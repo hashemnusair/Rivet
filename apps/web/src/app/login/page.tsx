@@ -90,9 +90,9 @@ export default function LoginPage() {
     <div className="grid min-h-screen lg:grid-cols-[44%_56%]">
       {/* Brand panel */}
       <div className="night-surface relative hidden flex-col justify-between bg-night p-10 text-night-ink lg:flex">
-        <div className="flex items-center gap-3">
-          <Image src="/brand/rivet-glyph-rev.png" alt="" width={26} height={40} priority />
-          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} priority />
+        <div className="flex items-center">
+          {/* Lockup only — it already contains the glyph. */}
+          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={149} height={38} priority />
         </div>
 
         <div className="max-w-md">
@@ -119,7 +119,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center bg-paper px-6 py-10">
         <div className="w-full max-w-md animate-fade-up">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={120} height={30} priority />
+            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={126} height={32} priority />
           </div>
 
           <h2 className="font-display text-[22px] font-semibold tracking-tight">Sign in to the demo</h2>

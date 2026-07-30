@@ -24,25 +24,14 @@ export function Sidebar() {
     >
       {/* Brand */}
       <div className={cn("flex h-16 items-center border-b border-night-line", sidebarCollapsed ? "justify-center px-2" : "px-4")}>
-        <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0" aria-label="RIVET home">
-          <Image
-            src="/brand/rivet-glyph-rev.png"
-            alt=""
-            width={22}
-            height={34}
-            className="shrink-0"
-            priority
-          />
-          {!sidebarCollapsed ? (
-            <Image
-              src="/brand/rivet-lockup-rev.png"
-              alt="RIVET"
-              width={92}
-              height={24}
-              className="shrink-0 translate-y-px"
-              priority
-            />
-          ) : null}
+        {/* The lockup already contains the glyph — never render both, or the
+            mark appears twice. Collapsed uses the glyph on its own. */}
+        <Link href="/dashboard" className="flex min-w-0 items-center" aria-label="RIVET home">
+          {sidebarCollapsed ? (
+            <Image src="/brand/rivet-glyph-rev.png" alt="RIVET" width={18} height={28} className="shrink-0" priority />
+          ) : (
+            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} className="shrink-0" priority />
+          )}
         </Link>
       </div>
 

@@ -53,3 +53,22 @@ Build the B2B gym-management web application first. The public multi-gym consume
 ## Definition of success
 
 A gym owner, manager, salesperson, and receptionist can each use a role-appropriate interface to operate one or more branches. The system must make renewals, follow-ups, check-ins, payments, and sensitive staff actions visible and auditable.
+
+## Running the frontend
+
+```bash
+pnpm install
+pnpm dev            # http://localhost:3000 — sign in with any password
+```
+
+Quality gates: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm build`.
+
+Deployment to Cloudflare (Workers runtime via `@opennextjs/cloudflare`):
+
+```bash
+pnpm --filter web cf:build
+pnpm --filter web cf:deploy
+```
+
+See `FRONTEND_HANDOFF.md` → *Hosting on Cloudflare* for dashboard settings and
+why a static export is not used.

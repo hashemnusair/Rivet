@@ -87,7 +87,7 @@ export default function ReceiptPage() {
         {/* The receipt document */}
         <div id="receipt-print" className="panel mx-auto w-full max-w-md px-8 py-8 font-mono text-[12.5px]">
           <div className="flex flex-col items-center border-b border-dashed border-line-3 pb-4 text-center">
-            <Image src="/brand/rivet-glyph.png" alt="" width={20} height={30} className="mb-2" />
+            <Image src="/brand/rivet-glyph.png" alt="" width={19} height={30} className="mb-2" />
             <h1 className="font-display text-[17px] font-semibold tracking-tight">{detail.organization.name}</h1>
             <p className="mt-0.5 text-[11px] text-ink-2">
               {detail.branch.name} · {detail.branch.address}

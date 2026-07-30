@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  workerd: true
   esbuild: true
   sharp: true
   unrs-resolver: true

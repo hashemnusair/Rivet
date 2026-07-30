@@ -126,6 +126,36 @@ Note: `eslint-plugin-react-hooks` is pinned to `^5` because that is what `eslint
 - **Mock-only behavior**: a hard page reload re-seeds the tenant, so demonstrations of multi-step state should navigate within the app. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
 - **RTL caveat**: interface copy is English. Under the RTL preview, English sentences that begin with a digit are re-ordered by the bidi algorithm (for example "25 things need action today"). This is correct bidi behavior, not a layout fault, and resolves once the copy is Arabic. Numeric ratios and ranges are already isolated with `dir="ltr"`.
 
+## Hosting on Cloudflare
+
+Deployed through the **Workers runtime** via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare), which is Cloudflare's current supported path for Next.js. Config lives in `apps/web/wrangler.jsonc` and `apps/web/open-next.config.ts`.
+
+```bash
+pnpm --filter web cf:build     # next build + OpenNext bundle -> apps/web/.open-next
+pnpm --filter web cf:preview   # run the real Workers runtime locally
+pnpm --filter web cf:deploy    # wrangler deploy
+```
+
+If wiring it to Cloudflare's dashboard (Workers → Builds, connected to the GitHub repo):
+
+| Setting | Value |
+|---|---|
+| Build command | `pnpm install && pnpm --filter web cf:build` |
+| Deploy command | `pnpm --filter web cf:deploy` |
+| Root directory | repository root (the pnpm workspace) |
+| Node version | 20 or newer |
+
+No environment variables or secrets are needed — the app runs entirely on the in-browser mock.
+
+**Why not a pure static export?** It was tried and rejected. Four routes carry dynamic segments — `/members/[memberId]`, `/crm/leads/[leadId]`, `/payments/receipts/[receiptId]`, `/automations/[ruleId]` — and `output: "export"` requires `generateStaticParams()` for each. Supplying one would mean importing seed data into page files (breaking the "no component imports seed data" rule) and would still 404 on any record created during a session. The Workers runtime keeps every route working, including a cold hard-refresh on a deep link.
+
+Verified locally against the actual Workers runtime (`wrangler dev`): all 19 routes return 200 including a dynamic member URL requested cold, static brand assets resolve, and an unknown path correctly returns 404.
+
+Two things to watch:
+
+- `compatibility_date` in `wrangler.jsonc` must not be **newer** than the deployed runtime supports, or the Worker refuses to boot. It is currently `2026-07-29`.
+- `nodejs_compat` is required in `compatibility_flags`.
+
 ## File-layout history (read this if older notes disagree)
 
 Two agents implemented parts of this frontend in the same working tree on 2026-07-30, which briefly left **two parallel implementations** of several areas. That has been reconciled: the surviving implementation is whatever `src/app/**` actually imports today, and nine superseded modules were deleted after verifying by import-graph analysis that nothing reached them.
