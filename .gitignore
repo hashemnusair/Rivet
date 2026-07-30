@@ -1,0 +1,32 @@
+# Dependencies — restore with `pnpm install` (pnpm-lock.yaml is committed)
+node_modules/
+.pnpm-store/
+
+# Next.js build output
+.next/
+out/
+build/
+
+# Test artefacts
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Environment — never commit real values
+.env
+.env.local
+.env*.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Note: next-env.d.ts is intentionally committed so `pnpm typecheck` works on a
+# fresh clone before `next dev` has had a chance to regenerate it.

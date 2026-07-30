@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+/*
+  RIVET design system
+  ———————————————————
+  Derived from the RIVET mark: warm black, paper white, one signal red.
+  No gradients, no glass, no decorative color. Color carries meaning only.
+*/
+
+@theme {
+  /* surfaces */
+  --color-paper: #f5f4ef;
+  --color-surface: #ffffff;
+  --color-sunken: #edece5;
+  --color-sunken-2: #e4e2d8;
+
+  /* ink */
+  --color-ink: #1b1a15;
+  --color-ink-2: #565449;
+  --color-ink-3: #8b887b;
+  --color-ink-4: #b6b3a6;
+
+  /* hairlines */
+  --color-line: #e3e1d6;
+  --color-line-2: #d2cfc2;
+  --color-line-3: #bdb9a9;
+
+  /* night (sidebar / reception console) */
+  --color-night: #15140f;
+  --color-night-2: #1e1c15;
+  --color-night-3: #2a2820;
+  --color-night-line: #2e2c22;
+  --color-night-ink: #f2f0e6;
+  --color-night-ink-2: #a6a394;
+  --color-night-ink-3: #6f6c5d;
+
+  /* brand signal red */
+  --color-signal: #d9232b;
+  --color-signal-deep: #ad1b22;
+  --color-signal-bg: #fae9e9;
+
+  /* semantic */
+  --color-success: #176e44;
+  --color-success-deep: #0f5232;
+  --color-success-bg: #e6f1ea;
+  --color-warning: #96620a;
+  --color-warning-deep: #6f4804;
+  --color-warning-bg: #f7edd9;
+  --color-danger: #b3261e;
+  --color-danger-bg: #f9e7e5;
+
+  /* fonts (wired to next/font variables in layout.tsx) */
+  --font-sans: var(--font-manrope), "Segoe UI", system-ui, sans-serif;
+  /* Same family as body — hierarchy comes from size, weight and tracking. */
+  --font-display: var(--font-manrope), "Segoe UI", system-ui, sans-serif;
+  /* Reserved for system records: IDs, receipt numbers, references, codes. */
+  --font-mono: var(--font-plex-mono), "SFMono-Regular", Menlo, monospace;
+
+  /* radii — restrained */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* one shadow scale — used only on floating layers */
+  --shadow-pop: 0 1px 2px rgb(27 26 21 / 0.06), 0 12px 32px -8px rgb(27 26 21 / 0.18);
+  --shadow-dialog: 0 2px 4px rgb(27 26 21 / 0.08), 0 24px 64px -12px rgb(27 26 21 / 0.28);
+
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-scale-in: scale-in 0.18s ease-out both;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to { opacity: 1; transform: scale(1); }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /*
+      This interface is light by design and has no dark theme. Declare it, or a
+      viewer whose OS is in dark mode gets dark-themed *native* controls —
+      date/time pickers, select popups, scrollbars — against light panels.
+      The night surfaces (sidebar, reception console) opt back in locally.
+    */
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* The three genuinely dark surfaces: sidebar, login brand panel, reception
+     console. Opting into the dark scheme keeps their scrollbars and carets
+     legible instead of painting light-theme chrome onto near-black panels. */
+  .night-surface,
+  [data-console] {
+    color-scheme: dark;
+  }
+
+  ::selection {
+    background: var(--color-signal);
+    color: #fff;
+  }
+
+  /* RTL: switch the stack so Arabic renders in Plex Sans Arabic */
+  .rtl-font body,
+  .rtl-font input,
+  .rtl-font textarea,
+  .rtl-font select,
+  .rtl-font button {
+    font-family: var(--font-plex-arabic), var(--font-manrope), system-ui, sans-serif;
+    letter-spacing: 0 !important;
+  }
+
+  /*
+    RTL: mirror icons whose meaning *is* their direction (next/previous, forward,
+    collapse). Done once here rather than at ~15 call sites. Deliberately narrow —
+    chevron-down (selects), rotate-ccw (renew) and status glyphs must not flip.
+  */
+  [dir="rtl"] .lucide-arrow-right,
+  [dir="rtl"] .lucide-arrow-left,
+  [dir="rtl"] .lucide-chevron-left,
+  [dir="rtl"] .lucide-chevron-right,
+  [dir="rtl"] .lucide-chevrons-left,
+  [dir="rtl"] .lucide-chevrons-right,
+  [dir="rtl"] .lucide-chevrons-right-icon,
+  [dir="rtl"] .lucide-corner-down-left,
+  [dir="rtl"] .lucide-log-in {
+    transform: scaleX(-1);
+  }
+
+  /* Focus ring — one consistent treatment */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+  .night-surface :focus-visible,
+  [data-console] :focus-visible {
+    outline-color: var(--color-night-ink);
+  }
+
+  /* Scrollbars — quiet */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-3) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-line-2);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-line-3);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Eyebrow / section label — the operational voice */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+@utility eyebrow-night {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-night-ink-3);
+}
+
+/* Hairline card — the default surface; shadow only when floating */
+@utility panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+@utility panel-inset {
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Print — receipts only
+   ------------------------------------------------------------------------- */
+@media print {
+  body {
+    background: #fff !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #receipt-print,
+  #receipt-print * {
+    visibility: visible;
+  }
+  #receipt-print {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    border: none;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

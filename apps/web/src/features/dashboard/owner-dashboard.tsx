@@ -1,0 +1,242 @@
+"use client";
+
+import { AlertTriangle, ArrowRight, ArrowUpRight, Info, OctagonAlert } from "lucide-react";
+import Link from "next/link";
+
+import { getApi } from "@/lib/api/client";
+import { qk } from "@/lib/api/keys";
+import { useApiQuery } from "@/lib/hooks/use-api";
+import { useApp } from "@/lib/providers/app-providers";
+import { todayISODate, formatDate } from "@/lib/utils/dates";
+import { money } from "@/lib/utils/money";
+import { MoneyText, RelativeText } from "@/components/shared/data-display";
+import { PageHeader, Stat } from "@/components/shared/chrome";
+import { TimelineFeed } from "@/components/shared/timeline-feed";
+import { ErrorState } from "@/components/ui/states";
+import { Skeleton } from "@/components/ui/misc";
+import { cn } from "@/lib/utils/cn";
+import { BranchRevenueBars, LeadFunnel, RevenueChart } from "./charts";
+
+export function OwnerDashboard() {
+  const { session } = useApp();
+  const branchId = session?.activeBranchId;
+  const today = todayISODate();
+
+  const { data, isLoading, isError, refetch } = useApiQuery(
+    qk.dashboard(branchId),
+    (api: ReturnType<typeof getApi>) => api.getDashboard({ branchId, from: today, to: today }),
+    { enabled: Boolean(session) },
+  );
+
+  if (isError) {
+    return <ErrorState onRetry={() => refetch()} />;
+  }
+
+  const kpis = data?.kpis;
+  const monthDelta =
+    kpis && kpis.revenuePrevMonth.amount > 0
+      ? Math.round(((kpis.revenueThisMonth.amount - kpis.revenuePrevMonth.amount) / kpis.revenuePrevMonth.amount) * 100)
+      : undefined;
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow={formatDate(today)}
+        title={`${greeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
+        description={
+          branchId
+            ? `Showing ${session?.branches.find((b) => b.id === branchId)?.name ?? "branch"} only.`
+            : "Both branches, consolidated."
+        }
+      />
+
+      {/* KPI strip — one ruled panel, not six cards */}
+      <section aria-label="Key numbers" className="panel grid grid-cols-2 divide-line sm:grid-cols-3 sm:divide-x lg:grid-cols-6">
+        <KpiCell label="Collected today" loading={isLoading}>
+          <MoneyText money={kpis?.revenueToday ?? money(0)} />
+        </KpiCell>
+        <KpiCell
+          label="This month"
+          loading={isLoading}
+          context={
+            monthDelta !== undefined ? (
+              <span className={cn("inline-flex items-center gap-0.5", monthDelta >= 0 ? "text-success-deep" : "text-danger")}>
+                <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} />
+                {Math.abs(monthDelta)}% vs last month
+              </span>
+            ) : undefined
+          }
+        >
+          <MoneyText money={kpis?.revenueThisMonth ?? money(0)} compact />
+        </KpiCell>
+        <KpiCell label="Outstanding" loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="unpaid balances">
+          <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />
+        </KpiCell>
+        <KpiCell label="New members" loading={isLoading} context="this month">
+          {kpis?.newMembersThisMonth ?? 0}
+        </KpiCell>
+        <KpiCell label="Renewals ≤ 7d" loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={`${kpis?.expiredUnactioned ?? 0} expired ≤ 30d`}>
+          {kpis?.renewalsDueNext7Days ?? 0}
+        </KpiCell>
+        <KpiCell label="Check-ins today" loading={isLoading} context={`${kpis?.activeLeads ?? 0} open leads`}>
+          {kpis?.checkInsToday ?? 0}
+        </KpiCell>
+      </section>
+
+      {/* Alerts rail */}
+      {data && data.alerts.length > 0 ? (
+        <section aria-label="Needs attention" className="panel overflow-hidden">
+          <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <h2 className="flex items-center gap-2 text-[13px] font-semibold">
+              <OctagonAlert className="size-4 text-signal" aria-hidden />
+              Needs attention
+              <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep tabular">
+                {data.alerts.length}
+              </span>
+            </h2>
+            <Link href="/audit" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
+              Full audit trail <ArrowRight className="size-3" />
+            </Link>
+          </header>
+          <ul className="divide-y divide-line">
+            {data.alerts.slice(0, 5).map((alert) => (
+              <li key={alert.id}>
+                <Link href={alert.href} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunken/40">
+                  {alert.severity === "critical" ? (
+                    <OctagonAlert className="size-4 shrink-0 text-signal" aria-hidden />
+                  ) : alert.severity === "warning" ? (
+                    <AlertTriangle className="size-4 shrink-0 text-warning" aria-hidden />
+                  ) : (
+                    <Info className="size-4 shrink-0 text-ink-3" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium">{alert.title}</span>
+                    <span className="block truncate text-[12px] text-ink-3">{alert.detail}</span>
+                  </span>
+                  {alert.actorName ? <span className="hidden shrink-0 text-[12px] text-ink-3 sm:block">{alert.actorName}</span> : null}
+                  <span className="shrink-0 text-[11.5px] text-ink-3">
+                    <RelativeText iso={alert.occurredAt} />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* Revenue + branch/funnel */}
+      <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
+        <section className="panel p-4">
+          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} />}
+        </section>
+        <div className="grid gap-5">
+          <section className="panel p-4">
+            <p className="eyebrow mb-3">Revenue by branch — 30 days</p>
+            {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
+          </section>
+          <section className="panel p-4">
+            <p className="eyebrow mb-3">Pipeline funnel</p>
+            {isLoading || !data ? <Skeleton className="h-[140px] w-full" /> : <LeadFunnel data={data.funnel} />}
+          </section>
+        </div>
+      </div>
+
+      {/* Leaderboard + activity */}
+      <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
+        <section className="panel overflow-hidden">
+          <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <h2 className="text-[13px] font-semibold">Sales this month</h2>
+            <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
+              Pipeline <ArrowRight className="size-3" />
+            </Link>
+          </header>
+          {isLoading || !data ? (
+            <div className="p-4">
+              <Skeleton className="h-[160px] w-full" />
+            </div>
+          ) : (
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-start">
+                  <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Rep</th>
+                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Collected</th>
+                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">New</th>
+                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Renewals</th>
+                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Follow-ups</th>
+                  <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Overdue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.leaderboard.map((rep, i) => (
+                  <tr key={rep.userId} className="border-b border-line/70 last:border-0">
+                    <td className="px-4 py-2.5">
+                      <span className="me-2 text-[11px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="font-medium">{rep.name}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-end">
+                      <MoneyText money={rep.revenueCollected} />
+                    </td>
+                    <td className="px-3 py-2.5 text-end tabular">{rep.newSales}</td>
+                    <td className="px-3 py-2.5 text-end tabular">{rep.renewals}</td>
+                    <td className="px-3 py-2.5 text-end tabular">{rep.followUpsCompleted}</td>
+                    <td className={cn("px-4 py-2.5 text-end tabular", rep.overdueFollowUps > 0 && "text-danger font-medium")}>
+                      {rep.overdueFollowUps}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section className="panel overflow-hidden">
+          <header className="border-b border-line px-4 py-2.5">
+            <h2 className="text-[13px] font-semibold">Recent activity</h2>
+          </header>
+          <div className="max-h-[380px] overflow-y-auto px-4 py-3">
+            {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <TimelineFeed events={data.recentActivity} dense />}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function KpiCell({
+  label,
+  children,
+  context,
+  tone,
+  loading,
+}: {
+  label: string;
+  children: React.ReactNode;
+  context?: React.ReactNode;
+  tone?: "warning";
+  loading?: boolean;
+}) {
+  return (
+    <div className="px-4 py-3.5">
+      <p className="eyebrow">{label}</p>
+      {loading ? (
+        <Skeleton className="mt-2 h-7 w-20" />
+      ) : (
+        <div className={cn("mt-1 text-[22px] font-medium leading-none tabular tracking-tight", tone === "warning" && "text-warning-deep")}>
+          {children}
+        </div>
+      )}
+      {context ? <div className="mt-1 text-[11.5px] text-ink-3">{context}</div> : null}
+    </div>
+  );
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export function DashboardStatPlaceholder() {
+  return <Stat label="—" value="—" />;
+}
