@@ -3,7 +3,7 @@
 import { GripVertical, LayoutList, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
@@ -39,6 +39,14 @@ function PipelinePageInner() {
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
   const [view, setView] = useState<"board" | "list">("board");
   const [dragOverStage, setDragOverStage] = useState<LeadStage | null>(null);
+
+  // HTML5 drag-and-drop doesn't work on touchscreens — default small touch
+  // devices to the list view (the board remains one tap away).
+  useEffect(() => {
+    if (window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 1024) {
+      setView("list");
+    }
+  }, []);
 
   const query = useMemo(
     () => ({ branchId: session?.activeBranchId, search: debounced || undefined, pageSize: 100, sort: "nextFollowUpAt" as const }),
@@ -104,7 +112,7 @@ function PipelinePageInner() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-3 gap-3 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-64 w-full" />
           ))}
@@ -209,36 +217,38 @@ function LeadListView({ leads }: { leads: LeadSummary[] }) {
   }
   return (
     <div className="panel overflow-hidden">
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="border-b border-line">
-            {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up"].map((h) => (
-              <th key={h} className="px-3 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {leads.map((lead) => (
-            <tr key={lead.id} className="border-b border-line/70 last:border-0 hover:bg-sunken/40">
-              <td className="px-3 py-2.5">
-                <Link href={`/crm/leads/${lead.id}`} className="font-medium hover:underline underline-offset-2">
-                  {lead.fullName}
-                </Link>
-                <span className="block font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
-              </td>
-              <td className="px-3 py-2.5 text-[12.5px] capitalize">{lead.stage.replace(/_/g, " ")}</td>
-              <td className="px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
-              <td className="px-3 py-2.5 text-[12.5px] text-ink-2">{LEAD_SOURCE_LABELS[lead.source]}</td>
-              <td className="px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>
-              <td className={cn("px-3 py-2.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
-                {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-line">
+              {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up"].map((h) => (
+                <th key={h} className="whitespace-nowrap px-3 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {leads.map((lead) => (
+              <tr key={lead.id} className="border-b border-line/70 last:border-0 hover:bg-sunken/40">
+                <td className="px-3 py-2.5">
+                  <Link href={`/crm/leads/${lead.id}`} className="font-medium hover:underline underline-offset-2">
+                    {lead.fullName}
+                  </Link>
+                  <span className="block whitespace-nowrap font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] capitalize">{lead.stage.replace(/_/g, " ")}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{LEAD_SOURCE_LABELS[lead.source]}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>
+                <td className={cn("whitespace-nowrap px-3 py-2.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
+                  {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { useApp } from "@/lib/providers/app-providers";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils/cn";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { signedIn, sessionLoading, sidebarCollapsed } = useApp();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -36,9 +38,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-paper">
       <Sidebar />
-      <div className={cn("flex min-h-screen flex-col transition-[margin] duration-200", sidebarCollapsed ? "ms-[60px]" : "ms-[228px]")}>
-        <Topbar />
-        <main className="flex-1 px-6 py-6 lg:px-8">{children}</main>
+      <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
+      {/* The fixed sidebar only exists ≥ lg; below that the drawer overlays
+          instead, so the content column keeps the full viewport width. */}
+      <div
+        className={cn(
+          "flex min-h-screen flex-col transition-[margin] duration-200",
+          sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
+        )}
+      >
+        <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

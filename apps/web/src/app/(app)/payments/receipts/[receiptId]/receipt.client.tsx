@@ -60,7 +60,7 @@ export default function ReceiptPageClient() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <div className="no-print flex items-center justify-between gap-3">
+      <div className="no-print flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/payments">
             <ArrowLeft /> Transactions

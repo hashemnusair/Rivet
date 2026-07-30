@@ -153,7 +153,7 @@ export default function TransactionsPage() {
                       {p.receiptNumber}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-[12.5px] text-ink-2">
+                  <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">
                     <DateTimeText iso={p.occurredAt} />
                   </TableCell>
                   <TableCell>

@@ -238,7 +238,7 @@ export default function ShiftsPage() {
             <TableBody>
               {historyQuery.data!.items.map((s) => (
                 <TableRow key={s.id}>
-                  <TableCell className="text-[12.5px]">{formatDateTime(s.openedAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[12.5px]">{formatDateTime(s.openedAt)}</TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{s.openedByName}</TableCell>
                   <TableCell className="text-end"><MoneyText money={s.openingFloat} /></TableCell>
                   <TableCell className="text-end">{s.expectedCash ? <MoneyText money={s.expectedCash} /> : "—"}</TableCell>

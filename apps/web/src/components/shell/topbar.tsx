@@ -1,6 +1,6 @@
 "use client";
 
-import { Beaker, Building2, Check, ChevronDown, Languages, LogOut, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
+import { Beaker, Building2, Check, ChevronDown, Languages, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -30,7 +30,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
   { role: "receptionist", blurb: "Front desk console — lookup, check-in, collect." },
 ];
 
-export function Topbar() {
+export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { session, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -40,12 +40,23 @@ export function Topbar() {
   const canPickBranch = role === "owner" || role === "manager" || role === "auditor";
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-paper/90 px-4 backdrop-blur-sm">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4">
+      {/* Navigation drawer — below lg the sidebar is hidden */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onOpenMobileNav}
+        className="-ms-1.5 lg:hidden"
+        aria-label="Open navigation menu"
+      >
+        <Menu />
+      </Button>
+
       {/* Search */}
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}
-        className="flex h-8 w-full max-w-72 items-center gap-2 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2 cursor-pointer"
+        className="flex h-8 w-full max-w-72 min-w-0 items-center gap-2 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2 cursor-pointer"
         aria-label="Search members, leads and pages"
       >
         <Search className="size-3.5" aria-hidden />

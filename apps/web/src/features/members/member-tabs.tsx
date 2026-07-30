@@ -169,7 +169,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
                 ) : null}
               </TableCell>
               <TableCell>
-                <span className="text-[12px] tabular">
+                <span className="whitespace-nowrap text-[12px] tabular">
                   {m.startDate} → {m.endDate}
                 </span>
                 <span className="block text-[11px]">
@@ -256,7 +256,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
                   {p.receiptNumber}
                 </Link>
               </TableCell>
-              <TableCell className="text-[12.5px] text-ink-2">
+              <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">
                 <DateTimeText iso={p.occurredAt} />
               </TableCell>
               <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
@@ -307,7 +307,7 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
           <TableBody>
             {items.map((c) => (
               <TableRow key={c.id}>
-                <TableCell className="text-[12.5px]">
+                <TableCell className="whitespace-nowrap text-[12.5px]">
                   <DateTimeText iso={c.occurredAt} />
                 </TableCell>
                 <TableCell className="text-[12.5px] text-ink-2">{c.branchName}</TableCell>

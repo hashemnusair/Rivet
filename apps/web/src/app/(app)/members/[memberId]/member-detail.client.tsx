@@ -78,7 +78,8 @@ export default function MemberDetailPageClient() {
 
       <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
         <Tabs defaultValue="overview">
-          <TabsList>
+          {/* Wraps to a second row on narrow screens (same convention as Settings). */}
+          <TabsList className="flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="timeline" data-testid="tab-timeline">Timeline</TabsTrigger>
             <TabsTrigger value="memberships">Memberships</TabsTrigger>

@@ -2,7 +2,7 @@
 
 import { CheckCircle2, MessageCircle, PhoneCall, UserPlus, X } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
@@ -44,6 +44,15 @@ export default function QueuesPage() {
   const mineOnly = role === "salesperson";
   const [queue, setQueue] = useState<QueueKey>("overdue");
   const [selected, setSelected] = useState<SelectedWork | null>(null);
+  const workPanelRef = useRef<HTMLElement | null>(null);
+
+  // Below xl the work panel stacks under the list — bring it into view when
+  // a row is picked, or the selection appears to do nothing on small screens.
+  useEffect(() => {
+    if (selected && window.innerWidth < 1280) {
+      workPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selected]);
 
   const tasksQuery = useApiQuery(qk.tasks({ queue: true }), (api) => api.listTasks({ status: "open", pageSize: 100 }));
   const leadsQuery = useApiQuery(qk.leads({ open: true }), (api) =>
@@ -162,7 +171,7 @@ export default function QueuesPage() {
 
           {/* Work drawer */}
           {selected ? (
-            <aside className="panel self-start overflow-hidden animate-fade-in" data-testid="queue-work-panel">
+            <aside ref={workPanelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="queue-work-panel">
               <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
                 <div className="min-w-0">
                   <p className="eyebrow">{selected.kind === "lead" ? "Lead" : "Renewal call"}</p>

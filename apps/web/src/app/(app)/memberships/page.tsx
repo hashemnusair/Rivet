@@ -133,7 +133,7 @@ export default function MembershipsPage() {
                     ) : null}
                   </TableCell>
                   <TableCell>
-                    <span className="text-[12px] tabular">
+                    <span className="whitespace-nowrap text-[12px] tabular">
                       {m.startDate} → {m.endDate}
                     </span>
                     <DaysUntilText date={m.endDate} className="block text-[11px]" />

@@ -114,7 +114,9 @@ export function MemberHeader({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {/* On phones the actions drop to a full-width row below the identity,
+            so the name/meta column is never squeezed between avatar and buttons. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full">
           {canSell ? (
             usable ? (
               <Button onClick={() => setDialog("renew")} data-testid="renew-membership">

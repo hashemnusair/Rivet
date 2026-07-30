@@ -9,6 +9,13 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { NAV_SECTIONS } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 
+/** Active-route rule shared by the desktop sidebar and the mobile drawer. */
+export function navIsActive(href: string, pathname: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard" || pathname === "/";
+  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/receipts");
+  return pathname.startsWith(href);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar } = useApp();
@@ -17,7 +24,8 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "night-surface fixed inset-y-0 start-0 z-40 flex flex-col bg-night text-night-ink transition-[width] duration-200 ease-out",
+        // Below lg the primary nav lives in the topbar's drawer instead.
+        "night-surface fixed inset-y-0 start-0 z-40 hidden flex-col bg-night text-night-ink transition-[width] duration-200 ease-out lg:flex",
         sidebarCollapsed ? "w-[60px]" : "w-[228px]",
       )}
       aria-label="Primary navigation"
@@ -46,12 +54,7 @@ export function Sidebar() {
                 {!sidebarCollapsed ? <p className="eyebrow-night px-2.5 pb-1.5">{section.label}</p> : <div className="mb-1.5 h-px bg-night-line mx-2" />}
                 <ul className="space-y-0.5">
                   {visible.map((item) => {
-                    const active =
-                      item.href === "/dashboard"
-                        ? pathname === "/dashboard" || pathname === "/"
-                        : item.href === "/payments"
-                          ? pathname === "/payments" || pathname.startsWith("/payments/receipts")
-                          : pathname.startsWith(item.href);
+                    const active = navIsActive(item.href, pathname);
                     const link = (
                       <Link
                         href={item.href}

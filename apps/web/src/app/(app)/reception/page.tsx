@@ -142,7 +142,7 @@ export default function ReceptionPage() {
   const committed = result !== null;
 
   return (
-    <div className="-mx-6 -my-6 flex min-h-[calc(100vh-3.5rem)] flex-col bg-night lg:-mx-8" data-console>
+    <div className="-mx-4 -my-6 flex min-h-[calc(100vh-3.5rem)] flex-col bg-night sm:-mx-6 lg:-mx-8" data-console>
       {/* Shift strip — cash is gated on an open drawer */}
       <ShiftStrip
         shift={shift?.shift ?? null}
@@ -188,7 +188,7 @@ export default function ReceptionPage() {
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
-              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-28 font-mono text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none"
+              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-14 font-mono text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none sm:pe-28"
             />
             <div className="absolute end-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
               {query ? (

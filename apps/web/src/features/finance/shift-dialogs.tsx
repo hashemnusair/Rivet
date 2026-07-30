@@ -162,7 +162,7 @@ export function CloseShiftDialog({
         </DialogHeader>
         <DialogBody className="space-y-4">
           {/* Expected story */}
-          <div className="grid grid-cols-4 gap-px overflow-hidden rounded-md border border-line bg-line">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
             <ExpectCell label="Float" minor={shift.openingFloat.amount} />
             <ExpectCell label="Cash in" minor={totals?.cashPayments.amount ?? 0} sign="+" />
             <ExpectCell label="Cash refunds" minor={totals?.cashRefunds.amount ?? 0} sign="−" />
@@ -178,7 +178,7 @@ export function CloseShiftDialog({
           {/* Denominations */}
           <div>
             <p className="eyebrow mb-2">Count the drawer</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {DENOMS.map((d) => (
                 <label key={d.label} className="block">
                   <span className="mb-1 block text-[11px] text-ink-3 tabular">{d.label}</span>

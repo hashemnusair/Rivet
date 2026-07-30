@@ -153,7 +153,7 @@ export function PlanFormDialog({
               />
             </Field>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {kind === "time" ? (
                 <Field label="Duration (days)" required error={form.formState.errors.durationDays?.message}>
                   <Input type="number" min={1} {...form.register("durationDays")} />

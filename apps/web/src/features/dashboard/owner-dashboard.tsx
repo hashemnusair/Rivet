@@ -155,37 +155,39 @@ export function OwnerDashboard() {
               <Skeleton className="h-[160px] w-full" />
             </div>
           ) : (
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-line text-start">
-                  <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Rep</th>
-                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Collected</th>
-                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">New</th>
-                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Renewals</th>
-                  <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Follow-ups</th>
-                  <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Overdue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.leaderboard.map((rep, i) => (
-                  <tr key={rep.userId} className="border-b border-line/70 last:border-0">
-                    <td className="px-4 py-2.5">
-                      <span className="me-2 text-[11px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="font-medium">{rep.name}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-end">
-                      <MoneyText money={rep.revenueCollected} />
-                    </td>
-                    <td className="px-3 py-2.5 text-end tabular">{rep.newSales}</td>
-                    <td className="px-3 py-2.5 text-end tabular">{rep.renewals}</td>
-                    <td className="px-3 py-2.5 text-end tabular">{rep.followUpsCompleted}</td>
-                    <td className={cn("px-4 py-2.5 text-end tabular", rep.overdueFollowUps > 0 && "text-danger font-medium")}>
-                      {rep.overdueFollowUps}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-line text-start">
+                    <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Rep</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Collected</th>
+                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">New</th>
+                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Renewals</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Follow-ups</th>
+                    <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Overdue</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.leaderboard.map((rep, i) => (
+                    <tr key={rep.userId} className="border-b border-line/70 last:border-0">
+                      <td className="whitespace-nowrap px-4 py-2.5">
+                        <span className="me-2 text-[11px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="font-medium">{rep.name}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-end">
+                        <MoneyText money={rep.revenueCollected} />
+                      </td>
+                      <td className="px-3 py-2.5 text-end tabular">{rep.newSales}</td>
+                      <td className="px-3 py-2.5 text-end tabular">{rep.renewals}</td>
+                      <td className="px-3 py-2.5 text-end tabular">{rep.followUpsCompleted}</td>
+                      <td className={cn("px-4 py-2.5 text-end tabular", rep.overdueFollowUps > 0 && "text-danger font-medium")}>
+                        {rep.overdueFollowUps}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
 

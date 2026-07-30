@@ -168,13 +168,13 @@ export default function MembersPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-[12px] text-ink-2" dir="ltr">{m.phone}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-[12px] text-ink-2" dir="ltr">{m.phone}</TableCell>
                   <TableCell className="text-ink-2">{branchName(m.homeBranchId)}</TableCell>
                   <TableCell className="text-ink-2">{m.currentPlanName ?? "—"}</TableCell>
                   <TableCell>
                     <MembershipStatusChip status={m.membershipStatus} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {m.membershipEndDate ? (
                       <span className="flex items-baseline gap-1.5">
                         <span className="text-[12px] tabular">{m.membershipEndDate}</span>
@@ -191,7 +191,7 @@ export default function MembersPage() {
                       <span className="text-[12px] tabular text-ink-4">0.000</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-[12px] text-ink-3">
+                  <TableCell className="whitespace-nowrap text-[12px] text-ink-3">
                     <RelativeText iso={m.lastCheckInAt} />
                   </TableCell>
                 </TableRow>
