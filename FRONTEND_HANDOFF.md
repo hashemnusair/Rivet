@@ -3,7 +3,7 @@
 ## Status
 
 - Completion date: 2026-07-30
-- Frontend commit: not applicable — this working tree is not a git repository (`git init` has not been run). Commit the tree as-is; `pnpm-lock.yaml` is present and current.
+- Frontend commit: working tree on `main` (see git log). Static-export / GitHub-connected Pages changes are uncommitted until you choose to commit.
 - Mock mode command: `pnpm install && pnpm dev` from the repository root (starts `apps/web` on <http://localhost:3000>)
 - Build command: `pnpm build`
 - Test command: `pnpm test` (unit + component), `pnpm test:e2e` (Playwright)
@@ -126,35 +126,42 @@ Note: `eslint-plugin-react-hooks` is pinned to `^5` because that is what `eslint
 - **Mock-only behavior**: a hard page reload re-seeds the tenant, so demonstrations of multi-step state should navigate within the app. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
 - **RTL caveat**: interface copy is English. Under the RTL preview, English sentences that begin with a digit are re-ordered by the bidi algorithm (for example "25 things need action today"). This is correct bidi behavior, not a layout fault, and resolves once the copy is Arabic. Numeric ratios and ranges are already isolated with `dir="ltr"`.
 
-## Hosting on Cloudflare
+## Hosting on Cloudflare Pages (GitHub-connected)
 
-Deployed through the **Workers runtime** via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare), which is Cloudflare's current supported path for Next.js. Config lives in `apps/web/wrangler.jsonc` and `apps/web/open-next.config.ts`.
+The app builds to **fully static output** — no adapter, no CLI, no runtime. Connect the GitHub repo in the Cloudflare Pages dashboard and it deploys on every push, with preview deployments per branch.
 
-```bash
-pnpm --filter web cf:build     # next build + OpenNext bundle -> apps/web/.open-next
-pnpm --filter web cf:preview   # run the real Workers runtime locally
-pnpm --filter web cf:deploy    # wrangler deploy
-```
-
-If wiring it to Cloudflare's dashboard (Workers → Builds, connected to the GitHub repo):
-
-| Setting | Value |
+| Pages setting | Value |
 |---|---|
-| Build command | `pnpm install && pnpm --filter web cf:build` |
-| Deploy command | `pnpm --filter web cf:deploy` |
-| Root directory | repository root (the pnpm workspace) |
-| Node version | 20 or newer |
+| Framework preset | Next.js (Static HTML Export) — or *None* |
+| Build command | `pnpm install && pnpm --filter web build` |
+| Build output directory | `apps/web/out` |
+| Root directory | *(leave empty — repository root)* |
+| Node version | `20` (set `NODE_VERSION=20` if Pages defaults lower) |
 
-No environment variables or secrets are needed — the app runs entirely on the in-browser mock.
+No environment variables and no secrets: the app runs entirely on its in-browser mock.
 
-**Why not a pure static export?** It was tried and rejected. Four routes carry dynamic segments — `/members/[memberId]`, `/crm/leads/[leadId]`, `/payments/receipts/[receiptId]`, `/automations/[ruleId]` — and `output: "export"` requires `generateStaticParams()` for each. Supplying one would mean importing seed data into page files (breaking the "no component imports seed data" rule) and would still 404 on any record created during a session. The Workers runtime keeps every route working, including a cold hard-refresh on a deep link.
+### Why this needed a small change
 
-Verified locally against the actual Workers runtime (`wrangler dev`): all 19 routes return 200 including a dynamic member URL requested cold, static brand assets resolve, and an unknown path correctly returns 404.
+`output: "export"` requires `generateStaticParams()` on every dynamic segment, and the four detail routes are `"use client"` files, which may not export it. Each is now a two-file pair:
 
-Two things to watch:
+- `page.tsx` — a tiny server shell holding `generateStaticParams()`
+- `*.client.tsx` — the original client component, unchanged in behaviour
 
-- `compatibility_date` in `wrangler.jsonc` must not be **newer** than the deployed runtime supports, or the Worker refuses to boot. It is currently `2026-07-29`.
-- `nodejs_compat` is required in `compatibility_flags`.
+The ids come from `src/lib/mock/prerender-ids.ts`, the single module permitted to read seed data outside the mock client. This is sound in mock mode because **the demo tenant is rebuilt from the same deterministic seed on every cold load**, so the seeded ids are exactly the set that can resolve on a fresh request. The build prerenders 320 HTML files (105 members, 164 receipts, 30 leads, 6 rules, plus the static pages).
+
+**Known limitation:** a record created during a session gets a client-side route that works while you navigate, but a hard refresh on its URL falls through to the 404 page. That is not a regression — the mock re-seeds on reload, so such a record does not survive a refresh under any rendering strategy.
+
+### Verified
+
+Built with `pnpm build`, then served `apps/web/out` through a bare static file server that mimics a static host (exact file → `.html` → `dir/index.html` → `404.html`):
+
+- All 19 route families return 200; an unknown path returns the 404 page.
+- A **cold deep link** to `/members/<seeded-id>` renders the full Member 360 — timeline, stats, details — with no server involved.
+- Brand assets and the favicon resolve.
+
+### Backend agent
+
+When `HttpGymOSApi` lands, static export is no longer the right target. Delete `src/lib/mock/prerender-ids.ts`, drop the `generateStaticParams()` shells (collapsing each pair back into one client page), and remove `output: "export"` from `next.config.mjs` in favour of a server deployment.
 
 ## File-layout history (read this if older notes disagree)
 

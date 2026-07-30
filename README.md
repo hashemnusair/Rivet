@@ -63,12 +63,12 @@ pnpm dev            # http://localhost:3000 — sign in with any password
 
 Quality gates: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm build`.
 
-Deployment to Cloudflare (Workers runtime via `@opennextjs/cloudflare`):
+Deployment: the app builds to fully static output, so any static host works.
+For Cloudflare Pages connected to GitHub:
 
-```bash
-pnpm --filter web cf:build
-pnpm --filter web cf:deploy
-```
+| Setting | Value |
+|---|---|
+| Build command | `pnpm install && pnpm --filter web build` |
+| Build output directory | `apps/web/out` |
 
-See `FRONTEND_HANDOFF.md` → *Hosting on Cloudflare* for dashboard settings and
-why a static export is not used.
+See `FRONTEND_HANDOFF.md` → *Hosting on Cloudflare Pages* for the details.
