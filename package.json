@@ -5,6 +5,9 @@
   "description": "RIVET (working title GymOS) — revenue and operations OS for gyms. Pass 1: frontend.",
   "scripts": {
     "dev": "pnpm --filter web dev",
+    "dev:full": "pnpm --filter web dev:full",
+    "convex:dev": "pnpm --filter web convex:dev",
+    "convex:deploy": "pnpm --filter web convex:deploy",
     "build": "pnpm --filter web build",
     "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",

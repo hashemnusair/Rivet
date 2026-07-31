@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, Check, QrCode, Search, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -31,10 +31,19 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
+const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
+
 export default function MemberSignupPage() {
   const router = useRouter();
   const { registerCustomer, emailTaken } = useExperience();
   const [submitting, setSubmitting] = useState(false);
+
+  // Real accounts are created by Clerk in the member portal. This local form
+  // only exists for the preview build, which has no Clerk instance — keeping
+  // both live would give members two different "sign up" buttons.
+  useEffect(() => {
+    if (!demoAuthBypass) router.replace("/login/member/create");
+  }, [router]);
 
   const {
     register,
@@ -91,7 +100,7 @@ export default function MemberSignupPage() {
 
         <p className="mt-5 max-w-md text-[12px] text-ink-3">
           Already have an account?{" "}
-          <Link href="/login#member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
+          <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
             Sign in
           </Link>
           . Running a gym?{" "}

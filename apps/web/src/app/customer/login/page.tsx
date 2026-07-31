@@ -11,7 +11,7 @@ export default function CustomerLoginRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/login#member");
+    router.replace("/login/member");
   }, [router]);
 
   return (

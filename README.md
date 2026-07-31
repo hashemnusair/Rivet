@@ -58,17 +58,9 @@ A gym owner, manager, salesperson, and receptionist can each use a role-appropri
 
 ```bash
 pnpm install
-pnpm dev            # http://localhost:3000 — sign in with any password
+pnpm dev:full       # Convex sync + http://localhost:3000
 ```
 
 Quality gates: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm build`.
 
-Deployment: the app builds to fully static output, so any static host works.
-For Cloudflare Pages connected to GitHub:
-
-| Setting | Value |
-|---|---|
-| Build command | `pnpm install && pnpm --filter web build` |
-| Build output directory | `apps/web/out` |
-
-See `FRONTEND_HANDOFF.md` → *Hosting on Cloudflare Pages* for the details.
+Deployment now requires a Next.js server runtime because Clerk uses `src/proxy.ts`. Use Vercel or an equivalent Next.js 16 host and configure the Clerk and Convex environment variables listed in `apps/web/.env.example`.

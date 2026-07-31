@@ -5,11 +5,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Fully static output: the app is client-rendered against an in-browser mock,
-  // so there is no server work to do. Deploys to any static host (e.g. Cloudflare
-  // Pages connected to GitHub) with no adapter, CLI, or runtime.
-  output: "export",
-  // next/image optimisation needs a server; serve the brand PNGs as-is.
+  // Playwright uses its own build directory so Next 16 can run the browser-test
+  // server beside a developer's existing `next dev` process.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  // Clerk's request proxy requires a Next.js server runtime. Keep images
+  // unoptimized for now so the approved brand assets render identically.
   images: { unoptimized: true },
   reactStrictMode: true,
   poweredByHeader: false,

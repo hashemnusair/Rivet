@@ -35,7 +35,7 @@ export default function DiscoverGymsPage() {
             ) : null
           ) : (
             <div className="flex gap-2">
-              <Button asChild variant="secondary"><Link href="/login#member">Sign in</Link></Button>
+              <Button asChild variant="secondary"><Link href="/login/member">Sign in</Link></Button>
               <Button asChild><Link href="/customer/signup">Create account</Link></Button>
             </div>
           )}

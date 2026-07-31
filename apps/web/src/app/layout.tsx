@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
 import { AppProviders } from "@/lib/providers/app-providers";
+import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -78,21 +80,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" dir="ltr" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body>
-        <AppProviders>
-          <ExperienceProvider>{children}</ExperienceProvider>
-          <Toaster
-            position="bottom-right"
-            toastOptions={{
-              style: {
-                background: "#15140f",
-                color: "#f2f0e6",
-                border: "1px solid #2e2c22",
-                borderRadius: "6px",
-                fontSize: "13px",
-              },
-            }}
-          />
-        </AppProviders>
+        <ClerkProvider>
+          <ConvexClientProvider>
+            <AppProviders>
+              <ExperienceProvider>{children}</ExperienceProvider>
+              <Toaster
+                position="bottom-right"
+                toastOptions={{
+                  style: {
+                    background: "#15140f",
+                    color: "#f2f0e6",
+                    border: "1px solid #2e2c22",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                  },
+                }}
+              />
+            </AppProviders>
+          </ConvexClientProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

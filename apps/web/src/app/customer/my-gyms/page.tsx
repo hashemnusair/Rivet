@@ -17,16 +17,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gymById, type CustomerMembership } from "@/lib/public/experience-data";
+import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { daysFromToday, diffDays, formatDate, formatRelative, todayISODate } from "@/lib/utils/dates";
 
 export default function MemberDashboardPage() {
   const customer = useCustomerPersona();
-  const { customerMemberships, customerBookings, customerSignedIn } = useExperience();
+  const { customerMemberships, customerBookings } = useExperience();
+  const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const [qrFor, setQrFor] = useState<CustomerMembership | null>(null);
 
-  if (!customerSignedIn || !customer) return <SignedOut />;
+  // No identity yet: the gate is already redirecting to the member portal.
+  if (!ready || !identitySignedIn) return <GateLoading />;
+  if (!profileSelected || !customer) return <SignedOut />;
 
   const primary = customerMemberships[0];
   const soonest = [...customerMemberships].sort((a, b) => a.endDate.localeCompare(b.endDate))[0];
@@ -392,6 +396,16 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function GateLoading() {
+  return (
+    <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label="Checking access">
+      <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
+        <div className="h-full w-1/2 animate-pulse rounded-full bg-ink" />
+      </div>
+    </main>
+  );
+}
+
 function SignedOut() {
   return (
     <main className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
@@ -402,7 +416,7 @@ function SignedOut() {
       <p className="mt-2 text-[13px] text-ink-2">Memberships, visits, balance, and your entry QR live behind sign-in.</p>
       <div className="mt-6 flex gap-2">
         <Button asChild>
-          <Link href="/login#member">Member sign-in</Link>
+          <Link href="/login/member">Member sign-in</Link>
         </Button>
         <Button asChild variant="secondary">
           <Link href="/customer/signup">Create an account</Link>

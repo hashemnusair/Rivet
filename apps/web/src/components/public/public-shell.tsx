@@ -1,5 +1,6 @@
 "use client";
 
+import { Show, UserButton } from "@clerk/nextjs";
 import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -54,15 +55,27 @@ export function PublicHeader() {
           ))}
         </nav>
 
+        {/* Sign-in lives at /login and nowhere else — no modal, so there is one
+            place to authenticate and one place that decides which portal. */}
         <div className="hidden items-center gap-2 lg:flex">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <Button asChild variant="signal" size="sm">
-            <Link href="/signup">
-              Start free trial <ArrowRight />
-            </Link>
-          </Button>
+          <Show when="signed-out">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/login">Sign in</Link>
+            </Button>
+            <Button asChild variant="signal" size="sm">
+              <Link href="/signup">
+                Start free trial <ArrowRight />
+              </Link>
+            </Button>
+          </Show>
+          <Show when="signed-in">
+            <Button asChild variant="signal" size="sm">
+              <Link href="/login">
+                Open RIVET <ArrowRight />
+              </Link>
+            </Button>
+            <UserButton />
+          </Show>
         </div>
 
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((value) => !value)} aria-label="Toggle navigation">
@@ -85,12 +98,22 @@ export function PublicHeader() {
             ))}
           </nav>
           <div className="mt-3 grid gap-2 border-t border-line pt-3">
-            <Button asChild variant="secondary" onClick={() => setOpen(false)}>
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button asChild variant="signal" onClick={() => setOpen(false)}>
-              <Link href="/signup">Start free trial</Link>
-            </Button>
+            <Show when="signed-out">
+              <Button asChild variant="secondary" onClick={() => setOpen(false)}>
+                <Link href="/login">Sign in</Link>
+              </Button>
+              <Button asChild variant="signal" onClick={() => setOpen(false)}>
+                <Link href="/signup">Start free trial</Link>
+              </Button>
+            </Show>
+            <Show when="signed-in">
+              <Button asChild variant="signal" onClick={() => setOpen(false)}>
+                <Link href="/login">Open RIVET</Link>
+              </Button>
+              <div className="flex justify-center py-2">
+                <UserButton />
+              </div>
+            </Show>
           </div>
         </div>
       ) : null}
@@ -132,9 +155,9 @@ export function PublicFooter() {
         <FooterColumn
           title="Sign in"
           links={[
-            ["Gym staff", "/login"],
-            ["Gym member", "/login#member"],
-            ["Start a gym trial", "/signup"],
+            ["Gym team", "/login/gym"],
+            ["Gym member", "/login/member"],
+            ["All sign-in options", "/login"],
           ]}
         />
       </div>
@@ -243,7 +266,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/login#member">Sign in</Link>
+                  <Link href="/login/member">Sign in</Link>
                 </Button>
                 <Button asChild size="sm">
                   <Link href="/customer/signup">Create account</Link>
@@ -271,7 +294,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 Sign out
               </button>
             ) : (
-              <Link href="/login#member" className="transition-colors hover:text-ink">
+              <Link href="/login/member" className="transition-colors hover:text-ink">
                 Sign in
               </Link>
             )}

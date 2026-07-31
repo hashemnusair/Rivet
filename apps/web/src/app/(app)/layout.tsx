@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
@@ -10,16 +11,22 @@ import { cn } from "@/lib/utils/cn";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { signedIn, sessionLoading, sidebarCollapsed } = useApp();
+  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const router = useRouter();
+  const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
+  const identityReady = demoAuthBypass || clerkLoaded;
+  const identitySignedIn = demoAuthBypass || clerkSignedIn;
 
   useEffect(() => {
-    if (!sessionLoading && !signedIn) {
-      router.replace("/login");
+    if (identityReady && !sessionLoading && (!identitySignedIn || !signedIn)) {
+      // Straight to the gym portal — the chooser would throw away the fact that
+      // we already know which side of the product they were trying to reach.
+      router.replace("/login/gym");
     }
-  }, [sessionLoading, signedIn, router]);
+  }, [identityReady, identitySignedIn, sessionLoading, signedIn, router]);
 
-  if (sessionLoading || !signedIn) {
+  if (!identityReady || sessionLoading || !identitySignedIn || !signedIn) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Loading workspace">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">

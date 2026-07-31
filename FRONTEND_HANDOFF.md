@@ -19,15 +19,34 @@ The product owner explicitly expanded the frontend scope beyond the original B2B
 
 ### One sign-in portal
 
-`/login` is the only sign-in surface. It carries three audiences:
+`/login` is the only sign-in surface. It preserves the approved split-screen RIVET design while Clerk owns the real email/password and Google identity flow. After Clerk authentication, the same page exposes a clearly labeled seeded-workspace chooser for three preview audiences:
 
 - **Gym staff** (default) — the four role personas; signing in lands on `/dashboard`, or `/reception` for the receptionist.
 - **Gym member** — the customer personas; lands on `/customer/my-gyms` or `/customer/discover`.
 - **Platform administrator** — deliberately quiet, at the bottom of the page behind a small lock link; lands on `/platform`.
 
-Deep links open the portal on the right tab via a URL hash (`/login#member`, `/login#admin`); a hash is used rather than a search param because `output: export` would otherwise force a Suspense boundary around the page. `/customer/login` is kept only as a client redirect to `/login#member` for old bookmarks. `/platform` now redirects to `/login#admin` unless the admin session exists.
+`/login` is the only sign-in surface, and it does not authenticate anyone itself — it chooses a portal. Each portal is a real route with its own accounts, so gym staff, members and platform administrators are never listed together:
 
-Accounts created at `/customer/signup` are appended to the member list and offered at sign-in alongside the seeded personas. Member sessions, created accounts, and trial bookings all persist in `sessionStorage`, so a reload does not sign a member out, orphan the session behind a customer that no longer exists, or drop a trial they just booked. Passwords are never stored — the preview does not authenticate. Real member registration, email verification, and password handling remain backend work.
+| Route | Portal | Accounts | Lands on |
+| --- | --- | --- | --- |
+| `/login` | Chooser | — | one of the three below |
+| `/login/gym` · `/login/gym/create` | Gym team | Owner, manager, sales, reception | `/dashboard`, or `/reception` |
+| `/login/member` · `/login/member/create` | Gym member | Member accounts | `/customer/my-gyms` or `/customer/discover` |
+| `/login/admin` | Platform administration | Single console entry, linked quietly from `/login` | `/platform` |
+
+Sign-up sits beside sign-in in each portal (`…/create`, rendering Clerk's `<SignUp>`), because previously no route created a Clerk user at all — Clerk's own "Sign up" link pointed at marketing pages, so a new visitor hit a dead end. Platform administration has no self-service sign-up by design. `/customer/signup` keeps its local preview form only under `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; with a real Clerk instance it redirects to `/login/member/create` so members are never offered two different sign-up buttons.
+
+Once Clerk reports a session, each portal shows the account actually in use with a sign-out control before offering preview accounts — otherwise there is no way to tell which identity you hold, or to switch. `ConvexClientProvider` already upserts that identity into the Convex `users` table via `users.ensureCurrent`.
+
+Each portal renders Clerk's `<SignIn>` scoped to itself (`forceRedirectUrl` back to that portal, `signUpUrl` for that audience), then shows only that portal's accounts once identity is established. `routing="hash"` is safe now that portals own routes rather than fragments. Legacy `/login#member` and `/login#admin` links are resolved client-side by `/login`, and `/customer/login` still redirects to `/login/member`.
+
+There is no second sign-in surface: the marketing header links to `/login` instead of opening Clerk's modal, so one page decides which portal a visitor lands in.
+
+Route guards are consistent across all three areas. `/dashboard` and `/reception` send a signed-out visitor to `/login/gym` rather than the chooser, so the portal they were already heading for is not thrown away; `/platform` sends them to `/login/admin`; and a member's own pages (`/customer/my-gyms`, `/customer/my-gyms/[membershipId]`) now require an identity through `useMemberGate` instead of rendering an in-page prompt. The marketplace — `/customer/discover` and gym profiles — stays open to visitors, since booking a trial has to work before anyone has an account.
+
+Playwright sets `NEXT_PUBLIC_RIVET_DEMO_AUTH=1` so browser tests exercise deterministic personas without creating external Clerk users. That flag now also short-circuits `src/proxy.ts`; leaving `clerkMiddleware()` active with no Clerk session made every request attempt a handshake it could never complete, which surfaced as `Refreshing the session token resulted in an infinite redirect loop` and stalled client-side navigation.
+
+Accounts created at `/customer/signup` are still preview-only records appended to the member chooser alongside seeded personas. Member preview sessions, created accounts, and trial bookings persist in `sessionStorage`, so a reload does not orphan the preview. Passwords entered into Clerk are handled by Clerk and are never stored by the preview. Converting the existing custom gym/member signup forms into Clerk onboarding plus Convex profile creation remains backend work.
 
 ### Connected preview behavior
 
@@ -35,6 +54,7 @@ Accounts created at `/customer/signup` are appended to the member list and offer
 - Customer identities, memberships, marketplace gyms, and platform subscriptions live in `src/lib/public/experience-data.ts`; interactive session state is isolated in `src/lib/providers/experience-provider.tsx`.
 - The QR pass encodes a demo identity. Production must replace it with a short-lived, signed, server-validated token; the UI labels this compromise explicitly.
 - The public/customer/platform expansion is frontend-only. Member sessions, accounts, and trial bookings persist for the browser session; the gym operating tenant remains in memory. Real authentication, durable persistence, tenant provisioning, subscription billing, marketplace moderation, and notification delivery remain backend work.
+- Backend integration has started: Convex is linked with a tenant-foundation schema, Clerk wraps the App Router, and the public header exposes Clerk sign-in/sign-up controls. The existing preview personas remain available until Clerk identities and Convex roles replace them end to end.
 
 ### Scope decision
 
@@ -45,8 +65,8 @@ Accounts created at `/customer/signup` are appended to the member list and offer
 - `pnpm --filter web typecheck` — pass.
 - `pnpm --filter web lint` — pass with zero warnings.
 - `pnpm --filter web test` — 162 tests passed across 7 files.
-- `pnpm --filter web test:e2e` — 13 browser journeys passed, including member registration persistence, customer trial → gym CRM, platform-admin guarding, and runtime payment receipts.
-- `pnpm --filter web build` — pass; 343 static pages generated, including the new customer, platform, and runtime receipt routes.
+- `pnpm --filter web test:e2e` — 13 browser journeys passed with the Clerk provider and development instance enabled.
+- `pnpm --filter web build` — pass on Next.js 16; 342 routes prerendered and the Clerk request proxy detected.
 - `qrcode.react` was added for the membership entry pass.
 - `public/brand/rivet-social-preview.png` is a generated, project-local social preview asset used by Open Graph and Twitter metadata.
 
@@ -54,7 +74,7 @@ Accounts created at `/customer/signup` are appended to the member list and offer
 
 - Completion date: 2026-07-31
 - Frontend branch: `main` (see git log for the latest handoff commit).
-- Mock mode command: `pnpm install && pnpm dev` from the repository root (starts `apps/web` on <http://localhost:3000>)
+- Full development command: `pnpm install && pnpm dev:full` from the repository root (syncs Convex and starts `apps/web` on <http://localhost:3000>)
 - Build command: `pnpm build`
 - Test command: `pnpm test` (unit + component), `pnpm test:e2e` (Playwright)
 
@@ -64,7 +84,7 @@ Product name in the UI is **RIVET** (working title GymOS), derived from the logo
 
 | Route | Purpose | Primary roles | Status |
 |---|---|---|---|
-| `/login` | Auth preview: four demo personas, any password | all | Done |
+| `/login` | Branded Clerk sign-in, followed by a clearly labeled seeded workspace chooser | all | Integration in progress |
 | `/` | Public marketing landing page and entry point for gym owners and customers | public | Done |
 | `/dashboard` | Owner/manager revenue + exceptions dashboard; sales variant for salespeople | owner, manager, sales | Done |
 | `/reception` | Full-height dark check-in console: lookup/scan, verdict, occupancy, shift gate | reception, manager | Done |
@@ -143,11 +163,12 @@ Permission-gated areas render `ForbiddenState` when reached by URL — the nav o
 - Scenario coverage (asserted by tests in `MockGymOSApi.test.ts`): 2 branches; 80+ members; 25+ leads covering all 8 stages; active / expiring / expired / frozen / cancelled / visit-based memberships; cash, card, CliQ and bank-transfer payments with partial and outstanding balances; 30 days of check-ins plus a live "today" window; 2 cash discrepancies (a JOD 7.000 shortage pending approval and a JOD 3.500 surplus already approved); approved and unapproved discounts and refunds; automation executions including suppressed duplicates and failures; audit events across every category.
 - Known inconsistencies: historical **closed** shifts compute expected cash from that day's cash payments, but only *today's* payments are linked to a shift via `shiftId`. On seeded days with no cash takings, a closed shift therefore shows `expected = opening float`. It is internally consistent, just sparse. The backend should link every payment to its shift.
 
-## Authentication preview
+## Authentication transition
 
-- Demo credentials / role-switch mechanism: `/login` offers four personas (Omar Al-Khatib — owner, Layla Haddad — manager, Sara Abuhamdan — sales, Hala Qasem — reception). The email prefills; **any password is accepted**. Roles can also be switched live from the topbar account menu, and the branch from the topbar branch selector. Trainer and auditor roles exist in the permission matrix but have no login persona.
-- Route guards currently simulated: `(app)/layout.tsx` redirects to `/login` when there is no session. Page-level permission checks render `ForbiddenState`. The mock API independently enforces permissions, so a hand-typed URL is refused by the client boundary, not just hidden.
-- What the backend must replace: real credential authentication, HTTP-only session cookies, CSRF protection, rate limiting on sign-in, session revocation, and denial for deactivated users. Remove `switchDemoRole` from the production client (or leave it behind a non-production flag) and delete the persona list in `src/app/login/page.tsx`.
+- Clerk is the sole real credential/session layer. `/login` embeds Clerk inside the approved RIVET login shell; a user does not enter a second password.
+- After authentication, the temporary chooser offers four seeded staff personas (Omar Al-Khatib — owner, Layla Haddad — manager, Sara Abuhamdan — sales, Hala Qasem — reception), seeded members, and a platform preview. These cards select mock data only and explicitly do not grant a Clerk account a real role. Roles can still be switched from the demo topbar.
+- `(app)/layout.tsx` and the platform shell require the Clerk session in addition to the preview session. Page-level permission checks and the mock API continue to enforce the selected preview role so hand-typed URLs are refused, not merely hidden in navigation.
+- Next backend step: replace the chooser with a Convex query for the authenticated user's platform role and organization memberships, then automatically route platform admins, gym staff, and customers. Remove `switchDemoRole` from production after those vertical workflows use persisted data.
 
 ## Critical workflows demonstrated
 
@@ -165,54 +186,25 @@ Permission-gated areas render `ForbiddenState` when reached by URL — the nav o
 - Lint: `pnpm lint` (`eslint . --max-warnings 0`) — **pass**, zero errors and zero warnings.
 - Unit/component tests: `pnpm test` — **162 passed** across 7 files (money, dates, permissions, membership status + check-in engine, mock API integration, the collect-payment form, the reception console's verdict states).
 - Browser tests: `pnpm test:e2e` — **13 passed** (renewal → timeline, runtime payment → printable receipt, check-in, unknown scan, role restrictions by nav *and* by URL, override → audit trail, RTL toggle, demo reset, member registration persistence, customer trial → gym CRM, and platform-admin guarding). Specs select by role and visible text rather than by `data-testid` wherever practical, so they survive markup churn.
-- Build: `pnpm build` — **pass**, 343 static pages, no metadata warnings.
+- Build: `pnpm build` — **pass** on Next.js 16, 342 prerendered routes plus the Clerk request proxy.
 
-Note: `eslint-plugin-react-hooks` is pinned to `^5` because that is what `eslint-config-next@15` is written against. Version 7 enables React-Compiler-era rules that reject the standard "reset a form when its dialog opens" effect used throughout this codebase.
+Note: Next.js 16 enables React Compiler advisory lint rules. Rivet is not enabling the compiler during authentication integration, so compiler-only advisories are disabled while the established React 19 behavior remains covered by tests.
 
 ## Known gaps
 
 - **Accepted frontend deferrals**: CSV import/export, a create-offer form, a dedicated approvals inbox, and dedicated trainer/auditor workspaces are not part of the approved frontend handoff. The underlying permission roles and relevant records remain represented so these can be added without redesigning the operating core. Automation scheduling is backend work; the frontend already covers rule configuration and execution history.
 - **Responsive/accessibility gaps**: the sidebar does not auto-collapse on tablet — it can be collapsed manually. Below roughly 640px the app is usable but wide tables scroll horizontally rather than reflowing into cards. The pipeline board relies on horizontal scrolling. Drag-and-drop on the pipeline is pointer-only by design; the equivalent keyboard path is the per-row **Move to** menu, which is what assistive-technology users get. Contrast, focus rings, dialog focus management, table semantics, form error wiring and `prefers-reduced-motion` are all handled.
 - **Visual decisions awaiting approval**: the product name "RIVET" and the derived warm-paper palette; the dark treatment for reception (chosen so a glanceable verdict reads across a counter); using a monogram instead of member photos (the domain model has `photo reference` but the mock has no image storage).
-- **Mock-only behavior**: a hard page reload re-seeds the gym tenant, so gym-side multi-step demonstrations should navigate within the app. Member sessions, registered accounts, and trial bookings survive reloads in `sessionStorage`. Runtime receipts use the fixed static route `/payments/receipts/view#<id>` and work during the active mock session; reloading a newly created receipt still loses its in-memory payment record. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
+- **Mock-only behavior**: a hard page reload re-seeds the gym tenant, so gym-side multi-step demonstrations should navigate within the app. Member sessions, registered accounts, and trial bookings survive reloads in `sessionStorage`. Clerk is mounted but has not yet replaced the three preview session providers. Runtime receipts use `/payments/receipts/view#<id>` and work during the active mock session; reloading a newly created receipt still loses its in-memory payment record. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the production client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
 - **RTL caveat**: interface copy is English. Under the RTL preview, English sentences that begin with a digit are re-ordered by the bidi algorithm (for example "25 things need action today"). This is correct bidi behavior, not a layout fault, and resolves once the copy is Arabic. Numeric ratios and ranges are already isolated with `dir="ltr"`.
 
-## Hosting on Cloudflare Pages (GitHub-connected)
+## Hosting with Clerk and Convex
 
-The app builds to **fully static output** — no adapter, no CLI, no runtime. Connect the GitHub repo in the Cloudflare Pages dashboard and it deploys on every push, with preview deployments per branch.
+Clerk's `src/proxy.ts` requires a Next.js server runtime, so `output: "export"` has been removed. The project should now deploy to Vercel or another Next.js 16 server host rather than the previous bare Cloudflare Pages static-output configuration.
 
-| Pages setting | Value |
-|---|---|
-| Framework preset | Next.js (Static HTML Export) — or *None* |
-| Build command | `pnpm install && pnpm --filter web build` |
-| Build output directory | `apps/web/out` |
-| Root directory | *(leave empty — repository root)* |
-| Node version | `20` (set `NODE_VERSION=20` if Pages defaults lower) |
+Production will require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `CONVEX_DEPLOY_KEY`, and `NEXT_PUBLIC_SITE_URL`. Keep `apps/web/.env.example` value-free and store real values only in local/deployment environment settings.
 
-No secrets are required: the app runs entirely on its in-browser mock. Set `NEXT_PUBLIC_SITE_URL` to the production origin for absolute social metadata; it falls back to `https://rivet.jo`.
-
-### Why this needed a small change
-
-`output: "export"` requires `generateStaticParams()` on every dynamic segment, and the four detail routes are `"use client"` files, which may not export it. Each is now a two-file pair:
-
-- `page.tsx` — a tiny server shell holding `generateStaticParams()`
-- `*.client.tsx` — the original client component, unchanged in behaviour
-
-The ids come from `src/lib/mock/prerender-ids.ts`, the single module permitted to read seed data outside the mock client. This is sound in mock mode because **the demo tenant is rebuilt from the same deterministic seed on every cold load**, so the seeded ids are exactly the set that can resolve on a fresh request. The build prerenders 320 HTML files (105 members, 164 receipts, 30 leads, 6 rules, plus the static pages).
-
-**Known limitation:** a record created during a session gets a client-side route that works while you navigate, but a hard refresh on its URL falls through to the 404 page. That is not a regression — the mock re-seeds on reload, so such a record does not survive a refresh under any rendering strategy.
-
-### Verified
-
-Built with `pnpm build`, then served `apps/web/out` through a bare static file server that mimics a static host (exact file → `.html` → `dir/index.html` → `404.html`):
-
-- All 19 route families return 200; an unknown path returns the 404 page.
-- A **cold deep link** to `/members/<seeded-id>` renders the full Member 360 — timeline, stats, details — with no server involved.
-- Brand assets and the favicon resolve.
-
-### Backend agent
-
-When `HttpGymOSApi` lands, static export is no longer the right target. Delete `src/lib/mock/prerender-ids.ts`, drop the `generateStaticParams()` shells (collapsing each pair back into one client page), and remove `output: "export"` from `next.config.mjs` in favour of a server deployment.
+The old `generateStaticParams()` shells and mock prerender IDs remain temporarily so the approved seeded deep links continue to build during the incremental data migration. Remove them as each detail route becomes backed by persisted Convex identifiers.
 
 ## File-layout history (read this if older notes disagree)
 

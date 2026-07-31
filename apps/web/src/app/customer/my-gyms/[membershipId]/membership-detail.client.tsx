@@ -5,13 +5,26 @@ import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { gymById } from "@/lib/public/experience-data";
+import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { daysFromToday, diffDays, formatDate, formatDateTime, todayISODate } from "@/lib/utils/dates";
 
 export default function MembershipDetailClient({ membershipId }: { membershipId: string }) {
   const { memberships } = useExperience();
+  const { ready, identitySignedIn } = useMemberGate();
   const membership = memberships.find((item) => item.id === membershipId);
+
+  // A membership card, its QR and its balance are never shown to a visitor.
+  if (!ready || !identitySignedIn) {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label="Checking access">
+        <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-ink" />
+        </div>
+      </main>
+    );
+  }
 
   if (!membership) {
     return (

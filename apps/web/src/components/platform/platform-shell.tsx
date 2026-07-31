@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth, useClerk } from "@clerk/nextjs";
 import {
   BadgeDollarSign,
   Building2,
@@ -32,20 +33,26 @@ const NAVIGATION = [
 export function PlatformShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
+  const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const { platformAdminSignedIn, experienceReady, signOutPlatformAdmin } = useExperience();
+  const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
+  const identityReady = demoAuthBypass || clerkLoaded;
+  const identitySignedIn = demoAuthBypass || clerkSignedIn;
 
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
-    if (experienceReady && !platformAdminSignedIn) router.replace("/login#admin");
-  }, [experienceReady, platformAdminSignedIn, router]);
+    if (identityReady && experienceReady && (!identitySignedIn || !platformAdminSignedIn)) router.replace("/login/admin");
+  }, [experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
 
-  const signOut = () => {
+  const signOut = async () => {
     signOutPlatformAdmin();
-    router.push("/");
+    if (!demoAuthBypass) await signOutClerk({ redirectUrl: "/" });
+    else router.push("/");
   };
 
-  if (!experienceReady || !platformAdminSignedIn) {
+  if (!identityReady || !experienceReady || !identitySignedIn || !platformAdminSignedIn) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Checking access">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
@@ -89,7 +96,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
               <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Platform owner</p>
             </div>
             <span className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[9px] text-paper">EH</span>
-            <Button variant="ghost" size="icon-sm" onClick={signOut} aria-label="Sign out">
+            <Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Sign out">
               <LogOut />
             </Button>
           </div>

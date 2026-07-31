@@ -10,9 +10,10 @@ import { expect, test, type Page } from "@playwright/test";
  */
 
 async function signIn(page: Page, persona: "Owner" | "Manager" | "Sales" | "Reception") {
-  await page.goto("/login");
+  // Every sign-in starts at /login; the gym team has its own portal beneath it.
+  await page.goto("/login/gym");
   await page.getByRole("radio", { name: new RegExp(persona, "i") }).click();
-  await page.getByRole("button", { name: /^Sign in as/i }).click();
+  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 

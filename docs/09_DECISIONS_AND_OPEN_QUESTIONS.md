@@ -14,6 +14,16 @@
 - Public consumer and trainer marketplaces are future phases.
 - Raw biometric storage is out of scope.
 
+## Approved architecture override — 2026-07-31
+
+The product owner selected **Next.js + Convex + Clerk + Vercel** for the active implementation. This is the approved alternative allowed by `AGENTS.md` and supersedes the earlier FastAPI/PostgreSQL/Redis default in `docs/04` for new backend work.
+
+- Convex owns persistence, server functions, realtime queries, file storage where needed, and scheduled/durable application work.
+- Clerk owns authentication and organization identity; Convex remains authoritative for tenant data, branch scope, operational roles, permissions, and audit events.
+- Vercel provides the Next.js server runtime required by Clerk's request proxy.
+- The documented domain invariants, API boundary, multi-tenant isolation, money representation, audit requirements, and acceptance tests remain binding even where the implementation mechanism changes.
+- The existing mock adapter remains available only as a preview/testing mode while each workflow is migrated vertically to Convex.
+
 ## Implementation decisions agents may make
 
 Agents may choose and document:

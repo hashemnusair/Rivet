@@ -19,8 +19,7 @@ test.describe("RIVET member experience", () => {
   });
 
   test("sends a member trial request into the selected gym CRM", async ({ page }) => {
-    await page.goto("/login#member");
-    await page.getByRole("tab", { name: "Gym member" }).click();
+    await page.goto("/login/member");
     await page.getByRole("radio", { name: /Yousef Nasser/i }).click();
     await page.getByRole("button", { name: /Continue as Yousef/i }).click();
     await expect(page).toHaveURL(/\/customer\/discover/);
@@ -37,8 +36,13 @@ test.describe("RIVET member experience", () => {
     // Use client-side navigation so the frontend mock and its newly created
     // lead remain alive while switching from member to staff mode.
     await page.getByRole("link", { name: "RIVET for gyms" }).click();
+    // /login only chooses a portal; the gym team signs in one level down.
     await page.getByRole("link", { name: "Sign in", exact: true }).first().click();
-    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByRole("link", { name: /Gym team/i }).click();
+    await expect(page).toHaveURL(/\/login\/gym$/);
+    // The label uses a typographic apostrophe, so match either form.
+    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: "Pipeline", exact: true }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
@@ -48,10 +52,10 @@ test.describe("RIVET member experience", () => {
 test.describe("RIVET platform administration", () => {
   test("guards the console and restores an authenticated admin reload", async ({ page }) => {
     await page.goto("/platform");
-    await expect(page).toHaveURL(/\/login#admin/);
+    await expect(page).toHaveURL(/\/login\/admin/);
     await expect(page.getByRole("heading", { name: "Platform administration" })).toBeVisible();
 
-    await page.getByRole("button", { name: /Enter platform console/i }).click();
+    await page.getByRole("button", { name: /Open platform console/i }).click();
     await expect(page).toHaveURL(/\/platform$/);
     await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
 

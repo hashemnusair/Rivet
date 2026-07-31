@@ -1,0 +1,6 @@
+
+.env.local
+.next-playwright/
+
+# clerk configuration (can include secrets)
+/.clerk/
