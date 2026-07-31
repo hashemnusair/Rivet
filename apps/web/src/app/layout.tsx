@@ -43,7 +43,10 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
 });
 
+const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://rivet.jo");
+
 export const metadata: Metadata = {
+  metadataBase,
   title: {
     default: "RIVET — Gym revenue & operations",
     template: "%s · RIVET",

@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import type { TimelineEvent, TimelineEventType } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
+import { receiptHref } from "@/lib/utils/receipt-links";
 import { DateTimeText, RelativeText } from "./data-display";
 
 const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> = {
@@ -85,7 +86,7 @@ export function TimelineFeed({
                 <p className="text-[13px] font-medium leading-snug text-ink">
                   {event.title}
                   {receiptId ? (
-                    <Link href={`/payments/receipts/${receiptId}`} className="ms-1.5 font-mono text-[11px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">
+                    <Link href={receiptHref(receiptId)} className="ms-1.5 font-mono text-[11px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">
                       receipt
                     </Link>
                   ) : null}

@@ -34,7 +34,7 @@ Accounts created at `/customer/signup` are appended to the member list and offer
 - Booking a free trial at Forge Fitness calls the existing `GymOSApi` boundary, creates a lead, and moves it to `trial_booked`; gym staff can see it in `/crm/pipeline` and `/crm/queues` without a separate fake backend.
 - Customer identities, memberships, marketplace gyms, and platform subscriptions live in `src/lib/public/experience-data.ts`; interactive session state is isolated in `src/lib/providers/experience-provider.tsx`.
 - The QR pass encodes a demo identity. Production must replace it with a short-lived, signed, server-validated token; the UI labels this compromise explicitly.
-- The public/customer/platform expansion is frontend-only and in-memory. Real customer and platform authentication, tenant provisioning, subscription billing, persisted trial bookings, marketplace moderation, and notification delivery remain backend work.
+- The public/customer/platform expansion is frontend-only. Member sessions, accounts, and trial bookings persist for the browser session; the gym operating tenant remains in memory. Real authentication, durable persistence, tenant provisioning, subscription billing, marketplace moderation, and notification delivery remain backend work.
 
 ### Scope decision
 
@@ -45,14 +45,15 @@ Accounts created at `/customer/signup` are appended to the member list and offer
 - `pnpm --filter web typecheck` — pass.
 - `pnpm --filter web lint` — pass with zero warnings.
 - `pnpm --filter web test` — 162 tests passed across 7 files.
-- `pnpm --filter web build` — pass; 341 static pages generated, including the new customer and platform routes.
+- `pnpm --filter web test:e2e` — 13 browser journeys passed, including member registration persistence, customer trial → gym CRM, platform-admin guarding, and runtime payment receipts.
+- `pnpm --filter web build` — pass; 343 static pages generated, including the new customer, platform, and runtime receipt routes.
 - `qrcode.react` was added for the membership entry pass.
 - `public/brand/rivet-social-preview.png` is a generated, project-local social preview asset used by Open Graph and Twitter metadata.
 
 ## Status
 
 - Completion date: 2026-07-31
-- Frontend commit: working tree on `main` (see git log). Static-export / GitHub-connected Pages changes are uncommitted until you choose to commit.
+- Frontend branch: `main` (see git log for the latest handoff commit).
 - Mock mode command: `pnpm install && pnpm dev` from the repository root (starts `apps/web` on <http://localhost:3000>)
 - Build command: `pnpm build`
 - Test command: `pnpm test` (unit + component), `pnpm test:e2e` (Playwright)
@@ -163,17 +164,17 @@ Permission-gated areas render `ForbiddenState` when reached by URL — the nav o
 - Type-check: `pnpm typecheck` — **pass**, no errors.
 - Lint: `pnpm lint` (`eslint . --max-warnings 0`) — **pass**, zero errors and zero warnings.
 - Unit/component tests: `pnpm test` — **162 passed** across 7 files (money, dates, permissions, membership status + check-in engine, mock API integration, the collect-payment form, the reception console's verdict states).
-- Browser tests: `pnpm test:e2e` — **10 passed**, verified stable across consecutive runs (renewal → timeline, payment → receipt, check-in, unknown scan, role restrictions by nav *and* by URL, override → audit trail, RTL toggle, demo reset). Specs select by role and visible text rather than by `data-testid` wherever practical, so they survive markup churn.
-- Build: `pnpm build` — **pass**, 19 routes, no warnings.
+- Browser tests: `pnpm test:e2e` — **13 passed** (renewal → timeline, runtime payment → printable receipt, check-in, unknown scan, role restrictions by nav *and* by URL, override → audit trail, RTL toggle, demo reset, member registration persistence, customer trial → gym CRM, and platform-admin guarding). Specs select by role and visible text rather than by `data-testid` wherever practical, so they survive markup churn.
+- Build: `pnpm build` — **pass**, 343 static pages, no metadata warnings.
 
 Note: `eslint-plugin-react-hooks` is pinned to `^5` because that is what `eslint-config-next@15` is written against. Version 7 enables React-Compiler-era rules that reject the standard "reset a form when its dialog opens" effect used throughout this codebase.
 
 ## Known gaps
 
-- **Functional gaps**: CSV import/export is not built (P0 item 10 in `docs/01`, no UI was specified in `docs/02`). Trainer and auditor roles exist in the permission matrix and are selectable in settings, but have no dedicated screens or login persona. Automation rules are configured and their executions are logged, but nothing evaluates them on a timer — executions are seeded. Offers are displayed on leads and are seeded, but there is no create-offer form. Approval *requests* are surfaced and can be approved or rejected; there is no separate approvals inbox route.
+- **Accepted frontend deferrals**: CSV import/export, a create-offer form, a dedicated approvals inbox, and dedicated trainer/auditor workspaces are not part of the approved frontend handoff. The underlying permission roles and relevant records remain represented so these can be added without redesigning the operating core. Automation scheduling is backend work; the frontend already covers rule configuration and execution history.
 - **Responsive/accessibility gaps**: the sidebar does not auto-collapse on tablet — it can be collapsed manually. Below roughly 640px the app is usable but wide tables scroll horizontally rather than reflowing into cards. The pipeline board relies on horizontal scrolling. Drag-and-drop on the pipeline is pointer-only by design; the equivalent keyboard path is the per-row **Move to** menu, which is what assistive-technology users get. Contrast, focus rings, dialog focus management, table semantics, form error wiring and `prefers-reduced-motion` are all handled.
 - **Visual decisions awaiting approval**: the product name "RIVET" and the derived warm-paper palette; the dark treatment for reception (chosen so a glanceable verdict reads across a counter); using a monogram instead of member photos (the domain model has `photo reference` but the mock has no image storage).
-- **Mock-only behavior**: a hard page reload re-seeds the tenant, so demonstrations of multi-step state should navigate within the app. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
+- **Mock-only behavior**: a hard page reload re-seeds the gym tenant, so gym-side multi-step demonstrations should navigate within the app. Member sessions, registered accounts, and trial bookings survive reloads in `sessionStorage`. Runtime receipts use the fixed static route `/payments/receipts/view#<id>` and work during the active mock session; reloading a newly created receipt still loses its in-memory payment record. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
 - **RTL caveat**: interface copy is English. Under the RTL preview, English sentences that begin with a digit are re-ordered by the bidi algorithm (for example "25 things need action today"). This is correct bidi behavior, not a layout fault, and resolves once the copy is Arabic. Numeric ratios and ranges are already isolated with `dir="ltr"`.
 
 ## Hosting on Cloudflare Pages (GitHub-connected)
@@ -188,7 +189,7 @@ The app builds to **fully static output** — no adapter, no CLI, no runtime. Co
 | Root directory | *(leave empty — repository root)* |
 | Node version | `20` (set `NODE_VERSION=20` if Pages defaults lower) |
 
-No environment variables and no secrets: the app runs entirely on its in-browser mock.
+No secrets are required: the app runs entirely on its in-browser mock. Set `NEXT_PUBLIC_SITE_URL` to the production origin for absolute social metadata; it falls back to `https://rivet.jo`.
 
 ### Why this needed a small change
 

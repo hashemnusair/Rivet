@@ -1,0 +1,61 @@
+import { expect, test } from "@playwright/test";
+
+test.describe("RIVET member experience", () => {
+  test("creates a member account and restores it after reload", async ({ page }) => {
+    await page.goto("/customer/signup");
+
+    await page.getByLabel("Full name").fill("Nour QA");
+    await page.getByLabel("Email").fill("nour.qa@example.com");
+    await page.getByLabel("Mobile number").fill("+962 79 321 4455");
+    await page.locator("#signup-password").fill("preview-pass");
+    await page.locator("#signup-confirm").fill("preview-pass");
+    await page.getByRole("button", { name: /create account/i }).click();
+
+    await expect(page).toHaveURL(/\/customer\/discover/);
+    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
+  });
+
+  test("sends a member trial request into the selected gym CRM", async ({ page }) => {
+    await page.goto("/login#member");
+    await page.getByRole("tab", { name: "Gym member" }).click();
+    await page.getByRole("radio", { name: /Yousef Nasser/i }).click();
+    await page.getByRole("button", { name: /Continue as Yousef/i }).click();
+    await expect(page).toHaveURL(/\/customer\/discover/);
+
+    await page.getByRole("link", { name: /View & book/i }).first().click();
+    await expect(page).toHaveURL(/\/customer\/gyms\/forge-fitness/);
+    await page.getByRole("button", { name: /Book free trial/i }).click();
+    await expect(page.getByRole("heading", { name: /Your free trial is booked/i })).toBeVisible();
+
+    await page.getByRole("link", { name: /Open My Gyms/i }).click();
+    await expect(page.getByText("Trial requested")).toBeVisible();
+    await expect(page.getByText("Forge Fitness Club").first()).toBeVisible();
+
+    // Use client-side navigation so the frontend mock and its newly created
+    // lead remain alive while switching from member to staff mode.
+    await page.getByRole("link", { name: "RIVET for gyms" }).click();
+    await page.getByRole("link", { name: "Sign in", exact: true }).first().click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+    await page.getByRole("link", { name: "Pipeline", exact: true }).first().click();
+    await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
+  });
+});
+
+test.describe("RIVET platform administration", () => {
+  test("guards the console and restores an authenticated admin reload", async ({ page }) => {
+    await page.goto("/platform");
+    await expect(page).toHaveURL(/\/login#admin/);
+    await expect(page.getByRole("heading", { name: "Platform administration" })).toBeVisible();
+
+    await page.getByRole("button", { name: /Enter platform console/i }).click();
+    await expect(page).toHaveURL(/\/platform$/);
+    await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
+  });
+});

@@ -12,6 +12,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { usePermissions } from "@/lib/providers/app-providers";
 import { formatDateTime, todayISODate } from "@/lib/utils/dates";
 import { money, toMajor } from "@/lib/utils/money";
+import { receiptHref } from "@/lib/utils/receipt-links";
 import { MoneyText } from "@/components/shared/data-display";
 import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -22,8 +23,9 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
 
-export default function ReceiptPageClient() {
-  const { receiptId } = useParams<{ receiptId: string }>();
+export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receiptId?: string } = {}) {
+  const { receiptId: paramReceiptId } = useParams<{ receiptId: string }>();
+  const receiptId = receiptIdProp ?? paramReceiptId;
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const [refundOpen, setRefundOpen] = useState(false);
@@ -183,7 +185,7 @@ export default function ReceiptPageClient() {
               <ul className="space-y-2">
                 {detail.relatedPayments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-[12.5px]">
-                    <Link href={`/payments/receipts/${p.receiptId}`} className="font-mono underline decoration-line-3 underline-offset-2 hover:text-ink">
+                    <Link href={receiptHref(p.receiptId)} className="font-mono underline decoration-line-3 underline-offset-2 hover:text-ink">
                       {p.receiptNumber}
                     </Link>
                     <span className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import { EmptyState, ErrorState, ForbiddenState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CollectPaymentMemberPicker } from "@/features/finance/collect-payment-picker";
 import { money } from "@/lib/utils/money";
+import { receiptHref } from "@/lib/utils/receipt-links";
 
 export default function TransactionsPage() {
   const { session } = useApp();
@@ -149,7 +150,7 @@ export default function TransactionsPage() {
               {data.items.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>
-                    <Link href={`/payments/receipts/${p.receiptId}`} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">
+                    <Link href={receiptHref(p.receiptId)} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">
                       {p.receiptNumber}
                     </Link>
                   </TableCell>

@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils/cn";
+import { receiptHref } from "@/lib/utils/receipt-links";
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -250,7 +251,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
             <TableRow key={p.id} interactive onClick={() => undefined} className="cursor-pointer">
               <TableCell>
                 <Link
-                  href={`/payments/receipts/${p.receiptId}`}
+                  href={receiptHref(p.receiptId)}
                   className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink"
                 >
                   {p.receiptNumber}
