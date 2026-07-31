@@ -22,30 +22,25 @@ export default function DiscoverGymsPage() {
 
   return (
     <main>
-      <section className="marketing-grid border-b border-ink/10 px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
-        <div className="mx-auto max-w-[1344px]">
-          <p className="eyebrow">RIVET network · Amman</p>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <h1 className="marketing-display max-w-4xl text-[clamp(3.4rem,7vw,7.2rem)] leading-[0.88]">Find a gym that fits <span className="text-signal">your life.</span></h1>
-              <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-ink-2">Compare gyms operating on RIVET, choose a branch, and book a free trial that lands directly on the gym team’s follow-up queue.</p>
-            </div>
-            {customer ? <div className="border border-line bg-surface px-4 py-3"><p className="eyebrow">Signed in as</p><p className="mt-1 text-[13px] font-medium">{customer.name}</p></div> : <Button asChild><Link href="/customer/login">Sign in to book</Link></Button>}
+      <section className="border-b border-line bg-surface px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-[1280px] flex-wrap items-end justify-between gap-5">
+          <div>
+            <p className="eyebrow">RIVET network · Amman</p>
+            <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">Find a gym</h1>
+            <p className="mt-1.5 max-w-xl text-[13.5px] text-ink-2">Compare gyms running on RIVET, pick a branch, and book a free trial that lands on the gym&rsquo;s follow-up queue.</p>
           </div>
+          {customer ? (
+            customerMemberships.length > 0 || customerBookings.length > 0 ? (
+              <Button asChild variant="secondary"><Link href="/customer/my-gyms">My dashboard <ArrowRight /></Link></Button>
+            ) : null
+          ) : (
+            <Button asChild><Link href="/login#member">Sign in to book</Link></Button>
+          )}
         </div>
       </section>
 
-      {customerMemberships.length > 0 || customerBookings.length > 0 ? (
-        <section className="border-b border-line bg-sunken px-5 py-6 sm:px-8 lg:px-12">
-          <div className="mx-auto flex max-w-[1344px] flex-wrap items-center justify-between gap-4">
-            <div><p className="eyebrow">Your activity</p><p className="mt-1 text-[13px] text-ink-2">{customerMemberships.length} active gym · {customerBookings.length} trial request</p></div>
-            <Button asChild variant="secondary"><Link href="/customer/my-gyms">Open My Gyms <ArrowRight /></Link></Button>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="px-5 py-10 sm:px-8 lg:px-12 lg:py-14">
-        <div className="mx-auto max-w-[1344px]">
+      <section className="px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1280px]">
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <label className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by gym, area, or training style" className="h-11 ps-10" /></label>
             <div className="flex flex-wrap gap-2">

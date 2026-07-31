@@ -1,53 +1,52 @@
 "use client";
 
-import { ArrowRight, Dumbbell, LogOut, Menu, X } from "lucide-react";
+import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Monogram } from "@/components/ui/misc";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
-const NAV = [
-  { href: "/#loop", label: "The loop" },
-  { href: "/#ops", label: "Operations" },
-  { href: "/customer/discover", label: "Find a gym" },
+const MARKETING_NAV = [
+  { href: "/#product", label: "Product" },
+  { href: "/#member", label: "For members" },
   { href: "/#pricing", label: "Pricing" },
+  { href: "/customer/discover", label: "Find a gym" },
 ];
 
-export function PublicHeader({ customerMode = false }: { customerMode?: boolean }) {
+// ---------------------------------------------------------------------------
+// Marketing header — the public site
+// ---------------------------------------------------------------------------
+export function PublicHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { customerSignedIn, signOutCustomer } = useExperience();
-  const customer = useCustomerPersona();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-ink/10 bg-paper/95 backdrop-blur-md">
-      <div className="mx-auto flex h-[76px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
-        <Link href={customerMode ? "/customer/discover" : "/"} className="flex items-center gap-3" aria-label="RIVET home">
-          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={144} height={36} priority />
-          {customerMode ? (
-            <span className="hidden border-s border-line-2 ps-3 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
-              Member
-            </span>
-          ) : null}
+    <header className="sticky top-0 z-50 border-b border-ink/10 bg-paper/90 backdrop-blur-md">
+      <div className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
+        <Link href="/" className="flex items-center" aria-label="RIVET home">
+          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={132} height={33} priority />
         </Link>
 
-        <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary navigation">
-          {(customerMode
-            ? [
-                { href: "/customer/discover", label: "Discover" },
-                { href: "/customer/my-gyms", label: "My gyms" },
-              ]
-            : NAV
-          ).map((item) => (
+        <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
+          {MARKETING_NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "font-mono text-[10.5px] font-medium uppercase tracking-[0.17em] text-ink-2 transition-colors hover:text-ink",
-                pathname === item.href && "text-signal",
+                "text-[13.5px] font-medium text-ink-2 transition-colors hover:text-ink",
+                pathname === item.href && "text-ink",
               )}
             >
               {item.label}
@@ -56,25 +55,14 @@ export function PublicHeader({ customerMode = false }: { customerMode?: boolean 
         </nav>
 
         <div className="hidden items-center gap-2 lg:flex">
-          {customerSignedIn ? (
-            <>
-              <Link href="/customer/my-gyms" className="me-2 text-[12px] font-medium text-ink-2">
-                {customer?.name}
-              </Link>
-              <Button variant="ghost" size="sm" onClick={signOutCustomer}>
-                <LogOut /> Sign out
-              </Button>
-            </>
-          ) : (
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/customer/login">Member login</Link>
-            </Button>
-          )}
-          {!customerMode ? (
-            <Button asChild variant="signal" size="sm">
-              <Link href="/signup">Start a gym trial <ArrowRight /></Link>
-            </Button>
-          ) : null}
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/login">Sign in</Link>
+          </Button>
+          <Button asChild variant="signal" size="sm">
+            <Link href="/signup">
+              Start free trial <ArrowRight />
+            </Link>
+          </Button>
         </div>
 
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((value) => !value)} aria-label="Toggle navigation">
@@ -83,42 +71,72 @@ export function PublicHeader({ customerMode = false }: { customerMode?: boolean 
       </div>
 
       {open ? (
-        <div className="border-t border-line bg-paper px-5 py-5 lg:hidden">
-          <nav className="grid gap-1" aria-label="Mobile navigation">
-            {(customerMode
-              ? [
-                  { href: "/customer/discover", label: "Discover gyms" },
-                  { href: "/customer/my-gyms", label: "My gyms" },
-                ]
-              : NAV
-            ).map((item) => (
-              <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="rounded-md px-3 py-3 text-[14px] font-medium hover:bg-sunken">
+        <div className="border-t border-line bg-paper px-5 py-4 lg:hidden">
+          <nav className="grid gap-0.5" aria-label="Mobile">
+            {MARKETING_NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className="rounded-md px-3 py-2.5 text-[14px] font-medium hover:bg-sunken"
+              >
                 {item.label}
               </Link>
             ))}
-            <Link href={customerSignedIn ? "/customer/my-gyms" : "/customer/login"} onClick={() => setOpen(false)} className="mt-2 flex items-center gap-2 border-t border-line px-3 pt-4 text-[14px] font-medium">
-              <Dumbbell className="size-4" /> {customerSignedIn ? customer?.name : "Member login"}
-            </Link>
           </nav>
+          <div className="mt-3 grid gap-2 border-t border-line pt-3">
+            <Button asChild variant="secondary" onClick={() => setOpen(false)}>
+              <Link href="/login">Sign in</Link>
+            </Button>
+            <Button asChild variant="signal" onClick={() => setOpen(false)}>
+              <Link href="/signup">Start free trial</Link>
+            </Button>
+          </div>
         </div>
       ) : null}
     </header>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Marketing footer — the site map lives here, so every area is one click away
+// ---------------------------------------------------------------------------
 export function PublicFooter() {
   return (
     <footer className="night-surface bg-night text-night-ink">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr] lg:px-12">
+      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] lg:px-12">
         <div>
-          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={150} height={38} />
-          <p className="mt-5 max-w-sm text-[14px] leading-relaxed text-night-ink-2">
-            The revenue and operations OS for gyms—and the simplest way for members to discover, join, and enter them.
+          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={35} />
+          <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
+            The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.
           </p>
-          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.18em] text-night-ink-3">صُنع في عمّان · Made in Amman</p>
+          <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em] text-night-ink-3">صُنع في عمّان · Made in Amman</p>
         </div>
-        <FooterColumn title="Product" links={[['Gym operations','/login'],['RIVET Member','/customer/discover'],['Platform admin','/platform'],['Pricing','/#pricing']]} />
-        <FooterColumn title="Start" links={[['Book a demo','/signup'],['Find a gym','/customer/discover'],['Member login','/customer/login'],['Gym staff login','/login']]} />
+        <FooterColumn
+          title="Product"
+          links={[
+            ["Overview", "/#product"],
+            ["For members", "/#member"],
+            ["Pricing", "/#pricing"],
+            ["Start free trial", "/signup"],
+          ]}
+        />
+        <FooterColumn
+          title="Members"
+          links={[
+            ["Find a gym", "/customer/discover"],
+            ["My dashboard", "/customer/my-gyms"],
+            ["Member sign-in", "/login#member"],
+          ]}
+        />
+        <FooterColumn
+          title="Sign in"
+          links={[
+            ["Gym staff", "/login"],
+            ["Gym member", "/login#member"],
+            ["Create an account", "/signup"],
+          ]}
+        />
       </div>
       <div className="border-t border-night-line px-5 py-5 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-night-ink-3">
@@ -145,12 +163,121 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
   );
 }
 
+// ---------------------------------------------------------------------------
+// Member shell — the signed-in member area and the gym marketplace
+// ---------------------------------------------------------------------------
+const MEMBER_NAV = [
+  { href: "/customer/my-gyms", label: "Dashboard", icon: LayoutDashboard, requiresAuth: true },
+  { href: "/customer/discover", label: "Find a gym", icon: Search, requiresAuth: false },
+];
+
 export function CustomerShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { customerSignedIn, signOutCustomer } = useExperience();
+  const customer = useCustomerPersona();
+  const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
+
   return (
-    <div className="min-h-screen bg-paper">
-      <PublicHeader customerMode />
-      {children}
-      <PublicFooter />
+    <div className="flex min-h-screen flex-col bg-paper">
+      <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
+        <div className="mx-auto flex h-[60px] max-w-[1280px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+          <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
+            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={28} priority />
+            <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
+              Member
+            </span>
+          </Link>
+
+          <nav className="flex items-center gap-1" aria-label="Member navigation">
+            {nav.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex h-8 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
+                    active ? "bg-sunken text-ink" : "text-ink-3 hover:bg-sunken/60 hover:text-ink",
+                  )}
+                >
+                  <item.icon className="size-3.5" aria-hidden />
+                  <span className="hidden sm:inline">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="ms-auto flex items-center gap-2">
+            {customerSignedIn && customer ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
+                    aria-label="Account menu"
+                  >
+                    <Monogram name={customer.name} size="sm" />
+                    <span className="hidden text-[13px] font-medium text-ink sm:block">{customer.name}</span>
+                    <ChevronDown className="hidden size-3.5 text-ink-3 sm:block" aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel>{customer.email}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/customer/my-gyms">
+                      <LayoutDashboard /> My dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/customer/discover">
+                      <Search /> Find a gym
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOutCustomer}>
+                    <LogOut /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/">Home</Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link href="/login#member">Sign in</Link>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1">{children}</div>
+
+      <footer className="border-t border-line bg-surface">
+        <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">© 2026 RIVET · Amman</span>
+          <nav className="flex flex-wrap items-center gap-5">
+            <Link href="/" className="transition-colors hover:text-ink">
+              RIVET for gyms
+            </Link>
+            <Link href="/customer/discover" className="transition-colors hover:text-ink">
+              Find a gym
+            </Link>
+            {customerSignedIn ? (
+              <button type="button" onClick={signOutCustomer} className="cursor-pointer transition-colors hover:text-ink">
+                Sign out
+              </button>
+            ) : (
+              <Link href="/login#member" className="transition-colors hover:text-ink">
+                Sign in
+              </Link>
+            )}
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

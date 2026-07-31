@@ -1,6 +1,6 @@
 "use client";
 
-import { Beaker, Building2, Check, ChevronDown, Languages, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
+import { Beaker, Building2, Check, ChevronDown, ExternalLink, Languages, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -239,6 +239,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>
               <Building2 /> Organization settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/")}>
+              <ExternalLink /> Public site
             </DropdownMenuItem>
             <DropdownMenuItem onClick={signOut}>
               <LogOut /> Sign out of demo

@@ -6,16 +6,25 @@ The product owner explicitly expanded the frontend scope beyond the original B2B
 
 - `/` — new public RIVET landing page, adapted from the supplied reference and extended with product, network, customer-portal, and pricing sections.
 - `/signup` — four-step gym-owner onboarding and trial-plan selection.
-- `/customer/login` — two customer preview states: an active gym member and a customer still looking for a gym.
 - `/customer/discover` — searchable directory of gyms subscribed to RIVET.
 - `/customer/gyms/[gymId]` — gym profile, branch/slot selection, and a validated free-trial request form.
-- `/customer/my-gyms` — active memberships plus free-trial requests.
+- `/customer/my-gyms` — the member dashboard: renewal countdown, visits, balance, membership cards, entry pass, and trial requests.
 - `/customer/my-gyms/[membershipId]` — membership details, balance, visits, activity, and an entry QR pass.
 - `/platform` — RIVET owner overview across all gym tenants.
 - `/platform/gyms` and `/platform/gyms/[gymId]` — tenant directory, subscription health, branches, usage, owner, and account timeline.
 - `/platform/subscriptions` — plan catalog, limits, trials, and current subscriptions.
 - `/platform/billing` — SaaS invoice ledger and an interactive failed-payment recovery state.
 - `/platform/support` — tenant support inbox, conversation view, reply, assignment/SLA, and resolution state.
+
+### One sign-in portal
+
+`/login` is the only sign-in surface. It carries three audiences:
+
+- **Gym staff** (default) — the four role personas; signing in lands on `/dashboard`, or `/reception` for the receptionist.
+- **Gym member** — the customer personas; lands on `/customer/my-gyms` or `/customer/discover`.
+- **Platform administrator** — deliberately quiet, at the bottom of the page behind a small lock link; lands on `/platform`.
+
+Deep links open the portal on the right tab via a URL hash (`/login#member`, `/login#admin`); a hash is used rather than a search param because `output: export` would otherwise force a Suspense boundary around the page. `/customer/login` is kept only as a client redirect to `/login#member` for old bookmarks. `/platform` now redirects to `/login#admin` unless the admin session exists — member and admin sessions survive a reload through `sessionStorage`, mirroring the staff persona.
 
 ### Connected preview behavior
 

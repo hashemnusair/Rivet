@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { getApi } from "@/lib/api/client";
 import type { CustomerMembership, TrialBooking } from "@/lib/public/experience-data";
 import {
@@ -26,6 +26,8 @@ interface ExperienceContextValue {
   customerId?: string;
   customerSignedIn: boolean;
   platformAdminSignedIn: boolean;
+  /** False until sessionStorage has been read, so guards do not bounce on first paint. */
+  experienceReady: boolean;
   memberships: CustomerMembership[];
   bookings: TrialBooking[];
   signInCustomer: (customerId: string) => void;
@@ -39,11 +41,23 @@ interface ExperienceContextValue {
 
 const ExperienceContext = createContext<ExperienceContextValue | null>(null);
 
+const STORAGE_KEYS = { customer: "rivet.demo.customer", admin: "rivet.demo.platformAdmin" } as const;
+
 export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [customerId, setCustomerId] = useState<string>();
   const [platformAdminSignedIn, setPlatformAdminSignedIn] = useState(false);
+  const [experienceReady, setExperienceReady] = useState(false);
   const [memberships] = useState<CustomerMembership[]>(INITIAL_CUSTOMER_MEMBERSHIPS);
   const [bookings, setBookings] = useState<TrialBooking[]>(INITIAL_TRIAL_BOOKINGS);
+
+  // A reload must not sign a member (or the platform admin) back out — the
+  // route guards would otherwise bounce them straight to /login.
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem(STORAGE_KEYS.customer);
+    if (stored && CUSTOMER_PERSONAS.some((persona) => persona.id === stored)) setCustomerId(stored);
+    if (window.sessionStorage.getItem(STORAGE_KEYS.admin) === "1") setPlatformAdminSignedIn(true);
+    setExperienceReady(true);
+  }, []);
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
@@ -97,19 +111,31 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       customerId,
       customerSignedIn: Boolean(customerId),
       platformAdminSignedIn,
+      experienceReady,
       memberships,
       bookings,
       signInCustomer: (id) => {
-        if (CUSTOMER_PERSONAS.some((persona) => persona.id === id)) setCustomerId(id);
+        if (!CUSTOMER_PERSONAS.some((persona) => persona.id === id)) return;
+        window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
+        setCustomerId(id);
       },
-      signOutCustomer: () => setCustomerId(undefined),
-      signInPlatformAdmin: () => setPlatformAdminSignedIn(true),
-      signOutPlatformAdmin: () => setPlatformAdminSignedIn(false),
+      signOutCustomer: () => {
+        window.sessionStorage.removeItem(STORAGE_KEYS.customer);
+        setCustomerId(undefined);
+      },
+      signInPlatformAdmin: () => {
+        window.sessionStorage.setItem(STORAGE_KEYS.admin, "1");
+        setPlatformAdminSignedIn(true);
+      },
+      signOutPlatformAdmin: () => {
+        window.sessionStorage.removeItem(STORAGE_KEYS.admin);
+        setPlatformAdminSignedIn(false);
+      },
       bookTrial,
       customerMemberships,
       customerBookings,
     }),
-    [bookTrial, bookings, customerBookings, customerId, customerMemberships, memberships, platformAdminSignedIn],
+    [bookTrial, bookings, customerBookings, customerId, customerMemberships, experienceReady, memberships, platformAdminSignedIn],
   );
 
   return <ExperienceContext.Provider value={value}>{children}</ExperienceContext.Provider>;
