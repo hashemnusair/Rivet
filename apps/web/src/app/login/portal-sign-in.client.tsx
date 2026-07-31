@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Monogram } from "@/components/ui/misc";
 import { ROLE_LABELS } from "@/lib/domain/permissions";
 import type { RoleKey } from "@/lib/domain/types";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
@@ -34,7 +35,6 @@ const STAFF_ROLES: Array<{ role: RoleKey; icon: LucideIcon; name: string; scope:
   { role: "receptionist", icon: ScanLine, name: "Hala Qasem", scope: "Lookup, check-in, collect, renew" },
 ];
 
-const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
 
 export type AuthMode = "sign-in" | "sign-up";
 
@@ -72,7 +72,7 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
   const { customers, signInCustomer, signInPlatformAdmin } = useExperience();
   const [loading, setLoading] = useState(false);
 
-  const identityReady = demoAuthBypass || clerkLoaded;
+  const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
 
   const enterStaff = async (role: RoleKey) => {
     setLoading(true);
@@ -126,9 +126,9 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
 
         {!identityReady ? <LoginLoading /> : null}
 
-        {identityReady && demoAuthBypass ? accounts : null}
+        {identityReady && DEMO_AUTH_BYPASS ? accounts : null}
 
-        {identityReady && !demoAuthBypass ? (
+        {identityReady && !DEMO_AUTH_BYPASS ? (
           <>
             <Show when="signed-out">
               <ClerkPanel audience={audience} mode={mode} />

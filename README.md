@@ -63,4 +63,25 @@ pnpm dev:full       # Convex sync + http://localhost:3000
 
 Quality gates: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm build`.
 
-Deployment now requires a Next.js server runtime because Clerk uses `src/proxy.ts`. Use Vercel or an equivalent Next.js 16 host and configure the Clerk and Convex environment variables listed in `apps/web/.env.example`.
+## Deployment
+
+This is no longer a static export. Clerk authenticates through `src/proxy.ts`, which needs a Next.js server runtime — a static host (including the Cloudflare Pages setup this repo used previously) cannot serve it.
+
+**Vercel** is the configured target; `apps/web/vercel.json` pins the framework and the `dub1` region, which is the same `eu-west-1` the Convex deployment runs in, so server code sits next to its database.
+
+1. Import the repository, then set **Root Directory** to `apps/web`. Vercel picks up the pnpm workspace at the repo root on its own.
+2. Add these environment variables (values come from the Clerk and Convex dashboards — see `apps/web/.env.example`):
+
+   | Variable | Where it comes from |
+   | --- | --- |
+   | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk → API keys |
+   | `CLERK_SECRET_KEY` | Clerk → API keys |
+   | `CLERK_FRONTEND_API_URL` | Clerk → Integrations → Convex |
+   | `NEXT_PUBLIC_CONVEX_URL` | Convex → deployment URL |
+   | `NEXT_PUBLIC_CONVEX_SITE_URL` | Convex → deployment URL |
+   | `NEXT_PUBLIC_SITE_URL` | the deployed origin, e.g. `https://rivet.jo` |
+
+3. Push the Convex functions and schema to the production deployment with `pnpm convex:deploy`, and set `CLERK_FRONTEND_API_URL` on the Convex side too — `convex/auth.config.ts` reads it to verify Clerk JWTs.
+4. Use a Clerk **production** instance for the live domain. Development instances serve cookies from `clerk.accounts.dev`, which forces a cross-domain handshake on first load; that is harmless locally but not what you want in production.
+
+**Never set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on a deployment.** It disables every identity check — the middleware, the gym workspace guard, the member gate and the platform console. It exists so Playwright can drive seeded personas without creating Clerk users, and `src/lib/auth/demo-auth.ts` refuses it in production builds so a stray variable cannot publish the app unauthenticated.

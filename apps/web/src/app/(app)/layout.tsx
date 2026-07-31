@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 
@@ -14,9 +15,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const router = useRouter();
-  const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
-  const identityReady = demoAuthBypass || clerkLoaded;
-  const identitySignedIn = demoAuthBypass || clerkSignedIn;
+  const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
+  const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
 
   useEffect(() => {
     if (identityReady && !sessionLoading && (!identitySignedIn || !signedIn)) {

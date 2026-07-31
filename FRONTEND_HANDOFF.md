@@ -46,6 +46,10 @@ Route guards are consistent across all three areas. `/dashboard` and `/reception
 
 Playwright sets `NEXT_PUBLIC_RIVET_DEMO_AUTH=1` so browser tests exercise deterministic personas without creating external Clerk users. That flag now also short-circuits `src/proxy.ts`; leaving `clerkMiddleware()` active with no Clerk session made every request attempt a handshake it could never complete, which surfaced as `Refreshing the session token resulted in an infinite redirect loop` and stalled client-side navigation.
 
+Because that one variable disables every identity check in the product, it is resolved through `src/lib/auth/demo-auth.ts` rather than read in six places, and it is refused when `NODE_ENV === "production"`. Verified by building with the flag set and confirming `/dashboard`, `/platform` and `/customer/my-gyms` still redirect to their portals.
+
+A separate, harmless log line remains in local development: Clerk **development** instances serve cookies from `clerk.accounts.dev` while the app runs on `localhost`, so the first request of a cold browser session goes through a cross-domain handshake. It retries three times and Clerk's loop detector logs `Refreshing the session token resulted in an infinite redirect loop` once, then settles — subsequent navigations make zero handshake requests. The message names key mismatch as the usual cause, but the keys are fine; a production Clerk instance serves cookies from the application's own domain and does not do this.
+
 Accounts created at `/customer/signup` are still preview-only records appended to the member chooser alongside seeded personas. Member preview sessions, created accounts, and trial bookings persist in `sessionStorage`, so a reload does not orphan the preview. Passwords entered into Clerk are handled by Clerk and are never stored by the preview. Converting the existing custom gym/member signup forms into Clerk onboarding plus Convex profile creation remains backend work.
 
 ### Connected preview behavior

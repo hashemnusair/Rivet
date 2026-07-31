@@ -10,6 +10,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 const schema = z
@@ -31,7 +32,6 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
-const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
 
 export default function MemberSignupPage() {
   const router = useRouter();
@@ -42,7 +42,7 @@ export default function MemberSignupPage() {
   // only exists for the preview build, which has no Clerk instance — keeping
   // both live would give members two different "sign up" buttons.
   useEffect(() => {
-    if (!demoAuthBypass) router.replace("/login/member/create");
+    if (!DEMO_AUTH_BYPASS) router.replace("/login/member/create");
   }, [router]);
 
   const {

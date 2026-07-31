@@ -3,9 +3,9 @@
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useExperience } from "@/lib/providers/experience-provider";
 
-const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
 
 /**
  * A member's own pages need a real identity, exactly like the gym workspace and
@@ -21,8 +21,8 @@ export function useMemberGate() {
   const { isLoaded, isSignedIn } = useAuth();
   const { customerSignedIn, experienceReady } = useExperience();
 
-  const identityReady = demoAuthBypass || isLoaded;
-  const identitySignedIn = demoAuthBypass || isSignedIn;
+  const identityReady = DEMO_AUTH_BYPASS || isLoaded;
+  const identitySignedIn = DEMO_AUTH_BYPASS || isSignedIn;
 
   useEffect(() => {
     if (identityReady && !identitySignedIn) router.replace("/login/member");

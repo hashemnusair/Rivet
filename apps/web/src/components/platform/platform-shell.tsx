@@ -19,6 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
@@ -37,9 +38,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const { platformAdminSignedIn, experienceReady, signOutPlatformAdmin } = useExperience();
-  const demoAuthBypass = process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1";
-  const identityReady = demoAuthBypass || clerkLoaded;
-  const identitySignedIn = demoAuthBypass || clerkSignedIn;
+  const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
+  const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
 
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
@@ -48,7 +48,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     signOutPlatformAdmin();
-    if (!demoAuthBypass) await signOutClerk({ redirectUrl: "/" });
+    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
     else router.push("/");
   };
 
