@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Manrope } from "next/font/google";
+import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
 import { AppProviders } from "@/lib/providers/app-providers";
+import { ExperienceProvider } from "@/lib/providers/experience-provider";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -30,6 +31,18 @@ const plexArabic = IBM_Plex_Sans_Arabic({
   display: "swap",
 });
 
+const archivo = Archivo({
+  subsets: ["latin"],
+  variable: "--font-archivo",
+  display: "swap",
+});
+
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-instrument-sans",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "RIVET — Gym revenue & operations",
@@ -38,6 +51,18 @@ export const metadata: Metadata = {
   description:
     "RIVET is the revenue and operations system for gyms: members, memberships, sales pipeline, reception, payments and reconciliation — with full staff accountability.",
   applicationName: "RIVET",
+  openGraph: {
+    title: "RIVET — Every member. Every dinar. Every shift.",
+    description: "The revenue and operations system for gyms—and one simple membership home for their customers.",
+    type: "website",
+    images: [{ url: "/brand/rivet-social-preview.png", width: 1200, height: 630, alt: "RIVET gym operations" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "RIVET — Gym revenue & operations",
+    description: "One operating loop for gym sales, members, entry, payments, and accountability.",
+    images: ["/brand/rivet-social-preview.png"],
+  },
 };
 
 export const viewport: Viewport = {
@@ -48,10 +73,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" dir="ltr" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable}`}>
+    <html lang="en" dir="ltr" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body>
         <AppProviders>
-          {children}
+          <ExperienceProvider>{children}</ExperienceProvider>
           <Toaster
             position="bottom-right"
             toastOptions={{

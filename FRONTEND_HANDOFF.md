@@ -1,8 +1,45 @@
 # Frontend Handoff
 
+## 2026-07-31 public, customer, and platform-admin expansion
+
+The product owner explicitly expanded the frontend scope beyond the original B2B MVP boundary. The frontend now demonstrates the complete acquisition loop around the existing gym operations app:
+
+- `/` — new public RIVET landing page, adapted from the supplied reference and extended with product, network, customer-portal, and pricing sections.
+- `/signup` — four-step gym-owner onboarding and trial-plan selection.
+- `/customer/login` — two customer preview states: an active gym member and a customer still looking for a gym.
+- `/customer/discover` — searchable directory of gyms subscribed to RIVET.
+- `/customer/gyms/[gymId]` — gym profile, branch/slot selection, and a validated free-trial request form.
+- `/customer/my-gyms` — active memberships plus free-trial requests.
+- `/customer/my-gyms/[membershipId]` — membership details, balance, visits, activity, and an entry QR pass.
+- `/platform` — RIVET owner overview across all gym tenants.
+- `/platform/gyms` and `/platform/gyms/[gymId]` — tenant directory, subscription health, branches, usage, owner, and account timeline.
+- `/platform/subscriptions` — plan catalog, limits, trials, and current subscriptions.
+- `/platform/billing` — SaaS invoice ledger and an interactive failed-payment recovery state.
+- `/platform/support` — tenant support inbox, conversation view, reply, assignment/SLA, and resolution state.
+
+### Connected preview behavior
+
+- Booking a free trial at Forge Fitness calls the existing `GymOSApi` boundary, creates a lead, and moves it to `trial_booked`; gym staff can see it in `/crm/pipeline` and `/crm/queues` without a separate fake backend.
+- Customer identities, memberships, marketplace gyms, and platform subscriptions live in `src/lib/public/experience-data.ts`; interactive session state is isolated in `src/lib/providers/experience-provider.tsx`.
+- The QR pass encodes a demo identity. Production must replace it with a short-lived, signed, server-validated token; the UI labels this compromise explicitly.
+- The public/customer/platform expansion is frontend-only and in-memory. Real customer and platform authentication, tenant provisioning, subscription billing, persisted trial bookings, marketplace moderation, and notification delivery remain backend work.
+
+### Scope decision
+
+`AGENTS.md` and the original README say not to build the future consumer marketplace in the MVP. This expansion is intentional because the product owner directly requested those surfaces on 2026-07-31. It remains an extension around the approved B2B operating core; it does not introduce an independent trainer marketplace.
+
+### Latest verification
+
+- `pnpm --filter web typecheck` — pass.
+- `pnpm --filter web lint` — pass with zero warnings.
+- `pnpm --filter web test` — 162 tests passed across 7 files.
+- `pnpm --filter web build` — pass; 341 static pages generated, including the new customer and platform routes.
+- `qrcode.react` was added for the membership entry pass.
+- `public/brand/rivet-social-preview.png` is a generated, project-local social preview asset used by Open Graph and Twitter metadata.
+
 ## Status
 
-- Completion date: 2026-07-30
+- Completion date: 2026-07-31
 - Frontend commit: working tree on `main` (see git log). Static-export / GitHub-connected Pages changes are uncommitted until you choose to commit.
 - Mock mode command: `pnpm install && pnpm dev` from the repository root (starts `apps/web` on <http://localhost:3000>)
 - Build command: `pnpm build`
@@ -15,7 +52,7 @@ Product name in the UI is **RIVET** (working title GymOS), derived from the logo
 | Route | Purpose | Primary roles | Status |
 |---|---|---|---|
 | `/login` | Auth preview: four demo personas, any password | all | Done |
-| `/` | Role-aware entry redirect (reception → console, else dashboard) | all | Done |
+| `/` | Public marketing landing page and entry point for gym owners and customers | public | Done |
 | `/dashboard` | Owner/manager revenue + exceptions dashboard; sales variant for salespeople | owner, manager, sales | Done |
 | `/reception` | Full-height dark check-in console: lookup/scan, verdict, occupancy, shift gate | reception, manager | Done |
 | `/members` | Searchable/filterable member table | all except trainer-only views | Done |

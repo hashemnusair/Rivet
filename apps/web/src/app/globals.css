@@ -55,6 +55,8 @@
   --font-display: var(--font-manrope), "Segoe UI", system-ui, sans-serif;
   /* Reserved for system records: IDs, receipt numbers, references, codes. */
   --font-mono: var(--font-plex-mono), "SFMono-Regular", Menlo, monospace;
+  --font-marketing: var(--font-instrument-sans), var(--font-manrope), system-ui, sans-serif;
+  --font-marketing-display: var(--font-archivo), var(--font-manrope), sans-serif;
 
   /* radii — restrained */
   --radius-xs: 3px;
@@ -82,6 +84,24 @@
     from { opacity: 0; transform: scale(0.97); }
     to { opacity: 1; transform: scale(1); }
   }
+}
+
+@utility marketing-grid {
+  background-image:
+    linear-gradient(to right, rgb(27 26 21 / 0.075) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(27 26 21 / 0.075) 1px, transparent 1px);
+  background-size: 112px 112px;
+}
+
+@utility marketing-display {
+  font-family: var(--font-marketing-display);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+@utility marketing-body {
+  font-family: var(--font-marketing);
 }
 
 @layer base {

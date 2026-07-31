@@ -48,7 +48,7 @@ A Jordan/MENA-first revenue and operations system for gyms that manages the full
 
 ## MVP boundary
 
-Build the B2B gym-management web application first. The public multi-gym consumer marketplace and independent trainer marketplace are documented as future phases and must not expand the MVP.
+The B2B gym-management application remains the operating core. On 2026-07-31 the product owner explicitly added a focused consumer layer (subscribed-gym discovery, free trials, My Gyms, and entry QR) plus a RIVET platform-owner console. The independent trainer marketplace remains out of scope. See `FRONTEND_HANDOFF.md` for the decision and mock/backend boundary.
 
 ## Definition of success
 
