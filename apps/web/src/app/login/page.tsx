@@ -32,7 +32,7 @@ const AUDIENCE_FROM_HASH: Record<string, Audience> = { "#member": "member", "#ad
 export default function LoginPage() {
   const router = useRouter();
   const { signIn, signedIn } = useApp();
-  const { signInCustomer, signInPlatformAdmin } = useExperience();
+  const { customers, signInCustomer, signInPlatformAdmin } = useExperience();
 
   const [audience, setAudience] = useState<Audience>("staff");
   const [staffRole, setStaffRole] = useState<RoleKey>("owner");
@@ -41,7 +41,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   const staff = STAFF_PERSONAS.find((p) => p.role === staffRole)!;
-  const customer = CUSTOMER_PERSONAS.find((p) => p.id === customerId)!;
+  const customer = customers.find((p) => p.id === customerId) ?? customers[0]!;
 
   // Deep links (/login#member, /login#admin) open the portal on the right tab.
   // A hash keeps this working under `output: export`, where search params would
@@ -69,8 +69,8 @@ export default function LoginPage() {
     submitting.current = true;
 
     if (audience === "member") {
-      signInCustomer(customerId);
-      router.push(customerId === "customer-lina" ? "/customer/my-gyms" : "/customer/discover");
+      signInCustomer(customer.id);
+      router.push(customer.id === "customer-lina" ? "/customer/my-gyms" : "/customer/discover");
       return;
     }
 
@@ -106,8 +106,11 @@ export default function LoginPage() {
           <Link href="/" className="flex items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" /> rivet.jo
           </Link>
-          <Link href="/signup" className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink">
-            Create a gym account
+          <Link
+            href={audience === "member" ? "/customer/signup" : "/signup"}
+            className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink"
+          >
+            {audience === "member" ? "Create a member account" : "Create a gym account"}
           </Link>
         </div>
 
@@ -164,10 +167,10 @@ export default function LoginPage() {
                           }}
                         />
                       ))
-                    : CUSTOMER_PERSONAS.map((persona) => (
+                    : customers.map((persona) => (
                         <AccountOption
                           key={persona.id}
-                          selected={customerId === persona.id}
+                          selected={customer.id === persona.id}
                           name={persona.name}
                           badge="Member"
                           detail={persona.context}
@@ -200,8 +203,11 @@ export default function LoginPage() {
 
               <p className="mt-5 text-center text-[12px] text-ink-3">
                 No account?{" "}
-                <Link href="/signup" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
-                  Start a gym trial
+                <Link
+                  href={audience === "member" ? "/customer/signup" : "/signup"}
+                  className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink"
+                >
+                  {audience === "member" ? "Create a member account" : "Start a gym trial"}
                 </Link>{" "}
                 or{" "}
                 <Link href="/customer/discover" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">

@@ -34,7 +34,10 @@ export default function DiscoverGymsPage() {
               <Button asChild variant="secondary"><Link href="/customer/my-gyms">My dashboard <ArrowRight /></Link></Button>
             ) : null
           ) : (
-            <Button asChild><Link href="/login#member">Sign in to book</Link></Button>
+            <div className="flex gap-2">
+              <Button asChild variant="secondary"><Link href="/login#member">Sign in</Link></Button>
+              <Button asChild><Link href="/customer/signup">Create account</Link></Button>
+            </div>
           )}
         </div>
       </section>

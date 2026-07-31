@@ -125,8 +125,8 @@ export function PublicFooter() {
           title="Members"
           links={[
             ["Find a gym", "/customer/discover"],
+            ["Create a member account", "/customer/signup"],
             ["My dashboard", "/customer/my-gyms"],
-            ["Member sign-in", "/login#member"],
           ]}
         />
         <FooterColumn
@@ -134,7 +134,7 @@ export function PublicFooter() {
           links={[
             ["Gym staff", "/login"],
             ["Gym member", "/login#member"],
-            ["Create an account", "/signup"],
+            ["Start a gym trial", "/signup"],
           ]}
         />
       </div>
@@ -243,10 +243,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/">Home</Link>
+                  <Link href="/login#member">Sign in</Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link href="/login#member">Sign in</Link>
+                  <Link href="/customer/signup">Create account</Link>
                 </Button>
               </>
             )}

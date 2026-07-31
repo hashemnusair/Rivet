@@ -6,6 +6,7 @@ The product owner explicitly expanded the frontend scope beyond the original B2B
 
 - `/` — new public RIVET landing page, adapted from the supplied reference and extended with product, network, customer-portal, and pricing sections.
 - `/signup` — four-step gym-owner onboarding and trial-plan selection.
+- `/customer/signup` — free member account creation (name, email, mobile, password), validated with Zod and signed in on submit.
 - `/customer/discover` — searchable directory of gyms subscribed to RIVET.
 - `/customer/gyms/[gymId]` — gym profile, branch/slot selection, and a validated free-trial request form.
 - `/customer/my-gyms` — the member dashboard: renewal countdown, visits, balance, membership cards, entry pass, and trial requests.
@@ -24,7 +25,9 @@ The product owner explicitly expanded the frontend scope beyond the original B2B
 - **Gym member** — the customer personas; lands on `/customer/my-gyms` or `/customer/discover`.
 - **Platform administrator** — deliberately quiet, at the bottom of the page behind a small lock link; lands on `/platform`.
 
-Deep links open the portal on the right tab via a URL hash (`/login#member`, `/login#admin`); a hash is used rather than a search param because `output: export` would otherwise force a Suspense boundary around the page. `/customer/login` is kept only as a client redirect to `/login#member` for old bookmarks. `/platform` now redirects to `/login#admin` unless the admin session exists — member and admin sessions survive a reload through `sessionStorage`, mirroring the staff persona.
+Deep links open the portal on the right tab via a URL hash (`/login#member`, `/login#admin`); a hash is used rather than a search param because `output: export` would otherwise force a Suspense boundary around the page. `/customer/login` is kept only as a client redirect to `/login#member` for old bookmarks. `/platform` now redirects to `/login#admin` unless the admin session exists.
+
+Accounts created at `/customer/signup` are appended to the member list and offered at sign-in alongside the seeded personas. Member sessions, created accounts, and trial bookings all persist in `sessionStorage`, so a reload does not sign a member out, orphan the session behind a customer that no longer exists, or drop a trial they just booked. Passwords are never stored — the preview does not authenticate. Real member registration, email verification, and password handling remain backend work.
 
 ### Connected preview behavior
 
