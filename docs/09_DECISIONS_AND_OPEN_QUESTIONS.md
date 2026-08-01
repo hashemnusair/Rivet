@@ -24,6 +24,20 @@ The product owner selected **Next.js + Convex + Clerk + Vercel** for the active 
 - The documented domain invariants, API boundary, multi-tenant isolation, money representation, audit requirements, and acceptance tests remain binding even where the implementation mechanism changes.
 - The existing mock adapter remains available only as a preview/testing mode while each workflow is migrated vertically to Convex.
 
+## Deferred — Clerk production instance (2026-08-01)
+
+The deployment at `rivet2-web.vercel.app` deliberately runs Clerk's **development** instance (`welcomed-oriole-41.clerk.accounts.dev`). This is a conscious hold, not an oversight: a Clerk production instance requires DNS records on a domain the product owner controls, and no domain has been bought yet. A `*.vercel.app` subdomain cannot host them.
+
+Consequences while this stands:
+
+- A "Development mode" badge is visible on the sign-in and sign-up forms to every visitor.
+- Development instances carry a user cap and rate limits, so this cannot support a real pilot.
+- The first request of a cold browser session logs `Refreshing the session token resulted in an infinite redirect loop`. This is the cross-domain handshake development instances use because their cookies come from `clerk.accounts.dev` rather than the application's own domain. It retries, settles, and later navigations make no handshake requests at all. The message names key mismatch as the usual cause; the keys are correct.
+
+To lift the hold once a domain exists, in order: point the domain at Vercel → create the Clerk production instance and add its DNS records → supply your own Google OAuth credentials, because development instances borrow Clerk's shared ones and the sign-in form offers Google → move `pk_live_`/`sk_live_`, `CLERK_FRONTEND_API_URL` and `NEXT_PUBLIC_SITE_URL` into Vercel → run `convex deploy` and set `CLERK_FRONTEND_API_URL` on the **Convex** deployment as well, since `convex/auth.config.ts` reads it there to verify Clerk JWTs and setting it only on Vercel leaves every Convex query unauthenticated.
+
+Users do not transfer between Clerk instances; accounts created against the development instance are discarded by the switch.
+
 ## Implementation decisions agents may make
 
 Agents may choose and document:
