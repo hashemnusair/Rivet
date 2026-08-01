@@ -15,13 +15,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Monogram } from "@/components/ui/misc";
 import { ROLE_LABELS } from "@/lib/domain/permissions";
 import type { RoleKey } from "@/lib/domain/types";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
@@ -136,7 +137,7 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
             </Show>
             <Show when="signed-in">
               <SignedInIdentity />
-              <IdentityPanel audience={audience} />
+              {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
             </Show>
           </>
         ) : null}
@@ -351,5 +352,24 @@ function AdminEntry({ onEnter }: { onEnter: () => void }) {
         Open platform console <ArrowRight className="size-4" />
       </Button>
     </form>
+  );
+}
+
+/**
+ * Roles live in Convex. A build with no `NEXT_PUBLIC_CONVEX_URL` has no way to
+ * know who anyone is, so the seeded accounts stand in — labelled, so nobody
+ * mistakes them for their own.
+ */
+function NoRoleSource({ children }: { children: ReactNode }) {
+  return (
+    <div>
+      <div className="mt-6 rounded-lg border border-warning/30 bg-warning-bg p-3">
+        <p className="text-[12px] leading-relaxed text-warning-deep">
+          No Convex deployment is configured for this build, so RIVET cannot read your role. These are seeded preview
+          accounts, not yours.
+        </p>
+      </div>
+      {children}
+    </div>
   );
 }

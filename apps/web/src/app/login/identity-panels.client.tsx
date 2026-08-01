@@ -23,6 +23,20 @@ export function IdentityPanel({ audience }: { audience: Audience }) {
   const identity = useRivetIdentity();
 
   if (identity.status === "loading" || identity.status === "pending") return <LoginLoading />;
+
+  // Convex holds the roles. If it cannot see this session there is nothing to
+  // route on, and silently rendering nothing would strand a signed-in person on
+  // a page with no way forward.
+  if (identity.status === "anonymous") {
+    return (
+      <NotEntitled
+        title="Your role could not be loaded"
+        body="You are signed in, but RIVET could not read your account's role. This usually means the Convex deployment is unreachable or is not configured to verify Clerk sessions."
+        primary={{ label: "Back to sign-in options", href: "/login" }}
+      />
+    );
+  }
+
   if (identity.status !== "ready") return null;
 
   if (audience === "staff") return <GymEntry identity={identity} />;
