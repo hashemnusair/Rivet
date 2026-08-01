@@ -36,7 +36,25 @@ The product owner explicitly expanded the frontend scope beyond the original B2B
 
 Sign-up sits beside sign-in in each portal (`…/create`, rendering Clerk's `<SignUp>`), because previously no route created a Clerk user at all — Clerk's own "Sign up" link pointed at marketing pages, so a new visitor hit a dead end. Platform administration has no self-service sign-up by design. `/customer/signup` keeps its local preview form only under `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; with a real Clerk instance it redirects to `/login/member/create` so members are never offered two different sign-up buttons.
 
-Once Clerk reports a session, each portal shows the account actually in use with a sign-out control before offering preview accounts — otherwise there is no way to tell which identity you hold, or to switch. `ConvexClientProvider` already upserts that identity into the Convex `users` table via `users.ensureCurrent`.
+Once Clerk reports a session, each portal shows the account actually in use with a sign-out control. `ConvexClientProvider` upserts that identity into the Convex `users` table via `users.ensureCurrent`.
+
+### Roles come from Convex, not from a list
+
+Nobody chooses who they are any more. `convex/identity.ts:current` returns the signed-in user, their `platformAdmin` flag and their active `organizationMemberships`; `destinationFor` in `src/lib/auth/rivet-identity.tsx` turns that into a destination — platform administration outranks gym staff, and a member is simply someone holding no gym role, which is why it is the fallback rather than a checked condition. Convex names the sales role `sales` while the permission model calls it `salesperson`, so the boundary maps between them.
+
+The gym workspace still reads gym data from the seeded mock tenant, so `(app)/layout.tsx` binds the Convex role to a mock session automatically instead of presenting a persona picker. That is the migration seam described above: Convex is authoritative for *who you are*, the mock is still authoritative for *gym data*, until each workflow moves across.
+
+`convex/seed.ts` creates the Forge Fitness organization, its two branches, its four staff and its two customers as real records. Seeded people are stored unclaimed — `authSubject` is `invite:<email>` rather than a Clerk subject — and `users.ensureCurrent` claims that row when someone first signs in with the matching email, so an invited staff member keeps the role they were given instead of silently getting a second member-only account. Seeding is idempotent and `internalMutation`, because the deployment is public and seeding is an owner action, not something the web app may trigger.
+
+Granting access is deliberately dashboard/CLI-only, for the same reason:
+
+```bash
+npx convex run seed:seedDemoTenant
+npx convex run seed:grantPlatformAdmin '{"email":"you@example.com"}'
+npx convex run seed:grantOrganizationRole '{"email":"you@example.com","organizationSlug":"forge-fitness","role":"owner"}'
+```
+
+**Clerk's JWT template must send `email` and `name` claims.** Without them `ctx.auth.getUserIdentity()` returns them undefined, every Convex user row is written with an empty email, and claiming an invited record by email cannot work — the grant helpers accept `authSubject` as a fallback precisely because this was the state when they were written. Fix it in Clerk under JWT Templates → the Convex template → Claims.
 
 Each portal renders Clerk's `<SignIn>` scoped to itself (`forceRedirectUrl` back to that portal, `signUpUrl` for that audience), then shows only that portal's accounts once identity is established. `routing="hash"` is safe now that portals own routes rather than fragments. Legacy `/login#member` and `/login#admin` links are resolved client-side by `/login`, and `/customer/login` still redirects to `/login/member`.
 

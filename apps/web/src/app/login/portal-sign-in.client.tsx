@@ -25,6 +25,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { IdentityPanel } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PORTALS, type Audience } from "./portals";
 
@@ -135,7 +136,7 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
             </Show>
             <Show when="signed-in">
               <SignedInIdentity />
-              {accounts}
+              <IdentityPanel audience={audience} />
             </Show>
           </>
         ) : null}

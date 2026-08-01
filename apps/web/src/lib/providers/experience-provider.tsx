@@ -40,6 +40,8 @@ interface ExperienceContextValue {
   bookings: TrialBooking[];
   signInCustomer: (customerId: string) => void;
   registerCustomer: (input: RegisterCustomerInput) => CustomerPersona;
+  /** Signs in the authenticated person as themselves, creating their member profile once. */
+  signInAsIdentity: (input: { email: string; fullName: string }) => CustomerPersona;
   emailTaken: (email: string) => boolean;
   signOutCustomer: () => void;
   signInPlatformAdmin: () => void;
@@ -101,6 +103,33 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (stored && known.some((persona) => persona.id === stored)) setCustomerId(stored);
     if (window.sessionStorage.getItem(STORAGE_KEYS.admin) === "1") setPlatformAdminSignedIn(true);
     setExperienceReady(true);
+  }, []);
+
+  /**
+   * A real signed-in person is their own member, not one of the seeded
+   * personas. Keyed on email so a reload or a second sign-in reuses the same
+   * profile instead of stacking duplicates.
+   */
+  const signInAsIdentity = useCallback((input: { email: string; fullName: string }) => {
+    const id = `identity:${input.email.trim().toLowerCase()}`;
+    const persona: CustomerPersona = {
+      id,
+      name: input.fullName.trim() || input.email,
+      nameAr: input.fullName.trim() || input.email,
+      email: input.email.trim().toLowerCase(),
+      phone: "",
+      initials: initialsOf(input.fullName || input.email),
+      context: "Your RIVET account",
+    };
+
+    setRegistered((current) => {
+      const next = [persona, ...current.filter((item) => item.id !== id)];
+      window.sessionStorage.setItem(STORAGE_KEYS.registered, JSON.stringify(next));
+      return next;
+    });
+    window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
+    setCustomerId(id);
+    return persona;
   }, []);
 
   const registerCustomer = useCallback((input: RegisterCustomerInput) => {
@@ -189,6 +218,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         setCustomerId(id);
       },
       registerCustomer,
+      signInAsIdentity,
       emailTaken: (email) => customers.some((persona) => persona.email.toLowerCase() === email.trim().toLowerCase()),
       signOutCustomer: () => {
         window.sessionStorage.removeItem(STORAGE_KEYS.customer);
@@ -217,6 +247,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       memberships,
       platformAdminSignedIn,
       registerCustomer,
+      signInAsIdentity,
     ],
   );
 

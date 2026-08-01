@@ -9,7 +9,7 @@ const organizationStatus = v.union(
   v.literal("cancelled"),
 );
 
-const organizationRole = v.union(
+export const organizationRole = v.union(
   v.literal("owner"),
   v.literal("manager"),
   v.literal("sales"),

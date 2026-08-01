@@ -4,6 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 
@@ -19,7 +20,8 @@ import { useExperience } from "@/lib/providers/experience-provider";
 export function useMemberGate() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
-  const { customerSignedIn, experienceReady } = useExperience();
+  const { customerSignedIn, experienceReady, signInAsIdentity } = useExperience();
+  const identity = useRivetIdentity();
 
   const identityReady = DEMO_AUTH_BYPASS || isLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || isSignedIn;
@@ -27,6 +29,13 @@ export function useMemberGate() {
   useEffect(() => {
     if (identityReady && !identitySignedIn) router.replace("/login/member");
   }, [identityReady, identitySignedIn, router]);
+
+  // Arriving straight at a member page with a real session should not send you
+  // back to the portal to state who you are — you already did that with Clerk.
+  useEffect(() => {
+    if (identity.status !== "ready" || customerSignedIn || !identity.email) return;
+    signInAsIdentity({ email: identity.email, fullName: identity.fullName ?? "" });
+  }, [identity.status, identity.email, identity.fullName, customerSignedIn, signInAsIdentity]);
 
   return {
     ready: identityReady && experienceReady,

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
+import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
 import { AppProviders } from "@/lib/providers/app-providers";
 import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
@@ -83,7 +84,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ClerkProvider>
           <ConvexClientProvider>
             <AppProviders>
-              <ExperienceProvider>{children}</ExperienceProvider>
+              <RivetIdentityProvider>
+                <ExperienceProvider>{children}</ExperienceProvider>
+              </RivetIdentityProvider>
               <Toaster
                 position="bottom-right"
                 toastOptions={{

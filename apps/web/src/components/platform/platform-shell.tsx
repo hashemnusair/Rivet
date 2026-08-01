@@ -20,6 +20,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
@@ -38,13 +39,19 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const { platformAdminSignedIn, experienceReady, signOutPlatformAdmin } = useExperience();
-  const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
+  const identity = useRivetIdentity();
+  const identityReady =
+    DEMO_AUTH_BYPASS || (clerkLoaded && identity.status !== "loading" && identity.status !== "pending");
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
+  // Authorization comes from the Convex record, so flipping the local
+  // sessionStorage flag by hand does not open the console.
+  const authorized = DEMO_AUTH_BYPASS || identity.platformAdmin;
 
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
-    if (identityReady && experienceReady && (!identitySignedIn || !platformAdminSignedIn)) router.replace("/login/admin");
-  }, [experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
+    if (identityReady && experienceReady && (!identitySignedIn || !authorized || !platformAdminSignedIn))
+      router.replace("/login/admin");
+  }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
 
   const signOut = async () => {
     signOutPlatformAdmin();
@@ -52,7 +59,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     else router.push("/");
   };
 
-  if (!identityReady || !experienceReady || !identitySignedIn || !platformAdminSignedIn) {
+  if (!identityReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Checking access">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">

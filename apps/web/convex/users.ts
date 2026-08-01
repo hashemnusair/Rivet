@@ -33,6 +33,22 @@ export const ensureCurrent = mutation({
       return existing._id;
     }
 
+    // A record may already exist for this email without a Clerk subject —
+    // either seeded staff, or someone a gym added before they ever signed in.
+    // Claiming it keeps the role and organization they were given, instead of
+    // silently creating a second, member-only account under the same address.
+    if (email) {
+      const invited = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .unique();
+
+      if (invited && invited.authSubject.startsWith("invite:")) {
+        await ctx.db.patch(invited._id, { authSubject: identity.subject, fullName, updatedAt: now });
+        return invited._id;
+      }
+    }
+
     return await ctx.db.insert("users", {
       authSubject: identity.subject,
       email,
