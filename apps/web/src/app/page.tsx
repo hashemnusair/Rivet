@@ -10,18 +10,10 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
 import { MARKETPLACE_GYMS, SAAS_PLANS } from "@/lib/public/experience-data";
-
-const LOOP = [
-  ["Lead", "Marketplace, walk-in, or referral"],
-  ["Free trial", "Booked, confirmed, attended"],
-  ["Membership", "Plan sold, terms recorded"],
-  ["Payment", "Cash, card or CliQ — receipted"],
-  ["Check-in", "One scan, one verdict"],
-  ["Renewal", "Queued before it lapses"],
-];
 
 export default function LandingPage() {
   return (
@@ -96,25 +88,7 @@ export default function LandingPage() {
         </section>
 
         {/* ---------------------------------------------------------------- Loop */}
-        <section id="product" className="scroll-mt-20 border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
-          <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              eyebrow="The commercial loop"
-              title="One record, discovery to renewal."
-              description="The marketplace, the member app and the gym workspace write to the same timeline. Nothing is copied between a booking form, a spreadsheet and the front desk."
-            />
-            <ol className="mt-12 grid gap-px overflow-hidden rounded-lg border border-ink/10 bg-ink/10 sm:grid-cols-2 lg:grid-cols-6">
-              {LOOP.map(([stage, detail], index) => (
-                <li key={stage} className="group bg-paper p-5 transition-colors hover:bg-surface">
-                  <span className="font-mono text-[9.5px] tracking-[0.16em] text-signal">{String(index + 1).padStart(2, "0")}</span>
-                  <p className="mt-6 text-[14.5px] font-semibold">{stage}</p>
-                  <p className="mt-1.5 text-[12px] leading-snug text-ink-3">{detail}</p>
-                  <div className="mt-4 h-px w-6 bg-ink/20 transition-all duration-300 group-hover:w-full group-hover:bg-signal" />
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
+        <RivetLoopMachine />
 
         {/* ----------------------------------------------------------------- Ops */}
         <section className="night-surface bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24">
