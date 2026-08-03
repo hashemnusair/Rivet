@@ -1,5 +1,6 @@
 "use client";
 
+import { useClerk } from "@clerk/nextjs";
 import { Beaker, Building2, Check, ChevronDown, ExternalLink, Languages, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -21,6 +22,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Monogram } from "@/components/ui/misc";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
 
 const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
@@ -32,12 +35,19 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { session, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
+  const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const router = useRouter();
 
   const role = session?.roles[0];
   const canPickBranch = role === "owner" || role === "manager" || role === "auditor";
+  const demoControlsEnabled = DEMO_AUTH_BYPASS || !CONVEX_ENABLED;
+
+  const handleSignOut = async () => {
+    await signOut();
+    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4">
@@ -112,8 +122,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         <Languages />
       </Button>
 
-      {/* Demo controls */}
-      <Popover>
+      {/* Preview-only controls never appear in a real Clerk + Convex deployment. */}
+      {demoControlsEnabled ? <Popover>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
@@ -198,7 +208,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             </Button>
           </div>
         </PopoverContent>
-      </Popover>
+      </Popover> : null}
 
       {/* User */}
       {session ? (
@@ -221,21 +231,25 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel>Signed in as {session.user.email}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-1.5">
-              <UsersRound className="size-3" /> Switch demo role
-            </DropdownMenuLabel>
-            {DEMO_ROLES.map((d) => (
-              <DropdownMenuItem key={d.role} onClick={() => switchRole(d.role)} className="flex items-start gap-2">
-                <span className="mt-0.5 size-4 shrink-0">
-                  {role === d.role ? <Check className="size-3.5 text-success" /> : <UserRound className="size-3.5" />}
-                </span>
-                <span>
-                  <span className="block font-medium">{ROLE_LABELS[d.role]}</span>
-                  <span className="block text-[11.5px] text-ink-3">{d.blurb}</span>
-                </span>
-              </DropdownMenuItem>
-            ))}
+            {demoControlsEnabled ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="flex items-center gap-1.5">
+                  <UsersRound className="size-3" /> Switch demo role
+                </DropdownMenuLabel>
+                {DEMO_ROLES.map((d) => (
+                  <DropdownMenuItem key={d.role} onClick={() => switchRole(d.role)} className="flex items-start gap-2">
+                    <span className="mt-0.5 size-4 shrink-0">
+                      {role === d.role ? <Check className="size-3.5 text-success" /> : <UserRound className="size-3.5" />}
+                    </span>
+                    <span>
+                      <span className="block font-medium">{ROLE_LABELS[d.role]}</span>
+                      <span className="block text-[11.5px] text-ink-3">{d.blurb}</span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>
               <Building2 /> Organization settings
@@ -243,8 +257,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <DropdownMenuItem onClick={() => router.push("/")}>
               <ExternalLink /> Public site
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={signOut}>
-              <LogOut /> Sign out of demo
+            <DropdownMenuItem onClick={() => void handleSignOut()}>
+              <LogOut /> {demoControlsEnabled ? "Sign out of demo" : "Sign out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

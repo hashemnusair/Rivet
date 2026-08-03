@@ -5,6 +5,7 @@ import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
 import { AppProviders } from "@/lib/providers/app-providers";
 import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -80,7 +81,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" dir="ltr" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
-      <body>
+      <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         <ClerkProvider>
           <ConvexClientProvider>
             <AppProviders>

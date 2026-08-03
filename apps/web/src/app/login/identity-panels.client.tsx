@@ -64,7 +64,10 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
   const enter = async () => {
     setLoading(true);
     try {
-      await signIn(membership.role);
+      await signIn(membership.role, undefined, {
+        name: identity.fullName || identity.email || "RIVET user",
+        email: identity.email || "",
+      });
       router.push(destination.href);
     } catch {
       setLoading(false);

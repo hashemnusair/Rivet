@@ -12,7 +12,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
+  const { session, signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const identity = useRivetIdentity();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -25,14 +25,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // chosen from a list. Nobody picks who they are any more.
   const gymRole = identity.status === "ready" ? destinationFor(identity).role : undefined;
   const binding = useRef(false);
+  const identityName = identity.fullName || identity.email || "RIVET user";
+  const identityEmail = identity.email || "";
+  const sessionMatchesIdentity = Boolean(
+    signedIn &&
+      session &&
+      session.roles[0] === gymRole &&
+      session.user.name === identityName &&
+      session.user.email === identityEmail,
+  );
 
   useEffect(() => {
-    if (binding.current || signedIn || sessionLoading || !gymRole) return;
+    if (binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;
     binding.current = true;
-    void signIn(gymRole).catch(() => {
+    void signIn(gymRole, undefined, { name: identityName, email: identityEmail }).finally(() => {
       binding.current = false;
     });
-  }, [gymRole, signIn, sessionLoading, signedIn]);
+  }, [gymRole, identityEmail, identityName, sessionLoading, sessionMatchesIdentity, signIn]);
 
   const identityStillResolving = identity.status === "loading" || identity.status === "pending";
 

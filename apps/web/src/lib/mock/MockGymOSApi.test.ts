@@ -42,6 +42,19 @@ describe("session and role switching", () => {
     expect(reception.permissions).toContain("payments.collect");
     expect(reception.permissions).not.toContain("reports.financial.read");
   });
+
+  it("binds an authenticated profile to the seeded role without exposing the seed persona", async () => {
+    const owner = await api.switchDemoRole("owner", undefined, {
+      name: "Hashem Nusair",
+      email: "nusairhashem04+owner@gmail.com",
+    });
+
+    expect(owner.user).toMatchObject({
+      name: "Hashem Nusair",
+      email: "nusairhashem04+owner@gmail.com",
+    });
+    expect(owner.roles).toEqual(["owner"]);
+  });
 });
 
 describe("tenant/branch scoping and authorization", () => {

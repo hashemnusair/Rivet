@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 export const current = query({
@@ -14,8 +15,8 @@ export const current = query({
 });
 
 export const ensureCurrent = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { fullName: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("UNAUTHENTICATED");
 
@@ -26,7 +27,9 @@ export const ensureCurrent = mutation({
 
     const now = Date.now();
     const email = identity.email ?? "";
-    const fullName = identity.name ?? email.split("@")[0] ?? "RIVET user";
+    const suppliedFullName = args.fullName?.trim().replace(/\s+/g, " ");
+    if (suppliedFullName && suppliedFullName.length > 160) throw new Error("INVALID_PROFILE_NAME");
+    const fullName = suppliedFullName || identity.name?.trim() || existing?.fullName || email.split("@")[0] || "RIVET user";
 
     if (existing) {
       await ctx.db.patch(existing._id, { email, fullName, updatedAt: now });

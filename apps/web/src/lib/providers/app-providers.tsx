@@ -26,7 +26,11 @@ interface AppContextValue {
   session: Session | undefined;
   sessionLoading: boolean;
   signedIn: boolean;
-  signIn: (role: RoleKey, branchId?: UUID) => Promise<void>;
+  signIn: (
+    role: RoleKey,
+    branchId?: UUID,
+    identity?: { name: string; email: string },
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   switchRole: (role: RoleKey) => Promise<void>;
   setBranch: (branchId: UUID | undefined) => Promise<void>;
@@ -126,10 +130,10 @@ function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(
-    async (role: RoleKey, branchId?: UUID) => {
+    async (role: RoleKey, branchId?: UUID, identity?: { name: string; email: string }) => {
       const api = getApi();
       const branch = branchId ?? PERSONA_DEFAULT_BRANCH[role];
-      const s = await api.switchDemoRole(role, branch);
+      const s = await api.switchDemoRole(role, branch, identity);
       window.sessionStorage.setItem(STORAGE_KEYS.persona, role);
       if (branch) window.sessionStorage.setItem(STORAGE_KEYS.branch, branch);
       else window.sessionStorage.removeItem(STORAGE_KEYS.branch);

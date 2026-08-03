@@ -377,10 +377,21 @@ export class MockGymOSApi implements GymOSApi {
     };
   }
 
-  switchDemoRole(role: T.RoleKey, branchId?: T.UUID): Promise<T.Session> {
+  switchDemoRole(
+    role: T.RoleKey,
+    branchId?: T.UUID,
+    identity?: Pick<T.Session["user"], "name" | "email">,
+  ): Promise<T.Session> {
     return this.respond(() => {
       const user = this.db.users.find((u) => u.role === role && u.status === "active");
       if (!user) throw ApiError.of(ERR.NOT_FOUND, `No active demo user for role ${role}.`);
+      // Convex supplies the real role while the operating data is still mocked.
+      // Rebind the seeded actor to the authenticated profile so current-user UI
+      // and newly created audit events never impersonate the seed persona.
+      if (identity) {
+        user.name = identity.name;
+        user.email = identity.email;
+      }
       this.db.session.userId = user.id;
       this.db.session.activeBranchId =
         branchId ?? (user.branchScope === "selected" ? user.branchIds[0] : undefined);

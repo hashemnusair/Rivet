@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils/cn";
 import { IdentityPanel } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PORTALS, type Audience } from "./portals";
+import { ProfileCompletionGate } from "./profile-completion.client";
 
 const STAFF_ROLES: Array<{ role: RoleKey; icon: LucideIcon; name: string; scope: string }> = [
   { role: "owner", icon: Gauge, name: "Omar Al-Khatib", scope: "Revenue, branches, staff, audit" },
@@ -137,7 +138,9 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
             </Show>
             <Show when="signed-in">
               <SignedInIdentity />
-              {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
+              <ProfileCompletionGate>
+                {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
+              </ProfileCompletionGate>
             </Show>
           </>
         ) : null}

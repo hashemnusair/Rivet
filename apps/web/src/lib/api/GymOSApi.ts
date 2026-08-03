@@ -168,7 +168,11 @@ export interface DashboardQuery {
 export interface GymOSApi {
   // Session
   getSession(): Promise<Session>;
-  switchDemoRole(role: RoleKey, branchId?: UUID): Promise<Session>;
+  switchDemoRole(
+    role: RoleKey,
+    branchId?: UUID,
+    identity?: Pick<Session["user"], "name" | "email">,
+  ): Promise<Session>;
   setActiveBranch(branchId: UUID | undefined): Promise<Session>;
   signOut(): Promise<void>;
 

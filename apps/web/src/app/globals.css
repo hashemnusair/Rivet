@@ -125,6 +125,14 @@
     line-height: 1.45;
   }
 
+  /* Playwright deliberately uses seeded personas instead of Clerk sessions.
+     Clerk's development-key notice is mounted outside the app tree and can
+     intercept clicks, so hide only that external surface for the explicit,
+     non-production demo bypass. */
+  body[data-demo-auth="true"] #clerk-components {
+    display: none !important;
+  }
+
   /* The three genuinely dark surfaces: sidebar, login brand panel, reception
      console. Opting into the dark scheme keeps their scrollbars and carets
      legible instead of painting light-theme chrome onto near-black panels. */

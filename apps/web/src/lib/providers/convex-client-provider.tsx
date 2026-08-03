@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { Authenticated, ConvexReactClient, useMutation } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { useEffect, type ReactNode } from "react";
@@ -29,11 +29,15 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 }
 
 function ClerkUserSync() {
+  const { user } = useUser();
   const ensureCurrentUser = useMutation(api.users.ensureCurrent);
+  const userId = user?.id;
+  const fullName = [user?.firstName?.trim(), user?.lastName?.trim()].filter(Boolean).join(" ") || undefined;
 
   useEffect(() => {
-    void ensureCurrentUser().catch(() => undefined);
-  }, [ensureCurrentUser]);
+    if (!userId) return;
+    void ensureCurrentUser({ fullName }).catch(() => undefined);
+  }, [ensureCurrentUser, fullName, userId]);
 
   return null;
 }
