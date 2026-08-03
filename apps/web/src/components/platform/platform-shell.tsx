@@ -32,6 +32,13 @@ const NAVIGATION = [
   { href: "/platform/support", label: "Support", icon: CircleHelp },
 ];
 
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? "?";
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
+  return `${first}${last}`.toUpperCase();
+}
+
 export function PlatformShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -46,6 +53,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   // Authorization comes from the Convex record, so flipping the local
   // sessionStorage flag by hand does not open the console.
   const authorized = DEMO_AUTH_BYPASS || identity.platformAdmin;
+  const administratorName = identity.fullName?.trim() || identity.email?.trim() || "Platform administrator";
+  const administratorInitials = initialsOf(administratorName);
 
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
@@ -99,10 +108,15 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           </div>
           <div className="ms-auto flex items-center gap-3">
             <div className="hidden text-end sm:block">
-              <p className="text-[12px] font-semibold">Elias Hreish</p>
+              <p className="text-[12px] font-semibold">{administratorName}</p>
               <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Platform owner</p>
             </div>
-            <span className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[9px] text-paper">EH</span>
+            <span
+              className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[9px] text-paper"
+              aria-label={`${administratorName} avatar`}
+            >
+              {administratorInitials}
+            </span>
             <Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Sign out">
               <LogOut />
             </Button>
