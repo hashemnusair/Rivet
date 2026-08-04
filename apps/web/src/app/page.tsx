@@ -46,7 +46,7 @@ export default function LandingPage() {
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="/login">See the live demo</Link>
+                  <Link href="#product">See how it works</Link>
                 </Button>
               </div>
               <p className="mt-4 text-[12.5px] text-ink-3">14 days · No card required · Your data stays yours</p>
@@ -284,14 +284,13 @@ export default function LandingPage() {
               Fourteen days, your own members, no card. Import last month, open a shift, and watch where the money
               actually goes.
             </p>
+            {/* One action here — the header already carries sign-in, and the ops
+                section owns the demo link. */}
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Button asChild variant="signal" size="lg">
                 <Link href="/signup">
                   Start a free trial <ArrowRight />
                 </Link>
-              </Button>
-              <Button asChild variant="secondary" size="lg">
-                <Link href="/login">Sign in</Link>
               </Button>
             </div>
           </div>
