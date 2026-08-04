@@ -2118,11 +2118,12 @@ export class MockGymOSApi implements GymOSApi {
     if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
     if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
+    if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
 
     // idempotency
     const existing = this.db.payments.find((p) => p.idempotencyKey === args.idempotencyKey);
     if (existing) {
-      if (existing.memberId !== args.memberId || existing.chargeId !== args.chargeId && args.chargeId !== undefined || existing.amount.amount !== args.amount.amount || existing.method !== args.method) {
+      if (existing.memberId !== args.memberId || (args.chargeId !== undefined && existing.chargeId !== args.chargeId) || existing.amount.amount !== args.amount.amount || existing.amount.currency !== args.amount.currency || existing.method !== args.method) {
         throw ApiError.of(ERR.VALIDATION, "This idempotency key was already used for a different payment.");
       }
       const receipt = this.db.receipts.find((r) => r.id === existing.receiptId)!;

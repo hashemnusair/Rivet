@@ -56,6 +56,14 @@ describe("decideHostRouting", () => {
     });
   });
 
+  it("redirects the apex domain to the public canonical hostname", () => {
+    expect(decideHostRouting("rivetjo.com", "/")).toEqual({
+      kind: "redirect",
+      hostname: "www.rivetjo.com",
+      status: 308,
+    });
+  });
+
   it("leaves the marketing host and unrelated paths unchanged", () => {
     expect(decideHostRouting("www.rivetjo.com", "/")).toEqual({ kind: "next" });
     expect(decideHostRouting("dashboard.rivetjo.com", "/members")).toEqual({ kind: "next" });

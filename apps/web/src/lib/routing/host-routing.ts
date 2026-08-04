@@ -29,6 +29,10 @@ export function decideHostRouting(
     return { kind: "redirect", hostname: "platform.rivetjo.com", status: 308 };
   }
 
+  if (normalized === "rivetjo.com") {
+    return { kind: "redirect", hostname: "www.rivetjo.com", status: 308 };
+  }
+
   if (normalized === "app.rivetjo.com") {
     if (pathname === "/") return { kind: "rewrite", pathname: "/customer/discover" };
     if (pathname === "/login") return { kind: "rewrite", pathname: "/login/member" };

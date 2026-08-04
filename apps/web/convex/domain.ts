@@ -1653,6 +1653,10 @@ async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, i
   const plan = await recordOf(ctx, actor, "plan", recordId(input.planId));
   const planData = data(plan.data);
   if (stringValue(planData.status, "active") !== "active") domainError("NOT_FOUND", "Plan not found or inactive.", { correlationId: actor.correlationId });
+  const memberBranchId = stringValue(memberData.homeBranchId);
+  if (stringValue(planData.branchAccess, "all") === "selected" && !arrayValue(planData.branchIds).map(String).includes(memberBranchId)) {
+    domainError("NOT_FOUND", "This plan is not available at the member's home branch.", { correlationId: actor.correlationId });
+  }
   const startDate = stringValue(input.startDate);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) domainError("VALIDATION_ERROR", "Start date must be a calendar date.", { correlationId: actor.correlationId });
   const override = input.priceOverride != null;
@@ -1673,6 +1677,7 @@ async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, i
   const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
   const renewal = Boolean(previousMembershipId);
   const event = await insertTimeline(ctx, actor, { memberId: memberData.id, branchId: memberData.homeBranchId, type: renewal ? "membership_renewed" : "membership_sold", title: `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`, body: `Term ${membership.startDate} → ${membership.endDate}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: membership.id } });
+  if (override) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
   if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price }, after: { discount }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
   await insertAudit(ctx, actor, { category: "memberships", action: renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}`, after: { startDate: membership.startDate, endDate: membership.endDate, total }, branchId: memberData.homeBranchId });
   let payment: Data | undefined;
@@ -2119,28 +2124,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "settings", action: "branch.create", entityType: "branch", entityId: publicBranchId(branch), entityLabel: branch.name, summary: "Branch created", branchId: publicBranchId(branch) });
       return branchView(branch, publicOrganizationId(actor.organization));
     }
-    case "users.invite": {
-      requirePermission(actor, "users.manage");
-      const email = stringValue(input.email).trim().toLowerCase();
-      const existing = (await ctx.db.query("users").collect()).find((item) => item.email.toLowerCase() === email);
-      let user: User;
-      if (existing) user = existing;
-      else {
-        const userId = await ctx.db.insert("users", { publicId: newPublicId(), authSubject: `invite:${email}`, email, fullName: stringValue(input.name).trim(), phone: optionalString(input.phone), platformAdmin: false, status: "invited", createdAt: Date.now(), updatedAt: Date.now() });
-        const inserted = await ctx.db.get(userId);
-        if (!inserted) domainError("NOT_FOUND", "User could not be invited.", { correlationId: actor.correlationId });
-        user = inserted;
-      }
-      const branchIds: Id<"branches">[] = [];
-      for (const branchId of arrayValue(input.branchIds).map(String)) { const branch = await branchByPublicId(ctx, actor.organization._id, branchId); assertBranchAccess(actor, branch); branchIds.push(branch._id); }
-      const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
-      const now = Date.now();
-      if (membership) await ctx.db.patch(membership._id, { role: roleFromFrontend(input.role), branchIds, branchScope: stringValue(input.branchScope, "selected") === "all" ? "all" : "selected", active: true, invitationStatus: "pending", invitedAt: now, updatedAt: now });
-      else await ctx.db.insert("organizationMemberships", { organizationId: actor.organization._id, userId: user._id, role: roleFromFrontend(input.role), branchIds, branchScope: stringValue(input.branchScope, "selected") === "all" ? "all" : "selected", active: true, invitationStatus: "pending", invitedAt: now, createdAt: now, updatedAt: now });
-      if (!existing) await ctx.db.patch(user._id, { status: "invited", updatedAt: now });
-      await insertAudit(ctx, actor, { category: "users", action: "user.invite", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: `Invited as ${stringValue(input.role)}` });
-      return { id: publicUserId(user), organizationId: publicOrganizationId(actor.organization), name: user.fullName, email: user.email, phone: user.phone ?? "", role: stringValue(input.role), branchScope: stringValue(input.branchScope, "selected"), branchIds: arrayValue(input.branchIds), status: "invited", invitedAt: utcIso(now) };
-    }
+    case "users.invite":
+      domainError("NOT_FOUND", "Staff invitations use the server-only Clerk invitation action.", { correlationId: actor.correlationId });
     case "users.update": {
       requirePermission(actor, "users.manage");
       const userId = recordId(input.userId);
@@ -2150,6 +2135,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (user._id === actor.user._id && input.status === "deactivated") domainError("VALIDATION_ERROR", "You cannot deactivate your own account.", { correlationId: actor.correlationId });
       const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
       if (!membership) domainError("NOT_FOUND", "User not found.", { correlationId: actor.correlationId });
+      if (membership.role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can change owner access.", { correlationId: actor.correlationId });
       const branchIds = input.branchIds ? arrayValue(input.branchIds).map(String) : membership.branchIds.map((id) => id);
       const branchScope = input.branchScope ? (input.branchScope === "all" ? "all" : "selected") : (membership.branchScope ?? "selected");
       if (branchScope === "all" && actor.branchScope !== "all") domainError("FORBIDDEN", "You cannot grant access to every branch.", { correlationId: actor.correlationId });
@@ -2236,7 +2222,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
   const memberships = (await membershipRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
   const leads = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter(inBranch);
-  const tasks = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data));
+  const tasks = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data)).filter(inBranch);
   const checkins = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
   const collectedOn = (date: string) => validPayments.filter((payment) => payment.type === "payment" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date).reduce((sum, payment) => sum + amountOf(payment.amount), 0);
   const refundsOn = (date: string) => validPayments.filter((payment) => payment.type === "refund" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
@@ -2251,7 +2237,8 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
   const funnelStages = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
   const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => lead.stage === stage).length }));
-  const users = await ctx.db.query("users").collect();
+  const organizationMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
   const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = validPayments.filter((payment) => payment.collectedById === id && payment.type === "payment"); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const alerts = audits.filter((event) => event.approvalStatus === "pending" || event.category === "reconciliation").slice(0, 8).map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "cash_variance", title: event.summary, detail: event.reason ?? event.entityLabel, actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: event.approvalStatus === "pending" ? "warning" : "info", occurredAt: utcIso(event.occurredAt) }));
