@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { FileUp, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -55,13 +55,20 @@ export default function MembersPage() {
         title="Members"
         description="Every person who trains with you — search, filter, act."
         actions={
-          <Gate permission="members.write">
-            <Button asChild data-testid="add-member">
-              <Link href="/members/new">
-                <Plus /> Add member
-              </Link>
-            </Button>
-          </Gate>
+          <>
+            <Gate permission="members.write">
+              <Button asChild variant="secondary">
+                <Link href="/members/import">
+                  <FileUp /> Import CSV
+                </Link>
+              </Button>
+              <Button asChild data-testid="add-member">
+                <Link href="/members/new">
+                  <Plus /> Add member
+                </Link>
+              </Button>
+            </Gate>
+          </>
         }
       />
 

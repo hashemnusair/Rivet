@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 
@@ -19,15 +20,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
+  const convexMode = isConvexMode();
 
-  // Convex owns the role; the workspace still reads gym data from the mock
-  // tenant, so the role it reports is bound to a mock session rather than
-  // chosen from a list. Nobody picks who they are any more.
-  const gymRole = identity.status === "ready" ? destinationFor(identity).role : undefined;
+  // In Convex mode the session was hydrated from the authenticated identity;
+  // mock mode retains its deterministic persona bootstrap for preview tests.
+  const gymRole = !convexMode && identity.status === "ready" ? destinationFor(identity).role : undefined;
   const binding = useRef(false);
   const identityName = identity.fullName || identity.email || "RIVET user";
   const identityEmail = identity.email || "";
-  const sessionMatchesIdentity = Boolean(
+  const sessionMatchesIdentity = convexMode || Boolean(
     signedIn &&
       session &&
       session.roles[0] === gymRole &&
@@ -36,12 +37,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;
+    if (convexMode || binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;
     binding.current = true;
     void signIn(gymRole, undefined, { name: identityName, email: identityEmail }).finally(() => {
       binding.current = false;
     });
-  }, [gymRole, identityEmail, identityName, sessionLoading, sessionMatchesIdentity, signIn]);
+  }, [convexMode, gymRole, identityEmail, identityName, sessionLoading, sessionMatchesIdentity, signIn]);
 
   const identityStillResolving = identity.status === "loading" || identity.status === "pending";
 
@@ -55,7 +56,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
     // Signed in, but this account holds no gym role. The portal explains that
     // rather than leaving them on a workspace that would render empty.
-    if (!signedIn && !gymRole && identity.status === "ready") router.replace("/login/gym");
+    if (!signedIn && !gymRole && (identity.status === "ready" || identity.status === "anonymous")) router.replace("/login/gym");
   }, [identityReady, identitySignedIn, identityStillResolving, identity.status, gymRole, sessionLoading, signedIn, router]);
 
   if (!identityReady || sessionLoading || identityStillResolving || !identitySignedIn || !signedIn) {

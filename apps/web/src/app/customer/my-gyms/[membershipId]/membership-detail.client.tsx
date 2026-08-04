@@ -4,14 +4,14 @@ import { ArrowLeft, CalendarDays, CreditCard, MapPin, Phone, ScanLine, Ticket } 
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
-import { gymById } from "@/lib/public/experience-data";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
-import { useExperience } from "@/lib/providers/experience-provider";
+import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { daysFromToday, diffDays, formatDate, formatDateTime, todayISODate } from "@/lib/utils/dates";
 
 export default function MembershipDetailClient({ membershipId }: { membershipId: string }) {
   const { memberships } = useExperience();
+  const gyms = useMarketplaceGyms();
   const { ready, identitySignedIn } = useMemberGate();
   const membership = memberships.find((item) => item.id === membershipId);
 
@@ -37,8 +37,11 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
     );
   }
 
-  const gym = gymById(membership.gymId)!;
-  const branch = gym.branches.find((item) => item.id === membership.branchId)!;
+  const gym = gyms.find((item) => item.id === membership.gymId);
+  const branch = gym?.branches.find((item) => item.id === membership.branchId);
+  if (!gym || !branch) {
+    return <main className="mx-auto max-w-md px-4 py-24 text-center"><h1 className="font-display text-[22px] font-semibold tracking-tight">Gym information unavailable</h1><Button asChild className="mt-5"><Link href="/customer/my-gyms">Back to dashboard</Link></Button></main>;
+  }
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
   const daysLeft = Math.max(daysFromToday(membership.endDate), 0);

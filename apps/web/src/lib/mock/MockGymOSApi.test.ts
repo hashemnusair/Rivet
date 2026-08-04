@@ -140,6 +140,23 @@ describe("member creation", () => {
     const matches = await api.checkMemberDuplicates({ phone: existing.phone });
     expect(matches.map((m) => m.memberId)).toContain(existing.id);
   });
+
+  it("previews and commits member CSV rows with resumable idempotency", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const preview = await api.previewMemberImport({
+      branchId: branch.id,
+      csv: "full_name,phone,email\nImport Test,+962790000099,import-test@example.com",
+    });
+    expect(preview.validRows).toBe(1);
+
+    const first = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-idem-1" });
+    const retry = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-idem-1" });
+    expect(retry).toEqual(first);
+    expect(first.status).toBe("completed");
+
+    await expect(api.commitMemberImport({ importId: preview.id, cursor: 1, chunkSize: 25, idempotencyKey: "member-import-idem-1" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    expect((await api.listMembers({ search: "Import Test", pageSize: 5 })).totalItems).toBe(1);
+  });
 });
 
 describe("collecting a payment", () => {

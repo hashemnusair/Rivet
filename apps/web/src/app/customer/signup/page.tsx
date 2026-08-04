@@ -55,14 +55,18 @@ export default function MemberSignupPage() {
     defaultValues: { fullName: "", email: "", phone: "", password: "", confirm: "" },
   });
 
-  const submit = handleSubmit((values) => {
+  const submit = handleSubmit(async (values) => {
     if (emailTaken(values.email)) {
       setError("email", { message: "An account already uses this email" });
       return;
     }
     setSubmitting(true);
-    registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
-    router.push("/customer/discover");
+    try {
+      await registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
+      router.push("/customer/discover");
+    } finally {
+      setSubmitting(false);
+    }
   });
 
   return (

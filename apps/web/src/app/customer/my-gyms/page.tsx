@@ -16,15 +16,16 @@ import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { gymById, type CustomerMembership } from "@/lib/public/experience-data";
+import type { CustomerMembership, MarketplaceGym } from "@/lib/public/experience-data";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
-import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
+import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { daysFromToday, diffDays, formatDate, formatRelative, todayISODate } from "@/lib/utils/dates";
 
 export default function MemberDashboardPage() {
   const customer = useCustomerPersona();
   const { customerMemberships, customerBookings } = useExperience();
+  const gyms = useMarketplaceGyms();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const [qrFor, setQrFor] = useState<CustomerMembership | null>(null);
 
@@ -40,6 +41,7 @@ export default function MemberDashboardPage() {
     .map((m) => m.lastCheckInAt)
     .sort()
     .at(-1);
+  const gymFor = (id: string) => gyms.find((gym) => gym.id === id);
 
   return (
     <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -100,7 +102,7 @@ export default function MemberDashboardPage() {
           {customerMemberships.length > 0 ? (
             <div className="mt-3 grid gap-3">
               {customerMemberships.map((membership) => (
-                <MembershipCard key={membership.id} membership={membership} onShowQr={() => setQrFor(membership)} />
+                <MembershipCard key={membership.id} membership={membership} gym={gymFor(membership.gymId)} onShowQr={() => setQrFor(membership)} />
               ))}
             </div>
           ) : (
@@ -119,7 +121,7 @@ export default function MemberDashboardPage() {
           {customerBookings.length > 0 ? (
             <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
               {customerBookings.map((booking) => {
-                const gym = gymById(booking.gymId);
+                const gym = gymFor(booking.gymId);
                 const branch = gym?.branches.find((item) => item.id === booking.branchId);
                 return (
                   <li key={booking.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -154,7 +156,7 @@ export default function MemberDashboardPage() {
         </section>
 
         <aside className="grid content-start gap-4">
-          {primary ? <EntryCard membership={primary} onExpand={() => setQrFor(primary)} /> : null}
+          {primary ? <EntryCard membership={primary} gym={gymFor(primary.gymId)} onExpand={() => setQrFor(primary)} /> : null}
 
           <div className="rounded-lg border border-line bg-surface">
             <p className="eyebrow border-b border-line px-4 py-2.5">Recent</p>
@@ -171,7 +173,7 @@ export default function MemberDashboardPage() {
               {customerBookings[0] ? (
                 <ActivityRow
                   title="Trial requested"
-                  detail={`${gymById(customerBookings[0].gymId)?.name ?? "Gym"} · ${formatRelative(customerBookings[0].createdAt)}`}
+                  detail={`${gymFor(customerBookings[0].gymId)?.name ?? "Gym"} · ${formatRelative(customerBookings[0].createdAt)}`}
                 />
               ) : null}
               {!lastCheckIn && !soonest && !customerBookings[0] ? (
@@ -194,7 +196,7 @@ export default function MemberDashboardPage() {
               </div>
               <p className="mt-4 font-mono text-[18px] tracking-wide">{qrFor.memberNumber}</p>
               <p className="mt-1 text-[12.5px] text-ink-3">
-                {gymById(qrFor.gymId)?.name} · {gymById(qrFor.gymId)?.branches.find((b) => b.id === qrFor.branchId)?.name}
+                {gymFor(qrFor.gymId)?.name} · {gymFor(qrFor.gymId)?.branches.find((b) => b.id === qrFor.branchId)?.name}
               </p>
               <p className="mt-4 text-[11.5px] text-ink-3">Show this at the desk. In production the code is short-lived and re-signed each time.</p>
             </DialogBody>
@@ -207,8 +209,7 @@ export default function MemberDashboardPage() {
 
 // ---------------------------------------------------------------------------
 
-function MembershipCard({ membership, onShowQr }: { membership: CustomerMembership; onShowQr: () => void }) {
-  const gym = gymById(membership.gymId);
+function MembershipCard({ membership, gym, onShowQr }: { membership: CustomerMembership; gym?: MarketplaceGym; onShowQr: () => void }) {
   const branch = gym?.branches.find((item) => item.id === membership.branchId);
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
@@ -274,8 +275,7 @@ function MembershipCard({ membership, onShowQr }: { membership: CustomerMembersh
   );
 }
 
-function EntryCard({ membership, onExpand }: { membership: CustomerMembership; onExpand: () => void }) {
-  const gym = gymById(membership.gymId);
+function EntryCard({ membership, gym, onExpand }: { membership: CustomerMembership; gym?: MarketplaceGym; onExpand: () => void }) {
   return (
     <div className="night-surface overflow-hidden rounded-lg bg-night text-night-ink">
       <div className="flex items-center justify-between border-b border-night-line px-4 py-2.5">

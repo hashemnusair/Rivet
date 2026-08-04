@@ -12,6 +12,9 @@ import type * as health from "../health.js";
 import type * as identity from "../identity.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
+import type * as domain from "../domain.js";
+import type * as automations from "../automations.js";
+import type * as invitations from "../invitations.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +27,9 @@ declare const fullApi: ApiFromModules<{
   identity: typeof identity;
   seed: typeof seed;
   users: typeof users;
+  domain: typeof domain;
+  automations: typeof automations;
+  invitations: typeof invitations;
 }>;
 
 /**

@@ -1,13 +1,16 @@
+"use client";
+
 import { ArrowRight, Building2, CircleAlert, CreditCard, LifeBuoy, TrendingUp, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { INITIAL_TRIAL_BOOKINGS, MARKETPLACE_GYMS } from "@/lib/public/experience-data";
+import { useExperience } from "@/lib/providers/experience-provider";
 
 const REVENUE_POINTS = [62, 68, 66, 75, 79, 87, 96, 103, 112, 121, 134, 151];
 
 export default function PlatformOverviewPage() {
-  const active = MARKETPLACE_GYMS.filter((gym) => gym.subscriptionStatus === "active");
-  const members = MARKETPLACE_GYMS.reduce((sum, gym) => sum + gym.memberCount, 0);
+  const { marketplaceGyms, bookings } = useExperience();
+  const active = marketplaceGyms.filter((gym) => gym.subscriptionStatus === "active");
+  const members = marketplaceGyms.reduce((sum, gym) => sum + gym.memberCount, 0);
   return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
     <div className="mx-auto max-w-[1480px]">
       <PageHeading eyebrow="Friday, 31 July" title="Platform overview" description="A live view of every gym, subscription, and operational risk across the RIVET network." action={<Button asChild variant="signal"><Link href="/platform/gyms">Manage gyms <ArrowRight /></Link></Button>} />
@@ -42,9 +45,9 @@ export default function PlatformOverviewPage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.9fr]">
         <section className="overflow-hidden border border-line bg-surface">
           <div className="flex items-center justify-between border-b border-line px-5 py-4"><div><p className="eyebrow">Tenant health</p><h2 className="mt-1 text-[17px] font-semibold">Subscribed gyms</h2></div><Button asChild variant="ghost" size="sm"><Link href="/platform/gyms">View all <ArrowRight /></Link></Button></div>
-          <div className="divide-y divide-line">{MARKETPLACE_GYMS.map((gym) => <Link key={gym.id} href={`/platform/gyms/${gym.id}`} className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-sunken sm:grid-cols-[1fr_120px_120px_auto]"><div className="flex min-w-0 items-center gap-3"><span className="flex size-9 shrink-0 items-center justify-center font-mono text-[9px] font-semibold text-white" style={{backgroundColor:gym.accent}}>{gym.shortName.slice(0,2)}</span><div className="min-w-0"><p className="truncate text-[13px] font-semibold">{gym.name}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{gym.branchCount} branch{gym.branchCount > 1 ? "es" : ""} · {gym.rivetPlan}</p></div></div><div className="hidden sm:block"><p className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-3">Health</p><p className="mt-1 text-[12px] font-medium">{healthFor(gym.id)} / 100</p></div><div className="hidden sm:block"><p className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-3">Members</p><p className="mt-1 text-[12px] font-medium">{gym.memberCount.toLocaleString()}</p></div><Status status={gym.subscriptionStatus} /></Link>)}</div>
+          <div className="divide-y divide-line">{marketplaceGyms.map((gym) => <Link key={gym.id} href={`/platform/gyms/${gym.id}`} className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-sunken sm:grid-cols-[1fr_120px_120px_auto]"><div className="flex min-w-0 items-center gap-3"><span className="flex size-9 shrink-0 items-center justify-center font-mono text-[9px] font-semibold text-white" style={{backgroundColor:gym.accent}}>{gym.shortName.slice(0,2)}</span><div className="min-w-0"><p className="truncate text-[13px] font-semibold">{gym.name}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{gym.branchCount} branch{gym.branchCount > 1 ? "es" : ""} · {gym.rivetPlan}</p></div></div><div className="hidden sm:block"><p className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-3">Health</p><p className="mt-1 text-[12px] font-medium">{healthFor(gym.id)} / 100</p></div><div className="hidden sm:block"><p className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-3">Members</p><p className="mt-1 text-[12px] font-medium">{gym.memberCount.toLocaleString()}</p></div><Status status={gym.subscriptionStatus} /></Link>)}</div>
         </section>
-        <section className="border border-line bg-surface p-5 sm:p-6"><p className="eyebrow">Member acquisition</p><h2 className="mt-2 text-[18px] font-semibold">Network demand</h2><div className="mt-7 grid grid-cols-2 gap-px border border-line bg-line"><MiniMetric label="Trial requests" value={String(INITIAL_TRIAL_BOOKINGS.length + 17)} /><MiniMetric label="Trial → member" value="41%" /><MiniMetric label="Marketplace views" value="3,820" /><MiniMetric label="Avg. response" value="24m" /></div><div className="mt-6 border-t border-line pt-5"><div className="flex items-center justify-between text-[11px]"><span className="text-ink-3">Top discovery gym</span><strong>Her House</strong></div><div className="mt-4 flex items-center justify-between text-[11px]"><span className="text-ink-3">Best conversion</span><strong>Forge · 53%</strong></div></div></section>
+        <section className="border border-line bg-surface p-5 sm:p-6"><p className="eyebrow">Member acquisition</p><h2 className="mt-2 text-[18px] font-semibold">Network demand</h2><div className="mt-7 grid grid-cols-2 gap-px border border-line bg-line"><MiniMetric label="Trial requests" value={String(bookings.length)} /><MiniMetric label="Trial → member" value="41%" /><MiniMetric label="Marketplace views" value="3,820" /><MiniMetric label="Avg. response" value="24m" /></div><div className="mt-6 border-t border-line pt-5"><div className="flex items-center justify-between text-[11px]"><span className="text-ink-3">Top discovery gym</span><strong>Her House</strong></div><div className="mt-4 flex items-center justify-between text-[11px]"><span className="text-ink-3">Best conversion</span><strong>Forge · 53%</strong></div></div></section>
       </div>
     </div>
   </div>;

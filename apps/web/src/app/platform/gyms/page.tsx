@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MARKETPLACE_GYMS } from "@/lib/public/experience-data";
+import { useMarketplaceGyms } from "@/lib/providers/experience-provider";
 
 export default function PlatformGymsPage(){
   const [query,setQuery]=useState(""); const [filter,setFilter]=useState("all");
-  const gyms=useMemo(()=>MARKETPLACE_GYMS.filter((gym)=>`${gym.name} ${gym.areas.join(" ")} ${gym.rivetPlan}`.toLowerCase().includes(query.toLowerCase())&&(filter==="all"||gym.subscriptionStatus===filter)),[filter,query]);
+  const directory=useMarketplaceGyms();
+  const gyms=useMemo(()=>directory.filter((gym)=>`${gym.name} ${gym.areas.join(" ")} ${gym.rivetPlan}`.toLowerCase().includes(query.toLowerCase())&&(filter==="all"||gym.subscriptionStatus===filter)),[directory,filter,query]);
   return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8"><div className="mx-auto max-w-[1480px]">
     <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="eyebrow">Tenant directory</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Subscribed gyms</h1><p className="mt-2 text-[12.5px] text-ink-2">Manage every gym organization, its branches, plan, and platform health.</p></div><Button variant="signal"><Plus/>Add gym</Button></div>
     <div className="mt-7 grid gap-3 border border-line bg-surface p-3 md:grid-cols-[1fr_auto]"><label className="relative"><Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3"/><Input value={query} onChange={(e)=>setQuery(e.target.value)} className="ps-9" placeholder="Search gyms, areas, or plans"/></label><div className="flex gap-2">{["all","active","trial"].map((item)=><Button key={item} variant={filter===item?"primary":"secondary"} size="sm" onClick={()=>setFilter(item)} className="capitalize">{item}</Button>)}</div></div>

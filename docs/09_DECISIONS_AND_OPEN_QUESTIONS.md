@@ -24,9 +24,22 @@ The product owner selected **Next.js + Convex + Clerk + Vercel** for the active 
 - The documented domain invariants, API boundary, multi-tenant isolation, money representation, audit requirements, and acceptance tests remain binding even where the implementation mechanism changes.
 - The existing mock adapter remains available only as a preview/testing mode while each workflow is migrated vertically to Convex.
 
+## Domain topology — 2026-08-04
+
+The product owner selected one Vercel project with hostname-specific entry points for the first release:
+
+- `rivetjo.com` redirects to `www.rivetjo.com`.
+- `www.rivetjo.com` is the public landing and marketing surface.
+- `app.rivetjo.com` is the member portal and future PWA surface.
+- `dashboard.rivetjo.com` is the gym workspace for owners, managers, reception, and sales.
+- `platform.rivetjo.com` is the canonical RIVET platform-owner console.
+- `admin.rivetjo.com` is a compatibility alias that redirects to `platform.rivetjo.com`.
+
+All of these domains currently attach to the `rivet-web` Vercel project. The Next.js request proxy maps each hostname's entry points to the existing `/customer`, gym workspace, and `/platform` route trees. Hostnames are navigation and canonical-URL boundaries only; Clerk and Convex authorization remain the security boundary.
+
 ## Deferred — Clerk production instance (2026-08-01)
 
-The deployment at `rivet2-web.vercel.app` deliberately runs Clerk's **development** instance (`welcomed-oriole-41.clerk.accounts.dev`). This is a conscious hold, not an oversight: a Clerk production instance requires DNS records on a domain the product owner controls, and no domain has been bought yet. A `*.vercel.app` subdomain cannot host them.
+The deployment at `rivet2-web.vercel.app` deliberately runs Clerk's **development** instance (`welcomed-oriole-41.clerk.accounts.dev`). This remains a conscious hold: the product domain now exists and is attached to Vercel, but a Clerk production instance still needs its own DNS setup and production credentials. A `*.vercel.app` subdomain cannot host them.
 
 Consequences while this stands:
 
@@ -39,6 +52,18 @@ To lift the hold once a domain exists, in order: point the domain at Vercel → 
 Users do not transfer between Clerk instances; accounts created against the development instance are discarded by the switch.
 
 ## Implementation decisions agents may make
+
+### Convex completion decisions — 2026-08-04
+
+- `ConvexGymOSApi` is the sole production adapter. `MockGymOSApi` remains available only for explicit non-production preview/test mode; production forces Convex and fails closed when its URL or authenticated session is missing.
+- Convex stores the operational model in a normalized `domainRecords` fact table plus explicit foundation, audit, idempotency, sequence, and entry-pass tables. The adapter maps those records into the existing typed `GymOSApi` contract and preserves UUID public IDs.
+- Clerk subject resolution, organization membership, role permissions, branch scope, platform-admin checks, stable errors, and append-only audits are server concerns. Browser gates are usability only.
+- Staff invitations use a server-only Convex action calling Clerk's invitation API. `CLERK_SECRET_KEY` is a Convex/Vercel server secret and is never sent to browser code. Invitation failures remain visible and audited.
+- Customer entry passes use a 15-minute HMAC-signed token, are stored/consumed in Convex, are branch-bound, and are not the prior demo QR value. `ENTRY_PASS_SIGNING_SECRET` is Convex-only.
+- Member CSV imports use a server-persisted preview followed by resumable chunks of at most 100 rows. Each chunk has an idempotency key; invalid and duplicate rows are reviewable/skipped, and preview/commit events are audited.
+- Automation evaluation runs from a Convex scheduled function every 15 minutes. The default delivery mode is sandbox/log, quiet hours suppress delivery, and execution/attempt records carry daily deduplication keys and retry metadata.
+- Platform billing collection and outbound messaging remain provider adapters. The MVP persists platform ledger/support records and exposes no fabricated external success.
+- The final real-data release sequence is credential-gated: Clerk production/custom-domain setup and access to the selected Convex/Vercel deployments are external steps, documented in the README and handoff rather than simulated in code.
 
 Agents may choose and document:
 

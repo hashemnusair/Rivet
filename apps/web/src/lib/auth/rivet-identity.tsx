@@ -5,6 +5,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { RoleKey } from "@/lib/domain/types";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
+import { dataMode } from "@/lib/api/ConvexGymOSApi";
 import { DEMO_AUTH_BYPASS } from "./demo-auth";
 
 export interface RivetMembership {
@@ -22,6 +23,7 @@ export interface RivetIdentity {
    * but the Convex user row is still being written on a first-ever sign-in.
    */
   status: "loading" | "anonymous" | "pending" | "ready" | "demo";
+  userId?: string;
   email?: string;
   fullName?: string;
   platformAdmin: boolean;
@@ -42,8 +44,13 @@ const IdentityContext = createContext<RivetIdentity>({ status: "loading", platfo
  * conditional `useQuery` inside `ConvexIdentity` is never conditionally called.
  */
 export function RivetIdentityProvider({ children }: { children: ReactNode }) {
-  if (DEMO_AUTH_BYPASS || !CONVEX_ENABLED) {
+  // Missing Convex configuration is a configuration failure, not permission
+  // to open a seeded demo tenant. Only explicit mock mode can use demo data.
+  if (DEMO_AUTH_BYPASS || dataMode() === "mock") {
     return <IdentityContext.Provider value={DEMO_IDENTITY}>{children}</IdentityContext.Provider>;
+  }
+  if (!CONVEX_ENABLED) {
+    return <IdentityContext.Provider value={{ status: "anonymous", platformAdmin: false, memberships: [] }}>{children}</IdentityContext.Provider>;
   }
   return <ConvexIdentity>{children}</ConvexIdentity>;
 }
@@ -61,6 +68,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
   } else {
     value = {
       status: "ready",
+      userId: result.user.id,
       email: result.user.email,
       fullName: result.user.fullName,
       platformAdmin: result.user.platformAdmin,

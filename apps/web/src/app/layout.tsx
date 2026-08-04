@@ -84,23 +84,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         <ClerkProvider>
           <ConvexClientProvider>
-            <AppProviders>
-              <RivetIdentityProvider>
+            <RivetIdentityProvider>
+              <AppProviders>
                 <ExperienceProvider>{children}</ExperienceProvider>
-              </RivetIdentityProvider>
-              <Toaster
-                position="bottom-right"
-                toastOptions={{
-                  style: {
-                    background: "#15140f",
-                    color: "#f2f0e6",
-                    border: "1px solid #2e2c22",
-                    borderRadius: "6px",
-                    fontSize: "13px",
-                  },
-                }}
-              />
-            </AppProviders>
+                <Toaster
+                  position="bottom-right"
+                  toastOptions={{
+                    style: {
+                      background: "#15140f",
+                      color: "#f2f0e6",
+                      border: "1px solid #2e2c22",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                    },
+                  }}
+                />
+              </AppProviders>
+            </RivetIdentityProvider>
           </ConvexClientProvider>
         </ClerkProvider>
       </body>

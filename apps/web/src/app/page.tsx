@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowRight,
   Banknote,
@@ -13,9 +15,10 @@ import Link from "next/link";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
-import { MARKETPLACE_GYMS, SAAS_PLANS } from "@/lib/public/experience-data";
+import { useExperience } from "@/lib/providers/experience-provider";
 
 export default function LandingPage() {
+  const { marketplaceGyms, saasPlans } = useExperience();
   return (
     <div className="marketing-body min-h-screen bg-paper text-ink">
       <PublicHeader />
@@ -182,7 +185,7 @@ export default function LandingPage() {
               description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
             />
             <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {MARKETPLACE_GYMS.map((gym) => (
+              {marketplaceGyms.map((gym) => (
                 <Link
                   key={gym.id}
                   href={`/customer/gyms/${gym.id}`}
@@ -224,7 +227,7 @@ export default function LandingPage() {
               description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends."
             />
             <div className="mt-12 grid gap-4 lg:grid-cols-3">
-              {SAAS_PLANS.map((plan) => (
+              {saasPlans.map((plan) => (
                 <div
                   key={plan.name}
                   className={

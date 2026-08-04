@@ -93,7 +93,7 @@ export default function ReceptionPage() {
 
   useEffect(() => () => (clearTimer.current ? clearTimeout(clearTimer.current) : undefined), []);
 
-  const checkIn = useApiMutation((api) => api.createCheckIn({ memberId: preview!.member!.id, branchId: branchId!, source: "search" }), {
+  const checkIn = useApiMutation((api) => api.createCheckIn({ memberId: preview!.member!.id, branchId: branchId!, source: query.trim().startsWith("rivet-pass.") ? "qr" : "search", ...(query.trim().startsWith("rivet-pass.") ? { entryPassToken: query.trim() } : {}) }), {
     onSuccess: async (res) => {
       setResult(res);
       await invalidate();
