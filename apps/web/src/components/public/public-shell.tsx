@@ -59,24 +59,7 @@ export function PublicHeader() {
         {/* Sign-in lives at /login and nowhere else — no modal, so there is one
             place to authenticate and one place that decides which portal. */}
         <div className="hidden items-center gap-2 lg:flex">
-          <Show when="signed-out">
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button asChild variant="signal" size="sm">
-              <Link href="/signup">
-                Start free trial <ArrowRight />
-              </Link>
-            </Button>
-          </Show>
-          <Show when="signed-in">
-            <Button asChild variant="signal" size="sm">
-              <Link href="/login">
-                Open RIVET <ArrowRight />
-              </Link>
-            </Button>
-            <UserButton />
-          </Show>
+          {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions /> : <ClerkMarketingActions />}
         </div>
 
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((value) => !value)} aria-label="Toggle navigation">
@@ -99,26 +82,72 @@ export function PublicHeader() {
             ))}
           </nav>
           <div className="mt-3 grid gap-2 border-t border-line pt-3">
-            <Show when="signed-out">
-              <Button asChild variant="secondary" onClick={() => setOpen(false)}>
-                <Link href="/login">Sign in</Link>
-              </Button>
-              <Button asChild variant="signal" onClick={() => setOpen(false)}>
-                <Link href="/signup">Start free trial</Link>
-              </Button>
-            </Show>
-            <Show when="signed-in">
-              <Button asChild variant="signal" onClick={() => setOpen(false)}>
-                <Link href="/login">Open RIVET</Link>
-              </Button>
-              <div className="flex justify-center py-2">
-                <UserButton />
-              </div>
-            </Show>
+            {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions mobile onClose={() => setOpen(false)} /> : <ClerkMarketingActions mobile onClose={() => setOpen(false)} />}
           </div>
         </div>
       ) : null}
     </header>
+  );
+}
+
+function PreviewMarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
+  return (
+    <>
+      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
+        <Link href="/login">Sign in</Link>
+      </Button>
+      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
+        <Link href="/signup">{mobile ? "Start free trial" : <>Start free trial <ArrowRight /></>}</Link>
+      </Button>
+    </>
+  );
+}
+
+function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
+  if (mobile) {
+    return (
+      <>
+        <Show when="signed-out">
+          <Button asChild variant="secondary" onClick={onClose}>
+            <Link href="/login">Sign in</Link>
+          </Button>
+          <Button asChild variant="signal" onClick={onClose}>
+            <Link href="/signup">Start free trial</Link>
+          </Button>
+        </Show>
+        <Show when="signed-in">
+          <Button asChild variant="signal" onClick={onClose}>
+            <Link href="/login">Open RIVET</Link>
+          </Button>
+          <div className="flex justify-center py-2">
+            <UserButton />
+          </div>
+        </Show>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Show when="signed-out">
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/login">Sign in</Link>
+        </Button>
+        <Button asChild variant="signal" size="sm">
+          <Link href="/signup">
+            Start free trial <ArrowRight />
+          </Link>
+        </Button>
+      </Show>
+      <Show when="signed-in">
+        <Button asChild variant="signal" size="sm">
+          <Link href="/login">
+            Open RIVET <ArrowRight />
+          </Link>
+        </Button>
+        <UserButton />
+      </Show>
+    </>
   );
 }
 
