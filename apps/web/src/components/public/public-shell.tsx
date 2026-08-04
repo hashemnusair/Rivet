@@ -1,6 +1,6 @@
 "use client";
 
-import { Show, UserButton } from "@clerk/nextjs";
+import { Show, UserButton, useClerk } from "@clerk/nextjs";
 import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Monogram } from "@/components/ui/misc";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
@@ -197,8 +198,18 @@ const MEMBER_NAV = [
 export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { customerSignedIn, signOutCustomer } = useExperience();
+  const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
+
+  // The member shell maintains a small preview persona in sessionStorage, but
+  // a deployed account is authenticated by Clerk. Clearing only the preview
+  // state left the Clerk session alive, which immediately made a member appear
+  // signed in again on the next guarded render.
+  const handleSignOut = async () => {
+    signOutCustomer();
+    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -258,7 +269,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={signOutCustomer}>
+                  <DropdownMenuItem onClick={() => void handleSignOut()}>
                     <LogOut /> Sign out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -290,7 +301,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
               Find a gym
             </Link>
             {customerSignedIn ? (
-              <button type="button" onClick={signOutCustomer} className="cursor-pointer transition-colors hover:text-ink">
+              <button type="button" onClick={() => void handleSignOut()} className="cursor-pointer transition-colors hover:text-ink">
                 Sign out
               </button>
             ) : (
