@@ -59,9 +59,10 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 190 tests passed across 15 files, including Convex security, adapter, schema, audit, invariants, automation scheduling, mock-mode, component, routing, and reception coverage.
+- `pnpm test` — 191 tests passed across 15 files, including Convex security, adapter, schema, audit, invariants, automation scheduling, mock-mode, component, routing, and reception coverage.
 - `pnpm test:e2e` — 13 Playwright journeys passed and 1 trusted Convex smoke was skipped because no external Clerk storage state was configured.
 - `pnpm build` — passed on Next.js 16.2.12; 35 application routes were compiled and generated, with protected operational routes remaining dynamic.
+- GitHub Actions run 3 — static/typecheck/lint/unit/build and Playwright jobs passed; Convex codegen and authenticated Clerk smoke were skipped because their secrets were not configured.
 
 `pnpm convex:codegen` is the only local verification command currently blocked: it exits before contacting Convex because `CONVEX_DEPLOYMENT` is not configured. The trusted Clerk-to-Convex smoke likewise requires an external Clerk session and credentialed Convex deployment. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; the smoke path sets it to `0`, uses `NEXT_PUBLIC_DATA_MODE=convex`, and requires a trusted Clerk storage-state file outside Git.
 
