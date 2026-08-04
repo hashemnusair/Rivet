@@ -35,7 +35,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function MemberSignupPage() {
   const router = useRouter();
-  const { registerCustomer, emailTaken } = useExperience();
+  const { registerCustomer, emailTaken, experienceReady } = useExperience();
   const [submitting, setSubmitting] = useState(false);
 
   // Real accounts are created by Clerk in the member portal. This local form
@@ -97,7 +97,7 @@ export default function MemberSignupPage() {
             </Field>
           </div>
 
-          <Button type="submit" size="lg" className="w-full" loading={submitting}>
+          <Button type="submit" size="lg" className="w-full" loading={submitting || !experienceReady}>
             Create account <ArrowRight className="size-4" />
           </Button>
         </form>
