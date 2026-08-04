@@ -85,3 +85,5 @@ This is no longer a static export. Clerk authenticates through `src/proxy.ts`, w
 4. Use a Clerk **production** instance for the live domain. Development instances serve cookies from `clerk.accounts.dev`, which forces a cross-domain handshake on first load; that is harmless locally but not what you want in production.
 
 **Never set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on a deployment.** It disables every identity check — the middleware, the gym workspace guard, the member gate and the platform console. It exists so Playwright can drive seeded personas without creating Clerk users, and `src/lib/auth/demo-auth.ts` refuses it in production builds so a stray variable cannot publish the app unauthenticated.
+
+<!-- Deployment trigger marker: 2026-08-04 -->
