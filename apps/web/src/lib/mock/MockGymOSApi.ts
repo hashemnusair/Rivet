@@ -2247,8 +2247,10 @@ export class MockGymOSApi implements GymOSApi {
       const alreadyRefunded = original.refundedAmount?.amount ?? 0;
       const remaining = original.amount.amount - alreadyRefunded;
       if (remaining <= 0) throw ApiError.of(ERR.PAYMENT_ALREADY_REFUNDED, "This payment was already fully refunded.");
-      const amount = Math.min(input.amount?.amount ?? remaining, remaining);
-      if (amount <= 0) throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
+      const amount = input.amount?.amount ?? remaining;
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) {
+        throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
+      }
 
       const receiptNumber = this.nextReceiptNumber();
       const refund: T.Payment = {
@@ -2677,8 +2679,14 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const event = this.db.audits.find((a) => a.id === auditEventId);
       if (!event) throw ApiError.of(ERR.NOT_FOUND, "Approval not found.");
+      if (input.decision !== "approved" && input.decision !== "rejected") {
+        throw ApiError.of(ERR.VALIDATION, "Approval decision must be approved or rejected.");
+      }
+      if (event.approvalStatus !== "pending") throw ApiError.of(ERR.VALIDATION, "This approval is not pending.");
       if (event.action === "membership.discount") this.require("payments.discount");
-      else this.require("reconciliation.approve_variance");
+      else if (event.action === "payment.refund") this.require("payments.refund");
+      else if (event.action === "shift.close_variance") this.require("reconciliation.approve_variance");
+      else throw ApiError.of(ERR.VALIDATION, "This audit event does not support approval review.");
       event.approvalStatus = input.decision;
       if (event.action === "membership.discount") {
         const membership = this.db.memberships.find((m) => m.id === event.entityId);

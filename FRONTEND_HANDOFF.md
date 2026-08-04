@@ -59,12 +59,15 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 191 tests passed across 15 files, including Convex security, adapter, schema, audit, invariants, automation scheduling, mock-mode, component, routing, and reception coverage.
+- `pnpm test` — 195 tests passed across 15 files, including Convex security, adapter, schema, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, routing, and reception coverage.
 - `pnpm test:e2e` — 13 Playwright journeys passed and 1 trusted Convex smoke was skipped because no external Clerk storage state was configured.
 - `pnpm build` — passed on Next.js 16.2.12; 35 application routes were compiled and generated, with protected operational routes remaining dynamic.
-- GitHub Actions run 5 — static/typecheck/lint/unit/build and Playwright jobs passed; Convex codegen and authenticated Clerk smoke were skipped because their secrets were not configured. CI retries the preview browser suite up to twice for cold dev-server startup; local runs remain fail-fast.
+- `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
+- `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
+- `convex run health:check` — returned `status: ok` from the linked development deployment.
+- GitHub Actions — static/typecheck/lint/unit/build and Playwright jobs passed on the prior branch head. Convex codegen remains repository-secret-gated, and a manually dispatched authenticated Clerk smoke now fails clearly when any required secret is missing instead of reporting a misleading success.
 
-`pnpm convex:codegen` is the only local verification command currently blocked: it exits before contacting Convex because `CONVEX_DEPLOYMENT` is not configured. The trusted Clerk-to-Convex smoke likewise requires an external Clerk session and credentialed Convex deployment. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; the smoke path sets it to `0`, uses `NEXT_PUBLIC_DATA_MODE=convex`, and requires a trusted Clerk storage-state file outside Git.
+The only remaining integration verification is the trusted Clerk-to-Convex browser smoke. It requires a current external Clerk session stored outside Git. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; the smoke path sets it to `0`, uses `NEXT_PUBLIC_DATA_MODE=convex`, and requires that trusted Clerk storage-state file.
 
 ## Local and deployment commands
 
@@ -87,7 +90,7 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The code and environment contract are production-ready, but the product owner still needs to complete the Clerk production instance/custom-domain DNS setup and provide the trusted Convex/Clerk/Vercel deployment credentials for the final real-data release sequence. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The code and environment contract are production-ready, but the product owner still needs to add the documented GitHub Actions secrets and run the trusted Clerk-to-Convex smoke before merging. This repository deploys to Vercel only from `main`, so production deployment verification follows the merge. Clerk production/custom-domain DNS remains a pre-public-launch step. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
 
 ## Files another agent should read first
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkInDecisionOrder, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation } from "./invariants";
+import { approvalPermissionForAction, checkInDecisionOrder, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
@@ -23,6 +23,21 @@ describe("server domain invariants", () => {
     expect(paymentAllocation(12_500, 40_000)).toEqual({ ok: true, remaining: 27_500 });
     expect(paymentAllocation(40_001, 40_000)).toEqual({ ok: false, code: "AMOUNT_EXCEEDS_OUTSTANDING" });
     expect(paymentAllocation(12.5, 40_000)).toEqual({ ok: false, code: "VALIDATION_ERROR" });
+  });
+
+  it("rejects refund requests instead of silently clamping them", () => {
+    expect(refundAllocation(undefined, 25_000)).toEqual({ ok: true, amount: 25_000 });
+    expect(refundAllocation(10_000, 25_000)).toEqual({ ok: true, amount: 10_000 });
+    expect(refundAllocation(25_001, 25_000)).toEqual({ ok: false, code: "REFUND_EXCEEDS_AMOUNT" });
+    expect(refundAllocation(0, 25_000)).toEqual({ ok: false, code: "REFUND_EXCEEDS_AMOUNT" });
+    expect(refundAllocation(undefined, 0)).toEqual({ ok: false, code: "PAYMENT_ALREADY_REFUNDED" });
+  });
+
+  it("maps each approval action to its own server permission", () => {
+    expect(approvalPermissionForAction("membership.discount")).toBe("payments.discount");
+    expect(approvalPermissionForAction("payment.refund")).toBe("payments.refund");
+    expect(approvalPermissionForAction("shift.close_variance")).toBe("reconciliation.approve_variance");
+    expect(approvalPermissionForAction("payment.void")).toBeNull();
   });
 
   it("does not let warnings outrank hard check-in blocks", () => {

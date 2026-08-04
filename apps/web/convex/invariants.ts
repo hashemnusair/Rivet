@@ -29,6 +29,26 @@ export function paymentAllocation(amount: number, outstanding: number): { ok: tr
   return { ok: true, remaining: outstanding - amount };
 }
 
+export function refundAllocation(requested: number | undefined, remaining: number):
+  | { ok: true; amount: number }
+  | { ok: false; code: "PAYMENT_ALREADY_REFUNDED" | "REFUND_EXCEEDS_AMOUNT" } {
+  if (!isValidMinorUnit(remaining) || remaining <= 0) return { ok: false, code: "PAYMENT_ALREADY_REFUNDED" };
+  const amount = requested ?? remaining;
+  if (!isValidMinorUnit(amount) || amount <= 0 || amount > remaining) return { ok: false, code: "REFUND_EXCEEDS_AMOUNT" };
+  return { ok: true, amount };
+}
+
+export function approvalPermissionForAction(action: string):
+  | "payments.discount"
+  | "payments.refund"
+  | "reconciliation.approve_variance"
+  | null {
+  if (action === "membership.discount") return "payments.discount";
+  if (action === "payment.refund") return "payments.refund";
+  if (action === "shift.close_variance") return "reconciliation.approve_variance";
+  return null;
+}
+
 export function checkInDecisionOrder(input: {
   duplicate: boolean;
   memberActive: boolean;

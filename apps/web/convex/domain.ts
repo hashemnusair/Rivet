@@ -18,7 +18,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation } from "./invariants";
+import { approvalPermissionForAction, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -712,6 +712,13 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
 
 async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
   requirePermission(actor, "audit.read");
+  const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
+  const reviewDecisions = new Map(
+    approvalReviews.map((review) => {
+      const value = data(review.data);
+      return [stringValue(value.auditEventId), stringValue(value.decision)] as const;
+    }),
+  );
   let rows = await ctx.db
     .query("auditEvents")
     .withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id))
@@ -750,7 +757,7 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     reason: row.reason,
     before: row.before,
     after: row.after,
-    approvalStatus: row.approvalStatus,
+    approvalStatus: reviewDecisions.get(row.publicId) ?? row.approvalStatus,
     correlationId: row.correlationId,
     occurredAt: utcIso(row.occurredAt),
   })));
@@ -1996,9 +2003,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const related = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.originalPaymentId === original.id && payment.type === "refund");
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
-      if (remaining <= 0) domainError("PAYMENT_ALREADY_REFUNDED", "This payment was already fully refunded.", { correlationId: actor.correlationId });
-      const amount = Math.min(input.amount == null ? remaining : amountOf(input.amount), remaining);
-      if (amount <= 0) domainError("REFUND_EXCEEDS_AMOUNT", "Refund amount exceeds the refundable balance.", { correlationId: actor.correlationId });
+      const allocation = refundAllocation(input.amount == null ? undefined : amountOf(input.amount), remaining);
+      if (!allocation.ok && allocation.code === "PAYMENT_ALREADY_REFUNDED") domainError(allocation.code, "This payment was already fully refunded.", { correlationId: actor.correlationId });
+      if (!allocation.ok) domainError(allocation.code, "Refund amount exceeds the refundable balance.", { correlationId: actor.correlationId });
+      const amount = allocation.amount;
       const allocated = await allocateReceipt(ctx, actor);
       const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: original.memberId, chargeId: original.chargeId, type: "refund", amount: signedMoney(-amount, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: (await findOpenShift(ctx, actor, stringValue(original.branchId))) ? stringValue(data((await findOpenShift(ctx, actor, stringValue(original.branchId)))!.data).id) : undefined, idempotencyKey: `refund-${original.id}-${allocated.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt: isoNow() };
       const receipt = { id: allocated.id, receiptNumber: allocated.number, paymentId: refund.id, issuedAt: refund.occurredAt };
@@ -2182,9 +2190,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!event) domainError("NOT_FOUND", "Approval not found.", { correlationId: actor.correlationId });
       if (event.approvalStatus !== "pending") domainError("VALIDATION_ERROR", "This approval is not pending.", { correlationId: actor.correlationId });
       const decision = stringValue(input.decision);
+      if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision must be approved or rejected.", { correlationId: actor.correlationId });
       const reviews = await recordsOf(ctx, actor, "approvalReview");
       if (reviews.some((review) => data(review.data).auditEventId === eventId)) domainError("VALIDATION_ERROR", "This approval has already been reviewed.", { correlationId: actor.correlationId });
-      if (event.action.includes("variance")) requirePermission(actor, "reconciliation.approve_variance"); else requirePermission(actor, "payments.discount");
+      const approvalPermission = approvalPermissionForAction(event.action);
+      if (!approvalPermission) domainError("VALIDATION_ERROR", "This audit event does not support approval review.", { correlationId: actor.correlationId });
+      requirePermission(actor, approvalPermission);
       await insertRecord(ctx, actor, "approvalReview", { id: newPublicId(), auditEventId: eventId, decision, note: optionalString(input.note), reviewedById: publicUserId(actor.user), reviewedAt: isoNow() }, { branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       if (event.entityType === "membership") { const membership = await recordOfOptional(ctx, actor, "membership", event.entityPublicId); if (membership) await patchRecord(ctx, actor, membership, { discountApprovalStatus: decision }); }
       if (event.entityType === "cash_shift") { const shift = await recordOfOptional(ctx, actor, "shift", event.entityPublicId); if (shift) await patchRecord(ctx, actor, shift, { varianceApprovalStatus: decision }); }
@@ -2241,7 +2252,9 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
   const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = validPayments.filter((payment) => payment.collectedById === id && payment.type === "payment"); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
-  const alerts = audits.filter((event) => event.approvalStatus === "pending" || event.category === "reconciliation").slice(0, 8).map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "cash_variance", title: event.summary, detail: event.reason ?? event.entityLabel, actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: event.approvalStatus === "pending" ? "warning" : "info", occurredAt: utcIso(event.occurredAt) }));
+  const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
+  const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));
+  const alerts = audits.filter((event) => (event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId)) || event.category === "reconciliation").slice(0, 8).map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "cash_variance", title: event.summary, detail: event.reason ?? event.entityLabel, actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId) ? "warning" : "info", occurredAt: utcIso(event.occurredAt) }));
   const timeline = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
   return { kpis: { revenueToday: money(collectedOn(today), actor.organization.currency), revenueThisMonth: money(validPayments.filter((payment) => payment.type === "payment" && stringValue(payment.occurredAt).slice(0, 7) === today.slice(0, 7)).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), revenuePrevMonth: money(0, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => stringValue(member.createdAt).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
 }

@@ -72,6 +72,19 @@ describe("tenant/branch scoping and authorization", () => {
     });
   });
 
+  it("requires refund authority to review a flagged refund", async () => {
+    const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
+    expect(pendingRefund).toBeDefined();
+
+    await api.switchDemoRole("salesperson");
+    await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+
+    await api.switchDemoRole("manager");
+    await api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" });
+    const reviewed = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
+    expect(reviewed.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("approved");
+  });
+
   it("refuses a check-in override without the permission", async () => {
     const members = await api.listMembers({ pageSize: 1 });
     const session = await api.switchDemoRole("receptionist");
@@ -511,6 +524,19 @@ describe("refunds and voids", () => {
     await expect(api.refundPayment(receipt.payment.id, { reason: "again" })).rejects.toMatchObject({
       code: ERR.PAYMENT_ALREADY_REFUNDED,
     });
+  });
+
+  it("rejects a partial refund above the remaining balance without changing the payment", async () => {
+    const member = await anyMemberWithBalance();
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-overage");
+
+    await expect(api.refundPayment(receipt.payment.id, { amount: money(10_001), reason: "Incorrect overage" })).rejects.toMatchObject({
+      code: ERR.REFUND_EXCEEDS_AMOUNT,
+    });
+
+    const unchanged = await api.getReceipt(receipt.receipt.id);
+    expect(unchanged.payment.status).toBe("completed");
+    expect(unchanged.relatedPayments).toHaveLength(0);
   });
 
   it("requires a reason for a refund", async () => {

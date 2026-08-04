@@ -107,3 +107,9 @@ These should not block the initial build, but should be answered before a paid r
 - Hardware/integration requirements.
 
 Record product decisions in this file or a dedicated ADR directory rather than burying them in code comments.
+
+## Interim approval semantics for the MVP
+
+Until pilot-specific thresholds are configured, the reference workflow treats a refund above JOD 25.000 as a completed, immutable financial transaction that requires post-action manager review. The review records approval or rejection for accountability; rejection never deletes or rewrites the refund. The actor must already hold `payments.refund` to issue or review it. Discounts above the actor's configured limit and cash-shift variances remain reviewable through their own permissions. Every review is an append-only record, and audit queries derive the displayed decision from that record rather than mutating the original event.
+
+The JOD 25.000 refund-review threshold is an explicit MVP assumption, not a final policy. Replace it with a tenant setting after pilot discovery establishes the required thresholds and whether any gym needs pre-authorization instead of post-action review.

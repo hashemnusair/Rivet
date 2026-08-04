@@ -137,9 +137,9 @@ Outbound automation delivery is sandbox/log based until an approved provider is 
 
 ## CI
 
-`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, Playwright preview journeys, Convex code generation, and a manually dispatched trusted Clerk-to-Convex smoke. The codegen and authenticated smoke jobs stay credential-gated so forked pull requests never receive secrets.
+`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, Playwright preview journeys, Convex code generation, and a manually dispatched trusted Clerk-to-Convex smoke. Codegen reports an explicit notice when its deploy key is unavailable. The manually dispatched smoke fails with the exact missing secret instead of silently skipping. Secrets remain unavailable to forked pull requests.
 
-After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/browser checks as required statuses. Vercel preview and production deployments remain separate from application data migrations.
+After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/browser checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment after merge. Application deployment remains separate from Convex data migrations.
 
 ## Product boundaries
 

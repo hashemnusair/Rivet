@@ -38,7 +38,7 @@ This is one implementation program. Use one feature branch, make logical checkpo
 1. Create one branch named `codex/complete-convex-integration` from the latest `main`.
 2. Keep all work on that branch.
 3. Make logical checkpoint commits after a phase is complete and its focused tests pass.
-4. Push the feature branch as needed for backup and Vercel preview deployments.
+4. Push the feature branch as needed for backup and GitHub Actions verification. This repository deploys to Vercel only from `main`.
 5. Do not merge partial phases into `main`.
 6. When every completion gate in this document passes, push the final branch and open one non-draft pull request.
 7. The pull request description must summarize architecture, migrations, persisted workflows, security boundaries, tests, deployment requirements, known compromises, and rollback considerations.
@@ -152,7 +152,7 @@ Extend the existing Convex schema to cover the current frontend contract. Prefer
 Exit criteria:
 
 - The complete baseline suite is green locally and in GitHub Actions.
-- Vercel remains green.
+- The pull request is green without requiring a Vercel branch deployment; verify the production Vercel deployment immediately after merge.
 - `main` can be protected using named required checks.
 - No application behavior changes are hidden inside CI work.
 

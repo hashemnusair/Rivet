@@ -66,7 +66,7 @@ jobs:
         run: pnpm test:e2e
 
   convex-codegen:
-    name: Convex generated code check
+    name: Convex generated code check (credential-gated)
     runs-on: ubuntu-latest
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -90,6 +90,9 @@ jobs:
       - name: Ensure generated files are committed
         if: ${{ env.CONVEX_DEPLOY_KEY != '' }}
         run: git diff --exit-code -- apps/web/convex/_generated
+      - name: Report credential-gated skip
+        if: ${{ env.CONVEX_DEPLOY_KEY == '' }}
+        run: echo "::notice::Convex code generation was skipped because CONVEX_DEPLOY_KEY is not configured for this repository."
 
   convex-clerk-smoke:
     name: Authenticated Clerk → Convex smoke
@@ -98,6 +101,7 @@ jobs:
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
       PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_STATE }}
     steps:
       - name: Check out repository
@@ -115,13 +119,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Verify trusted smoke credentials
+        run: |
+          test -n "$CONVEX_DEPLOY_KEY" || { echo "::error::Missing CONVEX_DEPLOY_KEY"; exit 1; }
+          test -n "$NEXT_PUBLIC_CONVEX_URL" || { echo "::error::Missing NEXT_PUBLIC_CONVEX_URL"; exit 1; }
+          test -n "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" || { echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" || { echo "::error::Missing PLAYWRIGHT_CLERK_STORAGE_STATE"; exit 1; }
       - name: Write trusted storage state outside the repository
-        if: ${{ env.CONVEX_DEPLOY_KEY != '' && env.NEXT_PUBLIC_CONVEX_URL != '' && env.PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET != '' }}
         run: printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" > "$RUNNER_TEMP/clerk-storage-state.json"
       - name: Run authenticated smoke
-        if: ${{ env.CONVEX_DEPLOY_KEY != '' && env.NEXT_PUBLIC_CONVEX_URL != '' && env.PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET != '' }}
         env:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: pnpm test:e2e -- convex-smoke.spec.ts
