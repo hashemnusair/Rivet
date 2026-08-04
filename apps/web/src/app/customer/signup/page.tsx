@@ -63,7 +63,10 @@ export default function MemberSignupPage() {
     setSubmitting(true);
     try {
       await registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
-      router.push("/customer/discover");
+      // This preview account is intentionally persisted in sessionStorage.
+      // Cross the account boundary with a full navigation so the next page
+      // proves it can restore that persisted identity from a clean render.
+      window.location.assign("/customer/discover");
     } finally {
       setSubmitting(false);
     }
