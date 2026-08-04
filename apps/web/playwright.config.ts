@@ -6,6 +6,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: [["list"]],
+  // GitHub's first navigation can include a cold Next.js dev-route compile.
+  // Keep the test ceiling strict while giving user-visible assertions enough
+  // time to observe that first navigation instead of passing only on retry.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: "http://localhost:3100",
     storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE || undefined,
