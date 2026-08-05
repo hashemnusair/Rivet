@@ -75,9 +75,9 @@ const PLATES: Plate[] = [
   { x: 73.5, w: 34, right: 107.5, y: 92, h: 10 },
   { x: 73.5, w: 34, right: 107.5, y: 104.5, h: 10 },
   { x: 73.5, w: 53.5, right: 127, y: 120, h: 10 },
-  { x: 72, w: 55, right: 127, y: 132.5, h: 10.5 },
-  { x: 72, w: 55, right: 127, y: 145.5, h: 10.5 },
-  { x: 72, w: 55, right: 127, y: 158, h: 10 },
+  { x: 73.5, w: 53.5, right: 127, y: 132.5, h: 10.5 },
+  { x: 73.5, w: 53.5, right: 127, y: 145.5, h: 10.5 },
+  { x: 73.5, w: 53.5, right: 127, y: 158, h: 10 },
 ];
 
 /** The pin is drawn at its home plate (index 4, as in the logo) and translated. */
@@ -191,7 +191,7 @@ export function RivetLoopMachine() {
         </div>
 
         <div className="flex items-center justify-center">
-          <Glyph active={active} onSelect={select} className="h-[340px] w-auto sm:h-[430px] lg:h-[560px]" />
+          <Glyph active={active} entered={running} onSelect={select} className="h-[340px] w-auto sm:h-[430px] lg:h-[560px]" />
         </div>
       </div>
     </section>
@@ -200,10 +200,13 @@ export function RivetLoopMachine() {
 
 function Glyph({
   active,
+  entered,
   onSelect,
   className,
 }: {
   active: number;
+  /** Plates rack in one by one the first time the section becomes visible. */
+  entered: boolean;
   onSelect: (index: number) => void;
   className?: string;
 }) {
@@ -223,6 +226,14 @@ function Glyph({
       {PLATES.map((plate, index) => (
         <g
           key={index}
+          className="transition-[transform,opacity] duration-700 ease-out"
+          style={{
+            opacity: entered ? 1 : 0,
+            transform: entered ? "translateY(0)" : "translateY(-14px)",
+            transitionDelay: entered ? `${index * 70}ms` : "0ms",
+          }}
+        >
+        <g
           onClick={() => onSelect(index)}
           className="cursor-pointer transition-transform duration-500 [transition-timing-function:cubic-bezier(0.3,1.4,0.4,1)]"
           style={{ transform: index < active ? "translateY(-3.5px)" : "translateY(0)", transitionDelay: `${index * 25}ms` }}
@@ -240,15 +251,20 @@ function Glyph({
             {String(index + 1).padStart(2, "0")}
           </text>
         </g>
+        </g>
       ))}
 
       {/* selector pin — the only colour on the machine */}
-      <g
-        className="transition-transform duration-500 [transition-timing-function:cubic-bezier(0.3,1.6,0.4,1)]"
-        style={{ transform: `translate(${dx}px, ${dy}px)` }}
-      >
-        <rect x={PIN_HOME.right - 2.5} y={pinY - 2.2} width={9.5} height={4.4} rx={2.2} fill="var(--color-signal)" />
-        <circle cx={PIN_HOME.right + 10} cy={pinY} r={4} fill="none" stroke="var(--color-signal)" strokeWidth={3.4} />
+      <g className="transition-opacity duration-500" style={{ opacity: entered ? 1 : 0, transitionDelay: entered ? "650ms" : "0ms" }}>
+        <g
+          className="transition-transform duration-500 [transition-timing-function:cubic-bezier(0.3,1.6,0.4,1)]"
+          style={{ transform: `translate(${dx}px, ${dy}px)` }}
+        >
+          <g key={active} className="animate-pin-pop [transform-box:fill-box] [transform-origin:center]">
+            <rect x={PIN_HOME.right - 2.5} y={pinY - 2.2} width={9.5} height={4.4} rx={2.2} fill="var(--color-signal)" />
+            <circle cx={PIN_HOME.right + 10} cy={pinY} r={4} fill="none" stroke="var(--color-signal)" strokeWidth={3.4} />
+          </g>
+        </g>
       </g>
     </svg>
   );

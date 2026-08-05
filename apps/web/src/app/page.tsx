@@ -12,6 +12,8 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { DecorativeQr } from "@/components/marketing/decorative-qr";
+import { HeroDevices } from "@/components/marketing/hero-devices";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
@@ -69,7 +71,7 @@ export default function LandingPage() {
               </dl>
             </div>
 
-            <OpsConsole />
+            <HeroDevices />
           </div>
         </section>
 
@@ -307,55 +309,6 @@ export default function LandingPage() {
 
 // ---------------------------------------------------------------------------
 
-function OpsConsole() {
-  return (
-    <div className="night-surface rounded-lg border border-night-line bg-night-2 text-night-ink shadow-[0_24px_80px_rgb(27_26_21/0.28)]">
-      <div className="flex items-center justify-between border-b border-night-line px-5 py-3.5 font-mono text-[9px] uppercase tracking-[0.16em] text-night-ink-3">
-        <span>RIVET OPS — ABDOUN DESK</span>
-        <span className="flex items-center gap-2 text-success">
-          <span className="size-1.5 rounded-full bg-success" /> Live
-        </span>
-      </div>
-      <div className="grid gap-px bg-night-line sm:grid-cols-[1.3fr_0.7fr]">
-        <div className="bg-night-2 p-5">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="eyebrow-night">Check-ins today</p>
-              <p className="mt-2 text-[40px] font-semibold leading-none tabular">215</p>
-            </div>
-            <div className="text-end">
-              <p className="eyebrow-night">Inside now</p>
-              <p className="mt-2 text-[22px] font-semibold tabular">67</p>
-            </div>
-          </div>
-          <div className="mt-6 space-y-2">
-            {[
-              ["14:18", "Omar H.", "renews in 41d", "VALID", "text-success"],
-              ["14:17", "Tariq M.", "3 days left", "EXPIRING", "text-warning"],
-              ["14:16", "Noor S.", "until 12 Aug", "FROZEN", "text-[#86a7d5]"],
-              ["14:14", "Fadi K.", "sent to renewal", "EXPIRED", "text-signal"],
-            ].map(([time, name, note, verdict, tone]) => (
-              <div key={time} className="grid grid-cols-[42px_1fr_auto] items-center gap-3 rounded-sm border border-night-line bg-night px-3 py-2.5">
-                <span className="font-mono text-[9px] text-night-ink-3">{time}</span>
-                <span>
-                  <strong className="block text-[12px] font-medium">{name}</strong>
-                  <span className="block text-[10px] text-night-ink-3">{note}</span>
-                </span>
-                <span className={`font-mono text-[9px] font-semibold tracking-[0.12em] ${tone}`}>{verdict}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-px bg-night-line">
-          <OpsMetric label="Renewals · 7 days" value="23" detail="JD 805 at stake" />
-          <OpsMetric label="Free trials today" value="08" detail="3 awaiting confirmation" />
-          <OpsMetric label="Drawer" value="OPEN" detail="Closes 22:00" small />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function MemberCard() {
   return (
     <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
@@ -382,54 +335,6 @@ function MemberCard() {
       <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-night-ink-3">
         Check-in identity · refreshes securely
       </p>
-    </div>
-  );
-}
-
-/**
- * Decorative stand-in for a member's entry code on the marketing page. The real
- * one is generated from a signed token inside the member app — this is only a
- * deterministic pattern so server and client render identically.
- */
-function DecorativeQr() {
-  const size = 25;
-  const finder = (x: number, y: number) =>
-    (x < 8 && y < 8) || (x >= size - 8 && y < 8) || (x < 8 && y >= size - 8);
-
-  const cells: React.ReactNode[] = [];
-  let seed = 20260731;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      if (finder(x, y) || (seed >> 15) % 100 >= 47) continue;
-      cells.push(<rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" />);
-    }
-  }
-
-  return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full" fill="currentColor" aria-hidden>
-      {cells}
-      {[
-        [0, 0],
-        [size - 7, 0],
-        [0, size - 7],
-      ].map(([x, y]) => (
-        <g key={`${x}-${y}`}>
-          <rect x={x} y={y} width="7" height="7" />
-          <rect x={x! + 1} y={y! + 1} width="5" height="5" fill="var(--color-night-ink)" />
-          <rect x={x! + 2} y={y! + 2} width="3" height="3" />
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function OpsMetric({ label, value, detail, small = false }: { label: string; value: string; detail: string; small?: boolean }) {
-  return (
-    <div className="bg-night-2 p-5">
-      <p className="eyebrow-night">{label}</p>
-      <p className={`mt-3 font-semibold ${small ? "text-[18px]" : "text-[30px]"}`}>{value}</p>
-      <p className="mt-1 text-[10px] text-night-ink-3">{detail}</p>
     </div>
   );
 }
