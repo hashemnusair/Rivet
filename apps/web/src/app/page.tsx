@@ -15,7 +15,6 @@ import Link from "next/link";
 import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import { Reveal } from "@/components/marketing/reveal";
-import { LoadingLink } from "@/components/marketing/route-loader";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
@@ -171,7 +170,7 @@ export default function LandingPage() {
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <LoadingLink href="/customer/discover">Find a gym</LoadingLink>
+                  <Link href="/customer/discover">Find a gym</Link>
                 </Button>
               </div>
             </div>

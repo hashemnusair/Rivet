@@ -15,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LoadingLink } from "@/components/marketing/route-loader";
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
@@ -44,7 +43,7 @@ export function PublicHeader() {
 
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
           {MARKETING_NAV.map((item) => (
-            <LoadingLink
+            <Link
               key={item.href}
               href={item.href}
               className={cn(
@@ -53,7 +52,7 @@ export function PublicHeader() {
               )}
             >
               {item.label}
-            </LoadingLink>
+            </Link>
           ))}
         </nav>
 
@@ -258,7 +257,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
             {nav.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
-                <LoadingLink
+                <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
@@ -268,7 +267,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 >
                   <item.icon className="size-3.5" aria-hidden />
                   <span className="hidden sm:inline">{item.label}</span>
-                </LoadingLink>
+                </Link>
               );
             })}
           </nav>
