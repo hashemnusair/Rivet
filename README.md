@@ -131,9 +131,11 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `PLAYWRIGHT_CONVEX_SMOKE` | trusted smoke switch |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | local path to trusted Playwright state |
 
-Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds.
+Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients.
 
-The production Clerk instance and custom-domain DNS setup remain an external release step. Until the product owner completes that setup, use the existing development instance only for trusted development/preview verification. Accounts do not transfer between Clerk instances.
+`www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The current public deployment is still a release hold until Vercel Production contains `NEXT_PUBLIC_CONVEX_URL` and the project is switched from the Clerk development instance to a Clerk production instance. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
+
+The production Clerk instance and custom-domain DNS setup are external dashboard steps. Accounts do not transfer between Clerk instances, so create a fresh production test user after the switch. Preview deployments may continue using the development Clerk/Convex pair; never reuse a production Convex deploy key in Preview.
 
 ## Security and data rules
 

@@ -91,7 +91,7 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The code and environment contract are production-ready, but the product owner still needs to add the documented GitHub Actions secrets and run the trusted Clerk-to-Convex smoke before merging. This repository deploys to Vercel only from `main`, so production deployment verification follows the merge. Clerk production/custom-domain DNS remains a pre-public-launch step. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The code and environment contract are ready for deployment, but `www.rivetjo.com` remains a marketing preview until Vercel Production receives `NEXT_PUBLIC_CONVEX_URL` and the project is moved from Clerk Development to a Clerk Production instance. The exact DNS, Vercel, Convex, and Clerk sequence is recorded in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
 
 ## Files another agent should read first
 

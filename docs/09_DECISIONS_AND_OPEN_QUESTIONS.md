@@ -37,19 +37,49 @@ The product owner selected one Vercel project with hostname-specific entry point
 
 All of these domains currently attach to the `rivet-web` Vercel project. The Next.js request proxy maps each hostname's entry points to the existing `/customer`, gym workspace, and `/platform` route trees. Hostnames are navigation and canonical-URL boundaries only; Clerk and Convex authorization remain the security boundary.
 
-## Deferred — Clerk production instance (2026-08-01)
+## Release hold — production Convex and Clerk configuration (2026-08-05)
 
-The deployment at `rivet2-web.vercel.app` deliberately runs Clerk's **development** instance (`welcomed-oriole-41.clerk.accounts.dev`). This remains a conscious hold: the product domain now exists and is attached to Vercel, but a Clerk production instance still needs its own DNS setup and production credentials. A `*.vercel.app` subdomain cannot host them.
+`rivetjo.com` is now attached to the live `rivet-web` Vercel project. The apex redirects to `www.rivetjo.com`, and both responses are healthy. The latest marketing build is deployed, but the deployment is not yet a usable production application:
 
-Consequences while this stands:
+- The production bundle was built without `NEXT_PUBLIC_CONVEX_URL`. The public pages still render, but authenticated users cannot resolve their Convex role and will see the seeded-account fallback instead of a tenant dashboard.
+- The site still uses the Clerk **development** instance (`welcomed-oriole-41.clerk.accounts.dev`). A production Clerk instance is now unblocked because `rivetjo.com` can host Clerk's required DNS records.
+- The Vercel project is owned by a different account/team than the Git author. Automatic deployments must be repaired before the next `main` commit can reliably deploy.
 
-- A "Development mode" badge is visible on the sign-in and sign-up forms to every visitor.
-- Development instances carry a user cap and rate limits, so this cannot support a real pilot.
-- The first request of a cold browser session logs `Refreshing the session token resulted in an infinite redirect loop`. This is the cross-domain handshake development instances use because their cookies come from `clerk.accounts.dev` rather than the application's own domain. It retries, settles, and later navigations make no handshake requests at all. The message names key mismatch as the usual cause; the keys are correct.
+### Ordered `rivetjo.com` release checklist
 
-To lift the hold once a domain exists, in order: point the domain at Vercel → create the Clerk production instance and add its DNS records → supply your own Google OAuth credentials, because development instances borrow Clerk's shared ones and the sign-in form offers Google → move `pk_live_`/`sk_live_`, `CLERK_FRONTEND_API_URL` and `NEXT_PUBLIC_SITE_URL` into Vercel → run `convex deploy` and set `CLERK_FRONTEND_API_URL` on the **Convex** deployment as well, since `convex/auth.config.ts` reads it there to verify Clerk JWTs and setting it only on Vercel leaves every Convex query unauthenticated.
+Complete these steps in order. Keep development/preview and production Convex deployments separate; never copy a production deploy key into Preview.
 
-Users do not transfer between Clerk instances; accounts created against the development instance are discarded by the switch.
+1. **Repair Vercel project access.** Add the GitHub/Vercel collaborator to the owning Vercel team (or move the project to a team that includes both collaborators). A private Hobby team cannot reliably deploy commits authored by a non-member.
+2. **Configure the production Convex deployment.** Create or select the production deployment, copy its `https://…convex.cloud` URL and deploy key, run `pnpm convex:deploy`, and set these Convex-side variables:
+
+   ```text
+   CLERK_FRONTEND_API_URL=<production Clerk issuer URL>
+   CLERK_SECRET_KEY=<production Clerk secret>
+   ENTRY_PASS_SIGNING_SECRET=<random Convex-only secret>
+   ```
+
+   `CLERK_FRONTEND_API_URL` must be set in Convex because `convex/auth.config.ts` reads it there. Setting it only in Vercel leaves every Convex query unauthenticated.
+3. **Configure Vercel Production variables.** Set the following in the `rivet-web` project with `apps/web` as the root directory:
+
+   ```text
+   NEXT_PUBLIC_DATA_MODE=convex
+   NEXT_PUBLIC_CONVEX_URL=<production Convex URL>
+   NEXT_PUBLIC_CONVEX_SITE_URL=<production Convex site URL>
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…
+   CLERK_SECRET_KEY=sk_live_…
+   CLERK_FRONTEND_API_URL=<production Clerk issuer URL>
+   NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com
+   CONVEX_DEPLOY_KEY=<production Convex deploy key, if the Vercel build runs convex deploy>
+   ```
+
+   The production build now stops with a clear error when the public Convex URL or Clerk publishable key is absent. `CONVEX_DEPLOY_KEY` remains a Vercel project/build setting, not a browser variable.
+4. **Create the Clerk production instance.** In Clerk, create the production instance and add every CNAME record Clerk provides to the DNS zone for `rivetjo.com`. Wait for Clerk to verify the records before changing application keys.
+5. **Configure Google sign-in for production.** Create a Google OAuth client owned by the project. Development Clerk instances borrow shared Google credentials; those credentials do not carry over to production. Add the production callback/origin values shown by Clerk.
+6. **Switch both runtimes to production Clerk.** Replace the development `pk_test_…`/`sk_test_…` values with `pk_live_…`/`sk_live_…` in Vercel, and set the production `CLERK_FRONTEND_API_URL` in both Vercel and Convex. Redeploy `main` only after all three systems agree: Clerk, Convex, and Vercel.
+7. **Verify a real staff account.** Clerk users do not transfer between instances. Create a new production test user, sign in once so Convex creates the user record, then grant the test role through the owner-only Convex seed/admin function. Seed the reference tenant only in a clean development/preview deployment; never use the demo seed as a production restore.
+8. **Run the trusted smoke.** Add the dedicated non-production Clerk session and the four GitHub Actions secrets (`CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `PLAYWRIGHT_CLERK_STORAGE_STATE`), then manually dispatch the `GymOS CI` workflow. This verifies Clerk-to-Convex tenant access rather than only checking that the landing page renders.
+
+Until this checklist is complete, the site is a public marketing preview, not a real-gym pilot. Accounts created against the development Clerk instance must be recreated in production.
 
 ## Implementation decisions agents may make
 
