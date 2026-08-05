@@ -34,7 +34,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
-  const { session, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
+  const { session, organizations, selectOrganization, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -76,6 +76,27 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         </kbd>
       </button>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+
+      {session && organizations.length > 1 ? (
+        <Select
+          value={session.organization.id}
+          onValueChange={(organizationId) => void selectOrganization(organizationId).catch(() => toast.error("That workspace could not be opened."))}
+        >
+          <SelectTrigger sizeVariant="sm" className="hidden w-48 md:flex" aria-label="Active workspace">
+            <div className="flex items-center gap-2 truncate">
+              <Building2 className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+              <SelectValue />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {organizations.map((organization) => (
+              <SelectItem key={organization.organizationId} value={organization.organizationId}>
+                {organization.organizationName} · {ROLE_LABELS[organization.role]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
 
       {/* Branch picker */}
       {session ? (

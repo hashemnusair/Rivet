@@ -3,13 +3,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarCheck, Check, Clock, MapPin, ShieldCheck, Star, Users } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { gymById } from "@/lib/public/experience-data";
-import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
+import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 
 const trialSchema = z.object({
   fullName: z.string().min(2, "Enter your full name"),
@@ -23,9 +24,11 @@ const trialSchema = z.object({
 type TrialValues = z.infer<typeof trialSchema>;
 
 export default function GymDetailClient({ gymId }: { gymId: string }) {
-  const gym = gymById(gymId);
+  const gyms = useMarketplaceGyms();
+  const gym = gyms.find((item) => item.id === gymId);
   const customer = useCustomerPersona();
   const { bookTrial, customerSignedIn } = useExperience();
+  const router = useRouter();
   const [booked, setBooked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const defaultDate = useMemo(() => {
@@ -34,7 +37,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     return date.toISOString().slice(0, 10);
   }, []);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<TrialValues>({
+  const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<TrialValues>({
     resolver: zodResolver(trialSchema),
     defaultValues: {
       fullName: customer?.name ?? "",
@@ -47,10 +50,27 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     },
   });
 
+  useEffect(() => {
+    if (!gym) return;
+    reset({
+      fullName: customer?.name ?? "",
+      email: customer?.email ?? "",
+      phone: customer?.phone ?? "",
+      branchId: gym.branches[0]?.id ?? "",
+      preferredDate: defaultDate,
+      preferredTime: gym.branches[0]?.trialSlots[0] ?? "18:00",
+      goal: "Try the gym and discuss the right membership",
+    });
+  }, [customer, defaultDate, gym, reset]);
+
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
   const selectedBranch = gym.branches.find((branch) => branch.id === watch("branchId")) ?? gym.branches[0]!;
 
   const submit = handleSubmit(async (values) => {
+    if (isConvexMode() && !customerSignedIn) {
+      router.push("/login/member");
+      return;
+    }
     setSubmitting(true);
     try {
       await bookTrial({ gymId: gym.id, ...values });

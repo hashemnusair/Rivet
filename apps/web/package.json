@@ -8,6 +8,8 @@
     "dev:full": "convex dev --start 'next dev -p 3000'",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
+    "convex:codegen": "convex codegen --typecheck enable",
+    "convex:typecheck": "tsc --noEmit -p convex/tsconfig.json",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint . --max-warnings 0",

@@ -72,6 +72,35 @@ describe("tenant/branch scoping and authorization", () => {
     });
   });
 
+  it("requires refund authority to review a flagged refund", async () => {
+    const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
+    expect(pendingRefund).toBeDefined();
+
+    await api.switchDemoRole("salesperson");
+    await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+
+    await api.switchDemoRole("manager");
+    await api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" });
+    const reviewed = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
+    expect(reviewed.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("approved");
+  });
+
+  it("keeps approval results inside the actor's branch scope", async () => {
+    const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
+    expect(pendingRefund).toBeDefined();
+
+    const session = await api.switchDemoRole("manager");
+    const hiddenBranch = session.branches.find((branch) => branch.id !== pendingRefund!.branchId)!;
+    const internalApi = api as unknown as { db: { users: Array<{ id: string; role: string; branchScope: string; branchIds: string[] }> } };
+    const manager = internalApi.db.users.find((user) => user.id === session.user.id);
+    expect(manager).toBeDefined();
+    manager!.branchIds = [hiddenBranch.id];
+    manager!.branchScope = "selected";
+
+    await expect(api.listPendingApprovals()).resolves.not.toContainEqual(pendingRefund);
+    await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+
   it("refuses a check-in override without the permission", async () => {
     const members = await api.listMembers({ pageSize: 1 });
     const session = await api.switchDemoRole("receptionist");
@@ -139,6 +168,23 @@ describe("member creation", () => {
     const existing = (await api.listMembers({ pageSize: 1 })).items[0]!;
     const matches = await api.checkMemberDuplicates({ phone: existing.phone });
     expect(matches.map((m) => m.memberId)).toContain(existing.id);
+  });
+
+  it("previews and commits member CSV rows with resumable idempotency", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const preview = await api.previewMemberImport({
+      branchId: branch.id,
+      csv: "full_name,phone,email\nImport Test,+962790000099,import-test@example.com",
+    });
+    expect(preview.validRows).toBe(1);
+
+    const first = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-idem-1" });
+    const retry = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-idem-1" });
+    expect(retry).toEqual(first);
+    expect(first.status).toBe("completed");
+
+    await expect(api.commitMemberImport({ importId: preview.id, cursor: 1, chunkSize: 25, idempotencyKey: "member-import-idem-1" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    expect((await api.listMembers({ search: "Import Test", pageSize: 5 })).totalItems).toBe(1);
   });
 });
 
@@ -494,6 +540,47 @@ describe("refunds and voids", () => {
     await expect(api.refundPayment(receipt.payment.id, { reason: "again" })).rejects.toMatchObject({
       code: ERR.PAYMENT_ALREADY_REFUNDED,
     });
+  });
+
+  it("rejects a partial refund above the remaining balance without changing the payment", async () => {
+    const member = await anyMemberWithBalance();
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-overage");
+
+    await expect(api.refundPayment(receipt.payment.id, { amount: money(10_001), reason: "Incorrect overage" })).rejects.toMatchObject({
+      code: ERR.REFUND_EXCEEDS_AMOUNT,
+    });
+
+    const unchanged = await api.getReceipt(receipt.receipt.id);
+    expect(unchanged.payment.status).toBe("completed");
+    expect(unchanged.relatedPayments).toHaveLength(0);
+  });
+
+  it("rejects a refund in a different currency without changing the payment", async () => {
+    const member = await anyMemberWithBalance();
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-currency");
+
+    await expect(api.refundPayment(receipt.payment.id, { amount: { amount: 5_000, currency: "USD" }, reason: "Currency mismatch" })).rejects.toMatchObject({
+      code: ERR.VALIDATION,
+    });
+
+    const unchanged = await api.getReceipt(receipt.receipt.id);
+    expect(unchanged.payment.status).toBe("completed");
+    expect(unchanged.relatedPayments).toHaveLength(0);
+  });
+
+  it("treats flagged refunds as completed before post-action review", async () => {
+    const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
+    expect(pendingRefund).toBeDefined();
+    const original = (await api.listTransactions({ type: "payment", pageSize: 200 })).items.find((payment) => payment.id === pendingRefund!.entityId);
+    expect(original?.status).toBe("refunded");
+
+    await api.reviewApproval(pendingRefund!.id, { decision: "rejected", note: "Post-action review recorded" });
+
+    const after = (await api.listTransactions({ type: "payment", pageSize: 200 })).items.find((payment) => payment.id === pendingRefund!.entityId);
+    expect(after?.status).toBe("refunded");
+    expect((await api.listPendingApprovals()).some((event) => event.id === pendingRefund!.id)).toBe(false);
+    const audit = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
+    expect(audit.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("rejected");
   });
 
   it("requires a reason for a refund", async () => {

@@ -14,6 +14,15 @@ import type {
   TimelineQuery,
   TransactionListQuery,
   UserListQuery,
+  PlatformBillingInvoice,
+  PlatformSnapshot,
+  PlatformSupportCase,
+  PlatformSaasPlan,
+  EntryPass,
+  MemberImportCommitInput,
+  MemberImportCommitResult,
+  MemberImportPreview,
+  MemberImportRow,
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
@@ -23,6 +32,13 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
 import { money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
+import {
+  CUSTOMER_PERSONAS,
+  INITIAL_CUSTOMER_MEMBERSHIPS,
+  INITIAL_TRIAL_BOOKINGS,
+  MARKETPLACE_GYMS,
+} from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import {
   currentRole,
   currentUser,
@@ -35,6 +51,27 @@ import {
 
 const TZ = "Asia/Amman";
 
+const MOCK_INVOICES: PlatformBillingInvoice[] = [
+  { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
+  { id: "RV-1047", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
+  { id: "RV-1046", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
+  { id: "RV-1045", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
+  { id: "RV-1044", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
+];
+
+const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
+  { id: "SUP-218", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
+  { id: "SUP-217", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
+  { id: "SUP-216", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
+  { id: "SUP-214", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
+];
+
+const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+];
+
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
 
 function paginate<I>(items: I[], q: PageParams): T.Page<I> {
@@ -44,6 +81,31 @@ function paginate<I>(items: I[], q: PageParams): T.Page<I> {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const start = (page - 1) * pageSize;
   return { items: items.slice(start, start + pageSize), page, pageSize, totalItems, totalPages };
+}
+
+function parseImportCsv(csv: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index];
+    const next = csv[index + 1];
+    if (character === '"' && quoted && next === '"') { cell += '"'; index += 1; continue; }
+    if (character === '"') { quoted = !quoted; continue; }
+    if (character === "," && !quoted) { row.push(cell.trim()); cell = ""; continue; }
+    if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && next === "\n") index += 1;
+      row.push(cell.trim()); cell = "";
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      continue;
+    }
+    cell += character;
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
 }
 
 function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, key: string) => string | number | undefined): I[] {
@@ -65,9 +127,142 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
   private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
+  private memberImports = new Map<string, MemberImportPreview>();
+  private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
+  }
+
+  listMarketplaceGyms(): Promise<MarketplaceGym[]> {
+    return this.respond(() => MARKETPLACE_GYMS.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial"));
+  }
+
+  getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
+    return this.respond(() => ({ customer: CUSTOMER_PERSONAS[0], memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: INITIAL_TRIAL_BOOKINGS }));
+  }
+
+  registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> {
+    return this.respond(() => ({
+      id: `customer-${Date.now()}`,
+      name: input.fullName,
+      nameAr: input.fullName,
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone,
+      initials: input.fullName.split(/\s+/).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase(),
+      context: "New member account",
+    }));
+  }
+
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {
+    return this.respond(() => ({ ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", customerId: input.customerId }));
+  }
+
+  getEntryPass(membershipId: string): Promise<EntryPass> {
+    return this.respond(() => {
+      const membership = INITIAL_CUSTOMER_MEMBERSHIPS.find((item) => item.id === membershipId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      return { token: membership.qrValue, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), membershipId };
+    });
+  }
+
+  previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> {
+    return this.respond(() => {
+      this.require("members.write");
+      const rows = parseImportCsv(input.csv);
+      const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
+      const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
+      const phoneIndex = header.findIndex((item) => ["phone", "mobile", "mobile_number"].includes(item));
+      const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
+      const previewRows: MemberImportRow[] = rows.map((values, index) => {
+        const fullName = nameIndex >= 0 ? values[nameIndex] ?? "" : "";
+        const phone = phoneIndex >= 0 ? values[phoneIndex] ?? "" : "";
+        const email = emailIndex >= 0 ? values[emailIndex] || undefined : undefined;
+        const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
+        const errors = [
+          ...(fullName ? [] : ["Full name is required"]),
+          ...(phone ? [] : ["Phone is required"]),
+          ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
+        ];
+        return { rowNumber: index + 2, fullName, phone, email, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
+      });
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, createdAt: nowISO() };
+      this.memberImports.set(preview.id, preview);
+      return preview;
+    });
+  }
+
+  commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> {
+    return this.respond(() => {
+      this.require("members.write");
+      const cursor = input.cursor ?? 0;
+      const chunkSize = Math.min(100, Math.max(1, input.chunkSize ?? 25));
+      const signature = JSON.stringify({ importId: input.importId, cursor, chunkSize });
+      const existingResult = this.memberImportIdempotency.get(input.idempotencyKey);
+      if (existingResult) {
+        if (existingResult.signature !== signature) throw ApiError.of(ERR.VALIDATION, "This import idempotency key was already used for a different chunk.");
+        return existingResult.result;
+      }
+      const preview = this.memberImports.get(input.importId);
+      if (!preview) throw ApiError.of(ERR.NOT_FOUND, "Import preview not found.");
+      const end = Math.min(preview.rows.length, cursor + chunkSize);
+      const createdMemberIds: string[] = [];
+      const errors: Array<{ rowNumber: number; message: string }> = [];
+      let skippedCount = 0;
+      for (let index = cursor; index < end; index += 1) {
+        const row = preview.rows[index]!;
+        if (row.status !== "valid") { skippedCount += 1; row.status = "skipped"; continue; }
+        const branch = this.db.branches.find((item) => item.id === preview.branchId);
+        if (!branch) { row.status = "invalid"; row.errors = ["Branch not found"]; errors.push({ rowNumber: row.rowNumber, message: "Branch not found" }); continue; }
+        this.db.counters.memberNumber += 1;
+        const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: nowISO() };
+        this.db.members.push(member);
+        this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
+        this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
+        row.status = "committed";
+        row.memberId = member.id;
+        createdMemberIds.push(member.id);
+      }
+      const nextCursor = end;
+      const result: MemberImportCommitResult = { importId: preview.id, status: nextCursor >= preview.rows.length ? "completed" : "processing", cursor: nextCursor, totalRows: preview.rows.length, committedCount: createdMemberIds.length, skippedCount, failedCount: errors.length, createdMemberIds, errors };
+      this.memberImports.set(preview.id, preview);
+      this.memberImportIdempotency.set(input.idempotencyKey, { signature, result });
+      return result;
+    });
+  }
+
+  getPlatformSnapshot(): Promise<PlatformSnapshot> {
+    return this.respond(() => ({ gyms: MARKETPLACE_GYMS, bookings: INITIAL_TRIAL_BOOKINGS, invoices: MOCK_INVOICES, supportCases: MOCK_SUPPORT_CASES, plans: MOCK_SAAS_PLANS }));
+  }
+
+  listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
+    return this.respond(() => MOCK_SAAS_PLANS);
+  }
+
+  retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {
+    return this.respond(() => {
+      const invoice = MOCK_INVOICES.find((item) => item.id === invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      invoice.status = "paid";
+      return invoice;
+    });
+  }
+
+  resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      const supportCase = MOCK_SUPPORT_CASES.find((item) => item.id === caseId);
+      if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
+      supportCase.status = "resolved";
+      return supportCase;
+    });
+  }
+
+  replyToPlatformSupportCase(caseId: string, _body: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      const supportCase = MOCK_SUPPORT_CASES.find((item) => item.id === caseId);
+      if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
+      return supportCase;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -86,6 +281,8 @@ export class MockGymOSApi implements GymOSApi {
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
     this.db = buildSeed();
+    this.memberImports.clear();
+    this.memberImportIdempotency.clear();
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
@@ -137,6 +334,11 @@ export class MockGymOSApi implements GymOSApi {
     if (user.branchScope === "all") return requested;
     if (requested && user.branchIds.includes(requested)) return requested;
     return user.branchIds[0];
+  }
+
+  private branchIsVisible(branchId?: T.UUID): boolean {
+    const user = this.actor();
+    return user.branchScope === "all" || !branchId || user.branchIds.includes(branchId);
   }
 
   private audit(input: Omit<T.AuditEvent, "id" | "organizationId" | "correlationId" | "occurredAt" | "actorId" | "actorName" | "actorRole">) {
@@ -362,6 +564,10 @@ export class MockGymOSApi implements GymOSApi {
 
   getSession(): Promise<T.Session> {
     return this.respond(() => this.buildSession());
+  }
+
+  selectOrganization(_organizationId: T.UUID): Promise<T.Session> {
+    return this.getSession();
   }
 
   private buildSession(): T.Session {
@@ -1917,10 +2123,14 @@ export class MockGymOSApi implements GymOSApi {
     if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
     if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
+    if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
 
     // idempotency
     const existing = this.db.payments.find((p) => p.idempotencyKey === args.idempotencyKey);
     if (existing) {
+      if (existing.memberId !== args.memberId || (args.chargeId !== undefined && existing.chargeId !== args.chargeId) || existing.amount.amount !== args.amount.amount || existing.amount.currency !== args.amount.currency || existing.method !== args.method) {
+        throw ApiError.of(ERR.VALIDATION, "This idempotency key was already used for a different payment.");
+      }
       const receipt = this.db.receipts.find((r) => r.id === existing.receiptId)!;
       return { payment: existing, receipt, timelineEventId: "" };
     }
@@ -1937,8 +2147,9 @@ export class MockGymOSApi implements GymOSApi {
     if (charge.outstandingAmount.amount <= 0) {
       throw ApiError.of(ERR.NO_OUTSTANDING_BALANCE, "This charge is already fully paid.");
     }
-    const amount = Math.min(args.amount.amount, charge.outstandingAmount.amount);
-    if (amount <= 0) throw ApiError.of(ERR.VALIDATION, "Amount must be greater than zero.");
+    if (!Number.isSafeInteger(args.amount.amount) || args.amount.amount <= 0) throw ApiError.of(ERR.VALIDATION, "Amount must be a positive integer.");
+    if (args.amount.amount > charge.outstandingAmount.amount) throw ApiError.of(ERR.VALIDATION, "Payment cannot exceed the outstanding balance.");
+    const amount = args.amount.amount;
 
     // cash requires an open shift at the member's home branch
     const branchId = member.homeBranchId;
@@ -2041,8 +2252,13 @@ export class MockGymOSApi implements GymOSApi {
       const alreadyRefunded = original.refundedAmount?.amount ?? 0;
       const remaining = original.amount.amount - alreadyRefunded;
       if (remaining <= 0) throw ApiError.of(ERR.PAYMENT_ALREADY_REFUNDED, "This payment was already fully refunded.");
-      const amount = Math.min(input.amount?.amount ?? remaining, remaining);
-      if (amount <= 0) throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
+      if (input.amount && input.amount.currency !== this.db.organization.currency) {
+        throw ApiError.of(ERR.VALIDATION, "Refund currency does not match the organization.");
+      }
+      const amount = input.amount?.amount ?? remaining;
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) {
+        throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
+      }
 
       const receiptNumber = this.nextReceiptNumber();
       const refund: T.Payment = {
@@ -2463,7 +2679,7 @@ export class MockGymOSApi implements GymOSApi {
   listPendingApprovals(): Promise<T.AuditEvent[]> {
     return this.respond(() => {
       this.require("audit.read");
-      return this.db.audits.filter((a) => a.approvalStatus === "pending");
+      return this.db.audits.filter((a) => a.approvalStatus === "pending" && this.branchIsVisible(a.branchId));
     });
   }
 
@@ -2471,8 +2687,15 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const event = this.db.audits.find((a) => a.id === auditEventId);
       if (!event) throw ApiError.of(ERR.NOT_FOUND, "Approval not found.");
+      if (!this.branchIsVisible(event.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Approval not found.");
+      if (input.decision !== "approved" && input.decision !== "rejected") {
+        throw ApiError.of(ERR.VALIDATION, "Approval decision must be approved or rejected.");
+      }
+      if (event.approvalStatus !== "pending") throw ApiError.of(ERR.VALIDATION, "This approval is not pending.");
       if (event.action === "membership.discount") this.require("payments.discount");
-      else this.require("reconciliation.approve_variance");
+      else if (event.action === "payment.refund") this.require("payments.refund");
+      else if (event.action === "shift.close_variance") this.require("reconciliation.approve_variance");
+      else throw ApiError.of(ERR.VALIDATION, "This audit event does not support approval review.");
       event.approvalStatus = input.decision;
       if (event.action === "membership.discount") {
         const membership = this.db.memberships.find((m) => m.id === event.entityId);

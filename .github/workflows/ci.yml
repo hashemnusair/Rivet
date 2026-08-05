@@ -1,0 +1,134 @@
+name: GymOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.32.1
+  NODE_VERSION: 22
+
+jobs:
+  static:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck web and Convex
+        run: |
+          pnpm typecheck
+          pnpm convex:typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit and component tests
+        run: pnpm test
+      - name: Production build
+        run: pnpm build
+
+  browser:
+    name: Playwright preview journeys
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Run Playwright
+        run: pnpm test:e2e
+
+  convex-codegen:
+    name: Convex generated code check (credential-gated)
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Regenerate and verify Convex types
+        if: ${{ env.CONVEX_DEPLOY_KEY != '' }}
+        run: pnpm convex:codegen
+      - name: Ensure generated files are committed
+        if: ${{ env.CONVEX_DEPLOY_KEY != '' }}
+        run: git diff --exit-code -- apps/web/convex/_generated
+      - name: Report credential-gated skip
+        if: ${{ env.CONVEX_DEPLOY_KEY == '' }}
+        run: echo "::notice::Convex code generation was skipped because CONVEX_DEPLOY_KEY is not configured for this repository."
+
+  convex-clerk-smoke:
+    name: Authenticated Clerk → Convex smoke
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_STATE }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Verify trusted smoke credentials
+        run: |
+          test -n "$CONVEX_DEPLOY_KEY" || { echo "::error::Missing CONVEX_DEPLOY_KEY"; exit 1; }
+          test -n "$NEXT_PUBLIC_CONVEX_URL" || { echo "::error::Missing NEXT_PUBLIC_CONVEX_URL"; exit 1; }
+          test -n "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" || { echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" || { echo "::error::Missing PLAYWRIGHT_CLERK_STORAGE_STATE"; exit 1; }
+      - name: Write trusted storage state outside the repository
+        run: printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" > "$RUNNER_TEMP/clerk-storage-state.json"
+      - name: Run authenticated smoke
+        env:
+          PLAYWRIGHT_CONVEX_SMOKE: "1"
+          PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
+        run: pnpm test:e2e -- convex-smoke.spec.ts

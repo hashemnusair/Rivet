@@ -76,6 +76,7 @@ import type {
   ISODate,
   UUID,
 } from "@/lib/domain/types";
+import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 
 // ---------------------------------------------------------------------------
 // Query inputs
@@ -155,19 +156,102 @@ export interface UserListQuery extends ListQuery {
   status?: "active" | "invited" | "deactivated";
 }
 
+export interface MemberImportRow {
+  rowNumber: number;
+  fullName: string;
+  phone: string;
+  email?: string;
+  status: "valid" | "duplicate" | "invalid" | "committed" | "skipped";
+  errors: string[];
+  duplicateMemberIds: string[];
+  memberId?: string;
+}
+
+export interface MemberImportPreview {
+  id: string;
+  branchId: string;
+  totalRows: number;
+  validRows: number;
+  duplicateRows: number;
+  errorRows: number;
+  rows: MemberImportRow[];
+  createdAt: string;
+}
+
+export interface MemberImportCommitInput {
+  importId: string;
+  cursor?: number;
+  chunkSize?: number;
+  idempotencyKey: string;
+}
+
+export interface MemberImportCommitResult {
+  importId: string;
+  status: "processing" | "completed";
+  cursor: number;
+  totalRows: number;
+  committedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  createdMemberIds: string[];
+  errors: Array<{ rowNumber: number; message: string }>;
+}
+
 export interface DashboardQuery {
   branchId?: UUID;
   from: string;
   to: string;
 }
 
+export interface PlatformBillingInvoice {
+  id: string;
+  gym: string;
+  amount: string;
+  date: string;
+  status: "paid" | "failed" | "trial";
+}
+
+export interface PlatformSupportCase {
+  id: string;
+  gym: string;
+  subject: string;
+  age: string;
+  priority: "urgent" | "normal";
+  status: "open" | "waiting" | "resolved";
+}
+
+export interface PlatformSaasPlan {
+  name: "Starter" | "Growth" | "Pro";
+  priceMinor: number;
+  branches: number;
+  staff: number;
+  members: number;
+  tone: "paper" | "signal" | "night";
+}
+
+export interface PlatformSnapshot {
+  gyms: import("@/lib/public/experience-data").MarketplaceGym[];
+  bookings: import("@/lib/public/experience-data").TrialBooking[];
+  invoices: PlatformBillingInvoice[];
+  supportCases: PlatformSupportCase[];
+  plans: PlatformSaasPlan[];
+}
+
+export interface EntryPass {
+  token: string;
+  expiresAt: string;
+  membershipId: string;
+}
+
 // ---------------------------------------------------------------------------
-// The client boundary. The backend agent implements HttpGymOSApi against this.
+// The page-facing client boundary. Production uses ConvexGymOSApi; mock mode
+// remains available only for explicit preview/test workflows.
 // ---------------------------------------------------------------------------
 
 export interface GymOSApi {
   // Session
   getSession(): Promise<Session>;
+  selectOrganization(organizationId: UUID): Promise<Session>;
   switchDemoRole(
     role: RoleKey,
     branchId?: UUID,
@@ -175,6 +259,18 @@ export interface GymOSApi {
   ): Promise<Session>;
   setActiveBranch(branchId: UUID | undefined): Promise<Session>;
   signOut(): Promise<void>;
+
+  // Public directory, customer identity, and platform snapshots
+  listMarketplaceGyms(): Promise<MarketplaceGym[]>;
+  getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }>;
+  registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
+  getEntryPass(membershipId: string): Promise<EntryPass>;
+  getPlatformSnapshot(): Promise<PlatformSnapshot>;
+  listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
+  retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
+  resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
+  replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;
 
   // Dashboard
   getDashboard(query: DashboardQuery): Promise<DashboardData>;
@@ -258,6 +354,8 @@ export interface GymOSApi {
   listBranches(): Promise<Branch[]>;
   upsertBranch(input: { id?: UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<Branch>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
+  previewMemberImport(input: { csv: string; branchId: UUID }): Promise<MemberImportPreview>;
+  commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;
   inviteUser(input: InviteUserInput): Promise<StaffUser>;
   updateUserAccess(userId: UUID, input: UpdateUserAccessInput): Promise<StaffUser>;
   updateRolePermissions(role: RoleKey, input: UpdateRolePermissionsInput): Promise<RoleDefinition>;

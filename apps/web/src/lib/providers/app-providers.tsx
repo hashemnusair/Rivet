@@ -13,17 +13,20 @@ import {
   type ReactNode,
 } from "react";
 import { getApi } from "@/lib/api/client";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { ERR, isApiError } from "@/lib/api/errors";
 import type { MockBehavior } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { qk } from "@/lib/api/keys";
 import type { RoleKey, Session, UUID } from "@/lib/domain/types";
+import { useRivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 
 /** Error codes where retrying cannot change the outcome. */
 const TERMINAL_ERROR_CODES: string[] = [ERR.FORBIDDEN, ERR.NOT_FOUND, ERR.VALIDATION, ERR.UNAUTHENTICATED];
 
 interface AppContextValue {
   session: Session | undefined;
+  organizations: RivetMembership[];
   sessionLoading: boolean;
   signedIn: boolean;
   signIn: (
@@ -34,6 +37,7 @@ interface AppContextValue {
   signOut: () => Promise<void>;
   switchRole: (role: RoleKey) => Promise<void>;
   setBranch: (branchId: UUID | undefined) => Promise<void>;
+  selectOrganization: (organizationId: UUID) => Promise<void>;
   behavior: MockBehavior;
   setBehavior: (b: Partial<MockBehavior>) => void;
   resetDemo: () => Promise<void>;
@@ -89,12 +93,15 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState<Session | undefined>(undefined);
   const [sessionLoading, setSessionLoading] = useState(true);
-  const bootstrapped = useRef(false);
+  const demoBootstrapped = useRef(false);
+  const convexSessionKey = useRef<string | undefined>(undefined);
+  const convexMode = isConvexMode();
+  const identity = useRivetIdentity();
 
-  // Bootstrap from sessionStorage (demo persona survives reloads)
+  // UI preferences are local presentation state in both modes. Identity and
+  // workspace sessions are deliberately not restored from browser storage in
+  // Convex mode.
   useEffect(() => {
-    if (bootstrapped.current) return;
-    bootstrapped.current = true;
     const storedDir = window.sessionStorage.getItem(STORAGE_KEYS.dir);
     if (storedDir === "rtl") {
       setDir("rtl");
@@ -103,7 +110,12 @@ function SessionProvider({ children }: { children: ReactNode }) {
     }
     const collapsed = window.localStorage.getItem(STORAGE_KEYS.sidebar);
     if (collapsed === "1") setSidebarCollapsed(true);
+  }, []);
 
+  // Bootstrap from sessionStorage only for explicit preview/test mode.
+  useEffect(() => {
+    if (convexMode || demoBootstrapped.current) return;
+    demoBootstrapped.current = true;
     const persona = window.sessionStorage.getItem(STORAGE_KEYS.persona) as RoleKey | null;
     const branch = window.sessionStorage.getItem(STORAGE_KEYS.branch) as UUID | null;
     if (persona) {
@@ -119,7 +131,40 @@ function SessionProvider({ children }: { children: ReactNode }) {
     } else {
       setSessionLoading(false);
     }
-  }, []);
+  }, [convexMode]);
+
+  // In production Clerk is the identity provider and Convex is the source of
+  // authorization plus the active tenant session. This call is the only place
+  // the app session is hydrated; pages never manufacture a role locally.
+  useEffect(() => {
+    if (!convexMode) return;
+    if (identity.status === "loading" || identity.status === "pending") return;
+    if (identity.status === "anonymous") {
+      convexSessionKey.current = undefined;
+      setSession(undefined);
+      setSignedIn(false);
+      setSessionLoading(false);
+      return;
+    }
+    if (identity.status !== "ready") return;
+
+    const key = `${identity.userId ?? identity.email ?? "unknown"}:${identity.memberships.map((membership) => `${membership.organizationId}:${membership.role}`).join(",")}:${identity.platformAdmin}`;
+    if (convexSessionKey.current === key) return;
+    convexSessionKey.current = key;
+    setSessionLoading(true);
+
+    void getApi()
+      .getSession()
+      .then((nextSession) => {
+        setSession(nextSession);
+        setSignedIn(true);
+      })
+      .catch(() => {
+        setSession(undefined);
+        setSignedIn(false);
+      })
+      .finally(() => setSessionLoading(false));
+  }, [convexMode, identity.email, identity.memberships, identity.platformAdmin, identity.status, identity.userId]);
 
   const setBehavior = useCallback((b: Partial<MockBehavior>) => {
     setBehaviorState((prev) => {
@@ -131,6 +176,13 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (role: RoleKey, branchId?: UUID, identity?: { name: string; email: string }) => {
+      if (convexMode) {
+        const s = await getApi().getSession();
+        setSession(s);
+        setSignedIn(true);
+        queryClient.clear();
+        return;
+      }
       const api = getApi();
       const branch = branchId ?? PERSONA_DEFAULT_BRANCH[role];
       const s = await api.switchDemoRole(role, branch, identity);
@@ -141,7 +193,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       setSignedIn(true);
       queryClient.clear();
     },
-    [queryClient],
+    [convexMode, queryClient],
   );
 
   const signOut = useCallback(async () => {
@@ -156,6 +208,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   const switchRole = useCallback(
     async (role: RoleKey) => {
+      if (convexMode) throw new Error("Role switching is available only in explicit mock mode.");
       const api = getApi();
       const s = await api.switchDemoRole(role);
       window.sessionStorage.setItem(STORAGE_KEYS.persona, role);
@@ -164,27 +217,37 @@ function SessionProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       router.push(role === "receptionist" ? "/reception" : "/dashboard");
     },
-    [queryClient, router],
+    [convexMode, queryClient, router],
   );
 
   const setBranch = useCallback(
     async (branchId: UUID | undefined) => {
       const s = await getApi().setActiveBranch(branchId);
-      if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
-      else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
+      if (!convexMode) {
+        if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
+        else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
+      }
       setSession(s);
       queryClient.invalidateQueries();
     },
-    [queryClient],
+    [convexMode, queryClient],
   );
 
+  const selectOrganization = useCallback(async (organizationId: UUID) => {
+    if (!convexMode) return;
+    const nextSession = await getApi().selectOrganization(organizationId);
+    setSession(nextSession);
+    queryClient.clear();
+  }, [convexMode, queryClient]);
+
   const resetDemo = useCallback(async () => {
+    if (convexMode) throw new Error("Demo reset is available only in explicit mock mode.");
     await getApi().resetDemo();
     const s = await getApi().getSession();
     setSession(s);
     queryClient.clear();
     queryClient.invalidateQueries({ queryKey: qk.session });
-  }, [queryClient]);
+  }, [convexMode, queryClient]);
 
   const toggleDir = useCallback(() => {
     setDir((prev) => {
@@ -207,12 +270,14 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       session,
+      organizations: identity.memberships,
       sessionLoading,
       signedIn,
       signIn,
       signOut,
       switchRole,
       setBranch,
+      selectOrganization,
       behavior,
       setBehavior,
       resetDemo,
@@ -221,7 +286,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       sidebarCollapsed,
       toggleSidebar,
     }),
-    [session, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
+    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

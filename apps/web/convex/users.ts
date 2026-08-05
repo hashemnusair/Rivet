@@ -26,13 +26,14 @@ export const ensureCurrent = mutation({
       .unique();
 
     const now = Date.now();
-    const email = identity.email ?? "";
+    const email = (identity.email ?? "").trim().toLowerCase();
     const suppliedFullName = args.fullName?.trim().replace(/\s+/g, " ");
     if (suppliedFullName && suppliedFullName.length > 160) throw new Error("INVALID_PROFILE_NAME");
     const fullName = suppliedFullName || identity.name?.trim() || existing?.fullName || email.split("@")[0] || "RIVET user";
 
     if (existing) {
-      await ctx.db.patch(existing._id, { email, fullName, updatedAt: now });
+      if (existing.status === "deactivated") throw new Error("UNAUTHENTICATED");
+      await ctx.db.patch(existing._id, { email, fullName, status: "active", updatedAt: now });
       return existing._id;
     }
 
@@ -47,16 +48,19 @@ export const ensureCurrent = mutation({
         .unique();
 
       if (invited && invited.authSubject.startsWith("invite:")) {
-        await ctx.db.patch(invited._id, { authSubject: identity.subject, fullName, updatedAt: now });
+        if (invited.status === "deactivated") throw new Error("UNAUTHENTICATED");
+        await ctx.db.patch(invited._id, { authSubject: identity.subject, fullName, status: "active", updatedAt: now });
         return invited._id;
       }
     }
 
     return await ctx.db.insert("users", {
+      publicId: crypto.randomUUID(),
       authSubject: identity.subject,
       email,
       fullName,
       platformAdmin: false,
+      status: "active",
       createdAt: now,
       updatedAt: now,
     });

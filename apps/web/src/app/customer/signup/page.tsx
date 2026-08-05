@@ -35,7 +35,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function MemberSignupPage() {
   const router = useRouter();
-  const { registerCustomer, emailTaken } = useExperience();
+  const { registerCustomer, emailTaken, experienceReady } = useExperience();
   const [submitting, setSubmitting] = useState(false);
 
   // Real accounts are created by Clerk in the member portal. This local form
@@ -55,14 +55,21 @@ export default function MemberSignupPage() {
     defaultValues: { fullName: "", email: "", phone: "", password: "", confirm: "" },
   });
 
-  const submit = handleSubmit((values) => {
+  const submit = handleSubmit(async (values) => {
     if (emailTaken(values.email)) {
       setError("email", { message: "An account already uses this email" });
       return;
     }
     setSubmitting(true);
-    registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
-    router.push("/customer/discover");
+    try {
+      await registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
+      // This preview account is intentionally persisted in sessionStorage.
+      // Cross the account boundary with a full navigation so the next page
+      // proves it can restore that persisted identity from a clean render.
+      window.location.assign("/customer/discover");
+    } finally {
+      setSubmitting(false);
+    }
   });
 
   return (
@@ -93,7 +100,7 @@ export default function MemberSignupPage() {
             </Field>
           </div>
 
-          <Button type="submit" size="lg" className="w-full" loading={submitting}>
+          <Button type="submit" size="lg" className="w-full" loading={submitting || !experienceReady}>
             Create account <ArrowRight className="size-4" />
           </Button>
         </form>

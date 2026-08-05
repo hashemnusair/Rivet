@@ -591,6 +591,7 @@ export interface CreateCheckInInput {
   memberId: UUID;
   branchId: UUID;
   source?: "search" | "qr" | "manual";
+  entryPassToken?: string;
 }
 
 export interface OverrideCheckInInput extends CreateCheckInInput {

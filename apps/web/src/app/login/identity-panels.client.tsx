@@ -106,11 +106,17 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
 function MemberEntry({ identity }: { identity: RivetIdentity }) {
   const router = useRouter();
   const { signInAsIdentity } = useExperience();
+  const [loading, setLoading] = useState(false);
   const name = identity.fullName || identity.email || "your account";
 
-  const enter = () => {
-    signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
-    router.push("/customer/my-gyms");
+  const enter = async () => {
+    setLoading(true);
+    try {
+      await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
+      router.push("/customer/my-gyms");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -126,7 +132,7 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
         </div>
       </div>
 
-      <Button className="mt-5 w-full" size="lg" onClick={enter} data-testid="enter-member">
+      <Button className="mt-5 w-full" size="lg" loading={loading} onClick={() => void enter()} data-testid="enter-member">
         Continue to my dashboard <ArrowRight className="size-4" />
       </Button>
 

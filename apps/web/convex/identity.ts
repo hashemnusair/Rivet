@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { toFrontendRole } from "./permissions";
 
 /**
  * Everything the frontend needs to route a signed-in person to the right place:
@@ -43,15 +44,15 @@ export const current = query({
       const branches = [];
       for (const branchId of row.branchIds) {
         const branch = await ctx.db.get(branchId);
-        if (branch?.active) branches.push({ id: branch._id, name: branch.name, code: branch.code });
+        if (branch?.active) branches.push({ id: branch.publicId ?? branch._id, name: branch.name, code: branch.code });
       }
 
       memberships.push({
-        organizationId: organization._id,
+        organizationId: organization.publicId ?? organization._id,
         organizationName: organization.name,
         organizationSlug: organization.slug,
         organizationStatus: organization.status,
-        role: row.role,
+        role: toFrontendRole(row.role),
         branches,
       });
     }
@@ -59,7 +60,7 @@ export const current = query({
     return {
       pending: false as const,
       user: {
-        id: user._id,
+        id: user.publicId ?? user._id,
         email: user.email,
         fullName: user.fullName,
         platformAdmin: user.platformAdmin,

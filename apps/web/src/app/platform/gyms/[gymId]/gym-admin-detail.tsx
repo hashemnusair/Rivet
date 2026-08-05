@@ -1,11 +1,13 @@
 "use client";
 
+"use client";
+
 import { ArrowLeft, Ban, Building2, CalendarClock, CreditCard, ExternalLink, Mail, MapPin, Phone, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { gymById } from "@/lib/public/experience-data";
+import { useMarketplaceGyms } from "@/lib/providers/experience-provider";
 
-export default function GymAdminDetail({gymId}:{gymId:string}){const gym=gymById(gymId);if(!gym)return <div className="p-10">Gym not found.</div>;
+export default function GymAdminDetail({gymId}:{gymId:string}){const gym=useMarketplaceGyms().find((item)=>item.id===gymId);if(!gym)return <div className="p-10">Gym not found.</div>;
   return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8"><div className="mx-auto max-w-[1480px]">
     <Link href="/platform/gyms" className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5"/>All gyms</Link>
     <div className="mt-6 flex flex-wrap items-start justify-between gap-6"><div className="flex items-center gap-4"><span className="flex size-14 items-center justify-center font-mono text-[11px] font-semibold text-white" style={{backgroundColor:gym.accent}}>{gym.shortName.slice(0,3)}</span><div><div className="flex items-center gap-2"><h1 className="text-[27px] font-semibold tracking-tight">{gym.name}</h1><ShieldCheck className="size-4 text-success"/></div><p className="mt-1 text-[11.5px] text-ink-3">Customer since {gym.joinedAt} · Last active today</p></div></div><div className="flex gap-2"><Button asChild variant="secondary"><Link href={`/customer/gyms/${gym.id}`}>Marketplace profile <ExternalLink/></Link></Button><Button variant="danger"><Ban/>Suspend</Button></div></div>

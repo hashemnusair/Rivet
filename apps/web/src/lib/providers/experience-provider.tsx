@@ -1,8 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
-import type { CustomerMembership, CustomerPersona, TrialBooking } from "@/lib/public/experience-data";
+import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
+import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -39,9 +42,9 @@ interface ExperienceContextValue {
   memberships: CustomerMembership[];
   bookings: TrialBooking[];
   signInCustomer: (customerId: string) => void;
-  registerCustomer: (input: RegisterCustomerInput) => CustomerPersona;
+  registerCustomer: (input: RegisterCustomerInput) => Promise<CustomerPersona>;
   /** Signs in the authenticated person as themselves, creating their member profile once. */
-  signInAsIdentity: (input: { email: string; fullName: string }) => CustomerPersona;
+  signInAsIdentity: (input: { email: string; fullName: string }) => Promise<CustomerPersona>;
   emailTaken: (email: string) => boolean;
   signOutCustomer: () => void;
   signInPlatformAdmin: () => void;
@@ -49,6 +52,9 @@ interface ExperienceContextValue {
   bookTrial: (input: BookTrialInput) => Promise<TrialBooking>;
   customerMemberships: CustomerMembership[];
   customerBookings: TrialBooking[];
+  marketplaceGyms: MarketplaceGym[];
+  platformSnapshot?: PlatformSnapshot;
+  saasPlans: PlatformSaasPlan[];
 }
 
 const ExperienceContext = createContext<ExperienceContextValue | null>(null);
@@ -77,22 +83,68 @@ function initialsOf(fullName: string): string {
 }
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
+  const convexMode = isConvexMode();
+  const identity = useRivetIdentity();
   const [customerId, setCustomerId] = useState<string>();
   const [platformAdminSignedIn, setPlatformAdminSignedIn] = useState(false);
   const [experienceReady, setExperienceReady] = useState(false);
   const [registered, setRegistered] = useState<CustomerPersona[]>([]);
-  const [memberships] = useState<CustomerMembership[]>(INITIAL_CUSTOMER_MEMBERSHIPS);
-  const [bookings, setBookings] = useState<TrialBooking[]>(INITIAL_TRIAL_BOOKINGS);
+  const [customer, setCustomer] = useState<CustomerPersona>();
+  const [memberships, setMemberships] = useState<CustomerMembership[]>(convexMode ? [] : INITIAL_CUSTOMER_MEMBERSHIPS);
+  const [bookings, setBookings] = useState<TrialBooking[]>(convexMode ? [] : INITIAL_TRIAL_BOOKINGS);
+  const [marketplaceGyms, setMarketplaceGyms] = useState<MarketplaceGym[]>(convexMode ? [] : MARKETPLACE_GYMS);
+  const [platformSnapshot, setPlatformSnapshot] = useState<PlatformSnapshot>();
+  const [saasPlans, setSaasPlans] = useState<PlatformSaasPlan[]>([]);
 
-  const customers = useMemo(() => [...registered, ...CUSTOMER_PERSONAS], [registered]);
+  const customers = useMemo(
+    () => (convexMode ? (customer ? [customer] : []) : [...registered, ...CUSTOMER_PERSONAS]),
+    [convexMode, customer, registered],
+  );
 
-  // A reload must not sign a member (or the platform admin) back out — the
-  // route guards would otherwise bounce them straight to /login. Accounts made
-  // through member sign-up are restored too, or the session would point at a
-  // customer that no longer exists, and so are trial bookings, or a member who
-  // just booked one comes back to an empty dashboard.
+  // Mock mode restores its deterministic browser session. Convex mode loads
+  // identity-linked records from the server and never uses sessionStorage as a
+  // source of truth.
   useEffect(() => {
+    if (convexMode) {
+      if (identity.status === "loading" || identity.status === "pending") return;
+      let cancelled = false;
+      void Promise.all([
+        getApi().listMarketplaceGyms().catch(() => []),
+        getApi().listPublicSaasPlans().catch(() => []),
+        identity.status === "ready" ? getApi().getCustomerExperience().catch(() => ({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] })) : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
+        identity.status === "ready" && identity.platformAdmin ? getApi().getPlatformSnapshot().catch(() => undefined) : Promise.resolve(undefined),
+      ]).then(async ([gyms, plans, experience, platform]) => {
+        if (cancelled) return;
+        const hydratedMemberships = identity.status === "ready"
+          ? await Promise.all(experience.memberships.map(async (membership) => {
+              if (membership.qrValue) return membership;
+              try {
+                const pass = await getApi().getEntryPass(membership.id);
+                return { ...membership, qrValue: pass.token };
+              } catch {
+                return membership;
+              }
+            }))
+          : experience.memberships;
+        if (cancelled) return;
+        setMarketplaceGyms(platform?.gyms ?? gyms);
+        setSaasPlans(platform?.plans ?? plans);
+        setMemberships(hydratedMemberships);
+        setBookings(platform?.bookings ?? experience.bookings);
+        if (platform) setPlatformSnapshot(platform);
+        setCustomer(experience.customer);
+        setCustomerId(experience.customer?.id);
+        setPlatformAdminSignedIn(identity.status === "ready" && identity.platformAdmin);
+        setExperienceReady(true);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const restored = readStored<CustomerPersona[]>(STORAGE_KEYS.registered) ?? [];
+    void getApi().getPlatformSnapshot().then(setPlatformSnapshot).catch(() => undefined);
+    void getApi().listPublicSaasPlans().then(setSaasPlans).catch(() => undefined);
     if (restored.length > 0) setRegistered(restored);
 
     const storedBookings = readStored<TrialBooking[]>(STORAGE_KEYS.bookings);
@@ -103,14 +155,20 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (stored && known.some((persona) => persona.id === stored)) setCustomerId(stored);
     if (window.sessionStorage.getItem(STORAGE_KEYS.admin) === "1") setPlatformAdminSignedIn(true);
     setExperienceReady(true);
-  }, []);
+  }, [convexMode, identity.email, identity.fullName, identity.platformAdmin, identity.status]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded
    * personas. Keyed on email so a reload or a second sign-in reuses the same
    * profile instead of stacking duplicates.
    */
-  const signInAsIdentity = useCallback((input: { email: string; fullName: string }) => {
+  const signInAsIdentity = useCallback(async (input: { email: string; fullName: string }) => {
+    if (convexMode) {
+      const persona = await getApi().registerCustomer({ email: input.email, fullName: input.fullName, phone: "" });
+      setCustomer(persona);
+      setCustomerId(persona.id);
+      return persona;
+    }
     const id = `identity:${input.email.trim().toLowerCase()}`;
     const persona: CustomerPersona = {
       id,
@@ -130,9 +188,15 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
     setCustomerId(id);
     return persona;
-  }, []);
+  }, [convexMode]);
 
-  const registerCustomer = useCallback((input: RegisterCustomerInput) => {
+  const registerCustomer = useCallback(async (input: RegisterCustomerInput) => {
+    if (convexMode) {
+      const persona = await getApi().registerCustomer(input);
+      setCustomer(persona);
+      setCustomerId(persona.id);
+      return persona;
+    }
     const persona: CustomerPersona = {
       id: `customer-${Date.now()}`,
       name: input.fullName.trim(),
@@ -150,10 +214,16 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     window.sessionStorage.setItem(STORAGE_KEYS.customer, persona.id);
     setCustomerId(persona.id);
     return persona;
-  }, []);
+  }, [convexMode]);
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
+      if (convexMode) {
+        const booking = await getApi().createTrialBooking({ ...input, ...(customerId ? { customerId } : {}) });
+        setBookings((current) => [booking, ...current.filter((item) => item.id !== booking.id)]);
+        return booking;
+      }
+
       const gym = gymById(input.gymId);
       const branch = gym?.branches.find((item) => item.id === input.branchId);
       let leadId: string | undefined;
@@ -191,7 +261,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       });
       return booking;
     },
-    [customerId],
+    [convexMode, customerId],
   );
 
   const customerMemberships = useMemo(
@@ -214,27 +284,30 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       bookings,
       signInCustomer: (id) => {
         if (!customers.some((persona) => persona.id === id)) return;
-        window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
+        if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
         setCustomerId(id);
       },
       registerCustomer,
       signInAsIdentity,
       emailTaken: (email) => customers.some((persona) => persona.email.toLowerCase() === email.trim().toLowerCase()),
       signOutCustomer: () => {
-        window.sessionStorage.removeItem(STORAGE_KEYS.customer);
+        if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.customer);
         setCustomerId(undefined);
       },
       signInPlatformAdmin: () => {
-        window.sessionStorage.setItem(STORAGE_KEYS.admin, "1");
+        if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.admin, "1");
         setPlatformAdminSignedIn(true);
       },
       signOutPlatformAdmin: () => {
-        window.sessionStorage.removeItem(STORAGE_KEYS.admin);
+        if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.admin);
         setPlatformAdminSignedIn(false);
       },
       bookTrial,
       customerMemberships,
       customerBookings,
+      marketplaceGyms,
+      platformSnapshot,
+      saasPlans,
     }),
     [
       bookTrial,
@@ -248,6 +321,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       platformAdminSignedIn,
       registerCustomer,
       signInAsIdentity,
+      marketplaceGyms,
+      convexMode,
+      platformSnapshot,
+      saasPlans,
     ],
   );
 
@@ -266,5 +343,6 @@ export function useCustomerPersona() {
 }
 
 export function useMarketplaceGyms() {
-  return MARKETPLACE_GYMS.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial");
+  const { marketplaceGyms } = useExperience();
+  return marketplaceGyms.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial");
 }

@@ -7,7 +7,7 @@ import { useEffect, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-const convexClient = convexUrl ? new ConvexReactClient(convexUrl) : undefined;
+export const convexClient = convexUrl ? new ConvexReactClient(convexUrl) : undefined;
 
 /** Whether a Convex deployment is configured; consumers must not call Convex hooks without one. */
 export const CONVEX_ENABLED = Boolean(convexUrl);

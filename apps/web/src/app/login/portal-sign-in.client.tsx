@@ -71,11 +71,15 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
   const portal = PORTALS[audience];
   const router = useRouter();
   const { isLoaded: clerkLoaded } = useAuth();
-  const { signIn } = useApp();
-  const { customers, signInCustomer, signInPlatformAdmin } = useExperience();
+  const { signIn, sessionLoading } = useApp();
+  const { customers, experienceReady, signInCustomer, signInPlatformAdmin } = useExperience();
   const [loading, setLoading] = useState(false);
 
-  const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
+  // Preview controls must not be interactive before the client providers have
+  // restored their browser state. Otherwise a cold server-rendered page can
+  // submit its form before React attaches the handlers.
+  const previewReady = !DEMO_AUTH_BYPASS || (!sessionLoading && experienceReady);
+  const identityReady = (DEMO_AUTH_BYPASS || clerkLoaded) && previewReady;
 
   const enterStaff = async (role: RoleKey) => {
     setLoading(true);
