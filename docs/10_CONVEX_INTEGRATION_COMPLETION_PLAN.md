@@ -81,6 +81,7 @@ This is one implementation program. Use one feature branch, make logical checkpo
 
 - Audit events are append-only from application users.
 - Price overrides, discounts, refunds, voids, freezes, unfreezes, extensions, cancellations, membership-date changes, check-in overrides, shift variances, role changes, permission changes, and user deactivation require immutable audit events.
+- For the MVP, approval thresholds are post-action review states: the underlying financial or commercial fact is completed first, and approval/rejection is stored as a separate append-only review without rewriting settled history.
 - Mandatory reasons must be enforced by server functions, not only by forms.
 - Audit events must record actor, organization, branch when relevant, action, entity type, entity public ID, UTC timestamp, reason, compact before/after state, and correlation ID.
 - Secrets, full authentication tokens, and unnecessary sensitive data must never enter logs or audit payloads.

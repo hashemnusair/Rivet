@@ -530,12 +530,15 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
 
 async function recordOfOptional(ctx: ReadContext, actor: ActorContext, entityType: string, id: string): Promise<DomainRecord | null> {
   if (!id) return null;
-  return await ctx.db
+  const record = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type_public_id", (q) =>
       q.eq("organizationId", actor.organization._id).eq("entityType", entityType).eq("publicId", id),
     )
     .unique();
+  if (!record) return null;
+  if (record.branchId && actor.branchScope === "selected" && !actor.branchIds.includes(record.branchId)) return null;
+  return record;
 }
 
 async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
@@ -2003,6 +2006,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const related = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.originalPaymentId === original.id && payment.type === "refund");
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
+      if (input.amount != null && currencyOf(input.amount, "") !== actor.organization.currency) {
+        domainError("VALIDATION_ERROR", "Refund currency does not match the organization.", { correlationId: actor.correlationId });
+      }
       const allocation = refundAllocation(input.amount == null ? undefined : amountOf(input.amount), remaining);
       if (!allocation.ok && allocation.code === "PAYMENT_ALREADY_REFUNDED") domainError(allocation.code, "This payment was already fully refunded.", { correlationId: actor.correlationId });
       if (!allocation.ok) domainError(allocation.code, "Refund amount exceeds the refundable balance.", { correlationId: actor.correlationId });
@@ -2015,8 +2021,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updatedStatus = alreadyRefunded + amount >= amountOf(original.amount) ? "refunded" : "partially_refunded";
       await patchRecord(ctx, actor, originalRecord, { status: updatedStatus, refundedAmount: money(alreadyRefunded + amount, actor.organization.currency), refundReason: stringValue(input.reason) });
       if (original.chargeId) {
-        const charge = await recordOfOptional(ctx, actor, "charge", stringValue(original.chargeId));
-        if (charge) { const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" }); }
+        const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
+        const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" });
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: `${original.receiptNumber} · ${original.memberId}`, summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
@@ -2033,7 +2039,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const paymentDay = todayIn(actor.organization.timezone || TZ_FALLBACK);
       if (businessDate(stringValue(original.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== paymentDay) domainError("VOID_WINDOW_EXPIRED", "Payments can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
       await patchRecord(ctx, actor, originalRecord, { status: "voided", voidReason: stringValue(input.reason) });
-      if (original.chargeId) { const charge = await recordOfOptional(ctx, actor, "charge", stringValue(original.chargeId)); if (charge) { const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); } }
+      if (original.chargeId) { const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId)); const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: `${original.receiptNumber} · ${original.memberId}`, summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
@@ -2188,6 +2194,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const eventId = recordId(input.auditEventId);
       const event = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).collect().then((rows) => rows.find((row) => row.publicId === eventId));
       if (!event) domainError("NOT_FOUND", "Approval not found.", { correlationId: actor.correlationId });
+      if (event.branchId && actor.branchScope === "selected" && !actor.branchIds.includes(event.branchId)) domainError("NOT_FOUND", "Approval not found.", { correlationId: actor.correlationId });
       if (event.approvalStatus !== "pending") domainError("VALIDATION_ERROR", "This approval is not pending.", { correlationId: actor.correlationId });
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision must be approved or rejected.", { correlationId: actor.correlationId });
@@ -2197,8 +2204,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!approvalPermission) domainError("VALIDATION_ERROR", "This audit event does not support approval review.", { correlationId: actor.correlationId });
       requirePermission(actor, approvalPermission);
       await insertRecord(ctx, actor, "approvalReview", { id: newPublicId(), auditEventId: eventId, decision, note: optionalString(input.note), reviewedById: publicUserId(actor.user), reviewedAt: isoNow() }, { branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
-      if (event.entityType === "membership") { const membership = await recordOfOptional(ctx, actor, "membership", event.entityPublicId); if (membership) await patchRecord(ctx, actor, membership, { discountApprovalStatus: decision }); }
-      if (event.entityType === "cash_shift") { const shift = await recordOfOptional(ctx, actor, "shift", event.entityPublicId); if (shift) await patchRecord(ctx, actor, shift, { varianceApprovalStatus: decision }); }
+      if (event.entityType === "membership") { const membership = await recordOf(ctx, actor, "membership", event.entityPublicId); await patchRecord(ctx, actor, membership, { discountApprovalStatus: decision }); }
+      if (event.entityType === "cash_shift") { const shift = await recordOf(ctx, actor, "shift", event.entityPublicId); await patchRecord(ctx, actor, shift, { varianceApprovalStatus: decision }); }
       await insertAudit(ctx, actor, { category: event.category, action: `${event.action}.${decision}`, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: `${decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`, reason: optionalString(input.note), branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       return undefined;
     }

@@ -71,6 +71,14 @@ pnpm build
 
 `pnpm test:e2e` runs seeded preview journeys. The trusted Clerk-to-Convex smoke is opt-in and requires `PLAYWRIGHT_CONVEX_SMOKE=1` plus a storage-state file outside Git.
 
+The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
+
+```bash
+PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm test:e2e -- convex-smoke.spec.ts
+```
+
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The repository currently has no trusted session or GitHub secrets, so this is the one external release gate that remains to be run by an authorized project maintainer.
+
 ## Convex deployment, seed, and rollback
 
 Regenerate the Convex client types and verify the server TypeScript before deploying:
@@ -132,6 +140,8 @@ The production Clerk instance and custom-domain DNS setup remain an external rel
 Convex resolves the authenticated Clerk subject, active organization membership, role permissions, and branch scope on every public operation. Cross-tenant lookups return stable non-disclosure errors. Sensitive actions require server-side permissions and reasons and append immutable audit events. Public IDs remain UUIDs at the `GymOSApi` boundary even though Convex document IDs are used internally.
 
 Money is stored as integer minor units plus currency; JOD uses three decimal places. Timestamps are UTC, business-day decisions use the tenant timezone, membership status and check-in precedence are server-side invariants, payments are idempotent, receipts are organization-sequenced, and void/refund facts are additive and distinct.
+
+MVP approval semantics are post-action review: large refunds, over-limit discounts, and shift variances are completed and audited before review. A rejection records accountability and does not rewrite settled financial history. Pre-authorization remains a pilot-policy decision.
 
 Outbound automation delivery is sandbox/log based until an approved provider is selected. The trainer marketplace, native mobile apps, inventory/POS, double-entry accounting, biometric storage, and unapproved external billing or messaging integrations are not part of this MVP.
 

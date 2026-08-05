@@ -336,6 +336,11 @@ export class MockGymOSApi implements GymOSApi {
     return user.branchIds[0];
   }
 
+  private branchIsVisible(branchId?: T.UUID): boolean {
+    const user = this.actor();
+    return user.branchScope === "all" || !branchId || user.branchIds.includes(branchId);
+  }
+
   private audit(input: Omit<T.AuditEvent, "id" | "organizationId" | "correlationId" | "occurredAt" | "actorId" | "actorName" | "actorRole">) {
     const actor = this.actor();
     const event: T.AuditEvent = {
@@ -2247,6 +2252,9 @@ export class MockGymOSApi implements GymOSApi {
       const alreadyRefunded = original.refundedAmount?.amount ?? 0;
       const remaining = original.amount.amount - alreadyRefunded;
       if (remaining <= 0) throw ApiError.of(ERR.PAYMENT_ALREADY_REFUNDED, "This payment was already fully refunded.");
+      if (input.amount && input.amount.currency !== this.db.organization.currency) {
+        throw ApiError.of(ERR.VALIDATION, "Refund currency does not match the organization.");
+      }
       const amount = input.amount?.amount ?? remaining;
       if (!Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) {
         throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
@@ -2671,7 +2679,7 @@ export class MockGymOSApi implements GymOSApi {
   listPendingApprovals(): Promise<T.AuditEvent[]> {
     return this.respond(() => {
       this.require("audit.read");
-      return this.db.audits.filter((a) => a.approvalStatus === "pending");
+      return this.db.audits.filter((a) => a.approvalStatus === "pending" && this.branchIsVisible(a.branchId));
     });
   }
 
@@ -2679,6 +2687,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const event = this.db.audits.find((a) => a.id === auditEventId);
       if (!event) throw ApiError.of(ERR.NOT_FOUND, "Approval not found.");
+      if (!this.branchIsVisible(event.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Approval not found.");
       if (input.decision !== "approved" && input.decision !== "rejected") {
         throw ApiError.of(ERR.VALIDATION, "Approval decision must be approved or rejected.");
       }
