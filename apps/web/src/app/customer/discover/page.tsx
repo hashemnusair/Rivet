@@ -3,6 +3,7 @@
 import { ArrowRight, Dumbbell, MapPin, Search, SlidersHorizontal, Star, Users } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Reveal } from "@/components/marketing/reveal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -29,16 +30,11 @@ export default function DiscoverGymsPage() {
             <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">Find a gym</h1>
             <p className="mt-1.5 max-w-xl text-[13.5px] text-ink-2">Compare gyms running on RIVET, pick a branch, and book a free trial that lands on the gym&rsquo;s follow-up queue.</p>
           </div>
-          {customer ? (
-            customerMemberships.length > 0 || customerBookings.length > 0 ? (
-              <Button asChild variant="secondary"><Link href="/customer/my-gyms">My dashboard <ArrowRight /></Link></Button>
-            ) : null
-          ) : (
-            <div className="flex gap-2">
-              <Button asChild variant="secondary"><Link href="/login/member">Sign in</Link></Button>
-              <Button asChild><Link href="/customer/signup">Create account</Link></Button>
-            </div>
-          )}
+          {/* Signing in lives in the header. Repeating it here (and again in the
+              footer) gave one page three ways to do the same thing. */}
+          {customer && (customerMemberships.length > 0 || customerBookings.length > 0) ? (
+            <Button asChild variant="secondary"><Link href="/customer/my-gyms">My dashboard <ArrowRight /></Link></Button>
+          ) : null}
         </div>
       </section>
 
@@ -52,23 +48,46 @@ export default function DiscoverGymsPage() {
           </div>
 
           <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((gym) => (
-              <article key={gym.id} className="group flex flex-col overflow-hidden border border-line bg-surface transition-all hover:-translate-y-1 hover:border-ink hover:shadow-pop">
-                <div className="relative min-h-[188px] p-6 text-white" style={{ backgroundColor: gym.accent }}>
-                  <div className="absolute inset-0 opacity-20 marketing-grid" />
-                  <div className="relative flex items-start justify-between"><span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]">{gym.shortName}</span>{gym.featured ? <span className="border border-white/40 px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em]">Featured</span> : null}</div>
-                  <div className="relative mt-14"><p className="text-[12px] text-white/75">{gym.category}</p><h2 className="mt-1 text-[27px] font-semibold tracking-tight">{gym.name}</h2></div>
-                </div>
-                <div className="flex flex-1 flex-col p-5">
-                  <p className="text-[13px] leading-relaxed text-ink-2">{gym.tagline}</p>
-                  <div className="mt-5 grid grid-cols-3 gap-2 border-y border-line py-4 text-[11px] text-ink-3">
-                    <span className="flex items-center gap-1.5"><Star className="size-3.5 fill-warning text-warning" /> {gym.rating}</span>
-                    <span className="flex items-center gap-1.5"><Users className="size-3.5" /> {gym.memberCount.toLocaleString()}</span>
-                    <span className="flex items-center gap-1.5"><MapPin className="size-3.5" /> {gym.areas[0]}</span>
+            {filtered.map((gym, index) => (
+              <Reveal key={gym.id} delay={index * 70}>
+                <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-all duration-300 hover:-translate-y-1 hover:border-ink hover:shadow-pop">
+                  <div className="relative h-28 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
+                    <div className="absolute inset-0 opacity-20 marketing-grid" />
+                    <div className="relative flex items-start justify-between">
+                      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]">{gym.shortName}</span>
+                      {gym.featured ? (
+                        <span className="rounded-sm border border-white/40 px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em]">Featured</span>
+                      ) : null}
+                    </div>
+                    <Dumbbell className="absolute -bottom-3 end-3 size-20 opacity-20 transition-transform duration-500 group-hover:scale-110" strokeWidth={1.2} />
                   </div>
-                  <div className="mt-5 flex items-end justify-between gap-4"><div><p className="eyebrow">Memberships from</p><p className="mt-1 text-[18px] font-semibold">JD {gym.fromPriceMinor / 1000}<span className="text-[11px] font-normal text-ink-3"> / month</span></p></div><Button asChild variant="signal"><Link href={`/customer/gyms/${gym.id}`}>View & book <ArrowRight /></Link></Button></div>
-                </div>
-              </article>
+
+                  <div className="flex flex-1 flex-col p-5">
+                    <p className="eyebrow">{gym.category}</p>
+                    <h2 className="mt-1.5 text-[21px] font-semibold tracking-tight">{gym.name}</h2>
+                    <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{gym.tagline}</p>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-line py-3 text-[11px] text-ink-3">
+                      <span className="flex items-center gap-1.5"><Star className="size-3.5 fill-warning text-warning" /> {gym.rating}</span>
+                      <span className="flex items-center gap-1.5"><Users className="size-3.5" /> {gym.memberCount.toLocaleString()}</span>
+                      <span className="flex items-center gap-1.5"><MapPin className="size-3.5" /> {gym.areas[0]}</span>
+                    </div>
+
+                    <div className="mt-auto flex items-end justify-between gap-4 pt-4">
+                      <div>
+                        <p className="eyebrow">From</p>
+                        <p className="mt-1 text-[18px] font-semibold">
+                          JD {gym.fromPriceMinor / 1000}
+                          <span className="text-[11px] font-normal text-ink-3"> / month</span>
+                        </p>
+                      </div>
+                      <Button asChild variant="signal">
+                        <Link href={`/customer/gyms/${gym.id}`}>View &amp; book <ArrowRight /></Link>
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              </Reveal>
             ))}
           </div>
 

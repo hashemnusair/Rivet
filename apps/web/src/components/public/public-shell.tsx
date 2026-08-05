@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { LoadingLink } from "@/components/marketing/route-loader";
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
@@ -43,7 +44,7 @@ export function PublicHeader() {
 
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
           {MARKETING_NAV.map((item) => (
-            <Link
+            <LoadingLink
               key={item.href}
               href={item.href}
               className={cn(
@@ -52,7 +53,7 @@ export function PublicHeader() {
               )}
             >
               {item.label}
-            </Link>
+            </LoadingLink>
           ))}
         </nav>
 
@@ -246,16 +247,18 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-[60px] max-w-[1280px] items-center gap-4 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
             <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={28} priority />
-            <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
-              Member
-            </span>
+            {customerSignedIn ? (
+              <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
+                Member
+              </span>
+            ) : null}
           </Link>
 
           <nav className="flex items-center gap-1" aria-label="Member navigation">
             {nav.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
-                <Link
+                <LoadingLink
                   key={item.href}
                   href={item.href}
                   className={cn(
@@ -265,7 +268,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 >
                   <item.icon className="size-3.5" aria-hidden />
                   <span className="hidden sm:inline">{item.label}</span>
-                </Link>
+                </LoadingLink>
               );
             })}
           </nav>
@@ -333,11 +336,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
               <button type="button" onClick={() => void handleSignOut()} className="cursor-pointer transition-colors hover:text-ink">
                 Sign out
               </button>
-            ) : (
-              <Link href="/login/member" className="transition-colors hover:text-ink">
-                Sign in
-              </Link>
-            )}
+            ) : null}
           </nav>
         </div>
       </footer>

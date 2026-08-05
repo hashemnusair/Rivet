@@ -14,6 +14,8 @@ import {
 import Link from "next/link";
 import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
+import { Reveal } from "@/components/marketing/reveal";
+import { LoadingLink } from "@/components/marketing/route-loader";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
@@ -84,10 +86,10 @@ export default function LandingPage() {
               ["JD 154K", "collected and reconciled monthly"],
               ["0", "spreadsheets required"],
             ].map(([value, label], index) => (
-              <div key={label} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
+              <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
                 <p className="text-[34px] font-semibold leading-none tabular">{value}</p>
                 <p className="mt-2 text-[12.5px] text-ink-3">{label}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
@@ -169,7 +171,7 @@ export default function LandingPage() {
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="/customer/discover">Find a gym</Link>
+                  <LoadingLink href="/customer/discover">Find a gym</LoadingLink>
                 </Button>
               </div>
             </div>
@@ -187,11 +189,11 @@ export default function LandingPage() {
               description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
             />
             <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {marketplaceGyms.map((gym) => (
+              {marketplaceGyms.map((gym, index) => (
+                <Reveal key={gym.id} delay={index * 80} className="h-full">
                 <Link
-                  key={gym.id}
                   href={`/customer/gyms/${gym.id}`}
-                  className="group flex flex-col overflow-hidden rounded-lg border border-line bg-surface transition-all hover:-translate-y-1 hover:border-ink hover:shadow-pop"
+                  className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-all duration-300 hover:-translate-y-1 hover:border-ink hover:shadow-pop"
                 >
                   <div className="relative h-24 px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
                     <div className="absolute inset-0 opacity-20 marketing-grid" />
@@ -215,6 +217,7 @@ export default function LandingPage() {
                     </div>
                   </div>
                 </Link>
+                </Reveal>
               ))}
             </div>
           </div>
@@ -229,9 +232,10 @@ export default function LandingPage() {
               description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends."
             />
             <div className="mt-12 grid gap-4 lg:grid-cols-3">
-              {saasPlans.map((plan) => (
-                <div
+              {saasPlans.map((plan, index) => (
+                <Reveal
                   key={plan.name}
+                  delay={index * 90}
                   className={
                     plan.tone === "night"
                       ? "night-surface rounded-lg bg-night p-6 text-night-ink"
@@ -272,7 +276,7 @@ export default function LandingPage() {
                   >
                     <Link href="/signup">Start 14-day trial</Link>
                   </Button>
-                </div>
+                </Reveal>
               ))}
             </div>
           </div>
@@ -353,7 +357,7 @@ function SectionIntro({
   stacked?: boolean;
 }) {
   return (
-    <div className={stacked ? "max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
+    <Reveal className={stacked ? "max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
       <div>
         <p className={`font-mono text-[10px] font-medium uppercase tracking-[0.18em] ${dark ? "text-signal" : "text-ink-3"}`}>{eyebrow}</p>
         <h2
@@ -365,17 +369,17 @@ function SectionIntro({
       <p className={`text-[14.5px] leading-[1.7] ${dark ? "text-night-ink-2" : "text-ink-2"} ${stacked ? "mt-5" : "lg:pb-2"}`}>
         {description}
       </p>
-    </div>
+    </Reveal>
   );
 }
 
 function DarkFeature({ icon, label, title, copy }: { icon: React.ReactNode; label: string; title: string; copy: string }) {
   return (
-    <div className="bg-night-2 p-6 transition-colors hover:bg-night-3">
+    <Reveal className="bg-night-2 p-6 transition-colors hover:bg-night-3">
       <span className="flex size-10 items-center justify-center rounded-md border border-night-line text-signal [&_svg]:size-4">{icon}</span>
       <p className="mt-7 eyebrow-night">{label}</p>
       <h3 className="mt-2.5 text-[19px] font-semibold tracking-tight">{title}</h3>
       <p className="mt-3 text-[12.5px] leading-relaxed text-night-ink-2">{copy}</p>
-    </div>
+    </Reveal>
   );
 }

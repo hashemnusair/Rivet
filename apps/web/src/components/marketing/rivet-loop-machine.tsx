@@ -69,14 +69,20 @@ interface Plate {
   h: number;
 }
 
+/**
+ * One pitch for the whole stack: 10 tall, 3 apart, so the run from plate one at
+ * 67 lands plate eight's base exactly on the frame bottom at 168. The source
+ * mark drifts here — a 5.5 gap between plates four and five and a 2 between
+ * seven and eight — which reads as a mistake once the plates are numbered.
+ */
 const PLATES: Plate[] = [
   { x: 73.5, w: 34, right: 107.5, y: 67, h: 10 },
-  { x: 73.5, w: 34, right: 107.5, y: 79.5, h: 10 },
-  { x: 73.5, w: 34, right: 107.5, y: 92, h: 10 },
-  { x: 73.5, w: 34, right: 107.5, y: 104.5, h: 10 },
-  { x: 73.5, w: 53.5, right: 127, y: 120, h: 10 },
-  { x: 73.5, w: 53.5, right: 127, y: 132.5, h: 10.5 },
-  { x: 73.5, w: 53.5, right: 127, y: 145.5, h: 10.5 },
+  { x: 73.5, w: 34, right: 107.5, y: 80, h: 10 },
+  { x: 73.5, w: 34, right: 107.5, y: 93, h: 10 },
+  { x: 73.5, w: 34, right: 107.5, y: 106, h: 10 },
+  { x: 73.5, w: 53.5, right: 127, y: 119, h: 10 },
+  { x: 73.5, w: 53.5, right: 127, y: 132, h: 10 },
+  { x: 73.5, w: 53.5, right: 127, y: 145, h: 10 },
   { x: 73.5, w: 53.5, right: 127, y: 158, h: 10 },
 ];
 
