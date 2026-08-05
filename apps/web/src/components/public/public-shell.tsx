@@ -4,7 +4,7 @@ import { Show, UserButton, useClerk } from "@clerk/nextjs";
 import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -226,6 +226,7 @@ const MEMBER_NAV = [
 
 export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { customerSignedIn, signOutCustomer } = useExperience();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
@@ -237,7 +238,8 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // signed in again on the next guarded render.
   const handleSignOut = async () => {
     signOutCustomer();
-    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
+    if (!DEMO_AUTH_BYPASS) await signOutClerk();
+    router.push("/login/member");
   };
 
   return (

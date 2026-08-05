@@ -1,36 +1,52 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils/cn";
 import { RivetLogoLoader } from "./rivet-logo-loader";
 
 /**
- * Working surfaces, where a full-screen hold between every list and record
- * would be in the way rather than reassuring. Someone moving through members,
- * the reception lane or the platform console is doing a job, not being
- * introduced to the product.
- *
- * Arriving at one of these from outside still gets the transition — it is
- * navigating *within* them that is suppressed.
+ * The journeys that deserve a branded hand-off. The rest of the product is a
+ * working surface: moving between members, reception, payments or settings
+ * should stay immediate rather than putting a full-screen hold between every
+ * task.
  */
-const WORKSPACE_ROUTES = [
-  "/dashboard",
-  "/reception",
-  "/members",
-  "/memberships",
-  "/plans",
-  "/crm",
-  "/payments",
-  "/automations",
-  "/audit",
-  "/settings",
-  "/platform",
-];
+function isAuthRoute(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/") ||
+    pathname === "/customer/login" ||
+    pathname === "/customer/signup"
+  );
+}
 
-function isWorkspace(pathname: string): boolean {
-  return WORKSPACE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+function isGymFinderRoute(pathname: string): boolean {
+  return pathname === "/customer/discover" || pathname.startsWith("/customer/gyms/");
+}
+
+function isAuthenticatedHome(pathname: string): boolean {
+  return (
+    pathname === "/dashboard" ||
+    pathname === "/reception" ||
+    pathname === "/platform" ||
+    pathname === "/customer/my-gyms" ||
+    pathname.startsWith("/customer/my-gyms/")
+  );
+}
+
+/** True only for the intentional public/authenticated hand-off journeys. */
+export function shouldTransition(from: string, to: string): boolean {
+  if (from === to) return false;
+  const landingToAuth = from === "/" && isAuthRoute(to);
+  const authToLanding = isAuthRoute(from) && to === "/";
+  const landingToFinder = from === "/" && isGymFinderRoute(to);
+  const finderToLanding = isGymFinderRoute(from) && to === "/";
+  const authToHome = isAuthRoute(from) && isAuthenticatedHome(to);
+  const homeToAuth = isAuthenticatedHome(from) && isAuthRoute(to);
+  return landingToAuth || authToLanding || landingToFinder || finderToLanding || authToHome || homeToAuth;
 }
 
 /**
@@ -65,40 +81,57 @@ export function RouteLoadingOverlay({ fixed = true }: { fixed?: boolean }) {
  */
 export function RouteTransitions({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [navigatingFrom, setNavigatingFrom] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const previousPathname = useRef(pathname);
+  const visibleSince = useRef<number | null>(null);
+  const hideTimer = useRef<number | null>(null);
+  const bailTimer = useRef<number | null>(null);
 
   useEffect(() => setMounted(true), []);
 
-  // The hold ends when the route actually changes.
-  useEffect(() => {
-    setNavigatingFrom((from) => (from !== null && from !== pathname ? null : from));
-  }, [pathname]);
+  const hide = useCallback(() => {
+    visibleSince.current = null;
+    setVisible(false);
+    if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
+    if (bailTimer.current !== null) window.clearTimeout(bailTimer.current);
+    hideTimer.current = null;
+    bailTimer.current = null;
+  }, []);
 
-  // A cached route can resolve in a few milliseconds; showing the hold straight
-  // away would read as a flicker, so it only appears if the wait is real.
-  useEffect(() => {
-    if (navigatingFrom === null) {
-      setVisible(false);
-      return;
+  const start = useCallback(() => {
+    if (visibleSince.current === null) {
+      visibleSince.current = performance.now();
+      setVisible(true);
     }
-    const show = window.setTimeout(() => setVisible(true), 130);
-    // Backstop: a click that never became a navigation must not strand the
-    // overlay over the page.
-    const bail = window.setTimeout(() => setNavigatingFrom(null), 10_000);
-    return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(bail);
-    };
-  }, [navigatingFrom]);
+    if (bailTimer.current !== null) window.clearTimeout(bailTimer.current);
+    bailTimer.current = window.setTimeout(hide, 10_000);
+  }, [hide]);
+
+  const finish = useCallback(() => {
+    if (visibleSince.current === null) return;
+    const elapsed = performance.now() - visibleSince.current;
+    const remaining = Math.max(320 - elapsed, 0);
+    if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(hide, remaining);
+  }, [hide]);
+
+  // Catch both prefetched links and programmatic router.push calls. The click
+  // listener below starts the hold before an anchor navigation; this effect is
+  // the fallback for the login button, sign-out, browser back/forward, and any
+  // other navigation that does not emit a click.
+  useEffect(() => {
+    const from = previousPathname.current;
+    previousPathname.current = pathname;
+    if (shouldTransition(from, pathname)) {
+      start();
+      finish();
+    }
+  }, [finish, pathname, start]);
 
   useEffect(() => {
-    if (isWorkspace(pathname)) return;
-
-    // Capture phase, and deliberately passive: Next's Link calls
-    // preventDefault on its own handler before a bubbled listener would run,
-    // so this watches for a navigation starting rather than trying to own it.
+    // Capture phase: Next's Link calls preventDefault in its own handler, so we
+    // observe the navigation before it is handed to the client router.
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
@@ -119,12 +152,14 @@ export function RouteTransitions({ children }: { children: ReactNode }) {
       // In-page anchors scroll; they are not navigations.
       if (url.pathname === window.location.pathname) return;
 
-      setNavigatingFrom(window.location.pathname);
+      if (shouldTransition(window.location.pathname, url.pathname)) start();
     };
 
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [pathname]);
+  }, [start]);
+
+  useEffect(() => () => hide(), [hide]);
 
   return (
     <>

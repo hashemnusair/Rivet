@@ -46,7 +46,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
   const handleSignOut = async () => {
     await signOut();
-    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
+    // AppProviders routes to /login; sign out Clerk without a second hard
+    // redirect so RouteTransitions can show the branded hand-off first.
+    if (!DEMO_AUTH_BYPASS) await signOutClerk();
   };
 
   return (
