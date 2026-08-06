@@ -175,7 +175,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
             <Show when="signed-in">
               <SignedInIdentity />
               <ProfileCompletionGate>
-                {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
+                {CONVEX_ENABLED ? <IdentityPanel /> : <NoRoleSource>{accounts}</NoRoleSource>}
               </ProfileCompletionGate>
             </Show>
           </>

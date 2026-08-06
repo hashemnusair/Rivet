@@ -10,15 +10,13 @@ import { destinationFor, useRivetIdentity, type RivetIdentity } from "@/lib/auth
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { LoginLoading } from "./login-chrome";
-import type { Audience } from "./portals";
 
 /**
- * What a portal shows once Clerk has authenticated someone and Convex has said
- * who they are. Nobody picks an account here: the role on their Convex
- * membership decides where they go, and a portal they do not belong to says so
- * plainly rather than offering a way in.
+ * Once Clerk authenticates someone, their Convex role—not the portal they
+ * happened to open—decides where they go. This prevents an administrator from
+ * being offered member access merely because they signed in on the gym page.
  */
-export function IdentityPanel({ audience }: { audience: Audience }) {
+export function IdentityPanel() {
   const identity = useRivetIdentity();
 
   if (identity.status === "loading" || identity.status === "pending") return <LoginLoading />;
@@ -38,9 +36,10 @@ export function IdentityPanel({ audience }: { audience: Audience }) {
 
   if (identity.status !== "ready") return null;
 
-  if (audience === "staff") return <GymEntry identity={identity} />;
-  if (audience === "member") return <MemberEntry identity={identity} />;
-  return <AdminEntry identity={identity} />;
+  const destination = destinationFor(identity);
+  if (destination.area === "platform") return <AdminEntry identity={identity} />;
+  if (destination.area === "gym") return <GymEntry identity={identity} />;
+  return <MemberEntry identity={identity} />;
 }
 
 function GymEntry({ identity }: { identity: RivetIdentity }) {
