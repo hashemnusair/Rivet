@@ -139,7 +139,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!convexMode) return;
     if (identity.status === "loading" || identity.status === "pending") return;
-    if (identity.status === "anonymous") {
+    if (identity.status === "anonymous" || identity.status === "error") {
       convexSessionKey.current = undefined;
       setSession(undefined);
       setSignedIn(false);

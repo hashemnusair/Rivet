@@ -273,6 +273,30 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     [bookings, customerId],
   );
 
+  // Keep auth actions referentially stable. Redirect effects depend on these
+  // callbacks; recreating them whenever background data arrived used to cancel
+  // the platform redirect timer halfway through a successful sign-in.
+  const signInCustomer = useCallback((id: string) => {
+    if (!customers.some((persona) => persona.id === id)) return;
+    if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
+    setCustomerId(id);
+  }, [convexMode, customers]);
+
+  const signOutCustomer = useCallback(() => {
+    if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.customer);
+    setCustomerId(undefined);
+  }, [convexMode]);
+
+  const signInPlatformAdmin = useCallback(() => {
+    if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.admin, "1");
+    setPlatformAdminSignedIn(true);
+  }, [convexMode]);
+
+  const signOutPlatformAdmin = useCallback(() => {
+    if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.admin);
+    setPlatformAdminSignedIn(false);
+  }, [convexMode]);
+
   const value = useMemo<ExperienceContextValue>(
     () => ({
       customerId,
@@ -282,26 +306,13 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       customers,
       memberships,
       bookings,
-      signInCustomer: (id) => {
-        if (!customers.some((persona) => persona.id === id)) return;
-        if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.customer, id);
-        setCustomerId(id);
-      },
+      signInCustomer,
       registerCustomer,
       signInAsIdentity,
       emailTaken: (email) => customers.some((persona) => persona.email.toLowerCase() === email.trim().toLowerCase()),
-      signOutCustomer: () => {
-        if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.customer);
-        setCustomerId(undefined);
-      },
-      signInPlatformAdmin: () => {
-        if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.admin, "1");
-        setPlatformAdminSignedIn(true);
-      },
-      signOutPlatformAdmin: () => {
-        if (!convexMode) window.sessionStorage.removeItem(STORAGE_KEYS.admin);
-        setPlatformAdminSignedIn(false);
-      },
+      signOutCustomer,
+      signInPlatformAdmin,
+      signOutPlatformAdmin,
       bookTrial,
       customerMemberships,
       customerBookings,
@@ -321,8 +332,11 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       platformAdminSignedIn,
       registerCustomer,
       signInAsIdentity,
+      signInCustomer,
+      signOutCustomer,
+      signInPlatformAdmin,
+      signOutPlatformAdmin,
       marketplaceGyms,
-      convexMode,
       platformSnapshot,
       saasPlans,
     ],

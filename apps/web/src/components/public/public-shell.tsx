@@ -1,6 +1,6 @@
 "use client";
 
-import { Show, UserButton, useClerk } from "@clerk/nextjs";
+import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
 import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
@@ -58,7 +59,7 @@ export function PublicHeader() {
 
         {/* Sign-in lives at /login and nowhere else — no modal, so there is one
             place to authenticate and one place that decides which portal. */}
-        <div className="hidden items-center gap-2 lg:flex">
+        <div className="hidden min-w-[246px] items-center justify-end gap-2 lg:flex">
           {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions /> : <ClerkMarketingActions />}
         </div>
 
@@ -104,49 +105,57 @@ function PreviewMarketingSignedOutActions({ mobile = false, onClose }: { mobile?
 }
 
 function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  const identity = useRivetIdentity();
+
+  // Paint the public actions on the server and first client frame. Clerk's
+  // previous <Show> boundary painted nothing until hydration, which pulled the
+  // entire navbar sideways on every refresh.
+  if (!isLoaded || !isSignedIn) {
+    return <MarketingSignedOutActions mobile={mobile} onClose={onClose} />;
+  }
+
+  const resolving = identity.status === "loading" || identity.status === "pending";
+  const destination = identity.status === "ready" ? destinationFor(identity).href : "/login";
+
   if (mobile) {
     return (
       <>
-        <Show when="signed-out">
-          <Button asChild variant="secondary" onClick={onClose}>
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <Button asChild variant="signal" onClick={onClose}>
-            <Link href="/signup">Send gym application</Link>
-          </Button>
-        </Show>
-        <Show when="signed-in">
-          <Button asChild variant="signal" onClick={onClose}>
-            <Link href="/login">Open RIVET</Link>
-          </Button>
-          <div className="flex justify-center py-2">
-            <UserButton />
-          </div>
-        </Show>
+        <Button asChild={!resolving} variant="signal" onClick={onClose} disabled={resolving}>
+          {resolving ? <span>Preparing your account…</span> : <Link href={destination}>Open RIVET</Link>}
+        </Button>
+        <div className="flex justify-center py-2">
+          <UserButton />
+        </div>
       </>
     );
   }
 
   return (
     <>
-      <Show when="signed-out">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/login">Sign in</Link>
-        </Button>
-        <Button asChild variant="signal" size="sm">
-          <Link href="/signup">
-            Send gym application <ArrowRight />
-          </Link>
-        </Button>
-      </Show>
-      <Show when="signed-in">
-        <Button asChild variant="signal" size="sm">
-          <Link href="/login">
+      <Button asChild={!resolving} variant="signal" size="sm" disabled={resolving}>
+        {resolving ? (
+          <span>Preparing account…</span>
+        ) : (
+          <Link href={destination}>
             Open RIVET <ArrowRight />
           </Link>
-        </Button>
-        <UserButton />
-      </Show>
+        )}
+      </Button>
+      <UserButton />
+    </>
+  );
+}
+
+function MarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
+  return (
+    <>
+      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
+        <Link href="/login">Sign in</Link>
+      </Button>
+      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
+        <Link href="/signup">{mobile ? "Send gym application" : <>Send gym application <ArrowRight /></>}</Link>
+      </Button>
     </>
   );
 }

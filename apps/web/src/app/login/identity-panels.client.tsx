@@ -26,18 +26,19 @@ export function IdentityPanel() {
     return <AutomaticEntry label="Preparing your workspace" />;
   }
 
-  // Convex holds the roles. If it cannot see this session there is nothing to
-  // route on, and silently rendering nothing would strand a signed-in person on
-  // a page with no way forward.
-  if (identity.status === "anonymous") {
+  // Only a confirmed synchronization/query failure becomes an error. Normal
+  // Clerk → Convex handoff states stay on the branded transition above.
+  if (identity.status === "error") {
     return (
       <NotEntitled
         title="Your role could not be loaded"
-        body="You are signed in, but RIVET could not read your account's role. This usually means the Convex deployment is unreachable or is not configured to verify Clerk sessions."
+        body={identity.errorMessage ?? "You are signed in, but RIVET could not read your account's role. Please try signing in again."}
         primary={{ label: "Back to sign-in options", href: "/login" }}
       />
     );
   }
+
+  if (identity.status === "anonymous") return null;
 
   if (identity.status !== "ready") return null;
 
@@ -129,14 +130,19 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
   const router = useRouter();
   const { signInPlatformAdmin } = useExperience();
   const started = useRef(false);
+  const signInPlatformAdminRef = useRef(signInPlatformAdmin);
+
+  useEffect(() => {
+    signInPlatformAdminRef.current = signInPlatformAdmin;
+  }, [signInPlatformAdmin]);
 
   useEffect(() => {
     if (!identity.platformAdmin || started.current) return;
     started.current = true;
-    signInPlatformAdmin();
+    signInPlatformAdminRef.current();
     const timer = window.setTimeout(() => router.replace("/platform"), ENTRY_TRANSITION_MS);
     return () => window.clearTimeout(timer);
-  }, [identity.platformAdmin, router, signInPlatformAdmin]);
+  }, [identity.platformAdmin, router]);
 
   if (!identity.platformAdmin) {
     return (

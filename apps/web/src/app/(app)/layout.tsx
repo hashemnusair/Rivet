@@ -24,7 +24,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // In Convex mode the session was hydrated from the authenticated identity;
   // mock mode retains its deterministic persona bootstrap for preview tests.
-  const gymRole = !convexMode && identity.status === "ready" ? destinationFor(identity).role : undefined;
+  const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
+  const gymRole = identityDestination?.area === "gym" ? identityDestination.role : undefined;
   const binding = useRef(false);
   const identityName = identity.fullName || identity.email || "RIVET user";
   const identityEmail = identity.email || "";
@@ -54,10 +55,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    // Signed in, but this account holds no gym role. The portal explains that
-    // rather than leaving them on a workspace that would render empty.
-    if (!signedIn && !gymRole && (identity.status === "ready" || identity.status === "anonymous")) router.replace("/login");
-  }, [identityReady, identitySignedIn, identityStillResolving, identity.status, gymRole, sessionLoading, signedIn, router]);
+    if (identity.status === "error" || identity.status === "anonymous") {
+      router.replace("/login");
+      return;
+    }
+    // A valid account that opened the wrong protected area should go directly
+    // to its real destination. Routing through /login caused the visible
+    // dashboard → login → platform flash reported in production.
+    if (identityDestination && identityDestination.area !== "gym") router.replace(identityDestination.href);
+  }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, sessionLoading, router]);
 
   if (!identityReady || sessionLoading || identityStillResolving || !identitySignedIn || !signedIn) {
     return (

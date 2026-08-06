@@ -1,7 +1,8 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
-import { createContext, useContext, type ReactNode } from "react";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { RoleKey } from "@/lib/domain/types";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
@@ -22,7 +23,8 @@ export interface RivetIdentity {
    * Convex deployment; `pending` is the brief window where Clerk has a session
    * but the Convex user row is still being written on a first-ever sign-in.
    */
-  status: "loading" | "anonymous" | "pending" | "ready" | "demo";
+  status: "loading" | "anonymous" | "pending" | "ready" | "error" | "demo";
+  errorMessage?: string;
   userId?: string;
   email?: string;
   fullName?: string;
@@ -56,18 +58,74 @@ export function RivetIdentityProvider({ children }: { children: ReactNode }) {
 }
 
 function ConvexIdentity({ children }: { children: ReactNode }) {
+  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
+  const { user } = useUser();
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const result = useQuery(api.identity.current, isAuthenticated ? {} : "skip");
+  const ensureCurrentUser = useMutation(api.users.ensureCurrent);
+  const userId = user?.id;
+  const fullName = [user?.firstName?.trim(), user?.lastName?.trim()].filter(Boolean).join(" ") || undefined;
+  const syncKey = userId ? `${userId}:${fullName ?? ""}` : undefined;
+  const [sync, setSync] = useState<{ key?: string; status: "idle" | "syncing" | "ready" | "error"; message?: string }>({
+    status: "idle",
+  });
+
+  // A Clerk session and a Convex-authenticated websocket become ready at
+  // different moments. Synchronize the user row first, then start the identity
+  // query. This removes the brief `null` result that previously painted a
+  // scary role error during every successful sign-in.
+  useEffect(() => {
+    if (!clerkLoaded || !clerkSignedIn || !isAuthenticated || !syncKey) {
+      setSync((current) => current.status === "idle" && !current.key ? current : { status: "idle" });
+      return;
+    }
+
+    let cancelled = false;
+    setSync((current) => current.key === syncKey && current.status === "ready" ? current : { key: syncKey, status: "syncing" });
+    void ensureCurrentUser({ fullName })
+      .then(() => {
+        if (!cancelled) setSync({ key: syncKey, status: "ready" });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSync({
+            key: syncKey,
+            status: "error",
+            message: "RIVET could not synchronize this account with its workspace.",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clerkLoaded, clerkSignedIn, ensureCurrentUser, fullName, isAuthenticated, syncKey]);
+
+  const canQueryIdentity = Boolean(isAuthenticated && syncKey && sync.key === syncKey && sync.status === "ready");
+  const result = useQuery(api.identity.current, canQueryIdentity ? {} : "skip");
 
   let value: RivetIdentity;
-  if (authLoading) {
+  if (!clerkLoaded || authLoading) {
     value = { status: "loading", platformAdmin: false, memberships: [] };
-  } else if (!isAuthenticated) {
+  } else if (!clerkSignedIn) {
     value = { status: "anonymous", platformAdmin: false, memberships: [] };
+  } else if (!isAuthenticated || sync.status === "idle" || sync.status === "syncing") {
+    value = { status: "loading", platformAdmin: false, memberships: [] };
+  } else if (sync.status === "error") {
+    value = {
+      status: "error",
+      errorMessage: sync.message,
+      platformAdmin: false,
+      memberships: [],
+    };
   } else if (result === undefined) {
     value = { status: "loading", platformAdmin: false, memberships: [] };
   } else if (result === null) {
-    value = { status: "anonymous", platformAdmin: false, memberships: [] };
+    value = {
+      status: "error",
+      errorMessage: "RIVET could not verify this account with Convex.",
+      platformAdmin: false,
+      memberships: [],
+    };
   } else if (result.pending || !result.user) {
     value = { status: "pending", platformAdmin: false, memberships: [] };
   } else {
