@@ -165,7 +165,7 @@ export default function LandingPage() {
               </ul>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild size="lg">
-                  <Link href="/customer/signup">
+                  <Link href="/login/member/create">
                     Create a free account <ArrowRight />
                   </Link>
                 </Button>

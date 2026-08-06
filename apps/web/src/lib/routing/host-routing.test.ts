@@ -22,7 +22,7 @@ describe("decideHostRouting", () => {
     });
     expect(decideHostRouting("app.rivetjo.com", "/signup")).toEqual({
       kind: "rewrite",
-      pathname: "/customer/signup",
+      pathname: "/login/member/create",
     });
   });
 

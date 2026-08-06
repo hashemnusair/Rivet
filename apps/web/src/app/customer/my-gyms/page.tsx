@@ -419,7 +419,7 @@ function SignedOut() {
           <Link href="/login/member">Member sign-in</Link>
         </Button>
         <Button asChild variant="secondary">
-          <Link href="/customer/signup">Create an account</Link>
+          <Link href="/login/member/create">Create an account</Link>
         </Button>
       </div>
       <Link href="/customer/discover" className="mt-4 text-[12.5px] text-ink-3 underline decoration-line-3 underline-offset-4 hover:text-ink">

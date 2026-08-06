@@ -36,7 +36,7 @@ export function decideHostRouting(
   if (normalized === "app.rivetjo.com") {
     if (pathname === "/") return { kind: "rewrite", pathname: "/customer/discover" };
     if (pathname === "/login") return { kind: "rewrite", pathname: "/login/member" };
-    if (pathname === "/signup") return { kind: "rewrite", pathname: "/customer/signup" };
+    if (pathname === "/signup") return { kind: "rewrite", pathname: "/login/member/create" };
   }
 
   if (normalized === "dashboard.rivetjo.com") {

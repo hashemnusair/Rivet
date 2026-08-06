@@ -178,7 +178,7 @@ export function PublicFooter() {
           title="Members"
           links={[
             ["Find a gym", "/customer/discover"],
-            ["Create a member account", "/customer/signup"],
+            ["Create a member account", "/login/member/create"],
             ["My dashboard", "/customer/my-gyms"],
           ]}
         />
@@ -313,7 +313,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <Link href="/login/member">Sign in</Link>
                 </Button>
                 <Button asChild size="sm">
-                  <Link href="/customer/signup">Create account</Link>
+                  <Link href="/login/member/create">Create account</Link>
                 </Button>
               </>
             )}

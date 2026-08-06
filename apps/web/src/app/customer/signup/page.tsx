@@ -3,14 +3,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, Check, QrCode, Search, Wallet } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 const schema = z
@@ -34,16 +32,8 @@ type FormValues = z.infer<typeof schema>;
 
 
 export default function MemberSignupPage() {
-  const router = useRouter();
   const { registerCustomer, emailTaken, experienceReady } = useExperience();
   const [submitting, setSubmitting] = useState(false);
-
-  // Real accounts are created by Clerk in the member portal. This local form
-  // only exists for the preview build, which has no Clerk instance — keeping
-  // both live would give members two different "sign up" buttons.
-  useEffect(() => {
-    if (!DEMO_AUTH_BYPASS) router.replace("/login/member/create");
-  }, [router]);
 
   const {
     register,

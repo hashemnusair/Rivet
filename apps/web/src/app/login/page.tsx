@@ -62,7 +62,7 @@ export default function LoginPage() {
           </Link>{" "}
           or{" "}
           <Link
-            href="/customer/signup"
+            href="/login/member/create"
             className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink"
           >
             create a member account
