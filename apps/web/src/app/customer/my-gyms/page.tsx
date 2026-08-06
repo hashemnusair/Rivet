@@ -416,7 +416,7 @@ function SignedOut() {
       <p className="mt-2 text-[13px] text-ink-2">Memberships, visits, balance, and your entry QR live behind sign-in.</p>
       <div className="mt-6 flex gap-2">
         <Button asChild>
-          <Link href="/login/member">Member sign-in</Link>
+          <Link href="/login">Sign in</Link>
         </Button>
         <Button asChild variant="secondary">
           <Link href="/login/member/create">Create an account</Link>

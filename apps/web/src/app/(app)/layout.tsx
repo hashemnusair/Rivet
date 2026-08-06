@@ -51,12 +51,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!identitySignedIn) {
       // Straight to the gym portal — the chooser would throw away the fact that
       // we already know which side of the product they were trying to reach.
-      router.replace("/login/gym");
+      router.replace("/login");
       return;
     }
     // Signed in, but this account holds no gym role. The portal explains that
     // rather than leaving them on a workspace that would render empty.
-    if (!signedIn && !gymRole && (identity.status === "ready" || identity.status === "anonymous")) router.replace("/login/gym");
+    if (!signedIn && !gymRole && (identity.status === "ready" || identity.status === "anonymous")) router.replace("/login");
   }, [identityReady, identitySignedIn, identityStillResolving, identity.status, gymRole, sessionLoading, signedIn, router]);
 
   if (!identityReady || sessionLoading || identityStillResolving || !identitySignedIn || !signedIn) {

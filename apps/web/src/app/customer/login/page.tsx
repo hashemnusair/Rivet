@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * exists so older links and bookmarks still land on the member tab.
  */
 export default function CustomerLoginRedirect() {
-  redirect("/login/member");
+  redirect("/login");
 }

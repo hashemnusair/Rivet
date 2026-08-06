@@ -13,6 +13,11 @@ const BRAND_COPY: Record<Audience | "chooser", { eyebrow: string; headline: stri
     headline: "Never lose a renewal, a lead, or a dinar again.",
     body: "Members, sales follow-up, reception, payments and cash — one chronological record per member, full accountability per staff action.",
   },
+  account: {
+    eyebrow: "One account · the right workspace",
+    headline: "Sign in once. RIVET handles the rest.",
+    body: "Your assigned role decides whether RIVET opens the member dashboard, gym operations, reception, or the platform console.",
+  },
   staff: {
     eyebrow: "RIVET for gyms",
     headline: "Never lose a renewal, a lead, or a dinar again.",

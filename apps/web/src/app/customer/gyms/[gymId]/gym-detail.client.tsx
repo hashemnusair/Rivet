@@ -68,7 +68,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
   const submit = handleSubmit(async (values) => {
     if (isConvexMode() && !customerSignedIn) {
-      router.push("/login/member");
+      router.push("/login");
       return;
     }
     setSubmitting(true);
@@ -110,7 +110,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
             ) : (
               <>
                 <p className="eyebrow">Free first visit</p><h2 className="mt-2 text-[24px] font-semibold tracking-tight">Book a trial at {gym.shortName}</h2><p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">No payment required. Choose a branch and preferred time; the gym will confirm.</p>
-                {!customerSignedIn ? <div className="mt-5 border border-warning/30 bg-warning-bg p-3 text-[11.5px] text-warning-deep">You can fill the form now. <Link href="/login/member" className="font-semibold underline">Sign in</Link> or <Link href="/login/member/create" className="font-semibold underline">create a free account</Link> to keep it under your name.</div> : null}
+                {!customerSignedIn ? <div className="mt-5 border border-warning/30 bg-warning-bg p-3 text-[11.5px] text-warning-deep">You can fill the form now. <Link href="/login" className="font-semibold underline">Sign in</Link> or <Link href="/login/member/create" className="font-semibold underline">create a free account</Link> to keep it under your name.</div> : null}
                 <form onSubmit={submit} className="mt-6 space-y-4">
                   <TrialField label="Full name" error={errors.fullName?.message}><Input {...register("fullName")} /></TrialField>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><TrialField label="Phone" error={errors.phone?.message}><Input {...register("phone")} /></TrialField><TrialField label="Email" error={errors.email?.message}><Input type="email" {...register("email")} /></TrialField></div>

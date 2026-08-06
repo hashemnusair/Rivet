@@ -27,7 +27,7 @@ export function useMemberGate() {
   const identitySignedIn = DEMO_AUTH_BYPASS || isSignedIn;
 
   useEffect(() => {
-    if (identityReady && !identitySignedIn) router.replace("/login/member");
+    if (identityReady && !identitySignedIn) router.replace("/login");
   }, [identityReady, identitySignedIn, router]);
 
   // Arriving straight at a member page with a real session should not send you

@@ -185,9 +185,7 @@ export function PublicFooter() {
         <FooterColumn
           title="Sign in"
           links={[
-            ["Gym team", "/login/gym"],
-            ["Gym member", "/login/member"],
-            ["All sign-in options", "/login"],
+            ["Sign in to RIVET", "/login"],
           ]}
         />
       </div>
@@ -239,7 +237,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const handleSignOut = async () => {
     signOutCustomer();
     if (!DEMO_AUTH_BYPASS) await signOutClerk();
-    router.push("/login/member");
+    router.push("/login");
   };
 
   return (
@@ -310,7 +308,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
-                  <Link href="/login/member">Sign in</Link>
+                  <Link href="/login">Sign in</Link>
                 </Button>
                 <Button asChild size="sm">
                   <Link href="/login/member/create">Create account</Link>

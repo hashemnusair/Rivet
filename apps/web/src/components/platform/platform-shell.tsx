@@ -61,7 +61,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
     if (identityReady && experienceReady && (!identitySignedIn || !authorized || !platformAdminSignedIn))
-      router.replace("/login/admin");
+      router.replace("/login");
   }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
 
   const signOut = async () => {

@@ -97,7 +97,7 @@ export default function MemberSignupPage() {
 
         <p className="mt-5 max-w-md text-[12px] text-ink-3">
           Already have an account?{" "}
-          <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
+          <Link href="/login" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
             Sign in
           </Link>
           . Running a gym?{" "}

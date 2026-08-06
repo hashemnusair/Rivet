@@ -35,18 +35,15 @@ export function decideHostRouting(
 
   if (normalized === "app.rivetjo.com") {
     if (pathname === "/") return { kind: "rewrite", pathname: "/customer/discover" };
-    if (pathname === "/login") return { kind: "rewrite", pathname: "/login/member" };
     if (pathname === "/signup") return { kind: "rewrite", pathname: "/login/member/create" };
   }
 
   if (normalized === "dashboard.rivetjo.com") {
     if (pathname === "/") return { kind: "rewrite", pathname: "/dashboard" };
-    if (pathname === "/login") return { kind: "rewrite", pathname: "/login/gym" };
   }
 
   if (normalized === "platform.rivetjo.com") {
     if (pathname === "/") return { kind: "rewrite", pathname: "/platform" };
-    if (pathname === "/login") return { kind: "rewrite", pathname: "/login/admin" };
   }
 
   return { kind: "next" };

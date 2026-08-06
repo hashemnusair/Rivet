@@ -136,7 +136,9 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   };
 
   const accounts =
-    audience === "staff" ? (
+    audience === "account" ? (
+      <PreviewAccountOptions />
+    ) : audience === "staff" ? (
       <StaffRoles loading={loading} onEnter={enterStaff} />
     ) : audience === "member" ? (
       <MemberAccounts customers={customers} onEnter={enterMember} />
@@ -155,11 +157,13 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       }
     >
       <div className="animate-fade-up">
-        <Link href="/login" className="flex w-fit items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
-          <ArrowLeft className="size-3.5" /> All sign-in options
-        </Link>
+        {audience !== "account" ? (
+          <Link href="/login" className="flex w-fit items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
+            <ArrowLeft className="size-3.5" /> Back to sign in
+          </Link>
+        ) : null}
 
-        <div className="mt-6">
+        <div className={audience === "account" ? undefined : "mt-6"}>
           <PortalHeading portal={portal} mode={mode} />
         </div>
 
@@ -264,6 +268,18 @@ function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode:
 function safeInternalRedirect(value: string | null, fallback: string): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
   return value;
+}
+
+/** The real build has one Clerk form; these links exist only in mock preview mode. */
+function PreviewAccountOptions() {
+  return (
+    <div className="mt-7 grid gap-2">
+      <p className="eyebrow mb-1">Preview an account</p>
+      <Button asChild variant="secondary"><Link href="/login/member">Member preview</Link></Button>
+      <Button asChild variant="secondary"><Link href="/login/gym">Gym team preview</Link></Button>
+      <Button asChild variant="secondary"><Link href="/login/admin">Platform admin preview</Link></Button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

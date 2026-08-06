@@ -1,4 +1,4 @@
-import { Building2, Dumbbell, Lock, type LucideIcon } from "lucide-react";
+import { Building2, Dumbbell, LogIn, Lock, type LucideIcon } from "lucide-react";
 
 /**
  * RIVET has one sign-in address (`/login`) with three portals beneath it. The
@@ -6,7 +6,7 @@ import { Building2, Dumbbell, Lock, type LucideIcon } from "lucide-react";
  * administrators each authenticate into their own surface. Gym access is
  * issued by RIVET after an application is reviewed; it is never self-created.
  */
-export type Audience = "staff" | "member" | "admin";
+export type Audience = "account" | "staff" | "member" | "admin";
 
 export interface Portal {
   id: Audience;
@@ -25,9 +25,19 @@ export interface Portal {
 }
 
 export const PORTALS: Record<Audience, Portal> = {
+  account: {
+    id: "account",
+    href: "/login",
+    icon: LogIn,
+    title: "Sign in to RIVET",
+    blurb: "Use your account once. RIVET will open the workspace assigned to you.",
+    audience: "Members · Gym teams · Platform administrators",
+    destination: "/login",
+    signUpUrl: "/login/member/create",
+  },
   staff: {
     id: "staff",
-    href: "/login/gym",
+    href: "/login",
     icon: Building2,
     title: "Gym team",
     blurb: "Run the floor, the sales desk and the cash drawer.",
@@ -36,7 +46,7 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   member: {
     id: "member",
-    href: "/login/member",
+    href: "/login",
     icon: Dumbbell,
     title: "Gym member",
     blurb: "Your memberships, visits, receipts and entry QR.",
@@ -47,19 +57,11 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   admin: {
     id: "admin",
-    href: "/login/admin",
+    href: "/login",
     icon: Lock,
     title: "Platform administration",
     blurb: "Tenants, subscriptions, billing and support across the network.",
     audience: "RIVET staff only",
     destination: "/platform",
   },
-};
-
-/** Legacy `/login#member` style links still resolve to the right portal. */
-export const AUDIENCE_FROM_HASH: Record<string, Audience> = {
-  "#staff": "staff",
-  "#gym": "staff",
-  "#member": "member",
-  "#admin": "admin",
 };

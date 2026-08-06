@@ -69,7 +69,7 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
       <NotEntitled
         title="This account is not on a gym team"
         body="Gym staff are added by the gym's owner or manager. Once someone puts your email on the team, this portal opens your workspace automatically."
-        primary={{ label: "Continue as a member", href: "/login/member" }}
+        primary={{ label: "Back to sign-in", href: "/login" }}
       />
     );
   }

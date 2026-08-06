@@ -69,7 +69,9 @@ test.describe("RIVET gym applications", () => {
 test.describe("RIVET platform administration", () => {
   test("guards the console and restores an authenticated admin reload", async ({ page }) => {
     await page.goto("/platform");
-    await expect(page).toHaveURL(/\/login\/admin/);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { name: "Sign in to RIVET" })).toBeVisible();
+    await page.getByRole("link", { name: /Platform admin preview/i }).click();
     await expect(page.getByRole("heading", { name: "Platform administration" })).toBeVisible();
 
     await page.getByRole("button", { name: /Open platform console/i }).click();

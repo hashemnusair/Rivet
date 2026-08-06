@@ -15,37 +15,28 @@ describe("decideHostRouting", () => {
     });
   });
 
-  it("uses the member sign-in and signup routes on the app hostname", () => {
-    expect(decideHostRouting("app.rivetjo.com", "/login")).toEqual({
-      kind: "rewrite",
-      pathname: "/login/member",
-    });
+  it("uses universal sign-in and member signup on the app hostname", () => {
+    expect(decideHostRouting("app.rivetjo.com", "/login")).toEqual({ kind: "next" });
     expect(decideHostRouting("app.rivetjo.com", "/signup")).toEqual({
       kind: "rewrite",
       pathname: "/login/member/create",
     });
   });
 
-  it("opens the gym workspace and gym sign-in on the dashboard hostname", () => {
+  it("opens the gym workspace while retaining universal sign-in", () => {
     expect(decideHostRouting("dashboard.rivetjo.com", "/")).toEqual({
       kind: "rewrite",
       pathname: "/dashboard",
     });
-    expect(decideHostRouting("dashboard.rivetjo.com", "/login")).toEqual({
-      kind: "rewrite",
-      pathname: "/login/gym",
-    });
+    expect(decideHostRouting("dashboard.rivetjo.com", "/login")).toEqual({ kind: "next" });
   });
 
-  it("opens the platform console on the platform hostname", () => {
+  it("opens the platform console while retaining universal sign-in", () => {
     expect(decideHostRouting("platform.rivetjo.com", "/")).toEqual({
       kind: "rewrite",
       pathname: "/platform",
     });
-    expect(decideHostRouting("platform.rivetjo.com", "/login")).toEqual({
-      kind: "rewrite",
-      pathname: "/login/admin",
-    });
+    expect(decideHostRouting("platform.rivetjo.com", "/login")).toEqual({ kind: "next" });
   });
 
   it("redirects the admin alias to the platform canonical hostname", () => {
