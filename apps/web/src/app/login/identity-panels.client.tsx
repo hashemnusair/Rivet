@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { destinationFor, useRivetIdentity, type RivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
@@ -167,9 +168,7 @@ function AutomaticEntry({ label }: { label: string }) {
       </div>
       <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">You’re signed in</p>
       <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
-      <div className="mt-5 h-1 w-36 overflow-hidden rounded-full bg-sunken-2" aria-hidden>
-        <div className="h-full w-2/3 animate-pulse rounded-full bg-ink" />
-      </div>
+      <AuthProgressBar className="mt-5 w-36" />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { AuthTransition } from "@/components/auth/auth-transition";
 import { Input } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
@@ -47,6 +48,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const { platformAdminSignedIn, experienceReady, signOutPlatformAdmin } = useExperience();
   const identity = useRivetIdentity();
   const identityReady =
@@ -65,10 +67,18 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
 
   const signOut = async () => {
-    signOutPlatformAdmin();
-    if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/" });
-    else router.push("/");
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/login" });
+      signOutPlatformAdmin();
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+    }
   };
+
+  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
 
   if (!identityReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
     return (

@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
+import { AuthProgressBar } from "@/components/auth/auth-transition";
 import type { Audience, Portal } from "./portals";
 
 const BRAND_COPY: Record<Audience | "chooser", { eyebrow: string; headline: string; body: string }> = {
@@ -132,9 +133,7 @@ export function PortalHeading({ portal, mode = "sign-in" }: { portal: Portal; mo
 export function LoginLoading() {
   return (
     <div className="flex min-h-40 items-center justify-center" role="status" aria-label="Checking sign-in">
-      <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
-        <div className="h-full w-1/2 animate-pulse rounded-full bg-ink" />
-      </div>
+      <AuthProgressBar />
     </div>
   );
 }

@@ -203,8 +203,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     setSignedIn(false);
     setSession(undefined);
     queryClient.clear();
-    router.push("/login");
-  }, [queryClient, router]);
+  }, [queryClient]);
 
   const switchRole = useCallback(
     async (role: RoleKey) => {

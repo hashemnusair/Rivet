@@ -1,9 +1,9 @@
 "use client";
 
 import { useSignIn } from "@clerk/nextjs";
-import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -132,50 +132,60 @@ export function PasswordSignIn() {
 
   if (verification) {
     const sentCode = verification === "email_code" || verification === "phone_code";
+    const codeReady = verification === "backup_code" ? Boolean(code.trim()) : code.length === VERIFICATION_CODE_LENGTH;
+    const title = verification === "email_code"
+      ? "Check your email"
+      : verification === "phone_code"
+        ? "Check your phone"
+        : "Two-step verification";
     return (
-      <div className="mt-7">
-        <div className="mb-5 flex items-start gap-3 rounded-lg border border-line-2 bg-surface p-4">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-sunken text-ink-2">
-            <LockKeyhole className="size-4" />
+      <div className="mt-7 rounded-xl border border-line-2 bg-surface px-5 py-6 shadow-[0_18px_50px_rgba(21,20,15,0.06)] sm:px-7">
+        <div className="text-center">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sunken text-ink">
+            {verification === "email_code" ? <MailCheck className="size-5" /> : <ShieldCheck className="size-5" />}
           </span>
-          <div>
-            <p className="text-[13.5px] font-semibold">Verify this sign-in</p>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
-              {sentCode
-                ? `Clerk sent a security code to your ${verification === "email_code" ? "email" : "phone"}.`
-                : verification === "totp"
-                  ? "Enter the code from your authenticator app."
-                  : "Enter one of your backup codes."}
-            </p>
-          </div>
+          <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">{title}</h2>
+          <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-ink-3">
+            {sentCode
+              ? `We sent a six-digit security code to your ${verification === "email_code" ? "email address" : "phone number"}. Enter it below to finish signing in.`
+              : verification === "totp"
+                ? "Enter the six-digit code from your authenticator app to finish signing in."
+                : "Enter one of the backup codes saved when two-step verification was enabled."}
+          </p>
         </div>
-        <form onSubmit={submitCode} className="space-y-4" noValidate>
-          <Field label="Verification code" htmlFor="login-code" error={errors.fields.code?.message} required>
-            <Input
-              id="login-code"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              inputMode={verification === "backup_code" ? "text" : "numeric"}
-              autoComplete="one-time-code"
-              autoFocus
-              aria-invalid={Boolean(errors.fields.code || localError)}
-            />
-          </Field>
-          {localError ? <p className="text-[12px] text-danger" role="alert">{localError}</p> : null}
-          <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!code.trim()}>
+        <form onSubmit={submitCode} className="mt-6 space-y-5" noValidate>
+          {verification === "backup_code" ? (
+            <Field label="Backup code" htmlFor="login-code" error={errors.fields.code?.message} required>
+              <Input
+                id="login-code"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                autoComplete="one-time-code"
+                autoFocus
+                aria-invalid={Boolean(errors.fields.code || localError)}
+              />
+            </Field>
+          ) : (
+            <VerificationCodeInput value={code} onChange={setCode} invalid={Boolean(errors.fields.code || localError)} />
+          )}
+          {localError ? <p className="text-center text-[12px] text-danger" role="alert">{localError}</p> : null}
+          <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!codeReady}>
             Verify and continue <ArrowRight />
           </Button>
         </form>
-        <div className="mt-4 flex items-center justify-between gap-3 text-[12px]">
-          <button type="button" onClick={() => void startOver()} className="text-ink-3 underline underline-offset-4 hover:text-ink">
-            Use another account
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[12px]">
+          <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink">
+            <ArrowLeft className="size-3.5" /> Use another account
           </button>
           {sentCode ? (
-            <button type="button" onClick={() => void resend()} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
-              Resend code
+            <button type="button" onClick={() => void resend()} className="font-medium text-ink-2 transition-colors hover:text-ink">
+              Didn’t receive it? Resend
             </button>
           ) : null}
         </div>
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[9px] uppercase tracking-[0.11em] text-ink-4">
+          <LockKeyhole className="size-3" /> Secure verification by Clerk
+        </p>
       </div>
     );
   }
@@ -232,6 +242,60 @@ export function PasswordSignIn() {
         </Link>
       </p>
     </form>
+  );
+}
+
+const VERIFICATION_CODE_LENGTH = 6;
+
+function VerificationCodeInput({ value, onChange, invalid }: { value: string; onChange: (value: string) => void; invalid: boolean }) {
+  const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const digits = Array.from({ length: VERIFICATION_CODE_LENGTH }, (_, index) => value[index] ?? "");
+
+  const update = (index: number, rawValue: string) => {
+    const incoming = rawValue.replace(/\D/g, "");
+    if (incoming.length > 1) {
+      const next = incoming.slice(0, VERIFICATION_CODE_LENGTH);
+      onChange(next);
+      inputs.current[Math.max(0, Math.min(next.length, VERIFICATION_CODE_LENGTH) - 1)]?.focus();
+      return;
+    }
+
+    const next = [...digits];
+    next[index] = incoming.slice(-1);
+    onChange(next.join(""));
+    if (incoming && index < VERIFICATION_CODE_LENGTH - 1) inputs.current[index + 1]?.focus();
+  };
+
+  const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace" && !digits[index] && index > 0) inputs.current[index - 1]?.focus();
+    if (event.key === "ArrowLeft" && index > 0) inputs.current[index - 1]?.focus();
+    if (event.key === "ArrowRight" && index < VERIFICATION_CODE_LENGTH - 1) inputs.current[index + 1]?.focus();
+  };
+
+  return (
+    <fieldset>
+      <legend className="mb-3 w-full text-center text-[12px] font-medium text-ink-2">Verification code</legend>
+      <div className="grid grid-cols-6 gap-2" aria-label="Verification code">
+        {digits.map((digit, index) => (
+          <input
+            key={index}
+            ref={(node) => { inputs.current[index] = node; }}
+            id={`login-code-${index}`}
+            value={digit}
+            onChange={(event) => update(index, event.target.value)}
+            onKeyDown={(event) => handleKeyDown(index, event)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={index === 0 ? VERIFICATION_CODE_LENGTH : 1}
+            autoComplete={index === 0 ? "one-time-code" : "off"}
+            autoFocus={index === 0}
+            aria-label={`Digit ${index + 1}`}
+            aria-invalid={invalid}
+            className="h-13 min-w-0 rounded-md border border-line-2 bg-paper text-center font-mono text-[20px] font-semibold text-ink outline-none transition-[border-color,box-shadow,background] focus:border-ink focus:bg-surface focus:ring-2 focus:ring-ink/10 aria-invalid:border-danger"
+          />
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

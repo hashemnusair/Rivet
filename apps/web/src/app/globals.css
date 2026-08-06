@@ -302,3 +302,17 @@
     display: none !important;
   }
 }
+@keyframes rivet-auth-progress {
+  0% { transform: translate3d(-125%, 0, 0); }
+  55% { transform: translate3d(120%, 0, 0) scaleX(1.35); }
+  100% { transform: translate3d(425%, 0, 0); }
+}
+
+.auth-progress-bar > span {
+  animation: rivet-auth-progress 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-progress-bar > span { animation: none; }
+}

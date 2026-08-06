@@ -85,7 +85,8 @@ describe("PasswordSignIn", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => expect(sendEmailCode).toHaveBeenCalledOnce());
-    fireEvent.change(screen.getByLabelText(/Verification code/), { target: { value: "123456" } });
+    expect(screen.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Digit 1"), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /Verify and continue/i }));
 
     await waitFor(() => expect(finalize).toHaveBeenCalledOnce());

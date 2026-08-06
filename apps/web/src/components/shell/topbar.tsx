@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Monogram } from "@/components/ui/misc";
+import { AuthTransition } from "@/components/auth/auth-transition";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
@@ -38,6 +39,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
 
   const role = session?.roles[0];
@@ -45,11 +47,24 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const demoControlsEnabled = DEMO_AUTH_BYPASS || !CONVEX_ENABLED;
 
   const handleSignOut = async () => {
-    await signOut();
-    // AppProviders routes to /login; sign out Clerk without a second hard
-    // redirect so the app owns the navigation consistently.
-    if (!DEMO_AUTH_BYPASS) await signOutClerk();
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      if (!DEMO_AUTH_BYPASS) {
+        // Clear Clerk first. Clearing only the local workspace made its guard
+        // open /login while Clerk still considered the account signed in,
+        // producing the login ↔ dashboard flicker.
+        await signOutClerk({ redirectUrl: "/login" });
+      }
+      await signOut();
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+      toast.error("Could not sign out. Please try again.");
+    }
   };
+
+  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4">

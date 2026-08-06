@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { AuthTransition } from "@/components/auth/auth-transition";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -237,6 +238,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const { customerSignedIn, signOutCustomer } = useExperience();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
+  const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
 
   // The member shell maintains a small preview persona in sessionStorage, but
@@ -244,10 +246,18 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // state left the Clerk session alive, which immediately made a member appear
   // signed in again on the next guarded render.
   const handleSignOut = async () => {
-    signOutCustomer();
-    if (!DEMO_AUTH_BYPASS) await signOutClerk();
-    router.push("/login");
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      if (!DEMO_AUTH_BYPASS) await signOutClerk({ redirectUrl: "/login" });
+      signOutCustomer();
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+    }
   };
+
+  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
