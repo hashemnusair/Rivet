@@ -228,6 +228,9 @@ const CLERK_APPEARANCE = {
 
 function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode: AuthMode; redirectUrl: string }) {
   const portal = PORTALS[audience];
+  const appearance = audience === "staff" || audience === "admin"
+    ? { ...CLERK_APPEARANCE, elements: { ...CLERK_APPEARANCE.elements, footerAction: "!hidden" } }
+    : CLERK_APPEARANCE;
 
   // Each portal owns a route, so Clerk is free to use the hash for its own
   // multi-step flow (factor-one, verify-email, reset password, …).
@@ -239,7 +242,7 @@ function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode:
           signInUrl={portal.href}
           forceRedirectUrl={redirectUrl}
           fallbackRedirectUrl={redirectUrl}
-          appearance={CLERK_APPEARANCE}
+          appearance={appearance}
         />
       </div>
     );
@@ -252,7 +255,7 @@ function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode:
         signUpUrl={portal.signUpUrl}
         forceRedirectUrl={redirectUrl}
         fallbackRedirectUrl={redirectUrl}
-        appearance={CLERK_APPEARANCE}
+        appearance={appearance}
       />
     </div>
   );

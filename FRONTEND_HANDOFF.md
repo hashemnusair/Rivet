@@ -4,7 +4,7 @@ Updated 2026-08-06 after production Clerk setup and release-hardening work. The 
 
 ## Product surface preserved
 
-The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console, gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The new `/onboarding/gym` route confirms and creates a gym workspace after Clerk signup; `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
+The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console, gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
 
 The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
 
@@ -33,7 +33,7 @@ The seeded Forge Fitness reference scenario is created by the internal, idempote
 
 Convex schema and domain functions now cover:
 
-- Organizations, branches, users, memberships, role definitions, settings, payment methods, audit events, idempotency records, sequence counters, and the owner-led gym onboarding transaction (including the first trial subscription and public directory record).
+- Organizations, branches, users, memberships, role definitions, settings, payment methods, audit events, idempotency records, sequence counters, and public `gymApplications` records. A pending application does not create a tenant; protected RIVET provisioning creates the first branch, role definitions, owner access, subscription, and public directory record after approval.
 - Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
 - Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.

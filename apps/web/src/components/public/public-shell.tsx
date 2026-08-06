@@ -97,7 +97,7 @@ function PreviewMarketingSignedOutActions({ mobile = false, onClose }: { mobile?
         <Link href="/login">Sign in</Link>
       </Button>
       <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/signup">{mobile ? "Start free trial" : <>Start free trial <ArrowRight /></>}</Link>
+        <Link href="/signup">{mobile ? "Send gym application" : <>Send gym application <ArrowRight /></>}</Link>
       </Button>
     </>
   );
@@ -112,7 +112,7 @@ function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; 
             <Link href="/login">Sign in</Link>
           </Button>
           <Button asChild variant="signal" onClick={onClose}>
-            <Link href="/signup">Start free trial</Link>
+            <Link href="/signup">Send gym application</Link>
           </Button>
         </Show>
         <Show when="signed-in">
@@ -135,7 +135,7 @@ function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; 
         </Button>
         <Button asChild variant="signal" size="sm">
           <Link href="/signup">
-            Start free trial <ArrowRight />
+            Send gym application <ArrowRight />
           </Link>
         </Button>
       </Show>
@@ -171,7 +171,7 @@ export function PublicFooter() {
             ["Overview", "/#product"],
             ["For members", "/#member"],
             ["Pricing", "/#pricing"],
-            ["Start free trial", "/signup"],
+            ["Send gym application", "/signup"],
           ]}
         />
         <FooterColumn

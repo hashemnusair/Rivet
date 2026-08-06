@@ -48,7 +48,7 @@ export default function LandingPage() {
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild variant="signal" size="lg">
                   <Link href="/signup">
-                    Start a free trial <ArrowRight />
+                    Send a gym application <ArrowRight />
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
@@ -273,7 +273,7 @@ export default function LandingPage() {
                     variant={plan.tone === "night" ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
                     className="mt-8 w-full"
                   >
-                    <Link href="/signup">Start 14-day trial</Link>
+                    <Link href="/signup">Send gym application</Link>
                   </Button>
                 </Reveal>
               ))}
@@ -297,7 +297,7 @@ export default function LandingPage() {
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Button asChild variant="signal" size="lg">
                 <Link href="/signup">
-                  Start a free trial <ArrowRight />
+                  Send a gym application <ArrowRight />
                 </Link>
               </Button>
             </div>

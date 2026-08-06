@@ -56,9 +56,9 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-[12px] text-ink-3">
-          New here?{" "}
+          Need access?{" "}
           <Link href="/signup" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
-            Start a gym trial
+            Send a gym application
           </Link>{" "}
           or{" "}
           <Link

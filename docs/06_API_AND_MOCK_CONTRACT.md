@@ -80,6 +80,28 @@ interface Session {
 
 The precise file names are implementation choices, but the client should expose domain-oriented methods similar to the following.
 
+### Gym applications
+
+```ts
+submitGymApplication(input: {
+  gymName: string;
+  ownerName: string;
+  email: string;
+  contactNumber: string;
+  plan: "Starter" | "Growth" | "Pro";
+}): Promise<{
+  applicationId: string;
+  status: "pending" | "under_review" | "approved" | "rejected";
+  notificationStatus: "pending" | "sent" | "failed" | "not_configured";
+  submittedAt: string;
+  duplicate: boolean;
+}>
+```
+
+This public method writes only to the platform-level application queue. Gym
+workspace creation and access issuance are protected review operations, not a
+browser mutation available to applicants.
+
 ### Session and dashboard
 
 ```ts

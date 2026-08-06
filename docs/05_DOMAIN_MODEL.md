@@ -36,6 +36,20 @@ A physical gym location owned by an organization.
 
 A staff login identity.
 
+### GymApplication
+
+A public request from a gym owner who wants to join RIVET. It is platform-level
+data, not tenant data: submitting one never creates a Clerk account,
+organization, branch, or membership. RIVET reviews the application and
+provisions access separately.
+
+- gym name
+- owner name
+- email and contact number
+- selected platform plan
+- status (`pending`, `under_review`, `approved`, `rejected`)
+- notification delivery status and timestamps
+
 ### OrganizationMembership
 
 Connects a user to an organization and defines role, status, and branch scope.

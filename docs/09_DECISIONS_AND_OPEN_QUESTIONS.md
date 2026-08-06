@@ -23,6 +23,7 @@ The product owner selected **Next.js + Convex + Clerk + Vercel** for the active 
 - Vercel provides the Next.js server runtime required by Clerk's request proxy.
 - The documented domain invariants, API boundary, multi-tenant isolation, money representation, audit requirements, and acceptance tests remain binding even where the implementation mechanism changes.
 - The existing mock adapter remains available only as a preview/testing mode while each workflow is migrated vertically to Convex.
+- Gym owners do not self-provision workspaces. The public `/signup` route submits a reviewed application with the gym name, owner name, email, contact number, and selected plan. RIVET creates the organization and issues gym access only after approval; `/login/gym` is sign-in only for invited teams.
 
 ## Domain topology — 2026-08-04
 
@@ -74,8 +75,9 @@ Complete these steps in order. Keep development/preview and production Convex de
    The production build now stops with a clear error when the public Convex URL or Clerk publishable key is absent. `CONVEX_DEPLOY_KEY` remains a Vercel project/build setting, not a browser variable.
 3. **Keep Google deferred unless the pilot requires it.** Email/password is enough to validate the first gym workflow. If Google is enabled later, create a project-owned OAuth client and add the production callback/origin values shown by Clerk.
 4. **Verify the production Clerk issuer in both runtimes.** The Vercel publishable/secret keys must be `pk_live_…`/`sk_live_…`, and the production `CLERK_FRONTEND_API_URL` must be set in both Vercel and Convex. Clerk's development users do not transfer between instances.
-5. **Verify the real gym owner account.** Sign in with the production test user once so Convex creates its user record, then create the gym through `/signup` → `/onboarding/gym`. If using a pre-existing owner account, grant the intended organization role through the owner-only Convex seed/admin function; never grant platform-admin access casually.
-6. **Run the trusted smoke.** Add the dedicated non-production Clerk session and the four GitHub Actions secrets (`CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `PLAYWRIGHT_CLERK_STORAGE_STATE`), then manually dispatch the `GymOS CI` workflow. This verifies Clerk-to-Convex tenant access rather than only checking that the landing page renders.
+5. **Verify the public gym application.** Submit a test application from `/signup` and confirm that `gymApplications` contains the gym name, owner name, email, contact number, selected plan, and `pending` status. Configure Resend in Convex with `RESEND_API_KEY`, a verified `RESEND_FROM_EMAIL`, and `RIVET_APPLICATION_RECIPIENTS`; confirm both the applicant confirmation and the partner notification arrive. Do not provision a workspace from the public form.
+6. **Provision approved gyms manually until the review console is connected.** Create the tenant and invited owner through the protected platform workflow/Convex owner tooling, then verify the owner can sign in at `/login/gym`. Never grant platform-admin access casually.
+7. **Run the trusted smoke.** Add the dedicated non-production Clerk session and the four GitHub Actions secrets (`CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `PLAYWRIGHT_CLERK_STORAGE_STATE`), then manually dispatch the `GymOS CI` workflow. This verifies Clerk-to-Convex tenant access rather than only checking that the landing page renders.
 
 Until this checklist is complete, the site is a public marketing preview, not a real-gym pilot. Accounts created against the development Clerk instance must be recreated in production.
 

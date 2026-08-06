@@ -19,8 +19,8 @@ import type {
   PlatformSupportCase,
   PlatformSaasPlan,
   EntryPass,
-  CreateGymOnboardingInput,
-  CreateGymOnboardingResult,
+  SubmitGymApplicationInput,
+  SubmitGymApplicationResult,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -241,15 +241,13 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => MOCK_SAAS_PLANS);
   }
 
-  createGymOnboarding(input: CreateGymOnboardingInput): Promise<CreateGymOnboardingResult> {
+  submitGymApplication(_input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     return this.respond(() => ({
-      organizationId: this.db.organization.id,
-      organizationSlug: this.db.organization.slug,
-      organizationName: input.gymName.trim(),
-      branchId: this.db.branches[0]?.id ?? "mock-branch",
-      branchName: input.branchName.trim(),
-      plan: input.plan,
-      trialEndsAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+      applicationId: `application-${Date.now()}`,
+      status: "pending" as const,
+      notificationStatus: "sent" as const,
+      submittedAt: new Date().toISOString(),
+      duplicate: false,
     }));
   }
 

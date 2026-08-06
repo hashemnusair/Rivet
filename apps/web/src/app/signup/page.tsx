@@ -1,18 +1,17 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, CircleCheck, Dumbbell, Sparkles } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { ArrowRight, Building2, Check, CheckCircle2, Mail, Phone } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { PublicHeader } from "@/components/public/public-shell";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
-import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
-import { DEFAULT_GYM_ONBOARDING_DRAFT, GYM_ONBOARDING_DRAFT_KEY, type GymOnboardingDraft } from "@/lib/onboarding/gym-draft";
+import type { PlatformSaasPlan, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
+import { getApi } from "@/lib/api/client";
+import { isApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-
-const STEPS = ["Owner", "Your gym", "Plan", "Ready"];
 
 const DEFAULT_PLANS: PlatformSaasPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
@@ -20,24 +19,50 @@ const DEFAULT_PLANS: PlatformSaasPlan[] = [
   { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
 ];
 
-export default function GymSignupPage() {
-  const router = useRouter();
+type FormErrors = Partial<Record<"ownerName" | "gymName" | "email" | "contactNumber", string>>;
+
+export default function GymApplicationPage() {
   const { saasPlans } = useExperience();
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<GymOnboardingDraft>(DEFAULT_GYM_ONBOARDING_DRAFT);
   const plans = saasPlans.length > 0 ? saasPlans : DEFAULT_PLANS;
+  const [ownerName, setOwnerName] = useState("");
+  const [gymName, setGymName] = useState("");
+  const [email, setEmail] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [plan, setPlan] = useState<PlatformSaasPlan["name"]>("Growth");
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [formError, setFormError] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<SubmitGymApplicationResult>();
 
-  const update = <K extends keyof GymOnboardingDraft>(key: K, value: GymOnboardingDraft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-  };
-
-  const startOnboarding = () => {
-    window.sessionStorage.setItem(GYM_ONBOARDING_DRAFT_KEY, JSON.stringify(draft));
-    if (DEMO_AUTH_BYPASS) {
-      router.push("/onboarding/gym");
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextErrors: FormErrors = {};
+    if (ownerName.trim().length < 2) nextErrors.ownerName = "Enter the owner name.";
+    if (gymName.trim().length < 2) nextErrors.gymName = "Enter the gym name.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) nextErrors.email = "Enter a valid email address.";
+    if (contactNumber.replace(/\D/g, "").length < 7) nextErrors.contactNumber = "Enter a reachable contact number.";
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
       return;
     }
-    router.push("/login/gym/create?next=%2Fonboarding%2Fgym");
+
+    setErrors({});
+    setFormError(undefined);
+    setSubmitting(true);
+    try {
+      const submitted = await getApi().submitGymApplication({
+        ownerName: ownerName.trim(),
+        gymName: gymName.trim(),
+        email: email.trim().toLowerCase(),
+        contactNumber: contactNumber.trim(),
+        plan,
+      });
+      setResult(submitted);
+    } catch (error) {
+      setFormError(isApiError(error) ? error.message : "We could not send your application. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -45,148 +70,81 @@ export default function GymSignupPage() {
       <PublicHeader />
       <main className="marketing-grid px-5 py-10 sm:px-8 lg:px-12 lg:py-16">
         <div className="mx-auto max-w-5xl">
-          <div className="mb-8 flex items-center justify-between gap-5">
-            <div>
-              <p className="eyebrow">14-day trial · No card required</p>
-              <h1 className="mt-2 text-[28px] font-semibold tracking-tight">Bring your gym onto RIVET.</h1>
-            </div>
-            <span className="hidden font-mono text-[9px] uppercase tracking-[0.16em] text-ink-3 sm:block">Takes about 3 minutes</span>
-          </div>
-
-          <ol className="grid grid-cols-4 border border-line bg-surface">
-            {STEPS.map((label, index) => (
-              <li key={label} className={cn("relative border-e border-line p-3 last:border-e-0 sm:p-4", index === step && "bg-ink text-paper")}>
-                <span className={cn("font-mono text-[8px] uppercase tracking-[0.14em]", index === step ? "text-paper/60" : "text-ink-3")}>0{index + 1}</span>
-                <p className="mt-1 text-[11px] font-semibold sm:text-[13px]">
-                  {index < step ? <Check className="me-1 inline size-3.5 text-success" /> : null}
-                  {label}
+          {result ? (
+            <ApplicationReceived result={result} gymName={gymName} email={email} />
+          ) : (
+            <>
+              <div className="mb-8 max-w-2xl">
+                <p className="eyebrow">Partner with RIVET</p>
+                <h1 className="mt-3 text-[32px] font-semibold tracking-tight sm:text-[38px]">Send a gym application.</h1>
+                <p className="mt-4 text-[14px] leading-relaxed text-ink-2">
+                  Tell us about your gym and the team behind it. We review every application, contact you directly, and create access for approved gyms.
                 </p>
-              </li>
-            ))}
-          </ol>
-
-          <section className="mt-5 min-h-[500px] border border-ink bg-surface p-6 shadow-pop sm:p-9 lg:p-12">
-            {step === 0 ? <StepAccount draft={draft} update={update} /> : null}
-            {step === 1 ? <StepGym draft={draft} update={update} /> : null}
-            {step === 2 ? <StepPlan plans={plans} plan={draft.plan} onPlan={(plan) => update("plan", plan)} /> : null}
-            {step === 3 ? <StepReady draft={draft} plan={plans.find((item) => item.name === draft.plan) ?? DEFAULT_PLANS[1]!} onStart={startOnboarding} /> : null}
-
-            {step < 3 ? (
-              <div className="mt-10 flex justify-between border-t border-line pt-6">
-                <Button variant="ghost" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>
-                  <ChevronLeft /> Back
-                </Button>
-                <Button variant="signal" onClick={() => setStep((value) => Math.min(3, value + 1))}>
-                  Continue <ChevronRight />
-                </Button>
               </div>
-            ) : null}
-          </section>
+
+              <form onSubmit={submit} className="grid gap-5 border border-ink bg-surface p-6 shadow-pop sm:p-9 lg:grid-cols-[1fr_0.9fr] lg:p-12">
+                <section>
+                  <p className="eyebrow">Your details</p>
+                  <h2 className="mt-2 text-[21px] font-semibold">Who should we contact?</h2>
+                  <div className="mt-7 grid gap-4">
+                    <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
+                      <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" />
+                    </Field>
+                    <Field label="Email address" htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
+                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" /></div>
+                    </Field>
+                    <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" /></div>
+                    </Field>
+                  </div>
+
+                  <div className="mt-8 border-t border-line pt-6">
+                    <p className="flex items-center gap-2 text-[12px] text-ink-2"><Building2 className="size-4 text-signal" /> Gym access is issued by RIVET after approval.</p>
+                    <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">There is no self-serve gym account. Members and gym teams with access use the sign-in portal.</p>
+                  </div>
+                </section>
+
+                <section className="border-t border-line pt-6 lg:border-s lg:border-t-0 lg:ps-9 lg:pt-0">
+                  <p className="eyebrow">Your gym</p>
+                  <h2 className="mt-2 text-[21px] font-semibold">Which plan fits?</h2>
+                  <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
+                    <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" />
+                  </Field>
+                  <div className="mt-6 grid gap-2" role="radiogroup" aria-label="RIVET plan">
+                    {plans.map((item) => (
+                      <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
+                        <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
+                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {(item.priceMinor / 1000).toFixed(3)} / month · {item.branches} branch{item.branches > 1 ? "es" : ""}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan selection is a starting point for the conversation, not a payment or activation.</p>
+                  {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
+                  <Button type="submit" variant="signal" size="lg" loading={submitting} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
+                  <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
+                </section>
+              </form>
+            </>
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function StepAccount({ draft, update }: { draft: GymOnboardingDraft; update: <K extends keyof GymOnboardingDraft>(key: K, value: GymOnboardingDraft[K]) => void }) {
+function ApplicationReceived({ result, gymName, email }: { result: SubmitGymApplicationResult; gymName: string; email: string }) {
   return (
-    <div className="mx-auto max-w-xl">
-      <p className="eyebrow">First, you</p>
-      <h2 className="mt-3 text-[31px] font-semibold tracking-tight">Tell us who will own the workspace.</h2>
-      <p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">You’ll create the secure owner login with Clerk after this short setup.</p>
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <Field label="Owner name">
-            <Input value={draft.ownerFullName} onChange={(event) => update("ownerFullName", event.target.value)} placeholder="Omar Khalil" autoComplete="name" />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Mobile number">
-            <Input value={draft.ownerPhone} onChange={(event) => update("ownerPhone", event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" />
-          </Field>
-        </div>
+    <div className="mx-auto max-w-xl border border-ink bg-surface p-8 text-center shadow-pop sm:p-12">
+      <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-bg text-success"><CheckCircle2 className="size-8" /></span>
+      <p className="mt-7 eyebrow">Application received</p>
+      <h1 className="mt-3 text-[32px] font-semibold tracking-tight">We’ll be in touch soon.</h1>
+      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">We received the application for <strong>{gymName || "your gym"}</strong>. We sent a confirmation to <strong>{email}</strong> and our team will contact you after review.</p>
+      {result.duplicate ? <p className="mt-4 text-[11.5px] text-ink-3">This application is already in our review queue.</p> : null}
+      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        <Button asChild variant="signal" size="lg"><Link href="/login">Sign in <ArrowRight /></Link></Button>
+        <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
       </div>
+      <p className="mt-5 text-[11px] text-ink-3">Gym accounts are created and issued by RIVET after approval.</p>
     </div>
   );
-}
-
-function StepGym({ draft, update }: { draft: GymOnboardingDraft; update: <K extends keyof GymOnboardingDraft>(key: K, value: GymOnboardingDraft[K]) => void }) {
-  return (
-    <div className="mx-auto max-w-xl">
-      <p className="eyebrow">Your organization</p>
-      <h2 className="mt-3 text-[31px] font-semibold tracking-tight">Tell us how your gym starts.</h2>
-      <p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">We’ll create your first branch and leave the rest ready to add from Settings.</p>
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <Field label="Gym name">
-            <Input value={draft.gymName} onChange={(event) => update("gymName", event.target.value)} placeholder="Northstar Fitness" />
-          </Field>
-        </div>
-        <Field label="City">
-          <Input value={draft.city} onChange={(event) => update("city", event.target.value)} placeholder="Amman" />
-        </Field>
-        <Field label="First branch">
-          <Input value={draft.branchName} onChange={(event) => update("branchName", event.target.value)} placeholder="Abdoun" />
-        </Field>
-        <div className="sm:col-span-2">
-          <Field label="Current active members (optional)">
-            <Input type="number" min={0} value={draft.currentActiveMembers} onChange={(event) => update("currentActiveMembers", event.target.value)} placeholder="650" />
-          </Field>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StepPlan({ plans, plan, onPlan }: { plans: PlatformSaasPlan[]; plan: PlatformSaasPlan["name"]; onPlan: (plan: PlatformSaasPlan["name"]) => void }) {
-  return (
-    <div>
-      <p className="eyebrow">Choose your starting point</p>
-      <h2 className="mt-3 text-[31px] font-semibold tracking-tight">One plan for your whole operation.</h2>
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        {plans.map((item) => (
-          <button key={item.name} type="button" onClick={() => onPlan(item.name)} className={cn("relative border p-5 text-start transition-all", plan === item.name ? "border-signal bg-signal/[0.035] shadow-pop" : "border-line hover:border-ink")}>
-            <div className="flex items-center justify-between">
-              <p className="eyebrow">{item.name}</p>
-              <span className={cn("flex size-5 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
-            </div>
-            <p className="mt-6 text-[28px] font-semibold">JD {(item.priceMinor / 1000).toFixed(3)}<span className="text-[11px] font-normal text-ink-3"> / month</span></p>
-            <ul className="mt-6 grid gap-2 text-[11.5px] text-ink-2">
-              <li>{item.branches} branch{item.branches > 1 ? "es" : ""}</li>
-              <li>Up to {item.members.toLocaleString()} members</li>
-              <li>{item.staff} staff accounts</li>
-            </ul>
-          </button>
-        ))}
-      </div>
-      <p className="mt-5 text-[11px] text-ink-3">You can change plans before the trial ends. Prices exclude applicable taxes.</p>
-    </div>
-  );
-}
-
-function StepReady({ draft, plan, onStart }: { draft: GymOnboardingDraft; plan: PlatformSaasPlan; onStart: () => void }) {
-  return (
-    <div className="mx-auto max-w-xl py-4 text-center">
-      <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-bg text-success"><CircleCheck className="size-7" /></span>
-      <p className="mt-7 eyebrow">Workspace setup ready</p>
-      <h2 className="mt-3 text-[35px] font-semibold tracking-tight">{draft.gymName || "Your gym"} is next.</h2>
-      <p className="mx-auto mt-4 max-w-md text-[13.5px] leading-relaxed text-ink-2">We’ll create your first branch, owner access, default permissions, and a 14-day {plan.name} trial.</p>
-      <div className="mt-8 grid grid-cols-3 gap-px border border-line bg-line text-start">
-        <ReadyItem icon={<Dumbbell />} label={draft.branchName || "1 branch"} />
-        <ReadyItem icon={<Sparkles />} label={`${plan.name} trial`} />
-        <ReadyItem icon={<Check />} label="14 days" />
-      </div>
-      <Button type="button" variant="signal" size="lg" className="mt-8" onClick={onStart}>
-        Create owner account <ChevronRight />
-      </Button>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="mb-1.5 block text-[11.5px] font-medium">{label}</span>{children}</label>;
-}
-
-function ReadyItem({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return <div className="bg-surface p-4 text-center text-[11px] font-medium"><span className="mx-auto mb-2 block w-fit text-signal [&_svg]:size-4">{icon}</span>{label}</div>;
 }

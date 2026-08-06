@@ -71,15 +71,15 @@ export function LoginLayout({
           <Link href="/" className="flex items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" /> rivet.jo
           </Link>
-          {/* The header link is always the other half of the pair, so sign-in
-              and sign-up are each one click from the other. */}
+          {/* Members can create accounts here; gym access is issued by RIVET
+              after an application is reviewed. */}
           {portal && mode === "sign-up" ? (
             <Link href={portal.href} className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink">
               Already have an account? Sign in
             </Link>
           ) : portal?.signUpUrl ? (
             <Link href={portal.signUpUrl} className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink">
-              {portal.id === "member" ? "Create a member account" : "Create a gym account"}
+              Create a member account
             </Link>
           ) : null}
         </div>

@@ -11,6 +11,20 @@ const organizationStatus = v.union(
 
 const accountStatus = v.union(v.literal("active"), v.literal("invited"), v.literal("deactivated"));
 
+const gymApplicationStatus = v.union(
+  v.literal("pending"),
+  v.literal("under_review"),
+  v.literal("approved"),
+  v.literal("rejected"),
+);
+
+const gymApplicationNotificationStatus = v.union(
+  v.literal("pending"),
+  v.literal("sent"),
+  v.literal("failed"),
+  v.literal("not_configured"),
+);
+
 export const organizationRole = v.union(
   v.literal("owner"),
   v.literal("manager"),
@@ -69,6 +83,30 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_auth_subject", ["authSubject"])
+    .index("by_email", ["email"])
+    .index("by_public_id", ["publicId"]),
+
+  // Public gym applications remain outside a tenant until RIVET approves and
+  // provisions the gym. Only platform-admin workflows may read or change them.
+  gymApplications: defineTable({
+    publicId: v.string(),
+    applicationKey: v.string(),
+    gymName: v.string(),
+    ownerName: v.string(),
+    email: v.string(),
+    contactNumber: v.string(),
+    plan: v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro")),
+    status: gymApplicationStatus,
+    notificationStatus: gymApplicationNotificationStatus,
+    notificationError: v.optional(v.string()),
+    submittedAt: v.number(),
+    updatedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.string()),
+    reviewNotes: v.optional(v.string()),
+  })
+    .index("by_application_key", ["applicationKey"])
+    .index("by_status", ["status"])
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
 

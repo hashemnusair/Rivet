@@ -229,24 +229,20 @@ export interface PlatformSaasPlan {
   tone: "paper" | "signal" | "night";
 }
 
-export interface CreateGymOnboardingInput {
+export interface SubmitGymApplicationInput {
   gymName: string;
-  city: string;
-  branchName: string;
-  ownerFullName: string;
-  ownerPhone?: string;
+  ownerName: string;
+  email: string;
+  contactNumber: string;
   plan: PlatformSaasPlan["name"];
-  currentActiveMembers?: number;
 }
 
-export interface CreateGymOnboardingResult {
-  organizationId: UUID;
-  organizationSlug: string;
-  organizationName: string;
-  branchId: UUID;
-  branchName: string;
-  plan: PlatformSaasPlan["name"];
-  trialEndsAt: string;
+export interface SubmitGymApplicationResult {
+  applicationId: UUID;
+  status: "pending" | "under_review" | "approved" | "rejected";
+  notificationStatus: "pending" | "sent" | "failed" | "not_configured";
+  submittedAt: string;
+  duplicate: boolean;
 }
 
 export interface PlatformSnapshot {
@@ -288,7 +284,7 @@ export interface GymOSApi {
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
-  createGymOnboarding(input: CreateGymOnboardingInput): Promise<CreateGymOnboardingResult>;
+  submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;

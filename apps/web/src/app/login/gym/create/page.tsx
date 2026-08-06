@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { PortalSignIn } from "../../portal-sign-in.client";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Create a gym account" };
-
-export default function GymSignUpPage() {
-  return <PortalSignIn audience="staff" mode="sign-up" />;
+/** Gym access is issued by RIVET; there is no self-serve gym sign-up route. */
+export default function LegacyGymSignUpPage() {
+  redirect("/signup");
 }

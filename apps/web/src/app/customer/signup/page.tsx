@@ -112,7 +112,7 @@ export default function MemberSignupPage() {
           </Link>
           . Running a gym?{" "}
           <Link href="/signup" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
-            Start a gym trial
+            Send a gym application
           </Link>
           .
         </p>

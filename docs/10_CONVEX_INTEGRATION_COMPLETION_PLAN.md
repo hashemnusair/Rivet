@@ -8,14 +8,14 @@ This is one implementation program. Use one feature branch, make logical checkpo
 
 ## Current baseline — 2026-08-06
 
-- Git branch `main` is synchronized with GitHub at `b426ce3`; current local work removes the branded route loader, hardens the customer signup journey, and adds the first real gym-onboarding mutation.
+- Git branch `main` is synchronized with GitHub at `9bf158a` before the reviewed gym-application workflow; the next release adds a public application record and server-side Resend notifications without self-provisioning a tenant.
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
 - `pnpm test` passes with 198 tests across 15 files after the route-loader removal.
 - `pnpm test:e2e` passes with 14 preview browser journeys; the trusted Convex smoke remains skipped without external Clerk storage state.
 - `pnpm build` passes with the Clerk request proxy enabled and generates the current 36 App Router routes.
-- Clerk authenticates users and Convex now persists users, organizations, branches, organization memberships, role definitions, settings, trial subscriptions, the onboarding audit event, and the public/platform directory record created by gym onboarding.
+- Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through protected tooling and then issues access.
 - Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.
 - `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
 - `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The trusted smoke remains secret-gated.

@@ -100,7 +100,14 @@ Set Convex-side environment values through the Convex CLI or dashboard. Keep the
 pnpm --filter web exec convex env set CLERK_FRONTEND_API_URL "$CLERK_FRONTEND_API_URL"
 pnpm --filter web exec convex env set ENTRY_PASS_SIGNING_SECRET "$ENTRY_PASS_SIGNING_SECRET"
 pnpm --filter web exec convex env set CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
+pnpm --filter web exec convex env set RESEND_API_KEY "$RESEND_API_KEY"
+pnpm --filter web exec convex env set RESEND_FROM_EMAIL "applications@rivetjo.com"
+pnpm --filter web exec convex env set RIVET_APPLICATION_RECIPIENTS "you@example.com,partner@example.com"
 ```
+
+### Gym applications and access
+
+Gym owners do not create their own RIVET workspace. `/signup` is a public application form that records the gym name, owner name, email, contact number, and selected plan in the Convex `gymApplications` table. The submission sends a confirmation to the applicant and a notification to the comma-separated `RIVET_APPLICATION_RECIPIENTS` list through Resend. After review, RIVET provisions the gym and issues access; `/login/gym` is sign-in only for invited gym teams. Verify `rivetjo.com` in Resend and keep `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `RIVET_APPLICATION_RECIPIENTS` in the Convex deployment environment.
 
 Run the deterministic reference tenant seed after deploying a new development/preview deployment:
 
@@ -127,6 +134,9 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `CLERK_SECRET_KEY` | server-only Clerk key for invitations |
 | `CLERK_FRONTEND_API_URL` | Clerk JWT issuer configured in Convex |
 | `ENTRY_PASS_SIGNING_SECRET` | Convex-only HMAC secret |
+| `RESEND_API_KEY` | Convex-only email delivery secret for gym applications |
+| `RESEND_FROM_EMAIL` | Verified sender, normally `applications@rivetjo.com` |
+| `RIVET_APPLICATION_RECIPIENTS` | Comma-separated RIVET partner notification recipients |
 | `NEXT_PUBLIC_SITE_URL` | canonical Next.js origin |
 | `PLAYWRIGHT_CONVEX_SMOKE` | trusted smoke switch |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | local path to trusted Playwright state |

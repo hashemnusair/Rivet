@@ -51,26 +51,18 @@ test.describe("RIVET member experience", () => {
   });
 });
 
-test.describe("RIVET gym onboarding", () => {
-  test("carries the trial brief through owner setup", async ({ page }) => {
+test.describe("RIVET gym applications", () => {
+  test("stores a gym application and shows the receipt", async ({ page }) => {
     await page.goto("/signup");
 
     await page.getByLabel("Owner name").fill("Omar QA");
-    await page.getByLabel("Mobile number").fill("+962 79 555 0101");
-    await page.getByRole("button", { name: /^Continue$/ }).click();
+    await page.getByLabel("Email address").fill("omar.qa@example.com");
+    await page.getByLabel("Contact number").fill("+962 79 555 0101");
     await page.getByLabel("Gym name").fill("Northstar QA Fitness");
-    await page.getByLabel("City").fill("Amman");
-    await page.getByLabel("First branch").fill("Abdoun");
-    await page.getByRole("button", { name: /^Continue$/ }).click();
-    await page.getByRole("button", { name: /^Continue$/ }).click();
-    await page.getByRole("button", { name: /Create owner account/i }).click();
+    await page.getByRole("button", { name: /Send gym application/i }).click();
 
-    await expect(page).toHaveURL(/\/onboarding\/gym/);
-    await expect(page.getByRole("heading", { name: /Confirm the details/i })).toBeVisible();
-    await page.getByRole("button", { name: /Create gym workspace/i }).click();
-
-    await expect(page.getByRole("heading", { name: /Northstar QA Fitness is ready/i })).toBeVisible();
-    await expect(page.getByText("Abdoun").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /We’ll be in touch soon/i })).toBeVisible();
+    await expect(page.getByText("omar.qa@example.com")).toBeVisible();
   });
 });
 
