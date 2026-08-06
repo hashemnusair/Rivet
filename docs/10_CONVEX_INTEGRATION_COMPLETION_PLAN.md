@@ -8,12 +8,12 @@ This is one implementation program. Use one feature branch, make logical checkpo
 
 ## Current baseline — 2026-08-06
 
-- Git branch `main` is synchronized with GitHub at `9bf158a` before the reviewed gym-application workflow; the next release adds a public application record and server-side Resend notifications without self-provisioning a tenant.
+- `main` now includes the reviewed gym-application workflow: platform-admin queue, server-side decisions, applicant status email delivery, and an immutable platform audit stream. Applications still do not self-provision a tenant.
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
-- `pnpm test` passes with 198 tests across 15 files after the route-loader removal.
-- `pnpm test:e2e` passes with 14 preview browser journeys; the trusted Convex smoke remains skipped without external Clerk storage state.
+- `pnpm test` passes with 200 tests across 15 files, including the platform application review path.
+- Preview Playwright journeys pass, including the platform application review journey; the trusted Convex smoke remains skipped without external Clerk storage state.
 - `pnpm build` passes with the Clerk request proxy enabled and generates the current 36 App Router routes.
 - Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through protected tooling and then issues access.
 - Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.

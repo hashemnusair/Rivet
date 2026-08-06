@@ -57,6 +57,20 @@ describe("session and role switching", () => {
   });
 });
 
+describe("platform gym applications", () => {
+  it("lists applications and records a review decision with a rejection reason", async () => {
+    const applications = await api.listGymApplications();
+    expect(applications.length).toBeGreaterThan(0);
+    const pending = applications.find((application) => application.status === "pending");
+    expect(pending).toBeDefined();
+
+    await expect(api.reviewGymApplication({ applicationId: pending!.id, decision: "rejected" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const reviewed = await api.reviewGymApplication({ applicationId: pending!.id, decision: "rejected", note: "Could not verify the branch address." });
+    expect(reviewed).toMatchObject({ status: "rejected", reviewNotificationStatus: "sent", reviewNotes: "Could not verify the branch address." });
+    await expect(api.reviewGymApplication({ applicationId: pending!.id, decision: "approved" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+});
+
 describe("tenant/branch scoping and authorization", () => {
   it("refuses the branch financial ledger to a receptionist", async () => {
     await api.switchDemoRole("receptionist");

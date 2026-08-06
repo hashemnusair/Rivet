@@ -79,4 +79,18 @@ test.describe("RIVET platform administration", () => {
     await page.reload();
     await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
   });
+
+  test("reviews a gym application before provisioning access", async ({ page }) => {
+    await page.goto("/login/admin");
+    await page.getByRole("button", { name: /Open platform console/i }).click();
+    await page.getByRole("link", { name: "Applications", exact: true }).click();
+    await expect(page).toHaveURL(/\/platform\/applications$/);
+    await expect(page.getByRole("heading", { name: "Gym applications" })).toBeVisible();
+    await expect(page.getByText("Northline Strength").first()).toBeVisible();
+
+    await page.getByRole("button", { name: /Northline Strength/i }).click();
+    await page.getByLabel("Review notes").fill("Verified the owner and branch address.");
+    await page.getByRole("button", { name: /Approve application/i }).click();
+    await expect(page.getByText(/Application approved\./)).toBeVisible();
+  });
 });

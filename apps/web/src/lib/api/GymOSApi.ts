@@ -237,10 +237,38 @@ export interface SubmitGymApplicationInput {
   plan: PlatformSaasPlan["name"];
 }
 
+export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
+export type GymApplicationNotificationStatus = "pending" | "sent" | "failed" | "not_configured";
+
+export interface PlatformGymApplication {
+  id: UUID;
+  gymName: string;
+  ownerName: string;
+  email: string;
+  contactNumber: string;
+  plan: PlatformSaasPlan["name"];
+  status: GymApplicationStatus;
+  notificationStatus: GymApplicationNotificationStatus;
+  notificationError?: string;
+  reviewNotificationStatus: GymApplicationNotificationStatus;
+  reviewNotificationError?: string;
+  submittedAt: string;
+  updatedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
+}
+
+export interface ReviewGymApplicationInput {
+  applicationId: UUID;
+  decision: Exclude<GymApplicationStatus, "pending">;
+  note?: string;
+}
+
 export interface SubmitGymApplicationResult {
   applicationId: UUID;
-  status: "pending" | "under_review" | "approved" | "rejected";
-  notificationStatus: "pending" | "sent" | "failed" | "not_configured";
+  status: GymApplicationStatus;
+  notificationStatus: GymApplicationNotificationStatus;
   submittedAt: string;
   duplicate: boolean;
 }
@@ -285,6 +313,8 @@ export interface GymOSApi {
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
+  listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
+  reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication>;
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;

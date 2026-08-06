@@ -811,6 +811,27 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
   };
 }
 
+function gymApplicationView(application: Doc<"gymApplications">): Data {
+  return {
+    id: application.publicId,
+    gymName: application.gymName,
+    ownerName: application.ownerName,
+    email: application.email,
+    contactNumber: application.contactNumber,
+    plan: application.plan,
+    status: application.status,
+    notificationStatus: application.notificationStatus,
+    notificationError: application.notificationError,
+    reviewNotificationStatus: application.reviewNotificationStatus ?? "not_configured",
+    reviewNotificationError: application.reviewNotificationError,
+    submittedAt: utcIso(application.submittedAt),
+    updatedAt: utcIso(application.updatedAt),
+    reviewedAt: application.reviewedAt ? utcIso(application.reviewedAt) : undefined,
+    reviewedBy: application.reviewedBy,
+    reviewNotes: application.reviewNotes,
+  };
+}
+
 async function marketplaceRows(ctx: ReadContext): Promise<DomainRecord[]> {
   return await ctx.db
     .query("domainRecords")
@@ -993,6 +1014,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
+  if (operation === "platform.applications") {
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const requestedStatus = optionalString(input.status);
+    const allowedStatuses = new Set(["pending", "under_review", "approved", "rejected"]);
+    const search = optionalString(input.search);
+    const rows = (await ctx.db.query("gymApplications").collect())
+      .filter((row) => !requestedStatus || (allowedStatuses.has(requestedStatus) && row.status === requestedStatus))
+      .filter((row) => matchesSearch([row.gymName, row.ownerName, row.email, row.contactNumber, row.plan, row.status], search))
+      .sort((a, b) => b.submittedAt - a.submittedAt);
+    return rows.map(gymApplicationView);
+  }
   if (operation === "platform.snapshot") {
     await requirePlatformAdmin(ctx, request.correlationId);
     const gyms = (await marketplaceRows(ctx)).map((row) => marketplaceView(data(row.data), true));

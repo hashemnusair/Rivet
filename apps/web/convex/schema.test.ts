@@ -9,6 +9,7 @@ describe("Convex persistence contract", () => {
       "branches",
       "users",
       "gymApplications",
+      "platformAuditEvents",
       "organizationMemberships",
       "roleDefinitions",
       "domainRecords",

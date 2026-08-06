@@ -15,12 +15,14 @@ import type {
   TransactionListQuery,
   UserListQuery,
   PlatformBillingInvoice,
+  PlatformGymApplication,
   PlatformSnapshot,
   PlatformSupportCase,
   PlatformSaasPlan,
   EntryPass,
   SubmitGymApplicationInput,
   SubmitGymApplicationResult,
+  ReviewGymApplicationInput,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -72,6 +74,37 @@ const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
   { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
   { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+];
+
+const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
+  {
+    id: "20000000-0000-4a00-8a00-000000000001",
+    gymName: "Northline Strength",
+    ownerName: "Karim Haddad",
+    email: "karim@northline.example",
+    contactNumber: "+962 79 555 0144",
+    plan: "Growth",
+    status: "pending",
+    notificationStatus: "sent",
+    reviewNotificationStatus: "not_configured",
+    submittedAt: "2026-08-06T08:42:00.000Z",
+    updatedAt: "2026-08-06T08:42:00.000Z",
+  },
+  {
+    id: "20000000-0000-4a00-8a00-000000000002",
+    gymName: "Mosaic Women’s Fitness",
+    ownerName: "Dina Al-Saleh",
+    email: "dina@mosaic.example",
+    contactNumber: "+962 78 222 0908",
+    plan: "Pro",
+    status: "under_review",
+    notificationStatus: "sent",
+    reviewNotificationStatus: "not_configured",
+    submittedAt: "2026-08-05T14:18:00.000Z",
+    updatedAt: "2026-08-05T16:05:00.000Z",
+    reviewedBy: "Elias RIVET",
+    reviewNotes: "Confirm the second branch address before approval.",
+  },
 ];
 
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
@@ -129,11 +162,13 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
   private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
+  private gymApplications: PlatformGymApplication[];
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
+    this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
@@ -251,6 +286,44 @@ export class MockGymOSApi implements GymOSApi {
     }));
   }
 
+  listGymApplications(query: { status?: PlatformGymApplication["status"]; search?: string } = {}): Promise<PlatformGymApplication[]> {
+    return this.respond(() => {
+      const search = query.search?.trim().toLowerCase();
+      return this.gymApplications
+        .filter((application) => !query.status || application.status === query.status)
+        .filter((application) => !search || [application.gymName, application.ownerName, application.email, application.contactNumber, application.plan, application.status].some((value) => value.toLowerCase().includes(search)))
+        .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+        .map((application) => ({ ...application }));
+    });
+  }
+
+  reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication> {
+    return this.respond(() => {
+      const application = this.gymApplications.find((item) => item.id === input.applicationId);
+      if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
+      if (application.status === "approved" || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
+      if (input.decision === "rejected" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Add a reason before rejecting an application.", { fieldErrors: { note: ["Required when rejecting an application"] } });
+      const now = nowISO();
+      application.status = input.decision;
+      application.updatedAt = now;
+      application.reviewedBy = this.actor().name;
+      application.reviewNotes = input.note?.trim() || undefined;
+      application.reviewedAt = input.decision === "under_review" ? undefined : now;
+      application.reviewNotificationStatus = input.decision === "under_review" ? "not_configured" : "sent";
+      application.reviewNotificationError = undefined;
+      this.audit({
+        category: "settings",
+        action: `gym_application.${input.decision}`,
+        entityType: "gym_application",
+        entityId: application.id,
+        entityLabel: application.gymName,
+        summary: `${input.decision === "under_review" ? "Moved to review" : input.decision === "approved" ? "Approved" : "Rejected"} gym application`,
+        reason: input.note,
+      });
+      return { ...application };
+    });
+  }
+
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
       const invoice = MOCK_INVOICES.find((item) => item.id === invoiceId);
@@ -295,6 +368,7 @@ export class MockGymOSApi implements GymOSApi {
     this.db = buildSeed();
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
+    this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;

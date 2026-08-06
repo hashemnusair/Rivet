@@ -4,7 +4,7 @@ Updated 2026-08-06 after production Clerk setup and release-hardening work. The 
 
 ## Product surface preserved
 
-The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console, gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
+The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console (including the protected `/platform/applications` review queue), gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
 
 The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
 
@@ -33,7 +33,7 @@ The seeded Forge Fitness reference scenario is created by the internal, idempote
 
 Convex schema and domain functions now cover:
 
-- Organizations, branches, users, memberships, role definitions, settings, payment methods, audit events, idempotency records, sequence counters, and public `gymApplications` records. A pending application does not create a tenant; protected RIVET provisioning creates the first branch, role definitions, owner access, subscription, and public directory record after approval.
+- Organizations, branches, users, memberships, role definitions, settings, payment methods, tenant audit events, platform audit events, idempotency records, sequence counters, and public `gymApplications` records. The platform review queue records approval/rejection decisions in the immutable `platformAuditEvents` stream. A pending application does not create a tenant; protected RIVET provisioning creates the first branch, role definitions, owner access, subscription, and public directory record after approval.
 - Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
 - Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.
@@ -60,8 +60,8 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 198 tests passed across 15 files, including Convex security, adapter, schema, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
-- `pnpm test:e2e` — 14 Playwright journeys passed and 1 trusted Convex smoke was skipped because no external Clerk storage state was configured.
+- `pnpm test` — 200 tests passed across 15 files, including Convex security, adapter, schema, platform application review, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test:e2e` — preview journeys pass, including the platform application review journey; 1 trusted Convex smoke remains skipped because no external Clerk storage state was configured.
 - `pnpm build` — passed on Next.js 16.2.12; 36 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.

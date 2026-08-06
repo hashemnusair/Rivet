@@ -53,6 +53,29 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(mutationArgs).toMatchObject({ operation: "payments.create", input: { idempotencyKey: "payment-key-1" } });
   });
 
+  it("keeps platform application review behind the platform query/action boundary", async () => {
+    const application = {
+      id: "20000000-0000-4a00-8a00-000000000001",
+      gymName: "Northline Strength",
+      ownerName: "Karim Haddad",
+      email: "karim@northline.example",
+      contactNumber: "+962 79 555 0144",
+      plan: "Growth" as const,
+      status: "approved" as const,
+      notificationStatus: "sent" as const,
+      reviewNotificationStatus: "sent" as const,
+      submittedAt: "2026-08-06T08:42:00.000Z",
+      updatedAt: "2026-08-06T09:00:00.000Z",
+    };
+    const calls: Array<{ kind: string; args: Record<string, unknown> }> = [];
+    const api = new ConvexGymOSApi(transportFor({ query: [], action: application }, (kind, args) => calls.push({ kind, args })));
+
+    await expect(api.listGymApplications({ status: "pending" })).resolves.toEqual([]);
+    await expect(api.reviewGymApplication({ applicationId: application.id, decision: "approved", note: "Verified." })).resolves.toEqual(application);
+    expect(calls[0]).toMatchObject({ kind: "query", args: { operation: "platform.applications", input: { status: "pending" } } });
+    expect(calls[1]).toMatchObject({ kind: "action", args: { applicationId: application.id, decision: "approved", note: "Verified.", correlationId: expect.any(String) } });
+  });
+
   it("converts structured Convex errors into stable ApiErrors", async () => {
     const error = Object.assign(new Error("wrapped failure"), { data: { code: ERR.FORBIDDEN, message: "Branch access denied.", requestId: "cor-test-1" } });
     const api = new ConvexGymOSApi(transportFor({ query: error }));

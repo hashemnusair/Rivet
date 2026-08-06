@@ -4,6 +4,7 @@ import { useAuth, useClerk } from "@clerk/nextjs";
 import {
   BadgeDollarSign,
   Building2,
+  ClipboardList,
   CircleHelp,
   CreditCard,
   ExternalLink,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils/cn";
 
 const NAVIGATION = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/platform/applications", label: "Applications", icon: ClipboardList },
   { href: "/platform/gyms", label: "Gyms", icon: Building2 },
   { href: "/platform/subscriptions", label: "Subscriptions", icon: BadgeDollarSign },
   { href: "/platform/billing", label: "Billing", icon: CreditCard },

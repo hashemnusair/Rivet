@@ -1,9 +1,12 @@
 import { v } from "convex/values";
 import { action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
+const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"), v.literal("rejected"));
 
 const applicationArgs = {
   gymName: v.string(),
@@ -140,6 +143,103 @@ export const markNotification = internalMutation({
   },
 });
 
+const reviewArgs = {
+  applicationId: v.string(),
+  decision: reviewDecision,
+  note: v.optional(v.string()),
+  correlationId: v.string(),
+};
+
+/**
+ * Changes the review state and writes an immutable platform audit event before
+ * any external email is attempted. The action below owns the Resend call.
+ */
+export const reviewRecord = internalMutation({
+  args: reviewArgs,
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const admin = await requirePlatformAdmin(ctx, args.correlationId);
+    const application = await ctx.db
+      .query("gymApplications")
+      .withIndex("by_public_id", (q) => q.eq("publicId", args.applicationId))
+      .unique();
+    if (!application) domainError("NOT_FOUND", "Gym application not found.", { correlationId: args.correlationId });
+    if (application.status === "approved" || application.status === "rejected") {
+      domainError("VALIDATION_ERROR", "This gym application has already been finalized.", { correlationId: args.correlationId });
+    }
+
+    const note = args.note?.trim() || undefined;
+    if (args.decision === "rejected" && !note) {
+      domainError("VALIDATION_ERROR", "Add a reason before rejecting an application.", {
+        correlationId: args.correlationId,
+        fieldErrors: { note: ["Required when rejecting an application"] },
+      });
+    }
+
+    const now = Date.now();
+    const reviewNotificationStatus = args.decision === "under_review" ? "not_configured" : "pending";
+    await ctx.db.patch(application._id, {
+      status: args.decision,
+      reviewNotificationStatus,
+      reviewNotificationError: undefined,
+      reviewedAt: args.decision === "under_review" ? undefined : now,
+      reviewedBy: admin.user.fullName,
+      reviewNotes: note,
+      updatedAt: now,
+    });
+    await ctx.db.insert("platformAuditEvents", {
+      publicId: crypto.randomUUID(),
+      actorUserId: admin.user._id,
+      actorPublicId: publicUserId(admin.user),
+      actorName: admin.user.fullName,
+      action: `gym_application.${args.decision}`,
+      entityType: "gym_application",
+      entityPublicId: application.publicId,
+      entityLabel: application.gymName,
+      summary: `${args.decision === "under_review" ? "Moved to review" : args.decision === "approved" ? "Approved" : "Rejected"} gym application for ${application.gymName}`,
+      reason: note,
+      before: { status: application.status },
+      after: { status: args.decision, plan: application.plan },
+      correlationId: args.correlationId,
+      occurredAt: now,
+    });
+
+    return {
+      applicationDocumentId: application._id,
+      applicationId: application.publicId,
+      gymName: application.gymName,
+      ownerName: application.ownerName,
+      email: application.email,
+      plan: application.plan,
+      status: args.decision,
+      reviewNotificationStatus,
+      reviewNotificationError: undefined,
+      submittedAt: new Date(application.submittedAt).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      reviewedAt: args.decision === "under_review" ? undefined : new Date(now).toISOString(),
+      reviewedBy: admin.user.fullName,
+      reviewNotes: note,
+    };
+  },
+});
+
+export const markReviewNotification = internalMutation({
+  args: {
+    applicationId: v.id("gymApplications"),
+    status: notificationStatus,
+    error: v.optional(v.string()),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.applicationId, {
+      reviewNotificationStatus: args.status,
+      reviewNotificationError: args.error,
+      updatedAt: Date.now(),
+    });
+    return undefined;
+  },
+});
+
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -178,6 +278,19 @@ async function sendResendEmail(args: { apiKey: string; from: string; to: string[
   }
 }
 
+function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" }, decision: "approved" | "rejected") {
+  const approved = decision === "approved";
+  const heading = approved ? "Your RIVET application is approved" : "An update on your RIVET application";
+  const message = approved
+    ? "Our team will contact you soon to finish setup and provide your gym access."
+    : "We are unable to approve the application at this time. Our team will contact you if more information is needed.";
+  return {
+    subject: approved ? `RIVET application approved · ${values.gymName}` : `RIVET application update · ${values.gymName}`,
+    html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>${heading}</h2><p>Hi ${escapeHtml(values.ownerName)},</p><p>${message}</p><p><strong>Gym:</strong> ${escapeHtml(values.gymName)}<br/><strong>Plan:</strong> ${escapeHtml(values.plan)}</p><p style="color:#777;font-size:12px">This message was sent by RIVET. Please contact our team directly if you have questions.</p></div>`,
+    text: `${heading}\n\nHi ${values.ownerName},\n\n${message}\n\nGym: ${values.gymName}\nPlan: ${values.plan}`,
+  };
+}
+
 function recipientList(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
@@ -197,7 +310,7 @@ export const submit = action({
     if (created.duplicate && created.notificationStatus === "sent") return { applicationId: created.applicationId, status: created.status, notificationStatus: created.notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: true };
 
     const apiKey = text(process.env.RESEND_API_KEY);
-    const from = text(process.env.RESEND_FROM_EMAIL) || "applications@rivetjo.com";
+    const from = text(process.env.RESEND_FROM_EMAIL) || "noreply@rivetjo.com";
     const recipients = recipientList(process.env.RIVET_APPLICATION_RECIPIENTS);
     if (!apiKey || recipients.length === 0) {
       await ctx.runMutation(internal.gymApplications.markNotification, { applicationId: created.applicationDocumentId, status: "not_configured", error: "Resend application notifications are not configured." });
@@ -227,5 +340,49 @@ export const submit = action({
     const error = [applicant.error, internalNotification.error].filter(Boolean).join(" ") || undefined;
     await ctx.runMutation(internal.gymApplications.markNotification, { applicationId: created.applicationDocumentId, status: notificationStatus, error });
     return { applicationId: created.applicationId, status: created.status, notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: created.duplicate };
+  },
+});
+
+/**
+ * Final review decisions send the applicant a separate status email. The
+ * application state remains durable even when Resend is temporarily missing or
+ * unavailable, and the notification status makes that failure visible to the
+ * platform operator.
+ */
+export const review = action({
+  args: reviewArgs,
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const reviewed = await ctx.runMutation(internal.gymApplications.reviewRecord, args);
+    const { applicationDocumentId, ...publicReview } = reviewed as {
+      applicationDocumentId: Id<"gymApplications">;
+      applicationId: string;
+      gymName: string;
+      ownerName: string;
+      email: string;
+      plan: "Starter" | "Growth" | "Pro";
+      status: "under_review" | "approved" | "rejected";
+      reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
+      reviewNotificationError?: string;
+      submittedAt: string;
+      updatedAt: string;
+      reviewedAt?: string;
+      reviewedBy: string;
+      reviewNotes?: string;
+    };
+    if (args.decision === "under_review") return publicReview;
+
+    const apiKey = text(process.env.RESEND_API_KEY);
+    const from = text(process.env.RESEND_FROM_EMAIL) || "noreply@rivetjo.com";
+    if (!apiKey) {
+      await ctx.runMutation(internal.gymApplications.markReviewNotification, { applicationId: applicationDocumentId, status: "not_configured", error: "Resend application review notifications are not configured." });
+      return { ...publicReview, reviewNotificationStatus: "not_configured" as const, reviewNotificationError: "Resend application review notifications are not configured." };
+    }
+
+    const email = reviewEmail({ gymName: publicReview.gymName, ownerName: publicReview.ownerName, plan: publicReview.plan }, args.decision);
+    const sent = await sendResendEmail({ apiKey, from, to: [publicReview.email], subject: email.subject, html: email.html, text: email.text });
+    const status: "sent" | "failed" = sent.ok ? "sent" : "failed";
+    await ctx.runMutation(internal.gymApplications.markReviewNotification, { applicationId: applicationDocumentId, status, error: sent.error });
+    return { ...publicReview, reviewNotificationStatus: status as "sent" | "failed", reviewNotificationError: sent.error };
   },
 });

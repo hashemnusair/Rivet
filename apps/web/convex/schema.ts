@@ -99,6 +99,8 @@ export default defineSchema({
     status: gymApplicationStatus,
     notificationStatus: gymApplicationNotificationStatus,
     notificationError: v.optional(v.string()),
+    reviewNotificationStatus: v.optional(gymApplicationNotificationStatus),
+    reviewNotificationError: v.optional(v.string()),
     submittedAt: v.number(),
     updatedAt: v.number(),
     reviewedAt: v.optional(v.number()),
@@ -109,6 +111,27 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
+
+  // Platform decisions sit outside a tenant, so they use their own immutable
+  // audit stream rather than being attached to a gym's organization audit log.
+  platformAuditEvents: defineTable({
+    publicId: v.string(),
+    actorUserId: v.id("users"),
+    actorPublicId: v.string(),
+    actorName: v.string(),
+    action: v.string(),
+    entityType: v.string(),
+    entityPublicId: v.string(),
+    entityLabel: v.string(),
+    summary: v.string(),
+    reason: v.optional(v.string()),
+    before: v.optional(v.any()),
+    after: v.optional(v.any()),
+    correlationId: v.string(),
+    occurredAt: v.number(),
+  })
+    .index("by_occurred", ["occurredAt"])
+    .index("by_entity", ["entityType", "entityPublicId"]),
 
   organizationMemberships: defineTable({
     organizationId: v.id("organizations"),
