@@ -9,9 +9,11 @@ test.describe("RIVET member experience", () => {
     await page.getByLabel("Mobile number").fill("+962 79 321 4455");
     await page.locator("#signup-password").fill("preview-pass");
     await page.locator("#signup-confirm").fill("preview-pass");
-    await page.getByRole("button", { name: /create account/i }).click();
+    const createAccount = page.getByRole("button", { name: /create account/i });
+    await expect(createAccount).toBeEnabled();
+    await createAccount.click();
 
-    await expect(page).toHaveURL(/\/customer\/discover/);
+    await expect(page).toHaveURL(/\/customer\/discover/, { timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
 
     await page.reload();
@@ -46,6 +48,29 @@ test.describe("RIVET member experience", () => {
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: "Pipeline", exact: true }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
+  });
+});
+
+test.describe("RIVET gym onboarding", () => {
+  test("carries the trial brief through owner setup", async ({ page }) => {
+    await page.goto("/signup");
+
+    await page.getByLabel("Owner name").fill("Omar QA");
+    await page.getByLabel("Mobile number").fill("+962 79 555 0101");
+    await page.getByRole("button", { name: /^Continue$/ }).click();
+    await page.getByLabel("Gym name").fill("Northstar QA Fitness");
+    await page.getByLabel("City").fill("Amman");
+    await page.getByLabel("First branch").fill("Abdoun");
+    await page.getByRole("button", { name: /^Continue$/ }).click();
+    await page.getByRole("button", { name: /^Continue$/ }).click();
+    await page.getByRole("button", { name: /Create owner account/i }).click();
+
+    await expect(page).toHaveURL(/\/onboarding\/gym/);
+    await expect(page.getByRole("heading", { name: /Confirm the details/i })).toBeVisible();
+    await page.getByRole("button", { name: /Create gym workspace/i }).click();
+
+    await expect(page.getByRole("heading", { name: /Northstar QA Fitness is ready/i })).toBeVisible();
+    await expect(page.getByText("Abdoun").first()).toBeVisible();
   });
 });
 

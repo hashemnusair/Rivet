@@ -19,6 +19,8 @@ import type {
   PlatformSupportCase,
   PlatformSaasPlan,
   EntryPass,
+  CreateGymOnboardingInput,
+  CreateGymOnboardingResult,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -237,6 +239,18 @@ export class MockGymOSApi implements GymOSApi {
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
     return this.respond(() => MOCK_SAAS_PLANS);
+  }
+
+  createGymOnboarding(input: CreateGymOnboardingInput): Promise<CreateGymOnboardingResult> {
+    return this.respond(() => ({
+      organizationId: this.db.organization.id,
+      organizationSlug: this.db.organization.slug,
+      organizationName: input.gymName.trim(),
+      branchId: this.db.branches[0]?.id ?? "mock-branch",
+      branchName: input.branchName.trim(),
+      plan: input.plan,
+      trialEndsAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+    }));
   }
 
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {

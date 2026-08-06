@@ -18,6 +18,8 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
+  CreateGymOnboardingInput,
+  CreateGymOnboardingResult,
   PlatformBillingInvoice,
   PlatformSnapshot,
   PlatformSupportCase,
@@ -40,6 +42,7 @@ export type ConvexOperationArgs = {
 export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
+  mutation(reference: typeof api.onboarding.createGym, args: CreateGymOnboardingInput): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: ConvexOperationArgs): Promise<unknown>;
 }
 
@@ -162,6 +165,14 @@ export class ConvexGymOSApi implements GymOSApi {
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
+  async createGymOnboarding(input: CreateGymOnboardingInput): Promise<CreateGymOnboardingResult> {
+    try {
+      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      return await this.transport.mutation(api.onboarding.createGym, input) as CreateGymOnboardingResult;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.billing.retry", { invoiceId }); }
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.resolve", { caseId }); }
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.reply", { caseId, body }); }

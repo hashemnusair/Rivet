@@ -77,8 +77,7 @@ export default function DiscoverGymsPage() {
                       <div>
                         <p className="eyebrow">From</p>
                         <p className="mt-1 text-[18px] font-semibold">
-                          JD {gym.fromPriceMinor / 1000}
-                          <span className="text-[11px] font-normal text-ink-3"> / month</span>
+                          {gym.fromPriceMinor > 0 ? <>JD {gym.fromPriceMinor / 1000}<span className="text-[11px] font-normal text-ink-3"> / month</span></> : <span className="text-[14px]">Contact gym</span>}
                         </p>
                       </div>
                       <Button asChild variant="signal">

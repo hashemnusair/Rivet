@@ -88,7 +88,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
           <Link href="/customer/discover" className="inline-flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.14em] text-white/75 hover:text-white"><ArrowLeft className="size-3.5" /> All gyms</Link>
           <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_0.45fr] lg:items-end">
             <div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/70">{gym.category} · {gym.city}</p><h1 className="marketing-display mt-4 max-w-5xl text-[clamp(4rem,8vw,8rem)] leading-[0.87]">{gym.name}</h1><p className="mt-7 max-w-2xl text-[17px] leading-relaxed text-white/85">{gym.tagline}</p></div>
-            <dl className="grid grid-cols-2 gap-px bg-white/25"><GymStat label="Rating" value={`${gym.rating} / 5`} /><GymStat label="Members" value={gym.memberCount.toLocaleString()} /><GymStat label="Branches" value={String(gym.branchCount)} /><GymStat label="From" value={`JD ${gym.fromPriceMinor / 1000}`} /></dl>
+            <dl className="grid grid-cols-2 gap-px bg-white/25"><GymStat label="Rating" value={`${gym.rating} / 5`} /><GymStat label="Members" value={gym.memberCount.toLocaleString()} /><GymStat label="Branches" value={String(gym.branchCount)} /><GymStat label="From" value={gym.fromPriceMinor > 0 ? `JD ${gym.fromPriceMinor / 1000}` : "Contact gym"} /></dl>
           </div>
         </div>
       </section>

@@ -15,6 +15,7 @@ import type * as health from "../health.js";
 import type * as identity from "../identity.js";
 import type * as invariants from "../invariants.js";
 import type * as invitations from "../invitations.js";
+import type * as onboarding from "../onboarding.js";
 import type * as permissions from "../permissions.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   identity: typeof identity;
   invariants: typeof invariants;
   invitations: typeof invitations;
+  onboarding: typeof onboarding;
   permissions: typeof permissions;
   security: typeof security;
   seed: typeof seed;

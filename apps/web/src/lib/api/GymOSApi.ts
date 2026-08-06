@@ -229,6 +229,26 @@ export interface PlatformSaasPlan {
   tone: "paper" | "signal" | "night";
 }
 
+export interface CreateGymOnboardingInput {
+  gymName: string;
+  city: string;
+  branchName: string;
+  ownerFullName: string;
+  ownerPhone?: string;
+  plan: PlatformSaasPlan["name"];
+  currentActiveMembers?: number;
+}
+
+export interface CreateGymOnboardingResult {
+  organizationId: UUID;
+  organizationSlug: string;
+  organizationName: string;
+  branchId: UUID;
+  branchName: string;
+  plan: PlatformSaasPlan["name"];
+  trialEndsAt: string;
+}
+
 export interface PlatformSnapshot {
   gyms: import("@/lib/public/experience-data").MarketplaceGym[];
   bookings: import("@/lib/public/experience-data").TrialBooking[];
@@ -268,6 +288,7 @@ export interface GymOSApi {
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
+  createGymOnboarding(input: CreateGymOnboardingInput): Promise<CreateGymOnboardingResult>;
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;

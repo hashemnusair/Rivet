@@ -76,8 +76,6 @@
   /* The selector pin "clicks" into a plate; the hero phone drifts idly. */
   --animate-pin-pop: pin-pop 0.35s ease-out both;
   --animate-float: float 7s ease-in-out infinite;
-  /* Loader: plates fall through the stack in a repeating wave. */
-  --animate-plate-drop: plate-drop 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(6px); }
@@ -103,12 +101,6 @@
   @keyframes float {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-7px); }
-  }
-  @keyframes plate-drop {
-    0% { transform: translateY(-16px); opacity: 0; }
-    28% { transform: translateY(0); opacity: 1; }
-    70% { transform: translateY(0); opacity: 1; }
-    100% { transform: translateY(0); opacity: 0.25; }
   }
 }
 

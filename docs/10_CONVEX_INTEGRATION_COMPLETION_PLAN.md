@@ -6,20 +6,21 @@ Complete GymOS as an operationally credible MVP on the approved Next.js, Convex,
 
 This is one implementation program. Use one feature branch, make logical checkpoint commits, run the complete verification suite, then push and open one final pull request. Do not create a separate pull request for each phase.
 
-## Current baseline — 2026-08-04
+## Current baseline — 2026-08-06
 
-- Git branch `main` is clean and synchronized with GitHub at `ad67092`.
+- Git branch `main` is synchronized with GitHub at `b426ce3`; current local work removes the branded route loader, hardens the customer signup journey, and adds the first real gym-onboarding mutation.
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
-- `pnpm test` passes with 165 tests across 8 files.
-- `pnpm test:e2e` passes with 13 browser journeys.
-- `pnpm build` passes and prerenders 347 routes with the Clerk request proxy enabled.
-- Clerk authenticates users and Convex currently persists users, organizations, branches, and organization memberships.
+- `pnpm test` passes with 198 tests across 15 files after the route-loader removal.
+- `pnpm test:e2e` passes with 14 preview browser journeys; the trusted Convex smoke remains skipped without external Clerk storage state.
+- `pnpm build` passes with the Clerk request proxy enabled and generates the current 36 App Router routes.
+- Clerk authenticates users and Convex now persists users, organizations, branches, organization memberships, role definitions, settings, trial subscriptions, the onboarding audit event, and the public/platform directory record created by gym onboarding.
 - Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.
-- `apps/web/src/lib/api/client.ts` always constructs `MockGymOSApi`; there is no production Convex implementation of the `GymOSApi` contract.
-- There is no GitHub Actions workflow. The only GitHub commit status currently reported is Vercel.
+- `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
+- `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The trusted smoke remains secret-gated.
 - Existing Playwright journeys use `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`, so they verify the deterministic preview path rather than the production Clerk-to-Convex path.
+- The latest GitHub Actions browser run failed only on a cold customer-signup navigation; the focused test passes locally with a 30-second route assertion. The full CI run must be rerun after these changes.
 
 ## Architectural authority
 

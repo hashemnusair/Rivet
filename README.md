@@ -133,9 +133,9 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 
 Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients.
 
-`www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The current public deployment is still a release hold until Vercel Production contains `NEXT_PUBLIC_CONVEX_URL` and the project is switched from the Clerk development instance to a Clerk production instance. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
+`www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The production Clerk instance, DNS records, and first production test user are now configured. The deployment remains on release hold until the Vercel Production and Convex environment values are verified against that production Clerk instance and the trusted Clerk-to-Convex smoke passes. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
 
-The production Clerk instance and custom-domain DNS setup are external dashboard steps. Accounts do not transfer between Clerk instances, so create a fresh production test user after the switch. Preview deployments may continue using the development Clerk/Convex pair; never reuse a production Convex deploy key in Preview.
+The production Clerk instance and custom-domain DNS setup have been completed. Google sign-in is optional and currently deferred; email/password is the supported production path. Accounts do not transfer between Clerk instances, so any development users must be recreated in production. Preview deployments may continue using the development Clerk/Convex pair; never reuse a production Convex deploy key in Preview.
 
 ## Security and data rules
 

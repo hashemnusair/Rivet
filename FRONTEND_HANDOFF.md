@@ -1,10 +1,10 @@
 # GymOS / RIVET handoff
 
-Updated 2026-08-04 for the completed Convex integration pass. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
+Updated 2026-08-06 after production Clerk setup and release-hardening work. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
 
 ## Product surface preserved
 
-The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console, gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The only new operational route is `/members/import`, a permission-gated CSV preview and resumable commit workflow.
+The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console, gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The new `/onboarding/gym` route confirms and creates a gym workspace after Clerk signup; `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
 
 The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
 
@@ -33,7 +33,7 @@ The seeded Forge Fitness reference scenario is created by the internal, idempote
 
 Convex schema and domain functions now cover:
 
-- Organizations, branches, users, memberships, role definitions, settings, payment methods, audit events, idempotency records, and sequence counters.
+- Organizations, branches, users, memberships, role definitions, settings, payment methods, audit events, idempotency records, sequence counters, and the owner-led gym onboarding transaction (including the first trial subscription and public directory record).
 - Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
 - Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.
@@ -60,9 +60,9 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 195 tests passed across 15 files, including Convex security, adapter, schema, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, routing, and reception coverage.
-- `pnpm test:e2e` — 13 Playwright journeys passed and 1 trusted Convex smoke was skipped because no external Clerk storage state was configured.
-- `pnpm build` — passed on Next.js 16.2.12; 35 application routes were compiled and generated, with protected operational routes remaining dynamic.
+- `pnpm test` — 198 tests passed across 15 files, including Convex security, adapter, schema, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test:e2e` — 14 Playwright journeys passed and 1 trusted Convex smoke was skipped because no external Clerk storage state was configured.
+- `pnpm build` — passed on Next.js 16.2.12; 36 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
 - `convex run health:check` — returned `status: ok` from the linked development deployment.
@@ -91,7 +91,7 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The code and environment contract are ready for deployment, but `www.rivetjo.com` remains a marketing preview until Vercel Production receives `NEXT_PUBLIC_CONVEX_URL` and the project is moved from Clerk Development to a Clerk Production instance. The exact DNS, Vercel, Convex, and Clerk sequence is recorded in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The production Clerk instance, custom-domain DNS records, and first production test user are now in place. The remaining release gate is to verify that Vercel Production and the selected Convex deployment both use the matching production Clerk issuer/keys and production Convex URL, then run the trusted Clerk-to-Convex smoke. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
 
 ## Files another agent should read first
 

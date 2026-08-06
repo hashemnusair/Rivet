@@ -14,8 +14,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Monogram } from "@/components/ui/misc";
@@ -67,10 +67,36 @@ function SignedInIdentity() {
   );
 }
 
-export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
+export function PortalSignIn(props: { audience: Audience; mode?: AuthMode }) {
+  return (
+    <Suspense fallback={<PortalSignInFallback {...props} />}>
+      <PortalSignInContent {...props} />
+    </Suspense>
+  );
+}
+
+function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
+  const portal = PORTALS[audience];
+  return (
+    <LoginLayout
+      portal={portal}
+      mode={mode}
+      footer={
+        <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
+          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · data by Convex"}
+        </p>
+      }
+    >
+      <LoginLoading />
+    </LoginLayout>
+  );
+}
+
+function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
   const portal = PORTALS[audience];
   const router = useRouter();
-  const { isLoaded: clerkLoaded } = useAuth();
+  const searchParams = useSearchParams();
+  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const { signIn, sessionLoading } = useApp();
   const { customers, experienceReady, signInCustomer, signInPlatformAdmin } = useExperience();
   const [loading, setLoading] = useState(false);
@@ -80,6 +106,12 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
   // submit its form before React attaches the handlers.
   const previewReady = !DEMO_AUTH_BYPASS || (!sessionLoading && experienceReady);
   const identityReady = (DEMO_AUTH_BYPASS || clerkLoaded) && previewReady;
+  const redirectUrl = safeInternalRedirect(searchParams.get("next"), portal.href);
+
+  useEffect(() => {
+    if (DEMO_AUTH_BYPASS || mode !== "sign-up" || redirectUrl === portal.href || !clerkLoaded || !clerkSignedIn) return;
+    router.replace(redirectUrl);
+  }, [clerkLoaded, clerkSignedIn, mode, portal.href, redirectUrl, router]);
 
   const enterStaff = async (role: RoleKey) => {
     setLoading(true);
@@ -138,7 +170,7 @@ export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audienc
         {identityReady && !DEMO_AUTH_BYPASS ? (
           <>
             <Show when="signed-out">
-              <ClerkPanel audience={audience} mode={mode} />
+              <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
             </Show>
             <Show when="signed-in">
               <SignedInIdentity />
@@ -194,7 +226,7 @@ const CLERK_APPEARANCE = {
   },
 } as const;
 
-function ClerkPanel({ audience, mode }: { audience: Audience; mode: AuthMode }) {
+function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode: AuthMode; redirectUrl: string }) {
   const portal = PORTALS[audience];
 
   // Each portal owns a route, so Clerk is free to use the hash for its own
@@ -205,8 +237,8 @@ function ClerkPanel({ audience, mode }: { audience: Audience; mode: AuthMode }) 
         <SignUp
           routing="hash"
           signInUrl={portal.href}
-          forceRedirectUrl={portal.href}
-          fallbackRedirectUrl={portal.href}
+          forceRedirectUrl={redirectUrl}
+          fallbackRedirectUrl={redirectUrl}
           appearance={CLERK_APPEARANCE}
         />
       </div>
@@ -218,12 +250,17 @@ function ClerkPanel({ audience, mode }: { audience: Audience; mode: AuthMode }) 
       <SignIn
         routing="hash"
         signUpUrl={portal.signUpUrl}
-        forceRedirectUrl={portal.href}
-        fallbackRedirectUrl={portal.href}
+        forceRedirectUrl={redirectUrl}
+        fallbackRedirectUrl={redirectUrl}
         appearance={CLERK_APPEARANCE}
       />
     </div>
   );
+}
+
+function safeInternalRedirect(value: string | null, fallback: string): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
+  return value;
 }
 
 // ---------------------------------------------------------------------------
