@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { destinationFor, useRivetIdentity, type RivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
-import { LoginLoading } from "./login-chrome";
+
+const ENTRY_TRANSITION_MS = 900;
+const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
 
 /**
  * Once Clerk authenticates someone, their Convex role—not the portal they
@@ -19,7 +22,9 @@ import { LoginLoading } from "./login-chrome";
 export function IdentityPanel() {
   const identity = useRivetIdentity();
 
-  if (identity.status === "loading" || identity.status === "pending") return <LoginLoading />;
+  if (identity.status === "loading" || identity.status === "pending") {
+    return <AutomaticEntry label="Preparing your workspace" />;
+  }
 
   // Convex holds the roles. If it cannot see this session there is nothing to
   // route on, and silently rendering nothing would strand a signed-in person on
@@ -53,10 +58,13 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
   useEffect(() => {
     if (!membership || started.current) return;
     started.current = true;
-    void signIn(membership.role, undefined, {
-      name: identity.fullName || identity.email || "RIVET user",
-      email: identity.email || "",
-    })
+    void Promise.all([
+      signIn(membership.role, undefined, {
+        name: identity.fullName || identity.email || "RIVET user",
+        email: identity.email || "",
+      }),
+      holdTransition(),
+    ])
       .then(() => router.replace(destination.href))
       .catch(() => {
         setFailed(true);
@@ -96,7 +104,10 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" })
+    void Promise.all([
+      signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" }),
+      holdTransition(),
+    ])
       .then(() => router.replace("/customer/my-gyms"))
       .catch(() => setFailed(true));
   }, [identity.email, identity.fullName, router, signInAsIdentity]);
@@ -123,7 +134,8 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
     if (!identity.platformAdmin || started.current) return;
     started.current = true;
     signInPlatformAdmin();
-    router.replace("/platform");
+    const timer = window.setTimeout(() => router.replace("/platform"), ENTRY_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
   }, [identity.platformAdmin, router, signInPlatformAdmin]);
 
   if (!identity.platformAdmin) {
@@ -141,9 +153,17 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
 
 function AutomaticEntry({ label }: { label: string }) {
   return (
-    <div className="mt-7" role="status" aria-live="polite">
-      <LoginLoading />
-      <p className="mt-3 text-center text-[12px] text-ink-3">{label}…</p>
+    <div className="mt-7 flex min-h-56 flex-col items-center justify-center" role="status" aria-live="polite">
+      <div className="relative flex size-16 items-center justify-center">
+        <span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden />
+        <span className="absolute inset-2 rounded-full bg-sunken" aria-hidden />
+        <Image src="/brand/rivet-glyph.png" alt="" width={26} height={36} className="relative h-9 w-auto" />
+      </div>
+      <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">You’re signed in</p>
+      <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
+      <div className="mt-5 h-1 w-36 overflow-hidden rounded-full bg-sunken-2" aria-hidden>
+        <div className="h-full w-2/3 animate-pulse rounded-full bg-ink" />
+      </div>
     </div>
   );
 }

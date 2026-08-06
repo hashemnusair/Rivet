@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { createContext, useContext, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { RoleKey } from "@/lib/domain/types";
@@ -56,10 +56,15 @@ export function RivetIdentityProvider({ children }: { children: ReactNode }) {
 }
 
 function ConvexIdentity({ children }: { children: ReactNode }) {
-  const result = useQuery(api.identity.current);
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const result = useQuery(api.identity.current, isAuthenticated ? {} : "skip");
 
   let value: RivetIdentity;
-  if (result === undefined) {
+  if (authLoading) {
+    value = { status: "loading", platformAdmin: false, memberships: [] };
+  } else if (!isAuthenticated) {
+    value = { status: "anonymous", platformAdmin: false, memberships: [] };
+  } else if (result === undefined) {
     value = { status: "loading", platformAdmin: false, memberships: [] };
   } else if (result === null) {
     value = { status: "anonymous", platformAdmin: false, memberships: [] };

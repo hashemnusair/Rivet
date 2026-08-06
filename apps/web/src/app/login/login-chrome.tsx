@@ -66,7 +66,7 @@ export function LoginLayout({
         </div>
 
         <div className="flex items-center justify-between border-t border-night-line pt-5 font-mono text-[11px] tracking-[0.12em] text-night-ink-3">
-          <span>DEMO TENANT — FORGE FITNESS CLUB</span>
+          <span>RIVET · GYM REVENUE &amp; OPERATIONS</span>
           <span>AMMAN · JOD</span>
         </div>
       </div>

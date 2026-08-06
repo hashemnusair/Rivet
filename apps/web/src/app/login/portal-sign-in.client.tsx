@@ -28,6 +28,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IdentityPanel } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
+import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
@@ -167,11 +168,21 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
           <PortalHeading portal={portal} mode={mode} />
         </div>
 
-        {!identityReady ? <LoginLoading /> : null}
+        {!identityReady && audience !== "account" ? <LoginLoading /> : null}
 
         {identityReady && DEMO_AUTH_BYPASS ? accounts : null}
 
-        {identityReady && !DEMO_AUTH_BYPASS ? (
+        {!DEMO_AUTH_BYPASS && audience === "account" ? (
+          !clerkLoaded || !clerkSignedIn ? (
+            <PasswordSignIn />
+          ) : (
+            <ProfileCompletionGate>
+              {CONVEX_ENABLED ? <IdentityPanel /> : <NoRoleSource>{accounts}</NoRoleSource>}
+            </ProfileCompletionGate>
+          )
+        ) : null}
+
+        {identityReady && !DEMO_AUTH_BYPASS && audience !== "account" ? (
           <>
             <Show when="signed-out">
               <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
@@ -251,6 +262,8 @@ function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode:
       </div>
     );
   }
+
+  if (audience === "account") return <PasswordSignIn />;
 
   return (
     <div className="mt-6">
