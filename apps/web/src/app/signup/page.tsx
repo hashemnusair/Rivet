@@ -2,8 +2,9 @@
 
 import { ArrowRight, Building2, Check, CheckCircle2, Mail, Phone } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PublicHeader } from "@/components/public/public-shell";
+import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 
 const DEFAULT_PLANS: PlatformSaasPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
@@ -22,8 +24,8 @@ const DEFAULT_PLANS: PlatformSaasPlan[] = [
 type FormErrors = Partial<Record<"ownerName" | "gymName" | "email" | "contactNumber", string>>;
 
 export default function GymApplicationPage() {
-  const { saasPlans } = useExperience();
-  const plans = saasPlans.length > 0 ? saasPlans : DEFAULT_PLANS;
+  const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const plans = useMemo(() => (saasPlans.length > 0 ? saasPlans : isConvexMode() ? [] : DEFAULT_PLANS), [saasPlans]);
   const [ownerName, setOwnerName] = useState("");
   const [gymName, setGymName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,6 +35,10 @@ export default function GymApplicationPage() {
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitGymApplicationResult>();
+
+  useEffect(() => {
+    if (plans.length > 0 && !plans.some((item) => item.name === plan)) setPlan(plans[0]!.name);
+  }, [plan, plans]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -110,17 +116,19 @@ export default function GymApplicationPage() {
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" />
                   </Field>
-                  <div className="mt-6 grid gap-2" role="radiogroup" aria-label="RIVET plan">
+                  {experienceStatus !== "ready" || plans.length === 0 ? (
+                    <div className="mt-6"><ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Plans are not available yet" emptyDescription="The application catalog is not ready. Please try again shortly." compact /></div>
+                  ) : <div className="mt-6 grid gap-2" role="radiogroup" aria-label="RIVET plan">
                     {plans.map((item) => (
                       <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
                         <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
                         <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {(item.priceMinor / 1000).toFixed(3)} / month · {item.branches} branch{item.branches > 1 ? "es" : ""}</span></span>
                       </button>
                     ))}
-                  </div>
+                  </div>}
                   <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan selection is a starting point for the conversation, not a payment or activation.</p>
                   {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
-                  <Button type="submit" variant="signal" size="lg" loading={submitting} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
+                  <Button type="submit" variant="signal" size="lg" loading={submitting} disabled={plans.length === 0 || experienceStatus !== "ready"} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
                   <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
                 </section>
               </form>

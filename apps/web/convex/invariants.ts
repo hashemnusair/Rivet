@@ -68,3 +68,74 @@ export function checkInDecisionOrder(input: {
   if (input.expiresSoon || input.outstanding) return "warning";
   return "allowed";
 }
+
+export interface DashboardPaymentInput {
+  type: string;
+  status?: string;
+  amount: number;
+  occurredAt: string;
+}
+
+export interface DashboardRevenueSummary {
+  revenueToday: number;
+  revenueThisMonth: number;
+  revenuePrevMonth: number;
+  revenueSeries: Array<{ date: string; collected: number; refunds: number }>;
+  validPayments: DashboardPaymentInput[];
+  rangePayments: DashboardPaymentInput[];
+}
+
+function businessDate(value: string, timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return value.slice(0, 10);
+  }
+}
+
+function addCalendarDays(value: string, days: number): string {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(year || 1970, (month || 1) - 1, (day || 1) + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Dashboard KPIs need a wider history than the chart window. This keeps the
+ * current/previous month totals correct even when the caller asks for only a
+ * 30-day chart range.
+ */
+export function dashboardRevenueSummary(
+  payments: readonly DashboardPaymentInput[],
+  input: { today: string; from: string; to: string; timezone: string },
+): DashboardRevenueSummary {
+  const validPayments = payments.filter((payment) => payment.status !== "voided");
+  const dated = validPayments.map((payment) => ({ payment, date: businessDate(payment.occurredAt, input.timezone) }));
+  const rangePayments = dated
+    .filter(({ date }) => date >= input.from && date <= input.to)
+    .map(({ payment }) => payment);
+  const currentMonth = input.today.slice(0, 7);
+  const previousMonth = addCalendarDays(`${currentMonth}-01`, -1).slice(0, 7);
+  const totalForMonth = (month: string) => dated
+    .filter(({ date, payment }) => date.slice(0, 7) === month && payment.type === "payment")
+    .reduce((sum, { payment }) => sum + payment.amount, 0);
+  const totalOn = (date: string, type: "payment" | "refund") => dated
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
+  const rangeDated = rangePayments.map((payment) => ({ payment, date: businessDate(payment.occurredAt, input.timezone) }));
+  const rangeTotalOn = (date: string, type: "payment" | "refund") => rangeDated
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
+
+  return {
+    revenueToday: totalOn(input.today, "payment"),
+    revenueThisMonth: totalForMonth(currentMonth),
+    revenuePrevMonth: totalForMonth(previousMonth),
+    revenueSeries: Array.from({ length: 30 }, (_, index) => {
+      const date = addCalendarDays(input.to, index - 29);
+      return { date, collected: rangeTotalOn(date, "payment"), refunds: rangeTotalOn(date, "refund") };
+    }),
+    validPayments,
+    rangePayments,
+  };
+}

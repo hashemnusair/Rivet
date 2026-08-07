@@ -19,6 +19,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
 import { AuthTransition } from "@/components/auth/auth-transition";
 import { Input } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
@@ -49,7 +50,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const { platformAdminSignedIn, experienceReady, signOutPlatformAdmin } = useExperience();
+  const { platformAdminSignedIn, experienceReady, experienceError, experienceStatus, retryExperience, signOutPlatformAdmin } = useExperience();
   const identity = useRivetIdentity();
   const identityReady =
     DEMO_AUTH_BYPASS || (clerkLoaded && identity.status !== "loading" && identity.status !== "pending");
@@ -79,6 +80,14 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   };
 
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
+
+  if (experienceStatus === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-paper px-5">
+        <ErrorState title="The platform console could not load" description={experienceError} onRetry={retryExperience} className="w-full max-w-md" />
+      </div>
+    );
+  }
 
   if (!identityReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
     return (
@@ -145,7 +154,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
     <>
       <div className="px-5 pb-7 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3">
-          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
+          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} style={{ height: "auto" }} alt="RIVET" />
           <span className="border-s border-night-line ps-3 font-mono text-[8px] uppercase tracking-[0.14em] text-night-ink-3">Platform</span>
         </Link>
       </div>

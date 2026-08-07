@@ -7,7 +7,7 @@ import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { todayISODate, formatDate } from "@/lib/utils/dates";
+import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader, Stat } from "@/components/shared/chrome";
@@ -24,7 +24,7 @@ export function OwnerDashboard() {
 
   const { data, isLoading, isError, refetch } = useApiQuery(
     qk.dashboard(branchId),
-    (api: ReturnType<typeof getApi>) => api.getDashboard({ branchId, from: today, to: today }),
+    (api: ReturnType<typeof getApi>) => api.getDashboard({ branchId, from: addDays(today, -29), to: today }),
     { enabled: Boolean(session) },
   );
 

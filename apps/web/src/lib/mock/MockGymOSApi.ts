@@ -191,8 +191,8 @@ export class MockGymOSApi implements GymOSApi {
     }));
   }
 
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {
-    return this.respond(() => ({ ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", customerId: input.customerId }));
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId">): Promise<TrialBooking> {
+    return this.respond(() => ({ ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested" }));
   }
 
   getEntryPass(membershipId: string): Promise<EntryPass> {

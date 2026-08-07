@@ -63,6 +63,13 @@ jobs:
       - name: Install Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Run Playwright
+        # Keep the parent Playwright process and the Next dev server on the
+        # same deterministic preview contract. The webServer config repeats
+        # these values for the child process; exporting them here also makes
+        # Next's public env replacement unambiguous on GitHub-hosted runners.
+        env:
+          NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
+          NEXT_PUBLIC_DATA_MODE: "mock"
         run: pnpm test:e2e
 
   convex-codegen:
