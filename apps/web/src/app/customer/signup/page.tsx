@@ -81,20 +81,20 @@ export default function MemberSignupPage() {
 
         <form onSubmit={submit} className="mt-7 max-w-md space-y-4" noValidate>
           <Field label="Full name" htmlFor="signup-name" error={errors.fullName?.message} required>
-            <Input id="signup-name" autoComplete="name" placeholder="Lina Haddad" {...register("fullName")} />
+            <Input id="signup-name" autoComplete="name" placeholder="Lina Haddad" disabled={!hydrated} {...register("fullName")} />
           </Field>
           <Field label="Email" htmlFor="signup-email" error={errors.email?.message} required>
-            <Input id="signup-email" type="email" autoComplete="email" placeholder="you@example.com" {...register("email")} />
+            <Input id="signup-email" type="email" autoComplete="email" placeholder="you@example.com" disabled={!hydrated} {...register("email")} />
           </Field>
           <Field label="Mobile number" htmlFor="signup-phone" error={errors.phone?.message} required hint="Gyms use this to confirm your trial booking.">
-            <Input id="signup-phone" type="tel" autoComplete="tel" placeholder="+962 79 000 0000" {...register("phone")} />
+            <Input id="signup-phone" type="tel" autoComplete="tel" placeholder="+962 79 000 0000" disabled={!hydrated} {...register("phone")} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Password" htmlFor="signup-password" error={errors.password?.message} required>
-              <Input id="signup-password" type="password" autoComplete="new-password" {...register("password")} />
+              <Input id="signup-password" type="password" autoComplete="new-password" disabled={!hydrated} {...register("password")} />
             </Field>
             <Field label="Confirm password" htmlFor="signup-confirm" error={errors.confirm?.message} required>
-              <Input id="signup-confirm" type="password" autoComplete="new-password" {...register("confirm")} />
+              <Input id="signup-confirm" type="password" autoComplete="new-password" disabled={!hydrated} {...register("confirm")} />
             </Field>
           </div>
 
