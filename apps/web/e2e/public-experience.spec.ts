@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  console.log(`[preview-failure] ${testInfo.title} · ${page.url()}`);
+  console.log(`[preview-failure] body: ${(await page.locator("body").innerText()).slice(0, 2000)}`);
+});
+
 test.describe("RIVET member experience", () => {
   test("creates a member account and restores it after reload", async ({ page }) => {
     await page.goto("/customer/signup");
