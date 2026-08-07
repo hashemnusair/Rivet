@@ -69,10 +69,10 @@ Complete these steps in order. Keep development/preview and production Convex de
    CLERK_SECRET_KEY=sk_live_…
    CLERK_FRONTEND_API_URL=<production Clerk issuer URL>
    NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com
-   CONVEX_DEPLOY_KEY=<production Convex deploy key, if the Vercel build runs convex deploy>
+   CONVEX_DEPLOY_KEY=<production Convex deploy key for the trusted Convex deploy command; not a browser variable>
    ```
 
-   The production build now stops with a clear error when the public Convex URL or Clerk publishable key is absent. `CONVEX_DEPLOY_KEY` remains a Vercel project/build setting, not a browser variable.
+   The production build now stops with a clear error when the public Convex URL or Clerk publishable key is absent. The repository pins Vercel's application build to `pnpm build`; run `pnpm convex:deploy` separately from a trusted environment with `CONVEX_DEPLOY_KEY` so a Preview build cannot accidentally deploy or mutate Convex.
 3. **Keep Google deferred unless the pilot requires it.** Email/password is enough to validate the first gym workflow. If Google is enabled later, create a project-owned OAuth client and add the production callback/origin values shown by Clerk.
 4. **Verify the production Clerk issuer in both runtimes.** The Vercel publishable/secret keys must be `pk_live_…`/`sk_live_…`, and the production `CLERK_FRONTEND_API_URL` must be set in both Vercel and Convex. Clerk's development users do not transfer between instances.
 5. **Verify the public gym application.** Submit a test application from `/signup` and confirm that `gymApplications` contains the gym name, owner name, email, contact number, selected plan, and `pending` status. Configure Resend in Convex with `RESEND_API_KEY`, a verified `RESEND_FROM_EMAIL` (normally `noreply@rivetjo.com`), and `RIVET_APPLICATION_RECIPIENTS`; confirm both the applicant confirmation and the partner notification arrive. Do not provision a workspace from the public form.
