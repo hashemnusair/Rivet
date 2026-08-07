@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, Check, QrCode, Search, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,11 @@ export default function MemberSignupPage() {
   const { registerCustomer, emailTaken, experienceReady } = useExperience();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const {
     register,
@@ -93,7 +98,7 @@ export default function MemberSignupPage() {
             </Field>
           </div>
 
-          <Button type="submit" size="lg" className="w-full" loading={submitting || !experienceReady}>
+          <Button type="submit" size="lg" className="w-full" loading={submitting || !experienceReady || !hydrated}>
             Create account <ArrowRight className="size-4" />
           </Button>
         </form>
