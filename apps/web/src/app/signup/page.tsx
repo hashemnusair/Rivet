@@ -35,10 +35,15 @@ export default function GymApplicationPage() {
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitGymApplicationResult>();
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     if (plans.length > 0 && !plans.some((item) => item.name === plan)) setPlan(plans[0]!.name);
   }, [plan, plans]);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -94,13 +99,13 @@ export default function GymApplicationPage() {
                   <h2 className="mt-2 text-[21px] font-semibold">Who should we contact?</h2>
                   <div className="mt-7 grid gap-4">
                     <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
-                      <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" />
+                      <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" disabled={!hydrated} />
                     </Field>
                     <Field label="Email address" htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
-                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" /></div>
+                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                     <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
-                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" /></div>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                   </div>
 
@@ -114,13 +119,13 @@ export default function GymApplicationPage() {
                   <p className="eyebrow">Your gym</p>
                   <h2 className="mt-2 text-[21px] font-semibold">Which plan fits?</h2>
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
-                    <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" />
+                    <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
                   </Field>
                   {experienceStatus !== "ready" || plans.length === 0 ? (
                     <div className="mt-6"><ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Plans are not available yet" emptyDescription="The application catalog is not ready. Please try again shortly." compact /></div>
                   ) : <div className="mt-6 grid gap-2" role="radiogroup" aria-label="RIVET plan">
                     {plans.map((item) => (
-                      <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
+                      <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
                         <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
                         <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {(item.priceMinor / 1000).toFixed(3)} / month · {item.branches} branch{item.branches > 1 ? "es" : ""}</span></span>
                       </button>
@@ -128,7 +133,7 @@ export default function GymApplicationPage() {
                   </div>}
                   <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan selection is a starting point for the conversation, not a payment or activation.</p>
                   {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
-                  <Button type="submit" variant="signal" size="lg" loading={submitting} disabled={plans.length === 0 || experienceStatus !== "ready"} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
+                  <Button type="submit" variant="signal" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0 || experienceStatus !== "ready"} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
                   <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
                 </section>
               </form>
