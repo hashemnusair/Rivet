@@ -308,7 +308,7 @@ export interface GymOSApi {
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }>;
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId">): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;

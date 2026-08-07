@@ -86,6 +86,24 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
 
+  // Consumer profiles are global authenticated identities, not tenant-owned
+  // staff/member records. Gym memberships and trial bookings may reference
+  // this public ID, but the profile itself must not belong to one gym.
+  customerProfiles: defineTable({
+    publicId: v.string(),
+    userId: v.string(),
+    name: v.string(),
+    nameAr: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    initials: v.string(),
+    context: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_public_id", ["publicId"]),
+
   // Public gym applications remain outside a tenant until RIVET approves and
   // provisions the gym. Only platform-admin workflows may read or change them.
   gymApplications: defineTable({

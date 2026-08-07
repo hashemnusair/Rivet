@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { todayISODate, formatDate, formatTime } from "@/lib/utils/dates";
+import { addDays, todayISODate, formatDate, formatTime } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
@@ -32,7 +32,7 @@ export function SalesDashboard() {
     api.listLeads({ ownerId: session?.user.id, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 8, sort: "nextFollowUpAt" }),
   );
   const dashQuery = useApiQuery(qk.dashboard(session?.activeBranchId), (api) =>
-    api.getDashboard({ branchId: session?.activeBranchId, from: today, to: today }),
+    api.getDashboard({ branchId: session?.activeBranchId, from: addDays(today, -29), to: today }),
   );
 
   const completeTask = useApiMutation((api, v: { taskId: string; outcome: string }) => api.completeTask(v.taskId, { outcome: v.outcome }), {

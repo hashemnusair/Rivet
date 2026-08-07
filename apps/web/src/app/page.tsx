@@ -17,11 +17,12 @@ import { HeroDevices } from "@/components/marketing/hero-devices";
 import { Reveal } from "@/components/marketing/reveal";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
+import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 export default function LandingPage() {
-  const { marketplaceGyms, saasPlans } = useExperience();
+  const { marketplaceGyms, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   return (
     <div className="marketing-body min-h-screen bg-paper text-ink">
       <PublicHeader />
@@ -187,8 +188,13 @@ export default function LandingPage() {
               title="Find the gym. Book before you visit."
               description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
             />
-            <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {marketplaceGyms.map((gym, index) => (
+            {experienceStatus !== "ready" || marketplaceGyms.length === 0 ? (
+              <div className="mt-12">
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="No RIVET gyms are live yet" emptyDescription="The network directory is ready, but no gym has published a live listing yet." />
+              </div>
+            ) : (
+              <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {marketplaceGyms.map((gym, index) => (
                 <Reveal key={gym.id} delay={index * 80} className="h-full">
                 <Link
                   href={`/customer/gyms/${gym.id}`}
@@ -217,8 +223,9 @@ export default function LandingPage() {
                   </div>
                 </Link>
                 </Reveal>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -230,8 +237,13 @@ export default function LandingPage() {
               title="One branch or eight. Same system."
               description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends."
             />
-            <div className="mt-12 grid gap-4 lg:grid-cols-3">
-              {saasPlans.map((plan, index) => (
+            {experienceStatus !== "ready" || saasPlans.length === 0 ? (
+              <div className="mt-12">
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Pricing is being prepared" emptyDescription="RIVET pricing is not available from the live catalog yet." />
+              </div>
+            ) : (
+              <div className="mt-12 grid gap-4 lg:grid-cols-3">
+                {saasPlans.map((plan, index) => (
                 <Reveal
                   key={plan.name}
                   delay={index * 90}
@@ -276,8 +288,9 @@ export default function LandingPage() {
                     <Link href="/signup">Send gym application</Link>
                   </Button>
                 </Reveal>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 

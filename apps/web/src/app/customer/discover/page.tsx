@@ -4,6 +4,7 @@ import { ArrowRight, Dumbbell, MapPin, Search, SlidersHorizontal, Star, Users } 
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Reveal } from "@/components/marketing/reveal";
+import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -11,7 +12,7 @@ import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/pro
 export default function DiscoverGymsPage() {
   const gyms = useMarketplaceGyms();
   const customer = useCustomerPersona();
-  const { customerMemberships, customerBookings } = useExperience();
+  const { customerMemberships, customerBookings, experienceError, experienceStatus, retryExperience } = useExperience();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All gyms");
 
@@ -40,6 +41,9 @@ export default function DiscoverGymsPage() {
 
       <section className="px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1280px]">
+          {experienceStatus !== "ready" || gyms.length === 0 ? (
+            <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="No RIVET gyms are live yet" emptyDescription="Check back after the next gym joins the network." />
+          ) : <>
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <label className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by gym, area, or training style" className="h-11 ps-10" /></label>
             <div className="flex flex-wrap gap-2">
@@ -91,6 +95,7 @@ export default function DiscoverGymsPage() {
           </div>
 
           {filtered.length === 0 ? <div className="mt-8 border border-dashed border-line-3 p-12 text-center"><Dumbbell className="mx-auto size-7 text-ink-3" /><h2 className="mt-4 text-[18px] font-semibold">No gyms match that search</h2><p className="mt-2 text-[13px] text-ink-3">Try another area or clear the category filter.</p></div> : null}
+          </>}
         </div>
       </section>
     </main>

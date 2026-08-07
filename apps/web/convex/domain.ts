@@ -18,7 +18,8 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -839,11 +840,46 @@ async function marketplaceRows(ctx: ReadContext): Promise<DomainRecord[]> {
     .collect();
 }
 
+async function legacyCustomerProfileForUser(ctx: ReadContext, userId: string): Promise<Data | undefined> {
+  const records = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerProfile")).collect();
+  const profiles = records.map((row) => {
+    const value = data(row.data);
+    return { ...value, id: row.publicId, userId: optionalString(value.userId) };
+  });
+  const record = findCustomerProfileByUserId(profiles, userId);
+  return record ? data(record) : undefined;
+}
+
+async function customerProfileForUser(ctx: ReadContext, userId: string): Promise<Data | undefined> {
+  const profile = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
+  if (profile) {
+    return { id: profile.publicId, userId: profile.userId, name: profile.name, nameAr: profile.nameAr, email: profile.email, phone: profile.phone, initials: profile.initials, context: profile.context };
+  }
+  // Keep existing preview/pilot profiles readable during the table migration,
+  // but never fall back to email matching: only the authenticated user ID can
+  // claim a legacy record.
+  return await legacyCustomerProfileForUser(ctx, userId);
+}
+
+async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): Promise<Data> {
+  const userId = publicUserId(user);
+  const email = user.email.trim().toLowerCase();
+  if (!email) domainError("CONFIGURATION_ERROR", "The authenticated Clerk identity is missing an email claim.");
+  const existing = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
+  const legacy = existing ? undefined : await legacyCustomerProfileForUser(ctx, userId);
+  const profileId = existing?.publicId ?? optionalString(legacy?.id) ?? newPublicId();
+  const value = buildCustomerProfileDraft({ userId, email, fullName: user.fullName, phone: user.phone }, input, profileId);
+  const now = Date.now();
+  const stored = { publicId: value.id, userId: value.userId, name: value.name, nameAr: value.nameAr, email: value.email, phone: value.phone, initials: value.initials, context: value.context };
+  if (existing) await ctx.db.patch(existing._id, { ...stored, updatedAt: now });
+  else await ctx.db.insert("customerProfiles", { ...stored, createdAt: now, updatedAt: now });
+  return value;
+}
+
 async function customerExperience(ctx: QueryCtx): Promise<Data> {
   const { user } = await requireAuthenticated(ctx);
   const userId = publicUserId(user);
-  const records = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerProfile")).collect();
-  const profile = records.map((record) => data(record.data)).find((value) => value.userId === userId || normalize(optionalString(value.email)) === normalize(user.email));
+  const profile = await customerProfileForUser(ctx, userId);
   const memberships = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
     .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
     .filter((value) => value.customerUserId === userId || value.customerId === profile?.id)
@@ -935,17 +971,7 @@ async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
 
 async function registerCustomer(ctx: MutationCtx, input: Data): Promise<Data> {
   const { user } = await requireAuthenticated(ctx);
-  const profileRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerProfile")).collect();
-  const existing = profileRows.find((record) => data(record.data).userId === publicUserId(user) || normalize(optionalString(data(record.data).email)) === normalize(user.email));
-  const fullName = stringValue(input.fullName, user.fullName).trim() || user.fullName;
-  const email = stringValue(input.email, user.email).trim().toLowerCase();
-  const initials = fullName.split(/\s+/).filter(Boolean).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase();
-  const value = { id: existing?.publicId ?? newPublicId(), userId: publicUserId(user), name: fullName, nameAr: fullName, email, phone: stringValue(input.phone, user.phone ?? ""), initials, context: "RIVET member" };
-  const organization = await ctx.db.query("organizations").withIndex("by_slug", (q) => q.eq("slug", "forge-fitness")).unique();
-  if (!organization) domainError("CONFIGURATION_ERROR", "The customer directory is not initialized.");
-  if (existing) await ctx.db.patch(existing._id, { data: value, updatedAt: Date.now() });
-  else await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "customerProfile", publicId: value.id, createdAt: Date.now(), updatedAt: Date.now(), data: value });
-  return value;
+  return await saveCustomerProfile(ctx, user, input);
 }
 
 async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data> {
@@ -966,17 +992,18 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique()
     : null;
   if (!branch) domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
+  const profile = await saveCustomerProfile(ctx, user, input);
+  const ownership = customerProfileOwnership(publicUserId(user), profile.id);
   const bookingId = newPublicId();
   const createdAt = isoNow();
   const base = {
     id: bookingId,
-    customerUserId: publicUserId(user),
-    customerId: optionalString(input.customerId),
+    ...ownership,
     gymId: stringValue(input.gymId),
     branchId: stringValue(input.branchId),
-    fullName: stringValue(input.fullName, user.fullName),
-    email: stringValue(input.email, user.email).trim().toLowerCase(),
-    phone: stringValue(input.phone, user.phone ?? ""),
+    fullName: profile.name,
+    email: profile.email,
+    phone: profile.phone,
     preferredDate: stringValue(input.preferredDate),
     preferredTime: stringValue(input.preferredTime),
     goal: stringValue(input.goal),
@@ -2267,16 +2294,18 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     const date = businessDate(stringValue(value[field]), actor.organization.timezone || TZ_FALLBACK);
     return date >= from && date <= to;
   };
-  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => inBranch(payment) && inRange(payment, "occurredAt"));
-  const validPayments = payments.filter((payment) => payment.status !== "voided");
+  const allPayments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
+  const validPayments = allPayments.filter((payment) => payment.status !== "voided" && inRange(payment, "occurredAt"));
+  const allValidPayments = allPayments.filter((payment) => payment.status !== "voided");
+  const revenueSummary = dashboardRevenueSummary(
+    allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
+    { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
+  );
   const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
   const memberships = (await membershipRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
   const leads = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter(inBranch);
   const tasks = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data)).filter(inBranch);
   const checkins = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
-  const collectedOn = (date: string) => validPayments.filter((payment) => payment.type === "payment" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date).reduce((sum, payment) => sum + amountOf(payment.amount), 0);
-  const refundsOn = (date: string) => validPayments.filter((payment) => payment.type === "refund" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
-  const revenueSeries = Array.from({ length: 30 }, (_, index) => { const date = addDays(to, index - 29); return { date, collected: collectedOn(date), refunds: refundsOn(date) }; });
   const outstanding = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch).reduce((sum, charge) => sum + Math.max(0, amountOf(charge.outstandingAmount)), 0);
   const activeLeads = leads.filter((lead) => !["won", "lost"].includes(stringValue(lead.stage))).length;
   const overdue = tasks.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow()).length;
@@ -2289,13 +2318,13 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => lead.stage === stage).length }));
   const organizationMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
-  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = validPayments.filter((payment) => payment.collectedById === id && payment.type === "payment"); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
+  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && payment.type === "payment" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
   const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));
   const alerts = audits.filter((event) => (event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId)) || event.category === "reconciliation").slice(0, 8).map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "cash_variance", title: event.summary, detail: event.reason ?? event.entityLabel, actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId) ? "warning" : "info", occurredAt: utcIso(event.occurredAt) }));
   const timeline = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
-  return { kpis: { revenueToday: money(collectedOn(today), actor.organization.currency), revenueThisMonth: money(validPayments.filter((payment) => payment.type === "payment" && stringValue(payment.occurredAt).slice(0, 7) === today.slice(0, 7)).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), revenuePrevMonth: money(0, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => stringValue(member.createdAt).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
+  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
 }
 
 export const query = convexQuery({

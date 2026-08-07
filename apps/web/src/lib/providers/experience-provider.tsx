@@ -14,6 +14,8 @@ import {
   gymById,
 } from "@/lib/public/experience-data";
 
+export type ExperienceStatus = "loading" | "ready" | "error";
+
 export interface BookTrialInput {
   gymId: string;
   branchId: string;
@@ -37,6 +39,9 @@ interface ExperienceContextValue {
   platformAdminSignedIn: boolean;
   /** False until sessionStorage has been read, so guards do not bounce on first paint. */
   experienceReady: boolean;
+  experienceStatus: ExperienceStatus;
+  experienceError?: string;
+  retryExperience: () => void;
   /** Seeded preview accounts plus anything created through member sign-up. */
   customers: CustomerPersona[];
   memberships: CustomerMembership[];
@@ -88,6 +93,9 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [customerId, setCustomerId] = useState<string>();
   const [platformAdminSignedIn, setPlatformAdminSignedIn] = useState(false);
   const [experienceReady, setExperienceReady] = useState(false);
+  const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>("loading");
+  const [experienceError, setExperienceError] = useState<string>();
+  const [experienceAttempt, setExperienceAttempt] = useState(0);
   const [registered, setRegistered] = useState<CustomerPersona[]>([]);
   const [customer, setCustomer] = useState<CustomerPersona>();
   const [memberships, setMemberships] = useState<CustomerMembership[]>(convexMode ? [] : INITIAL_CUSTOMER_MEMBERSHIPS);
@@ -101,18 +109,29 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     [convexMode, customer, registered],
   );
 
+  const retryExperience = useCallback(() => {
+    setExperienceAttempt((attempt) => attempt + 1);
+  }, []);
+
   // Mock mode restores its deterministic browser session. Convex mode loads
   // identity-linked records from the server and never uses sessionStorage as a
   // source of truth.
   useEffect(() => {
     if (convexMode) {
-      if (identity.status === "loading" || identity.status === "pending") return;
+      if (identity.status === "loading" || identity.status === "pending") {
+        setExperienceStatus("loading");
+        setExperienceReady(false);
+        return;
+      }
       let cancelled = false;
+      setExperienceStatus("loading");
+      setExperienceError(undefined);
+      setExperienceReady(false);
       void Promise.all([
-        getApi().listMarketplaceGyms().catch(() => []),
-        getApi().listPublicSaasPlans().catch(() => []),
-        identity.status === "ready" ? getApi().getCustomerExperience().catch(() => ({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] })) : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
-        identity.status === "ready" && identity.platformAdmin ? getApi().getPlatformSnapshot().catch(() => undefined) : Promise.resolve(undefined),
+        getApi().listMarketplaceGyms(),
+        getApi().listPublicSaasPlans(),
+        identity.status === "ready" ? getApi().getCustomerExperience() : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
+        identity.status === "ready" && identity.platformAdmin ? getApi().getPlatformSnapshot() : Promise.resolve(undefined),
       ]).then(async ([gyms, plans, experience, platform]) => {
         if (cancelled) return;
         const hydratedMemberships = identity.status === "ready"
@@ -131,11 +150,17 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         setSaasPlans(platform?.plans ?? plans);
         setMemberships(hydratedMemberships);
         setBookings(platform?.bookings ?? experience.bookings);
-        if (platform) setPlatformSnapshot(platform);
+        setPlatformSnapshot(platform);
         setCustomer(experience.customer);
         setCustomerId(experience.customer?.id);
         setPlatformAdminSignedIn(identity.status === "ready" && identity.platformAdmin);
+        setExperienceError(undefined);
+        setExperienceStatus("ready");
         setExperienceReady(true);
+      }).catch((error: unknown) => {
+        if (cancelled) return;
+        setExperienceError(error instanceof Error && error.message ? error.message : "RIVET could not load its live data.");
+        setExperienceStatus("error");
       });
       return () => {
         cancelled = true;
@@ -154,8 +179,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     const known = [...restored, ...CUSTOMER_PERSONAS];
     if (stored && known.some((persona) => persona.id === stored)) setCustomerId(stored);
     if (window.sessionStorage.getItem(STORAGE_KEYS.admin) === "1") setPlatformAdminSignedIn(true);
+    setExperienceError(undefined);
+    setExperienceStatus("ready");
     setExperienceReady(true);
-  }, [convexMode, identity.email, identity.fullName, identity.platformAdmin, identity.status]);
+  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.platformAdmin, identity.status]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded
@@ -219,7 +246,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
       if (convexMode) {
-        const booking = await getApi().createTrialBooking({ ...input, ...(customerId ? { customerId } : {}) });
+        const booking = await getApi().createTrialBooking(input);
+        if (!customerId && booking.customerId) setCustomerId(booking.customerId);
         setBookings((current) => [booking, ...current.filter((item) => item.id !== booking.id)]);
         return booking;
       }
@@ -303,6 +331,9 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       customerSignedIn: Boolean(customerId),
       platformAdminSignedIn,
       experienceReady,
+      experienceStatus,
+      experienceError,
+      retryExperience,
       customers,
       memberships,
       bookings,
@@ -324,12 +355,15 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       bookTrial,
       bookings,
       customerBookings,
+      experienceError,
+      experienceStatus,
       customerId,
       customerMemberships,
       customers,
       experienceReady,
       memberships,
       platformAdminSignedIn,
+      retryExperience,
       registerCustomer,
       signInAsIdentity,
       signInCustomer,

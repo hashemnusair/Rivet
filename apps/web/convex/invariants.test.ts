@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPermissionForAction, checkInDecisionOrder, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
@@ -45,5 +45,24 @@ describe("server domain invariants", () => {
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "frozen", branchAllowed: true, expiresSoon: false, outstanding: false })).toBe("membership_blocked");
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "active", visitsRemaining: 0, branchAllowed: true, expiresSoon: true, outstanding: true })).toBe("visits_depleted");
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "active", visitsRemaining: 5, branchAllowed: true, expiresSoon: true, outstanding: true })).toBe("warning");
+  });
+
+  it("keeps monthly KPIs independent from the chart window and excludes voided payments", () => {
+    const summary = dashboardRevenueSummary(
+      [
+        { type: "payment", amount: 10_000, occurredAt: "2026-08-08T10:00:00Z" },
+        { type: "payment", amount: 20_000, occurredAt: "2026-08-02T10:00:00Z" },
+        { type: "payment", amount: 30_000, occurredAt: "2026-07-20T10:00:00Z" },
+        { type: "payment", amount: 99_000, status: "voided", occurredAt: "2026-08-08T11:00:00Z" },
+        { type: "refund", amount: -2_000, occurredAt: "2026-08-08T12:00:00Z" },
+      ],
+      { today: "2026-08-08", from: "2026-08-01", to: "2026-08-08", timezone: "Asia/Amman" },
+    );
+
+    expect(summary.revenueToday).toBe(10_000);
+    expect(summary.revenueThisMonth).toBe(30_000);
+    expect(summary.revenuePrevMonth).toBe(30_000);
+    expect(summary.rangePayments).toHaveLength(3);
+    expect(summary.revenueSeries.at(-1)).toEqual({ date: "2026-08-08", collected: 10_000, refunds: 2_000 });
   });
 });

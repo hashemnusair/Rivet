@@ -92,7 +92,7 @@ export function LoginLayout({
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
           <div className="mb-8 lg:hidden">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={126} height={32} priority />
+            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={126} height={32} style={{ height: "auto" }} priority />
           </div>
           {children}
         </div>
