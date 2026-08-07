@@ -169,7 +169,7 @@ export function PublicFooter() {
     <footer className="night-surface bg-night text-night-ink">
       <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] lg:px-12">
         <div>
-          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={35} />
+            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={35} style={{ height: "auto" }} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
             The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.
           </p>

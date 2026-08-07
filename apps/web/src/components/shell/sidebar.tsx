@@ -38,7 +38,7 @@ export function Sidebar() {
           {sidebarCollapsed ? (
             <Image src="/brand/rivet-glyph-rev.png" alt="RIVET" width={18} height={28} className="shrink-0" priority />
           ) : (
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} className="shrink-0" priority />
+            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} style={{ height: "auto" }} className="shrink-0" priority />
           )}
         </Link>
       </div>

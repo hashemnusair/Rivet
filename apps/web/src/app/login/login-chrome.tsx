@@ -54,7 +54,7 @@ export function LoginLayout({
     <div className="grid min-h-screen lg:grid-cols-[42%_58%]">
       <div className="night-surface relative hidden flex-col justify-between bg-night p-10 text-night-ink lg:flex">
         <Link href="/" aria-label="RIVET home">
-          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={149} height={38} priority />
+          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={149} height={38} style={{ height: "auto" }} priority />
         </Link>
 
         <div className="max-w-md">

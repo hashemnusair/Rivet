@@ -154,7 +154,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
     <>
       <div className="px-5 pb-7 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3">
-          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
+          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} style={{ height: "auto" }} alt="RIVET" />
           <span className="border-s border-night-line ps-3 font-mono text-[8px] uppercase tracking-[0.14em] text-night-ink-3">Platform</span>
         </Link>
       </div>
