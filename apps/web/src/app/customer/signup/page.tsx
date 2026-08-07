@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, Check, QrCode, Search, Wallet } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -33,6 +34,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function MemberSignupPage() {
   const { registerCustomer, emailTaken, experienceReady } = useExperience();
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -53,10 +55,11 @@ export default function MemberSignupPage() {
     setSubmitting(true);
     try {
       await registerCustomer({ fullName: values.fullName, email: values.email, phone: values.phone });
-      // This preview account is intentionally persisted in sessionStorage.
-      // Cross the account boundary with a full navigation so the next page
-      // proves it can restore that persisted identity from a clean render.
-      window.location.assign("/customer/discover");
+      // The preview account is intentionally persisted in sessionStorage.
+      // Client navigation keeps the signup journey reliable on a cold dev
+      // server; the following reload still proves the persisted identity is
+      // restored from a clean render.
+      router.replace("/customer/discover");
     } finally {
       setSubmitting(false);
     }

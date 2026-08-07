@@ -92,8 +92,11 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const identity = useRivetIdentity();
   const [customerId, setCustomerId] = useState<string>();
   const [platformAdminSignedIn, setPlatformAdminSignedIn] = useState(false);
-  const [experienceReady, setExperienceReady] = useState(false);
-  const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>("loading");
+  // Mock data is bundled and available synchronously. Starting it in a
+  // loading state makes preview-only forms race the first client effect under
+  // a cold Next dev server, while Convex genuinely needs an asynchronous load.
+  const [experienceReady, setExperienceReady] = useState(!convexMode);
+  const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>(convexMode ? "loading" : "ready");
   const [experienceError, setExperienceError] = useState<string>();
   const [experienceAttempt, setExperienceAttempt] = useState(0);
   const [registered, setRegistered] = useState<CustomerPersona[]>([]);
