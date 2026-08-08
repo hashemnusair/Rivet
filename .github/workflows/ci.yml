@@ -138,4 +138,4 @@ jobs:
         env:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
-        run: pnpm test:e2e -- convex-smoke.spec.ts
+        run: pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts

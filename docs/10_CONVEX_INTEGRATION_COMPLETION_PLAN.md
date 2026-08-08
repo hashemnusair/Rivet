@@ -13,12 +13,12 @@ This is one implementation program. Use one feature branch, make logical checkpo
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
 - `pnpm test` passes with 200 tests across 15 files, including the platform application review path.
-- Preview Playwright journeys pass, including the platform application review journey; the trusted Convex smoke remains skipped without external Clerk storage state.
+- Preview Playwright journeys pass, including the platform application review journey; the isolated staging Clerk-to-Convex smoke now passes with an external Clerk storage state.
 - `pnpm build` passes with the Clerk request proxy enabled and generates the current 36 App Router routes.
 - Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through protected tooling and then issues access.
 - Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.
 - `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
-- `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The trusted smoke remains secret-gated.
+- `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all four non-production inputs now configured.
 - Existing Playwright journeys use `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`, so they verify the deterministic preview path rather than the production Clerk-to-Convex path.
 - The latest GitHub Actions browser run failed only on a cold customer-signup navigation; the focused test passes locally with a 30-second route assertion. The full CI run must be rerun after these changes.
 

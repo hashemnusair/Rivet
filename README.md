@@ -74,10 +74,10 @@ pnpm build
 The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
 
 ```bash
-PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm test:e2e -- convex-smoke.spec.ts
+PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
 ```
 
-The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The repository currently has no trusted session or GitHub secrets, so this is the one external release gate that remains to be run by an authorized project maintainer.
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the four CI secrets are now configured; the GitHub workflow remains a manual release-gate check.
 
 ## Convex deployment, seed, and rollback
 
@@ -145,7 +145,7 @@ Vercel's root directory is `apps/web`. The target is a Next.js server deployment
 
 The repository pins Vercel's application build command to `pnpm build`. Convex schema/function deployment is intentionally separate: run `pnpm convex:deploy` from a trusted operator environment with `CONVEX_DEPLOY_KEY`, then deploy the Next.js application. Do not make Vercel Preview builds depend on a production Convex deploy key.
 
-`www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The production Clerk instance, DNS records, and first production test user are now configured. The deployment remains on release hold until the Vercel Production and Convex environment values are verified against that production Clerk instance and the trusted Clerk-to-Convex smoke passes. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
+`www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The production Clerk instance, DNS records, and first production test user are now configured. The isolated staging Clerk-to-Convex smoke passes, but the deployment remains on release hold until the Vercel Production and Convex environment values are verified against the production Clerk instance and a production-shaped pilot check is completed. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
 
 The production Clerk instance and custom-domain DNS setup have been completed. Google sign-in is optional and currently deferred; email/password is the supported production path. Accounts do not transfer between Clerk instances, so any development users must be recreated in production. Preview deployments may continue using the development Clerk/Convex pair; never reuse a production Convex deploy key in Preview.
 
