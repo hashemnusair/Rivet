@@ -27,11 +27,11 @@ The approved architecture is Next.js + Convex + Clerk + Vercel. The Convex/Clerk
 Operating instructions:
 
 - Begin by inspecting `git status`, local branches, remote `main`, recent commits, and the current test baseline.
-- Fetch and synchronize safely before branching. Preserve any user-owned changes and stop only if an overlapping dirty change cannot be handled safely.
-- Create one branch named `codex/complete-convex-integration` from the latest `main`.
-- Implement every phase of `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md` on that branch.
-- Make logical checkpoint commits, but do not create multiple pull requests.
-- You may push the feature branch for backup and Vercel previews. Open one ready-for-review pull request only after every completion gate is satisfied.
+- Fetch and synchronize safely before editing. Preserve any user-owned changes and stop only if an overlapping dirty change cannot be handled safely.
+- Keep implementation on `main` for this repository unless the user explicitly requests a review branch.
+- Implement every phase of `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md` on the active branch.
+- Make logical checkpoint commits, but do not leave completed work stranded on an unnecessary feature branch.
+- Push the verified result to `main`; Vercel deploys the Next.js application from `main`.
 - Preserve the approved frontend. Do not redesign it or replace it with a scaffold.
 - Keep all operational data access behind `GymOSApi` and the established hooks. Do not add direct backend calls to product pages as a shortcut.
 - Implement a production Convex adapter and retain `MockGymOSApi` only for explicit preview/test mode.
@@ -76,8 +76,7 @@ Before delivery:
 - Confirm `git diff --check` passes.
 - Inspect the final diff for secrets, debug files, generated junk, and unrelated changes.
 - Confirm the working tree is clean after the final commit.
-- Push `codex/complete-convex-integration`.
-- Open one ready-for-review pull request into `main` with a complete summary and verification results.
+- Push `main` after verification; do not open a pull request solely to avoid merging a finished slice.
 
 Do not stop after producing a plan, schema, CI workflow, or partial reference-data slice. Continue until the full completion plan is implemented and verified, or until a genuinely external blocker makes a specific completion criterion impossible. When blocked, finish every independent phase first and provide concrete evidence of the remaining blocker.
 

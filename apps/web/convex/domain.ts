@@ -18,7 +18,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -1561,6 +1561,30 @@ async function paymentRecord(
   return { payment, receipt, receiptId: receipt.id };
 }
 
+async function paymentAuditEntityLabel(ctx: ReadContext, actor: ActorContext, payment: Data): Promise<string> {
+  const member = await recordOfOptional(ctx, actor, "member", stringValue(payment.memberId));
+  const memberData = member ? data(member.data) : undefined;
+  return formatPaymentAuditEntityLabel({
+    receiptNumber: payment.receiptNumber,
+    memberName: memberData?.fullName,
+    memberNumber: memberData?.memberNumber,
+    memberId: payment.memberId,
+  });
+}
+
+async function auditPaymentCollection(ctx: MutationCtx, actor: ActorContext, payment: Data): Promise<Data> {
+  return await insertAudit(ctx, actor, {
+    category: "payments",
+    action: "payment.collect",
+    entityType: "payment",
+    entityId: stringValue(payment.id),
+    entityLabel: await paymentAuditEntityLabel(ctx, actor, payment),
+    summary: `Collected ${actor.organization.currency} ${(amountOf(payment.amount) / 1000).toFixed(3)} (${stringValue(payment.method).replace("_", " ")})`,
+    after: { amount: amountOf(payment.amount), method: payment.method },
+    branchId: optionalString(payment.branchId),
+  });
+}
+
 async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): Promise<Data> {
   const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.shiftId === shift.id);
   const total = (method: string, type = "payment") => payments.filter((payment) => payment.method === method && payment.type === type).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
@@ -1780,6 +1804,7 @@ async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, i
     const paymentResult = await paymentRecord(ctx, actor, { ...data(input.payment), memberId: memberData.id, chargeId: charge.id, branchId: memberData.homeBranchId }, `sale-${membership.id}`);
     payment = paymentResult.payment;
     receipt = paymentResult.receipt;
+    await auditPaymentCollection(ctx, actor, payment);
   }
   return { membership: await toMembership(ctx, actor, membership), charge, payment, receipt, timelineEventIds: [event.id] };
 }
@@ -2077,7 +2102,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const idempotencyKey = recordId(input.idempotencyKey);
       const result = await paymentRecord(ctx, actor, input, idempotencyKey);
       const payment = result.payment;
-      await insertAudit(ctx, actor, { category: "payments", action: "payment.collect", entityType: "payment", entityId: payment.id, entityLabel: `${payment.receiptNumber} · ${payment.memberId}`, summary: `Collected ${actor.organization.currency} ${(amountOf(payment.amount) / 1000).toFixed(3)} (${stringValue(payment.method).replace("_", " ")})`, after: { amount: amountOf(payment.amount), method: payment.method }, branchId: optionalString(payment.branchId) });
+      await auditPaymentCollection(ctx, actor, payment);
       return await receiptDetail(ctx, actor, result.receiptId);
     }
     case "payments.refund": {
@@ -2108,7 +2133,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
         const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" });
       }
-      await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: `${original.receiptNumber} · ${original.memberId}`, summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
+      await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await receiptDetail(ctx, actor, receipt.id);
     }
@@ -2124,7 +2149,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (businessDate(stringValue(original.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== paymentDay) domainError("VOID_WINDOW_EXPIRED", "Payments can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
       await patchRecord(ctx, actor, originalRecord, { status: "voided", voidReason: stringValue(input.reason) });
       if (original.chargeId) { const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId)); const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); }
-      await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: `${original.receiptNumber} · ${original.memberId}`, summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
+      await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
     }

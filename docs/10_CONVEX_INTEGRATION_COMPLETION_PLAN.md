@@ -4,7 +4,7 @@
 
 Complete GymOS as an operationally credible MVP on the approved Next.js, Convex, Clerk, and Vercel architecture. Preserve the approved frontend, replace production mock behavior through the existing data-access boundary, enforce tenant and branch authorization on the server, persist the full commercial operating loop, and retain mock mode only for deterministic preview and testing.
 
-This is one implementation program. Use one feature branch, make logical checkpoint commits, run the complete verification suite, then push and open one final pull request. Do not create a separate pull request for each phase.
+This is one implementation program. Keep implementation on `main` for this repository unless the user explicitly requests a review branch, make logical checkpoint commits, run the complete verification suite, and push the verified result. Do not create a separate pull request for each phase.
 
 ## Current baseline — 2026-08-08
 
@@ -12,14 +12,15 @@ This is one implementation program. Use one feature branch, make logical checkpo
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
-- `pnpm test` passes with 218 tests across 22 files, including the platform application review and provisioning paths.
-- Preview Playwright journeys pass, including the platform application review journey; the isolated staging Clerk-to-Convex smoke now passes with an external Clerk storage state.
+- `pnpm test` passes with 220 tests across 22 files, including the platform application review/provisioning paths, Convex security, adapter, schema, audit, domain-invariant, mock-mode, component, and reception coverage.
+- Preview Playwright journeys pass with 15 tests; the isolated staging Clerk-to-Convex smoke and opt-in operational write flow remain explicit credential-gated checks.
 - `pnpm build` passes with the Clerk request proxy enabled and generates the current 37 App Router routes.
 - Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through a protected action that creates the organization, first branch, subscription, default roles/settings, owner membership, Clerk organization, and owner invitation.
-- Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.
-- `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
+- Real Clerk identity, Convex tenant/role resolution, and the core gym operational adapter are integrated. Members, memberships, payments, check-ins, timelines, receipts, shifts, CRM, automations, settings, and audit pages route through `ConvexGymOSApi` whenever Convex mode is selected; `MockGymOSApi` remains an explicit preview/test adapter.
+- The highest-value write path has been verified against the isolated staging deployment: create member → sell membership with immediate card payment → check in → verify timeline and searchable payment/membership audit events. The opt-in Playwright test archives its disposable member after the run.
 - `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all four non-production inputs now configured.
 - Existing Playwright journeys use `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`, so they verify the deterministic preview path rather than the production Clerk-to-Convex path.
+- `apps/web/e2e/convex-operational-flow.spec.ts` is intentionally excluded from ordinary CI; a manual workflow input `run_operational_flow` enables the staging write verification when an operator accepts the mutation/cleanup.
 - Manual GitHub Actions run `31257271522` passed the static/build checks, preview Playwright journeys, Convex codegen, and the authenticated Clerk-to-Convex smoke against the isolated staging deployment.
 
 ## Architectural authority
@@ -36,13 +37,11 @@ This is one implementation program. Use one feature branch, make logical checkpo
 
 ## Branch and delivery model
 
-1. Create one branch named `codex/complete-convex-integration` from the latest `main`.
-2. Keep all work on that branch.
-3. Make logical checkpoint commits after a phase is complete and its focused tests pass.
-4. Push the feature branch as needed for backup and GitHub Actions verification. This repository deploys to Vercel only from `main`.
-5. Do not merge partial phases into `main`.
-6. When every completion gate in this document passes, push the final branch and open one non-draft pull request.
-7. The pull request description must summarize architecture, migrations, persisted workflows, security boundaries, tests, deployment requirements, known compromises, and rollback considerations.
+1. Keep implementation on `main` for this repository unless the user explicitly asks for a review branch.
+2. Make logical checkpoint commits after a phase is complete and its focused tests pass.
+3. Push `main` after verification; Vercel deploys the Next.js application from `main`.
+4. Do not leave completed work stranded on a feature branch or create a pull request solely to avoid merging a finished slice.
+5. Each handoff must summarize architecture, persisted workflows, security boundaries, tests, deployment requirements, known compromises, and rollback considerations.
 
 ## Non-negotiable implementation rules
 
@@ -365,6 +364,11 @@ Also run:
 - Tenant-isolation and authorization tests.
 - Money-changing and audit tests.
 - An authenticated Clerk-to-Convex smoke flow against a development or preview deployment.
+- The explicit staged operational write flow when a disposable staging mutation is acceptable:
+
+  ```bash
+  PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
+  ```
 - The complete product-level release sequence below.
 
 Update:
@@ -380,8 +384,8 @@ After verification:
 1. Confirm `git diff --check` passes.
 2. Review the final diff for secrets, generated junk, debug output, and unrelated files.
 3. Commit remaining documentation and verification updates.
-4. Push `codex/complete-convex-integration`.
-5. Open one ready-for-review pull request into `main`.
+4. Push `main` after verification; Vercel deploys the Next.js application from `main`.
+5. Do not leave completed work stranded on a feature branch or open a pull request solely to avoid merging a finished slice.
 
 ## Product-level release sequence
 

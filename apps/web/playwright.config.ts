@@ -23,8 +23,10 @@ export default defineConfig({
     // deployed sessions always go through Clerk before this chooser appears.
     env: {
       NEXT_DIST_DIR: ".next-playwright",
-      NEXT_PUBLIC_RIVET_DEMO_AUTH: process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" ? "0" : "1",
-      NEXT_PUBLIC_DATA_MODE: process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" ? "convex" : "mock",
+      NEXT_PUBLIC_RIVET_DEMO_AUTH:
+        process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" || process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ? "0" : "1",
+      NEXT_PUBLIC_DATA_MODE:
+        process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" || process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ? "convex" : "mock",
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -24,7 +24,7 @@ The approved runtime is Next.js + Convex + Clerk + Vercel. `GymOSApi` remains th
 ├── apps/web/                  # Next.js App Router, Clerk, Convex functions
 │   ├── convex/                # schema, server functions, seed, scheduled work
 │   ├── src/lib/api/           # GymOSApi, ConvexGymOSApi, mock adapter
-│   └── e2e/                   # mock journeys and trusted Convex smoke
+│   └── e2e/                   # mock journeys, trusted smoke, optional staging flow
 ├── docs/
 ├── .github/workflows/ci.yml
 └── pnpm-lock.yaml
@@ -78,6 +78,14 @@ PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-st
 ```
 
 The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the five CI secrets are configured; manual GitHub Actions run `31257271522` passed all jobs on `main`.
+
+The full operational write check is separate and explicitly mutating: it creates one disposable member in the isolated staging deployment, verifies member → membership → card payment → check-in → timeline/audit, and archives that member in cleanup. Run it only when you intend to exercise staging writes:
+
+```bash
+PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
+```
+
+The same check is available as the optional `run_operational_flow` input on a manually dispatched `GymOS CI` workflow. It is never part of push, pull-request, or ordinary preview runs.
 
 ## Convex deployment, seed, and rollback
 
@@ -149,6 +157,7 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `RIVET_APPLICATION_RECIPIENTS` | Comma-separated RIVET partner notification recipients |
 | `NEXT_PUBLIC_SITE_URL` | canonical Next.js origin |
 | `PLAYWRIGHT_CONVEX_SMOKE` | trusted smoke switch |
+| `PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW` | explicit staging write-flow switch |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | local path to trusted Playwright state |
 
 Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients.

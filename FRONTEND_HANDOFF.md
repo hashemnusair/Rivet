@@ -1,6 +1,6 @@
 # GymOS / RIVET handoff
 
-Updated 2026-08-06 after production Clerk setup and release-hardening work. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
+Updated 2026-08-08 after production Clerk setup, staging write verification, and payment-audit hardening. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
 
 ## Product surface preserved
 
@@ -60,15 +60,15 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 218 tests passed across 22 files, including Convex security, adapter, schema, platform application review/provisioning, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
-- `pnpm test:e2e` — preview journeys pass, including the platform application review journey; 1 trusted Convex smoke remains skipped because no external Clerk storage state was configured.
+- `pnpm test` — 220 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test:e2e` — 15 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
 - `pnpm build` — passed on Next.js 16.2.12; 37 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
 - `convex run health:check` — returned `status: ok` from the linked development deployment.
 - GitHub Actions — static/typecheck/lint/unit/build and Playwright jobs passed on the prior branch head. Convex codegen remains repository-secret-gated, and a manually dispatched authenticated Clerk smoke now fails clearly when any required secret is missing instead of reporting a misleading success.
 
-The only remaining integration verification is the trusted Clerk-to-Convex browser smoke. It requires a current external Clerk session stored outside Git. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; the smoke path sets it to `0`, uses `NEXT_PUBLIC_DATA_MODE=convex`, and requires that trusted Clerk storage-state file.
+The isolated staging Clerk-to-Convex read smoke and the opt-in operational write flow now pass with the external Clerk session stored outside Git. The remaining release gate is production-specific: verify the Vercel Production values and production Convex deployment against the production Clerk issuer, then run a pilot check without touching the staging fixture. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; both trusted paths set it to `0`, use `NEXT_PUBLIC_DATA_MODE=convex`, and require the storage-state file.
 
 ## Local and deployment commands
 
@@ -79,6 +79,7 @@ pnpm convex:typecheck
 pnpm lint
 pnpm test
 pnpm test:e2e
+PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
 pnpm build
 pnpm convex:codegen
 pnpm convex:deploy
@@ -107,3 +108,4 @@ The production Clerk instance, custom-domain DNS records, and first production t
 10. `apps/web/convex/platformProvisioningAction.ts`
 11. `apps/web/src/lib/providers/app-providers.tsx`
 12. `apps/web/.env.example`
+13. `apps/web/e2e/convex-operational-flow.spec.ts`

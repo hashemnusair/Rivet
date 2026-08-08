@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_operational_flow:
+        description: "Create and archive one disposable member while verifying the staged Convex write path"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -141,3 +147,10 @@ jobs:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
+      - name: Run staged operational flow
+        if: ${{ inputs.run_operational_flow == true }}
+        env:
+          PLAYWRIGHT_CONVEX_SMOKE: "1"
+          PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW: "1"
+          PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
+        run: pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts

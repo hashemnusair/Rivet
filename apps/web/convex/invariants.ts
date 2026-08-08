@@ -38,6 +38,18 @@ export function refundAllocation(requested: number | undefined, remaining: numbe
   return { ok: true, amount };
 }
 
+export function formatPaymentAuditEntityLabel(input: {
+  receiptNumber?: unknown;
+  memberName?: unknown;
+  memberNumber?: unknown;
+  memberId?: unknown;
+}): string {
+  const part = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const receipt = part(input.receiptNumber) ?? "Payment";
+  const member = [part(input.memberName), part(input.memberNumber)].filter((value): value is string => Boolean(value)).join(" · ");
+  return `${receipt} · ${member || part(input.memberId) || "Unknown member"}`;
+}
+
 export function approvalPermissionForAction(action: string):
   | "payments.discount"
   | "payments.refund"

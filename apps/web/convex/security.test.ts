@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "./_generated/dataModel";
+import { rolePermissions } from "./permissions";
 import { assertBranchAccess, domainError, requirePermission, requireReason, type ActorContext } from "./security";
 
 const organizationId = "org-test" as Id<"organizations">;
@@ -23,6 +24,13 @@ function actor(overrides: Partial<ActorContext> = {}): ActorContext {
 describe("Convex security kernel", () => {
   it("rejects a missing server permission", () => {
     expect(() => requirePermission(actor(), "payments.refund")).toThrow(/refund permission/i);
+  });
+
+  it("keeps commercial and override permissions role-owned", () => {
+    expect(rolePermissions("owner")).toEqual(expect.arrayContaining(["memberships.sell", "payments.collect", "payments.refund", "checkins.override"]));
+    expect(rolePermissions("sales")).toEqual(expect.arrayContaining(["memberships.sell", "payments.collect"]));
+    expect(rolePermissions("sales")).not.toContain("payments.refund");
+    expect(rolePermissions("receptionist")).not.toContain("checkins.override");
   });
 
   it("prevents cross-tenant branch access and selected-branch escape", () => {
