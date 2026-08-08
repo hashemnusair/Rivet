@@ -37,18 +37,37 @@ function clerkId(payload: unknown): string | undefined {
   return payload && typeof payload === "object" && typeof (payload as { id?: unknown }).id === "string" ? (payload as { id: string }).id : undefined;
 }
 
+type ClerkErrorItem = {
+  code?: unknown;
+  long_message?: unknown;
+  longMessage?: unknown;
+  message?: unknown;
+  short_message?: unknown;
+  shortMessage?: unknown;
+};
+
 /** Keep Clerk's actionable diagnostic, but never persist the whole response. */
-function clerkErrorMessage(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const record = payload as { message?: unknown; long_message?: unknown; errors?: unknown };
-  const direct = [record.long_message, record.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  if (direct) return direct.replace(/\s+/g, " ").trim().slice(0, 300);
+function clerkErrorDetails(payload: unknown): { code?: string; message?: string } {
+  if (!payload || typeof payload !== "object") return {};
+  const record = payload as ClerkErrorItem & { errors?: unknown };
+  const candidates: ClerkErrorItem[] = [record];
   if (Array.isArray(record.errors)) {
-    const first = record.errors.find((item): item is { long_message?: unknown; message?: unknown } => Boolean(item) && typeof item === "object");
-    const nested = [first?.long_message, first?.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-    if (nested) return nested.replace(/\s+/g, " ").trim().slice(0, 300);
+    candidates.push(...record.errors.filter((item): item is ClerkErrorItem => Boolean(item) && typeof item === "object"));
   }
-  return undefined;
+  const code = candidates.map((item) => item.code).find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const message = candidates
+    .flatMap((item) => [item.long_message, item.longMessage, item.message, item.short_message, item.shortMessage])
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return {
+    code: code?.trim().slice(0, 120),
+    message: message?.replace(/\s+/g, " ").trim().slice(0, 300),
+  };
+}
+
+function clerkErrorMessage(payload: unknown): string | undefined {
+  const details = clerkErrorDetails(payload);
+  if (!details.message) return details.code;
+  return details.code ? `${details.code}: ${details.message}` : details.message;
 }
 
 async function createOrFindClerkOrganization(secret: string, input: { name: string; slug: string; applicationId: string; organizationPublicId: string }): Promise<string> {

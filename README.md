@@ -105,13 +105,19 @@ pnpm convex:deploy
 Set Convex-side environment values through the Convex CLI or dashboard. Keep the actual values outside Git:
 
 ```bash
-pnpm --filter web exec convex env set CLERK_FRONTEND_API_URL "$CLERK_FRONTEND_API_URL"
-pnpm --filter web exec convex env set ENTRY_PASS_SIGNING_SECRET "$ENTRY_PASS_SIGNING_SECRET"
-pnpm --filter web exec convex env set CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
-pnpm --filter web exec convex env set RIVET_SITE_URL "https://www.rivetjo.com"
-pnpm --filter web exec convex env set RESEND_API_KEY "$RESEND_API_KEY"
-pnpm --filter web exec convex env set RESEND_FROM_EMAIL "noreply@rivetjo.com"
-pnpm --filter web exec convex env set RIVET_APPLICATION_RECIPIENTS "you@example.com,partner@example.com"
+pnpm --filter web exec convex env set --prod CLERK_FRONTEND_API_URL "$CLERK_FRONTEND_API_URL"
+pnpm --filter web exec convex env set --prod ENTRY_PASS_SIGNING_SECRET "$ENTRY_PASS_SIGNING_SECRET"
+pnpm --filter web exec convex env set --prod CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
+pnpm --filter web exec convex env set --prod RIVET_SITE_URL "https://www.rivetjo.com"
+pnpm --filter web exec convex env set --prod RESEND_API_KEY "$RESEND_API_KEY"
+pnpm --filter web exec convex env set --prod RESEND_FROM_EMAIL "noreply@rivetjo.com"
+pnpm --filter web exec convex env set --prod RIVET_APPLICATION_RECIPIENTS "you@example.com,partner@example.com"
+```
+
+`convex env set` defaults to Development; the `--prod` flag is intentional here. Verify the production deployment without printing secret values:
+
+```bash
+pnpm --filter web exec convex env list --prod --names-only
 ```
 
 ### Gym applications and access

@@ -59,7 +59,7 @@ Complete these steps in order. Keep development/preview and production Convex de
    RIVET_SITE_URL=https://www.rivetjo.com
    ```
 
-   `CLERK_FRONTEND_API_URL` must be set in Convex because `convex/auth.config.ts` reads it there. Setting it only in Vercel leaves every Convex query unauthenticated.
+   `CLERK_FRONTEND_API_URL` must be set in Convex because `convex/auth.config.ts` reads it there. Setting it only in Vercel leaves every Convex query unauthenticated. Convex environment variables are deployment-specific and `convex env set` defaults to Development, so use `--prod` on every production command (or select the production deployment in the dashboard). Verify the target with `pnpm --filter web exec convex env list --prod --names-only` without printing secret values.
 2. **Verify Vercel Production variables and redeploy.** Set the following in the `rivet-web` project with `apps/web` as the root directory, then trigger a fresh production deployment from `main`:
 
    ```text
