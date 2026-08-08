@@ -50,7 +50,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const { platformAdminSignedIn, experienceReady, experienceError, experienceStatus, retryExperience, signOutPlatformAdmin } = useExperience();
+  const { platformAdminSignedIn, previewSessionReady, experienceReady, experienceError, experienceStatus, retryExperience, signOutPlatformAdmin } = useExperience();
   const identity = useRivetIdentity();
   const identityReady =
     DEMO_AUTH_BYPASS || (clerkLoaded && identity.status !== "loading" && identity.status !== "pending");
@@ -63,9 +63,9 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
-    if (identityReady && experienceReady && (!identitySignedIn || !authorized || !platformAdminSignedIn))
+    if (identityReady && previewSessionReady && experienceReady && (!identitySignedIn || !authorized || !platformAdminSignedIn))
       router.replace("/login");
-  }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, router]);
+  }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, previewSessionReady, router]);
 
   const signOut = async () => {
     if (signingOut) return;
@@ -89,7 +89,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!identityReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
+  if (!identityReady || !previewSessionReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Checking access">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">

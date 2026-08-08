@@ -82,6 +82,13 @@ Complete these steps in order. Keep development/preview and production Convex de
 
 Until this checklist is complete, the site is a public marketing preview, not a real-gym pilot. Accounts created against the development Clerk instance must be recreated in production.
 
+### Environment progress — 2026-08-08
+
+- Convex production has a completed backup export from 8 August 2026. Production data remains intentionally unseeded; do not run `seed:seedDemoTenant` against production without an explicit pilot-data decision.
+- Vercel Preview now uses `NEXT_PUBLIC_DATA_MODE=mock`; Production uses `NEXT_PUBLIC_DATA_MODE=convex`. The remaining Preview-scoped Clerk/Convex values are masked in the Vercel dashboard and must be reviewed or replaced with a dedicated staging pair before an authenticated Preview deployment is used.
+- A fresh local Convex development deployment, `dev/hashem-nusair` (`fleet-otter-621`), is configured with the production Clerk issuer, a development-only entry-pass secret, the current schema/functions, and the idempotent reference seed. It is not production or a pilot tenant.
+- GitHub Actions now has non-production `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` secrets. `PLAYWRIGHT_CLERK_STORAGE_STATE` remains intentionally unset until an authorized maintainer signs in with a real Clerk account and saves a Playwright session outside the repository.
+
 ## Implementation decisions agents may make
 
 ### Convex completion decisions — 2026-08-04

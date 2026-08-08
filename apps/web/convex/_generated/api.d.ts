@@ -10,6 +10,7 @@
 
 import type * as automations from "../automations.js";
 import type * as crons from "../crons.js";
+import type * as customer from "../customer.js";
 import type * as domain from "../domain.js";
 import type * as gymApplications from "../gymApplications.js";
 import type * as health from "../health.js";
@@ -30,6 +31,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   automations: typeof automations;
   crons: typeof crons;
+  customer: typeof customer;
   domain: typeof domain;
   gymApplications: typeof gymApplications;
   health: typeof health;

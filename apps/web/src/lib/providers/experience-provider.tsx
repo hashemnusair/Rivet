@@ -39,6 +39,8 @@ interface ExperienceContextValue {
   platformAdminSignedIn: boolean;
   /** False until sessionStorage has been read, so guards do not bounce on first paint. */
   experienceReady: boolean;
+  /** False until the preview session flags have been restored from sessionStorage. */
+  previewSessionReady: boolean;
   experienceStatus: ExperienceStatus;
   experienceError?: string;
   retryExperience: () => void;
@@ -92,6 +94,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const identity = useRivetIdentity();
   const [customerId, setCustomerId] = useState<string>();
   const [platformAdminSignedIn, setPlatformAdminSignedIn] = useState(false);
+  const [previewSessionReady, setPreviewSessionReady] = useState(convexMode);
   // Mock data is bundled and available synchronously. Starting it in a
   // loading state makes preview-only forms race the first client effect under
   // a cold Next dev server, while Convex genuinely needs an asynchronous load.
@@ -121,6 +124,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // source of truth.
   useEffect(() => {
     if (convexMode) {
+      setPreviewSessionReady(true);
       if (identity.status === "loading" || identity.status === "pending") {
         setExperienceStatus("loading");
         setExperienceReady(false);
@@ -170,6 +174,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    setPreviewSessionReady(false);
     const restored = readStored<CustomerPersona[]>(STORAGE_KEYS.registered) ?? [];
     void getApi().getPlatformSnapshot().then(setPlatformSnapshot).catch(() => undefined);
     void getApi().listPublicSaasPlans().then(setSaasPlans).catch(() => undefined);
@@ -185,6 +190,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceError(undefined);
     setExperienceStatus("ready");
     setExperienceReady(true);
+    setPreviewSessionReady(true);
   }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.platformAdmin, identity.status]);
 
   /**
@@ -333,6 +339,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       customerId,
       customerSignedIn: Boolean(customerId),
       platformAdminSignedIn,
+      previewSessionReady,
       experienceReady,
       experienceStatus,
       experienceError,
@@ -366,6 +373,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       experienceReady,
       memberships,
       platformAdminSignedIn,
+      previewSessionReady,
       retryExperience,
       registerCustomer,
       signInAsIdentity,
