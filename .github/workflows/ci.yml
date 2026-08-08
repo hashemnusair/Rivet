@@ -109,6 +109,7 @@ jobs:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_STATE }}
     steps:
       - name: Check out repository
@@ -131,6 +132,7 @@ jobs:
           test -n "$CONVEX_DEPLOY_KEY" || { echo "::error::Missing CONVEX_DEPLOY_KEY"; exit 1; }
           test -n "$NEXT_PUBLIC_CONVEX_URL" || { echo "::error::Missing NEXT_PUBLIC_CONVEX_URL"; exit 1; }
           test -n "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY" || { echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"; exit 1; }
+          test -n "$CLERK_SECRET_KEY" || { echo "::error::Missing CLERK_SECRET_KEY"; exit 1; }
           test -n "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" || { echo "::error::Missing PLAYWRIGHT_CLERK_STORAGE_STATE"; exit 1; }
       - name: Write trusted storage state outside the repository
         run: printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" > "$RUNNER_TEMP/clerk-storage-state.json"

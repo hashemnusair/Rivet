@@ -71,7 +71,7 @@ pnpm build
 
 `pnpm test:e2e` runs seeded preview journeys. The trusted Clerk-to-Convex smoke is opt-in and requires `PLAYWRIGHT_CONVEX_SMOKE=1` plus a storage-state file outside Git.
 
-The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
+The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
 
 ```bash
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
