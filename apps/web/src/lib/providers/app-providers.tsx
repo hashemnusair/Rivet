@@ -59,19 +59,27 @@ const STORAGE_KEYS = {
 const PERSONA_DEFAULT_BRANCH: Partial<Record<RoleKey, UUID>> = {};
 
 export function AppProviders({ children }: { children: ReactNode }) {
+  const convexMode = isConvexMode();
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5_000,
+            // Convex queries in the API seam are currently one-shot reads.
+            // Keep the existing seam while refreshing active screens so a
+            // second operator's changes appear without a hard reload. The
+            // Convex websocket remains responsible for auth and mutations.
+            staleTime: convexMode ? 0 : 5_000,
+            refetchInterval: convexMode ? 4_000 : false,
+            refetchIntervalInBackground: false,
+            refetchOnWindowFocus: true,
+            refetchOnReconnect: true,
             // Deterministic rejections (permissions, missing records, bad input)
             // will never succeed on a retry — surface them immediately.
             retry: (failureCount, error) => {
               if (isApiError(error) && TERMINAL_ERROR_CODES.includes(error.code)) return false;
               return failureCount < 1;
             },
-            refetchOnWindowFocus: false,
           },
         },
       }),

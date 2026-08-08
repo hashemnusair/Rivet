@@ -63,6 +63,17 @@ export default function PlatformApplicationsPage() {
     void loadApplications();
   }, [loadApplications]);
 
+  // The platform applications screen uses the shared API seam rather than a
+  // direct Convex React query. Refresh the active list frequently so a form
+  // submission, review decision, or provisioning failure made in another tab
+  // appears without asking the operator to reload the page.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadApplications(true);
+    }, 4_000);
+    return () => window.clearInterval(interval);
+  }, [loadApplications]);
+
   const counts = useMemo(() => FILTERS.reduce<Record<Filter, number>>((result, item) => {
     result[item.value] = item.value === "all" ? applications.length : applications.filter((application) => application.status === item.value).length;
     return result;
@@ -132,7 +143,12 @@ export default function PlatformApplicationsPage() {
       } : application));
       setFeedback(`Workspace created for ${result.organizationName}. ${result.ownerEmail} was invited as the gym owner.`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The gym workspace could not be provisioned.");
+      const message = cause instanceof Error ? cause.message : "The gym workspace could not be provisioned.";
+      // The action records the provider failure on the application before it
+      // rejects. Pull that row back immediately so the detail pane shows the
+      // actionable reason (and not only the generic action error).
+      await loadApplications(true);
+      setError(message);
     } finally {
       setBusyProvisioning(false);
     }
