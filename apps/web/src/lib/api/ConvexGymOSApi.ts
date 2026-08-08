@@ -278,13 +278,17 @@ export class ConvexGymOSApi implements GymOSApi {
 
 export function dataMode(): "mock" | "convex" {
   const configured = process.env.NEXT_PUBLIC_DATA_MODE;
+  // Vercel Preview is also a production-mode Next.js build. An explicit
+  // environment value must therefore win before the production default, or a
+  // Preview deployment configured for the deterministic mock experience will
+  // still try to connect to Convex.
+  if (configured === "mock" || configured === "convex") return configured;
   if (process.env.NODE_ENV === "production") return "convex";
   // The preview auth bypass and mock adapter are one explicit test contract.
   // Treat the bypass as the stronger selector so the first dev-bundle request
   // cannot transiently construct a fail-closed Convex client before the public
   // data-mode variable is available to Next's client compilation.
   if (process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1") return "mock";
-  if (configured === "mock" || configured === "convex") return configured;
   return "mock";
 }
 

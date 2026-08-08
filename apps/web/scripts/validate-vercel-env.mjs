@@ -12,6 +12,10 @@ const required = [
 ];
 const missing = required.filter((name) => !process.env[name]?.trim());
 
+if (process.env.NEXT_PUBLIC_DATA_MODE !== "convex") {
+  missing.push("NEXT_PUBLIC_DATA_MODE (must be convex for Production)");
+}
+
 if (!missing.length) {
   try {
     const convexUrl = new URL(process.env.NEXT_PUBLIC_CONVEX_URL);

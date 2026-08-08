@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ConvexGymOSApi, type ConvexTransport, dataMode } from "./ConvexGymOSApi";
 import { ApiError, ERR } from "./errors";
 import type { Session } from "@/lib/domain/types";
@@ -84,12 +84,19 @@ describe("ConvexGymOSApi contract boundary", () => {
   });
 
   it("selects mock or Convex only through explicit mode configuration", () => {
-    const originalMode = process.env.NEXT_PUBLIC_DATA_MODE;
-    process.env.NEXT_PUBLIC_DATA_MODE = "convex";
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "convex");
     expect(dataMode()).toBe("convex");
-    process.env.NEXT_PUBLIC_DATA_MODE = "mock";
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
     expect(dataMode()).toBe("mock");
-    if (originalMode === undefined) delete process.env.NEXT_PUBLIC_DATA_MODE;
-    else process.env.NEXT_PUBLIC_DATA_MODE = originalMode;
+    vi.unstubAllEnvs();
+  });
+
+  it("honors an explicit mock mode in a production-mode Preview build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
+
+    expect(dataMode()).toBe("mock");
+
+    vi.unstubAllEnvs();
   });
 });
