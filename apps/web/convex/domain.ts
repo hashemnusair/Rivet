@@ -10,6 +10,7 @@ import {
   publicUserId,
   requireActor,
   requireAuthenticated,
+  requireMember,
   requirePermission,
   requirePlatformAdmin,
   requireReason,
@@ -903,7 +904,7 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
 }
 
 async function customerExperience(ctx: QueryCtx): Promise<Data> {
-  const { user } = await requireAuthenticated(ctx);
+  const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
   const memberships = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
@@ -959,7 +960,7 @@ async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: st
 async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
   if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass signing is not configured.");
-  const { user } = await requireAuthenticated(ctx);
+  const { user } = await requireMember(ctx);
   const membershipId = recordId(input.membershipId);
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
   const membership = rows.find((row) => row.publicId === membershipId && data(row.data).customerUserId === publicUserId(user));
@@ -996,12 +997,12 @@ async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
 }
 
 async function registerCustomer(ctx: MutationCtx, input: Data): Promise<Data> {
-  const { user } = await requireAuthenticated(ctx);
+  const { user } = await requireMember(ctx);
   return await saveCustomerProfile(ctx, user, input);
 }
 
 async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data> {
-  const { user } = await requireAuthenticated(ctx);
+  const { user } = await requireMember(ctx);
   const gyms = await marketplaceRows(ctx);
   const gymRecord = gyms.find((record) => record.publicId === stringValue(input.gymId));
   if (!gymRecord || !booleanValue(data(gymRecord.data).isPublic)) domainError("NOT_FOUND", "Gym not found.");

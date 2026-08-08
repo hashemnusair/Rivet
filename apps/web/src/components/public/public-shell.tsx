@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } fro
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthTransition } from "@/components/auth/auth-transition";
 import {
@@ -19,6 +19,7 @@ import {
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
@@ -235,11 +236,34 @@ const MEMBER_NAV = [
 export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { customerSignedIn, signOutCustomer } = useExperience();
+  const { session } = useApp();
+  const { customerSignedIn, platformAdminSignedIn, signOutCustomer } = useExperience();
+  const identity = useRivetIdentity();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
+
+  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/");
+  const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
+  const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
+  const elevatedDestination = protectedMemberRoute
+    ? platformAdminSignedIn || identity.platformAdmin
+      ? "/platform"
+      : identityDestination?.area === "gym"
+        ? identityDestination.href
+        : mockGymRole
+          ? mockGymRole === "receptionist" ? "/reception" : "/dashboard"
+          : undefined
+    : undefined;
+
+  // Keep the member shell from painting an administrator's old customer
+  // profile for even one route transition. The protected page has its own
+  // guard as well; this outer guard covers the header/footer and deep links.
+  useEffect(() => {
+    if (!elevatedDestination) return;
+    router.replace(elevatedDestination);
+  }, [elevatedDestination, router]);
 
   // The member shell maintains a small preview persona in sessionStorage, but
   // a deployed account is authenticated by Clerk. Clearing only the preview
@@ -258,6 +282,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   };
 
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
+  if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">

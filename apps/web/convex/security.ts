@@ -173,6 +173,29 @@ export async function requireAuthenticated(ctx: ReadCtx) {
   return { identity, user } as { identity: NonNullable<typeof identity>; user: NonNullable<MaybeUser> };
 }
 
+/**
+ * Member-only operations must not be reachable by platform administrators or
+ * gym staff. Those accounts have a higher-priority workspace and should never
+ * be silently provisioned a consumer profile just because they opened a
+ * member URL or called the customer API directly.
+ */
+export async function requireMember(ctx: ReadCtx) {
+  const { identity, user } = await requireAuthenticated(ctx);
+  if (user.platformAdmin) {
+    domainError("FORBIDDEN", "Platform administrators must use the platform workspace.");
+  }
+
+  const memberships = await ctx.db
+    .query("organizationMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .collect();
+  if (memberships.some((membership) => membership.active)) {
+    domainError("FORBIDDEN", "Gym team accounts must use their gym workspace.");
+  }
+
+  return { identity, user } as { identity: NonNullable<typeof identity>; user: NonNullable<MaybeUser> };
+}
+
 export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promise<ActorContext> {
   const { user } = await requireAuthenticated(ctx);
   const membership = args.organizationId

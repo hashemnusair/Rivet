@@ -4,7 +4,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
-import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 
@@ -23,6 +23,16 @@ export function useMemberGate() {
   const { customerSignedIn, experienceReady, signInAsIdentity } = useExperience();
   const identity = useRivetIdentity();
 
+  // A Clerk session is not automatically a member session. Platform admins
+  // and gym staff can still have an old customer profile from the previous
+  // member bootstrap, so checking `customerSignedIn` alone would let them
+  // render this area. Once the authoritative identity is ready, its elevated
+  // destination always wins and this hook keeps the member page behind the
+  // redirect while the router completes it.
+  const elevatedDestination = identity.status === "ready" && destinationFor(identity).area !== "member"
+    ? destinationFor(identity).href
+    : undefined;
+
   const identityReady = DEMO_AUTH_BYPASS || isLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || isSignedIn;
 
@@ -30,16 +40,21 @@ export function useMemberGate() {
     if (identityReady && !identitySignedIn) router.replace("/login");
   }, [identityReady, identitySignedIn, router]);
 
+  useEffect(() => {
+    if (!identityReady || !identitySignedIn || !elevatedDestination) return;
+    router.replace(elevatedDestination);
+  }, [elevatedDestination, identityReady, identitySignedIn, router]);
+
   // Arriving straight at a member page with a real session should not send you
   // back to the portal to state who you are — you already did that with Clerk.
   useEffect(() => {
-    if (identity.status !== "ready" || customerSignedIn || !identity.email) return;
+    if (identity.status !== "ready" || elevatedDestination || customerSignedIn || !identity.email) return;
     signInAsIdentity({ email: identity.email, fullName: identity.fullName ?? "" });
-  }, [identity.status, identity.email, identity.fullName, customerSignedIn, signInAsIdentity]);
+  }, [elevatedDestination, identity.status, identity.email, identity.fullName, customerSignedIn, signInAsIdentity]);
 
   return {
-    ready: identityReady && experienceReady,
+    ready: identityReady && experienceReady && !elevatedDestination,
     identitySignedIn,
-    profileSelected: customerSignedIn,
+    profileSelected: customerSignedIn && !elevatedDestination,
   };
 }

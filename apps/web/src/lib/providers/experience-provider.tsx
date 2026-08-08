@@ -134,14 +134,15 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       setExperienceStatus("loading");
       setExperienceError(undefined);
       setExperienceReady(false);
+      const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
       void Promise.all([
         getApi().listMarketplaceGyms(),
         getApi().listPublicSaasPlans(),
-        identity.status === "ready" ? getApi().getCustomerExperience() : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
+        memberIdentity ? getApi().getCustomerExperience() : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
         identity.status === "ready" && identity.platformAdmin ? getApi().getPlatformSnapshot() : Promise.resolve(undefined),
       ]).then(async ([gyms, plans, experience, platform]) => {
         if (cancelled) return;
-        const hydratedMemberships = identity.status === "ready"
+        const hydratedMemberships = memberIdentity
           ? await Promise.all(experience.memberships.map(async (membership) => {
               if (membership.qrValue) return membership;
               try {
@@ -191,7 +192,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceStatus("ready");
     setExperienceReady(true);
     setPreviewSessionReady(true);
-  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.platformAdmin, identity.status]);
+  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded
