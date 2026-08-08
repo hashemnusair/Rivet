@@ -136,7 +136,11 @@ export const provision = action({
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Gym provisioning could not be completed.";
       await ctx.runMutation(internal.platformProvisioning.fail, { applicationId: prepared.applicationId, message, correlationId: prepared.correlationId });
-      throw new ConvexError({ code: "PROVISIONING_FAILED", message: "Gym provisioning could not be completed. Retry from the application screen." } as never);
+      // The application row remains the durable audit trail, but return the
+      // provider detail to the already-authorized platform operator too. This
+      // avoids hiding a Clerk configuration/API response behind a generic
+      // action error while never exposing it to public routes.
+      throw new ConvexError({ code: "PROVISIONING_FAILED", message } as never);
     }
   },
 });
