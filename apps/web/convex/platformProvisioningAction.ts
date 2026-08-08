@@ -9,7 +9,7 @@ const provisionArgs = {
 };
 
 type Data = Record<string, unknown>;
-type ClerkOrganization = { id?: unknown; slug?: unknown };
+type ClerkOrganization = { id?: unknown; name?: unknown; slug?: unknown; public_metadata?: unknown; publicMetadata?: unknown };
 type ClerkInvitation = { id?: unknown; email_address?: unknown; status?: unknown };
 
 async function clerkRequest(secret: string, url: string, method: "GET" | "POST", body?: Data): Promise<{ ok: boolean; status: number; payload: unknown }> {
@@ -70,15 +70,32 @@ function clerkErrorMessage(payload: unknown): string | undefined {
   return details.code ? `${details.code}: ${details.message}` : details.message;
 }
 
+function clerkOrganizationMatches(payload: unknown, input: { name: string; slug: string; applicationId: string; organizationPublicId: string }): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const organization = payload as ClerkOrganization;
+  const metadata = organization.public_metadata && typeof organization.public_metadata === "object"
+    ? organization.public_metadata as Record<string, unknown>
+    : organization.publicMetadata && typeof organization.publicMetadata === "object"
+      ? organization.publicMetadata as Record<string, unknown>
+      : {};
+  return metadata.rivetApplicationId === input.applicationId
+    || metadata.rivetOrganizationPublicId === input.organizationPublicId
+    || organization.slug === input.slug;
+}
+
 async function createOrFindClerkOrganization(secret: string, input: { name: string; slug: string; applicationId: string; organizationPublicId: string }): Promise<string> {
-  const existing = await clerkRequest(secret, `https://api.clerk.com/v1/organizations?query=${encodeURIComponent(input.slug)}&limit=100`, "GET");
-  const match = listPayload(existing.payload).find((item) => item && typeof item === "object" && (item as ClerkOrganization).slug === input.slug);
-  const existingId = clerkId(match);
-  if (existing.ok && existingId) return existingId;
+  // Clerk organization slugs are optional and disabled by default on newer
+  // instances. RIVET keeps its own stable internal slug, so look up existing
+  // organizations by name/metadata and never require Clerk's slug feature.
+  for (const query of [input.name, input.slug]) {
+    const existing = await clerkRequest(secret, `https://api.clerk.com/v1/organizations?query=${encodeURIComponent(query)}&limit=100`, "GET");
+    const match = listPayload(existing.payload).find((item) => clerkOrganizationMatches(item, input));
+    const existingId = clerkId(match);
+    if (existing.ok && existingId) return existingId;
+  }
 
   const created = await clerkRequest(secret, "https://api.clerk.com/v1/organizations", "POST", {
     name: input.name,
-    slug: input.slug,
     public_metadata: { rivetApplicationId: input.applicationId, rivetOrganizationPublicId: input.organizationPublicId },
   });
   const createdId = clerkId(created.payload);
