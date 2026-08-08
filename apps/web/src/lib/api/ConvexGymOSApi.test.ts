@@ -97,6 +97,48 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(call).toMatchObject({ applicationId: result.applicationId, correlationId: expect.any(String) });
   });
 
+  it("keeps platform tenant controls behind the platform mutation boundary", async () => {
+    const gym = {
+      id: "marketplace-gym-1",
+      name: "Northline Strength",
+      shortName: "NORTHLINE",
+      tagline: "",
+      description: "",
+      city: "Amman",
+      areas: [],
+      category: "Gym",
+      audience: "All members",
+      rating: 0,
+      reviewCount: 0,
+      memberCount: 0,
+      branchCount: 1,
+      fromPriceMinor: 0,
+      amenities: [],
+      accent: "#000",
+      featured: false,
+      subscriptionStatus: "suspended" as const,
+      rivetPlan: "Growth" as const,
+      joinedAt: "2026-08-08",
+      lastActiveAt: "2026-08-08T00:00:00.000Z",
+      monthlyRevenueMinor: 0,
+      branches: [],
+    };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
+
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth" })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth" } });
+  });
+
+  it("keeps SaaS catalog edits behind the platform mutation boundary", async () => {
+    const plan = { name: "Growth" as const, priceMinor: 159_000, branches: 4, staff: 30, members: 3_000, tone: "signal" as const };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: plan }, (_kind, args) => { call = args; }));
+
+    await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000 })).resolves.toEqual(plan);
+    expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Growth", priceMinor: 159_000 } });
+  });
+
   it("converts structured Convex errors into stable ApiErrors", async () => {
     const error = Object.assign(new Error("wrapped failure"), { data: { code: ERR.FORBIDDEN, message: "Branch access denied.", requestId: "cor-test-1" } });
     const api = new ConvexGymOSApi(transportFor({ query: error }));

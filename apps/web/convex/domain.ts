@@ -1831,6 +1831,91 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.register") return await registerCustomer(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "platform.gym.update") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    const requestedStatus = optionalString(input.status);
+    const requestedPlan = optionalString(input.plan);
+    const statuses = new Set(["trial", "active", "overdue", "suspended"]);
+    const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
+    if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
+    if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
+    if (!requestedStatus && !requestedPlan) domainError("VALIDATION_ERROR", "Choose a status or plan change.", { correlationId: request.correlationId });
+    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
+    const current = data(record.data);
+    const updated = {
+      ...current,
+      ...(requestedStatus ? { subscriptionStatus: requestedStatus } : {}),
+      ...(requestedPlan ? { rivetPlan: requestedPlan } : {}),
+      lastActiveAt: isoNow(),
+    };
+    await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    if (targetOrganizationId) {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
+      if (organization) {
+        const statusMap: Record<string, "trial" | "active" | "past_due" | "suspended"> = { trial: "trial", active: "active", overdue: "past_due", suspended: "suspended" };
+        await ctx.db.patch(organization._id, {
+          ...(requestedStatus ? { status: statusMap[requestedStatus] } : {}),
+          ...(requestedPlan && requestedPlan !== "Enterprise" ? { subscriptionPlan: requestedPlan as "Starter" | "Growth" | "Pro" } : {}),
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    await ctx.db.insert("platformAuditEvents", {
+      publicId: crypto.randomUUID(),
+      actorUserId: admin.user._id,
+      actorPublicId: publicUserId(admin.user),
+      actorName: admin.user.fullName,
+      action: "gym.subscription.update",
+      entityType: "platform_gym",
+      entityPublicId: gymId,
+      entityLabel: stringValue(current.name, gymId),
+      summary: "Updated gym subscription controls",
+      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan },
+      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan },
+      correlationId: admin.correlationId,
+      occurredAt: Date.now(),
+    });
+    return marketplaceView(updated, true);
+  }
+
+  if (operation === "platform.plan.update") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const name = stringValue(input.name);
+    if (!["Starter", "Growth", "Pro"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => stringValue(data(row.data).name) === name);
+    if (!record) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
+    const numeric = (key: string, fallback: number) => input[key] === undefined ? fallback : numberValue(input[key], -1);
+    const priceMinor = numeric("priceMinor", numberValue(data(record.data).priceMinor));
+    const branches = numeric("branches", numberValue(data(record.data).branches));
+    const staff = numeric("staff", numberValue(data(record.data).staff));
+    const members = numeric("members", numberValue(data(record.data).members));
+    if (![priceMinor, branches, staff, members].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
+      domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
+    }
+    const current = data(record.data);
+    const updated = { ...current, name, priceMinor, branches, staff, members };
+    await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    await ctx.db.insert("platformAuditEvents", {
+      publicId: crypto.randomUUID(),
+      actorUserId: admin.user._id,
+      actorPublicId: publicUserId(admin.user),
+      actorName: admin.user.fullName,
+      action: "plan.catalog_update",
+      entityType: "platform_plan",
+      entityPublicId: record.publicId,
+      entityLabel: name,
+      summary: `Updated ${name} plan catalog limits`,
+      before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members },
+      after: { priceMinor, branches, staff, members },
+      correlationId: admin.correlationId,
+      occurredAt: Date.now(),
+    });
+    return { id: record.publicId, ...updated };
+  }
+
   if (operation === "platform.billing.retry" || operation === "platform.support.resolve" || operation === "platform.support.reply") {
     await requirePlatformAdmin(ctx, request.correlationId);
     const entityType = operation === "platform.billing.retry" ? "platformInvoice" : "supportCase";

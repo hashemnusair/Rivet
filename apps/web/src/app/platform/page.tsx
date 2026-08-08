@@ -4,22 +4,27 @@ import { ArrowRight, Building2, CircleAlert, CreditCard, LifeBuoy, TrendingUp, U
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useExperience } from "@/lib/providers/experience-provider";
+import { formatMoney, money } from "@/lib/utils/money";
 
 const REVENUE_POINTS = [62, 68, 66, 75, 79, 87, 96, 103, 112, 121, 134, 151];
 
 export default function PlatformOverviewPage() {
-  const { marketplaceGyms, bookings } = useExperience();
+  const { marketplaceGyms, bookings, platformSnapshot } = useExperience();
   const active = marketplaceGyms.filter((gym) => gym.subscriptionStatus === "active");
   const members = marketplaceGyms.reduce((sum, gym) => sum + gym.memberCount, 0);
+  const branches = marketplaceGyms.reduce((sum, gym) => sum + gym.branchCount, 0);
+  const mrrMinor = active.reduce((sum, gym) => sum + (platformSnapshot?.plans.find((plan) => plan.name === gym.rivetPlan)?.priceMinor ?? gym.monthlyRevenueMinor), 0);
+  const openCases = platformSnapshot?.supportCases.filter((item) => item.status !== "resolved") ?? [];
+  const attentionCases = openCases.filter((item) => item.priority === "urgent").length;
   return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
     <div className="mx-auto max-w-[1480px]">
       <PageHeading eyebrow="Friday, 31 July" title="Platform overview" description="A live view of every gym, subscription, and operational risk across the RIVET network." action={<Button asChild variant="signal"><Link href="/platform/gyms">Manage gyms <ArrowRight /></Link></Button>} />
 
       <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi icon={<Building2 />} label="Active gyms" value={String(active.length)} detail="+1 this month" trend="up" />
-        <Kpi icon={<CreditCard />} label="Monthly recurring revenue" value="JD 647" detail="+14.2% vs June" trend="up" />
-        <Kpi icon={<Users />} label="Members under management" value={members.toLocaleString()} detail="Across 6 branches" trend="neutral" />
-        <Kpi icon={<LifeBuoy />} label="Open support cases" value="4" detail="1 needs attention" trend="warning" />
+        <Kpi icon={<CreditCard />} label="Monthly recurring revenue" value={formatMoney(money(mrrMinor), { hideCurrency: true })} detail={`${active.length} active subscription${active.length === 1 ? "" : "s"}`} trend="up" />
+        <Kpi icon={<Users />} label="Members under management" value={members.toLocaleString()} detail={`Across ${branches} branch${branches === 1 ? "" : "es"}`} trend="neutral" />
+        <Kpi icon={<LifeBuoy />} label="Open support cases" value={String(openCases.length)} detail={`${attentionCases} needs attention`} trend={openCases.length > 0 ? "warning" : "neutral"} />
       </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.55fr_0.8fr]">

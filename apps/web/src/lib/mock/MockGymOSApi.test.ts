@@ -71,6 +71,23 @@ describe("platform gym applications", () => {
   });
 });
 
+describe("platform subscription controls", () => {
+  it("updates a gym subscription and plan catalog in the shared platform snapshot", async () => {
+    const before = await api.getPlatformSnapshot();
+    const gym = before.gyms[0]!;
+    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth" });
+    expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth" });
+    expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
+
+    const plan = before.plans.find((item) => item.name === "Growth")!;
+    const originalPrice = plan.priceMinor;
+    const originalMembers = plan.members;
+    const updatedPlan = await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 1_000, members: plan.members + 100 });
+    expect(updatedPlan.priceMinor).toBe(originalPrice + 1_000);
+    expect(updatedPlan.members).toBe(originalMembers + 100);
+  });
+});
+
 describe("tenant/branch scoping and authorization", () => {
   it("refuses the branch financial ledger to a receptionist", async () => {
     await api.switchDemoRole("receptionist");

@@ -29,6 +29,8 @@ import type {
   EntryPass,
   ProvisionGymInput,
   GymProvisioningResult,
+  UpdatePlatformGymInput,
+  UpdatePlatformPlanInput,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
@@ -198,6 +200,8 @@ export class ConvexGymOSApi implements GymOSApi {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }
   }
+  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutate("platform.gym.update", input); }
+  updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.billing.retry", { invoiceId }); }
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.resolve", { caseId }); }
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.reply", { caseId, body }); }

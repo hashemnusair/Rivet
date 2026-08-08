@@ -4,6 +4,7 @@ import { Command } from "cmdk";
 import {
   ArrowRight,
   Banknote,
+  FileBarChart,
   Gauge,
   KanbanSquare,
   ListFilter,
@@ -104,6 +105,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { href: "/crm/queues", label: "Sales queues", icon: ListFilter, perm: ["crm.read"] },
     { href: "/payments", label: "Transactions", icon: Banknote, perm: ["reports.financial.read", "payments.collect"] },
     { href: "/payments/shifts", label: "Shifts & cash", icon: ScanLine, perm: ["reports.financial.read", "reconciliation.open_shift"] },
+    { href: "/reports", label: "Reports", icon: FileBarChart, perm: ["reports.financial.read"] },
     { href: "/automations", label: "Automations", icon: Zap, perm: ["automations.manage"] },
     { href: "/audit", label: "Audit log", icon: ScrollText, perm: ["audit.read"] },
     { href: "/settings", label: "Settings", icon: Settings, perm: ["settings.manage", "users.manage"] },

@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   Banknote,
   ClipboardList,
+  FileBarChart,
   Gauge,
   KanbanSquare,
   ListFilter,
@@ -55,6 +56,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/payments", label: "Transactions", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
       { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
+      { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
     ],
   },
   {

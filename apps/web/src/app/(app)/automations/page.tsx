@@ -1,17 +1,23 @@
 "use client";
 
-import { Zap } from "lucide-react";
+import { Plus, Zap } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import type { AutomationAction, AutomationActionKey, AutomationTriggerKey } from "@/lib/domain/types";
 import { DateTimeText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACTION_LABELS, TRIGGER_LABELS } from "@/features/automations/labels";
@@ -23,6 +29,7 @@ export default function AutomationsPage() {
         eyebrow="System"
         title="Automations"
         description="Rules that never forget: expiry reminders, win-backs, inactivity nudges and overdue follow-ups. Delivery runs in sandbox mode for the demo."
+        actions={<NewRuleDialog />}
       />
       <Gate
         permission="automations.manage"
@@ -38,6 +45,46 @@ export default function AutomationsPage() {
       </Gate>
     </div>
   );
+}
+
+function NewRuleDialog() {
+  const invalidate = useInvalidate();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [trigger, setTrigger] = useState<AutomationTriggerKey>("membership_expiring");
+  const [threshold, setThreshold] = useState("7");
+  const [dedupe, setDedupe] = useState("24");
+  const [actions, setActions] = useState<AutomationActionKey[]>(["create_task"]);
+  const create = useApiMutation((api) => {
+    const numeric = threshold.split(",").map((value) => Number(value.trim())).filter((value) => Number.isFinite(value) && value > 0);
+    const triggerParams: Record<string, number | number[] | string> = trigger === "membership_expiring" ? { daysBefore: numeric } : trigger === "membership_expired" ? { daysAfter: numeric[0] ?? 1 } : trigger === "member_inactive" || trigger === "payment_outstanding" ? { days: numeric[0] ?? 7 } : { hours: numeric[0] ?? 24 };
+    const builtActions: AutomationAction[] = actions.map((key) => key === "create_task" ? { key, taskOwnerRole: "salesperson", taskTitle: name.trim() || "Follow up with member" } : key === "queue_message" ? { key, channel: "whatsapp" } : { key });
+    return api.createAutomationRule({ name: name.trim(), trigger, triggerParams, actions: builtActions, enabled: true, dedupeWindowHours: Math.max(1, Number(dedupe) || 24) });
+  }, {
+    onSuccess: async () => {
+      toast.success("Automation rule created.");
+      setOpen(false);
+      setName("");
+      await invalidate([qk.automationRules]);
+    },
+  });
+  const toggleAction = (key: AutomationActionKey, checked: boolean) => setActions((current) => checked ? [...new Set([...current, key])] : current.filter((item) => item !== key));
+
+  return <>
+    <Button onClick={() => setOpen(true)}><Plus /> New rule</Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>New automation rule</DialogTitle><DialogDescription>Start with a durable task or sandbox message. Every run is deduplicated and auditable.</DialogDescription></DialogHeader>
+        <DialogBody className="space-y-4">
+          <Field label="Rule name" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Renewals — 7 days" /></Field>
+          <Field label="When this happens"><Select value={trigger} onValueChange={(value) => setTrigger(value as AutomationTriggerKey)}><SelectTrigger aria-label="Automation trigger"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRIGGER_LABELS).map(([key, label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select></Field>
+          <div className="grid gap-3 sm:grid-cols-2"><Field label={trigger === "membership_expiring" ? "Days before expiry" : trigger.includes("lead") || trigger === "follow_up_overdue" ? "Hours" : "Days"} hint={trigger === "membership_expiring" ? "Use commas for multiple checkpoints." : undefined}><Input value={threshold} onChange={(event) => setThreshold(event.target.value)} inputMode="numeric" /></Field><Field label="Deduplication window (hours)"><Input value={dedupe} onChange={(event) => setDedupe(event.target.value)} inputMode="numeric" /></Field></div>
+          <Field label="Actions"><div className="space-y-2">{(["create_task", "queue_message", "notify_manager"] as AutomationActionKey[]).map((key) => <label key={key} className="flex items-center justify-between rounded-md border border-line px-3 py-2.5 text-[13px]"><span>{ACTION_LABELS[key]}</span><Switch checked={actions.includes(key)} onCheckedChange={(checked) => toggleAction(key, checked)} aria-label={ACTION_LABELS[key]} /></label>)}</div></Field>
+        </DialogBody>
+        <DialogFooter><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={() => create.mutate()} loading={create.isPending} disabled={!name.trim() || actions.length === 0}>Create rule</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
 
 function AutomationContent() {

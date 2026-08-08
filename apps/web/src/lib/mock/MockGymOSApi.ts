@@ -25,6 +25,8 @@ import type {
   ReviewGymApplicationInput,
   ProvisionGymInput,
   GymProvisioningResult,
+  UpdatePlatformGymInput,
+  UpdatePlatformPlanInput,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -165,16 +167,25 @@ export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
   private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
   private gymApplications: PlatformGymApplication[];
+  private platformGyms: MarketplaceGym[];
+  private platformPlans: PlatformSaasPlan[];
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
+    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
+      ...gym,
+      areas: [...gym.areas],
+      amenities: [...gym.amenities],
+      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
+    }));
+    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => MARKETPLACE_GYMS.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial"));
+    return this.respond(() => this.platformGyms.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial"));
   }
 
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
@@ -271,11 +282,11 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getPlatformSnapshot(): Promise<PlatformSnapshot> {
-    return this.respond(() => ({ gyms: MARKETPLACE_GYMS, bookings: INITIAL_TRIAL_BOOKINGS, invoices: MOCK_INVOICES, supportCases: MOCK_SUPPORT_CASES, plans: MOCK_SAAS_PLANS }));
+    return this.respond(() => ({ gyms: this.platformGyms, bookings: INITIAL_TRIAL_BOOKINGS, invoices: MOCK_INVOICES, supportCases: MOCK_SUPPORT_CASES, plans: this.platformPlans }));
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
-    return this.respond(() => MOCK_SAAS_PLANS);
+    return this.respond(() => this.platformPlans);
   }
 
   submitGymApplication(_input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
@@ -371,6 +382,29 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
+    return this.respond(() => {
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (input.status) gym.subscriptionStatus = input.status;
+      if (input.plan) gym.rivetPlan = input.plan;
+      gym.lastActiveAt = nowISO();
+      return { ...gym, areas: [...gym.areas], amenities: [...gym.amenities], branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })) };
+    });
+  }
+
+  updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
+    return this.respond(() => {
+      const plan = this.platformPlans.find((item) => item.name === input.name);
+      if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
+      if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
+      if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
+      if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      return { ...plan };
+    });
+  }
+
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
       const invoice = MOCK_INVOICES.find((item) => item.id === invoiceId);
@@ -416,6 +450,13 @@ export class MockGymOSApi implements GymOSApi {
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
+    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
+      ...gym,
+      areas: [...gym.areas],
+      amenities: [...gym.amenities],
+      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
+    }));
+    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;

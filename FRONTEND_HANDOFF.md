@@ -1,10 +1,10 @@
 # GymOS / RIVET handoff
 
-Updated 2026-08-08 after production Clerk setup, staging write verification, and payment-audit hardening. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
+Updated 2026-08-08 after production Clerk setup, staging write verification, platform-operations controls, and reporting hardening. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
 
 ## Product surface preserved
 
-The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console (including the protected `/platform/applications` review queue), gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
+The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console (including the protected `/platform/applications` review queue, tenant subscription controls, plan catalog editor, billing export, and searchable support inbox), gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, reports, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
 
 The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
 
@@ -37,6 +37,7 @@ Convex schema and domain functions now cover:
 - Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
 - Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.
+- Platform subscription state and SaaS plan limits can be updated through platform-admin mutations. Updates synchronize the public directory/tenant record when available and append immutable platform audit events. Owner/manager reports compose persisted dashboard and transaction contracts and support CSV export; automation rules can be created from the existing UI with deduplicated task/message actions.
 
 The normalized Convex `domainRecords` table stores JSON-shaped domain facts with direct organization/branch/member/lead indexes. Public UUIDs are stable at the `GymOSApi` boundary; Convex document IDs remain internal. This is an intentional adapter boundary, not permission for pages to consume untyped records.
 
@@ -60,9 +61,9 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 220 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test` — 223 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
 - `pnpm test:e2e` — 15 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
-- `pnpm build` — passed on Next.js 16.2.12; 37 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
+- `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
 - `convex run health:check` — returned `status: ok` from the linked development deployment.

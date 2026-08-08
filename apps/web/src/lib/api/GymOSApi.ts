@@ -308,6 +308,23 @@ export interface PlatformSnapshot {
   plans: PlatformSaasPlan[];
 }
 
+/** Platform-only controls for a subscribed tenant. The public directory row
+ * and the backing Convex organization are updated together when a match is
+ * available; this keeps the console from being a read-only mock surface. */
+export interface UpdatePlatformGymInput {
+  gymId: string;
+  status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
+  plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
+}
+
+export interface UpdatePlatformPlanInput {
+  name: PlatformSaasPlan["name"];
+  priceMinor?: number;
+  branches?: number;
+  staff?: number;
+  members?: number;
+}
+
 export interface EntryPass {
   token: string;
   expiresAt: string;
@@ -343,6 +360,8 @@ export interface GymOSApi {
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication>;
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
+  updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
+  updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;

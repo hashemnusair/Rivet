@@ -1,16 +1,38 @@
 "use client";
 
-"use client";
-
-import { ArrowLeft, Ban, Building2, CalendarClock, CreditCard, ExternalLink, Mail, MapPin, Phone, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Ban, Building2, CalendarClock, Check, CreditCard, ExternalLink, Mail, MapPin, Phone, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import { useApiMutation } from "@/lib/hooks/use-api";
+import type { MarketplaceGym } from "@/lib/public/experience-data";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export default function GymAdminDetail({gymId}:{gymId:string}){const gym=useMarketplaceGyms().find((item)=>item.id===gymId);if(!gym)return <div className="p-10">Gym not found.</div>;
+export default function GymAdminDetail({gymId}:{gymId:string}){
+  const directoryGym=useMarketplaceGyms().find((item)=>item.id===gymId);
+  const [gym, setGym] = useState<MarketplaceGym | undefined>(directoryGym);
+  const [status, setStatus] = useState<MarketplaceGym["subscriptionStatus"]>(directoryGym?.subscriptionStatus ?? "active");
+  const [plan, setPlan] = useState<MarketplaceGym["rivetPlan"]>(directoryGym?.rivetPlan ?? "Starter");
+  useEffect(() => {
+    setGym(directoryGym);
+    if (directoryGym) {
+      setStatus(directoryGym.subscriptionStatus);
+      setPlan(directoryGym.rivetPlan);
+    }
+  }, [directoryGym]);
+  const update = useApiMutation((api) => api.updatePlatformGym({ gymId, status, plan }), {
+    onSuccess: (updated) => {
+      setGym(updated);
+      toast.success("Gym subscription controls saved and audited.");
+    },
+  });
+  if(!gym)return <div className="p-10">Gym not found.</div>;
   return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8"><div className="mx-auto max-w-[1480px]">
     <Link href="/platform/gyms" className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5"/>All gyms</Link>
-    <div className="mt-6 flex flex-wrap items-start justify-between gap-6"><div className="flex items-center gap-4"><span className="flex size-14 items-center justify-center font-mono text-[11px] font-semibold text-white" style={{backgroundColor:gym.accent}}>{gym.shortName.slice(0,3)}</span><div><div className="flex items-center gap-2"><h1 className="text-[27px] font-semibold tracking-tight">{gym.name}</h1><ShieldCheck className="size-4 text-success"/></div><p className="mt-1 text-[11.5px] text-ink-3">Customer since {gym.joinedAt} · Last active today</p></div></div><div className="flex gap-2"><Button asChild variant="secondary"><Link href={`/customer/gyms/${gym.id}`}>Marketplace profile <ExternalLink/></Link></Button><Button variant="danger"><Ban/>Suspend</Button></div></div>
+    <div className="mt-6 flex flex-wrap items-start justify-between gap-6"><div className="flex items-center gap-4"><span className="flex size-14 items-center justify-center font-mono text-[11px] font-semibold text-white" style={{backgroundColor:gym.accent}}>{gym.shortName.slice(0,3)}</span><div><div className="flex items-center gap-2"><h1 className="text-[27px] font-semibold tracking-tight">{gym.name}</h1><ShieldCheck className="size-4 text-success"/></div><p className="mt-1 text-[11.5px] text-ink-3">Customer since {gym.joinedAt} · Last active today</p></div></div><div className="flex flex-wrap gap-2"><Button asChild variant="secondary"><Link href={`/customer/gyms/${gym.id}`}>Marketplace profile <ExternalLink/></Link></Button><Button variant={status === "suspended" ? "primary" : "danger"} onClick={() => { setStatus(status === "suspended" ? "active" : "suspended"); }}><Ban/>{status === "suspended" ? "Restore access" : "Suspend"}</Button></div></div>
+    <section className="mt-5 border border-line bg-surface p-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">Changes update the tenant record, public directory state, and immutable platform audit trail.</p></div><Button variant="signal" onClick={() => update.mutate()} loading={update.isPending}><Check/>Save controls</Button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan} onValueChange={(value) => setPlan(value as MarketplaceGym["rivetPlan"])}><SelectTrigger aria-label="Gym plan"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem></SelectContent></Select></label><label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status} onValueChange={(value) => setStatus(value as MarketplaceGym["subscriptionStatus"])}><SelectTrigger aria-label="Subscription status"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent></Select></label></div></section>
     <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="RIVET plan" value={gym.rivetPlan} detail={gym.subscriptionStatus}/><Stat label="Platform health" value={gym.id==="district-strength"?"71 / 100":"94 / 100"} detail="Stable this week"/><Stat label="Active members" value={gym.memberCount.toLocaleString()} detail={`${gym.branchCount} branch${gym.branchCount>1?"es":""}`}/><Stat label="Gym MRR" value={`JD ${(gym.monthlyRevenueMinor/1000).toLocaleString()}`} detail="Reported this month"/></section>
     <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
       <section className="border border-line bg-surface"><div className="border-b border-line px-5 py-4"><p className="eyebrow">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div><div className="divide-y divide-line">{gym.branches.map((branch,index)=><div key={branch.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-3"><MapPin className="size-3"/>{branch.address}</p></div><div className="sm:text-end"><p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Members</p><p className="mt-1 text-[12px] font-semibold">{Math.round(gym.memberCount/(index+1.6)).toLocaleString()}</p></div><Button size="sm" variant="secondary">Open branch</Button></div>)}</div><div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-4"><Usage icon={<Users/>} label="Staff seats" value={`${Math.min(18,gym.memberCount/70|0)} / ${gym.rivetPlan==="Starter"?8:gym.rivetPlan==="Growth"?25:80}`}/><Usage icon={<Building2/>} label="Storage" value="1.8 GB"/><Usage icon={<CalendarClock/>} label="Automations" value="12 active"/><Usage icon={<CreditCard/>} label="Transactions" value="1,184"/></div></section>
