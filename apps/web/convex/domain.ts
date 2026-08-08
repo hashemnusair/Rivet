@@ -56,6 +56,15 @@ const DEFAULT_NOTIFICATIONS = {
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",
 };
+// The public SaaS catalog is configuration, not demo tenant data. Production
+// intentionally starts without the Forge reference seed, so keep the approved
+// launch plans available until an operator has created editable catalog rows.
+// These values are also the defaults used by the application form.
+const DEFAULT_PLATFORM_PLANS: Data[] = [
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+];
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 
@@ -81,6 +90,13 @@ function booleanValue(value: unknown, fallback = false): boolean {
 
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+async function platformPlans(ctx: ReadContext): Promise<Data[]> {
+  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
+  return rows.length > 0
+    ? rows.map((row): Data => ({ id: row.publicId, ...data(row.data) }))
+    : DEFAULT_PLATFORM_PLANS.map((plan) => ({ id: plan.name, ...plan }));
 }
 
 function recordId(value: unknown): string {
@@ -1047,7 +1063,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return rows.filter((row) => booleanValue(data(row.data).isPublic)).map((row) => marketplaceView(data(row.data)));
   }
   if (operation === "public.catalog") {
-    return (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
+    return await platformPlans(ctx);
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
   if (operation === "platform.applications") {
@@ -1067,7 +1083,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
     const invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
     const supportCases = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
-    const plans = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
+    const plans = await platformPlans(ctx);
     return { gyms, bookings, invoices, supportCases, plans };
   }
 

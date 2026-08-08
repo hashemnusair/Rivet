@@ -13,7 +13,6 @@ import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 
 const DEFAULT_PLANS: PlatformSaasPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
@@ -25,7 +24,10 @@ type FormErrors = Partial<Record<"ownerName" | "gymName" | "email" | "contactNum
 
 export default function GymApplicationPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
-  const plans = useMemo(() => (saasPlans.length > 0 ? saasPlans : isConvexMode() ? [] : DEFAULT_PLANS), [saasPlans]);
+  // Keep the public application usable while a production deployment has not
+  // yet stored editable catalog rows. Convex still supplies the live catalog
+  // whenever those rows exist; these are the approved launch defaults.
+  const plans = useMemo(() => (saasPlans.length > 0 ? saasPlans : DEFAULT_PLANS), [saasPlans]);
   const [ownerName, setOwnerName] = useState("");
   const [gymName, setGymName] = useState("");
   const [email, setEmail] = useState("");
