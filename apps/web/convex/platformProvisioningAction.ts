@@ -37,6 +37,20 @@ function clerkId(payload: unknown): string | undefined {
   return payload && typeof payload === "object" && typeof (payload as { id?: unknown }).id === "string" ? (payload as { id: string }).id : undefined;
 }
 
+/** Keep Clerk's actionable diagnostic, but never persist the whole response. */
+function clerkErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as { message?: unknown; long_message?: unknown; errors?: unknown };
+  const direct = [record.long_message, record.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (direct) return direct.replace(/\s+/g, " ").trim().slice(0, 300);
+  if (Array.isArray(record.errors)) {
+    const first = record.errors.find((item): item is { long_message?: unknown; message?: unknown } => Boolean(item) && typeof item === "object");
+    const nested = [first?.long_message, first?.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
+    if (nested) return nested.replace(/\s+/g, " ").trim().slice(0, 300);
+  }
+  return undefined;
+}
+
 async function createOrFindClerkOrganization(secret: string, input: { name: string; slug: string; applicationId: string; organizationPublicId: string }): Promise<string> {
   const existing = await clerkRequest(secret, `https://api.clerk.com/v1/organizations?query=${encodeURIComponent(input.slug)}&limit=100`, "GET");
   const match = listPayload(existing.payload).find((item) => item && typeof item === "object" && (item as ClerkOrganization).slug === input.slug);
@@ -49,7 +63,10 @@ async function createOrFindClerkOrganization(secret: string, input: { name: stri
     public_metadata: { rivetApplicationId: input.applicationId, rivetOrganizationPublicId: input.organizationPublicId },
   });
   const createdId = clerkId(created.payload);
-  if (!created.ok || !createdId) throw new Error(`Clerk organization request failed (${created.status}).`);
+  if (!created.ok || !createdId) {
+    const detail = clerkErrorMessage(created.payload);
+    throw new Error(`Clerk organization request failed (${created.status})${detail ? `: ${detail}` : "."}`);
+  }
   return createdId;
 }
 
@@ -68,7 +85,10 @@ async function createOrFindClerkInvitation(secret: string, input: { organization
     public_metadata: { rivetApplicationId: input.applicationId, rivetOrganizationPublicId: input.organizationPublicId },
   });
   const createdId = clerkId(created.payload);
-  if (!created.ok || !createdId) throw new Error(`Clerk owner invitation request failed (${created.status}).`);
+  if (!created.ok || !createdId) {
+    const detail = clerkErrorMessage(created.payload);
+    throw new Error(`Clerk owner invitation request failed (${created.status})${detail ? `: ${detail}` : "."}`);
+  }
   return createdId;
 }
 
