@@ -27,6 +27,8 @@ import type {
   PlatformSupportCase,
   PlatformSaasPlan,
   EntryPass,
+  ProvisionGymInput,
+  GymProvisioningResult,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
@@ -46,6 +48,7 @@ export interface ConvexTransport {
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
   action(reference: typeof api.gymApplications.submit, args: SubmitGymApplicationInput): Promise<unknown>;
   action(reference: typeof api.gymApplications.review, args: ReviewGymApplicationInput & { correlationId: string }): Promise<unknown>;
+  action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: ConvexOperationArgs): Promise<unknown>;
 }
 
@@ -183,6 +186,14 @@ export class ConvexGymOSApi implements GymOSApi {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
       return await this.transport.action(api.gymApplications.review, { ...input, correlationId: correlationId() }) as PlatformGymApplication;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+  async provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult> {
+    try {
+      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      return await this.transport.action(api.platformProvisioningAction.provision, { ...input, correlationId: correlationId() }) as GymProvisioningResult;
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }

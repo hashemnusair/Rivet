@@ -18,6 +18,8 @@ import type * as identity from "../identity.js";
 import type * as invariants from "../invariants.js";
 import type * as invitations from "../invitations.js";
 import type * as permissions from "../permissions.js";
+import type * as platformProvisioning from "../platformProvisioning.js";
+import type * as platformProvisioningAction from "../platformProvisioningAction.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
@@ -39,6 +41,8 @@ declare const fullApi: ApiFromModules<{
   invariants: typeof invariants;
   invitations: typeof invitations;
   permissions: typeof permissions;
+  platformProvisioning: typeof platformProvisioning;
+  platformProvisioningAction: typeof platformProvisioningAction;
   security: typeof security;
   seed: typeof seed;
   users: typeof users;

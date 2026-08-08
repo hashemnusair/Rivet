@@ -56,6 +56,7 @@ export interface Organization {
   id: UUID;
   name: string;
   slug: string;
+  subscriptionPlan?: "Starter" | "Growth" | "Pro";
   currency: string;
   timezone: string;
   locale: string;

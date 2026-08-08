@@ -47,6 +47,9 @@ type MaybeOrganization = {
   name: string;
   slug: string;
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  subscriptionPlan?: "Starter" | "Growth" | "Pro";
+  subscriptionStartedAt?: number;
+  clerkOrganizationId?: string;
   timezone: string;
   currency: string;
   locale?: string;

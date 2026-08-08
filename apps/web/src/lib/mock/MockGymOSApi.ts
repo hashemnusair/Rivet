@@ -23,6 +23,8 @@ import type {
   SubmitGymApplicationInput,
   SubmitGymApplicationResult,
   ReviewGymApplicationInput,
+  ProvisionGymInput,
+  GymProvisioningResult,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -321,6 +323,51 @@ export class MockGymOSApi implements GymOSApi {
         reason: input.note,
       });
       return { ...application };
+    });
+  }
+
+  provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult> {
+    return this.respond(() => {
+      const application = this.gymApplications.find((item) => item.id === input.applicationId);
+      if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
+      if (application.status !== "approved") throw ApiError.of(ERR.VALIDATION, "Only approved applications can be provisioned.");
+      if (application.provisioningStatus === "completed" && application.provisionedOrganizationId && application.provisionedBranchId) {
+        return {
+          applicationId: application.id,
+          status: "completed" as const,
+          organizationId: application.provisionedOrganizationId,
+          organizationName: application.gymName,
+          branchId: application.provisionedBranchId,
+          branchName: `${application.gymName} — Main branch`,
+          plan: application.plan,
+          ownerName: application.ownerName,
+          ownerEmail: application.email,
+          clerkOrganizationId: application.clerkOrganizationId ?? `clerk-org-${application.id.slice(0, 8)}`,
+          clerkInvitationId: application.clerkInvitationId ?? `clerk-inv-${application.id.slice(0, 8)}`,
+        };
+      }
+      const now = nowISO();
+      application.provisioningStatus = "completed";
+      application.provisionedAt = now;
+      application.provisionedOrganizationId = `org-${application.id}`;
+      application.provisionedBranchId = `branch-${application.id}`;
+      application.clerkOrganizationId = `clerk-org-${application.id.slice(0, 8)}`;
+      application.clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
+      application.provisioningError = undefined;
+      application.updatedAt = now;
+      return {
+        applicationId: application.id,
+        status: "completed" as const,
+        organizationId: application.provisionedOrganizationId,
+        organizationName: application.gymName,
+        branchId: application.provisionedBranchId,
+        branchName: `${application.gymName} — Main branch`,
+        plan: application.plan,
+        ownerName: application.ownerName,
+        ownerEmail: application.email,
+        clerkOrganizationId: application.clerkOrganizationId,
+        clerkInvitationId: application.clerkInvitationId,
+      };
     });
   }
 

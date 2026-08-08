@@ -76,6 +76,27 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(calls[1]).toMatchObject({ kind: "action", args: { applicationId: application.id, decision: "approved", note: "Verified.", correlationId: expect.any(String) } });
   });
 
+  it("keeps gym provisioning behind the protected action boundary", async () => {
+    const result = {
+      applicationId: "20000000-0000-4a00-8a00-000000000001",
+      status: "completed" as const,
+      organizationId: "30000000-0000-4a00-8a00-000000000001",
+      organizationName: "Northline Strength",
+      branchId: "40000000-0000-4a00-8a00-000000000001",
+      branchName: "Northline Strength — Main branch",
+      plan: "Growth" as const,
+      ownerName: "Karim Haddad",
+      ownerEmail: "karim@northline.example",
+      clerkOrganizationId: "org_clerk_1",
+      clerkInvitationId: "inv_clerk_1",
+    };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ action: result }, (_kind, args) => { call = args; }));
+
+    await expect(api.provisionGym({ applicationId: result.applicationId })).resolves.toEqual(result);
+    expect(call).toMatchObject({ applicationId: result.applicationId, correlationId: expect.any(String) });
+  });
+
   it("converts structured Convex errors into stable ApiErrors", async () => {
     const error = Object.assign(new Error("wrapped failure"), { data: { code: ERR.FORBIDDEN, message: "Branch access denied.", requestId: "cor-test-1" } });
     const api = new ConvexGymOSApi(transportFor({ query: error }));

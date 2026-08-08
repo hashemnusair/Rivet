@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { StatePanel } from "@/components/ui/states";
 import { getApi } from "@/lib/api/client";
-import type { GymApplicationStatus, PlatformGymApplication, ReviewGymApplicationInput } from "@/lib/api/GymOSApi";
+import type { GymApplicationStatus, PlatformGymApplication, ProvisionGymInput, ReviewGymApplicationInput } from "@/lib/api/GymOSApi";
 import { cn } from "@/lib/utils/cn";
 
 type Filter = "all" | GymApplicationStatus;
@@ -39,6 +39,7 @@ export default function PlatformApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyDecision, setBusyDecision] = useState<ReviewGymApplicationInput["decision"]>();
+  const [busyProvisioning, setBusyProvisioning] = useState(false);
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState<string>();
 
@@ -112,6 +113,31 @@ export default function PlatformApplicationsPage() {
     }
   };
 
+  const provision = async (input: ProvisionGymInput) => {
+    setBusyProvisioning(true);
+    setError(undefined);
+    setFeedback(undefined);
+    try {
+      const result = await getApi().provisionGym(input);
+      setApplications((current) => current.map((application) => application.id === result.applicationId ? {
+        ...application,
+        provisioningStatus: result.status,
+        provisioningStartedAt: undefined,
+        provisioningError: undefined,
+        provisionedAt: new Date().toISOString(),
+        provisionedOrganizationId: result.organizationId,
+        provisionedBranchId: result.branchId,
+        clerkOrganizationId: result.clerkOrganizationId,
+        clerkInvitationId: result.clerkInvitationId,
+      } : application));
+      setFeedback(`Workspace created for ${result.organizationName}. ${result.ownerEmail} was invited as the gym owner.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The gym workspace could not be provisioned.");
+    } finally {
+      setBusyProvisioning(false);
+    }
+  };
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
@@ -167,7 +193,7 @@ export default function PlatformApplicationsPage() {
                 </div>
               </aside>
 
-              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} onReview={review} /> : null}
+              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} busyProvisioning={busyProvisioning} onReview={review} onProvision={() => void provision({ applicationId: selected.id })} /> : null}
             </div>
           )}
         </section>
@@ -176,7 +202,7 @@ export default function PlatformApplicationsPage() {
   );
 }
 
-function ApplicationDetail({ application, note, setNote, busyDecision, onReview }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void> }) {
+function ApplicationDetail({ application, note, setNote, busyDecision, busyProvisioning, onReview, onProvision }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyProvisioning: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onProvision: () => void }) {
   const finalized = application.status === "approved" || application.status === "rejected";
   return (
     <article className="flex min-w-0 flex-col">
@@ -194,16 +220,31 @@ function ApplicationDetail({ application, note, setNote, busyDecision, onReview 
           <section><p className="eyebrow">Applicant details</p><div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-2"><Detail icon={<UserRound />} label="Owner" value={application.ownerName} /><Detail icon={<Mail />} label="Email" value={application.email} /><Detail icon={<Phone />} label="Contact number" value={application.contactNumber} /><Detail icon={<CheckCircle2 />} label="Chosen plan" value={application.plan} /></div></section>
           <section><p className="eyebrow">Review notes</p><Textarea className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} disabled={finalized || Boolean(busyDecision)} placeholder="Record what you verified, or why the application was rejected." aria-label="Review notes" /><p className="mt-2 text-[10px] text-ink-3">A rejection requires a reason. Notes are visible to the platform team only.</p></section>
           {finalized ? <div className={cn("flex items-start gap-3 border p-4 text-[12px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4" /><div><strong>{application.status === "approved" ? "Application approved" : "Application rejected"}</strong><p className="mt-1 text-[11px] opacity-80">{application.reviewedBy ? `Decision by ${application.reviewedBy} on ${formatDate(application.reviewedAt ?? application.updatedAt)}.` : "Decision recorded."} {application.reviewNotificationStatus === "sent" ? "The owner was notified by email." : application.reviewNotificationStatus === "failed" ? "The decision was saved, but the email failed." : "The owner notification is not configured."}</p></div></div> : null}
+          {application.status === "approved" ? <ProvisioningCard application={application} busy={busyProvisioning} onProvision={onProvision} /> : null}
         </div>
 
         <aside className="space-y-5 border-t border-line pt-5 xl:border-s xl:border-t-0 xl:ps-5 xl:pt-0">
           <section><p className="eyebrow">Email delivery</p><div className="mt-3 space-y-3"><DeliveryRow label="Received confirmation" status={application.notificationStatus} /><DeliveryRow label="Decision email" status={application.reviewNotificationStatus} /></div></section>
           {!finalized ? <section className="border-t border-line pt-5"><p className="eyebrow">Decision</p><div className="mt-3 grid gap-2"><Button variant="secondary" onClick={() => void onReview("under_review")} loading={busyDecision === "under_review"} disabled={Boolean(busyDecision) || application.status === "under_review"}><Clock3 />Mark under review</Button><Button variant="signal" onClick={() => void onReview("approved")} loading={busyDecision === "approved"} disabled={Boolean(busyDecision)}><Check />Approve application</Button><Button variant="danger" onClick={() => void onReview("rejected")} loading={busyDecision === "rejected"} disabled={Boolean(busyDecision)}><X />Reject application</Button></div></section> : null}
-          <section className="border-t border-line pt-5 text-[10.5px] leading-relaxed text-ink-3"><p>Approval records the decision only. Provision the gym workspace and send access after your team completes its onboarding checks.</p></section>
+          <section className="border-t border-line pt-5 text-[10.5px] leading-relaxed text-ink-3"><p>Provisioning creates the tenant, first branch, role definitions, subscription assignment, and owner invitation in one audited workflow.</p></section>
         </aside>
       </div>
     </article>
   );
+}
+
+function ProvisioningCard({ application, busy, onProvision }: { application: PlatformGymApplication; busy: boolean; onProvision: () => void }) {
+  const status = application.provisioningStatus ?? "not_started";
+  if (status === "completed") {
+    return <div className="mt-5 flex items-start gap-3 border border-success/30 bg-success-bg p-4 text-[12px] text-success"><CheckCircle2 className="mt-0.5 size-4" /><div><strong>Workspace provisioned</strong><p className="mt-1 text-[11px] opacity-80">The first branch and owner invitation are ready. The gym can now sign in after accepting the Clerk invitation.</p></div></div>;
+  }
+  if (status === "failed") {
+    return <div className="mt-5 border border-danger/30 bg-danger-bg p-4 text-[12px] text-danger"><div className="flex items-start gap-3"><X className="mt-0.5 size-4" /><div><strong>Provisioning needs attention</strong><p className="mt-1 text-[11px] opacity-80">{application.provisioningError ?? "The workspace was not completed."}</p></div></div><Button className="mt-4" variant="danger" size="sm" onClick={onProvision} loading={busy}>Retry provisioning</Button></div>;
+  }
+  if (status === "in_progress") {
+    return <div className="mt-5 border border-warning/30 bg-warning-bg p-4 text-[12px] text-warning" role="status"><div className="flex items-start gap-3"><Clock3 className="mt-0.5 size-4" /><div><strong>Provisioning in progress</strong><p className="mt-1 text-[11px] opacity-80">The workspace request is being completed. Refresh this application in a moment before trying again.</p></div></div></div>;
+  }
+  return <div className="mt-5 border border-info/30 bg-info-bg p-4 text-[12px] text-info"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4" /><div><strong>Ready to provision</strong><p className="mt-1 text-[11px] opacity-80">Creates the gym workspace, assigns the {application.plan} plan, and emails an owner invitation.</p></div></div><Button className="mt-4" variant="signal" size="sm" onClick={onProvision} loading={busy}><Check />Provision gym workspace</Button></div>;
 }
 
 function Kpi({ label, value, detail, tone = "default" }: { label: string; value: number; detail: string; tone?: "default" | "warning" | "success" }) {

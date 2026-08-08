@@ -6,16 +6,16 @@ Complete GymOS as an operationally credible MVP on the approved Next.js, Convex,
 
 This is one implementation program. Use one feature branch, make logical checkpoint commits, run the complete verification suite, then push and open one final pull request. Do not create a separate pull request for each phase.
 
-## Current baseline — 2026-08-06
+## Current baseline — 2026-08-08
 
-- `main` now includes the reviewed gym-application workflow: platform-admin queue, server-side decisions, applicant status email delivery, and an immutable platform audit stream. Applications still do not self-provision a tenant.
+- `main` now includes the reviewed gym-application workflow: platform-admin queue, server-side decisions, applicant status email delivery, an immutable platform audit stream, and a protected idempotent provisioning action. Applications still do not self-provision a tenant; only a platform administrator can provision an approved application.
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
-- `pnpm test` passes with 200 tests across 15 files, including the platform application review path.
+- `pnpm test` passes with 218 tests across 22 files, including the platform application review and provisioning paths.
 - Preview Playwright journeys pass, including the platform application review journey; the isolated staging Clerk-to-Convex smoke now passes with an external Clerk storage state.
-- `pnpm build` passes with the Clerk request proxy enabled and generates the current 36 App Router routes.
-- Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through protected tooling and then issues access.
+- `pnpm build` passes with the Clerk request proxy enabled and generates the current 37 App Router routes.
+- Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through a protected action that creates the organization, first branch, subscription, default roles/settings, owner membership, Clerk organization, and owner invitation.
 - Real identity and role resolution are partially integrated, but gym operational data still comes from `MockGymOSApi`.
 - `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
 - `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all four non-production inputs now configured.

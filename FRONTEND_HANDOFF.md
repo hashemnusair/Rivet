@@ -60,9 +60,9 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 200 tests passed across 15 files, including Convex security, adapter, schema, platform application review, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test` — 218 tests passed across 22 files, including Convex security, adapter, schema, platform application review/provisioning, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
 - `pnpm test:e2e` — preview journeys pass, including the platform application review journey; 1 trusted Convex smoke remains skipped because no external Clerk storage state was configured.
-- `pnpm build` — passed on Next.js 16.2.12; 36 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
+- `pnpm build` — passed on Next.js 16.2.12; 37 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
 - `convex run health:check` — returned `status: ok` from the linked development deployment.
@@ -85,7 +85,7 @@ pnpm convex:deploy
 pnpm --filter web exec convex run seed:seedDemoTenant
 ```
 
-Use `NEXT_PUBLIC_DATA_MODE=mock pnpm dev` for visual review. Use `pnpm dev:full` for a linked Convex development deployment. Before deployment, set `CLERK_FRONTEND_API_URL`, `ENTRY_PASS_SIGNING_SECRET`, and `CLERK_SECRET_KEY` in the Convex deployment through the CLI/dashboard. Configure the public Clerk key, server Clerk key, Convex URL, site URL, and other names from `apps/web/.env.example` in Vercel.
+Use `NEXT_PUBLIC_DATA_MODE=mock pnpm dev` for visual review. Use `pnpm dev:full` for a linked Convex development deployment. Before deployment, set `CLERK_FRONTEND_API_URL`, `ENTRY_PASS_SIGNING_SECRET`, `CLERK_SECRET_KEY`, and `RIVET_SITE_URL` in the Convex deployment through the CLI/dashboard. Configure the public Clerk key, server Clerk key, Convex URL, site URL, and other names from `apps/web/.env.example` in Vercel.
 
 Vercel should use `apps/web` as the root directory and the Next.js server runtime. Schema/function rollback and application rollback are separate: use the Convex deployment backup/export workflow before data migrations and Vercel's deployment rollback workflow for application code. Do not rerun the seed over pilot data as a restore operation.
 
@@ -103,5 +103,7 @@ The production Clerk instance, custom-domain DNS records, and first production t
 6. `apps/web/convex/schema.ts`
 7. `apps/web/convex/seed.ts`
 8. `apps/web/convex/invitations.ts`
-9. `apps/web/src/lib/providers/app-providers.tsx`
-10. `apps/web/.env.example`
+9. `apps/web/convex/platformProvisioning.ts`
+10. `apps/web/convex/platformProvisioningAction.ts`
+11. `apps/web/src/lib/providers/app-providers.tsx`
+12. `apps/web/.env.example`

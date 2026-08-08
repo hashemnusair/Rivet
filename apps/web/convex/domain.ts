@@ -387,6 +387,7 @@ function organizationView(org: Organization): Data {
     id: publicOrganizationId(org),
     name: org.name,
     slug: org.slug,
+    subscriptionPlan: org.subscriptionPlan,
     currency: org.currency,
     timezone: org.timezone,
     locale: org.locale ?? "en-JO",
@@ -830,6 +831,14 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     reviewedAt: application.reviewedAt ? utcIso(application.reviewedAt) : undefined,
     reviewedBy: application.reviewedBy,
     reviewNotes: application.reviewNotes,
+    provisioningStatus: application.provisioningStatus ?? "not_started",
+    provisioningStartedAt: application.provisioningStartedAt ? utcIso(application.provisioningStartedAt) : undefined,
+    provisioningError: application.provisioningError,
+    provisionedAt: application.provisionedAt ? utcIso(application.provisionedAt) : undefined,
+    provisionedOrganizationId: application.provisionedOrganizationId,
+    provisionedBranchId: application.provisionedBranchId,
+    clerkOrganizationId: application.clerkOrganizationId,
+    clerkInvitationId: application.clerkInvitationId,
   };
 }
 

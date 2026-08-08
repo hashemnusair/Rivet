@@ -239,6 +239,7 @@ export interface SubmitGymApplicationInput {
 
 export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
 export type GymApplicationNotificationStatus = "pending" | "sent" | "failed" | "not_configured";
+export type GymProvisioningStatus = "not_started" | "in_progress" | "completed" | "failed";
 
 export interface PlatformGymApplication {
   id: UUID;
@@ -257,12 +258,38 @@ export interface PlatformGymApplication {
   reviewedAt?: string;
   reviewedBy?: string;
   reviewNotes?: string;
+  provisioningStatus?: GymProvisioningStatus;
+  provisioningStartedAt?: string;
+  provisioningError?: string;
+  provisionedAt?: string;
+  provisionedOrganizationId?: UUID;
+  provisionedBranchId?: UUID;
+  clerkOrganizationId?: string;
+  clerkInvitationId?: string;
 }
 
 export interface ReviewGymApplicationInput {
   applicationId: UUID;
   decision: Exclude<GymApplicationStatus, "pending">;
   note?: string;
+}
+
+export interface ProvisionGymInput {
+  applicationId: UUID;
+}
+
+export interface GymProvisioningResult {
+  applicationId: UUID;
+  status: "completed";
+  organizationId: UUID;
+  organizationName: string;
+  branchId: UUID;
+  branchName: string;
+  plan: PlatformSaasPlan["name"];
+  ownerName: string;
+  ownerEmail: string;
+  clerkOrganizationId: string;
+  clerkInvitationId: string;
 }
 
 export interface SubmitGymApplicationResult {
@@ -315,6 +342,7 @@ export interface GymOSApi {
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication>;
+  provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;

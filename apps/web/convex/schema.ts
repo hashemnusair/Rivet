@@ -40,6 +40,9 @@ export default defineSchema({
     name: v.string(),
     slug: v.string(),
     status: organizationStatus,
+    subscriptionPlan: v.optional(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"))),
+    subscriptionStartedAt: v.optional(v.number()),
+    clerkOrganizationId: v.optional(v.string()),
     timezone: v.string(),
     currency: v.string(),
     locale: v.optional(v.string()),
@@ -124,6 +127,14 @@ export default defineSchema({
     reviewedAt: v.optional(v.number()),
     reviewedBy: v.optional(v.string()),
     reviewNotes: v.optional(v.string()),
+    provisioningStatus: v.optional(v.union(v.literal("not_started"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"))),
+    provisioningStartedAt: v.optional(v.number()),
+    provisioningError: v.optional(v.string()),
+    provisionedAt: v.optional(v.number()),
+    provisionedOrganizationId: v.optional(v.string()),
+    provisionedBranchId: v.optional(v.string()),
+    clerkOrganizationId: v.optional(v.string()),
+    clerkInvitationId: v.optional(v.string()),
   })
     .index("by_application_key", ["applicationKey"])
     .index("by_status", ["status"])
