@@ -20,7 +20,7 @@ This is one implementation program. Use one feature branch, make logical checkpo
 - `apps/web/src/lib/api/client.ts` selects `ConvexGymOSApi` for Convex mode and keeps `MockGymOSApi` for explicit preview/test mode; the adapter is not yet complete for every operational page.
 - `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all four non-production inputs now configured.
 - Existing Playwright journeys use `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`, so they verify the deterministic preview path rather than the production Clerk-to-Convex path.
-- The latest GitHub Actions browser run failed only on a cold customer-signup navigation; the focused test passes locally with a 30-second route assertion. The full CI run must be rerun after these changes.
+- Manual GitHub Actions run `31257271522` passed the static/build checks, preview Playwright journeys, Convex codegen, and the authenticated Clerk-to-Convex smoke against the isolated staging deployment.
 
 ## Architectural authority
 

@@ -77,7 +77,7 @@ The trusted smoke is the production-shaped check: Playwright reuses a signed-in 
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
 ```
 
-The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the four CI secrets are now configured; the GitHub workflow remains a manual release-gate check.
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the five CI secrets are configured; manual GitHub Actions run `31257271522` passed all jobs on `main`.
 
 ## Convex deployment, seed, and rollback
 
