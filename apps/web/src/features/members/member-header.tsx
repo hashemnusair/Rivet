@@ -1,10 +1,10 @@
 "use client";
 
-import { Archive, Banknote, CalendarClock, CalendarPlus, MoreHorizontal, Phone, Snowflake, Sun, WalletCards } from "lucide-react";
-import { useState } from "react";
+import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, MoreHorizontal, Pencil, Phone, Snowflake, Sun, WalletCards } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
-import { usePermissions } from "@/lib/providers/app-providers";
+import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { formatDate } from "@/lib/utils/dates";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
@@ -12,7 +12,8 @@ import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/sta
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,9 +24,9 @@ import {
 import { Monogram } from "@/components/ui/misc";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
-import { CancelMembershipDialog, ExtendDialog, FreezeDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
+import { CancelMembershipDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
 
-type DialogKind = "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "cancel" | "archive" | null;
+type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "cancel" | "archive" | null;
 
 /**
  * Member 360 header: identity, current commercial state, and every action a
@@ -41,15 +42,36 @@ export function MemberHeader({
   branchName: string;
 }) {
   const { can } = usePermissions();
+  const { session } = useApp();
   const invalidate = useInvalidate();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [archiveReason, setArchiveReason] = useState("");
+  const [editForm, setEditForm] = useState({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "" });
+
+  useEffect(() => {
+    if (dialog === "edit") setEditForm({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "" });
+  }, [dialog, member]);
 
   const archive = useApiMutation((api) => api.archiveMember(member.id, { reason: archiveReason }), {
     onSuccess: async () => {
       toast.success("Member archived.");
       await invalidate();
       setDialog(null);
+    },
+  });
+  const updateProfile = useApiMutation((api) => api.updateMember(member.id, {
+    ...editForm,
+    fullNameAr: editForm.fullNameAr.trim() || undefined,
+    email: editForm.email.trim() || undefined,
+    emergencyContactName: editForm.emergencyContactName.trim() || undefined,
+    emergencyContactPhone: editForm.emergencyContactPhone.trim() || undefined,
+    notes: editForm.notes.trim() || undefined,
+    tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+  }), {
+    onSuccess: async () => {
+      toast.success("Member profile updated — audited.");
+      setDialog(null);
+      await invalidate();
     },
   });
 
@@ -133,7 +155,7 @@ export function MemberHeader({
               <Banknote /> Collect
             </Button>
           ) : null}
-          {can("memberships.freeze") || can("memberships.override_dates") || can("members.archive") ? (
+          {can("members.write") || can("memberships.freeze") || can("memberships.override_dates") || can("members.archive") ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="secondary" size="icon" aria-label="More actions">
@@ -141,6 +163,11 @@ export function MemberHeader({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {can("members.write") ? (
+                  <DropdownMenuItem onClick={() => setDialog("edit")}>
+                    <Pencil /> Edit profile…
+                  </DropdownMenuItem>
+                ) : null}
                 {can("memberships.freeze") && currentMembership && !currentMembership.activeFreeze && (currentMembership.status === "active" || currentMembership.status === "expiring") ? (
                   <DropdownMenuItem onClick={() => setDialog("freeze")}>
                     <Snowflake /> Freeze…
@@ -154,6 +181,11 @@ export function MemberHeader({
                 {can("memberships.override_dates") && currentMembership && !currentMembership.cancelledAt ? (
                   <DropdownMenuItem onClick={() => setDialog("extend")}>
                     <CalendarPlus /> Extend…
+                  </DropdownMenuItem>
+                ) : null}
+                {can("memberships.override_dates") && currentMembership && !currentMembership.cancelledAt && (session?.branches.length ?? 0) > 1 ? (
+                  <DropdownMenuItem onClick={() => setDialog("transfer")}>
+                    <ArrowRightLeft /> Transfer branch…
                   </DropdownMenuItem>
                 ) : null}
                 {can("memberships.freeze") && currentMembership && !currentMembership.cancelledAt ? (
@@ -208,9 +240,47 @@ export function MemberHeader({
           />
           <UnfreezeDialog open={dialog === "unfreeze"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Freeze ended.")} />
           <ExtendDialog open={dialog === "extend"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership extended.")} />
+          <TransferMembershipDialog open={dialog === "transfer"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} branches={session?.branches ?? []} onDone={() => toast.success("Membership transferred.")} />
           <CancelMembershipDialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership cancelled.")} />
         </>
       ) : null}
+
+      <Dialog open={dialog === "edit"} onOpenChange={(value) => !value && setDialog(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit member profile</DialogTitle>
+            <DialogDescription>Identity, contact, branch and service notes. Changes are authorized and audited server-side.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Full name" required><Input value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
+              <Field label="Arabic name"><Input dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
+              <Field label="Phone" required><Input dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
+              <Field label="Email"><Input type="email" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+              <Field label="Home branch">
+                <Select value={editForm.homeBranchId} onValueChange={(value) => setEditForm((form) => ({ ...form, homeBranchId: value }))}>
+                  <SelectTrigger aria-label="Home branch"><SelectValue /></SelectTrigger>
+                  <SelectContent>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="Preferred language">
+                <Select value={editForm.preferredLanguage} onValueChange={(value) => setEditForm((form) => ({ ...form, preferredLanguage: value as "en" | "ar" }))}>
+                  <SelectTrigger aria-label="Preferred language"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent>
+                </Select>
+              </Field>
+              <Field label="Emergency contact"><Input value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
+              <Field label="Emergency phone"><Input dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
+            </div>
+            <Field label="Tags" hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder="VIP, morning, personal training" /></Field>
+            <Field label="Service notes"><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Non-sensitive operational context for staff" /></Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>
+            <Button disabled={editForm.fullName.trim().length < 2 || editForm.phone.trim().length < 5} loading={updateProfile.isPending} onClick={() => updateProfile.mutate()}>Save profile</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialog === "archive"} onOpenChange={(v) => !v && setDialog(null)}>
         <DialogContent>
@@ -238,4 +308,3 @@ export function MemberHeader({
     </header>
   );
 }
-

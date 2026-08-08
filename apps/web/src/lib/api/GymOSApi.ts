@@ -46,6 +46,7 @@ import type {
   Offer,
   OpenCashShiftInput,
   OrganizationSettings,
+  OperationalPolicies,
   OverrideCheckInInput,
   Page,
   PaymentMethod,
@@ -56,6 +57,7 @@ import type {
   RefundPaymentInput,
   RenewalQueueItem,
   RenewMembershipInput,
+  TransferMembershipInput,
   RoleDefinition,
   RoleKey,
   Session,
@@ -395,6 +397,7 @@ export interface GymOSApi {
   unfreezeMembership(membershipId: UUID, input: { reason: string }): Promise<MembershipDetail>;
   extendMembership(membershipId: UUID, input: ExtendMembershipInput): Promise<MembershipDetail>;
   cancelMembership(membershipId: UUID, input: CancelMembershipInput): Promise<MembershipDetail>;
+  transferMembership(membershipId: UUID, input: TransferMembershipInput): Promise<MembershipDetail>;
 
   // CRM
   listLeads(query: LeadListQuery): Promise<Page<LeadSummary>>;
@@ -446,6 +449,7 @@ export interface GymOSApi {
   updateOrganizationSettings(input: UpdateOrganizationSettingsInput): Promise<OrganizationSettings>;
   updatePaymentMethods(input: PaymentMethod[]): Promise<OrganizationSettings>;
   updateNotificationSettings(input: NotificationSettings): Promise<OrganizationSettings>;
+  updateOperationalPolicies(input: OperationalPolicies): Promise<OrganizationSettings>;
   listBranches(): Promise<Branch[]>;
   upsertBranch(input: { id?: UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<Branch>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;

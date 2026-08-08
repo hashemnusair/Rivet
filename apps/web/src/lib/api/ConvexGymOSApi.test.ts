@@ -53,6 +53,22 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(mutationArgs).toMatchObject({ operation: "payments.create", input: { idempotencyKey: "payment-key-1" } });
   });
 
+  it("routes operational policies and branch transfers through audited domain mutations", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => calls.push(args)));
+    const days = Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: true, opensAt: "06:00", closesAt: "23:00" }])) as import("@/lib/domain/types").OperationalPolicies["operatingHours"][number]["days"];
+
+    await api.updateOperationalPolicies({
+      entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: true },
+      membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
+      operatingHours: [{ branchId: session.activeBranchId!, days }],
+    });
+    await api.transferMembership("membership-1", { branchId: "branch-2", reason: "Member relocated" });
+
+    expect(calls[0]).toMatchObject({ operation: "settings.operationalPolicies", input: { operationalPolicies: { entry: { enforceOperatingHours: true } } } });
+    expect(calls[1]).toMatchObject({ operation: "memberships.transfer", input: { membershipId: "membership-1", branchId: "branch-2", reason: "Member relocated" } });
+  });
+
   it("keeps platform application review behind the platform query/action boundary", async () => {
     const application = {
       id: "20000000-0000-4a00-8a00-000000000001",

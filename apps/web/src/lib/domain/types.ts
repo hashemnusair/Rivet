@@ -281,6 +281,7 @@ export type AdjustmentType =
   | "unfreeze"
   | "extension"
   | "cancellation"
+  | "branch_transfer"
   | "visit_adjustment"
   | "date_correction";
 
@@ -353,6 +354,11 @@ export interface ExtendMembershipInput {
 }
 
 export interface CancelMembershipInput {
+  reason: string;
+}
+
+export interface TransferMembershipInput {
+  branchId: UUID;
   reason: string;
 }
 
@@ -533,6 +539,7 @@ export type TimelineEventType =
   | "membership_unfrozen"
   | "membership_extended"
   | "membership_cancelled"
+  | "membership_transferred"
   | "payment_collected"
   | "payment_refunded"
   | "payment_voided"
@@ -571,6 +578,7 @@ export type CheckInReasonCode =
   | "MEMBERSHIP_FROZEN"
   | "MEMBER_INACTIVE"
   | "DUPLICATE_SCAN"
+  | "OUTSIDE_OPERATING_HOURS"
   | "MANUAL_OVERRIDE";
 
 export interface CheckInLookupInput {
@@ -983,6 +991,36 @@ export interface OrganizationSettings {
   paymentMethods: PaymentMethod[];
   roles: RoleDefinition[];
   notifications: NotificationSettings;
+  operationalPolicies: OperationalPolicies;
+}
+
+export type WeekdayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+
+export interface OperatingHoursDay {
+  enabled: boolean;
+  opensAt: string;
+  closesAt: string;
+}
+
+export interface BranchOperatingHours {
+  branchId: UUID;
+  days: Record<WeekdayKey, OperatingHoursDay>;
+}
+
+export interface OperationalPolicies {
+  entry: {
+    outstandingBalance: "allow" | "warn" | "block";
+    expiryWarningDays: number;
+    duplicateScanWindowMinutes: number;
+    enforceOperatingHours: boolean;
+  };
+  membership: {
+    allowOverlappingMemberships: boolean;
+    renewalWindowDays: number;
+    minimumFreezeDays: number;
+    maximumExtensionDays: number;
+  };
+  operatingHours: BranchOperatingHours[];
 }
 
 export interface NotificationSettings {

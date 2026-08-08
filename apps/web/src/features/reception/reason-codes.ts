@@ -12,5 +12,6 @@ export const REASON_CODE_LABELS: Record<CheckInReasonCode, string> = {
   MEMBERSHIP_FROZEN: "Membership is frozen",
   MEMBER_INACTIVE: "Member account is not active",
   DUPLICATE_SCAN: "Already scanned moments ago",
+  OUTSIDE_OPERATING_HOURS: "Branch is outside operating hours",
   MANUAL_OVERRIDE: "Let in by manual override",
 };

@@ -20,6 +20,76 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const transferSchema = z.object({
+  branchId: z.string().min(1, "Choose a destination branch"),
+  reason: z.string().min(3, "A reason is required"),
+});
+type TransferValues = z.infer<typeof transferSchema>;
+
+export function TransferMembershipDialog({
+  open,
+  onOpenChange,
+  membership,
+  branches,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  membership: MembershipSummary;
+  branches: Array<{ id: string; name: string; code: string }>;
+  onDone?: () => void;
+}) {
+  const invalidate = useInvalidate();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const destinations = branches.filter((branch) => branch.id !== membership.homeBranchId);
+  const form = useForm<TransferValues>({ resolver: zodResolver(transferSchema), defaultValues: { branchId: "", reason: "" } });
+  useEffect(() => {
+    if (open) {
+      form.reset({ branchId: destinations[0]?.id ?? "", reason: "" });
+      setServerError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const mutation = useApiMutation((api, values: TransferValues) => api.transferMembership(membership.id, values), {
+    onSuccess: async () => {
+      await invalidate();
+      onOpenChange(false);
+      onDone?.();
+    },
+    onError: (error) => setServerError(isApiError(error) ? error.message : "Transfer failed."),
+  });
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Transfer membership</DialogTitle>
+          <DialogDescription>Moves the membership and member home branch. The old and new branches are preserved in the immutable audit trail.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+          <DialogBody className="space-y-4">
+            <Field label="Destination branch" required error={form.formState.errors.branchId?.message}>
+              <Select value={form.watch("branchId")} onValueChange={(value) => form.setValue("branchId", value, { shouldValidate: true })}>
+                <SelectTrigger aria-label="Destination branch"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>{destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            {destinations.length === 0 ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">No other active branch is available to your account.</p> : null}
+            <Field label="Reason" required error={form.formState.errors.reason?.message}>
+              <Textarea placeholder="e.g. Member relocated; confirmed by branch manager" {...form.register("reason")} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={destinations.length === 0}>Transfer membership</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const freezeSchema = z.object({
   startDate: z.string().min(1, "Required"),

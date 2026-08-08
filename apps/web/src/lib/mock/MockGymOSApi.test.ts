@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
-import type { MemberSummary } from "@/lib/domain/types";
+import type { MemberSummary, OperationalPolicies } from "@/lib/domain/types";
 import { partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
@@ -24,6 +24,11 @@ async function anyMemberWithBalance(): Promise<MemberSummary> {
   const member = page.items.find((m) => m.outstanding.amount > 0);
   if (!member) throw new Error("seed should contain a member with an outstanding balance");
   return member;
+}
+
+async function freshMemberForSale(): Promise<MemberSummary> {
+  const session = await api.getSession();
+  return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en" })).member;
 }
 
 describe("session and role switching", () => {
@@ -280,7 +285,7 @@ describe("collecting a payment", () => {
 
 describe("membership sale and renewal", () => {
   it("sells a membership with a payment and records charge, receipt and timeline together", async () => {
-    const member = (await api.listMembers({ pageSize: 1 })).items[0]!;
+    const member = await freshMemberForSale();
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
 
     const result = await api.createMembershipSale({
@@ -301,7 +306,7 @@ describe("membership sale and renewal", () => {
   });
 
   it("leaves an outstanding balance when the member pays a deposit only", async () => {
-    const member = (await api.listMembers({ pageSize: 1 })).items[0]!;
+    const member = await freshMemberForSale();
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
     const deposit = money(Math.floor(plan.basePrice.amount / 4));
 
@@ -317,7 +322,7 @@ describe("membership sale and renewal", () => {
   });
 
   it("applies a discount to the charge total and keeps the reason", async () => {
-    const member = (await api.listMembers({ pageSize: 1 })).items[0]!;
+    const member = await freshMemberForSale();
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
     const discount = fromMajor(10);
 
@@ -362,6 +367,24 @@ describe("membership sale and renewal", () => {
 });
 
 describe("membership adjustments", () => {
+  it("transfers a membership and member home branch with an audit trail", async () => {
+    const session = await api.getSession();
+    const active = await api.listMemberships({ status: "active", pageSize: 50 });
+    const candidates = await Promise.all(active.items.map((membership) => api.getMembership(membership.id)));
+    const membership = candidates.find((candidate) => candidate.plan.branchAccess === "all")!;
+    const destination = session.branches.find((branch) => branch.id !== membership.homeBranchId)!;
+
+    const transferred = await api.transferMembership(membership.id, { branchId: destination.id, reason: "Member relocated closer to this branch" });
+
+    expect(transferred.homeBranchId).toBe(destination.id);
+    expect(transferred.member.homeBranchId).toBe(destination.id);
+    expect(transferred.adjustments.at(-1)).toMatchObject({ type: "branch_transfer", reason: "Member relocated closer to this branch" });
+    const timeline = await api.listMemberTimeline(membership.member.id, { pageSize: 50 });
+    expect(timeline.items.some((event) => event.type === "membership_transferred")).toBe(true);
+    const audit = await api.listAuditEvents({ category: "memberships", pageSize: 50 });
+    expect(audit.items.some((event) => event.action === "membership.branch_transfer" && event.entityId === membership.id)).toBe(true);
+  });
+
   it("freezes a membership, writes an adjustment and an audit event", async () => {
     const active = await api.listMemberships({ status: "active", pageSize: 5 });
     const membership = active.items[0]!;
@@ -406,6 +429,33 @@ describe("membership adjustments", () => {
 
     expect(detail.status).toBe("cancelled");
     expect(detail.cancellationReason).toBe("Member relocated to Dubai");
+  });
+});
+
+describe("operational policies", () => {
+  it("persists entry, membership, and branch-hour rules and audits the change", async () => {
+    const settings = await api.getOrganizationSettings();
+    const branch = settings.branches[0]!;
+    const days = Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: day !== "fri", opensAt: "06:00", closesAt: "23:00" }])) as OperationalPolicies["operatingHours"][number]["days"];
+    const updated = await api.updateOperationalPolicies({
+      entry: { outstandingBalance: "block", expiryWarningDays: 10, duplicateScanWindowMinutes: 4, enforceOperatingHours: true },
+      membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
+      operatingHours: [{ branchId: branch.id, days }],
+    });
+
+    expect(updated.operationalPolicies.entry.outstandingBalance).toBe("block");
+    expect(updated.operationalPolicies.operatingHours[0]?.branchId).toBe(branch.id);
+    const audit = await api.listAuditEvents({ category: "settings", pageSize: 50 });
+    expect(audit.items.some((event) => event.action === "settings.operational_policies")).toBe(true);
+  });
+
+  it("enforces the configured minimum freeze and maximum extension", async () => {
+    const settings = await api.getOrganizationSettings();
+    await api.updateOperationalPolicies({ ...settings.operationalPolicies, membership: { ...settings.operationalPolicies.membership, minimumFreezeDays: 10, maximumExtensionDays: 20 } });
+    const active = await api.listMemberships({ status: "active", pageSize: 10 });
+    const membership = active.items[0]!;
+    await expect(api.freezeMembership(membership.id, { startDate: "2026-08-10", endDate: "2026-08-14", reason: "Short trip" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.extendMembership(membership.id, { days: 21, reason: "Too long" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 });
 

@@ -57,6 +57,22 @@ const DEFAULT_NOTIFICATIONS = {
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",
 };
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const DEFAULT_OPERATIONAL_POLICIES = {
+  entry: {
+    outstandingBalance: "warn",
+    expiryWarningDays: 7,
+    duplicateScanWindowMinutes: 2,
+    enforceOperatingHours: false,
+  },
+  membership: {
+    allowOverlappingMemberships: false,
+    renewalWindowDays: 14,
+    minimumFreezeDays: 1,
+    maximumExtensionDays: 365,
+  },
+  operatingHours: [],
+};
 // The public SaaS catalog is configuration, not demo tenant data. Production
 // intentionally starts without the Forge reference seed, so keep the approved
 // launch plans available until an operator has created editable catalog rows.
@@ -151,6 +167,34 @@ function todayIn(timezone: string): string {
   } catch {
     return new Date().toISOString().slice(0, 10);
   }
+}
+
+function localSchedulePosition(timezone: string): { weekday: string; time: string } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return { weekday: stringValue(values.weekday).slice(0, 3).toLowerCase(), time: `${values.hour}:${values.minute}` };
+  } catch {
+    const now = new Date();
+    return { weekday: WEEKDAYS[now.getUTCDay()] ?? "sun", time: now.toISOString().slice(11, 16) };
+  }
+}
+
+function isBranchOpen(operationalPolicies: Data, branchId: string, timezone: string): boolean {
+  if (!booleanValue(data(operationalPolicies.entry).enforceOperatingHours)) return true;
+  const schedule = arrayValue(operationalPolicies.operatingHours).map(data).find((item) => item.branchId === branchId);
+  if (!schedule) return true;
+  const position = localSchedulePosition(timezone);
+  const hours = data(data(schedule.days)[position.weekday]);
+  if (!booleanValue(hours.enabled)) return false;
+  return position.time >= stringValue(hours.opensAt) && position.time < stringValue(hours.closesAt);
 }
 
 function businessDate(value: string, timezone: string): string {
@@ -393,9 +437,59 @@ async function settingsRecord(ctx: ReadContext, actor: ActorContext): Promise<Do
 async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const record = await settingsRecord(ctx, actor);
   const current = data(record?.data);
+  const operational = data(current.operationalPolicies);
   return {
     paymentMethods: current.paymentMethods ?? DEFAULT_PAYMENT_METHODS,
     notifications: current.notifications ?? DEFAULT_NOTIFICATIONS,
+    operationalPolicies: {
+      entry: { ...DEFAULT_OPERATIONAL_POLICIES.entry, ...data(operational.entry) },
+      membership: { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operational.membership) },
+      operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
+    },
+  };
+}
+
+async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContext, raw: unknown): Promise<Data> {
+  const value = data(raw);
+  const entry = data(value.entry);
+  const membership = data(value.membership);
+  const outstandingBalance = stringValue(entry.outstandingBalance, "warn");
+  if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Outstanding-balance policy is invalid.", { correlationId: actor.correlationId });
+  const expiryWarningDays = numberValue(entry.expiryWarningDays, 7);
+  const duplicateScanWindowMinutes = numberValue(entry.duplicateScanWindowMinutes, 2);
+  const renewalWindowDays = numberValue(membership.renewalWindowDays, 14);
+  const minimumFreezeDays = numberValue(membership.minimumFreezeDays, 1);
+  const maximumExtensionDays = numberValue(membership.maximumExtensionDays, 365);
+  const integerInRange = (candidate: number, minimum: number, maximum: number) => Number.isInteger(candidate) && candidate >= minimum && candidate <= maximum;
+  if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "Expiry warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(duplicateScanWindowMinutes, 1, 15)) domainError("VALIDATION_ERROR", "Duplicate-scan window must be between 1 and 15 minutes.", { correlationId: actor.correlationId });
+  if (!integerInRange(renewalWindowDays, 1, 90)) domainError("VALIDATION_ERROR", "Renewal window must be between 1 and 90 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(minimumFreezeDays, 1, 30)) domainError("VALIDATION_ERROR", "Minimum freeze must be between 1 and 30 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
+  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const operatingHours: Data[] = [];
+  for (const rawSchedule of arrayValue(value.operatingHours)) {
+    const schedule = data(rawSchedule);
+    const branchId = recordId(schedule.branchId);
+    assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+    const days = data(schedule.days);
+    const validatedDays: Data = {};
+    for (const weekday of WEEKDAYS) {
+      const day = data(days[weekday]);
+      const enabled = booleanValue(day.enabled);
+      const opensAt = stringValue(day.opensAt, "06:00");
+      const closesAt = stringValue(day.closesAt, "23:00");
+      if (!timePattern.test(opensAt) || !timePattern.test(closesAt) || (enabled && opensAt >= closesAt)) {
+        domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { correlationId: actor.correlationId });
+      }
+      validatedDays[weekday] = { enabled, opensAt, closesAt };
+    }
+    operatingHours.push({ branchId, days: validatedDays });
+  }
+  return {
+    entry: { outstandingBalance, expiryWarningDays, duplicateScanWindowMinutes, enforceOperatingHours: booleanValue(entry.enforceOperatingHours) },
+    membership: { allowOverlappingMemberships: booleanValue(membership.allowOverlappingMemberships), renewalWindowDays, minimumFreezeDays, maximumExtensionDays },
+    operatingHours,
   };
 }
 
@@ -1102,6 +1196,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         paymentMethods: settings.paymentMethods,
         roles: await roleViews(ctx, actor),
         notifications: settings.notifications,
+        operationalPolicies: settings.operationalPolicies,
       };
     }
     case "branches.list":
@@ -1230,6 +1325,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "renewal.queue": {
       requirePermission(actor, "crm.read");
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const policies = (await settingsData(ctx, actor)).operationalPolicies;
+      const renewalWindowDays = numberValue(data(data(policies).membership).renewalWindowDays, 14);
       const items: Data[] = [];
       const memberships = await membershipRecords(ctx, actor);
       const memberRows = await memberRecords(ctx, actor);
@@ -1242,7 +1339,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         const status = statusOfMembership(term, today);
         if (input.bucket === "expired") {
           if (status !== "expired" || daysUntil < -45) continue;
-        } else if (!(status === "expiring" || (status === "active" && daysUntil <= 14))) continue;
+        } else if (!(status === "expiring" || (status === "active" && daysUntil <= renewalWindowDays))) continue;
         const memberSummary = await toMemberSummary(ctx, actor, member);
         const membershipSummary = await toMembershipSummary(ctx, actor, term);
         const calls = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === member.id && event.type === "call_attempt").sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
@@ -1396,15 +1493,20 @@ function peakHour(rows: Data[], timezone: string): string {
 }
 
 async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Data, branchId: string, forCreation: boolean): Promise<Data> {
+  const policies = (await settingsData(ctx, actor)).operationalPolicies;
+  const entryPolicy = data(data(policies).entry);
   const membership = await currentMembership(ctx, actor, stringValue(member.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
   const checks = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data));
-  const duplicate = checks.some((checkin) => checkin.memberId === member.id && checkin.branchId === branchId && checkin.decision !== "blocked" && Date.now() - new Date(stringValue(checkin.occurredAt)).getTime() < 2 * 60_000);
+  const duplicateWindow = numberValue(entryPolicy.duplicateScanWindowMinutes, 2);
+  const duplicate = checks.some((checkin) => checkin.memberId === member.id && checkin.branchId === branchId && checkin.decision !== "blocked" && Date.now() - new Date(stringValue(checkin.occurredAt)).getTime() < duplicateWindow * 60_000);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const codes: string[] = [];
   let decision = "allowed";
   let message = "Membership valid. Welcome in.";
-  if (duplicate) {
+  if (!isBranchOpen(data(policies), branchId, actor.organization.timezone || TZ_FALLBACK)) {
+    decision = "blocked"; codes.push("OUTSIDE_OPERATING_HOURS"); message = "This branch is currently closed. A manager override is required for entry.";
+  } else if (duplicate) {
     decision = "blocked"; codes.push("DUPLICATE_SCAN"); message = "Already checked in moments ago. Duplicate scan ignored.";
   } else if (stringValue(member.status) !== "active") {
     decision = "blocked"; codes.push("MEMBER_INACTIVE"); message = "This member account is not active.";
@@ -1425,14 +1527,20 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
         decision = "blocked"; codes.push("WRONG_BRANCH"); message = "This membership does not include access to this branch.";
       } else {
         const daysLeft = diffDays(today, stringValue(membership.endDate));
-        if (daysLeft <= 7) codes.push("EXPIRES_SOON");
-        if (amountOf(await outstandingForMember(ctx, actor, stringValue(member.id))) > 0) codes.push("OUTSTANDING_BALANCE");
+        if (daysLeft <= numberValue(entryPolicy.expiryWarningDays, 7)) codes.push("EXPIRES_SOON");
+        const outstanding = amountOf(await outstandingForMember(ctx, actor, stringValue(member.id))) > 0;
+        const balancePolicy = stringValue(entryPolicy.outstandingBalance, "warn");
+        if (outstanding && balancePolicy !== "allow") codes.push("OUTSTANDING_BALANCE");
+        if (outstanding && balancePolicy === "block") {
+          decision = "blocked";
+          message = "Entry blocked because this member has an outstanding balance.";
+        }
         if (codes.length > 0) {
-          decision = "warning";
+          if (decision !== "blocked") decision = "warning";
           const parts: string[] = [];
           if (codes.includes("EXPIRES_SOON")) parts.push(daysLeft === 0 ? "membership expires today" : `membership expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`);
           if (codes.includes("OUTSTANDING_BALANCE")) parts.push("outstanding balance due");
-          message = `Allowed with notice — ${parts.join("; ")}.`;
+          if (decision !== "blocked") message = `Allowed with notice — ${parts.join("; ")}.`;
         }
       }
     }
@@ -1790,8 +1898,20 @@ async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, i
   const roleDefinition = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", actor.role)).unique();
   const approvalPending = discount > roleDiscountLimit(actor.role, roleDefinition?.discountLimitMinor);
   const duration = stringValue(planData.kind) === "visits" ? numberValue(planData.visitValidityDays, 90) : numberValue(planData.durationDays, 30);
+  const endDate = addDays(startDate, duration);
+  const allowOverlappingMemberships = booleanValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).allowOverlappingMemberships);
+  if (!allowOverlappingMemberships) {
+    const overlaps = (await membershipRecords(ctx, actor)).map((candidate) => data(candidate.data)).some((candidate) =>
+      candidate.memberId === memberData.id &&
+      candidate.id !== previousMembershipId &&
+      !candidate.cancelledAt &&
+      startDate <= stringValue(candidate.endDate) &&
+      stringValue(candidate.startDate) <= endDate,
+    );
+    if (overlaps) domainError("CONFLICT", "This member already has a membership covering part of the selected term.", { correlationId: actor.correlationId });
+  }
   const membership = await insertRecord(ctx, actor, "membership", {
-    id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, planId: planData.id, homeBranchId: stringValue(memberData.homeBranchId), startDate, endDate: addDays(startDate, duration), totalVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, remainingVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, salePrice: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), discountReason: optionalString(input.discountReason), discountApprovalStatus: discount > 0 ? (approvalPending ? "pending" : "approved") : "none", soldById: publicUserId(actor.user), previousMembershipId, frozenDaysUsed: 0, freezes: [], adjustments: [], createdAt: isoNow(),
+    id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, planId: planData.id, homeBranchId: stringValue(memberData.homeBranchId), startDate, endDate, totalVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, remainingVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, salePrice: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), discountReason: optionalString(input.discountReason), discountApprovalStatus: discount > 0 ? (approvalPending ? "pending" : "approved") : "none", soldById: publicUserId(actor.user), previousMembershipId, frozenDaysUsed: 0, freezes: [], adjustments: [], createdAt: isoNow(),
   }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
   const total = price - discount;
   const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
@@ -1951,12 +2071,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const patch: Data = { ...input };
       delete patch.memberId;
-      if (patch.homeBranchId) {
-        const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId));
-        assertBranchAccess(actor, branch);
-      }
+      const homeBranch = patch.homeBranchId ? await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId)) : null;
+      if (patch.homeBranchId) assertBranchAccess(actor, homeBranch);
       const before = { fullName: data(record.data).fullName, phone: data(record.data).phone, email: data(record.data).email, homeBranchId: data(record.data).homeBranchId };
       const updated = await patchRecord(ctx, actor, record, patch);
+      if (homeBranch) await ctx.db.patch(record._id, { branchId: homeBranch._id, updatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "members", action: "member.update", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member profile updated", before, after: { fullName: updated.fullName, phone: updated.phone, email: updated.email, homeBranchId: updated.homeBranchId }, branchId: optionalString(updated.homeBranchId) });
       return await toMemberDetail(ctx, actor, updated);
     }
@@ -2027,6 +2146,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const planData = data(plan.data);
       const days = diffDays(stringValue(input.startDate), stringValue(input.endDate)) + 1;
       if (days <= 0) domainError("VALIDATION_ERROR", "Freeze end must be on or after the start date.", { correlationId: actor.correlationId });
+      const minimumFreezeDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).minimumFreezeDays, 1);
+      if (days < minimumFreezeDays) domainError("VALIDATION_ERROR", `A freeze must be at least ${minimumFreezeDays} day${minimumFreezeDays === 1 ? "" : "s"}.`, { correlationId: actor.correlationId });
       const allowance = numberValue(planData.freezeAllowanceDays) - numberValue(value.frozenDaysUsed);
       if (days > allowance) domainError("FREEZE_ALLOWANCE_EXCEEDED", `This plan allows ${numberValue(planData.freezeAllowanceDays)} freeze days total; ${Math.max(0, allowance)} remain.`, { correlationId: actor.correlationId });
       const freeze = { id: newPublicId(), membershipId: record.publicId, startDate: stringValue(input.startDate), endDate: stringValue(input.endDate), status: "active", reason: stringValue(input.reason), createdById: publicUserId(actor.user), createdAt: isoNow() };
@@ -2060,7 +2181,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "memberships.override_dates");
       requireReason(input.reason, actor.correlationId);
       const days = numberValue(input.days);
-      if (days <= 0 || days > 365) domainError("VALIDATION_ERROR", "Extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
+      const maximumExtensionDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).maximumExtensionDays, 365);
+      if (days <= 0 || days > maximumExtensionDays) domainError("VALIDATION_ERROR", `Extension must be between 1 and ${maximumExtensionDays} days.`, { correlationId: actor.correlationId });
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const newEndDate = addDays(stringValue(value.endDate), days);
@@ -2081,6 +2203,37 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.cancel", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Membership cancelled", reason: stringValue(input.reason), before: { status: value.status ?? "active" }, after: { status: "cancelled" }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
+    }
+    case "memberships.transfer": {
+      requirePermission(actor, "memberships.override_dates");
+      requireReason(input.reason, actor.correlationId);
+      const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      const value = data(record.data);
+      const status = statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK));
+      if (["cancelled", "expired", "depleted"].includes(status)) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      const destinationBranchId = recordId(input.branchId);
+      const destination = await branchByPublicId(ctx, actor.organization._id, destinationBranchId);
+      assertBranchAccess(actor, destination);
+      if (!destination || !destination.active || destination.status === "inactive") domainError("NOT_FOUND", "Destination branch not found or inactive.", { correlationId: actor.correlationId });
+      const previousBranchId = stringValue(value.homeBranchId);
+      if (previousBranchId === destinationBranchId) domainError("VALIDATION_ERROR", "Membership is already assigned to this branch.", { correlationId: actor.correlationId });
+      const plan = await recordOf(ctx, actor, "plan", stringValue(value.planId));
+      const planData = data(plan.data);
+      if (stringValue(planData.branchAccess, "all") === "selected" && !arrayValue(planData.branchIds).map(String).includes(destinationBranchId)) {
+        domainError("VALIDATION_ERROR", "This membership plan is not available at the destination branch.", { correlationId: actor.correlationId });
+      }
+      const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "branch_transfer", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, approvalStatus: "not_required", createdAt: isoNow() };
+      const nextValue = { ...value, homeBranchId: destinationBranchId, adjustments: [...arrayValue(value.adjustments), adjustment] };
+      await ctx.db.patch(record._id, { branchId: destination._id, data: nextValue, updatedAt: Date.now() });
+      const member = await recordOf(ctx, actor, "member", stringValue(value.memberId));
+      const memberValue = data(member.data);
+      if (stringValue(memberValue.homeBranchId) === previousBranchId) {
+        await ctx.db.patch(member._id, { branchId: destination._id, data: { ...memberValue, homeBranchId: destinationBranchId }, updatedAt: Date.now() });
+      }
+      const previousBranch = await branchByPublicId(ctx, actor.organization._id, previousBranchId);
+      await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
+      await insertAudit(ctx, actor, { category: "memberships", action: "membership.branch_transfer", entityType: "membership", entityId: record.publicId, entityLabel: `${memberValue.fullName} · ${memberValue.memberNumber}`, summary: `Transferred ${previousBranch?.name ?? "branch"} → ${destination.name}`, reason: stringValue(input.reason), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, branchId: destinationBranchId });
+      return await toMembershipDetail(ctx, actor, nextValue);
     }
     case "leads.create": {
       requirePermission(actor, "crm.write");
@@ -2319,6 +2472,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "settings", action: "settings.notifications", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Notification settings updated" });
       return await settingsView(ctx, actor);
     }
+    case "settings.operationalPolicies": {
+      requirePermission(actor, "settings.manage");
+      const settings = await settingsRecord(ctx, actor);
+      const before = (await settingsData(ctx, actor)).operationalPolicies;
+      const operationalPolicies = await validatedOperationalPolicies(ctx, actor, input.operationalPolicies ?? input);
+      const value = { ...(settings ? data(settings.data) : {}), operationalPolicies };
+      if (settings) await patchRecord(ctx, actor, settings, value);
+      else await insertRecord(ctx, actor, "settings", { id: "settings", ...value });
+      await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_policies", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Entry, membership, and operating-hour policies updated", before, after: operationalPolicies });
+      return await settingsView(ctx, actor);
+    }
     case "branches.upsert": {
       requirePermission(actor, "settings.manage");
       const inputId = optionalString(input.id);
@@ -2419,7 +2583,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 async function settingsView(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const settings = await settingsData(ctx, actor);
   const branches = await accessibleBranches(ctx, actor);
-  return { organization: organizationView(actor.organization), branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications };
+  return { organization: organizationView(actor.organization), branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies };
 }
 
 async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {

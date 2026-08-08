@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BranchesSection,
   NotificationsSection,
+  OperationalRulesSection,
   OrganizationSection,
   PaymentsSection,
   ReceiptsSection,
@@ -36,6 +37,7 @@ function SettingsPageInner() {
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="receipts">Receipts & tax</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="operations">Rules & hours</TabsTrigger>
           </TabsList>
           <TabsContent value="organization">
             <OrganizationSection />
@@ -57,6 +59,9 @@ function SettingsPageInner() {
           </TabsContent>
           <TabsContent value="notifications">
             <NotificationsSection />
+          </TabsContent>
+          <TabsContent value="operations">
+            <OperationalRulesSection />
           </TabsContent>
         </Tabs>
       </Gate>

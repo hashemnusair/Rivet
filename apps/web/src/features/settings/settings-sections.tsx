@@ -7,7 +7,7 @@ import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PERMISSIONS, ROLE_LABELS } from "@/lib/domain/permissions";
-import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser } from "@/lib/domain/types";
+import type { Branch, NotificationSettings, OperationalPolicies, PaymentMethod, RoleKey, StaffUser, WeekdayKey } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
@@ -769,6 +769,137 @@ export function NotificationsSection() {
         </div>
         <p className="mt-2 text-[11.5px] text-ink-3">Messages queued during quiet hours are delivered after they end.</p>
       </section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Operational rules & hours
+// ---------------------------------------------------------------------------
+const WEEKDAY_ROWS: Array<{ key: WeekdayKey; label: string }> = [
+  { key: "sun", label: "Sunday" },
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+];
+
+function defaultOperatingDays(): OperationalPolicies["operatingHours"][number]["days"] {
+  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, {
+    enabled: key !== "fri",
+    opensAt: key === "sat" ? "07:00" : "06:00",
+    closesAt: key === "sat" ? "22:00" : "23:00",
+  }])) as OperationalPolicies["operatingHours"][number]["days"];
+}
+
+export function OperationalRulesSection() {
+  const invalidate = useInvalidate();
+  const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
+  const [policies, setPolicies] = useState<OperationalPolicies | null>(null);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+
+  useEffect(() => {
+    const settings = settingsQuery.data;
+    if (!settings) return;
+    const branchIds = settings.branches.filter((branch) => branch.status === "active").map((branch) => branch.id);
+    setPolicies({
+      ...settings.operationalPolicies,
+      operatingHours: branchIds.map((branchId) => settings.operationalPolicies.operatingHours.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultOperatingDays() }),
+    });
+    setSelectedBranchId((current) => branchIds.includes(current) ? current : (branchIds[0] ?? ""));
+  }, [settingsQuery.data]);
+
+  const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
+    onSuccess: async () => {
+      toast.success("Operational rules saved and audited.");
+      await invalidate([qk.settings, qk.renewalQueue({}), qk.checkIns({})]);
+    },
+    onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save operational rules."),
+  });
+
+  if (settingsQuery.isLoading || !policies) return <Skeleton className="h-96 w-full" />;
+  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
+  const selectedSchedule = policies.operatingHours.find((schedule) => schedule.branchId === selectedBranchId);
+  const branches = settingsQuery.data?.branches.filter((branch) => branch.status === "active") ?? [];
+  const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
+    setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
+  const updateMembership = <K extends keyof OperationalPolicies["membership"]>(key: K, value: OperationalPolicies["membership"][K]) =>
+    setPolicies((current) => current ? { ...current, membership: { ...current.membership, [key]: value } } : current);
+  const updateHours = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["operatingHours"][number]["days"][WeekdayKey]>) =>
+    setPolicies((current) => current ? {
+      ...current,
+      operatingHours: current.operatingHours.map((schedule) => schedule.branchId === selectedBranchId ? {
+        ...schedule,
+        days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } },
+      } : schedule),
+    } : current);
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(440px,1.1fr)]">
+      <div className="space-y-5">
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Entry rules</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">These rules are evaluated by Convex for every QR scan and manual check-in.</p>
+          <div className="space-y-4">
+            <Field label="Outstanding balance">
+              <Select value={policies.entry.outstandingBalance} onValueChange={(value) => updateEntry("outstandingBalance", value as OperationalPolicies["entry"]["outstandingBalance"])}>
+                <SelectTrigger aria-label="Outstanding balance policy"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="allow">Allow silently</SelectItem>
+                  <SelectItem value="warn">Allow with warning</SelectItem>
+                  <SelectItem value="block">Block entry</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Expiry warning (days)"><Input type="number" min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} /></Field>
+              <Field label="Duplicate scan window"><Input type="number" min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} /></Field>
+            </div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+              <span><span className="block text-[13px] font-medium">Enforce operating hours</span><span className="block text-[11.5px] text-ink-3">Outside-hours entries require a manager override.</span></span>
+              <Switch checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} aria-label="Enforce operating hours" />
+            </label>
+          </div>
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Membership lifecycle</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">Guardrails for sales, renewals and sensitive date changes.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Renewal window"><Input type="number" min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(event.target.value))} /></Field>
+            <Field label="Minimum freeze"><Input type="number" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} /></Field>
+            <Field label="Maximum extension"><Input type="number" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} /></Field>
+          </div>
+          <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+            <span><span className="block text-[13px] font-medium">Allow overlapping memberships</span><span className="block text-[11.5px] text-ink-3">Off prevents accidental duplicate active terms.</span></span>
+            <Switch checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} aria-label="Allow overlapping memberships" />
+          </label>
+        </section>
+      </div>
+
+      <section className="panel self-start overflow-hidden">
+        <header className="border-b border-line p-5">
+          <h2 className="font-display text-[15px] font-semibold">Branch operating hours</h2>
+          <p className="mb-3 text-[12.5px] text-ink-3">Hours use the organization timezone and support a different schedule per branch.</p>
+          <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+            <SelectTrigger aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
+            <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </header>
+        <div className="divide-y divide-line">
+          {selectedSchedule ? WEEKDAY_ROWS.map(({ key, label }) => {
+            const day = selectedSchedule.days[key];
+            return (
+              <div key={key} className="grid grid-cols-[110px_1fr] items-center gap-3 px-5 py-2.5 sm:grid-cols-[110px_1fr_1fr]">
+                <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><Checkbox checked={day.enabled} onCheckedChange={(value) => updateHours(key, { enabled: value === true })} aria-label={`${label} open`} />{label}</label>
+                {day.enabled ? <><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></> : <span className="text-[12px] text-ink-3 sm:col-span-2">Closed</span>}
+              </div>
+            );
+          }) : <p className="p-5 text-[12.5px] text-ink-3">Create an active branch before setting hours.</p>}
+        </div>
+      </section>
+      <div className="xl:col-span-2 flex justify-end"><Button onClick={() => save.mutate(policies)} loading={save.isPending}>Save operational rules</Button></div>
     </div>
   );
 }

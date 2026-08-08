@@ -1864,6 +1864,21 @@ export function buildSeed(now: Date = new Date()): MockDb {
       quietHoursStart: "22:00",
       quietHoursEnd: "07:00",
     },
+    operationalPolicies: {
+      entry: {
+        outstandingBalance: "warn",
+        expiryWarningDays: 7,
+        duplicateScanWindowMinutes: 2,
+        enforceOperatingHours: false,
+      },
+      membership: {
+        allowOverlappingMemberships: false,
+        renewalWindowDays: 14,
+        minimumFreezeDays: 1,
+        maximumExtensionDays: 365,
+      },
+      operatingHours: [],
+    },
     members,
     memberships,
     plans: planDefs.map((p) => ({ ...p, activeSubscribers: 0 })),

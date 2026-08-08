@@ -35,7 +35,7 @@ import type {
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
 import { discountNeedsApproval, type Permission } from "@/lib/domain/permissions";
-import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable, EXPIRING_WINDOW_DAYS } from "@/lib/domain/status";
+import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
 import { money, zeroMoney } from "@/lib/utils/money";
@@ -1352,6 +1352,17 @@ export class MockGymOSApi implements GymOSApi {
     const approvalPending = discountNeedsApproval(this.db.roles, currentRole(this.db), discountMinor);
 
     const duration = plan.kind === "visits" ? (plan.visitValidityDays ?? 90) : (plan.durationDays ?? 30);
+    const endDate = addDays(args.startDate, duration);
+    if (!this.db.operationalPolicies.membership.allowOverlappingMemberships) {
+      const overlap = this.db.memberships.some((membership) =>
+        membership.memberId === member.id &&
+        membership.id !== args.previousMembershipId &&
+        !membership.cancelledAt &&
+        args.startDate <= membership.endDate &&
+        membership.startDate <= endDate,
+      );
+      if (overlap) throw ApiError.of(ERR.CONFLICT, "This member already has a membership covering part of the selected term.");
+    }
     const record: MembershipRecord = {
       id: mockUuid(),
       organizationId: this.db.organization.id,
@@ -1359,7 +1370,7 @@ export class MockGymOSApi implements GymOSApi {
       planId: plan.id,
       homeBranchId: member.homeBranchId,
       startDate: args.startDate,
-      endDate: addDays(args.startDate, duration),
+      endDate,
       totalVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
       remainingVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
       salePrice: money(priceMinor),
@@ -1497,6 +1508,7 @@ export class MockGymOSApi implements GymOSApi {
       const plan = this.db.plans.find((p) => p.id === record.planId)!;
       const days = diffDays(input.startDate, input.endDate) + 1;
       if (days <= 0) throw ApiError.of(ERR.VALIDATION, "Freeze end must be on or after the start date.");
+      if (days < this.db.operationalPolicies.membership.minimumFreezeDays) throw ApiError.of(ERR.VALIDATION, `A freeze must be at least ${this.db.operationalPolicies.membership.minimumFreezeDays} days.`);
       const remainingAllowance = plan.freezeAllowanceDays - record.frozenDaysUsed;
       if (days > remainingAllowance) {
         throw ApiError.of(
@@ -1613,7 +1625,8 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("memberships.override_dates");
       this.requireReason(input.reason);
-      if (input.days <= 0 || input.days > 365) throw ApiError.of(ERR.VALIDATION, "Extension must be between 1 and 365 days.");
+      const maximumExtensionDays = this.db.operationalPolicies.membership.maximumExtensionDays;
+      if (input.days <= 0 || input.days > maximumExtensionDays) throw ApiError.of(ERR.VALIDATION, `Extension must be between 1 and ${maximumExtensionDays} days.`);
       const record = this.db.memberships.find((m) => m.id === membershipId);
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       const oldEnd = record.endDate;
@@ -1697,6 +1710,62 @@ export class MockGymOSApi implements GymOSApi {
         before: { endDate: record.endDate },
         after: { status: "cancelled" },
         branchId: record.homeBranchId,
+      });
+      return this.getMembershipSync(record);
+    });
+  }
+
+  transferMembership(membershipId: T.UUID, input: T.TransferMembershipInput): Promise<T.MembershipDetail> {
+    return this.respond(() => {
+      this.require("memberships.override_dates");
+      this.requireReason(input.reason);
+      const record = this.db.memberships.find((membership) => membership.id === membershipId);
+      if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      if (record.cancelledAt) throw ApiError.of(ERR.VALIDATION, "Cancelled memberships cannot be transferred.");
+      const branch = this.db.branches.find((candidate) => candidate.id === input.branchId && candidate.status === "active");
+      if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Destination branch not found or inactive.");
+      if (!this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to the destination branch.");
+      const plan = this.db.plans.find((candidate) => candidate.id === record.planId);
+      if (plan?.branchAccess === "selected" && !plan.branchIds.includes(input.branchId)) {
+        throw ApiError.of(ERR.VALIDATION, "This membership plan is not available at the destination branch.");
+      }
+      if (record.homeBranchId === input.branchId) throw ApiError.of(ERR.VALIDATION, "Membership is already assigned to this branch.");
+      const previousBranchId = record.homeBranchId;
+      record.homeBranchId = input.branchId;
+      record.adjustments.push({
+        id: mockUuid(),
+        membershipId: record.id,
+        type: "branch_transfer",
+        reason: input.reason,
+        actorId: this.actor().id,
+        before: { branchId: previousBranchId },
+        after: { branchId: input.branchId },
+        approvalStatus: "not_required",
+        createdAt: nowISO(),
+      });
+      const member = this.db.members.find((candidate) => candidate.id === record.memberId)!;
+      if (member.homeBranchId === previousBranchId) member.homeBranchId = input.branchId;
+      const previousBranch = this.db.branches.find((candidate) => candidate.id === previousBranchId);
+      this.activity({
+        memberId: record.memberId,
+        type: "membership_transferred",
+        title: `Membership transferred to ${branch.name}`,
+        body: input.reason,
+        actorId: this.actor().id,
+        actorName: this.actor().name,
+        meta: { membershipId: record.id, previousBranchId, branchId: input.branchId },
+      });
+      this.audit({
+        category: "memberships",
+        action: "membership.branch_transfer",
+        entityType: "membership",
+        entityId: record.id,
+        entityLabel: `${member.fullName} · ${member.memberNumber}`,
+        summary: `Transferred ${previousBranch?.name ?? "branch"} → ${branch.name}`,
+        reason: input.reason,
+        before: { branchId: previousBranchId },
+        after: { branchId: input.branchId },
+        branchId: input.branchId,
       });
       return this.getMembershipSync(record);
     });
@@ -2045,7 +2114,7 @@ export class MockGymOSApi implements GymOSApi {
         if (query.bucket === "expired") {
           if (status !== "expired" || daysUntil < -45) continue;
         } else {
-          if (!(status === "expiring" || (status === "active" && daysUntil <= EXPIRING_WINDOW_DAYS))) continue;
+          if (!(status === "expiring" || (status === "active" && daysUntil <= this.db.operationalPolicies.membership.renewalWindowDays))) continue;
         }
         const calls = this.db.activities.filter((a) => a.memberId === record.memberId && a.type === "call_attempt");
         const openTask = this.db.tasks.find((t) => t.memberId === record.memberId && t.status === "open" && t.type === "renewal_call");
@@ -2904,6 +2973,7 @@ export class MockGymOSApi implements GymOSApi {
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
+      operationalPolicies: this.db.operationalPolicies,
     }));
   }
 
@@ -2933,6 +3003,7 @@ export class MockGymOSApi implements GymOSApi {
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
+      operationalPolicies: this.db.operationalPolicies,
     };
   }
 
@@ -2956,6 +3027,22 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("settings.manage");
       this.db.notificationSettings = input;
+      return this.getOrganizationSettingsSync();
+    });
+  }
+
+  updateOperationalPolicies(input: T.OperationalPolicies): Promise<T.OrganizationSettings> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.db.operationalPolicies = structuredClone(input);
+      this.audit({
+        category: "settings",
+        action: "settings.operational_policies",
+        entityType: "organization",
+        entityId: this.db.organization.id,
+        entityLabel: this.db.organization.name,
+        summary: "Entry, membership, and operating-hour policies updated",
+      });
       return this.getOrganizationSettingsSync();
     });
   }

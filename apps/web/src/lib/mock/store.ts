@@ -13,6 +13,7 @@ import type {
   MessageTemplate,
   Money,
   NotificationSettings,
+  OperationalPolicies,
   Offer,
   Organization,
   Payment,
@@ -92,6 +93,7 @@ export interface MockDb {
   roles: RoleDefinition[];
   paymentMethods: PaymentMethod[];
   notificationSettings: NotificationSettings;
+  operationalPolicies: OperationalPolicies;
   members: MemberRecord[];
   memberships: MembershipRecord[];
   plans: MembershipPlan[];

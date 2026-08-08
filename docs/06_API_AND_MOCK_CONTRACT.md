@@ -133,6 +133,7 @@ renewMembership(membershipId: string, input: RenewMembershipInput): Promise<Memb
 freezeMembership(membershipId: string, input: FreezeMembershipInput): Promise<MembershipDetail>
 extendMembership(membershipId: string, input: ExtendMembershipInput): Promise<MembershipDetail>
 cancelMembership(membershipId: string, input: CancelMembershipInput): Promise<MembershipDetail>
+transferMembership(membershipId: string, input: TransferMembershipInput): Promise<MembershipDetail>
 ```
 
 A sale result should include the membership, charge, optional payment/receipt, and timeline events created.
@@ -199,6 +200,7 @@ listAutomationExecutions(query: ExecutionQuery): Promise<Page<AutomationExecutio
 listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>
 getOrganizationSettings(): Promise<OrganizationSettings>
 updateOrganizationSettings(input: UpdateOrganizationSettingsInput): Promise<OrganizationSettings>
+updateOperationalPolicies(input: OperationalPolicies): Promise<OrganizationSettings>
 listUsers(query: UserListQuery): Promise<Page<StaffUser>>
 inviteUser(input: InviteUserInput): Promise<StaffUser>
 updateUserAccess(userId: string, input: UpdateUserAccessInput): Promise<StaffUser>
@@ -227,6 +229,7 @@ POST   /memberships/{id}/renewals
 POST   /memberships/{id}/freezes
 POST   /memberships/{id}/extensions
 POST   /memberships/{id}/cancellations
+POST   /memberships/{id}/branch-transfers
 
 GET    /leads
 POST   /leads
