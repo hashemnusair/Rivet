@@ -208,7 +208,9 @@ async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizat
     lastActiveAt: new Date(input.now).toISOString(),
     monthlyRevenueMinor: 0,
     targetOrganizationId: input.organizationPublicId,
-    isPublic: false,
+    // An approved, provisioned gym is part of the member discovery network by
+    // default. Platform admins can hide it later through the listing control.
+    isPublic: true,
     branches: [{ id: input.branchPublicId, name: input.branchName, area: "Amman", address: "", trialSlots: [] }],
     applicationId: input.applicationId,
   };

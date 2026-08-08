@@ -121,13 +121,14 @@ describe("ConvexGymOSApi contract boundary", () => {
       joinedAt: "2026-08-08",
       lastActiveAt: "2026-08-08T00:00:00.000Z",
       monthlyRevenueMinor: 0,
+      isPublic: true,
       branches: [],
     };
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth" })).resolves.toEqual(gym);
-    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth" } });
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false } });
   });
 
   it("keeps SaaS catalog edits behind the platform mutation boundary", async () => {

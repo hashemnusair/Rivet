@@ -75,8 +75,9 @@ describe("platform subscription controls", () => {
   it("updates a gym subscription and plan catalog in the shared platform snapshot", async () => {
     const before = await api.getPlatformSnapshot();
     const gym = before.gyms[0]!;
-    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth" });
-    expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth" });
+    expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(true);
+    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false });
+    expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth", isPublic: false });
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
 
     const plan = before.plans.find((item) => item.name === "Growth")!;

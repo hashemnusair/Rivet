@@ -33,6 +33,8 @@ export interface MarketplaceGym {
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;
+  /** Platform-only visibility flag; public API responses omit it. */
+  isPublic?: boolean;
   branches: MarketplaceBranch[];
 }
 

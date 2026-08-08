@@ -185,7 +185,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => this.platformGyms.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial"));
+    return this.respond(() => this.platformGyms.filter((gym) => (gym.isPublic ?? true) && (gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial")));
   }
 
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
@@ -388,6 +388,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
       if (input.status) gym.subscriptionStatus = input.status;
       if (input.plan) gym.rivetPlan = input.plan;
+      if (input.isPublic !== undefined) gym.isPublic = input.isPublic;
       gym.lastActiveAt = nowISO();
       return { ...gym, areas: [...gym.areas], amenities: [...gym.amenities], branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })) };
     });

@@ -315,6 +315,7 @@ export interface UpdatePlatformGymInput {
   gymId: string;
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
+  isPublic?: boolean;
 }
 
 export interface UpdatePlatformPlanInput {

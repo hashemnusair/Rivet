@@ -816,6 +816,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
     // Revenue is platform-private. Public discovery receives a zero placeholder
     // to preserve the existing view model without disclosing tenant finances.
     monthlyRevenueMinor: includePlatformFields ? numberValue(value.monthlyRevenueMinor) : 0,
+    ...(includePlatformFields ? { isPublic: booleanValue(value.isPublic) } : {}),
     branches: arrayValue(value.branches).map((item) => {
       const branch = data(item);
       return {
@@ -1836,11 +1837,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const gymId = recordId(input.gymId);
     const requestedStatus = optionalString(input.status);
     const requestedPlan = optionalString(input.plan);
+    const requestedPublic = input.isPublic === undefined ? undefined : booleanValue(input.isPublic);
     const statuses = new Set(["trial", "active", "overdue", "suspended"]);
     const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
     if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
     if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
-    if (!requestedStatus && !requestedPlan) domainError("VALIDATION_ERROR", "Choose a status or plan change.", { correlationId: request.correlationId });
+    if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
+    if (!requestedStatus && !requestedPlan && requestedPublic === undefined) domainError("VALIDATION_ERROR", "Choose a status, plan, or listing change.", { correlationId: request.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
@@ -1848,6 +1851,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ...current,
       ...(requestedStatus ? { subscriptionStatus: requestedStatus } : {}),
       ...(requestedPlan ? { rivetPlan: requestedPlan } : {}),
+      ...(requestedPublic !== undefined ? { isPublic: requestedPublic } : {}),
       lastActiveAt: isoNow(),
     };
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
@@ -1873,8 +1877,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       entityPublicId: gymId,
       entityLabel: stringValue(current.name, gymId),
       summary: "Updated gym subscription controls",
-      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan },
-      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan },
+      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan, isPublic: current.isPublic },
+      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan, isPublic: updated.isPublic },
       correlationId: admin.correlationId,
       occurredAt: Date.now(),
     });
