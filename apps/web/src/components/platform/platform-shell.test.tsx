@@ -31,6 +31,7 @@ vi.mock("@/lib/auth/rivet-identity", () => ({
 vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({
     platformAdminSignedIn: true,
+    previewSessionReady: true,
     experienceReady: true,
     signOutPlatformAdmin: state.clearPlatformSession,
   }),
