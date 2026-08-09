@@ -15,7 +15,7 @@ Baseline at the time this roadmap was written:
 - Architecture: Next.js App Router + Convex + Clerk + Vercel.
 - Production data access: `ConvexGymOSApi` behind `GymOSApi`.
 - Preview/test data access: explicit `MockGymOSApi` mode only.
-- Current automated baseline: 246 Vitest tests, 19 preview Playwright journeys, 2 credential-gated Convex journeys, passing typecheck, Convex typecheck, lint, and production build.
+- Current automated baseline: 248 Vitest tests, 19 preview Playwright journeys, 2 credential-gated Convex journeys, passing typecheck, Convex typecheck, lint, and production build.
 - Existing staged operational path: member creation → membership sale → payment → check-in → timeline/audit → disposable-member archive.
 - Existing free-trial path: requested → confirmed → completed/no-show/cancelled → converted, with CRM tasks, timeline entries, customer status, and audit facts.
 - Existing production surfaces include platform provisioning, gym settings, staff access, plans, members/import, CRM, reception, payments, shifts, member portal, automations, reporting, support, and audit.
