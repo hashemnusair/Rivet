@@ -59,11 +59,11 @@ The owner dashboard says **Both branches, consolidated** whenever the branch sel
 - Remove assumptions tied to the seeded Forge Fitness tenant.
 - Add component coverage for zero/loading, one, two, and three-or-more accessible branches plus an explicitly selected branch.
 
-## P1 — Expose optional email during lead capture
+## P1 — Fix lead-capture contact and owner fields
 
 ### Observed problem
 
-The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere.
+The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere. The owner selector also appeared blank during Production testing even though the current gym owner was silently assigned and later appeared on the lead card; its option query only requests active salespeople and therefore cannot render the selected owner identity.
 
 ### Completion criteria
 
@@ -71,8 +71,28 @@ The lead schema, API contract, persistence layer, detail screen, and duplicate-c
 - Keep phone-only lead creation valid; do not make email mandatory.
 - Persist and display the email in the lead context and carry it into the converted member record.
 - Include both phone and email in duplicate detection without leaking cross-tenant matches.
+- Ensure the owner selector visibly represents the value that will be saved. Include every legitimately assignable current user, or show a clear **Unassigned** value rather than silently persisting a hidden owner.
+- Define which roles may own leads and which roles may assign them, then enforce the same rules in both the selector and server authorization.
 - Define an authorized edit path for correcting or adding lead contact details after capture, with timeline/audit treatment appropriate to identity changes.
-- Add tests for phone-only, phone-plus-email, invalid email, normalization, conversion, and same-tenant/cross-tenant duplicate behavior.
+- Add tests for phone-only, phone-plus-email, invalid email, normalization, conversion, visible owner assignment, unassigned leads, and same-tenant/cross-tenant duplicate behavior.
+
+## P0 — Make offer delivery and status truthful
+
+### Observed problem
+
+The lead action says **Create offer**, its confirmation button says **Send offer**, the persisted offer immediately receives `status: "sent"`, and the timeline says **Offer sent**. The operation currently only creates an internal offer record and does not deliver an email, WhatsApp message, SMS, link, or document to the prospect. That wording creates a serious operational risk: staff can reasonably believe a revenue-critical offer reached a lead when nothing left RIVET.
+
+### Completion criteria
+
+- Separate **Record/draft offer** from **Send offer**; never claim an offer was sent solely because an internal record was created.
+- Let staff select an available delivery channel based on captured contact data, with a deliberate manual-delivery option when external messaging is not configured.
+- For provider delivery, persist queued, provider-accepted, delivered, failed, bounced, and retried states as appropriate; expose failures and safe retries to the operator.
+- For manual delivery, require an explicit confirmation and record who confirmed it, when, through which channel, and any safe external reference—without storing message credentials or sensitive provider payloads.
+- Generate a stable, branded offer view/document with plan, historical offered price, expiry, gym identity, and clear acceptance/contact instructions.
+- Keep offer price and plan history immutable after the offer is issued; later plan edits must not rewrite it.
+- Append accurate lead-timeline and audit facts for creation, delivery attempt, success/failure, expiry, acceptance, and conversion.
+- Add tests proving a failed or unattempted delivery can never display as **sent**.
+- Treat this as a release gate before real sales staff use the CRM.
 
 ## P1 — Build a branded transactional-email system
 
