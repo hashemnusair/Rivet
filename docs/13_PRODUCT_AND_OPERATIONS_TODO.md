@@ -1,6 +1,6 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 9 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 10 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
 ## How to use this file
 
@@ -13,15 +13,15 @@ Updated 9 August 2026. This is the single canonical backlog for confirmed bugs, 
 - Every fix must add or update a focused test and add its commit and evidence to the closure log.
 - Update an item's status and evidence when it changes; never erase the history of a release blocker.
 
-## P0 — Finish the disposable production onboarding
+## P0 — Supervised disposable production onboarding — completed 10 August 2026
 
 - [x] Accept the Clerk owner invitation in a private/incognito browser so the platform-admin and gym-owner sessions cannot mix.
 - [x] Confirm the invited identity resolves to the provisioned `Hashem Test` organization with the `owner` role and the first branch.
 - [x] Complete the first-owner setup: organization settings, branch details, and one membership plan.
 - [x] Exercise lead → member → membership → cash payment → receipt → check-in with disposable data.
 - [x] Confirm the member timeline contains conversion, profile creation, membership sale, payment, and check-in in chronological order.
-- [ ] Verify the relevant audit events, close the JOD 80.000 drawer without variance, and confirm daily reconciliation after reload.
-- [ ] Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
+- [x] Verify the relevant audit events, close the JOD 80.000 drawer without variance, and confirm daily reconciliation after reload.
+- [x] Hide the disposable tenant from the public directory and suspend its subscription after verification. Completed for the exact `Hashem Test` target on 10 August 2026. Do not run `seed:seedDemoTenant` in Production.
 
 ## P0 — Complete cash-shift recovery and Production verification
 
@@ -38,7 +38,7 @@ Opening the first Production cash shift succeeded in Convex, but the subsequent 
 - Keep the opening dialog in a stable pending/success transition until refreshed shift data is renderable; do not flicker back through stale content.
 - Add focused UI coverage for open → refresh → render, mutation failure, ambiguous post-mutation recovery, duplicate open, and error-boundary recovery.
 - [x] Resume and verify the membership sale, JOD 30.000 cash payment, receipt, and JOD 80.000 expected drawer total after the deployed shift page passed the recovery check.
-- [ ] Close the shift and verify reconciliation before considering this incident fully closed.
+- [x] Close the shift and verify reconciliation before considering the Production recovery complete. The JOD 80.000 expected and counted totals matched, daily cash collection was JOD 30.000, variance was JOD 0.000, and the append-only audit recorded `shift.close`.
 
 ## P0 — Fix first-time invited-owner account creation
 
@@ -312,10 +312,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
 
-- Status: **Environment alignment verified on 9 August 2026; supervised pilot completion remains open under BUG-003 and the onboarding checklist above**.
-- Evidence: Vercel Production uses the Production Convex deployment, Clerk Production issuer/key family, Convex-mode data selection, and the approved canonical origins. The public health check passed, and the supervised Production flow has now reached owner onboarding, CRM conversion, membership sale, cash receipt, check-in, and member timeline verification.
-- Risk: alignment can regress after credential, domain, deployment, or environment-scope changes; the remaining audit/reconciliation/cleanup steps must still be completed.
-- Fix/acceptance: retain the value-free ownership/verification record in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, rerun the classification checks after relevant configuration changes, finish the approved Production pilot sequence, and record the exact deployed commit. Never seed Production as a shortcut.
+- Status: **Environment alignment and the supervised single-cash-path pilot were verified across 9–10 August 2026; configuration-regression monitoring remains ongoing**.
+- Evidence: Vercel Production uses the Production Convex deployment, Clerk Production issuer/key family, Convex-mode data selection, and approved canonical origins. The public health check and full disposable-tenant path passed through audited suspension and public-listing removal.
+- Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
+- Fix/acceptance: retain the value-free ownership/verification record in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, rerun classification checks after relevant configuration changes, and record the exact deployed commit for every release. Never seed Production as a shortcut.
 
 ### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
 
@@ -326,10 +326,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-003 — Production-shaped release sequence is incomplete
 
-- Status: **Confirmed coverage gap; supervised Production sequence is in progress**.
-- Evidence: the staged write smoke covers member → membership → payment → check-in → timeline/audit. The supervised Production sequence has additionally verified provisioning, first-owner setup, CRM conversion, a cash shift/payment, check-in, and the unified timeline, but audit review, shift close/reconciliation, cleanup, staff, renewal, automation, member portal, and broader isolation remain incomplete.
+- Status: **The supervised disposable-tenant sequence is complete; broader release coverage remains incomplete**.
+- Evidence: the Production sequence verified application → provisioning → owner access → setup → CRM conversion → membership → cash receipt → check-in → timeline/audit → balanced shift close/reconciliation → audited listing removal and suspension. Staff invitation/roles, renewal, automation, member portal, alternate payment/refund/variance paths, and broader isolation remain incomplete.
 - Risk: individual screens can pass while the real gym workflow fails at a handoff between domains.
-- Fix/acceptance: finish the supervised disposable-tenant checklist above and add independently runnable, cleanup-safe staging journeys using Development Clerk and isolated Convex only. Gate all mutations explicitly and report cleanup results.
+- Fix/acceptance: retain the completed pilot evidence and add independently runnable, cleanup-safe staging journeys for the remaining paths using Development Clerk and isolated Convex only. Gate all mutations explicitly and report cleanup results.
 
 ### BUG-004 — Customer trial ownership must be proven through real authenticated mutations
 
@@ -389,6 +389,20 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - Risk: a transient Clerk/API failure can leave an approved application stuck, create duplicate organizations/invitations on retry, or make the UI report success before Convex state is complete.
 - Fix/acceptance: add a deterministic fault-injection test around organization creation, owner invitation, and finalization. Retry must converge to one organization, one branch, one subscription, one owner membership, and one invitation; each failure must remain auditable with a correlation ID and an actionable operator message.
 
+### BUG-012 — Platform gym detail renders fabricated operational and billing facts
+
+- Status: **Confirmed P0 Production truthfulness defect**.
+- Evidence: the `Hashem Test` Production gym detail correctly loaded the target gym header, branch, plan, subscription status, and public-listing control, but the same page displayed a hardcoded account owner, email pattern, phone, storage usage, automation count, transaction count, subscription renewal/card details, platform health score, and July activity. `apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx` constructs these values directly in the component; branch member counts and staff usage are also estimated from unrelated formulas rather than authoritative records.
+- Risk: a platform administrator can mistake invented data for real tenant identity, billing, usage, or activity, contact the wrong person, or make a Production decision using fabricated evidence. The presentation resembles a cross-tenant leak even though inspection confirmed static placeholders.
+- Fix/acceptance: remove every fabricated value from the Production platform route. Introduce an authorized, typed platform-gym detail contract backed by the selected organization, owner membership, real usage aggregates, platform ledger/subscription facts, and platform audit timeline. Render an explicit **Not available** or **Not configured** state for fields that are not implemented; never estimate or synthesize operational facts. Add tests using at least two tenants that prove identity, branches, member/transaction counts, subscription data, and activity remain target-scoped, plus a browser assertion that no preview person, card, invoice, or activity copy appears in Production mode.
+
+### BUG-013 — Balanced shifts are labeled “variance approved”
+
+- Status: **Confirmed P1 Production wording/state defect**.
+- Evidence: the supervised `Hashem Test` shift closed with JOD 80.000 expected, JOD 80.000 counted, and JOD 0.000 variance. The audit correctly recorded `shift.close`, but shift history displayed **variance approved** because `apps/web/src/app/(app)/payments/shifts/page.tsx` prioritizes `varianceApprovalStatus === "approved"` without first checking that the variance amount is non-zero.
+- Risk: staff may believe a manager approved a discrepancy that never existed, weakening reconciliation semantics and audit confidence.
+- Fix/acceptance: display **balanced** or **closed** whenever variance is exactly zero; reserve pending/approved/rejected variance labels and review controls for non-zero discrepancies. Align mock and Convex projections, add focused zero/positive/negative variance tests, and verify history plus audit copy together.
+
 ## P1 — Missing or incomplete MVP behavior
 
 ### TODO-001 — Membership upgrade and downgrade are not explicit API operations
@@ -436,10 +450,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 
-- Status: **In progress in the supervised Production flow**.
+- Status: **The single cash-payment Production path is verified; broader payment-method, exception, and concurrency coverage remains open**.
 - Scope: open shift, opening float, cash/card/CliQ-style configured payments, partial balance, receipt, refund/void review, close shift, expected-vs-counted cash, manager variance decision, daily reconciliation.
-- Evidence to date: JOD 50.000 opening float, JOD 30.000 cash membership payment, receipt `RV-001001`, JOD 80.000 expected drawer, successful check-in, and unified member timeline were verified in Production on 9 August 2026.
-- Acceptance: source transaction facts, receipt numbers, shift totals, audit events, and reports agree after reload and concurrent updates. Shift close/reconciliation and the remaining method/variance scenarios are still open.
+- Evidence to date: JOD 50.000 opening float, JOD 30.000 cash membership payment, receipt `RV-001001`, JOD 80.000 expected and counted drawer, JOD 0.000 variance, daily reconciliation, `shift.close` audit, successful check-in, and unified member timeline were verified in Production across 9–10 August 2026.
+- Acceptance: the verified cash path is complete. Card/CliQ-style methods, partial balances, refund/void review, non-zero manager variance decisions, reports, reload/concurrent updates, and realistic-volume reconciliation remain open.
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
@@ -499,3 +513,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Historical public plan-catalog fallback | 2026-08-09 | `55cead9` | Approved launch defaults keep the public gym application usable when editable catalog rows are absent; production success/timeout/recovery coverage remains open as BUG-010. |
 | Dashboard scope and CRM capture slice | 2026-08-09 | `2269863` + `1bd4b05` | 248 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build passed after merging branch-aware dashboard copy, lead email capture, explicit unassigned-owner handling, assignment authorization, and cash-shift error-path coverage. Production one-branch visual verification and TODO-009 preference provenance/revocation remain open. The overlapping opt-out default was subsequently realigned to the product owner's opted-in default decision. |
 | Application review notes | 2026-08-09 | `8c0d34f` | 249 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build pass. Notes can be saved, cleared, edited after final decisions, and audited; disposable Production reload verification remains required. |
+| Supervised disposable Production pilot | 2026-08-10 | Production deployed head plus operator evidence | `Hashem Test` completed application, approval, provisioning, owner invitation/account creation, settings, branch and plan setup, CRM conversion, membership sale, JOD 30.000 cash receipt, check-in, unified timeline, sensitive-action audit review, JOD 80.000 balanced shift close, daily reconciliation, public-listing removal, subscription suspension, and audited platform-control save. BUG-012 and BUG-013 capture defects discovered during cleanup. |

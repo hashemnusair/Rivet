@@ -1,6 +1,6 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-09 at commit `e3f1dcc`.
+Last reviewed: 2026-08-10 after the supervised disposable-tenant Production pilot.
 
 ## Purpose
 
@@ -17,9 +17,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 - The application is a release candidate, not a blank scaffold.
 - `main` is deployed to Vercel Production and production Convex health is reachable.
-- Credential-free checks pass: frontend and Convex typecheck, lint, 230 unit/component tests, 15 preview browser journeys, and the production build.
-- The authenticated Development Clerk → Convex smoke and staged operational write flow have passed previously, but must be rerun on the current head before release.
-- Production remains on release hold until private environment alignment, Resend delivery, authenticated tenant resolution, and the supervised onboarding/operational sequence are verified.
+- Credential-free checks pass: frontend and Convex typecheck, lint, 256 unit/component tests, 20 preview browser journeys, and the production build.
+- The authenticated Development Clerk → Convex smoke and staged operational write flow passed on the current merged head in manual workflow `31325711295`.
+- Production environment alignment, Resend application mail, authenticated tenant resolution, and the supervised single-cash-path onboarding/operational sequence have been verified. Release remains held for the invited-owner onboarding defect, fabricated platform-gym detail facts, remaining adversarial authorization coverage, and the incomplete workflow/provider items in the canonical backlog.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
 ## Map 1 — Provider and deployment topology
@@ -482,6 +482,8 @@ Stop if the authenticated smoke uses Production credentials or if the operationa
 ### Phase D — Supervised production onboarding
 
 This phase mutates Production and requires explicit operator approval for the disposable email addresses and cleanup target.
+
+Evidence recorded 10 August 2026: steps 1–10, 12–14, 16–18, and subscription suspension completed for the exact disposable `Hashem Test` target. The balanced drawer closed at JOD 80.000 expected/counted with JOD 0.000 variance; daily reconciliation and `shift.close` audit passed. Steps 11 and 15, alternate payment/refund/variance paths, and deeper record-deactivation behavior remain separate release coverage. The listing is off and the tenant is suspended; do not restore it merely to finish unchecked scenarios without a new explicit Production approval.
 
 1. Submit one disposable gym application from `/signup`.
 2. Confirm applicant confirmation and partner notification emails.
