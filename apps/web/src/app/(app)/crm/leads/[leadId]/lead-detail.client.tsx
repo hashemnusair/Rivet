@@ -12,6 +12,7 @@ import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import type { LeadStage, OfferDeliveryChannel, TrialBookingStatus } from "@/lib/domain/types";
+import { LEAD_STAGE_PROGRESS, leadStageProgress } from "@/lib/crm/lead-stage-progress";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDate } from "@/lib/utils/dates";
@@ -30,7 +31,6 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
 
-const STAGE_ORDER: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won"];
 const STAGE_LABELS: Record<LeadStage, string> = {
   new: "New",
   attempted: "Attempted",
@@ -96,7 +96,7 @@ export default function LeadDetailPageClient() {
 
   const lead = leadQuery.data!;
   const open = lead.stage !== "won" && lead.stage !== "lost";
-  const currentStageIdx = STAGE_ORDER.indexOf(lead.stage);
+  const stageProgress = leadStageProgress(lead);
 
   return (
     <div className="space-y-4">
@@ -146,25 +146,29 @@ export default function LeadDetailPageClient() {
 
         {/* Stage stepper */}
         <ol className="mt-5 flex items-center gap-1 overflow-x-auto" aria-label="Lead stage">
-          {STAGE_ORDER.map((stage, i) => {
-            const done = lead.stage === "lost" ? false : i < currentStageIdx;
+          {LEAD_STAGE_PROGRESS.map((stage, i) => {
+            const progress = stageProgress[i]!;
+            const done = progress.state === "completed";
             const current = lead.stage === stage;
+            const skipped = progress.state === "skipped";
+            const stateLabel = current ? "current" : done ? "completed" : skipped ? "skipped" : "not reached";
             return (
-              <li key={stage} className="flex min-w-0 flex-1 items-center gap-1" aria-current={current ? "step" : undefined}>
+              <li key={stage} className="flex min-w-0 flex-1 items-center gap-1" aria-current={current ? "step" : undefined} aria-label={`${STAGE_LABELS[stage]}: ${stateLabel}`}>
                 <span
                   className={cn(
                     "flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-mono",
                     done && "border-success bg-success text-white",
                     current && (lead.stage === "lost" ? "border-signal bg-signal text-white" : "border-ink bg-ink text-paper"),
-                    !done && !current && "border-line-3 text-ink-3",
+                    skipped && "border-line-2 bg-sunken text-ink-3",
+                    !done && !current && !skipped && "border-line-3 text-ink-3",
                   )}
                 >
-                  {done ? <Check className="size-3" /> : i + 1}
+                  {done ? <Check className="size-3" /> : skipped ? <span aria-hidden>–</span> : i + 1}
                 </span>
                 <span className={cn("hidden truncate text-[11px] md:block", current ? "font-medium text-ink" : "text-ink-3")}>
                   {STAGE_LABELS[stage]}
                 </span>
-                {i < STAGE_ORDER.length - 1 ? <span className={cn("h-px min-w-3 flex-1", done ? "bg-success" : "bg-line-2")} /> : null}
+                {i < LEAD_STAGE_PROGRESS.length - 1 ? <span className={cn("h-px min-w-3 flex-1", done ? "bg-success" : "bg-line-2")} /> : null}
               </li>
             );
           })}

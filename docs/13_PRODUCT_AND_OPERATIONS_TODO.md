@@ -148,6 +148,13 @@ The original flow said **Create offer**, immediately persisted `status: "sent"`,
 
 After a Production lead moved directly from **Contacted** to **Offer sent**, the lead stepper painted **Trial booked** and **Trial done** as completed even though no trial was booked or completed and no corresponding timeline facts existed. The UI currently treats every stage before the lead's current ordinal position as historical fact. That is misleading in a pipeline where valid paths can skip stages.
 
+### Implementation status
+
+- [x] Lead detail milestones now derive completed, current, skipped, and pending states from timeline, trial-booking, conversion, and delivered-offer facts rather than enum position alone.
+- [x] Skipped trial milestones are visibly marked and announced to assistive technology; direct contact → offer paths no longer fabricate a trial history.
+- [x] Added pure unit coverage for skipped-trial, completed-trial, and new-lead states plus a browser assertion in the CRM offer journey.
+- [ ] Board counts, dashboard funnel semantics, and all historical stage transitions still need a shared event-backed contract and production visual verification.
+
 ### Completion criteria
 
 - Define which pipeline stages are current state, which are optional milestones, and which require an actual domain event.

@@ -214,6 +214,8 @@ test.describe("CRM lead capture", () => {
     await expect(page.getByText(/offer delivery confirmed and lead stage updated/i)).toBeVisible();
     await expect(page.getByText(/Delivered · (whatsapp|sms|manual|email)/i)).toBeVisible();
     await expect(page.getByText("Offer sent").first()).toBeVisible();
+    await expect(page.getByRole("listitem", { name: "Trial booked: skipped" })).toBeVisible();
+    await expect(page.getByRole("listitem", { name: "Trial done: skipped" })).toBeVisible();
   });
 });
 
