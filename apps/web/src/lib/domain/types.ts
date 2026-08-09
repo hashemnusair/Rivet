@@ -411,10 +411,35 @@ export interface LeadSummary extends Lead {
   overdue: boolean;
 }
 
+export type TrialBookingStatus =
+  | "requested"
+  | "confirmed"
+  | "completed"
+  | "no_show"
+  | "cancelled"
+  | "converted";
+
+export interface LeadTrialBooking {
+  id: UUID;
+  customerId?: UUID;
+  gymId: UUID;
+  branchId: UUID;
+  fullName: string;
+  email: string;
+  phone: string;
+  preferredDate: ISODate;
+  preferredTime: string;
+  goal: string;
+  status: TrialBookingStatus;
+  createdAt: ISODateTime;
+  leadId?: UUID;
+}
+
 export interface LeadDetail extends LeadSummary {
   notes?: string;
   activities: TimelineEvent[];
   offers: Offer[];
+  trialBooking?: LeadTrialBooking;
 }
 
 export interface Offer {
@@ -544,6 +569,10 @@ export type TimelineEventType =
   | "payment_refunded"
   | "payment_voided"
   | "check_in"
+  | "trial_confirmed"
+  | "trial_completed"
+  | "trial_no_show"
+  | "trial_cancelled"
   | "lead_converted"
   | "automation";
 
@@ -870,6 +899,7 @@ export type AuditCategory =
   | "memberships"
   | "payments"
   | "checkins"
+  | "crm"
   | "reconciliation"
   | "automations"
   | "users"

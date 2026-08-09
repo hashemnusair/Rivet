@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-09 after production Clerk setup, staging write verification, platform-operations controls, reporting hardening, and the latest duplicate-conversion/reconciliation regression pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-09 after production Clerk setup, staging write verification, platform-operations controls, reporting hardening, and the end-to-end free-trial lifecycle pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Product surface preserved
 
@@ -19,6 +19,8 @@ The frontend still uses the established warm paper/ink visual system, Radix-base
 
 The page-facing seam is `apps/web/src/lib/api/GymOSApi.ts`. Query/mutation pages continue to use `useApiQuery`, `useApiMutation`, and `useInvalidate`; the adapter owns Convex operation names, public-ID mapping, pagination, and error conversion into `ApiError`.
 
+Operational queries and the authenticated member experience use a four-second background refresh while in Convex mode. Refreshes preserve the already-rendered screen instead of replaying loading gates, so cross-browser trial/status changes appear without manual reloads or layout flicker. This polling boundary preserves the typed `GymOSApi` seam; moving selected screens to native Convex subscriptions remains an optimization rather than a correctness requirement.
+
 ## Authentication and tenancy
 
 Clerk remains the credential/session provider. `ConvexClientProvider` supplies the authenticated Convex React client and claims/creates the current Convex user through `users.ensureCurrent`. `identity.current` resolves platform-admin status and all active organization memberships. The gym workspace obtains its session from the server, with organization selection available only when multiple active memberships exist.
@@ -36,7 +38,7 @@ Convex schema and domain functions now cover:
 - Organizations, branches, users, memberships, role definitions, settings, payment methods, tenant audit events, platform audit events, idempotency records, sequence counters, and public `gymApplications` records. The platform review queue records approval/rejection decisions in the immutable `platformAuditEvents` stream. A pending application does not create a tenant; protected RIVET provisioning creates the first branch, role definitions, owner access, subscription, and public directory record after approval.
 - Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
-- Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.
+- Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes. Linked trials now move through requested, confirmed, completed, no-show, cancelled, and converted states from the CRM lead. Completed/no-show outcomes create deduplicated follow-up work, customer-facing booking status updates from the same record, and every staff outcome appends a timeline plus audit event.
 - Platform subscription state and SaaS plan limits can be updated through platform-admin mutations. Updates synchronize the public directory/tenant record when available and append immutable platform audit events. Owner/manager reports compose persisted dashboard and transaction contracts and support CSV export; automation rules can be created from the existing UI with deduplicated task/message actions.
 - Provisioned gyms publish a member-facing directory listing by default; platform administrators can hide or republish a listing from the gym controls. Existing production applications still require the normal approve → provision workflow before a real gym appears in discovery.
 
@@ -54,6 +56,7 @@ The normalized Convex `domainRecords` table stores JSON-shaped domain facts with
 - MVP approval semantics are explicitly post-action: refunds above JOD 25.000, over-limit discounts, and shift variances complete as immutable facts first; approval or rejection is a separate append-only review record and never rewrites settled financial history.
 - Entry passes are HMAC-signed, branch-bound, short-lived, stored in Convex, and consumed on a successful check-in. The Convex customer experience never exposes the old demo QR identity.
 - Member imports require `members.write`, validate required columns, identify duplicate rows, persist a preview, commit in chunks of at most 100 rows, use per-chunk idempotency keys, and record audit facts. Invalid/duplicate rows are reviewable and skipped rather than silently created.
+- Trial lifecycle transitions require `crm.write` and branch access. Cancellation/no-show outcomes require a reason; cancellation closes the lead, no-show creates a high-priority recovery task, completion schedules post-trial follow-up, terminal states cannot be reopened, and lead conversion marks the customer booking converted.
 
 ## Verification status
 
@@ -62,7 +65,7 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 230 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test` — 234 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
 - `pnpm test:e2e` — 15 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
 - `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.

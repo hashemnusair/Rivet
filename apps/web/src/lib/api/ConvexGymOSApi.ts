@@ -169,7 +169,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listMarketplaceGyms(): Promise<MarketplaceGym[]> { return this.query("public.marketplace"); }
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> { return this.query("customer.experience"); }
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId">): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
@@ -236,6 +236,7 @@ export class ConvexGymOSApi implements GymOSApi {
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.create", input); }
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
+  updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }
   createOffer(input: { leadId: T.UUID; planId: T.UUID; price: T.Money; expiresInDays?: number }): Promise<T.Offer> { return this.mutate("offers.create", input); }
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> { return this.query("tasks.list", query); }
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> { return this.mutate("tasks.create", input); }

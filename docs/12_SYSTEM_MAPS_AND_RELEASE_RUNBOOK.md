@@ -196,6 +196,8 @@ flowchart LR
 
     subgraph CRM["Gym CRM"]
         LEAD["Gym-scoped lead"]
+        CONFIRM["Confirm trial"]
+        OUTCOME{"Trial outcome"}
         CONTACT["Contact attempts<br/>follow-up tasks"]
         OFFER["Offer"]
         CONVERT{"Convert lead"}
@@ -215,8 +217,13 @@ flowchart LR
     end
 
     DISCOVER --> TRIAL
-    TRIAL -->|"creates trial booking"| LEAD
-    LEAD --> CONTACT --> OFFER --> CONVERT
+    TRIAL -->|"creates linked booking + lead"| LEAD
+    LEAD --> CONFIRM --> OUTCOME
+    OUTCOME -->|"completed"| CONTACT
+    OUTCOME -->|"no-show"| RECOVER["High-priority recovery task"] --> CONTACT
+    OUTCOME -->|"cancelled + reason"| LOST["Close lead + audit"]
+    CONTACT --> OFFER --> CONVERT
+    CONVERT -->|"updates customer booking"| BOOKING["Converted trial status"]
 
     CONVERT -->|"no duplicate"| MEMBER
     CONVERT -->|"phone/email match"| EXISTING["Open existing member"]

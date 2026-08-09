@@ -23,6 +23,7 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   memberships: "Memberships",
   payments: "Payments",
   checkins: "Check-ins",
+  crm: "CRM & trials",
   reconciliation: "Reconciliation",
   automations: "Automations",
   users: "Users & roles",

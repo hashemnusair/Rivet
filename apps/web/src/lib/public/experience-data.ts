@@ -1,4 +1,4 @@
-import type { UUID } from "@/lib/domain/types";
+import type { TrialBookingStatus, UUID } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/seed";
 
 export interface MarketplaceBranch {
@@ -76,7 +76,7 @@ export interface TrialBooking {
   preferredDate: string;
   preferredTime: string;
   goal: string;
-  status: "requested" | "confirmed" | "completed" | "converted";
+  status: TrialBookingStatus;
   createdAt: string;
   leadId?: UUID;
 }

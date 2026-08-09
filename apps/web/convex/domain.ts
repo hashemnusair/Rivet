@@ -19,7 +19,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -1144,6 +1144,10 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   return { ...base, ...(leadId ? { leadId } : {}) };
 }
 
+async function linkedTrialBooking(ctx: ReadContext, actor: ActorContext, leadId: string) {
+  return (await recordsOf(ctx, actor, "trialBooking")).find((record) => optionalString(data(record.data).leadId) === leadId);
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -1310,7 +1314,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const leadId = stringValue(data(lead.data).id);
       const activities = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
       const offers = (await recordsOf(ctx, actor, "offer")).map((record) => data(record.data)).filter((offer) => offer.leadId === leadId);
-      return { ...(await toLeadSummary(ctx, actor, data(lead.data))), notes: optionalString(data(lead.data).notes), activities, offers };
+      const trialBooking = await linkedTrialBooking(ctx, actor, leadId);
+      return { ...(await toLeadSummary(ctx, actor, data(lead.data))), notes: optionalString(data(lead.data).notes), activities, offers, ...(trialBooking ? { trialBooking: data(trialBooking.data) } : {}) };
     }
     case "tasks.list": {
       requirePermission(actor, "crm.read");
@@ -2267,6 +2272,45 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers: [] };
     }
+    case "trials.update": {
+      requirePermission(actor, "crm.write");
+      const booking = await recordOf(ctx, actor, "trialBooking", recordId(input.bookingId));
+      const current = data(booking.data);
+      const currentStatus = stringValue(current.status, "requested");
+      const nextStatus = stringValue(input.status);
+      if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { correlationId: actor.correlationId });
+      const note = optionalString(input.note);
+      if ((nextStatus === "no_show" || nextStatus === "cancelled") && !note) domainError("VALIDATION_ERROR", "Record a reason for this trial outcome.", { correlationId: actor.correlationId });
+      const leadId = optionalString(current.leadId);
+      if (!leadId) domainError("NOT_FOUND", "This trial is not linked to a lead.", { correlationId: actor.correlationId });
+      const lead = await recordOf(ctx, actor, "lead", leadId);
+      const leadValue = data(lead.data);
+      const occurredAt = isoNow();
+      const labels: Record<string, string> = { confirmed: "Trial confirmed", completed: "Trial completed", no_show: "Trial marked as no-show", cancelled: "Trial cancelled" };
+      const eventTypes: Record<string, string> = { confirmed: "trial_confirmed", completed: "trial_completed", no_show: "trial_no_show", cancelled: "trial_cancelled" };
+      const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
+      const leadPatch: Data = nextStatus === "completed"
+        ? { stage: "trial_completed", nextFollowUpAt: followUpAt, updatedAt: occurredAt }
+        : nextStatus === "cancelled"
+          ? { stage: "lost", lostReason: `Trial cancelled${note ? ` — ${note}` : ""}`, nextFollowUpAt: undefined, updatedAt: occurredAt }
+          : nextStatus === "no_show"
+            ? { stage: "contacted", nextFollowUpAt: followUpAt, updatedAt: occurredAt }
+            : { stage: "trial_booked", updatedAt: occurredAt };
+      const updatedBooking = await patchRecord(ctx, actor, booking, { status: nextStatus, updatedAt: occurredAt });
+      const updatedLead = await patchRecord(ctx, actor, lead, leadPatch);
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadValue.branchId), type: eventTypes[nextStatus], title: labels[nextStatus], body: note, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, status: nextStatus } });
+      if (nextStatus === "completed" || nextStatus === "no_show") {
+        const existing = (await recordsOf(ctx, actor, "task")).find((record) => {
+          const task = data(record.data);
+          return task.leadId === leadId && task.type === "trial_follow_up" && task.status === "open";
+        });
+        if (!existing) await createTaskMutation(ctx, actor, { leadId, type: "trial_follow_up", title: nextStatus === "no_show" ? "Reschedule missed trial" : "Follow up after trial", ownerId: optionalString(leadValue.ownerId) ?? publicUserId(actor.user), dueAt: followUpAt, priority: nextStatus === "no_show" ? "high" : "normal" });
+      }
+      await insertAudit(ctx, actor, { category: "crm", action: `trial.${nextStatus}`, entityType: "trial_booking", entityId: booking.publicId, entityLabel: `${stringValue(current.fullName)} · ${stringValue(current.preferredDate)} ${stringValue(current.preferredTime)}`, summary: stringValue(labels[nextStatus]), reason: note, before: { status: currentStatus }, after: { status: nextStatus }, branchId: optionalString(leadValue.branchId) });
+      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
+      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => data(item.data)).filter((offer) => offer.leadId === leadId);
+      return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: updatedBooking };
+    }
     case "offers.create": {
       requirePermission(actor, "crm.write");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
@@ -2294,6 +2338,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const created = await createMemberMutation(ctx, actor, { ...input, fullName: leadData.fullName, phone: leadData.phone, email: leadData.email, homeBranchId: input.homeBranchId, preferredLanguage: input.preferredLanguage, source: leadData.source, assignedSalespersonId: leadData.ownerId }, { rejectDuplicates: true });
       const member = data(created.member);
       await patchRecord(ctx, actor, lead, { stage: "won", convertedMemberId: member.id, nextFollowUpAt: undefined, updatedAt: isoNow() });
+      const trialBooking = await linkedTrialBooking(ctx, actor, lead.publicId);
+      if (trialBooking) await patchRecord(ctx, actor, trialBooking, { status: "converted", updatedAt: isoNow() });
       const tasks = await recordsOf(ctx, actor, "task");
       for (const task of tasks) if (data(task.data).leadId === lead.publicId && data(task.data).status === "open") await patchRecord(ctx, actor, task, { status: "completed", outcome: "Converted to member", completedAt: isoNow() });
       await insertTimeline(ctx, actor, { leadId: lead.publicId, memberId: member.id, branchId: member.homeBranchId, type: "lead_converted", title: `Lead converted — ${member.fullName} became ${member.memberNumber}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });

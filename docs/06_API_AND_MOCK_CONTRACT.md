@@ -146,11 +146,22 @@ getLead(leadId: string): Promise<LeadDetail>
 createLead(input: CreateLeadInput): Promise<LeadDetail>
 updateLead(leadId: string, input: UpdateLeadInput): Promise<LeadDetail>
 logContactAttempt(leadId: string, input: ContactAttemptInput): Promise<LeadDetail>
+updateTrialBooking(bookingId: string, input: {
+  status: "confirmed" | "completed" | "no_show" | "cancelled";
+  note?: string;
+}): Promise<LeadDetail>
 createFollowUp(input: CreateTaskInput): Promise<Task>
 completeTask(taskId: string, input: CompleteTaskInput): Promise<Task>
 convertLead(leadId: string, input: ConvertLeadInput): Promise<MemberDetail>
 listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>
 ```
+
+A member free-trial request creates one gym/branch-scoped lead and one linked
+trial booking. `LeadDetail.trialBooking` is the staff-facing lifecycle record.
+No-show and cancellation require a reason. Completion and no-show create one
+open `trial_follow_up` task at most; conversion marks the linked booking
+`converted`. The same booking record feeds the customer portal, so staff
+outcomes cannot drift from the member-visible status.
 
 ### Check-in
 
@@ -236,6 +247,7 @@ POST   /leads
 GET    /leads/{id}
 PATCH  /leads/{id}
 POST   /leads/{id}/contact-attempts
+POST   /trial-bookings/{id}/status
 POST   /leads/{id}/convert
 GET    /tasks
 POST   /tasks

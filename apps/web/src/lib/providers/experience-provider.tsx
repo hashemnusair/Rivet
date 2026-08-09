@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
@@ -11,7 +11,6 @@ import {
   INITIAL_CUSTOMER_MEMBERSHIPS,
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
-  gymById,
 } from "@/lib/public/experience-data";
 
 export type ExperienceStatus = "loading" | "ready" | "error";
@@ -102,6 +101,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>(convexMode ? "loading" : "ready");
   const [experienceError, setExperienceError] = useState<string>();
   const [experienceAttempt, setExperienceAttempt] = useState(0);
+  const experienceHydratedRef = useRef(!convexMode);
   const [registered, setRegistered] = useState<CustomerPersona[]>([]);
   const [customer, setCustomer] = useState<CustomerPersona>();
   const [memberships, setMemberships] = useState<CustomerMembership[]>(convexMode ? [] : INITIAL_CUSTOMER_MEMBERSHIPS);
@@ -119,6 +119,17 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceAttempt((attempt) => attempt + 1);
   }, []);
 
+  // The page-facing API remains the only data boundary, so customer records
+  // use the same quiet background refresh cadence as the operational shell.
+  // Keeping the hydrated flag in a ref prevents every refresh from flashing
+  // the full-page loading gate.
+  useEffect(() => {
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    if (!convexMode || !memberIdentity) return;
+    const timer = window.setInterval(() => setExperienceAttempt((attempt) => attempt + 1), 4_000);
+    return () => window.clearInterval(timer);
+  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
+
   // Mock mode restores its deterministic browser session. Convex mode loads
   // identity-linked records from the server and never uses sessionStorage as a
   // source of truth.
@@ -126,14 +137,16 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (convexMode) {
       setPreviewSessionReady(true);
       if (identity.status === "loading" || identity.status === "pending") {
-        setExperienceStatus("loading");
-        setExperienceReady(false);
+        if (!experienceHydratedRef.current) {
+          setExperienceStatus("loading");
+          setExperienceReady(false);
+        }
         return;
       }
       let cancelled = false;
-      setExperienceStatus("loading");
+      if (!experienceHydratedRef.current) setExperienceStatus("loading");
       setExperienceError(undefined);
-      setExperienceReady(false);
+      if (!experienceHydratedRef.current) setExperienceReady(false);
       const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
       void Promise.all([
         getApi().listMarketplaceGyms(),
@@ -165,6 +178,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         setExperienceError(undefined);
         setExperienceStatus("ready");
         setExperienceReady(true);
+        experienceHydratedRef.current = true;
       }).catch((error: unknown) => {
         if (cancelled) return;
         setExperienceError(error instanceof Error && error.message ? error.message : "RIVET could not load its live data.");
@@ -255,46 +269,11 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
-      if (convexMode) {
-        const booking = await getApi().createTrialBooking(input);
-        if (!customerId && booking.customerId) setCustomerId(booking.customerId);
-        setBookings((current) => [booking, ...current.filter((item) => item.id !== booking.id)]);
-        return booking;
-      }
-
-      const gym = gymById(input.gymId);
-      const branch = gym?.branches.find((item) => item.id === input.branchId);
-      let leadId: string | undefined;
-
-      // Forge is the active GymOS demo tenant. Booking its free trial writes a
-      // real lead into the existing mock CRM, so staff see it immediately.
-      if (gym?.id === "forge-fitness" && branch?.internalBranchId) {
-        const followUp = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
-        const lead = await getApi().createLead({
-          fullName: input.fullName,
-          phone: input.phone,
-          email: input.email,
-          branchId: branch.internalBranchId,
-          source: "other",
-          expectedValue: { amount: gym.fromPriceMinor, currency: "JOD" },
-          nextFollowUpAt: followUp,
-          notes: `Free trial requested through RIVET Member for ${branch.name}. Goal: ${input.goal}`,
-        });
-        await getApi().updateLead(lead.id, { stage: "trial_booked", nextFollowUpAt: followUp });
-        leadId = lead.id;
-      }
-
-      const booking: TrialBooking = {
-        id: `trial-${Date.now()}`,
-        customerId,
-        ...input,
-        status: "requested",
-        createdAt: new Date().toISOString(),
-        leadId,
-      };
+      const booking = await getApi().createTrialBooking({ ...input, customerId });
+      if (!customerId && booking.customerId) setCustomerId(booking.customerId);
       setBookings((current) => {
-        const next = [booking, ...current];
-        window.sessionStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(next));
+        const next = [booking, ...current.filter((item) => item.id !== booking.id)];
+        if (!convexMode) window.sessionStorage.setItem(STORAGE_KEYS.bookings, JSON.stringify(next));
         return next;
       });
       return booking;

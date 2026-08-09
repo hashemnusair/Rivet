@@ -42,6 +42,10 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   payment_refunded: { icon: Banknote, tone: "text-danger" },
   payment_voided: { icon: Banknote, tone: "text-danger" },
   check_in: { icon: LogIn, tone: "text-ink-2" },
+  trial_confirmed: { icon: CalendarClock, tone: "text-success-deep" },
+  trial_completed: { icon: CheckCircle2, tone: "text-success-deep" },
+  trial_no_show: { icon: CircleDot, tone: "text-warning-deep" },
+  trial_cancelled: { icon: CircleDot, tone: "text-danger" },
   lead_converted: { icon: UserCheck, tone: "text-success-deep" },
   automation: { icon: Zap, tone: "text-ink-3" },
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
@@ -64,6 +64,15 @@ describe("server domain invariants", () => {
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "frozen", branchAllowed: true, expiresSoon: false, outstanding: false })).toBe("membership_blocked");
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "active", visitsRemaining: 0, branchAllowed: true, expiresSoon: true, outstanding: true })).toBe("visits_depleted");
     expect(checkInDecisionOrder({ duplicate: false, memberActive: true, hasMembership: true, membershipStatus: "active", visitsRemaining: 5, branchAllowed: true, expiresSoon: true, outstanding: true })).toBe("warning");
+  });
+
+  it("permits only forward free-trial lifecycle transitions", () => {
+    expect(trialTransitionAllowed("requested", "confirmed")).toBe(true);
+    expect(trialTransitionAllowed("requested", "completed")).toBe(true);
+    expect(trialTransitionAllowed("confirmed", "no_show")).toBe(true);
+    expect(trialTransitionAllowed("completed", "confirmed")).toBe(false);
+    expect(trialTransitionAllowed("cancelled", "requested")).toBe(false);
+    expect(trialTransitionAllowed("unknown", "confirmed")).toBe(false);
   });
 
   it("keeps monthly KPIs independent from the chart window and excludes voided payments", () => {

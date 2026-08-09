@@ -379,6 +379,8 @@ const PILL_TONES: Record<string, string> = {
   requested: "bg-warning-bg text-warning-deep",
   confirmed: "bg-success-bg text-success-deep",
   completed: "bg-sunken-2 text-ink-2",
+  no_show: "bg-warning-bg text-warning-deep",
+  cancelled: "bg-signal-bg text-signal-deep",
   converted: "bg-signal-bg text-signal-deep",
 };
 
@@ -391,7 +393,7 @@ function StatusPill({ status }: { status: string }) {
       )}
     >
       {status === "frozen" ? <Snowflake className="size-2.5" aria-hidden /> : null}
-      {status}
+      {status.replaceAll("_", " ")}
     </span>
   );
 }

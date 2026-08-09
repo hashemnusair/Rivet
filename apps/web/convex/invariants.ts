@@ -127,6 +127,21 @@ export function checkInDecisionOrder(input: {
   return "allowed";
 }
 
+export type TrialLifecycleStatus = "requested" | "confirmed" | "completed" | "no_show" | "cancelled" | "converted";
+
+const TRIAL_STATUS_TRANSITIONS: Record<TrialLifecycleStatus, readonly TrialLifecycleStatus[]> = {
+  requested: ["confirmed", "completed", "no_show", "cancelled"],
+  confirmed: ["completed", "no_show", "cancelled"],
+  completed: [],
+  no_show: [],
+  cancelled: [],
+  converted: [],
+};
+
+export function trialTransitionAllowed(current: string, next: string): boolean {
+  return (TRIAL_STATUS_TRANSITIONS[current as TrialLifecycleStatus] ?? []).includes(next as TrialLifecycleStatus);
+}
+
 export interface DashboardPaymentInput {
   type: string;
   status?: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Check, FileText, Phone, UserCheck, XCircle } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, CheckCircle2, FileText, Phone, UserCheck, UserX, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,7 +11,7 @@ import { z } from "zod";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { LeadStage } from "@/lib/domain/types";
+import type { LeadStage, TrialBookingStatus } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDate } from "@/lib/utils/dates";
@@ -50,6 +50,8 @@ export default function LeadDetailPageClient() {
   const [lostOpen, setLostOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [lostReason, setLostReason] = useState("");
+  const [trialOutcome, setTrialOutcome] = useState<Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">>();
+  const [trialNote, setTrialNote] = useState("");
 
   const leadQuery = useApiQuery(qk.lead(leadId), (api) => api.getLead(leadId));
 
@@ -60,6 +62,19 @@ export default function LeadDetailPageClient() {
       await invalidate();
     },
   });
+
+  const updateTrial = useApiMutation(
+    (api, input: { bookingId: string; status: Extract<TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }) =>
+      api.updateTrialBooking(input.bookingId, { status: input.status, note: input.note }),
+    {
+      onSuccess: async (updated) => {
+        toast.success(`Trial ${updated.trialBooking?.status.replaceAll("_", " ") ?? "updated"}.`);
+        setTrialOutcome(undefined);
+        setTrialNote("");
+        await invalidate();
+      },
+    },
+  );
 
   if (leadQuery.isLoading) {
     return (
@@ -162,6 +177,37 @@ export default function LeadDetailPageClient() {
       <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
         {/* Work column */}
         <div className="space-y-4 self-start">
+          {lead.trialBooking ? (
+            <section className="panel p-4" data-testid="trial-workflow">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Free trial</p>
+                  <h2 className="mt-1 font-display text-[15px] font-semibold">
+                    {formatDate(lead.trialBooking.preferredDate)} · {lead.trialBooking.preferredTime}
+                  </h2>
+                </div>
+                <Badge variant={lead.trialBooking.status === "completed" || lead.trialBooking.status === "converted" ? "success" : lead.trialBooking.status === "cancelled" ? "signal" : "warning"}>
+                  {lead.trialBooking.status.replaceAll("_", " ")}
+                </Badge>
+              </div>
+              <p className="mt-3 text-[12.5px] leading-relaxed text-ink-2">{lead.trialBooking.goal}</p>
+              {lead.trialBooking.status === "requested" ? (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Button loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}>
+                    <CalendarClock /> Confirm
+                  </Button>
+                  <Button variant="secondary" onClick={() => setTrialOutcome("cancelled")}><XCircle /> Cancel</Button>
+                </div>
+              ) : lead.trialBooking.status === "confirmed" ? (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 /> Complete</Button>
+                  <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> No-show</Button>
+                  <Button variant="ghost" className="col-span-2" onClick={() => setTrialOutcome("cancelled")}><XCircle /> Cancel trial</Button>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="panel p-4">
             <h2 className="mb-3 font-display text-[14px] font-semibold">Log contact</h2>
             {open ? (
@@ -215,6 +261,33 @@ export default function LeadDetailPageClient() {
 
       <CreateOfferDialog leadId={lead.id} open={offerOpen} onOpenChange={setOfferOpen} />
       <ConvertLeadDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} branchId={lead.branchId} open={convertOpen} onOpenChange={setConvertOpen} />
+
+      <Dialog open={Boolean(trialOutcome)} onOpenChange={(open) => { if (!open) { setTrialOutcome(undefined); setTrialNote(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{trialOutcome === "completed" ? "Complete free trial" : trialOutcome === "no_show" ? "Mark as no-show" : "Cancel free trial"}</DialogTitle>
+            <DialogDescription>
+              {trialOutcome === "completed" ? "This moves the lead into post-trial follow-up and creates a task for tomorrow." : trialOutcome === "no_show" ? "Record what happened so the sales owner can reschedule with context." : "Cancelling closes this lead and records the reason in its history."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Field label={trialOutcome === "completed" ? "Outcome note" : "Reason"} required={trialOutcome !== "completed"}>
+              <Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional coaching or sales notes" : "Required operational reason"} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setTrialOutcome(undefined)}>Back</Button>
+            <Button
+              variant={trialOutcome === "cancelled" ? "signal" : "primary"}
+              disabled={!lead.trialBooking || !trialOutcome || (trialOutcome !== "completed" && !trialNote.trim())}
+              loading={updateTrial.isPending}
+              onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}
+            >
+              Save outcome
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mark lost */}
       <Dialog open={lostOpen} onOpenChange={setLostOpen}>

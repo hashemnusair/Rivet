@@ -928,6 +928,62 @@ describe("cash shifts and reconciliation", () => {
   });
 });
 
+describe("free-trial lifecycle", () => {
+  async function bookTrial() {
+    return await api.createTrialBooking({
+      customerId: "customer-test",
+      gymId: "forge-fitness",
+      branchId: "forge-abdoun",
+      fullName: "Trial Lifecycle Test",
+      email: `trial-${Date.now()}@example.com`,
+      phone: `+962 79 ${String(Date.now()).slice(-7)}`,
+      preferredDate: "2026-08-20",
+      preferredTime: "19:00",
+      goal: "Build a consistent training routine",
+    });
+  }
+
+  it("links a public booking to CRM and records staff outcomes across every surface", async () => {
+    const booking = await bookTrial();
+    expect(booking).toMatchObject({ status: "requested", customerId: "customer-test" });
+    expect(booking.leadId).toBeDefined();
+
+    const lead = await api.getLead(booking.leadId!);
+    expect(lead).toMatchObject({ stage: "trial_booked", trialBooking: { id: booking.id, status: "requested" } });
+
+    const confirmed = await api.updateTrialBooking(booking.id, { status: "confirmed" });
+    expect(confirmed.trialBooking?.status).toBe("confirmed");
+    const completed = await api.updateTrialBooking(booking.id, { status: "completed", note: "Enjoyed the strength floor." });
+    expect(completed.stage).toBe("trial_completed");
+    expect(completed.activities.some((event) => event.type === "trial_completed")).toBe(true);
+
+    const tasks = await api.listTasks({ status: "open", pageSize: 100 });
+    expect(tasks.items.some((task) => task.leadId === booking.leadId && task.type === "trial_follow_up")).toBe(true);
+    const experience = await api.getCustomerExperience();
+    expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("completed");
+    const audit = await api.listAuditEvents({ category: "crm", pageSize: 20 });
+    expect(audit.items.some((event) => event.entityId === booking.id && event.action === "trial.completed")).toBe(true);
+  });
+
+  it("requires a no-show reason, creates a high-priority recovery task, and blocks terminal transitions", async () => {
+    const booking = await bookTrial();
+    await expect(api.updateTrialBooking(booking.id, { status: "no_show" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const updated = await api.updateTrialBooking(booking.id, { status: "no_show", note: "Customer did not arrive or answer." });
+    expect(updated).toMatchObject({ stage: "contacted", trialBooking: { status: "no_show" } });
+    const tasks = await api.listTasks({ status: "open", pageSize: 100 });
+    expect(tasks.items).toContainEqual(expect.objectContaining({ leadId: booking.leadId, type: "trial_follow_up", priority: "high" }));
+    await expect(api.updateTrialBooking(booking.id, { status: "confirmed" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
+  it("marks the linked customer booking converted when the lead becomes a member", async () => {
+    const booking = await bookTrial();
+    const session = await api.getSession();
+    await api.convertLead(booking.leadId!, { homeBranchId: session.branches[0]!.id, preferredLanguage: "en" });
+    const experience = await api.getCustomerExperience();
+    expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("converted");
+  });
+});
+
 describe("demo controls", () => {
   it("forces list endpoints empty so empty states can be reviewed", async () => {
     api.setBehavior({ forceEmptyLists: true });

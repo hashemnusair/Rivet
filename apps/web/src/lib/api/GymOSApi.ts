@@ -355,7 +355,7 @@ export interface GymOSApi {
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }>;
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId">): Promise<TrialBooking>;
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
@@ -405,6 +405,10 @@ export interface GymOSApi {
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;
   logContactAttempt(leadId: UUID, input: ContactAttemptInput): Promise<LeadDetail>;
+  updateTrialBooking(
+    bookingId: UUID,
+    input: { status: Extract<import("@/lib/domain/types").TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string },
+  ): Promise<LeadDetail>;
   createOffer(input: { leadId: UUID; planId: UUID; price: Money; expiresInDays?: number }): Promise<Offer>;
   listTasks(query: TaskListQuery): Promise<Page<Task>>;
   createFollowUp(input: CreateTaskInput): Promise<Task>;

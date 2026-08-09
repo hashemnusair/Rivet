@@ -169,6 +169,7 @@ export class MockGymOSApi implements GymOSApi {
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private platformPlans: PlatformSaasPlan[];
+  private trialBookings: TrialBooking[];
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
 
@@ -182,6 +183,7 @@ export class MockGymOSApi implements GymOSApi {
       branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
     }));
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
@@ -189,7 +191,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
-    return this.respond(() => ({ customer: CUSTOMER_PERSONAS[0], memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: INITIAL_TRIAL_BOOKINGS }));
+    return this.respond(() => ({ customer: CUSTOMER_PERSONAS[0], memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) }));
   }
 
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> {
@@ -204,8 +206,38 @@ export class MockGymOSApi implements GymOSApi {
     }));
   }
 
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId">): Promise<TrialBooking> {
-    return this.respond(() => ({ ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested" }));
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {
+    return this.respond(() => {
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
+      const internalBranchId = directoryBranch?.internalBranchId;
+      let leadId: string | undefined;
+      if (gym && internalBranchId) {
+        leadId = mockUuid();
+        const followUp = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
+        const lead: T.Lead = {
+          id: leadId,
+          organizationId: this.db.organization.id,
+          branchId: internalBranchId,
+          fullName: input.fullName.trim(),
+          phone: input.phone.trim(),
+          email: input.email.trim().toLowerCase(),
+          stage: "trial_booked",
+          source: "other",
+          ownerId: this.actor().id,
+          expectedValue: { amount: gym.fromPriceMinor, currency: "JOD" },
+          nextFollowUpAt: followUp,
+          createdAt: nowISO(),
+          updatedAt: nowISO(),
+        };
+        (lead as T.Lead & { notes?: string }).notes = `Free trial requested through RIVET Member for ${directoryBranch.name}. Goal: ${input.goal}`;
+        this.db.leads.push(lead);
+        this.activity({ leadId, type: "member_created", title: "Free trial requested", body: input.goal, actorName: "RIVET Member" });
+      }
+      const booking: TrialBooking = { ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
+      this.trialBookings.unshift(booking);
+      return { ...booking };
+    });
   }
 
   getEntryPass(membershipId: string): Promise<EntryPass> {
@@ -458,6 +490,7 @@ export class MockGymOSApi implements GymOSApi {
       branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
     }));
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
@@ -1822,7 +1855,8 @@ export class MockGymOSApi implements GymOSApi {
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       const activities = this.db.activities.filter((a) => a.leadId === leadId);
       const offers = this.db.offers.filter((o) => o.leadId === leadId);
-      return { ...this.toLeadSummary(lead), notes: lead.notes, activities, offers };
+      const trialBooking = this.trialBookings.find((booking) => booking.leadId === leadId);
+      return { ...this.toLeadSummary(lead), notes: lead.notes, activities, offers, ...(trialBooking ? { trialBooking: { ...trialBooking } } : {}) };
     });
   }
 
@@ -1867,6 +1901,7 @@ export class MockGymOSApi implements GymOSApi {
       notes: lead.notes,
       activities: this.db.activities.filter((a) => a.leadId === leadId),
       offers: this.db.offers.filter((o) => o.leadId === leadId),
+      trialBooking: this.trialBookings.find((booking) => booking.leadId === leadId),
     };
   }
 
@@ -1910,6 +1945,42 @@ export class MockGymOSApi implements GymOSApi {
         meta: { outcome: input.outcome },
       });
       return this.getLeadSync(leadId);
+    });
+  }
+
+  updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const booking = this.trialBookings.find((item) => item.id === bookingId);
+      if (!booking?.leadId) throw ApiError.of(ERR.NOT_FOUND, "Trial booking not found.");
+      const lead = this.db.leads.find((item) => item.id === booking.leadId);
+      if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trial booking not found.");
+      const transitions: Record<T.TrialBookingStatus, T.TrialBookingStatus[]> = {
+        requested: ["confirmed", "completed", "no_show", "cancelled"],
+        confirmed: ["completed", "no_show", "cancelled"],
+        completed: [],
+        no_show: [],
+        cancelled: [],
+        converted: [],
+      };
+      if (!transitions[booking.status].includes(input.status)) throw ApiError.of(ERR.VALIDATION, `Trial cannot move from ${booking.status.replaceAll("_", " ")} to ${input.status.replaceAll("_", " ")}.`);
+      if ((input.status === "no_show" || input.status === "cancelled") && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Record a reason for this trial outcome.");
+      const previous = booking.status;
+      booking.status = input.status;
+      const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
+      if (input.status === "completed") Object.assign(lead, { stage: "trial_completed", nextFollowUpAt: followUpAt });
+      else if (input.status === "cancelled") Object.assign(lead, { stage: "lost", lostReason: `Trial cancelled — ${input.note}`, nextFollowUpAt: undefined });
+      else if (input.status === "no_show") Object.assign(lead, { stage: "contacted", nextFollowUpAt: followUpAt });
+      else lead.stage = "trial_booked";
+      lead.updatedAt = nowISO();
+      const labels = { confirmed: "Trial confirmed", completed: "Trial completed", no_show: "Trial marked as no-show", cancelled: "Trial cancelled" } as const;
+      const eventTypes = { confirmed: "trial_confirmed", completed: "trial_completed", no_show: "trial_no_show", cancelled: "trial_cancelled" } as const;
+      this.activity({ leadId: lead.id, type: eventTypes[input.status], title: labels[input.status], body: input.note, actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId, status: input.status } });
+      if ((input.status === "completed" || input.status === "no_show") && !this.db.tasks.some((task) => task.leadId === lead.id && task.type === "trial_follow_up" && task.status === "open")) {
+        this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "trial_follow_up", title: input.status === "no_show" ? "Reschedule missed trial" : "Follow up after trial", ownerId: lead.ownerId ?? this.actor().id, ownerName: this.db.users.find((user) => user.id === lead.ownerId)?.name ?? this.actor().name, dueAt: followUpAt, priority: input.status === "no_show" ? "high" : "normal", status: "open", leadId: lead.id, subjectName: lead.fullName, createdById: this.actor().id, createdAt: nowISO() });
+      }
+      this.audit({ category: "crm", action: `trial.${input.status}`, entityType: "trial_booking", entityId: booking.id, entityLabel: `${booking.fullName} · ${booking.preferredDate} ${booking.preferredTime}`, summary: labels[input.status], reason: input.note, before: { status: previous }, after: { status: input.status }, branchId: lead.branchId });
+      return this.getLeadSync(lead.id);
     });
   }
 
@@ -2049,6 +2120,8 @@ export class MockGymOSApi implements GymOSApi {
       lead.convertedMemberId = result.id;
       lead.nextFollowUpAt = undefined;
       lead.updatedAt = nowISO();
+      const trialBooking = this.trialBookings.find((booking) => booking.leadId === lead.id);
+      if (trialBooking) trialBooking.status = "converted";
       // Close open follow-up tasks for this lead
       for (const t of this.db.tasks.filter((t) => t.leadId === lead.id && t.status === "open")) {
         t.status = "completed";
