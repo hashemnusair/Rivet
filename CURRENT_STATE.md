@@ -65,7 +65,7 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 234 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
+- `pnpm test` — 238 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, mock-mode, component, reception, customer ownership, and member-portal regression coverage.
 - `pnpm test:e2e` — 15 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
 - `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.

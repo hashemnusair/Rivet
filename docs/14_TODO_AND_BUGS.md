@@ -2,7 +2,7 @@
 
 This is the active engineering backlog. It is intentionally evidence-based: confirmed defects are separated from release blockers, missing MVP capabilities, and items that still need verification. Update the status and evidence when a task is fixed; do not delete the history of a release blocker without recording how it was closed.
 
-Last reviewed: 2026-08-09, commit `2164748` plus the current roadmap documentation.
+Last reviewed: 2026-08-09, commits `cfa297a` and `850454c` plus the current roadmap documentation.
 
 ## How to use this file
 
@@ -47,17 +47,17 @@ Last reviewed: 2026-08-09, commit `2164748` plus the current roadmap documentati
 
 ### BUG-005 — Trial success copy promises My Gyms persistence when the visitor is not signed in
 
-- Status: **Confirmed in browser preview**.
+- Status: **Resolved in `850454c`; production still needs a Convex-mode browser check**.
 - Evidence: the public gym form displays “Your booking is also saved under My Gyms,” while `/customer/my-gyms` correctly requires a member sign-in. In Convex mode, submitting while signed out redirects to login; in mock mode, the public preview can show the success state without a member session.
 - Risk: a visitor believes the booking is attached to an account when it is only routed to the gym CRM, then sees an apparently missing booking after opening My Gyms.
-- Fix/acceptance: either require/sign in before submitting in every mode or change the success copy and CTA to explain that the gym received the request and the visitor must sign in/create an account to attach it to My Gyms. Add unauthenticated and authenticated browser tests.
+- Fix/acceptance: the success copy and CTA now explain that an unauthenticated request was received by the gym and direct the visitor to sign in; authenticated requests still open My Gyms. Browser coverage exists for both authenticated and unauthenticated preview flows.
 
 ### BUG-006 — Member QR panel still labels the entry pass as a “Preview code”
 
-- Status: **Confirmed stale copy**.
+- Status: **Resolved in `850454c`; production still needs a Convex-mode browser check**.
 - Evidence: `apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx` renders “Preview code. In production this is a short-lived signed token,” while `CURRENT_STATE.md` says the Convex path already uses a short-lived HMAC-signed, branch-bound entry pass.
 - Risk: members and gym staff cannot tell whether the QR shown in the live portal is a real usable credential.
-- Fix/acceptance: make the label runtime-aware. In Convex mode say it is a short-lived signed entry pass and show its expiry/refresh behavior; reserve “Preview code” for explicit mock mode. Add mock/Convex component coverage.
+- Fix/acceptance: the label is now runtime-aware, missing tokens show a retryable state, and preview wording is reserved for mock mode. Preview browser coverage exists; add the credential-gated Convex assertion during the production-shaped smoke.
 
 ### BUG-007 — Critical screens are polling, not truly realtime
 
@@ -79,6 +79,20 @@ Last reviewed: 2026-08-09, commit `2164748` plus the current roadmap documentati
 - Evidence: earlier browser reports described admin/team sessions flickering through member pages, an extra “Access platform” step, and role errors before reaching the correct dashboard. Recent tests cover sign-out transition and role restrictions, but not every Clerk identity-to-destination path.
 - Risk: a valid gym owner, platform admin, or member can land on the wrong surface or see a misleading role error.
 - Fix/acceptance: add trusted/mock browser tests for member → member dashboard, gym staff → gym dashboard, platform admin → platform console, forbidden direct URLs, sign-out → login, and cold-refresh hydration. Assert no intermediate wrong-dashboard content is visible.
+
+### BUG-010 — Public gym application can fail closed with no selectable plan catalog
+
+- Status: **Needs verification against the current production deployment**.
+- Evidence: a browser run on `/signup` showed “Plans are not available yet” and disabled the application action, even though the UI is designed to show the public catalog. The page currently has approved launch defaults, but it still gates the form while the Convex experience provider is loading or in an error state.
+- Risk: a temporary public catalog/Convex read failure blocks every new gym application instead of preserving a usable application path and clearly reporting the degraded dependency.
+- Fix/acceptance: verify the live `public.catalog` query and the default-plan fallback in both Development and Production. If the catalog is unavailable, keep the approved fallback plans selectable when safe, show a non-blocking “catalog temporarily unavailable” notice, and add a retry/telemetry path. Add a browser test for catalog success, empty, timeout, and recovery.
+
+### BUG-011 — Provisioning retry/idempotency after an external Clerk failure needs fault-injection coverage
+
+- Status: **Needs verification; the known Clerk slug failure is fixed**.
+- Evidence: provisioning previously failed with Clerk `organization_slugs_disabled` (fixed in `5a7622e` by removing the requirement for Clerk slugs). The protected action now records `failed` state and exposes retry, but there is no end-to-end test that retries after a partial Clerk organization/invitation response without duplicating the workspace, owner membership, invitation, or audit facts.
+- Risk: a transient Clerk/API failure can leave an approved application stuck, create duplicate organizations/invitations on retry, or make the UI report success before Convex state is complete.
+- Fix/acceptance: add a deterministic fault-injection test around organization creation, owner invitation, and finalization. Retry must converge to one organization, one branch, one subscription, one owner membership, and one invitation; each failure must remain auditable with a correlation ID and an actionable operator message.
 
 ## P1 — Missing or incomplete MVP behavior
 
@@ -170,4 +184,6 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 
 | Issue | Closed on | Commit | Evidence |
 | --- | --- | --- | --- |
-| — | — | — | No items from this review have been closed yet. |
+| BUG-005, BUG-006 | 2026-08-09 | `850454c` | 238 unit tests; 7 public-experience Playwright tests passed, including authenticated/unauthenticated trial confirmation and preview QR wording. Convex-mode production assertion remains release-gated. |
+| Historical provisioning slug failure | 2026-08-09 | `5a7622e` | Clerk organization creation no longer requires the optional Clerk slug feature; the internal RIVET organization slug remains stable. Retry/idempotency coverage remains open as BUG-011. |
+| Historical public plan-catalog fallback | 2026-08-09 | `55cead9` | Approved launch defaults keep the public gym application usable when editable catalog rows are absent; production success/timeout/recovery coverage remains open as BUG-010. |
