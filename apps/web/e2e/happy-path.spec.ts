@@ -187,6 +187,34 @@ test.describe("CRM lead capture", () => {
     await page.getByRole("option", { name: "Unassigned" }).click();
     await expect(dialog.getByLabel("Owner")).toContainText("Unassigned");
   });
+
+  test("keeps a CRM offer drafted until staff confirms manual delivery", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/crm/pipeline");
+    await page.locator("article").first().click();
+    await expect(page).toHaveURL(/\/crm\/leads\//);
+
+    const dialog = async () => page.getByRole("dialog");
+    await page.getByRole("button", { name: "Create offer" }).click();
+    await expect(await dialog()).toBeVisible();
+    await (await dialog()).getByLabel("Plan").click();
+    await page.getByRole("option").first().click();
+    await (await dialog()).getByRole("button", { name: "Record draft" }).click();
+    await expect(page.getByText(/offer saved as a draft/i)).toBeVisible();
+    await expect(page.getByText("Draft · not delivered")).toBeVisible();
+
+    await page.getByRole("button", { name: "Create offer" }).click();
+    await (await dialog()).getByLabel("Plan").click();
+    await page.getByRole("option").first().click();
+    await (await dialog()).getByLabel("Delivery state").click();
+    await page.getByRole("option", { name: /Confirm manual delivery/i }).click();
+    await expect((await dialog()).getByRole("button", { name: "Confirm manual delivery" })).toBeVisible();
+    await (await dialog()).getByRole("button", { name: "Confirm manual delivery" }).click();
+
+    await expect(page.getByText(/offer delivery confirmed and lead stage updated/i)).toBeVisible();
+    await expect(page.getByText(/Delivered · (whatsapp|sms|manual|email)/i)).toBeVisible();
+    await expect(page.getByText("Offer sent").first()).toBeVisible();
+  });
 });
 
 test.describe("sensitive actions are audited", () => {

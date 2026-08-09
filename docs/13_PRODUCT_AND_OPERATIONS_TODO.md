@@ -120,7 +120,15 @@ The dialog now keeps the current actor visible as an owner, includes active staf
 
 ### Observed problem
 
-The lead action says **Create offer**, its confirmation button says **Send offer**, the persisted offer immediately receives `status: "sent"`, and the timeline says **Offer sent**. The operation currently only creates an internal offer record and does not deliver an email, WhatsApp message, SMS, link, or document to the prospect. That wording creates a serious operational risk: staff can reasonably believe a revenue-critical offer reached a lead when nothing left RIVET.
+The original flow said **Create offer**, immediately persisted `status: "sent"`, and wrote **Offer sent** to the timeline even though it only created an internal record. That wording created a serious operational risk: staff could reasonably believe an offer reached a lead when nothing left RIVET. The implementation status below records the corrective draft/manual-confirmation slice; provider-backed delivery remains a separate follow-up.
+
+### Implementation status
+
+- [x] Offer creation now records an immutable-price **draft** and an `offer_drafted` timeline fact without advancing the lead to **Offer sent**.
+- [x] Staff can explicitly confirm manual delivery through email, WhatsApp, SMS, or another channel; the actor, timestamp, channel, optional safe reference, lead stage, timeline, and audit event are recorded only after that confirmation.
+- [x] Missing contact data and repeat delivery attempts are rejected; failed/unattempted delivery cannot display as sent.
+- [x] Mock, Convex adapter, Convex domain, component-facing UI, unit, and browser coverage are aligned.
+- [ ] Provider-backed delivery, stable branded offer views/documents, retries, delivery webhooks, expiry, acceptance, and conversion remain open work.
 
 ### Completion criteria
 

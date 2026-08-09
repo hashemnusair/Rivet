@@ -11,7 +11,7 @@ import { z } from "zod";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { LeadStage, TrialBookingStatus } from "@/lib/domain/types";
+import type { LeadStage, OfferDeliveryChannel, TrialBookingStatus } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDate } from "@/lib/utils/dates";
@@ -238,12 +238,15 @@ export default function LeadDetailPageClient() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">{offer.planName}</span>
                       <Badge variant={offer.status === "accepted" ? "success" : offer.status === "sent" ? "warning" : "neutral"}>
-                        {offer.status}
+                        {offer.status === "draft" ? "Draft · not delivered" : offer.status === "sent" && offer.deliveryChannel ? `Delivered · ${offer.deliveryChannel}` : offer.status}
                       </Badge>
                     </div>
                     <div className="mt-1 flex items-center justify-between text-ink-3">
                       <MoneyText money={offer.price} />
-                      {offer.expiresAt ? <span>expires {formatDate(offer.expiresAt)}</span> : null}
+                      <span className="text-end">
+                        {offer.expiresAt ? <>expires {formatDate(offer.expiresAt)}</> : null}
+                        {offer.status === "sent" && offer.deliveredAt ? <span className="ms-2">· {formatDate(offer.deliveredAt)}</span> : null}
+                      </span>
                     </div>
                   </li>
                 ))}
@@ -259,7 +262,7 @@ export default function LeadDetailPageClient() {
         </section>
       </div>
 
-      <CreateOfferDialog leadId={lead.id} open={offerOpen} onOpenChange={setOfferOpen} />
+      <CreateOfferDialog leadId={lead.id} email={lead.email} phone={lead.phone} open={offerOpen} onOpenChange={setOfferOpen} />
       <ConvertLeadDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} branchId={lead.branchId} open={convertOpen} onOpenChange={setConvertOpen} />
 
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(open) => { if (!open) { setTrialOutcome(undefined); setTrialNote(""); } }}>
@@ -343,16 +346,29 @@ const offerSchema = z.object({
 });
 type OfferValues = z.infer<typeof offerSchema>;
 
-function CreateOfferDialog({ leadId, open, onOpenChange }: { leadId: string; open: boolean; onOpenChange: (v: boolean) => void }) {
+function CreateOfferDialog({ leadId, email, phone, open, onOpenChange }: { leadId: string; email?: string; phone: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const invalidate = useInvalidate();
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 50 }));
   const form = useForm<OfferValues>({ resolver: zodResolver(offerSchema), defaultValues: { planId: "", price: "", expiresInDays: 7 } });
+  const [deliveryMode, setDeliveryMode] = useState<"draft" | "manual">("draft");
+  const [channel, setChannel] = useState<OfferDeliveryChannel>(email ? "email" : phone ? "whatsapp" : "manual");
+  const [reference, setReference] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setDeliveryMode("draft");
+    setChannel(email ? "email" : phone ? "whatsapp" : "manual");
+    setReference("");
+  }, [email, open, phone]);
 
   const mutation = useApiMutation(
-    (api, v: OfferValues) => api.createOffer({ leadId, planId: v.planId, price: fromMajor(Number(v.price)), expiresInDays: v.expiresInDays }),
+    async (api, v: OfferValues) => {
+      const offer = await api.createOffer({ leadId, planId: v.planId, price: fromMajor(Number(v.price)), expiresInDays: v.expiresInDays });
+      return deliveryMode === "manual" ? api.markOfferDelivered(offer.id, { channel, reference: reference.trim() || undefined }) : offer;
+    },
     {
       onSuccess: async () => {
-        toast.success("Offer recorded and stage moved to “Offer sent”.");
+        toast.success(deliveryMode === "manual" ? "Offer delivery confirmed and lead stage updated." : "Offer saved as a draft — it has not been delivered.");
         onOpenChange(false);
         await invalidate();
       },
@@ -364,7 +380,7 @@ function CreateOfferDialog({ leadId, open, onOpenChange }: { leadId: string; ope
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create offer</DialogTitle>
-          <DialogDescription>Records the commercial offer on the lead timeline and moves the stage forward.</DialogDescription>
+          <DialogDescription>Record the price and expiry first. A lead only moves to “Offer sent” after delivery is explicitly confirmed.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
@@ -403,10 +419,42 @@ function CreateOfferDialog({ leadId, open, onOpenChange }: { leadId: string; ope
                 <Input type="number" min={1} max={60} {...form.register("expiresInDays")} />
               </Field>
             </div>
+            <Field label="Delivery state" hint="RIVET does not send CRM offers yet; manual confirmation records what happened outside the app.">
+              <Select value={deliveryMode} onValueChange={(value) => setDeliveryMode(value as "draft" | "manual")}>
+                <SelectTrigger aria-label="Delivery state">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Keep as draft · not delivered</SelectItem>
+                  <SelectItem value="manual">Confirm manual delivery</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {deliveryMode === "manual" ? (
+              <div className="space-y-3 rounded-md border border-line bg-sunken px-3.5 py-3">
+                <p className="text-[12px] text-ink-2">Confirm that you already sent the offer outside RIVET. This does not call an email or messaging provider.</p>
+                <Field label="Channel" required>
+                  <Select value={channel} onValueChange={(value) => setChannel(value as OfferDeliveryChannel)}>
+                    <SelectTrigger aria-label="Delivery channel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="email" disabled={!email}>Email{email ? ` · ${email}` : " · no email captured"}</SelectItem>
+                      <SelectItem value="whatsapp" disabled={!phone}>WhatsApp · {phone}</SelectItem>
+                      <SelectItem value="sms" disabled={!phone}>SMS · {phone}</SelectItem>
+                      <SelectItem value="manual">Other manual channel</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="External reference (optional)" hint="Message ID, call note, or other safe reference — never paste credentials.">
+                  <Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. WhatsApp note · 12 Aug" />
+                </Field>
+              </div>
+            ) : null}
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending}>Send offer</Button>
+            <Button type="submit" loading={mutation.isPending}>{deliveryMode === "manual" ? "Confirm manual delivery" : "Record draft"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

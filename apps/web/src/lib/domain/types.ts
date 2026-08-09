@@ -450,10 +450,16 @@ export interface Offer {
   planName: string;
   price: Money;
   expiresAt?: ISODateTime;
-  status: "sent" | "accepted" | "declined" | "expired";
+  status: "draft" | "sent" | "accepted" | "declined" | "expired";
+  deliveryChannel?: OfferDeliveryChannel;
+  deliveredAt?: ISODateTime;
+  deliveredById?: UUID;
+  deliveryReference?: string;
   createdById: UUID;
   createdAt: ISODateTime;
 }
+
+export type OfferDeliveryChannel = "email" | "whatsapp" | "sms" | "manual";
 
 export type ContactOutcome =
   | "no_answer"
@@ -557,6 +563,7 @@ export type TimelineEventType =
   | "message"
   | "task_created"
   | "task_completed"
+  | "offer_drafted"
   | "offer_sent"
   | "membership_sold"
   | "membership_renewed"

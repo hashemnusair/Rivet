@@ -1245,6 +1245,10 @@ export function buildSeed(now: Date = new Date()): MockDb {
           price: money(expectedMinor),
           expiresAt: iso(hoursAgo(now, stage === "offer_sent" ? -48 : 24 * 10)),
           status: stage === "won" ? "accepted" : "sent",
+          deliveryChannel: "manual",
+          deliveredAt: iso(daysAgo(now, Math.max(1, createdDaysAgo - 2))),
+          deliveredById: ownerId ?? U.sara,
+          deliveryReference: "seeded-demo-delivery",
           createdById: ownerId ?? U.sara,
           createdAt: iso(daysAgo(now, Math.max(1, createdDaysAgo - 2))),
         };
@@ -1254,10 +1258,12 @@ export function buildSeed(now: Date = new Date()): MockDb {
           organizationId: ORG_ID,
           leadId: id,
           type: "offer_sent",
-          title: `Offer sent — ${plan.name} at JOD ${(expectedMinor / 1000).toFixed(3)}`,
+          title: `Offer delivery confirmed — ${plan.name} at JOD ${(expectedMinor / 1000).toFixed(3)}`,
+          body: "Manual delivery confirmed · seeded demo delivery.",
           actorId: offer.createdById,
           actorName: users.find((u) => u.id === offer.createdById)?.name,
           occurredAt: offer.createdAt,
+          meta: { offerId: offer.id, channel: "manual" },
         });
       }
 

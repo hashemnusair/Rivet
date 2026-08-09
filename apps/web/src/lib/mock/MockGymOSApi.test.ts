@@ -807,6 +807,41 @@ describe("CRM", () => {
     expect(detail.activities.some((a) => a.type === "call_attempt")).toBe(true);
   });
 
+  it("keeps offers as drafts until delivery is explicitly confirmed", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({
+      fullName: "Offer Truth Test",
+      phone: "+962 79 900 0444",
+      email: "offer-truth@example.com",
+      branchId: session.branches[0]!.id,
+      source: "walk_in",
+    });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+
+    const draft = await api.createOffer({ leadId: lead.id, planId: plan.id, price: plan.basePrice, expiresInDays: 7 });
+    expect(draft).toMatchObject({ status: "draft", planName: plan.name });
+    expect((await api.getLead(lead.id)).stage).toBe("new");
+    expect((await api.getLead(lead.id)).activities.some((event) => event.type === "offer_drafted")).toBe(true);
+
+    const delivered = await api.markOfferDelivered(draft.id, { channel: "email", reference: "manual-email-2026-08-09" });
+    expect(delivered).toMatchObject({ status: "sent", deliveryChannel: "email", deliveryReference: "manual-email-2026-08-09" });
+    expect((await api.getLead(lead.id)).stage).toBe("offer_sent");
+    expect((await api.getLead(lead.id)).activities.some((event) => event.type === "offer_sent")).toBe(true);
+    expect((await api.listAuditEvents({ category: "crm", pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "offer.delivered", entityId: draft.id }));
+    await expect(api.markOfferDelivered(draft.id, { channel: "email" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("does not mark an email offer delivered when the lead has no email", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Offer Contact Gap", phone: "+962 79 900 0445", branchId: session.branches[0]!.id, source: "walk_in" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const draft = await api.createOffer({ leadId: lead.id, planId: plan.id, price: plan.basePrice });
+
+    await expect(api.markOfferDelivered(draft.id, { channel: "email" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    expect((await api.getLead(lead.id)).stage).toBe("new");
+    expect((await api.getLead(lead.id)).offers[0]).toMatchObject({ id: draft.id, status: "draft" });
+  });
+
   it("converts a lead into a member without duplicating contact details", async () => {
     const leads = await api.listLeads({ pageSize: 30 });
     const lead = leads.items.find((l) => !l.convertedMemberId && l.stage !== "lost")!;

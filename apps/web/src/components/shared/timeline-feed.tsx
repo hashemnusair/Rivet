@@ -30,6 +30,7 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   message: { icon: MessageSquare, tone: "text-ink-2" },
   task_created: { icon: CalendarClock, tone: "text-warning-deep" },
   task_completed: { icon: CheckCircle2, tone: "text-success-deep" },
+  offer_drafted: { icon: FileText, tone: "text-ink-2" },
   offer_sent: { icon: FileText, tone: "text-warning-deep" },
   membership_sold: { icon: CreditCard, tone: "text-success-deep" },
   membership_renewed: { icon: RotateCcw, tone: "text-success-deep" },

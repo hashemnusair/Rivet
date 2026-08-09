@@ -44,6 +44,7 @@ import type {
   NotificationSettings,
   OccupancySnapshot,
   Offer,
+  OfferDeliveryChannel,
   OpenCashShiftInput,
   OrganizationSettings,
   OperationalPolicies,
@@ -316,6 +317,18 @@ export interface PlatformSnapshot {
   plans: PlatformSaasPlan[];
 }
 
+export interface CreateOfferInput {
+  leadId: UUID;
+  planId: UUID;
+  price: Money;
+  expiresInDays?: number;
+}
+
+export interface MarkOfferDeliveredInput {
+  channel: OfferDeliveryChannel;
+  reference?: string;
+}
+
 /** Platform-only controls for a subscribed tenant. The public directory row
  * and the backing Convex organization are updated together when a match is
  * available; this keeps the console from being a read-only mock surface. */
@@ -416,7 +429,8 @@ export interface GymOSApi {
     bookingId: UUID,
     input: { status: Extract<import("@/lib/domain/types").TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string },
   ): Promise<LeadDetail>;
-  createOffer(input: { leadId: UUID; planId: UUID; price: Money; expiresInDays?: number }): Promise<Offer>;
+  createOffer(input: CreateOfferInput): Promise<Offer>;
+  markOfferDelivered(offerId: UUID, input: MarkOfferDeliveredInput): Promise<Offer>;
   listTasks(query: TaskListQuery): Promise<Page<Task>>;
   createFollowUp(input: CreateTaskInput): Promise<Task>;
   completeTask(taskId: UUID, input: CompleteTaskInput): Promise<Task>;

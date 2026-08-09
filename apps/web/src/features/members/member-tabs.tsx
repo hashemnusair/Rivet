@@ -78,7 +78,7 @@ const TIMELINE_FILTERS: Array<{ value: string; label: string; types?: TimelineEv
   { value: "all", label: "Everything" },
   { value: "commercial", label: "Sales & payments", types: ["membership_sold", "membership_renewed", "payment_collected", "payment_refunded", "payment_voided"] },
   { value: "membership", label: "Membership changes", types: ["membership_frozen", "membership_unfrozen", "membership_extended", "membership_cancelled"] },
-  { value: "contact", label: "Calls & notes", types: ["call_attempt", "note", "message", "task_created", "task_completed", "offer_sent"] },
+  { value: "contact", label: "Calls & notes", types: ["call_attempt", "note", "message", "task_created", "task_completed", "offer_drafted", "offer_sent"] },
   { value: "checkin", label: "Check-ins", types: ["check_in"] },
 ];
 

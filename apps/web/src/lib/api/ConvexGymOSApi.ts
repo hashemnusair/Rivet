@@ -32,6 +32,8 @@ import type {
   GymProvisioningResult,
   UpdatePlatformGymInput,
   UpdatePlatformPlanInput,
+  CreateOfferInput,
+  MarkOfferDeliveredInput,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
@@ -241,7 +243,8 @@ export class ConvexGymOSApi implements GymOSApi {
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }
-  createOffer(input: { leadId: T.UUID; planId: T.UUID; price: T.Money; expiresInDays?: number }): Promise<T.Offer> { return this.mutate("offers.create", input); }
+  createOffer(input: CreateOfferInput): Promise<T.Offer> { return this.mutate("offers.create", input); }
+  markOfferDelivered(offerId: T.UUID, input: MarkOfferDeliveredInput): Promise<T.Offer> { return this.mutate("offers.deliver", { offerId, ...input }); }
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> { return this.query("tasks.list", query); }
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> { return this.mutate("tasks.create", input); }
   completeTask(taskId: T.UUID, input: T.CompleteTaskInput): Promise<T.Task> { return this.mutate("tasks.complete", { taskId, ...input }); }

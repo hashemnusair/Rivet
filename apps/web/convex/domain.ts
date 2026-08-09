@@ -2356,10 +2356,33 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const plan = await recordOf(ctx, actor, "plan", recordId(input.planId));
-      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: amountOf(input.price), currency: actor.organization.currency }, expiresAt: input.expiresInDays ? new Date(Date.now() + numberValue(input.expiresInDays) * 86_400_000).toISOString() : undefined, status: "sent", createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
-      await patchRecord(ctx, actor, lead, { stage: "offer_sent", updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_sent", title: `Offer sent — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: amountOf(input.price), currency: actor.organization.currency }, expiresAt: input.expiresInDays ? new Date(Date.now() + numberValue(input.expiresInDays) * 86_400_000).toISOString() : undefined, status: "draft", createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
       return offer;
+    }
+    case "offers.deliver": {
+      requirePermission(actor, "crm.write");
+      const offerRecord = await recordOf(ctx, actor, "offer", recordId(input.offerId));
+      const current = data(offerRecord.data);
+      if (stringValue(current.status, "draft") !== "draft") domainError("CONFLICT", "This offer has already been delivered or closed.", { correlationId: actor.correlationId });
+      const channel = stringValue(input.channel);
+      if (!["email", "whatsapp", "sms", "manual"].includes(channel)) domainError("VALIDATION_ERROR", "Choose a valid delivery channel.", { correlationId: actor.correlationId, fieldErrors: { channel: ["Choose a valid delivery channel"] } });
+      const leadId = optionalString(current.leadId);
+      if (!leadId) domainError("NOT_FOUND", "Offer not found.", { correlationId: actor.correlationId });
+      const lead = await recordOf(ctx, actor, "lead", leadId);
+      const leadData = data(lead.data);
+      const email = optionalString(leadData.email);
+      const phone = optionalString(leadData.phone);
+      if ((channel === "email" && !email) || ((channel === "whatsapp" || channel === "sms") && !phone)) {
+        domainError("VALIDATION_ERROR", `This lead has no ${channel === "email" ? "email address" : "phone number"} to record delivery against.`, { correlationId: actor.correlationId });
+      }
+      const deliveredAt = isoNow();
+      const reference = typeof input.reference === "string" ? input.reference.trim() : undefined;
+      const updated = await patchRecord(ctx, actor, offerRecord, { status: "sent", deliveryChannel: channel, deliveredAt, deliveredById: publicUserId(actor.user), deliveryReference: reference || undefined });
+      await patchRecord(ctx, actor, lead, { stage: "offer_sent", updatedAt: deliveredAt });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
+      await insertAudit(ctx, actor, { category: "crm", action: "offer.delivered", entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer delivery confirmed via ${channel}`, reason: reference || `Manual ${channel} delivery confirmation`, before: { status: "draft" }, after: { status: "sent", deliveryChannel: channel }, branchId: optionalString(leadData.branchId) });
+      return updated;
     }
     case "tasks.create":
       return await createTaskMutation(ctx, actor, input);

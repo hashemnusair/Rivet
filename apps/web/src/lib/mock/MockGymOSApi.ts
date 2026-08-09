@@ -2018,7 +2018,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === input.leadId);
-      if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       const plan = this.db.plans.find((p) => p.id === input.planId);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
       const offer: T.Offer = {
@@ -2028,19 +2028,64 @@ export class MockGymOSApi implements GymOSApi {
         planName: plan.name,
         price: input.price,
         expiresAt: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000).toISOString() : undefined,
-        status: "sent",
+        status: "draft",
         createdById: this.actor().id,
         createdAt: nowISO(),
       };
       this.db.offers.push(offer);
+      this.activity({
+        leadId: lead.id,
+        type: "offer_drafted",
+        title: `Offer drafted — ${plan.name} at JOD ${(input.price.amount / 1000).toFixed(3)}`,
+        actorId: this.actor().id,
+        actorName: this.actor().name,
+        meta: { offerId: offer.id },
+      });
+      return offer;
+    });
+  }
+
+  markOfferDelivered(offerId: T.UUID, input: { channel: T.OfferDeliveryChannel; reference?: string }): Promise<T.Offer> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const offer = this.db.offers.find((item) => item.id === offerId);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Offer not found.");
+      if (offer.status !== "draft") throw ApiError.of(ERR.CONFLICT, "This offer has already been delivered or closed.");
+      if (!["email", "whatsapp", "sms", "manual"].includes(input.channel)) throw ApiError.of(ERR.VALIDATION, "Choose a valid delivery channel.");
+      if ((input.channel === "email" && !lead.email) || ((input.channel === "whatsapp" || input.channel === "sms") && !lead.phone)) {
+        throw ApiError.of(ERR.VALIDATION, `This lead has no ${input.channel === "email" ? "email address" : "phone number"} to record delivery against.`);
+      }
+      const deliveredAt = nowISO();
+      Object.assign(offer, {
+        status: "sent" as const,
+        deliveryChannel: input.channel,
+        deliveredAt,
+        deliveredById: this.actor().id,
+        deliveryReference: input.reference?.trim() || undefined,
+      });
       lead.stage = "offer_sent";
-      lead.updatedAt = nowISO();
+      lead.updatedAt = deliveredAt;
       this.activity({
         leadId: lead.id,
         type: "offer_sent",
-        title: `Offer sent — ${plan.name} at JOD ${(input.price.amount / 1000).toFixed(3)}`,
+        title: `Offer delivery confirmed — ${offer.planName}`,
+        body: `${input.channel === "manual" ? "Manual delivery" : input.channel} confirmed${input.reference?.trim() ? ` · ${input.reference.trim()}` : ""}.`,
         actorId: this.actor().id,
         actorName: this.actor().name,
+        meta: { offerId: offer.id, channel: input.channel },
+      });
+      this.audit({
+        category: "crm",
+        action: "offer.delivered",
+        entityType: "offer",
+        entityId: offer.id,
+        entityLabel: `${offer.planName} · ${lead.fullName}`,
+        summary: `Offer delivery confirmed via ${input.channel}`,
+        reason: input.reference?.trim() || `Manual ${input.channel} delivery confirmation`,
+        before: { status: "draft" },
+        after: { status: "sent", deliveryChannel: input.channel },
+        branchId: lead.branchId,
       });
       return offer;
     });
