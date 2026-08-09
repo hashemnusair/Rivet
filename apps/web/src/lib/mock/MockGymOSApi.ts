@@ -297,7 +297,7 @@ export class MockGymOSApi implements GymOSApi {
         const branch = this.db.branches.find((item) => item.id === preview.branchId);
         if (!branch) { row.status = "invalid"; row.errors = ["Branch not found"]; errors.push({ rowNumber: row.rowNumber, message: "Branch not found" }); continue; }
         this.db.counters.memberNumber += 1;
-        const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: nowISO() };
+        const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: false, createdAt: nowISO() };
         this.db.members.push(member);
         this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
         this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
@@ -1122,7 +1122,7 @@ export class MockGymOSApi implements GymOSApi {
         fullName: input.fullName.trim(),
         fullNameAr: input.fullNameAr,
         phone: input.phone.trim(),
-        email: input.email?.trim() || undefined,
+        email: input.email?.trim().toLowerCase() || undefined,
         gender: input.gender,
         dateOfBirth: input.dateOfBirth,
         homeBranchId: branch.id,
@@ -1133,7 +1133,7 @@ export class MockGymOSApi implements GymOSApi {
         emergencyContactPhone: input.emergencyContactPhone,
         source: input.source,
         assignedSalespersonId: input.assignedSalespersonId,
-        marketingOptIn: input.marketingOptIn ?? true,
+        marketingOptIn: input.marketingOptIn === true,
         notes: input.notes,
         createdAt: nowISO(),
       };
@@ -1863,16 +1863,22 @@ export class MockGymOSApi implements GymOSApi {
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.write");
+      const requestedOwnerId = input.ownerId;
+      if (requestedOwnerId && requestedOwnerId !== "unassigned" && requestedOwnerId !== this.actor().id) {
+        this.require("crm.assign");
+        const owner = this.db.users.find((user) => user.id === requestedOwnerId && user.status === "active");
+        if (!owner || !["owner", "manager", "salesperson"].includes(owner.role)) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+      }
       const lead: T.Lead = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
         branchId: input.branchId,
         fullName: input.fullName.trim(),
         phone: input.phone.trim(),
-        email: input.email?.trim() || undefined,
+        email: input.email?.trim().toLowerCase() || undefined,
         stage: "new",
         source: input.source,
-        ownerId: input.ownerId ?? this.actor().id,
+        ownerId: input.ownerId === "unassigned" ? undefined : input.ownerId ?? this.actor().id,
         expectedValue: input.expectedValue,
         nextFollowUpAt: input.nextFollowUpAt,
         createdAt: nowISO(),
@@ -2160,7 +2166,7 @@ export class MockGymOSApi implements GymOSApi {
       emergencyContactPhone: input.emergencyContactPhone,
       source: input.source,
       assignedSalespersonId: input.assignedSalespersonId,
-      marketingOptIn: input.marketingOptIn ?? true,
+      marketingOptIn: input.marketingOptIn === true,
       notes: input.notes,
       createdAt: nowISO(),
     };

@@ -478,7 +478,7 @@ export interface CreateLeadInput {
   email?: string;
   branchId: UUID;
   source: LeadSource;
-  ownerId?: UUID;
+  ownerId?: UUID | "unassigned";
   expectedValue?: Money;
   nextFollowUpAt?: ISODateTime;
   notes?: string;

@@ -19,7 +19,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, explicitMarketingConsent, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -673,7 +673,7 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
     emergencyContactPhone: optionalString(value.emergencyContactPhone),
     source: optionalString(value.source),
     assignedSalespersonId: optionalString(value.assignedSalespersonId),
-    marketingOptIn: booleanValue(value.marketingOptIn),
+    marketingOptIn: explicitMarketingConsent(value.marketingOptIn),
     notes: optionalString(value.notes),
     archivedAt: optionalString(value.archivedAt),
       stats: {
@@ -1462,7 +1462,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
     }
     case "users.list": {
-      requirePermission(actor, "users.manage");
+      if (!hasPermission(actor, "users.manage") && !hasPermission(actor, "crm.assign")) requirePermission(actor, "users.manage");
       const users = await ctx.db.query("users").collect();
       const output: Data[] = [];
       for (const user of users) {
@@ -1823,7 +1823,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: true });
+    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: false });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
     rows[index] = { ...row, status: "committed", memberId: member.id };
@@ -1875,7 +1875,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     emergencyContactPhone: optionalString(input.emergencyContactPhone),
     source: optionalString(input.source),
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
-    marketingOptIn: booleanValue(input.marketingOptIn, true),
+    marketingOptIn: explicitMarketingConsent(input.marketingOptIn),
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });
@@ -2249,7 +2249,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const branchId = recordId(input.branchId);
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName: stringValue(input.fullName).trim(), phone: stringValue(input.phone).trim(), email: optionalString(input.email), stage: "new", source: stringValue(input.source, "other"), ownerId: optionalString(input.ownerId) ?? publicUserId(actor.user), expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
+      const requestedOwnerId = optionalString(input.ownerId);
+      const ownerId: string | undefined = requestedOwnerId === "unassigned" ? undefined : requestedOwnerId ?? publicUserId(actor.user);
+      if (ownerId && ownerId !== publicUserId(actor.user)) {
+        requirePermission(actor, "crm.assign");
+        const owner = await userByPublicId(ctx, actor.organization._id, ownerId);
+        if (!owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+        const ownerMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", owner._id)).unique();
+        if (!ownerMembership || !ownerMembership.active || !["owner", "manager", "sales"].includes(ownerMembership.role)) domainError("VALIDATION_ERROR", "Leads can only be assigned to active owner, manager, or sales staff.", { correlationId: actor.correlationId });
+      }
+      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName: stringValue(input.fullName).trim(), phone: stringValue(input.phone).trim(), email: optionalString(input.email), stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
       await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities: [], offers: [] };
     }

@@ -16,6 +16,7 @@ import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
 import { BranchRevenueBars, LeadFunnel, RevenueChart } from "./charts";
+import { dashboardScopeDescription } from "./dashboard-scope";
 
 export function OwnerDashboard() {
   const { session } = useApp();
@@ -44,9 +45,7 @@ export function OwnerDashboard() {
         eyebrow={formatDate(today)}
         title={`${greeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
         description={
-          branchId
-            ? `Showing ${session?.branches.find((b) => b.id === branchId)?.name ?? "branch"} only.`
-            : "Both branches, consolidated."
+          dashboardScopeDescription(session?.branches ?? [], branchId)
         }
       />
 

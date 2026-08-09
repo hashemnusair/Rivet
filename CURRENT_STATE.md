@@ -65,9 +65,9 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 238 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, mock-mode, component, reception, customer ownership, and member-portal regression coverage.
-- `pnpm test:e2e` — 17 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
-- `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
+- `pnpm test` — 246 tests passed across 23 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, marketing-consent defaults, lead assignment, dashboard scope copy, mock-mode, component, reception, customer ownership, and member-portal regression coverage.
+- `pnpm test:e2e` — 19 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches. The current head adds browser coverage for branch-aware dashboard scope and CRM lead capture.
+- `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic. The first sandboxed attempt could not reach Google Fonts; the network-enabled rerun passed.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
 - `convex run health:check` — returned `status: ok` from the linked development deployment.

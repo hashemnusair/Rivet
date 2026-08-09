@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
@@ -35,7 +35,17 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const { session } = useApp();
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
-  const usersQuery = useApiQuery(qk.users({ role: "salesperson" }), (api) => api.listUsers({ role: "salesperson", status: "active", pageSize: 20 }));
+  // Lead ownership is not limited to salespeople: owners and managers may
+  // legitimately carry a queue, and the current actor must remain visible
+  // when their role is not salesperson.
+  const usersQuery = useApiQuery(qk.users({ status: "active" }), (api) => api.listUsers({ status: "active", pageSize: 50 }));
+  const ownerOptions = useMemo(() => {
+    const candidates = [
+      ...(session?.user ? [{ id: session.user.id, name: session.user.name }] : []),
+      ...(usersQuery.data?.items ?? []).map((user) => ({ id: user.id, name: user.name })),
+    ];
+    return candidates.filter((user, index) => candidates.findIndex((candidate) => candidate.id === user.id) === index);
+  }, [session?.user, usersQuery.data?.items]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -75,10 +85,10 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       api.createLead({
         fullName: v.fullName,
         phone: v.phone,
-        email: v.email || undefined,
+        email: v.email?.trim().toLowerCase() || undefined,
         branchId: v.branchId,
         source: v.source as LeadSource,
-        ownerId: v.ownerId || undefined,
+        ownerId: v.ownerId || "unassigned",
         expectedValue: v.expectedValue ? fromMajor(Number(v.expectedValue)) : undefined,
         nextFollowUpAt: v.nextFollowUp ? new Date(`${v.nextFollowUp}T10:00:00Z`).toISOString() : undefined,
         notes: v.notes || undefined,
@@ -109,6 +119,9 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <Input dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
               </Field>
             </div>
+            <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
+              <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Branch" required>
                 <Controller
@@ -157,12 +170,13 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   control={form.control}
                   name="ownerId"
                   render={({ field }) => (
-                    <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || undefined)}>
+                    <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || "unassigned")}>
                       <SelectTrigger aria-label="Owner">
                         <SelectValue placeholder="Unassigned" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(usersQuery.data?.items ?? []).map((u) => (
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {ownerOptions.map((u) => (
                           <SelectItem key={u.id} value={u.id}>
                             {u.name}
                           </SelectItem>

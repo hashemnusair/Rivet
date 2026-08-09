@@ -23,6 +23,14 @@ export function isValidMinorUnit(amount: unknown, allowNegative = false): amount
   return typeof amount === "number" && Number.isSafeInteger(amount) && (allowNegative || amount >= 0);
 }
 
+/**
+ * Marketing consent is affirmative only. Missing, malformed, or inherited
+ * values must never be interpreted as permission to send promotions.
+ */
+export function explicitMarketingConsent(value: unknown): boolean {
+  return value === true;
+}
+
 export interface DuplicateMemberCandidate {
   id?: unknown;
   fullName?: unknown;

@@ -125,6 +125,12 @@ test.describe("reception check-in", () => {
 });
 
 test.describe("role restrictions", () => {
+  test("describes the actual dashboard branch scope", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/dashboard");
+    await expect(page.getByText("All 2 branches, consolidated.")).toBeVisible();
+  });
+
   test("hides finance and system areas from reception", async ({ page }) => {
     await signIn(page, "Reception");
     const nav = page.getByRole("navigation").first();
@@ -145,6 +151,20 @@ test.describe("role restrictions", () => {
     await expect(nav.getByRole("link", { name: /^Transactions$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Audit log$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
+  });
+});
+
+test.describe("CRM lead capture", () => {
+  test("captures an optional email and exposes an explicit unassigned owner", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/crm/pipeline");
+    await page.getByRole("button", { name: /New lead/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Email")).toBeVisible();
+    await dialog.getByLabel("Email").fill("prospect@example.com");
+    await dialog.getByLabel("Owner").click();
+    await page.getByRole("option", { name: "Unassigned" }).click();
+    await expect(dialog.getByLabel("Owner")).toContainText("Unassigned");
   });
 });
 

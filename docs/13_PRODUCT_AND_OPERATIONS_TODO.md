@@ -59,11 +59,17 @@ The owner dashboard says **Both branches, consolidated** whenever the branch sel
 - Remove assumptions tied to the seeded Forge Fitness tenant.
 - Add component coverage for zero/loading, one, two, and three-or-more accessible branches plus an explicitly selected branch.
 
+### Implementation status
+
+The hardcoded two-branch copy is replaced by `dashboardScopeDescription`, which handles selected, singular, aggregate, and loading scopes. Focused coverage now covers all four cases; the remaining work is visual verification in a real one-branch Production workspace.
+
 ## P1 — Fix lead-capture contact and owner fields
 
 ### Observed problem
 
 The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere. The owner selector also appeared blank during Production testing even though the current gym owner was silently assigned and later appeared on the lead card; its option query only requests active salespeople and therefore cannot render the selected owner identity.
+
+The dialog now keeps the current actor visible as an owner, includes active staff beyond salespeople when the caller can read them, and provides a real **Unassigned** choice. Server-side role/assignment authorization and the full email-field test matrix remain open.
 
 ### Completion criteria
 
@@ -114,6 +120,8 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 ### Observed problem
 
 The Production lead-conversion flow never asked for marketing consent, yet the resulting member record displayed **Marketing: Opted in**. The shared member-creation mutation defaults a missing `marketingOptIn` value to `true`, and the manual new-member form is also initially switched on. Absence of a choice is not affirmative consent; silently opting people in creates legal, trust, and deliverability risk.
+
+The default is now opt-out across the Convex create/import paths, mock adapter/import path, and manual member form. Explicit `true` remains supported. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
 
 ### Completion criteria
 

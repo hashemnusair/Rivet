@@ -2,7 +2,7 @@
 
 This is the active engineering backlog. It is intentionally evidence-based: confirmed defects are separated from release blockers, missing MVP capabilities, and items that still need verification. Update the status and evidence when a task is fixed; do not delete the history of a release blocker without recording how it was closed.
 
-Last reviewed: 2026-08-09, commits `cfa297a` and `850454c` plus the current roadmap documentation.
+Last reviewed: 2026-08-09, current `main` feature slice plus the production follow-up documentation.
 
 ## How to use this file
 
@@ -151,6 +151,13 @@ Last reviewed: 2026-08-09, commits `cfa297a` and `850454c` plus the current road
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
 - Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
 
+### TODO-009 — Record marketing-consent provenance and revocation history
+
+- Status: **Partially implemented in the current feature slice**.
+- Evidence: new Convex/mock members, lead conversions, imports, and the manual member form now default to opt-out; explicit opt-in remains available. The stored domain fact is still a boolean without source, wording version, timestamp, actor, channel scope, or append-only revocation history.
+- Risk: the system can avoid accidental opt-in, but cannot yet prove why an existing member was opted in or reliably suppress every future promotional channel.
+- Fix/acceptance: add consent source/version/actor/timestamp facts, a staff/member opt-out path, channel-specific suppression, migration treatment for historical records, and tests for affirmative consent, withdrawal, imports, conversion, and authorization.
+
 ## P2 — Deliberately deferred until after the first pilot
 
 - Full class schedules, capacity, waitlists, and no-shows.
@@ -187,3 +194,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | BUG-005, BUG-006 | 2026-08-09 | `850454c` | 238 unit tests; 7 public-experience Playwright tests passed, including authenticated/unauthenticated trial confirmation and preview QR wording. Convex-mode production assertion remains release-gated. |
 | Historical provisioning slug failure | 2026-08-09 | `5a7622e` | Clerk organization creation no longer requires the optional Clerk slug feature; the internal RIVET organization slug remains stable. Retry/idempotency coverage remains open as BUG-011. |
 | Historical public plan-catalog fallback | 2026-08-09 | `55cead9` | Approved launch defaults keep the public gym application usable when editable catalog rows are absent; production success/timeout/recovery coverage remains open as BUG-010. |
+| Dashboard scope copy and consent defaults | 2026-08-09 | pending | 246 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build pass. Production one-branch visual verification and consent provenance/revocation remain open. |

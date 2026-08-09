@@ -188,6 +188,36 @@ describe("member creation", () => {
     expect(after.totalItems).toBe(before.totalItems + 1);
   });
 
+  it("defaults new members and imported rows to opted out unless consent is explicit", async () => {
+    const session = await api.getSession();
+    const created = await api.createMember({
+      fullName: "Consent Default Test",
+      phone: "+962 79 555 1240",
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+    });
+    expect(created.member.marketingOptIn).toBe(false);
+
+    const optedIn = await api.createMember({
+      fullName: "Consent Explicit Test",
+      phone: "+962 79 555 1241",
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      marketingOptIn: true,
+    });
+    expect(optedIn.member.marketingOptIn).toBe(true);
+
+    const preview = await api.previewMemberImport({
+      branchId: session.branches[0]!.id,
+      csv: "full_name,phone,email\nConsent Import,+962790001240,consent-import@example.com",
+    });
+    const imported = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-consent-1" });
+    expect(imported.committedCount).toBe(1);
+    const importedMember = (await api.listMembers({ search: "Consent Import", pageSize: 5 })).items[0];
+    expect(importedMember).toBeDefined();
+    expect((await api.getMember(importedMember!.id)).marketingOptIn).toBe(false);
+  });
+
   it("warns about a duplicate phone instead of silently creating a second record", async () => {
     const existing = (await api.listMembers({ pageSize: 1 })).items[0]!;
     const session = await api.getSession();
@@ -222,6 +252,36 @@ describe("member creation", () => {
 
     await expect(api.commitMemberImport({ importId: preview.id, cursor: 1, chunkSize: 25, idempotencyKey: "member-import-idem-1" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     expect((await api.listMembers({ search: "Import Test", pageSize: 5 })).totalItems).toBe(1);
+  });
+});
+
+describe("lead capture", () => {
+  it("normalizes optional email and supports an explicit unassigned owner", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({
+      fullName: "Lead Email Test",
+      phone: "+962 79 555 1299",
+      email: "  Prospect@Example.COM ",
+      branchId: session.branches[0]!.id,
+      source: "phone_call",
+      ownerId: "unassigned",
+    });
+    expect(lead.email).toBe("prospect@example.com");
+    expect(lead.ownerId).toBeUndefined();
+    expect(lead.ownerName).toBeUndefined();
+  });
+
+  it("requires assignment permission when choosing another staff owner", async () => {
+    const ownerSession = await api.getSession();
+    const salesperson = (await api.listUsers({ role: "salesperson", status: "active", pageSize: 10 })).items[0]!;
+    await api.switchDemoRole("salesperson");
+    await expect(api.createLead({
+      fullName: "Unauthorized Assignment",
+      phone: "+962 79 555 1300",
+      branchId: ownerSession.branches[0]!.id,
+      source: "phone_call",
+      ownerId: salesperson.id,
+    })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 });
 
