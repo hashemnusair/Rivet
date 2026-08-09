@@ -214,6 +214,82 @@ export interface PlatformBillingInvoice {
   status: "paid" | "failed" | "trial";
 }
 
+export type PlatformDataState = "available" | "not_available" | "not_configured";
+
+export type PlatformData<T> =
+  | { state: "available"; value: T }
+  | { state: "not_available" }
+  | { state: "not_configured" };
+
+export interface PlatformGymDetailBranch {
+  id: string;
+  name: string;
+  code: string;
+  address?: string;
+  phone?: string;
+  status: "active" | "inactive";
+}
+
+export interface PlatformGymOwner {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface PlatformGymActivity {
+  id: string;
+  action: string;
+  summary: string;
+  actorName: string;
+  occurredAt: string;
+}
+
+/**
+ * Platform-only detail data. Values are either backed by the selected tenant
+ * or deliberately marked unavailable/configuration-dependent. The platform
+ * route must not manufacture a value to fill an empty provider boundary.
+ */
+export interface PlatformGymDetail {
+  id: string;
+  name: string;
+  shortName: string;
+  accent: string;
+  controls: {
+    status: MarketplaceGym["subscriptionStatus"];
+    plan: MarketplaceGym["rivetPlan"];
+    isPublic: boolean;
+  };
+  organization: PlatformData<{
+    id: UUID;
+    name: string;
+    status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+    currency: string;
+    timezone: string;
+  }>;
+  joinedAt: PlatformData<string>;
+  branches: PlatformData<PlatformGymDetailBranch[]>;
+  owner: PlatformData<PlatformGymOwner>;
+  usage: {
+    memberCount: PlatformData<number>;
+    activeStaffCount: PlatformData<number>;
+    staffLimit: PlatformData<number>;
+    automationRuleCount: PlatformData<number>;
+    paymentTransactionCount: PlatformData<number>;
+    storage: PlatformData<string>;
+  };
+  subscription: {
+    plan: PlatformData<MarketplaceGym["rivetPlan"]>;
+    status: PlatformData<MarketplaceGym["subscriptionStatus"]>;
+    startedAt: PlatformData<string>;
+    recurringAmount: PlatformData<Money>;
+    renewalDate: PlatformData<string>;
+    paymentMethod: PlatformData<string>;
+    invoices: PlatformData<PlatformBillingInvoice[]>;
+  };
+  health: PlatformData<number>;
+  activity: PlatformData<PlatformGymActivity[]>;
+}
+
 export interface PlatformSupportCase {
   id: string;
   gym: string;
@@ -377,6 +453,7 @@ export interface GymOSApi {
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
+  getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;

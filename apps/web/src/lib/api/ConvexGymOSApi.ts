@@ -24,6 +24,7 @@ import type {
   ReviewGymApplicationInput,
   SaveGymApplicationReviewNoteInput,
   PlatformBillingInvoice,
+  PlatformGymDetail,
   PlatformSnapshot,
   PlatformSupportCase,
   PlatformSaasPlan,
@@ -175,6 +176,7 @@ export class ConvexGymOSApi implements GymOSApi {
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
+  getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> { return this.query("platform.gym.detail", { gymId }); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {

@@ -21,6 +21,8 @@ import {
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
+import { buildPlatformGymDetail } from "./platformGymDetail";
+import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -1186,6 +1188,107 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const plans = await platformPlans(ctx);
     return { gyms, bookings, invoices, supportCases, plans };
   }
+  if (operation === "platform.gym.detail") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    const row = (await marketplaceRows(ctx)).find((candidate) => candidate.publicId === gymId);
+    if (!row) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+
+    const gym = data(row.data);
+    const rawStatus = stringValue(gym.subscriptionStatus);
+    const rawPlan = stringValue(gym.rivetPlan);
+    const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    if (!allowedStatuses.includes(rawStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(rawPlan as (typeof allowedPlans)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
+    }
+
+    const targetOrganizationId = optionalString(gym.targetOrganizationId);
+    const organization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+
+    let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
+    let owner: { name: string; email: string; phone?: string } | undefined;
+    let memberCount = 0;
+    let activeStaffCount = 0;
+    let staffLimit: number | undefined;
+    let automationRuleCount = 0;
+    let paymentTransactionCount = 0;
+    let activity: Array<{ id: string; action: string; summary: string; actorName: string; occurredAt: string }> = [];
+
+    if (organization) {
+      const branchRows = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+      branches = branchRows.map((branch) => ({
+        id: publicBranchId(branch),
+        name: branch.name,
+        code: branch.code,
+        address: branch.address,
+        phone: branch.phone,
+        status: branch.active && branch.status !== "inactive" ? "active" : "inactive",
+      }));
+
+      const membershipRows = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+      activeStaffCount = membershipRows.filter((membership) => membership.active).length;
+      const ownerMembership = membershipRows.find((membership) => membership.active && membership.role === "owner");
+      const ownerUser = ownerMembership ? await ctx.db.get(ownerMembership.userId) : null;
+      if (ownerUser) owner = { name: ownerUser.fullName, email: ownerUser.email, phone: ownerUser.phone };
+
+      const [memberRows, planRows, ruleRows, paymentRows] = await Promise.all([
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
+        platformPlans(ctx),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "automationRule")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "payment")).collect(),
+      ]);
+      memberCount = memberRows.filter((member) => stringValue(data(member.data).status) === "active").length;
+      automationRuleCount = ruleRows.length;
+      paymentTransactionCount = paymentRows.length;
+      const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === rawPlan);
+      const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
+      if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
+
+      const directActivity = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "platform_gym").eq("entityPublicId", gymId)).collect();
+      const applicationId = optionalString(gym.applicationId);
+      const applicationActivity = applicationId
+        ? await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "gym_application").eq("entityPublicId", applicationId)).collect()
+        : [];
+      const targetActivity = [...directActivity, ...applicationActivity]
+        .filter((event, index, events) => events.findIndex((candidate) => candidate.publicId === event.publicId) === index)
+        .filter((event) => event.entityType === "platform_gym" || stringValue(data(event.after).organizationId) === publicOrganizationId(organization))
+        .sort((left, right) => right.occurredAt - left.occurredAt);
+      activity = targetActivity.map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
+    }
+
+    const status = rawStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
+    const plan = rawPlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    return buildPlatformGymDetail({
+      gym: {
+        id: gymId,
+        name: stringValue(gym.name, gymId),
+        shortName: stringValue(gym.shortName, stringValue(gym.name, gymId).slice(0, 3).toUpperCase()),
+        accent: stringValue(gym.accent, "#1b1a15"),
+        subscriptionStatus: status,
+        rivetPlan: plan,
+        isPublic: booleanValue(gym.isPublic),
+      },
+      organization: organization
+        ? {
+            id: publicOrganizationId(organization),
+            name: organization.name,
+            status: organization.status,
+            currency: organization.currency,
+            timezone: organization.timezone,
+            createdAt: organization.createdAt,
+            subscriptionPlan: organization.subscriptionPlan,
+            subscriptionStartedAt: organization.subscriptionStartedAt,
+          }
+        : undefined,
+      branches,
+      owner,
+      usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
+      activity,
+    });
+  }
 
   const actor = await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
@@ -2001,7 +2104,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const requestedStatus = optionalString(input.status);
     const requestedPlan = optionalString(input.plan);
     const requestedPublic = input.isPublic === undefined ? undefined : booleanValue(input.isPublic);
-    const statuses = new Set(["trial", "active", "overdue", "suspended"]);
+    const statuses = new Set(["trial", "active", "overdue", "suspended", "cancelled"]);
     const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
     if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
     if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
@@ -2022,7 +2125,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (targetOrganizationId) {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
       if (organization) {
-        const statusMap: Record<string, "trial" | "active" | "past_due" | "suspended"> = { trial: "trial", active: "active", overdue: "past_due", suspended: "suspended" };
+        const statusMap: Record<string, "trial" | "active" | "past_due" | "suspended" | "cancelled"> = { trial: "trial", active: "active", overdue: "past_due", suspended: "suspended", cancelled: "cancelled" };
         await ctx.db.patch(organization._id, {
           ...(requestedStatus ? { status: statusMap[requestedStatus] } : {}),
           ...(requestedPlan && requestedPlan !== "Enterprise" ? { subscriptionPlan: requestedPlan as "Starter" | "Growth" | "Pro" } : {}),
@@ -2530,8 +2633,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const counted = amountOf(input.countedCash);
       const variance = counted - expected;
       if (variance !== 0) requireReason(input.varianceExplanation, actor.correlationId, "varianceExplanation");
-      const updated = await patchRecord(ctx, actor, record, { status: "closed", closedAt: isoNow(), closedById: publicUserId(actor.user), expectedCash: money(expected, actor.organization.currency), countedCash: money(counted, actor.organization.currency), variance: signedMoney(variance, actor.organization.currency), varianceExplanation: optionalString(input.varianceExplanation), varianceApprovalStatus: variance === 0 ? "approved" : "pending" });
-      await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${(variance / 1000).toFixed(3)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: variance === 0 ? "approved" : "pending", branchId: optionalString(shift.branchId) });
+      const updated = await patchRecord(ctx, actor, record, { status: "closed", closedAt: isoNow(), closedById: publicUserId(actor.user), expectedCash: money(expected, actor.organization.currency), countedCash: money(counted, actor.organization.currency), variance: signedMoney(variance, actor.organization.currency), varianceExplanation: optionalString(input.varianceExplanation), varianceApprovalStatus: varianceApprovalStatusForAmount(variance) });
+      await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${(variance / 1000).toFixed(3)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
       return updated;
     }
     case "shifts.review": {

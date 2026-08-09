@@ -127,4 +127,19 @@ test.describe("RIVET platform administration", () => {
     await page.getByRole("button", { name: "Save note" }).click();
     await expect(page.getByRole("status")).toContainText("Review note saved.");
   });
+
+  test("shows only scoped gym detail facts and explicit unavailable states", async ({ page }) => {
+    await page.goto("/login/admin");
+    await page.getByRole("button", { name: /Open platform console/i }).click();
+    await page.goto("/platform/gyms/forge-fitness");
+
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club" })).toBeVisible();
+    await expect(page.getByText("Omar Al-Khatib")).toBeVisible();
+    await expect(page.getByText("Not configured").first()).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Dana Al-Khatib");
+    await expect(page.locator("body")).not.toContainText("Visa");
+    await expect(page.locator("body")).not.toContainText("4041");
+    await expect(page.locator("body")).not.toContainText("RV-1041");
+    await expect(page.locator("body")).not.toContainText("Last active today");
+  });
 });

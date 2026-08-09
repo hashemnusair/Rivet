@@ -10,6 +10,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
+import { canReviewCashVariance, cashShiftHistoryStatus } from "@/lib/domain/reconciliation";
 import { MoneyText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
 import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
@@ -236,7 +237,9 @@ export default function ShiftsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {historyQuery.data!.items.map((s) => (
+              {historyQuery.data!.items.map((s) => {
+                const historyStatus = cashShiftHistoryStatus(s);
+                return (
                 <TableRow key={s.id}>
                   <TableCell className="whitespace-nowrap text-[12.5px]">{formatDateTime(s.openedAt)}</TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{s.openedByName}</TableCell>
@@ -249,11 +252,11 @@ export default function ShiftsPage() {
                   <TableCell>
                     {s.status === "open" ? (
                       <Badge variant="success" dot>open</Badge>
-                    ) : s.varianceApprovalStatus === "pending" ? (
+                    ) : historyStatus === "variance_pending" ? (
                       <Badge variant="warning">variance pending</Badge>
-                    ) : s.varianceApprovalStatus === "approved" ? (
+                    ) : historyStatus === "variance_approved" ? (
                       <Badge variant="neutral">variance approved</Badge>
-                    ) : s.varianceApprovalStatus === "rejected" ? (
+                    ) : historyStatus === "variance_rejected" ? (
                       <Badge variant="signal">variance rejected</Badge>
                     ) : (
                       <Badge variant="outline">balanced</Badge>
@@ -261,7 +264,7 @@ export default function ShiftsPage() {
                   </TableCell>
                   <Gate permission="reconciliation.approve_variance">
                     <TableCell className="text-end">
-                      {s.varianceApprovalStatus === "pending" ? (
+                      {canReviewCashVariance(s) ? (
                         <span className="flex justify-end gap-1">
                           <Button
                             variant="ghost"
@@ -289,7 +292,8 @@ export default function ShiftsPage() {
                     </TableCell>
                   </Gate>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}

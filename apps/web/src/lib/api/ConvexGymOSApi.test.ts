@@ -100,6 +100,45 @@ describe("ConvexGymOSApi contract boundary", () => {
     await expect(api.getCurrentCashShift(session.activeBranchId!)).resolves.toBeNull();
   });
 
+  it("passes the selected gym ID through the platform detail boundary", async () => {
+    const detail = {
+      id: "gym-a",
+      name: "Alpha Gym",
+      shortName: "ALPHA",
+      accent: "#111111",
+      controls: { status: "active" as const, plan: "Growth" as const, isPublic: true },
+      organization: { state: "available" as const, value: { id: "org-a", name: "Alpha Gym", status: "active" as const, currency: "JOD", timezone: "Asia/Amman" } },
+      joinedAt: { state: "not_available" as const },
+      branches: { state: "available" as const, value: [{ id: "branch-a", name: "Alpha Main", code: "MAIN", status: "active" as const }] },
+      owner: { state: "available" as const, value: { name: "Alpha Owner", email: "owner@alpha.example" } },
+      usage: {
+        memberCount: { state: "available" as const, value: 7 },
+        activeStaffCount: { state: "available" as const, value: 2 },
+        staffLimit: { state: "not_configured" as const },
+        automationRuleCount: { state: "available" as const, value: 3 },
+        paymentTransactionCount: { state: "available" as const, value: 11 },
+        storage: { state: "not_configured" as const },
+      },
+      subscription: {
+        plan: { state: "available" as const, value: "Growth" as const },
+        status: { state: "available" as const, value: "active" as const },
+        startedAt: { state: "not_available" as const },
+        recurringAmount: { state: "not_configured" as const },
+        renewalDate: { state: "not_configured" as const },
+        paymentMethod: { state: "not_configured" as const },
+        invoices: { state: "not_configured" as const },
+      },
+      health: { state: "not_configured" as const },
+      activity: { state: "available" as const, value: [] },
+    };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ query: detail }, (_kind, args) => { call = args; }));
+
+    await expect(api.getPlatformGymDetail("gym-a")).resolves.toEqual(detail);
+    expect(call).toMatchObject({ operation: "platform.gym.detail", input: { gymId: "gym-a" } });
+    expect(JSON.stringify(detail)).not.toContain("Beta");
+  });
+
   it("routes operational policies and branch transfers through audited domain mutations", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => calls.push(args)));

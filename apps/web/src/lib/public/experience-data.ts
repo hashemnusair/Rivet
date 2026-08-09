@@ -28,7 +28,7 @@ export interface MarketplaceGym {
   amenities: string[];
   accent: string;
   featured: boolean;
-  subscriptionStatus: "trial" | "active" | "overdue" | "suspended";
+  subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
   rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
   joinedAt: string;
   lastActiveAt: string;

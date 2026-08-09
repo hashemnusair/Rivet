@@ -103,6 +103,26 @@ describe("platform subscription controls", () => {
     expect(updatedPlan.priceMinor).toBe(originalPrice + 1_000);
     expect(updatedPlan.members).toBe(originalMembers + 100);
   });
+
+  it("returns target-scoped tenant facts and explicit provider gaps", async () => {
+    const forge = await api.getPlatformGymDetail("forge-fitness");
+    expect(forge.organization).toMatchObject({ state: "available", value: { name: "Forge Fitness Club" } });
+    expect(forge.owner).toMatchObject({ state: "available", value: { name: "Omar Al-Khatib", email: "omar@forgefitness.jo" } });
+    expect(forge.branches).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ name: "Forge — Abdoun" })]) });
+    expect(forge.usage.memberCount.state).toBe("available");
+    expect(forge.usage.paymentTransactionCount.state).toBe("available");
+    expect(forge.health).toEqual({ state: "not_configured" });
+    expect(forge.subscription.paymentMethod).toEqual({ state: "not_configured" });
+    expect(JSON.stringify(forge)).not.toContain("Dana Al-Khatib");
+    expect(JSON.stringify(forge)).not.toContain("4041");
+    expect(JSON.stringify(forge)).not.toContain("RV-1041");
+
+    const directoryOnly = await api.getPlatformGymDetail("pulse-lab");
+    expect(directoryOnly.organization).toEqual({ state: "not_available" });
+    expect(directoryOnly.owner).toEqual({ state: "not_available" });
+    expect(directoryOnly.usage.memberCount).toEqual({ state: "not_available" });
+    expect(JSON.stringify(directoryOnly)).not.toContain("Omar Al-Khatib");
+  });
 });
 
 describe("tenant/branch scoping and authorization", () => {
@@ -1020,6 +1040,8 @@ describe("cash shifts and reconciliation", () => {
       varianceExplanation: "Member overpaid, credited next visit",
     });
 
+    expect(closed.variance!.amount).toBe(3_000);
+    expect(closed.varianceApprovalStatus).toBe("pending");
     const reviewed = await api.reviewVariance(closed.id, { decision: "approved" });
     expect(reviewed.varianceApprovalStatus).toBe("approved");
   });

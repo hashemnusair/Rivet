@@ -15,6 +15,8 @@ import type {
   TransactionListQuery,
   UserListQuery,
   PlatformBillingInvoice,
+  PlatformGymDetail,
+  PlatformData,
   PlatformGymApplication,
   PlatformSnapshot,
   PlatformSupportCase,
@@ -316,6 +318,62 @@ export class MockGymOSApi implements GymOSApi {
 
   getPlatformSnapshot(): Promise<PlatformSnapshot> {
     return this.respond(() => ({ gyms: this.platformGyms, bookings: INITIAL_TRIAL_BOOKINGS, invoices: MOCK_INVOICES, supportCases: MOCK_SUPPORT_CASES, plans: this.platformPlans }));
+  }
+
+  getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> {
+    return this.respond(() => {
+      const gym = this.platformGyms.find((item) => item.id === gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+
+      const available = <T,>(value: T): PlatformData<T> => ({ state: "available", value });
+      const notAvailable = <T,>(): PlatformData<T> => ({ state: "not_available" });
+      const notConfigured = <T,>(): PlatformData<T> => ({ state: "not_configured" });
+      // The mock has one authoritative tenant. Other directory rows are
+      // intentionally detail-incomplete rather than borrowing Forge facts.
+      const isSeedTenant = gym.id === "forge-fitness";
+      const organization = isSeedTenant ? this.db.organization : undefined;
+      const branches = isSeedTenant
+        ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
+        : [];
+      const owner = organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined;
+      const plan = organization?.subscriptionPlan ? this.platformPlans.find((item) => item.name === organization.subscriptionPlan) : undefined;
+      const activeMemberCount = organization ? this.db.members.filter((member) => member.status === "active").length : 0;
+      const activeStaffCount = organization ? this.db.users.filter((user) => user.status === "active").length : 0;
+      const field = <T,>(value: T | undefined, missing: "not_available" | "not_configured" = "not_available"): PlatformData<T> => value === undefined ? (missing === "not_available" ? notAvailable<T>() : notConfigured<T>()) : available(value);
+
+      return {
+        id: gym.id,
+        name: gym.name,
+        shortName: gym.shortName,
+        accent: gym.accent,
+        controls: { status: gym.subscriptionStatus, plan: gym.rivetPlan, isPublic: gym.isPublic ?? true },
+        organization: organization
+          ? available({ id: organization.id, name: organization.name, status: organization.status, currency: organization.currency, timezone: organization.timezone })
+          : notAvailable(),
+        joinedAt: notAvailable(),
+        branches: organization ? available(branches) : notAvailable(),
+        owner: owner ? available({ name: owner.name, email: owner.email, phone: owner.phone || undefined }) : notAvailable(),
+        usage: {
+          memberCount: organization ? available(activeMemberCount) : notAvailable(),
+          activeStaffCount: organization ? available(activeStaffCount) : notAvailable(),
+          staffLimit: organization ? field(plan?.staff, "not_configured") : notAvailable(),
+          automationRuleCount: organization ? available(this.db.rules.length) : notAvailable(),
+          paymentTransactionCount: organization ? available(this.db.payments.length) : notAvailable(),
+          storage: notConfigured(),
+        },
+        subscription: {
+          plan: organization ? field(organization.subscriptionPlan, "not_configured") : notAvailable(),
+          status: organization ? available(organization.status === "active" ? "active" : "suspended") : notAvailable(),
+          startedAt: notAvailable(),
+          recurringAmount: notConfigured(),
+          renewalDate: notConfigured(),
+          paymentMethod: notConfigured(),
+          invoices: notConfigured(),
+        },
+        health: notConfigured(),
+        activity: notConfigured(),
+      };
+    });
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {

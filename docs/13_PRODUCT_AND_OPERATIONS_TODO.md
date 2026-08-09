@@ -391,17 +391,30 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-012 — Platform gym detail renders fabricated operational and billing facts
 
-- Status: **Confirmed P0 Production truthfulness defect**.
+- Status: **Resolved in code; Production credentialed verification remains required**.
 - Evidence: the `Hashem Test` Production gym detail correctly loaded the target gym header, branch, plan, subscription status, and public-listing control, but the same page displayed a hardcoded account owner, email pattern, phone, storage usage, automation count, transaction count, subscription renewal/card details, platform health score, and July activity. `apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx` constructs these values directly in the component; branch member counts and staff usage are also estimated from unrelated formulas rather than authoritative records.
 - Risk: a platform administrator can mistake invented data for real tenant identity, billing, usage, or activity, contact the wrong person, or make a Production decision using fabricated evidence. The presentation resembles a cross-tenant leak even though inspection confirmed static placeholders.
 - Fix/acceptance: remove every fabricated value from the Production platform route. Introduce an authorized, typed platform-gym detail contract backed by the selected organization, owner membership, real usage aggregates, platform ledger/subscription facts, and platform audit timeline. Render an explicit **Not available** or **Not configured** state for fields that are not implemented; never estimate or synthesize operational facts. Add tests using at least two tenants that prove identity, branches, member/transaction counts, subscription data, and activity remain target-scoped, plus a browser assertion that no preview person, card, invoice, or activity copy appears in Production mode.
 
+#### Implementation status
+
+- [x] Added the authorized `platform.gym.detail` API contract and Convex platform-admin query. It scopes organization, branches, owner membership, active members/staff, automation rules, payment records, plan limits, and platform audit events to the selected gym's target organization.
+- [x] Replaced the detail page's owner, health, usage, billing, invoice, and activity placeholders with real target-scoped values or explicit **Not available**/**Not configured** states. No preview owner, card, invoice, July activity, or estimated branch/staff fact remains on the route.
+- [x] Added two-tenant projection tests, adapter/mock scope tests, and a browser assertion for the selected gym detail surface. The local full gate passed: 267 unit tests, 21 preview journeys, typechecks, lint, and build.
+- [ ] Run the credentialed Production browser assertion after deploying the implementation; external SaaS billing, storage, and health providers remain intentionally unconfigured.
+
 ### BUG-013 — Balanced shifts are labeled “variance approved”
 
-- Status: **Confirmed P1 Production wording/state defect**.
+- Status: **Resolved in code; Production credentialed verification remains required**.
 - Evidence: the supervised `Hashem Test` shift closed with JOD 80.000 expected, JOD 80.000 counted, and JOD 0.000 variance. The audit correctly recorded `shift.close`, but shift history displayed **variance approved** because `apps/web/src/app/(app)/payments/shifts/page.tsx` prioritizes `varianceApprovalStatus === "approved"` without first checking that the variance amount is non-zero.
 - Risk: staff may believe a manager approved a discrepancy that never existed, weakening reconciliation semantics and audit confidence.
 - Fix/acceptance: display **balanced** or **closed** whenever variance is exactly zero; reserve pending/approved/rejected variance labels and review controls for non-zero discrepancies. Align mock and Convex projections, add focused zero/positive/negative variance tests, and verify history plus audit copy together.
+
+#### Implementation status
+
+- [x] History rendering and review controls now check the numeric variance before any approval status, so zero is always **balanced** and cannot be reviewed as a discrepancy.
+- [x] Mock and Convex close projections now use no approval workflow for zero and pending approval only for positive or negative discrepancies; zero, positive, and negative tests cover the server and UI state helpers.
+- [ ] Run the credentialed Production shift-history/audit verification after deploying the implementation.
 
 ## P1 — Missing or incomplete MVP behavior
 
@@ -514,3 +527,5 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Dashboard scope and CRM capture slice | 2026-08-09 | `2269863` + `1bd4b05` | 248 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build passed after merging branch-aware dashboard copy, lead email capture, explicit unassigned-owner handling, assignment authorization, and cash-shift error-path coverage. Production one-branch visual verification and TODO-009 preference provenance/revocation remain open. The overlapping opt-out default was subsequently realigned to the product owner's opted-in default decision. |
 | Application review notes | 2026-08-09 | `8c0d34f` | 249 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build pass. Notes can be saved, cleared, edited after final decisions, and audited; disposable Production reload verification remains required. |
 | Supervised disposable Production pilot | 2026-08-10 | Production deployed head plus operator evidence | `Hashem Test` completed application, approval, provisioning, owner invitation/account creation, settings, branch and plan setup, CRM conversion, membership sale, JOD 30.000 cash receipt, check-in, unified timeline, sensitive-action audit review, JOD 80.000 balanced shift close, daily reconciliation, public-listing removal, subscription suspension, and audited platform-control save. BUG-012 and BUG-013 capture defects discovered during cleanup. |
+| BUG-012 | 2026-08-10 | Implementation commit to be recorded after the final latest-main check | 267 unit tests across 27 files, 21 preview Playwright journeys passed with 2 trusted Convex journeys skipped without credential switches, typecheck, Convex typecheck, lint, build, and diff check passed. Credentialed Production browser verification remains required before onboarding a real gym. |
+| BUG-013 | 2026-08-10 | Implementation commit to be recorded after the final latest-main check | Zero/positive/negative variance tests passed in Convex, mock, and UI reconciliation helpers; the full 267-test, 21-pass/2-skip e2e, typecheck, lint, build, and diff gate passed. Credentialed Production shift-history/audit verification remains required. |

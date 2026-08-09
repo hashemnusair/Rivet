@@ -26,6 +26,7 @@ export const qk = {
   templates: ["templates"] as const,
   audit: (params?: unknown) => ["audit", params] as const,
   approvals: ["approvals"] as const,
+  platformGymDetail: (id: string) => ["platform", "gyms", "detail", id] as const,
   settings: ["settings"] as const,
   branches: ["branches"] as const,
   users: (params?: unknown) => ["users", params] as const,

@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-09 after production topology verification, the Production Convex deployment, staging write verification, the disposable production onboarding through workspace provisioning, platform-operations controls, reporting hardening, the end-to-end free-trial lifecycle pass, reception verdict-card responsive hardening, CRM offer-delivery truthfulness, and facts-backed CRM stage progress. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-10 after production topology verification, the Production Convex deployment, staging write verification, the disposable production onboarding through workspace provisioning, platform-operations controls, reporting hardening, the end-to-end free-trial lifecycle pass, reception verdict-card responsive hardening, CRM offer-delivery truthfulness, facts-backed CRM stage progress, and BUG-012/BUG-013 correctness hardening. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Product surface preserved
 
@@ -40,6 +40,7 @@ Convex schema and domain functions now cover:
 - Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
 - Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes. Linked trials now move through requested, confirmed, completed, no-show, cancelled, and converted states from the CRM lead. Completed/no-show outcomes create deduplicated follow-up work, customer-facing booking status updates from the same record, and every staff outcome appends a timeline plus audit event.
 - Platform subscription state and SaaS plan limits can be updated through platform-admin mutations. Updates synchronize the public directory/tenant record when available and append immutable platform audit events. Owner/manager reports compose persisted dashboard and transaction contracts and support CSV export; automation rules can be created from the existing UI with deduplicated task/message actions.
+- Platform gym detail is a typed `platform.gym.detail` projection. It resolves the selected directory record to its target organization, owner membership, branches, scoped usage aggregates, and platform audit events; provider-backed billing, storage, and health fields remain explicit `Not configured` states rather than preview values.
 - Provisioned gyms publish a member-facing directory listing by default; platform administrators can hide or republish a listing from the gym controls. Existing production applications still require the normal approve → provision workflow before a real gym appears in discovery.
 - CRM offers preserve their historical plan/price as drafts, expose a separate manual-delivery confirmation path with channel/reference/actor facts, and advance the lead to `offer_sent` only after that confirmation. Provider-backed delivery, retries, and branded offer documents remain intentionally deferred.
 
@@ -55,6 +56,7 @@ The normalized Convex `domainRecords` table stores JSON-shaped domain facts with
 - Payment creation is organization/idempotency-key scoped and rejects key reuse with a different request hash. Receipt numbers advance from an organization counter and are never reused.
 - Refunds and same-business-day voids are distinct additive facts. Sensitive actions require server-side permission and reasons and write append-only audit events with actor, branch, before/after, reason, and correlation ID.
 - MVP approval semantics are explicitly post-action: refunds above JOD 25.000, over-limit discounts, and shift variances complete as immutable facts first; approval or rejection is a separate append-only review record and never rewrites settled financial history.
+- A cash shift with exactly zero variance is balanced/closed and has no variance approval workflow; pending, approved, and rejected variance states are reserved for non-zero discrepancies.
 - Entry passes are HMAC-signed, branch-bound, short-lived, stored in Convex, and consumed on a successful check-in. The Convex customer experience never exposes the old demo QR identity.
 - Member imports require `members.write`, validate required columns, identify duplicate rows, persist a preview, commit in chunks of at most 100 rows, use per-chunk idempotency keys, and record audit facts. Invalid/duplicate rows are reviewable and skipped rather than silently created.
 - Trial lifecycle transitions require `crm.write` and branch access. Cancellation/no-show outcomes require a reason; cancellation closes the lead, no-show creates a high-priority recovery task, completion schedules post-trial follow-up, terminal states cannot be reopened, and lead conversion marks the customer booking converted.
@@ -66,8 +68,8 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 256 tests passed across 24 files, covering Convex security, adapter (including separate offer draft/delivery mutations), schema, platform application review/provisioning and note editing, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, marketing-consent defaults, lead assignment, facts-backed CRM stage progress, dashboard scope copy, mock-mode, component, reception (including long bilingual verdict-card layout), customer ownership, and member-portal regression coverage. The merged cash-shift rendering fix also adds Convex API error-path coverage.
-- `pnpm test:e2e` — 20 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches; the current CRM stepper change also passes its focused browser journey. The current head covers branch-aware dashboard scope, CRM lead capture, truthful draft/manual offer delivery with skipped-trial assertions, editing a finalized platform application note, and non-overlapping reception verdict regions at desktop and narrow tablet widths.
+- `pnpm test` — 267 tests passed across 27 files, covering Convex security, adapter (including the target-scoped platform gym detail boundary), schema, platform application review/provisioning and note editing, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, zero/positive/negative cash variance reconciliation, refund bounds, approval permissions, automation scheduling, marketing-consent defaults, lead assignment, facts-backed CRM stage progress, dashboard scope copy, mock-mode, component, reception (including long bilingual verdict-card layout), customer ownership, and member-portal regression coverage.
+- `pnpm test:e2e` — 21 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches. Coverage includes the platform gym detail assertion that renders selected-tenant facts and explicit unavailable/configuration states without preview owner/card/invoice/activity copy, alongside branch-aware dashboard scope, CRM lead capture, truthful draft/manual offer delivery with skipped-trial assertions, editing a finalized platform application note, and non-overlapping reception verdict regions at desktop and narrow tablet widths.
 - `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic. The first sandboxed attempt could not reach Google Fonts; the network-enabled rerun passed.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
@@ -78,7 +80,7 @@ The isolated staging Clerk-to-Convex read smoke and opt-in operational write flo
 
 Vercel Production was rebuilt from commit `2c42130` with `pnpm build`. Its live bundle contains the Production Convex URL, a `pk_live_` Clerk key resolving to `clerk.rivetjo.com`, and `https://www.rivetjo.com` as the canonical origin. The Production Convex deployment `descriptive-meerkat-589` has the seven expected variable names, was deployed from current `main`, and returned `status: ok` after deployment.
 
-The disposable Production application `Hashem Test` completed the full supervised path across 9–10 August 2026: submission, applicant confirmation, platform review, approval notification, tenant/first-branch creation, subscription assignment, Clerk organization creation, owner-invitation delivery, new-user account creation, profile completion, authenticated owner-workspace entry, first-owner settings, branch and plan creation, CRM lead conversion, membership sale, JOD 30.000 cash receipt, check-in, unified member timeline, sensitive-action audit review, and balanced shift close/reconciliation. The drawer closed at JOD 80.000 expected and counted with JOD 0.000 variance; daily reconciliation showed one JOD 30.000 cash payment; the audit recorded `shift.close`. The exact disposable tenant was then removed from the public directory and suspended through the audited platform controls. The supervised single-cash-path Production pilot is complete. Production verification findings and the engineering backlog are consolidated in the single canonical `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`; newly confirmed blockers include fabricated platform-gym detail facts and a misleading zero-variance status label.
+The disposable Production application `Hashem Test` completed the full supervised path across 9–10 August 2026: submission, applicant confirmation, platform review, approval notification, tenant/first-branch creation, subscription assignment, Clerk organization creation, owner-invitation delivery, new-user account creation, profile completion, authenticated owner-workspace entry, first-owner settings, branch and plan creation, CRM lead conversion, membership sale, JOD 30.000 cash receipt, check-in, unified member timeline, sensitive-action audit review, and balanced shift close/reconciliation. The drawer closed at JOD 80.000 expected and counted with JOD 0.000 variance; daily reconciliation showed one JOD 30.000 cash payment; the audit recorded `shift.close`. The exact disposable tenant was then removed from the public directory and suspended through the audited platform controls. The supervised single-cash-path Production pilot is complete. The post-pilot platform-detail truthfulness and zero-variance labeling defects are now fixed in the typed client, mock adapter, Convex projection, UI, and tests; production credentialed verification remains an operator step before onboarding a real gym. Production verification findings and the engineering backlog are consolidated in the single canonical `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`.
 
 ## Local and deployment commands
 
@@ -102,20 +104,23 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The Production Clerk instance, custom-domain DNS, Vercel environment split, Production Convex environment/deployment, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. Before onboarding a real gym, fix the invited-owner account-creation UX and remove every fabricated platform-gym detail fact; complete the remaining adversarial authorization and workflow/provider coverage in the canonical backlog. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability, live WhatsApp/SMS delivery, and external SaaS billing remain provider-bound follow-ups. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The Production Clerk instance, custom-domain DNS, Vercel environment split, Production Convex environment/deployment, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. Before onboarding a real gym, fix the invited-owner account-creation UX and complete the remaining adversarial authorization and workflow/provider coverage in the canonical backlog. The platform gym detail now shows only authorized target-scoped facts; external SaaS billing, storage, and health remain explicit `Not configured` capabilities until their providers are integrated. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability and live WhatsApp/SMS delivery remain provider-bound follow-ups. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
 
 ## Files another agent should read first
 
 1. `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md`
 2. `apps/web/src/lib/api/GymOSApi.ts`
 3. `apps/web/src/lib/api/ConvexGymOSApi.ts`
-4. `apps/web/convex/security.ts`
-5. `apps/web/convex/domain.ts`
-6. `apps/web/convex/schema.ts`
-7. `apps/web/convex/seed.ts`
-8. `apps/web/convex/invitations.ts`
-9. `apps/web/convex/platformProvisioning.ts`
-10. `apps/web/convex/platformProvisioningAction.ts`
-11. `apps/web/src/lib/providers/app-providers.tsx`
-12. `apps/web/.env.example`
-13. `apps/web/e2e/convex-operational-flow.spec.ts`
+4. `apps/web/convex/platformGymDetail.ts`
+5. `apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx`
+6. `apps/web/src/lib/domain/reconciliation.ts`
+7. `apps/web/convex/security.ts`
+8. `apps/web/convex/domain.ts`
+9. `apps/web/convex/schema.ts`
+10. `apps/web/convex/seed.ts`
+11. `apps/web/convex/invitations.ts`
+12. `apps/web/convex/platformProvisioning.ts`
+13. `apps/web/convex/platformProvisioningAction.ts`
+14. `apps/web/src/lib/providers/app-providers.tsx`
+15. `apps/web/.env.example`
+16. `apps/web/e2e/convex-operational-flow.spec.ts`
