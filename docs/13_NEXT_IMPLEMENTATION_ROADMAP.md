@@ -38,7 +38,7 @@ Read these files completely:
 10. `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`
 11. `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md`
 12. `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`
-13. `docs/14_TODO_AND_BUGS.md`
+13. `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`
 14. `apps/web/src/lib/api/GymOSApi.ts`
 15. `apps/web/src/lib/api/ConvexGymOSApi.ts`
 16. `apps/web/convex/security.ts`

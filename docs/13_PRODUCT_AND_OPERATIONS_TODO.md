@@ -1,14 +1,27 @@
-# RIVET product and operations follow-ups
+# RIVET product, engineering, and operations backlog
 
-Updated 9 August 2026. This is the living, prioritized follow-up list for issues discovered during production-shaped verification. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 9 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## How to use this file
+
+- `P0` blocks a trustworthy pilot or can expose data, money, access, or misleading system state.
+- `P1` materially reduces operational quality but does not block the first supervised pilot.
+- `P2` is a post-pilot improvement or an intentionally deferred product decision.
+- `P3` is deliberately scheduled after functional, security, accessibility, and launch-critical work.
+- `Confirmed` means the behavior was observed in code, a test, or a browser run.
+- `Needs verification` means there is a credible risk or regression report, but it must be reproduced against the current head before changing behavior.
+- Every fix must add or update a focused test and add its commit and evidence to the closure log.
+- Update an item's status and evidence when it changes; never erase the history of a release blocker.
 
 ## P0 — Finish the disposable production onboarding
 
 - [x] Accept the Clerk owner invitation in a private/incognito browser so the platform-admin and gym-owner sessions cannot mix.
 - [x] Confirm the invited identity resolves to the provisioned `Hashem Test` organization with the `owner` role and the first branch.
 - [x] Complete the first-owner setup: organization settings, branch details, and one membership plan.
-- Exercise lead → member → membership → payment → check-in → timeline/audit → shift reconciliation with disposable data.
-- Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
+- [x] Exercise lead → member → membership → cash payment → receipt → check-in with disposable data.
+- [x] Confirm the member timeline contains conversion, profile creation, membership sale, payment, and check-in in chronological order.
+- [ ] Verify the relevant audit events, close the JOD 80.000 drawer without variance, and confirm daily reconciliation after reload.
+- [ ] Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
 
 ## P0 — Complete cash-shift recovery and Production verification
 
@@ -18,13 +31,14 @@ Opening the first Production cash shift succeeded in Convex, but the subsequent 
 
 ### Completion criteria
 
-- Unwrap the current-shift envelope at the Convex adapter boundary and cover both open-shift and no-open-shift responses with contract tests.
-- Replace demo-only global error copy with Production-safe guidance that does not claim a mutation failed or succeeded without evidence, and provide working reload/back recovery actions.
-- After deployment, confirm the already-open Production shift renders once with its JOD 50.000 opening float; do not create a duplicate shift to perform this check.
+- [x] Unwrap the current-shift envelope at the Convex adapter boundary and cover both open-shift and no-open-shift responses with contract tests (`8e81bd4`).
+- [x] Replace demo-only global error copy with Production-safe guidance that does not claim a mutation failed or succeeded without evidence, and provide working reload/back recovery actions (`8e81bd4`).
+- [x] After deployment, confirm the already-open Production shift renders once with its JOD 50.000 opening float; Production verification passed on 9 August 2026.
 - Verify duplicate-open attempts remain blocked with an inline `SHIFT_ALREADY_OPEN` error rather than a route crash.
 - Keep the opening dialog in a stable pending/success transition until refreshed shift data is renderable; do not flicker back through stale content.
 - Add focused UI coverage for open → refresh → render, mutation failure, ambiguous post-mutation recovery, duplicate open, and error-boundary recovery.
-- Resume and finish membership sale, cash payment, shift close, and reconciliation only after the deployed shift page passes this recovery check.
+- [x] Resume and verify the membership sale, JOD 30.000 cash payment, receipt, and JOD 80.000 expected drawer total after the deployed shift page passed the recovery check.
+- [ ] Close the shift and verify reconciliation before considering this incident fully closed.
 
 ## P0 — Fix first-time invited-owner account creation
 
@@ -131,13 +145,28 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 - Keep board counts, lead detail, dashboard funnel, timeline, and trial state consistent from the same source of truth.
 - Add tests for straight-through, skipped-trial, completed-trial, lost, converted, cancelled-trial, and no-show paths.
 
+## P1 — Fix Reception verdict-card collisions and responsive hierarchy
+
+### Observed problem
+
+During the duplicate-check-in verification in Production, the guard correctly blocked a second scan, but the result card's identity and membership-fact regions collided. The long name **Production QA Member** overflowed its shrinking flex column into the adjacent **Plan** heading/value, creating overlapping text and an unclear reading order. The current row gives the facts grid enough intrinsic width to squeeze the identity block below the width of an unbroken word.
+
+### Completion criteria
+
+- Replace the fragile identity/facts flex sizing with an explicit responsive grid or bounded flex basis so neither region can overlap the other.
+- Keep the member name readable with deliberate wrapping or truncation, while member number and phone remain visually attached to the identity.
+- Move the fact grid below the identity when available width is insufficient; preserve a clean desktop layout at wider widths.
+- Verify allowed, warning, blocked, overridden, and committed states with long English names, long Arabic names/RTL, large text zoom, and narrow laptop/tablet/phone widths.
+- Keep action buttons reachable without colliding with identity, facts, reasons, or critical notes.
+- Add a focused component regression test and a visual/browser assertion for the long-name duplicate-scan state shown during Production verification.
+
 ## P1 — Make the default marketing preference transparent and attributable
 
 ### Observed problem
 
 The Production lead-conversion flow did not show a marketing-preference choice, while the resulting member record displayed **Marketing: Opted in**. RIVET's chosen product policy is to keep **Opted in** as the default for newly created members. The remaining product gap is transparency and provenance: staff and members should be able to see the default, change it easily, and distinguish a system-applied default from an explicit member choice.
 
-The default is now opt-out across the Convex create/import paths, mock adapter/import path, and manual member form. Explicit `true` remains supported. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
+The approved product decision is **Opted in by default** across manual member creation, lead conversion, and imports. An explicit **Opted out** choice must always be preserved. The current implementation is being realigned to that policy after an overlapping feature slice temporarily changed omitted values to opt-out. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
 
 ### Completion criteria
 
@@ -248,3 +277,192 @@ During the 9 August Production onboarding check, the owner navigated from branch
 - Optimize the audit log specifically with index-backed filters and bounded pagination before mapping rows; avoid loading the staff filter as a blocker for the audit-event list.
 - Add navigation and query performance regression checks to CI for representative data volumes, including tenants with large member, payment, timeline, and audit histories.
 - Verify improvements in Production using both cold and warm sessions, record before/after measurements, and keep a small permanent performance budget suite so speed does not regress after launch.
+
+---
+
+## P0 — Release blockers and correctness risks
+
+The stable BUG/TODO identifiers below were imported from the former `docs/14_TODO_AND_BUGS.md` so existing commits and discussions remain traceable.
+
+### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
+
+- Status: **Environment alignment verified on 9 August 2026; supervised pilot completion remains open under BUG-003 and the onboarding checklist above**.
+- Evidence: Vercel Production uses the Production Convex deployment, Clerk Production issuer/key family, Convex-mode data selection, and the approved canonical origins. The public health check passed, and the supervised Production flow has now reached owner onboarding, CRM conversion, membership sale, cash receipt, check-in, and member timeline verification.
+- Risk: alignment can regress after credential, domain, deployment, or environment-scope changes; the remaining audit/reconciliation/cleanup steps must still be completed.
+- Fix/acceptance: retain the value-free ownership/verification record in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, rerun the classification checks after relevant configuration changes, finish the approved Production pilot sequence, and record the exact deployed commit. Never seed Production as a shortcut.
+
+### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
+
+- Status: **Confirmed coverage gap**.
+- Evidence: customer tests currently prove ownership helpers, while the roadmap still requires handler-level attempts using attacker-controlled customer, membership, trial, payment, lead, entry-pass, and branch identifiers.
+- Risk: a UI gate or a helper can look correct while a direct authenticated mutation/query still accepts an out-of-scope identifier.
+- Fix/acceptance: add authenticated allow/deny/cross-tenant/cross-branch tests for every private identifier family. Test deactivated users, inactive memberships, branch scope, role escalation, and non-disclosing `NOT_FOUND` behavior. Fix the server boundary if any test fails.
+
+### BUG-003 — Production-shaped release sequence is incomplete
+
+- Status: **Confirmed coverage gap; supervised Production sequence is in progress**.
+- Evidence: the staged write smoke covers member → membership → payment → check-in → timeline/audit. The supervised Production sequence has additionally verified provisioning, first-owner setup, CRM conversion, a cash shift/payment, check-in, and the unified timeline, but audit review, shift close/reconciliation, cleanup, staff, renewal, automation, member portal, and broader isolation remain incomplete.
+- Risk: individual screens can pass while the real gym workflow fails at a handoff between domains.
+- Fix/acceptance: finish the supervised disposable-tenant checklist above and add independently runnable, cleanup-safe staging journeys using Development Clerk and isolated Convex only. Gate all mutations explicitly and report cleanup results.
+
+### BUG-004 — Customer trial ownership must be proven through real authenticated mutations
+
+- Status: **Confirmed coverage gap**.
+- Evidence: the current customer tests cover profile ownership helpers, but the high-risk behavior is the actual authenticated booking path.
+- Risk: a caller could submit another customer's email or ID and attach a booking to the wrong person, or route a booking outside the selected gym/branch.
+- Fix/acceptance: test authenticated customer profile resolution, caller-supplied ID rejection, selected gym/branch routing, and staff/platform denial of member-only operations through real Convex handlers.
+
+## P0 — Confirmed user-facing and runtime issues
+
+### BUG-005 — Trial success copy promises My Gyms persistence when the visitor is not signed in
+
+- Status: **Resolved in `850454c`; production still needs a Convex-mode browser check**.
+- Evidence: the public gym form displayed “Your booking is also saved under My Gyms,” while `/customer/my-gyms` correctly requires a member sign-in. In Convex mode, submitting while signed out redirects to login; in mock mode, the public preview could show the success state without a member session.
+- Risk: a visitor believes the booking is attached to an account when it is only routed to the gym CRM, then sees an apparently missing booking after opening My Gyms.
+- Fix/acceptance: the success copy and CTA now explain that an unauthenticated request was received by the gym and direct the visitor to sign in; authenticated requests still open My Gyms. Browser coverage exists for both authenticated and unauthenticated preview flows.
+
+### BUG-006 — Member QR panel still labels the entry pass as a “Preview code”
+
+- Status: **Resolved in `850454c`; production still needs a Convex-mode browser check**.
+- Evidence: `apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx` rendered “Preview code. In production this is a short-lived signed token,” while `CURRENT_STATE.md` says the Convex path already uses a short-lived HMAC-signed, branch-bound entry pass.
+- Risk: members and gym staff cannot tell whether the QR shown in the live portal is a real usable credential.
+- Fix/acceptance: the label is now runtime-aware, missing tokens show a retryable state, and preview wording is reserved for mock mode. Preview browser coverage exists; add the credential-gated Convex assertion during the production-shaped smoke.
+
+### BUG-007 — Critical screens are polling, not truly realtime
+
+- Status: **Confirmed architectural compromise**.
+- Evidence: `CURRENT_STATE.md` and `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` document a four-second background refresh because the typed client boundary has no subscription-aware adapter.
+- Risk: reception, CRM, platform provisioning, payments, and My Gyms can show stale state for several seconds and may still feel like they require manual refresh during concurrent work.
+- Fix/acceptance: add a typed subscription seam behind the existing API/provider boundary. Migrate platform applications, CRM/trials, My Gyms, reception occupancy/check-ins, and payment/shift totals first. Keep a bounded polling fallback until each subscription is tested. Add two-context Playwright tests with no reload and no full-page loading flicker.
+
+### BUG-008 — Generated Next route types dirty the worktree during local dev and Playwright
+
+- Status: **Confirmed tooling issue**.
+- Evidence: running `next dev`/Playwright rewrote `apps/web/next-env.d.ts` from `./.next/types/routes.d.ts` to a mode-specific path such as `./.next-playwright/dev/types/routes.d.ts`. A typecheck before a successful build also reported a missing generated route module.
+- Risk: routine tests create unrelated diffs, and a clean checkout may depend on generated `.next` files before `typecheck` is run.
+- Fix/acceptance: make generated route typing deterministic for dev, Playwright, CI, and production; ensure a clean checkout can run the documented static checks in CI order; do not commit generated `.next` output. Add a CI/fixture check for a clean workspace.
+
+### BUG-009 — Login and role-routing regressions need permanent browser coverage
+
+- Status: **Needs verification against current head**.
+- Evidence: earlier browser reports described admin/team sessions flickering through member pages, an extra “Access platform” step, and role errors before reaching the correct dashboard. Recent tests cover sign-out transition and role restrictions, but not every Clerk identity-to-destination path.
+- Risk: a valid gym owner, platform admin, or member can land on the wrong surface or see a misleading role error.
+- Fix/acceptance: add trusted/mock browser tests for member → member dashboard, gym staff → gym dashboard, platform admin → platform console, forbidden direct URLs, sign-out → login, and cold-refresh hydration. Assert no intermediate wrong-dashboard content is visible.
+
+### BUG-010 — Public gym application can fail closed with no selectable plan catalog
+
+- Status: **Needs verification against the current production deployment**.
+- Evidence: a browser run on `/signup` showed “Plans are not available yet” and disabled the application action, even though the UI is designed to show the public catalog. The page currently has approved launch defaults, but it still gates the form while the Convex experience provider is loading or in an error state.
+- Risk: a temporary public catalog/Convex read failure blocks every new gym application instead of preserving a usable application path and clearly reporting the degraded dependency.
+- Fix/acceptance: verify the live `public.catalog` query and the default-plan fallback in both Development and Production. If the catalog is unavailable, keep the approved fallback plans selectable when safe, show a non-blocking “catalog temporarily unavailable” notice, and add a retry/telemetry path. Add a browser test for catalog success, empty, timeout, and recovery.
+
+### BUG-011 — Provisioning retry/idempotency after an external Clerk failure needs fault-injection coverage
+
+- Status: **Needs verification; the known Clerk slug failure is fixed**.
+- Evidence: provisioning previously failed with Clerk `organization_slugs_disabled` (fixed in `5a7622e` by removing the requirement for Clerk slugs). The protected action now records `failed` state and exposes retry, but there is no end-to-end test that retries after a partial Clerk organization/invitation response without duplicating the workspace, owner membership, invitation, or audit facts.
+- Risk: a transient Clerk/API failure can leave an approved application stuck, create duplicate organizations/invitations on retry, or make the UI report success before Convex state is complete.
+- Fix/acceptance: add a deterministic fault-injection test around organization creation, owner invitation, and finalization. Retry must converge to one organization, one branch, one subscription, one owner membership, and one invitation; each failure must remain auditable with a correlation ID and an actionable operator message.
+
+## P1 — Missing or incomplete MVP behavior
+
+### TODO-001 — Membership upgrade and downgrade are not explicit API operations
+
+- Status: **Confirmed missing from the current `GymOSApi` contract**.
+- Evidence: the contract exposes sale, renewal, freeze, unfreeze, extension, cancellation, and transfer, but no dedicated plan-change operation.
+- Risk: staff cannot safely change a member's plan while preserving historical terms and reconciling price differences.
+- Fix/acceptance: add a typed plan-change operation to mock and Convex adapters. Support immediate or next-renewal effective dates, required reason/permission, immutable successor or adjustment facts, explicit integer-minor-unit charge/credit, timeline, and audit. Do not invent proration; record the chosen pilot policy in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`.
+
+### TODO-002 — Operational messaging is sandbox-only outside gym applications
+
+- Status: **Confirmed deferred capability**.
+- Evidence: automation rules and templates show a sandbox provider; `CURRENT_STATE.md` defers live WhatsApp/SMS/email delivery. Resend is currently used for gym-application notifications, not the complete member lifecycle.
+- Risk: renewal reminders, trial confirmations, payment receipts, expiry alerts, and retry behavior are not yet a real-gym communication system.
+- Fix/acceptance: implement a provider boundary with durable delivery attempts, deduplication, retries, quiet hours, provider IDs, final status, and Arabic/English templates. Keep sandbox as the default until the product owner approves sender, recipient, and template policy.
+
+### TODO-003 — Member documents/profile photos are not represented in the operational contract
+
+- Status: **Needs product decision / likely P1**.
+- Evidence: member notes, tags, and emergency contacts exist, but there is no approved document/photo storage workflow in the current API contract.
+- Risk: gyms that require an ID or waiver cannot keep that record beside Member 360.
+- Fix/acceptance: only implement after deciding retention, file type/size, access scope, and Convex storage policy. Add signed upload/download authorization, audit events, and deletion/retention rules. Do not store sensitive files in arbitrary JSON.
+
+### TODO-004 — Discovery empty state needs an operational explanation
+
+- Status: **Needs verification / product copy**.
+- Evidence: Production can correctly show “No RIVET gyms are live yet” while no tenant has completed approve → provision and public-listing publication. The public catalog plans can still load.
+- Risk: visitors may interpret an intentionally empty catalog as a broken backend.
+- Fix/acceptance: keep the safe empty state, but explain that gyms appear after approval and publication, provide a clear application CTA, and add a platform/admin verification that provisioning publishes a listing. Do not seed fake Production gyms.
+
+### TODO-005 — Error handling can silently hide background failures
+
+- Status: **Needs verification**.
+- Evidence: provider/background refresh code contains deliberate `.catch(() => undefined)` paths for some snapshots and refreshes.
+- Risk: the UI can remain stale without a visible retry or diagnostic state, especially when Convex or Clerk is temporarily unavailable.
+- Fix/acceptance: classify expected unauthenticated/empty cases separately from network/configuration failures; preserve the last good data, surface a non-blocking stale/retry indicator, and log redacted correlation context server-side. Add offline/reconnect tests.
+
+## P1 — Security, finance, and audit hardening
+
+### TODO-006 — Expand real-handler isolation tests across money and entry flows
+
+- Status: **Confirmed roadmap item**.
+- Scope: member/lead/payment/check-in/entry-pass/trial IDs, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope.
+- Acceptance: each has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required, idempotency, and immutable-audit assertions.
+
+### TODO-007 — Complete supervised finance/reconciliation evidence
+
+- Status: **In progress in the supervised Production flow**.
+- Scope: open shift, opening float, cash/card/CliQ-style configured payments, partial balance, receipt, refund/void review, close shift, expected-vs-counted cash, manager variance decision, daily reconciliation.
+- Evidence to date: JOD 50.000 opening float, JOD 30.000 cash membership payment, receipt `RV-001001`, JOD 80.000 expected drawer, successful check-in, and unified member timeline were verified in Production on 9 August 2026.
+- Acceptance: source transaction facts, receipt numbers, shift totals, audit events, and reports agree after reload and concurrent updates. Shift close/reconciliation and the remaining method/variance scenarios are still open.
+
+### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
+
+- Status: **Confirmed staging gap**.
+- Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
+- Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
+
+### TODO-009 — Record marketing-preference provenance and revocation history
+
+- Status: **Partially implemented; default policy confirmed by the product owner**.
+- Evidence: RIVET intentionally defaults new members to **Opted in** across manual creation, lead conversion, and imports, while explicit opt-out remains supported. The stored domain fact is still a boolean without source, wording version, timestamp, actor, channel scope, or append-only change history.
+- Risk: the current system cannot distinguish a system-applied product default from a preference actively selected by a member or staff user, prove why an existing preference has its value, or reliably suppress every future promotional channel after withdrawal.
+- Fix/acceptance: add preference source (`system_default`, `staff_selected`, or `member_selected`), version/actor/timestamp facts, an obvious staff/member opt-out path, channel-specific suppression, migration treatment for historical records, and tests for defaulted opt-in, explicit opt-in, explicit opt-out, withdrawal, imports, conversion, and authorization. Never describe the system default as explicit consent.
+
+## P2 — Deliberately deferred until after the first pilot
+
+- Full class schedules, capacity, waitlists, and no-shows.
+- PT packages and trainer availability.
+- Corporate accounts and commissions.
+- POS/inventory and equipment maintenance.
+- Native mobile app and offline-tolerant reception queue.
+- Advanced churn/anomaly prediction.
+- Live WhatsApp/SMS and external SaaS billing beyond approved provider boundaries.
+- Google authentication unless the pilot proves it is necessary and a project-owned OAuth client is configured.
+
+## Regression checklist before closing a bug
+
+Run the focused test first, then the full gate:
+
+```bash
+corepack pnpm typecheck
+corepack pnpm convex:typecheck
+corepack pnpm lint
+corepack pnpm test
+corepack pnpm test:e2e
+corepack pnpm build
+git diff --check
+```
+
+For staged Convex writes, use only the documented explicit switches and a disposable Development Clerk identity/storage state. For Production, complete the read-only verification and obtain approval for each mutation before running it.
+
+## Closure log
+
+When closing an item, add one line here with the issue ID, date, commit SHA, test evidence, and any operator action still required. Do not mark a release blocker closed because a local mock test passed.
+
+| Issue | Closed on | Commit | Evidence |
+| --- | --- | --- | --- |
+| Production cash-shift render crash | 2026-08-09 | `8e81bd4` | 236 unit/component tests, both typechecks, lint, and production build passed; Vercel deployed the fix; the existing Production shift then rendered its JOD 50.000 float and later reconciled one JOD 30.000 cash payment into a JOD 80.000 expected drawer. Final shift close remains open under TODO-007. |
+| BUG-005, BUG-006 | 2026-08-09 | `850454c` | 238 unit tests; 7 public-experience Playwright tests passed, including authenticated/unauthenticated trial confirmation and preview QR wording. Convex-mode production assertion remains release-gated. |
+| Historical provisioning slug failure | 2026-08-09 | `5a7622e` | Clerk organization creation no longer requires the optional Clerk slug feature; the internal RIVET organization slug remains stable. Retry/idempotency coverage remains open as BUG-011. |
+| Historical public plan-catalog fallback | 2026-08-09 | `55cead9` | Approved launch defaults keep the public gym application usable when editable catalog rows are absent; production success/timeout/recovery coverage remains open as BUG-010. |
+| Dashboard scope and CRM capture slice | 2026-08-09 | `2269863` + `1bd4b05` | 248 unit tests, 19 preview Playwright journeys, typecheck, Convex typecheck, lint, and production build passed after merging branch-aware dashboard copy, lead email capture, explicit unassigned-owner handling, assignment authorization, and cash-shift error-path coverage. Production one-branch visual verification and TODO-009 preference provenance/revocation remain open. The overlapping opt-out default was subsequently realigned to the product owner's opted-in default decision. |

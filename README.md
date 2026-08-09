@@ -19,7 +19,8 @@ The approved runtime is Next.js + Convex + Clerk + Vercel. `GymOSApi` remains th
 11. `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`
 12. `docs/13_NEXT_IMPLEMENTATION_ROADMAP.md`
 13. `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`
-14. `docs/14_TODO_AND_BUGS.md`
+
+`docs/13_PRODUCT_AND_OPERATIONS_TODO.md` is the single canonical backlog for product findings, engineering bugs, release blockers, deferred work, and closure evidence. Do not create parallel TODO documents.
 
 `FRONTEND_HANDOFF.md` is the frozen historical record of the frontend-only pass completed on 30 July 2026. It is retained for the original frontend → backend contract and should not be used as the living release-status document.
 
