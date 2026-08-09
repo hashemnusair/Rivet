@@ -1,12 +1,12 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-09 after production topology verification, the Production Convex deployment, staging write verification, the disposable production onboarding through workspace provisioning, platform-operations controls, reporting hardening, and the end-to-end free-trial lifecycle pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-09 after production topology verification, the Production Convex deployment, staging write verification, the disposable production onboarding through workspace provisioning, platform-operations controls, reporting hardening, the end-to-end free-trial lifecycle pass, and reception verdict-card responsive hardening. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Product surface preserved
 
 The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console (including the protected `/platform/applications` review queue, tenant subscription controls, plan catalog editor, billing export, and searchable support inbox), gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, reports, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
 
-The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
+The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. The reception verdict summary now uses bounded responsive grid regions so long English/Arabic member names cannot collide with plan, expiry, visits, or balance facts. No page makes a direct Convex or `fetch` call.
 
 ## Runtime modes
 
@@ -65,8 +65,8 @@ The current local verification is green for all credential-free product checks:
 - `pnpm typecheck` — pass.
 - `pnpm convex:typecheck` — pass.
 - `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 249 tests passed across 23 files, covering Convex security, adapter, schema, platform application review/provisioning and note editing, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, marketing-consent defaults, lead assignment, dashboard scope copy, mock-mode, component, reception, customer ownership, and member-portal regression coverage. The merged cash-shift rendering fix also adds Convex API error-path coverage.
-- `pnpm test:e2e` — 19 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches. The current head covers branch-aware dashboard scope, CRM lead capture, and editing a finalized platform application note.
+- `pnpm test` — 250 tests passed across 23 files, covering Convex security, adapter, schema, platform application review/provisioning and note editing, platform control mutation boundaries, audit, trial lifecycle/accountability, duplicate conversion, reconciliation, refund bounds, approval permissions, automation scheduling, marketing-consent defaults, lead assignment, dashboard scope copy, mock-mode, component, reception (including long bilingual verdict-card layout), customer ownership, and member-portal regression coverage. The merged cash-shift rendering fix also adds Convex API error-path coverage.
+- `pnpm test:e2e` — 19 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches. The current head covers branch-aware dashboard scope, CRM lead capture, editing a finalized platform application note, and non-overlapping reception verdict regions at desktop and narrow tablet widths.
 - `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic. The first sandboxed attempt could not reach Google Fonts; the network-enabled rerun passed.
 - `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
 - `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.

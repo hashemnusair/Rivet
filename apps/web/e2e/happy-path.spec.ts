@@ -17,6 +17,19 @@ async function signIn(page: Page, persona: "Owner" | "Manager" | "Sales" | "Rece
   await expect(page).not.toHaveURL(/\/login/);
 }
 
+async function expectVerdictRegionsDoNotOverlap(page: Page) {
+  const identityBox = await page.getByTestId("checkin-identity").boundingBox();
+  const factsBox = await page.getByTestId("checkin-facts").boundingBox();
+  if (!identityBox || !factsBox) throw new Error("reception verdict regions did not render");
+
+  const overlap =
+    identityBox.x < factsBox.x + factsBox.width &&
+    factsBox.x < identityBox.x + identityBox.width &&
+    identityBox.y < factsBox.y + factsBox.height &&
+    factsBox.y < identityBox.y + identityBox.height;
+  expect(overlap, "member identity and membership facts must never overlap").toBe(false);
+}
+
 test.describe("member lookup → renewal → payment → timeline", () => {
   test("a salesperson renews an expiring member and the record agrees everywhere", async ({ page }) => {
     await signIn(page, "Sales");
@@ -102,6 +115,14 @@ test.describe("reception check-in", () => {
     const verdict = page.getByTestId("checkin-verdict");
     await expect(verdict).toBeVisible();
     await expect(verdict).toHaveAttribute("data-decision", /allowed|warning|blocked/);
+
+    // The identity/facts regions must remain readable at both the desktop
+    // console width and a narrow tablet width. This catches the old flex-item
+    // collision when a long member name squeezes the facts grid.
+    await expectVerdictRegionsDoNotOverlap(page);
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(verdict).toBeVisible();
+    await expectVerdictRegionsDoNotOverlap(page);
 
     const decision = await verdict.getAttribute("data-decision");
     if (decision !== "blocked") {

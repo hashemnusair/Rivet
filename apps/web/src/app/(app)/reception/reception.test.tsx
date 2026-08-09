@@ -100,6 +100,29 @@ describe("reception console — allowed", () => {
     expect(within(verdict).getByText("Balance")).toBeInTheDocument();
   });
 
+  it("keeps long bilingual identities separate from membership facts", async () => {
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "manager" });
+    const session = await api.getSession();
+    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    const members = await api.listMembers({ branchId, pageSize: 200 });
+    const seededMember = members.items.find((candidate) => candidate.status === "active");
+    if (!seededMember) throw new Error("no active seeded member available for layout regression");
+
+    const longName = "Production QA Member — Front Desk Verification Name That Must Wrap";
+    const longArabicName = "عضو اختبار الإنتاج — اسم طويل يجب أن يلتف دون تداخل";
+    await api.updateMember(seededMember.id, { fullName: longName, fullNameAr: longArabicName });
+
+    await lookup(seededMember.memberNumber);
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    const identity = within(verdict).getByTestId("checkin-identity");
+    const facts = within(verdict).getByTestId("checkin-facts");
+    expect(identity).toHaveClass("min-w-0");
+    expect(facts).toHaveClass("min-w-0");
+    expect(within(identity).getByText(longName)).toBeInTheDocument();
+    expect(within(identity).getByText(longArabicName)).toHaveAttribute("dir", "rtl");
+  });
+
   it("records the check-in and confirms with a timestamp", async () => {
     const { member } = await findMember(
       "receptionist",

@@ -155,6 +155,13 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 
 During the duplicate-check-in verification in Production, the guard correctly blocked a second scan, but the result card's identity and membership-fact regions collided. The long name **Production QA Member** overflowed its shrinking flex column into the adjacent **Plan** heading/value, creating overlapping text and an unclear reading order. The current row gives the facts grid enough intrinsic width to squeeze the identity block below the width of an unbroken word.
 
+### Implementation status
+
+- [x] Replace the identity/facts flex row with bounded grid columns; stack the facts below the identity when the console is narrow.
+- [x] Add long English/Arabic text wrapping, explicit RTL direction for the Arabic name, and non-overlapping action wrapping.
+- [x] Add component coverage and a browser assertion at desktop and narrow tablet widths.
+- [ ] Repeat the duplicate-scan check against the live Production tenant at laptop, tablet, phone, and large-text zoom sizes; retain the exact commit and screenshot in the pilot notes.
+
 ### Completion criteria
 
 - Replace the fragile identity/facts flex sizing with an explicit responsive grid or bounded flex basis so neither region can overlap the other.

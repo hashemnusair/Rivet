@@ -557,26 +557,30 @@ function VerdictPanel({
       data-decision={decision}
     >
       {/* Verdict band */}
-      <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3", verdict.band)}>
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3", verdict.band)}>
         <Icon className="size-5 shrink-0" aria-hidden />
         <span className="font-display text-[17px] font-semibold tracking-tight">
           {committed && decision !== "blocked" ? `Checked in · ${formatTime(occurredAt ?? new Date().toISOString())}` : verdict.label}
         </span>
-        <span className="text-[13px] opacity-90">{message}</span>
+        <span className="min-w-0 break-words text-[13px] opacity-90">{message}</span>
       </div>
 
       {/* Identity + membership facts */}
-      <div className="flex flex-wrap items-start gap-5 px-5 py-5">
-        <Monogram name={member.fullName} size="xl" className="shrink-0" />
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-[20px] font-semibold leading-tight tracking-tight text-night-ink">{member.fullName}</h2>
-          {member.fullNameAr ? <p className="mt-0.5 text-[13px] text-night-ink-2">{member.fullNameAr}</p> : null}
-          <p className="mt-1 font-mono text-[12px] text-night-ink-3" dir="ltr">
-            {member.memberNumber} · {member.phone}
-          </p>
+      <div className="grid min-w-0 gap-5 px-5 py-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]" data-testid="checkin-summary">
+        <div className="flex min-w-0 items-start gap-3" data-testid="checkin-identity">
+          <Monogram name={member.fullName} size="xl" className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h2 className="break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight tracking-tight text-night-ink" dir="auto">
+              {member.fullName}
+            </h2>
+            {member.fullNameAr ? <p className="mt-0.5 break-words [overflow-wrap:anywhere] text-[13px] text-night-ink-2" dir="rtl">{member.fullNameAr}</p> : null}
+            <p className="mt-1 break-words font-mono text-[12px] text-night-ink-3" dir="ltr">
+              {member.memberNumber} · {member.phone}
+            </p>
+          </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
           <Cell label="Plan" value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
           <Cell label="Expires" value={member.membershipEndDate ?? "—"} mono />
           <Cell
@@ -596,10 +600,10 @@ function VerdictPanel({
 
       {/* Reasons */}
       {meaningfulCodes.length > 0 ? (
-        <ul className="flex flex-wrap gap-x-4 gap-y-1 border-t border-night-line px-5 py-2.5">
+        <ul className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 border-t border-night-line px-5 py-2.5">
           {meaningfulCodes.map((code) => (
-            <li key={code} className="flex items-center gap-1.5 text-[12.5px] text-night-ink-2">
-              <span className="size-1 rounded-full bg-night-ink-3" aria-hidden />
+            <li key={code} className="flex min-w-0 items-center gap-1.5 break-words text-[12.5px] text-night-ink-2">
+              <span className="size-1 shrink-0 rounded-full bg-night-ink-3" aria-hidden />
               {REASON_CODE_LABELS[code as keyof typeof REASON_CODE_LABELS] ?? code}
             </li>
           ))}
@@ -609,17 +613,17 @@ function VerdictPanel({
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
           <p className="eyebrow-night text-signal">Critical note</p>
-          <p className="mt-0.5 text-[13px] text-night-ink">{criticalNotes}</p>
+          <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
         </div>
       ) : null}
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-night-line bg-night px-5 py-3.5">
+      <div className="flex flex-col gap-3 border-t border-night-line bg-night px-5 py-3.5 sm:flex-row sm:flex-wrap sm:items-center">
         <Button asChild size="sm" variant="night-ghost">
           <Link href={`/members/${member.id}`}>Open profile</Link>
         </Button>
 
-        <div className="ms-auto flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ms-auto">
           {hasBalance && canCollect ? (
             <Button
               size="sm"
