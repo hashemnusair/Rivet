@@ -109,6 +109,24 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 - Keep board counts, lead detail, dashboard funnel, timeline, and trial state consistent from the same source of truth.
 - Add tests for straight-through, skipped-trial, completed-trial, lost, converted, cancelled-trial, and no-show paths.
 
+## P0 — Make marketing consent explicit and safe by default
+
+### Observed problem
+
+The Production lead-conversion flow never asked for marketing consent, yet the resulting member record displayed **Marketing: Opted in**. The shared member-creation mutation defaults a missing `marketingOptIn` value to `true`, and the manual new-member form is also initially switched on. Absence of a choice is not affirmative consent; silently opting people in creates legal, trust, and deliverability risk.
+
+### Completion criteria
+
+- Default every member-creation, lead-conversion, import, API, and migration path to **opted out** unless valid affirmative consent is supplied.
+- Add an explicit, initially unchecked consent control with concise channel/purpose language where consent can legitimately be collected.
+- Store consent status with source, timestamp, actor, wording/version, and applicable channels; preserve revocation history as append-only facts.
+- Do not infer marketing consent from submitting a gym inquiry, creating a member account, joining a gym, accepting terms, or providing contact details.
+- Keep essential transactional/service messages separate from marketing preferences.
+- Provide an authorized member-facing and staff-assisted opt-out path and apply suppressions before any campaign send.
+- Define safe treatment for existing records created under the old default; do not silently reinterpret them as proven opt-ins.
+- Add tests for omitted, false, true-with-evidence, import, conversion, withdrawal, cross-channel, and authorization cases.
+- Treat this as a release blocker before sending any marketing automation.
+
 ## P1 — Build a branded transactional-email system
 
 ### Observed problem
@@ -189,7 +207,7 @@ Run this as a dedicated, broad launch-hardening pass only after the product work
 
 ### Observed problem
 
-During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. Opening the empty one-lead Pipeline also took roughly five seconds. Opening that lead's detail screen took roughly five to ten seconds with no immediate navigation or loading feedback, making the application appear frozen. Those waits are far too slow for routine operations. The current audit screen starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; the Pipeline and lead detail similarly need their route, authenticated bootstrap, reference-data queries, domain queries, and rendering paths measured rather than guessed. Both cold and warm navigation must be profiled.
+During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. Opening the empty one-lead Pipeline also took roughly five seconds. Opening that lead's detail screen took roughly five to ten seconds with no immediate navigation or loading feedback, making the application appear frozen. After successful lead conversion, the dialog closed and the stale lead page reappeared for several seconds, followed by a separate loading screen and finally the member record. Those waits and visual reversions are far too slow and unstable for routine operations. The current audit screen starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; the Pipeline, lead detail, and conversion transition similarly need their route, authenticated bootstrap, reference-data queries, domain queries, cache invalidation, and rendering paths measured rather than guessed. Both cold and warm navigation must be profiled.
 
 ### Required performance work
 
@@ -197,6 +215,7 @@ During the 9 August Production onboarding check, the owner navigated from branch
 - Add privacy-safe Real User Monitoring for Core Web Vitals, route-transition duration, authentication/session readiness, Convex query/mutation latency, error rate, and long tasks. Never include member, payment, invitation, or credential data in telemetry.
 - Define and enforce launch budgets for initial load, authenticated route transitions, useful-content paint, interaction latency, layout shift, JavaScript size, image/font delivery, and critical Convex operations. Treat a five-second routine route transition as a release failure.
 - Provide immediate interaction acknowledgement for every navigation. If useful content cannot appear near-instantly, show an accessible pending indicator or route-level skeleton promptly so a click never appears ignored or frozen.
+- Keep successful create/convert/sale mutations in one stable transition state until their destination is ready. Do not close a dialog back onto stale source content and then introduce a second loading phase; prefetch or seed the destination record where safe and use `replace` when returning to the completed source action would be misleading.
 - Profile the full Clerk → Convex identity/session bootstrap and remove duplicated or serial readiness gates.
 - Audit Next.js route and component boundaries, server/client rendering, streaming, Suspense placement, dynamic imports, bundle composition, hydration work, font/image loading, and accidental client-only waterfalls.
 - Add deliberate route and data prefetching for likely navigation targets using Next.js link prefetch plus TanStack Query prefetching on safe idle, hover, or focus signals. Do not prefetch privileged data for an unauthorized identity.
