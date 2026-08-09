@@ -13,6 +13,7 @@
 - The MVP prioritizes members, memberships, CRM, reception, payments, reconciliation, automations, dashboards, and audit.
 - Public consumer and trainer marketplaces are future phases.
 - Raw biometric storage is out of scope.
+- New members default to **Marketing: Opted in** across manual creation, lead conversion, and imports. An explicit opt-out must be preserved. The system-applied default is a product preference, not a claim that the member actively gave consent; preference provenance and withdrawal history remain tracked in the canonical backlog.
 
 ## Approved architecture override — 2026-07-31
 

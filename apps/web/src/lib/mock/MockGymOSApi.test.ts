@@ -199,7 +199,7 @@ describe("member creation", () => {
     expect(after.totalItems).toBe(before.totalItems + 1);
   });
 
-  it("defaults new members and imported rows to opted out unless consent is explicit", async () => {
+  it("defaults new members and imported rows to opted in while preserving explicit opt-out", async () => {
     const session = await api.getSession();
     const created = await api.createMember({
       fullName: "Consent Default Test",
@@ -207,16 +207,16 @@ describe("member creation", () => {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
     });
-    expect(created.member.marketingOptIn).toBe(false);
+    expect(created.member.marketingOptIn).toBe(true);
 
-    const optedIn = await api.createMember({
-      fullName: "Consent Explicit Test",
+    const optedOut = await api.createMember({
+      fullName: "Preference Explicit Test",
       phone: "+962 79 555 1241",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
-      marketingOptIn: true,
+      marketingOptIn: false,
     });
-    expect(optedIn.member.marketingOptIn).toBe(true);
+    expect(optedOut.member.marketingOptIn).toBe(false);
 
     const preview = await api.previewMemberImport({
       branchId: session.branches[0]!.id,
@@ -226,7 +226,7 @@ describe("member creation", () => {
     expect(imported.committedCount).toBe(1);
     const importedMember = (await api.listMembers({ search: "Consent Import", pageSize: 5 })).items[0];
     expect(importedMember).toBeDefined();
-    expect((await api.getMember(importedMember!.id)).marketingOptIn).toBe(false);
+    expect((await api.getMember(importedMember!.id)).marketingOptIn).toBe(true);
   });
 
   it("warns about a duplicate phone instead of silently creating a second record", async () => {
@@ -815,6 +815,7 @@ describe("CRM", () => {
 
     expect(member.fullName).toBe(lead.fullName);
     expect(member.phone).toBe(lead.phone);
+    expect(member.marketingOptIn).toBe(true);
 
     const after = await api.getLead(lead.id);
     expect(after.stage).toBe("won");
