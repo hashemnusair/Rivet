@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-09 after production Clerk setup, staging write verification, platform-operations controls, reporting hardening, and the end-to-end free-trial lifecycle pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-09 after production topology verification, the Production Convex deployment, staging write verification, the disposable production onboarding through workspace provisioning, platform-operations controls, reporting hardening, and the end-to-end free-trial lifecycle pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Product surface preserved
 
@@ -73,7 +73,11 @@ The current local verification is green for all credential-free product checks:
 - `convex run health:check` — returned `status: ok` from the linked development deployment.
 - GitHub Actions — static/typecheck/lint/unit/build and Playwright jobs passed on the prior branch head. Convex codegen remains repository-secret-gated, and a manually dispatched authenticated Clerk smoke now fails clearly when any required secret is missing instead of reporting a misleading success.
 
-The isolated staging Clerk-to-Convex read smoke and the opt-in operational write flow now pass with the external Clerk session stored outside Git. The remaining release gate is production-specific: verify the Vercel Production values and production Convex deployment against the production Clerk issuer, then run a pilot check without touching the staging fixture. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; both trusted paths set it to `0`, use `NEXT_PUBLIC_DATA_MODE=convex`, and require the storage-state file.
+The isolated staging Clerk-to-Convex read smoke and opt-in operational write flow passed on current `main` in manual GitHub Actions run `31325711295`; the operational flow created and archived its disposable member. Push CI run `31325701531` also passed. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; both trusted paths set it to `0`, use `NEXT_PUBLIC_DATA_MODE=convex`, and require the storage-state file.
+
+Vercel Production was rebuilt from commit `2c42130` with `pnpm build`. Its live bundle contains the Production Convex URL, a `pk_live_` Clerk key resolving to `clerk.rivetjo.com`, and `https://www.rivetjo.com` as the canonical origin. The Production Convex deployment `descriptive-meerkat-589` has the seven expected variable names, was deployed from current `main`, and returned `status: ok` after deployment.
+
+The disposable Production application `Hashem Test` completed submission, applicant confirmation, platform review, approval notification, tenant/first-branch creation, subscription assignment, Clerk organization creation, and owner-invitation delivery. The remaining pilot gate is to accept that Clerk invitation in an isolated browser, verify the owner identity/workspace, exercise the first-owner and commercial loop, and archive/hide the disposable tenant. The production check also exposed two follow-ups: review notes have no independent save action, and transactional/Clerk email branding, sender identity, and Gmail placement need deliberate work. These are recorded in `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`.
 
 ## Local and deployment commands
 
@@ -97,7 +101,7 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The production Clerk instance, custom-domain DNS records, and first production test user are now in place. The remaining release gate is to verify that Vercel Production and the selected Convex deployment both use the matching production Clerk issuer/keys and production Convex URL, then run the trusted Clerk-to-Convex smoke. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The Production Clerk instance, custom-domain DNS, Vercel environment split, Production Convex environment/deployment, Resend application mail, and first platform administrator have been verified. The remaining release gate is the invited-owner acceptance and disposable production operating loop described above. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability, live WhatsApp/SMS delivery, and external SaaS billing remain provider-bound follow-ups. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
 
 ## Files another agent should read first
 
