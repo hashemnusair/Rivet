@@ -55,6 +55,29 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("link", { name: "Pipeline", exact: true }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
   });
+
+  test("does not promise My Gyms persistence for an unauthenticated trial request", async ({ page }) => {
+    await page.goto("/customer/gyms/forge-fitness");
+
+    await page.getByLabel("Full name").fill("Unauthenticated QA");
+    await page.getByLabel("Phone").fill("+962 79 321 4456");
+    await page.getByLabel("Email").fill("unauthenticated.qa@example.com");
+    await page.getByLabel("What are you looking for?").fill("Test the public request confirmation");
+    await page.getByRole("button", { name: /Book free trial/i }).click();
+
+    await expect(page.getByRole("heading", { name: /Your free trial is booked/i })).toBeVisible();
+    await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
+  });
+
+  test("labels the local QR as preview-only", async ({ page }) => {
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await page.goto("/customer/my-gyms/membership-lina-forge");
+
+    await expect(page.getByText(/Preview code for the local demo/i)).toBeVisible();
+  });
 });
 
 test.describe("RIVET gym applications", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import { rolePermissions } from "./permissions";
-import { assertBranchAccess, domainError, requirePermission, requireReason, type ActorContext } from "./security";
+import { assertBranchAccess, domainError, requireMember, requirePermission, requireReason, type ActorContext } from "./security";
 
 const organizationId = "org-test" as Id<"organizations">;
 const branchA = "branch-a" as Id<"branches">;
@@ -19,6 +19,32 @@ function actor(overrides: Partial<ActorContext> = {}): ActorContext {
     correlationId: "cor-security-1",
     ...overrides,
   };
+}
+
+function memberContext({
+  identity,
+  user,
+  memberships = [],
+}: {
+  identity?: { subject: string };
+  user?: Record<string, unknown> | null;
+  memberships?: Array<Record<string, unknown>>;
+}) {
+  const users = user !== null ? [{ _id: "user-1", authSubject: "clerk-user-1", status: "active", ...(user ?? {}) }] : [];
+  const rows: Record<string, Array<Record<string, unknown>>> = { users, organizationMemberships: memberships };
+  const query = (table: string) => ({
+    withIndex: (_index: string, build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown) => {
+      const filters: Array<[string, unknown]> = [];
+      const q = { eq: (field: string, value: unknown) => { filters.push([field, value]); return q; } };
+      build(q);
+      const matches = (rows[table] ?? []).filter((row) => filters.every(([field, value]) => row[field] === value));
+      return { unique: async () => matches[0] ?? null, collect: async () => matches };
+    },
+  });
+  return {
+    auth: { getUserIdentity: async () => identity ?? { subject: "clerk-user-1" } },
+    db: { query },
+  } as never;
 }
 
 describe("Convex security kernel", () => {
@@ -49,5 +75,29 @@ describe("Convex security kernel", () => {
     } catch (error) {
       expect((error as { data?: unknown }).data).toMatchObject({ code: "FORBIDDEN", requestId: "cor-error-1", details: { scope: "branch" } });
     }
+  });
+
+  it("keeps platform administrators out of member-only operations", async () => {
+    await expect(requireMember(memberContext({ user: { platformAdmin: true } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+  });
+
+  it("keeps active gym team accounts out of member-only operations", async () => {
+    await expect(
+      requireMember(
+        memberContext({
+          memberships: [{ _id: "membership-1", userId: "user-1", active: true }],
+        }),
+      ),
+    ).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+  });
+
+  it("allows an authenticated member identity with no active gym membership", async () => {
+    await expect(requireMember(memberContext({}))).resolves.toMatchObject({ user: expect.objectContaining({ authSubject: "clerk-user-1" }) });
+  });
+
+  it("fails closed for deactivated or unknown identities", async () => {
+    await expect(requireMember(memberContext({ user: { status: "deactivated" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+    await expect(requireMember(memberContext({ identity: { subject: "unknown-clerk-user" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+    await expect(requireMember(memberContext({ user: null }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
   });
 });

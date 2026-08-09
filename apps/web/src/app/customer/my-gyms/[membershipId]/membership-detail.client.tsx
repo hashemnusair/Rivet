@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, CreditCard, MapPin, Phone, ScanLine, Ticket } 
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
@@ -45,6 +46,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
   const daysLeft = Math.max(daysFromToday(membership.endDate), 0);
+  const signedEntryPass = isConvexMode();
 
   return (
     <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -86,20 +88,12 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           </div>
           <div className="p-4">
             <div className="rounded-md bg-white p-4">
-              <QRCodeSVG
-                value={membership.qrValue}
-                size={232}
-                level="H"
-                bgColor="#ffffff"
-                fgColor="#15140f"
-                className="h-auto w-full"
-                aria-label="Membership entry QR code"
-              />
+              {membership.qrValue ? <QRCodeSVG value={membership.qrValue} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" className="h-auto w-full" aria-label="Membership entry QR code" /> : <p className="px-3 py-16 text-center text-[12px] text-ink-3">Entry pass unavailable. Refresh to try again.</p>}
             </div>
             <p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p>
             <p className="mt-0.5 text-[11.5px] text-night-ink-3">{branch.name}</p>
             <p className="mt-4 border-t border-night-line pt-3 text-[11px] leading-relaxed text-night-ink-3">
-              Preview code. In production this is a short-lived signed token validated at the desk.
+              {signedEntryPass ? "Short-lived signed entry pass. Refresh before entry if it expires." : "Preview code for the local demo. Production uses a short-lived signed token validated at the desk."}
             </p>
           </div>
         </div>
