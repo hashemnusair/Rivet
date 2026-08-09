@@ -19,7 +19,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, explicitMarketingConsent, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -673,7 +673,7 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
     emergencyContactPhone: optionalString(value.emergencyContactPhone),
     source: optionalString(value.source),
     assignedSalespersonId: optionalString(value.assignedSalespersonId),
-    marketingOptIn: explicitMarketingConsent(value.marketingOptIn),
+    marketingOptIn: marketingPreference(value.marketingOptIn),
     notes: optionalString(value.notes),
     archivedAt: optionalString(value.archivedAt),
       stats: {
@@ -1823,7 +1823,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: false });
+    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: true });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
     rows[index] = { ...row, status: "committed", memberId: member.id };
@@ -1875,7 +1875,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     emergencyContactPhone: optionalString(input.emergencyContactPhone),
     source: optionalString(input.source),
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
-    marketingOptIn: explicitMarketingConsent(input.marketingOptIn),
+    marketingOptIn: marketingPreference(input.marketingOptIn),
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });

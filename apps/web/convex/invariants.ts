@@ -24,11 +24,11 @@ export function isValidMinorUnit(amount: unknown, allowNegative = false): amount
 }
 
 /**
- * Marketing consent is affirmative only. Missing, malformed, or inherited
- * values must never be interpreted as permission to send promotions.
+ * RIVET's approved product default is opted in. Preserve an explicit opt-out;
+ * omitted or legacy values inherit the opted-in default.
  */
-export function explicitMarketingConsent(value: unknown): boolean {
-  return value === true;
+export function marketingPreference(value: unknown): boolean {
+  return value !== false;
 }
 
 export interface DuplicateMemberCandidate {

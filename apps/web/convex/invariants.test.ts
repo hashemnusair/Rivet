@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, explicitMarketingConsent, isValidMinorUnit, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
+import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
@@ -19,11 +19,11 @@ describe("server domain invariants", () => {
     expect(isValidMinorUnit(-1, true)).toBe(true);
   });
 
-  it("requires affirmative marketing consent", () => {
-    expect(explicitMarketingConsent(true)).toBe(true);
-    expect(explicitMarketingConsent(false)).toBe(false);
-    expect(explicitMarketingConsent(undefined)).toBe(false);
-    expect(explicitMarketingConsent("true")).toBe(false);
+  it("defaults marketing preference to opted in while preserving explicit opt-out", () => {
+    expect(marketingPreference(true)).toBe(true);
+    expect(marketingPreference(false)).toBe(false);
+    expect(marketingPreference(undefined)).toBe(true);
+    expect(marketingPreference("true")).toBe(true);
   });
 
   it("normalizes duplicate contacts and ignores archived members", () => {

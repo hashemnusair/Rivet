@@ -60,7 +60,7 @@ export default function NewMemberPage() {
       email: "",
       homeBranchId: session?.activeBranchId ?? session?.branches[0]?.id ?? "",
       preferredLanguage: "en",
-      marketingOptIn: false,
+      marketingOptIn: true,
     },
   });
 
@@ -283,7 +283,7 @@ export default function NewMemberPage() {
           <label className="mt-4 flex items-center justify-between gap-3 cursor-pointer">
             <span>
               <span className="block text-[13px] font-medium">Marketing messages</span>
-              <span className="block text-[12px] text-ink-3">Optional promotional offers and campaigns on WhatsApp/SMS. Service messages are separate.</span>
+              <span className="block text-[12px] text-ink-3">Opted in by default for promotional offers and campaigns on WhatsApp/SMS. Switch off to opt out. Service messages are separate.</span>
             </span>
             <Controller
               control={form.control}

@@ -166,7 +166,7 @@ During the duplicate-check-in verification in Production, the guard correctly bl
 
 The Production lead-conversion flow did not show a marketing-preference choice, while the resulting member record displayed **Marketing: Opted in**. RIVET's chosen product policy is to keep **Opted in** as the default for newly created members. The remaining product gap is transparency and provenance: staff and members should be able to see the default, change it easily, and distinguish a system-applied default from an explicit member choice.
 
-The approved product decision is **Opted in by default** across manual member creation, lead conversion, and imports. An explicit **Opted out** choice must always be preserved. The current implementation is being realigned to that policy after an overlapping feature slice temporarily changed omitted values to opt-out. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
+The approved product decision is **Opted in by default** across manual member creation, lead conversion, and imports. An explicit **Opted out** choice must always be preserved. The implementation is aligned with that policy after an overlapping feature slice temporarily changed omitted values to opt-out. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
 
 ### Completion criteria
 
