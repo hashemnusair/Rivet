@@ -12,7 +12,7 @@ Read these files completely before editing:
 
 1. `AGENTS.md`
 2. `README.md`
-3. `FRONTEND_HANDOFF.md`
+3. `CURRENT_STATE.md`
 4. `docs/00_PRODUCT_BRIEF.md`
 5. `docs/01_SCOPE_AND_ROADMAP.md`
 6. `docs/05_DOMAIN_MODEL.md`
@@ -71,7 +71,7 @@ pnpm build
 
 Before delivery:
 
-- Update `README.md`, `FRONTEND_HANDOFF.md`, `.env.example`, and relevant decisions documentation to match the implementation.
+- Update `README.md`, `CURRENT_STATE.md`, `.env.example`, and relevant decisions documentation to match the implementation.
 - Record all meaningful assumptions and external deferrals.
 - Confirm `git diff --check` passes.
 - Inspect the final diff for secrets, debug files, generated junk, and unrelated changes.

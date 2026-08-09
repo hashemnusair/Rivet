@@ -1,113 +1,193 @@
-# GymOS / RIVET handoff
+# Historical frontend pass handoff
 
-Updated 2026-08-08 after production Clerk setup, staging write verification, platform-operations controls, and reporting hardening. The approved frontend remains the product surface; the production data seam now points at Convex through `GymOSApi`.
+> Frozen record of the frontend-only pass completed on 2026-07-30 at commit `10aec50`.
+> It exists for historical context and for the original frontend → backend contract.
+> Do not update this file with current implementation or release status.
+> Read `CURRENT_STATE.md` and `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` for the living state.
 
-## Product surface preserved
+---
+## Original frontend handoff
 
-The existing RIVET routes remain intact, including the public landing and gym directory, customer signup/discovery/My Gyms, platform console (including the protected `/platform/applications` review queue, tenant subscription controls, plan catalog editor, billing export, and searchable support inbox), gym dashboard, reception, members/member 360, memberships, plans, CRM pipeline and queues, payments/receipts/shifts, automations, reports, audit, and settings. The public `/signup` route now submits a reviewed gym application; gym workspaces are provisioned by RIVET and `/login/gym` is sign-in only for teams that have been given access. `/members/import` remains the permission-gated CSV preview and resumable commit workflow.
+## Status
 
-The frontend still uses the established warm paper/ink visual system, Radix-based UI primitives, RTL logical properties, keyboard-friendly reception contract, `PageHeader`/`Gate` patterns, and TanStack Query hooks. No page makes a direct Convex or `fetch` call.
+- Completion date: 2026-07-30
+- Frontend commit: not applicable — this working tree is not a git repository (`git init` has not been run). Commit the tree as-is; `pnpm-lock.yaml` is present and current.
+- Mock mode command: `pnpm install && pnpm dev` from the repository root (starts `apps/web` on <http://localhost:3000>)
+- Build command: `pnpm build`
+- Test command: `pnpm test` (unit + component), `pnpm test:e2e` (Playwright)
 
-## Runtime modes
+Product name in the UI is **RIVET** (working title GymOS), derived from the logo in the repository root.
 
-`apps/web/src/lib/api/client.ts` is the only client factory:
+## Implemented routes
 
-- `ConvexGymOSApi` is selected for production and all explicit `NEXT_PUBLIC_DATA_MODE=convex` runs.
-- `MockGymOSApi` is selected only for non-production `NEXT_PUBLIC_DATA_MODE=mock` or the non-production default without a mode variable.
-- Production always resolves to Convex, even if `NEXT_PUBLIC_DATA_MODE=mock` is accidentally present. Missing Convex configuration produces a configuration/auth failure; it never opens a seeded tenant.
-- `resetDemo`, `setBehavior`, and persona switching are unavailable in Convex mode.
+| Route | Purpose | Primary roles | Status |
+|---|---|---|---|
+| `/login` | Auth preview: four demo personas, any password | all | Done |
+| `/` | Role-aware entry redirect (reception → console, else dashboard) | all | Done |
+| `/dashboard` | Owner/manager revenue + exceptions dashboard; sales variant for salespeople | owner, manager, sales | Done |
+| `/reception` | Full-height dark check-in console: lookup/scan, verdict, occupancy, shift gate | reception, manager | Done |
+| `/members` | Searchable/filterable member table | all except trainer-only views | Done |
+| `/members/new` | Create member with duplicate warning | sales, reception, manager | Done |
+| `/members/[memberId]` | Member 360: overview, timeline, memberships, payments, check-ins, notes, tasks | all | Done |
+| `/memberships` | Subscription list with status/payment filters | manager, owner | Done |
+| `/plans` | Plan catalogue + create/edit plan | owner, manager | Done |
+| `/crm/pipeline` | Stage board with drag-and-drop + accessible move menu, lost-reason report | sales, manager | Done |
+| `/crm/queues` | Split-view daily work queues (overdue, due today, unassigned, trials, expiring, expired, my tasks) | sales, manager | Done |
+| `/crm/leads/[leadId]` | Full lead record; contact logging, follow-up, conversion | sales, manager | Done |
+| `/payments` | Branch transaction ledger with refund/void actions | manager, owner, auditor | Done |
+| `/payments/receipts/[receiptId]` | Receipt detail with a real print layout | manager, owner, reception | Done |
+| `/payments/shifts` | Current shift, daily reconciliation, shift history, variance approval | reception, manager, owner | Done |
+| `/automations` | Rules list with enable/pause, EN/AR template previews, execution log | owner, manager | Done |
+| `/automations/[ruleId]` | Rule editor: trigger + parameters, actions, dedupe window | owner, manager | Done |
+| `/audit` | Filterable append-only audit log; rows expand to a before/after diff | owner, manager, auditor | Done |
+| `/settings` | Organization, branches, staff access, roles/permissions, payment methods, notifications | owner | Done |
+| `/_not-found` | Global 404 | all | Done |
 
-The page-facing seam is `apps/web/src/lib/api/GymOSApi.ts`. Query/mutation pages continue to use `useApiQuery`, `useApiMutation`, and `useInvalidate`; the adapter owns Convex operation names, public-ID mapping, pagination, and error conversion into `ApiError`.
+Permission-gated areas render `ForbiddenState` when reached by URL — the nav only hides the link as a usability nicety.
 
-## Authentication and tenancy
+## Architecture
 
-Clerk remains the credential/session provider. `ConvexClientProvider` supplies the authenticated Convex React client and claims/creates the current Convex user through `users.ensureCurrent`. `identity.current` resolves platform-admin status and all active organization memberships. The gym workspace obtains its session from the server, with organization selection available only when multiple active memberships exist.
+- **App structure**: Next.js App Router. One authenticated route group `src/app/(app)/` sharing `Sidebar` + `Topbar`; `/login` sits outside it. Page files stay thin — workflow surfaces live in `src/features/<domain>/`.
+- **Design system**: hand-built on Radix primitives in `src/components/ui/` (no shadcn CLI). Tokens in `src/app/globals.css` via Tailwind v4 `@theme`. Warm paper/ink palette, one signal red, a "night" palette reserved for the sidebar, login brand panel and reception console. Restrained radii, a single shadow scale used only on floating layers. Custom utilities: `panel`, `panel-inset`, `eyebrow`, `eyebrow-night`, `tabular`.
+- **Typography**: **Manrope** (variable, `next/font/google`) for both display and body — hierarchy comes from size, weight and tracking, not a second family. **IBM Plex Mono** is reserved for *system records*: member numbers, receipt numbers, correlation IDs, branch/plan codes, template variables, keyboard hints, and the uppercase eyebrow/table-header labels. **Money and every other quantity use Manrope with `font-variant-numeric: tabular-nums`** (the `tabular` utility) — measured at 86.8px per digit versus 54.6–86.9px proportional, so columns align exactly without borrowing mono. IBM Plex Sans Arabic is swapped in under the RTL preview. The printed receipt (`#receipt-print`) is the one deliberate full-mono surface, since it mimics a POS slip.
+- **Colour scheme**: the app declares `color-scheme: light` on `html` (it has no dark theme), with `.night-surface, [data-console] { color-scheme: dark }` so the dark surfaces keep legible native scrollbars and carets. Without this, a viewer whose OS is in dark mode gets dark-themed date pickers and select popups on light panels.
+- **State strategy**: TanStack Query for all server state; React state for local UI. No global store. `useInvalidate()` invalidates a documented prefix list (`src/lib/api/keys.ts` → `INVALIDATE_ALL`) after any money- or membership-affecting mutation, which is why a payment shows up on the timeline, the ledger, the shift totals and the dashboard at once.
+- **Form strategy**: React Hook Form + Zod resolvers for every significant form. Simple single-field reason dialogs use controlled state plus an explicit disabled-until-valid button.
+- **Data-fetching/client boundary**: components never call `fetch` and never import seed data. Everything goes through `useApiQuery` / `useApiMutation`, which resolve the active client from `getApi()`.
+- **Mock persistence behavior**: the mock database lives in memory for the lifetime of a browser page. Client-side navigation preserves mutations; a **full page reload re-seeds the tenant**. The demo persona, branch and RTL flag persist in `sessionStorage`, and sidebar collapse in `localStorage`. This is allowed by `docs/06` ("optional local storage persistence is acceptable") — see *Known gaps* for the implication.
+- **Role/permission simulation**: `switchDemoRole(role)` swaps the acting user and recomputes the permission set from `defaultRoleDefinitions()`. The mock re-checks permissions on **every** method via a private `require()` guard, so the UI cannot fake authorization.
+- **RTL strategy**: `dir` is set on `<html>` by a topbar toggle, plus an `.rtl-font` class that swaps in IBM Plex Sans Arabic. Layout uses logical properties throughout (`ms-*`, `pe-*`, `start-*`, `end-*`). Directional icons are mirrored once in `globals.css` by lucide class name. Numeric ratios and ranges are wrapped in `dir="ltr"` so bidi cannot reverse them.
 
-Convex is authoritative for organization, branch, staff role, permission, and audit state. Every operational query/mutation calls the shared security helpers in `apps/web/convex/security.ts` to resolve the authenticated Clerk subject, active organization membership, role permissions, and branch scope. Cross-tenant records use non-disclosure `NOT_FOUND` behavior; deactivated users and inactive memberships lose access.
+## Data client
 
-Staff invitations are sent by the server-only Convex action in `apps/web/convex/invitations.ts`. `CLERK_SECRET_KEY` is never imported into browser code. Invitation requested/sent/failed events are audited. Tenant users cannot grant a role's permissions or branch scope beyond their own authority.
+- Interface location: `apps/web/src/lib/api/GymOSApi.ts` — 74 methods plus all query-input types.
+- Mock implementation location: `apps/web/src/lib/mock/MockGymOSApi.ts` (seed in `seed.ts`, constants in `seed-constants.ts`, store in `store.ts`).
+- Factory/provider location: `apps/web/src/lib/api/client.ts` (`getApi()`, plus `setApiForTests()`), consumed by hooks in `src/lib/hooks/use-api.ts`.
+- **How to add `HttpGymOSApi`**: implement the `GymOSApi` interface against `/api/v1`, then switch inside `getApi()` on an env flag, e.g.
 
-The seeded Forge Fitness reference scenario is created by the internal, idempotent `seed:seedDemoTenant` mutation. It includes the organization, two branches, roles, plans, members, memberships, charges, payment/receipt, check-in, CRM, automation, public directory, customer, platform, and settings records. It is not callable from product pages.
+  ```ts
+  export function getApi(): GymOSApi {
+    if (process.env.NEXT_PUBLIC_API_MODE === "http") return httpSingleton ??= new HttpGymOSApi();
+    return mockSingleton ??= new MockGymOSApi();
+  }
+  ```
 
-## Persisted domains
+  No page or component changes are required. `setBehavior()` is mock-only; give `HttpGymOSApi` a no-op implementation.
+- How errors are represented: every failure is an `ApiError` (`src/lib/api/errors.ts`) carrying `code`, `message`, `requestId`, optional `details` and `fieldErrors`. UI branches on the stable `code`, never on message text. Stable codes are enumerated in `ERR`. `QueryErrorState` maps `FORBIDDEN` / `NOT_FOUND` to the right surface; the query client does not retry those codes.
+- Pagination/filter conventions: every list takes `ListQuery` (`page`, `pageSize`, `search`, `sort` with `-field` for descending) plus domain filters, and returns `Page<T>` (`items`, `page`, `pageSize`, `totalItems`, `totalPages`).
 
-Convex schema and domain functions now cover:
+## Domain types
 
-- Organizations, branches, users, memberships, role definitions, settings, payment methods, tenant audit events, platform audit events, idempotency records, sequence counters, and public `gymApplications` records. The platform review queue records approval/rejection decisions in the immutable `platformAuditEvents` stream. A pending application does not create a tenant; protected RIVET provisioning creates the first branch, role definitions, owner access, subscription, and public directory record after approval.
-- Plans, members, member imports, memberships/renewals/freezes/extensions/cancellations, charges, payments, receipts, shifts, check-ins, tasks, leads, offers, timelines, and approvals.
-- Automation rules/templates/executions/attempts/message deliveries, scheduled evaluation, quiet-hour suppression, retry metadata, and daily deduplication.
-- Public gym directory/catalog, customer profiles, customer memberships, trial bookings routed to gym-scoped leads, platform invoices/support cases, and server-signed short-lived entry passes.
-- Platform subscription state and SaaS plan limits can be updated through platform-admin mutations. Updates synchronize the public directory/tenant record when available and append immutable platform audit events. Owner/manager reports compose persisted dashboard and transaction contracts and support CSV export; automation rules can be created from the existing UI with deduplicated task/message actions.
-- Provisioned gyms publish a member-facing directory listing by default; platform administrators can hide or republish a listing from the gym controls. Existing production applications still require the normal approve → provision workflow before a real gym appears in discovery.
+- Type/schema locations: `apps/web/src/lib/domain/types.ts` (all domain shapes), `permissions.ts` (permission catalogue, role defaults, discount limits), `status.ts` (membership status derivation + the pure check-in decision engine).
+- Differences from `docs/06_API_AND_MOCK_CONTRACT.md`:
+  - `createMember` returns `CreateMemberResult { member, duplicates }` rather than a bare `MemberDetail`, so the duplicate warning is part of the contract.
+  - `createPayment`, `refundPayment` and `voidPayment` all return `ReceiptDetail` (the doc says `PaymentReceipt`) — the UI needs the branch, member, charge and linked transactions to render and print a receipt.
+  - Added beyond the doc sketch: `switchDemoRole`, `setActiveBranch`, `checkMemberDuplicates`, `getMembership`, `unfreezeMembership`, `getCurrentShiftTotals`, `listCashShifts`, `reviewVariance`, `listMessageTemplates`, `listPendingApprovals`, `reviewApproval`, `upsertBranch`, `updatePaymentMethods`, `updateNotificationSettings`, `updateRolePermissions`, `resetDemo`, `setBehavior`.
+  - `previewCheckIn` takes `{ branchId, query }` (matching `CheckInLookupInput`) and returns `CheckInPreview` with `found: false` for a miss instead of throwing — the desk must not see an error dialog for a typo.
+- **Decisions the backend must preserve**:
+  - Money is always `{ amount: integer minor units, currency }`. JOD has **three** decimal places; formatting is driven by an exponent table, never hardcoded to 2.
+  - Membership effective status is **derived** (`deriveMembershipStatus`), with this precedence: cancelled → frozen → scheduled → expired → depleted → expiring (≤14 days) → active. The final day of a term is `expiring`, not `expired`.
+  - The check-in decision engine's ordering matters: duplicate scan → member inactive → no membership → expired/scheduled/cancelled → frozen → visits depleted → wrong branch → warnings (expiring ≤7 days, outstanding balance) → allowed. A hard block never degrades into a warning.
+  - `void` and `refund` are different operations: a **void** says the payment never cleared, so the charge returns to unpaid and the member owes again; a **refund** reverses the sale, so the charge is marked `refunded` and nothing is re-owed. Void is same-business-day only (Amman day, not UTC); refunds are always available. Both are additive — the original receipt is never edited.
+  - Receipt numbers are allocated in sequence from the organization counter and never reused.
+  - "Today" and all day boundaries are the tenant's local day (`Asia/Amman`), not UTC.
+  - Reasons are mandatory and enforced server-side (not just in dialogs) for: freeze, unfreeze, extend, cancel, archive member, refund, void, check-in override, and shift close with a variance.
 
-The normalized Convex `domainRecords` table stores JSON-shaped domain facts with direct organization/branch/member/lead indexes. Public UUIDs are stable at the `GymOSApi` boundary; Convex document IDs remain internal. This is an intentional adapter boundary, not permission for pages to consume untyped records.
+## Seed data
 
-## Domain guarantees
+- Seed location: `apps/web/src/lib/mock/seed.ts` (deterministic — IDs and member numbers are stable across reloads, which the tests rely on).
+- Reset command/action: **Demo controls** in the topbar → *Reset demo data*, or `api.resetDemo()`. A full page reload also re-seeds.
+- Scenario coverage (asserted by tests in `MockGymOSApi.test.ts`): 2 branches; 80+ members; 25+ leads covering all 8 stages; active / expiring / expired / frozen / cancelled / visit-based memberships; cash, card, CliQ and bank-transfer payments with partial and outstanding balances; 30 days of check-ins plus a live "today" window; 2 cash discrepancies (a JOD 7.000 shortage pending approval and a JOD 3.500 surplus already approved); approved and unapproved discounts and refunds; automation executions including suppressed duplicates and failures; audit events across every category.
+- Known inconsistencies: historical **closed** shifts compute expected cash from that day's cash payments, but only *today's* payments are linked to a shift via `shiftId`. On seeded days with no cash takings, a closed shift therefore shows `expected = opening float`. It is internally consistent, just sparse. The backend should link every payment to its shift.
 
-- Money is integer minor units with an ISO currency; JOD is formatted and validated at three decimal places.
-- Timestamps are UTC. Business dates, same-day void rules, and dashboard/reconciliation windows use the tenant timezone.
-- Membership status is derived server-side with precedence: cancelled → frozen → scheduled → expired → depleted → expiring ≤14 days → active.
-- Check-in order is server-side: duplicate → inactive member → no membership → invalid term → frozen → depleted → wrong branch → warnings → allowed.
-- Sales create immutable historical terms and linked charges; renewals create a new linked term.
-- Payment creation is organization/idempotency-key scoped and rejects key reuse with a different request hash. Receipt numbers advance from an organization counter and are never reused.
-- Refunds and same-business-day voids are distinct additive facts. Sensitive actions require server-side permission and reasons and write append-only audit events with actor, branch, before/after, reason, and correlation ID.
-- MVP approval semantics are explicitly post-action: refunds above JOD 25.000, over-limit discounts, and shift variances complete as immutable facts first; approval or rejection is a separate append-only review record and never rewrites settled financial history.
-- Entry passes are HMAC-signed, branch-bound, short-lived, stored in Convex, and consumed on a successful check-in. The Convex customer experience never exposes the old demo QR identity.
-- Member imports require `members.write`, validate required columns, identify duplicate rows, persist a preview, commit in chunks of at most 100 rows, use per-chunk idempotency keys, and record audit facts. Invalid/duplicate rows are reviewable and skipped rather than silently created.
+## Authentication preview
 
-## Verification status
+- Demo credentials / role-switch mechanism: `/login` offers four personas (Omar Al-Khatib — owner, Layla Haddad — manager, Sara Abuhamdan — sales, Hala Qasem — reception). The email prefills; **any password is accepted**. Roles can also be switched live from the topbar account menu, and the branch from the topbar branch selector. Trainer and auditor roles exist in the permission matrix but have no login persona.
+- Route guards currently simulated: `(app)/layout.tsx` redirects to `/login` when there is no session. Page-level permission checks render `ForbiddenState`. The mock API independently enforces permissions, so a hand-typed URL is refused by the client boundary, not just hidden.
+- What the backend must replace: real credential authentication, HTTP-only session cookies, CSRF protection, rate limiting on sign-in, session revocation, and denial for deactivated users. Remove `switchDemoRole` from the production client (or leave it behind a non-production flag) and delete the persona list in `src/app/login/page.tsx`.
 
-The current local verification is green for all credential-free product checks:
+## Critical workflows demonstrated
 
-- `pnpm typecheck` — pass.
-- `pnpm convex:typecheck` — pass.
-- `pnpm lint` — pass with zero warnings.
-- `pnpm test` — 223 tests passed across 22 files, covering Convex security, adapter, schema, platform application review/provisioning, platform control mutation boundaries, audit, refund bounds, approval permissions, automation scheduling, mock-mode, component, and reception coverage.
-- `pnpm test:e2e` — 15 preview journeys passed and 2 trusted Convex journeys were intentionally skipped without their explicit credential switches.
-- `pnpm build` — passed on Next.js 16.2.12; 38 App Router routes were compiled and generated, with protected operational routes remaining dynamic.
-- `pnpm convex:codegen` — passed against the linked development deployment; regenerated bindings are committed.
-- `convex run seed:seedDemoTenant` — passed against the linked development deployment and returned 2 branches, 4 staff, and 2 customers.
-- `convex run health:check` — returned `status: ok` from the linked development deployment.
-- GitHub Actions — static/typecheck/lint/unit/build and Playwright jobs passed on the prior branch head. Convex codegen remains repository-secret-gated, and a manually dispatched authenticated Clerk smoke now fails clearly when any required secret is missing instead of reporting a misleading success.
+1. **Member creation** — `/members/new`: validated form, live duplicate check by phone/email, warning panel listing existing matches, `member_created` timeline event, branch-prefixed member number.
+2. **Membership sale / renewal** — `MembershipSaleDialog`: plan picker, price override, discount with reason and an approval warning past the role's limit, start date, payment split, and a full money summary before commit. Renewal keeps the prior term readable and links `previousMembershipId`.
+3. **Check-in** — `/reception`: debounced lookup or scan, allowed / warning / blocked / overridden verdicts with plain-language reason codes, Enter to commit, Esc for the next member, occupancy and recent-check-in feed updating live, visit decrement on visit passes, duplicate-scan suppression.
+4. **Payment / receipt** — `CollectPaymentDialog` shows the balance before and after; payment is idempotent by key; the receipt is numbered, printable (`@media print` isolates `#receipt-print`), and linked from the member timeline.
+5. **CRM follow-up** — `LogContactDialog`: the outcome drives the stage change *and* the next follow-up date in one decision; lost outcomes require a reason and feed the lost-reason report; leads convert to members without retyping contact details and open follow-up tasks close automatically.
+6. **Shift reconciliation** — open a shift with a counted float, cash collection gated on an open drawer, close with expected vs counted and a mandatory variance explanation, manager approval of the variance from either `/payments/shifts` or the audit log.
+7. **Sensitive-action audit** — refund, void, freeze, extend, cancel, override, discount, and shift variance all write append-only audit events with actor, role, reason, before/after and a correlation ID, viewable with a before→after diff table.
 
-The isolated staging Clerk-to-Convex read smoke and the opt-in operational write flow now pass with the external Clerk session stored outside Git. The remaining release gate is production-specific: verify the Vercel Production values and production Convex deployment against the production Clerk issuer, then run a pilot check without touching the staging fixture. Playwright preview mode remains deterministic and uses `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`; both trusted paths set it to `0`, use `NEXT_PUBLIC_DATA_MODE=convex`, and require the storage-state file.
+## Tests run
 
-## Local and deployment commands
+- Type-check: `pnpm typecheck` — **pass**, no errors.
+- Lint: `pnpm lint` (`eslint . --max-warnings 0`) — **pass**, zero errors and zero warnings.
+- Unit/component tests: `pnpm test` — **162 passed** across 7 files (money, dates, permissions, membership status + check-in engine, mock API integration, the collect-payment form, the reception console's verdict states).
+- Browser tests: `pnpm test:e2e` — **10 passed**, verified stable across consecutive runs (renewal → timeline, payment → receipt, check-in, unknown scan, role restrictions by nav *and* by URL, override → audit trail, RTL toggle, demo reset). Specs select by role and visible text rather than by `data-testid` wherever practical, so they survive markup churn.
+- Build: `pnpm build` — **pass**, 19 routes, no warnings.
 
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm convex:typecheck
-pnpm lint
-pnpm test
-pnpm test:e2e
-PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
-pnpm build
-pnpm convex:codegen
-pnpm convex:deploy
-pnpm --filter web exec convex run seed:seedDemoTenant
-```
+Note: `eslint-plugin-react-hooks` is pinned to `^5` because that is what `eslint-config-next@15` is written against. Version 7 enables React-Compiler-era rules that reject the standard "reset a form when its dialog opens" effect used throughout this codebase.
 
-Use `NEXT_PUBLIC_DATA_MODE=mock pnpm dev` for visual review. Use `pnpm dev:full` for a linked Convex development deployment. Before deployment, set `CLERK_FRONTEND_API_URL`, `ENTRY_PASS_SIGNING_SECRET`, `CLERK_SECRET_KEY`, and `RIVET_SITE_URL` in the Convex deployment through the CLI/dashboard. Configure the public Clerk key, server Clerk key, Convex URL, site URL, and other names from `apps/web/.env.example` in Vercel.
+## Known gaps
 
-Vercel should use `apps/web` as the root directory and the Next.js server runtime. Schema/function rollback and application rollback are separate: use the Convex deployment backup/export workflow before data migrations and Vercel's deployment rollback workflow for application code. Do not rerun the seed over pilot data as a restore operation.
+- **Functional gaps**: CSV import/export is not built (P0 item 10 in `docs/01`, no UI was specified in `docs/02`). Trainer and auditor roles exist in the permission matrix and are selectable in settings, but have no dedicated screens or login persona. Automation rules are configured and their executions are logged, but nothing evaluates them on a timer — executions are seeded. Offers are displayed on leads and are seeded, but there is no create-offer form. Approval *requests* are surfaced and can be approved or rejected; there is no separate approvals inbox route.
+- **Responsive/accessibility gaps**: the sidebar does not auto-collapse on tablet — it can be collapsed manually. Below roughly 640px the app is usable but wide tables scroll horizontally rather than reflowing into cards. The pipeline board relies on horizontal scrolling. Drag-and-drop on the pipeline is pointer-only by design; the equivalent keyboard path is the per-row **Move to** menu, which is what assistive-technology users get. Contrast, focus rings, dialog focus management, table semantics, form error wiring and `prefers-reduced-motion` are all handled.
+- **Visual decisions awaiting approval**: the product name "RIVET" and the derived warm-paper palette; the dark treatment for reception (chosen so a glanceable verdict reads across a counter); using a monogram instead of member photos (the domain model has `photo reference` but the mock has no image storage).
+- **Mock-only behavior**: a hard page reload re-seeds the tenant, so demonstrations of multi-step state should navigate within the app. Latency, forced failures and forced-empty lists come from `setBehavior()` via topbar **Demo controls** and must not exist in the HTTP client. Payment idempotency is simulated by an in-memory key map. Message delivery is sandbox-only — nothing is ever sent.
+- **RTL caveat**: interface copy is English. Under the RTL preview, English sentences that begin with a digit are re-ordered by the bidi algorithm (for example "25 things need action today"). This is correct bidi behavior, not a layout fault, and resolves once the copy is Arabic. Numeric ratios and ranges are already isolated with `dir="ltr"`.
 
-## External deferrals
+## File-layout history (read this if older notes disagree)
 
-The production Clerk instance, custom-domain DNS records, and first production test user are now in place. The remaining release gate is to verify that Vercel Production and the selected Convex deployment both use the matching production Clerk issuer/keys and production Convex URL, then run the trusted Clerk-to-Convex smoke. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Live WhatsApp/SMS/email delivery and external SaaS billing remain behind provider boundaries, as required by the MVP scope. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+Two agents implemented parts of this frontend in the same working tree on 2026-07-30, which briefly left **two parallel implementations** of several areas. That has been reconciled: the surviving implementation is whatever `src/app/**` actually imports today, and nine superseded modules were deleted after verifying by import-graph analysis that nothing reached them.
 
-## Files another agent should read first
+Removed (all functionally replaced, no behaviour lost):
 
-1. `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md`
-2. `apps/web/src/lib/api/GymOSApi.ts`
-3. `apps/web/src/lib/api/ConvexGymOSApi.ts`
-4. `apps/web/convex/security.ts`
-5. `apps/web/convex/domain.ts`
-6. `apps/web/convex/schema.ts`
-7. `apps/web/convex/seed.ts`
-8. `apps/web/convex/invitations.ts`
-9. `apps/web/convex/platformProvisioning.ts`
-10. `apps/web/convex/platformProvisioningAction.ts`
-11. `apps/web/src/lib/providers/app-providers.tsx`
-12. `apps/web/.env.example`
-13. `apps/web/e2e/convex-operational-flow.spec.ts`
+| Deleted | Superseded by |
+|---|---|
+| `features/settings/org-panels.tsx`, `people-panels.tsx`, `roles-panel.tsx` | `features/settings/settings-sections.tsx` |
+| `features/automations/rule-dialog.tsx`, `triggers.ts` | `app/(app)/automations/[ruleId]/page.tsx` + `features/automations/labels.ts` |
+| `features/crm/lead-drawer.tsx`, `lead-actions.tsx` | `features/crm/contact-work-panel.tsx` + `app/(app)/crm/leads/[leadId]/page.tsx` |
+| `features/finance/refund-void-dialogs.tsx` | refund/void inlined in `app/(app)/payments/receipts/[receiptId]/page.tsx` |
+| `components/ui/drawer.tsx` | no longer used — audit rows expand inline, queues use an inline work panel |
+
+Two consequences worth knowing:
+
+- **`ui/drawer.tsx` is gone.** There is no side-drawer primitive any more. If you need one, re-add it rather than assuming it exists.
+- **`/payments` briefly lost its permission guard** during that overlap and was restored. Reception must get `ForbiddenState`, not a generic retry error — there is an e2e test pinning this.
+
+Verified after cleanup: type-check, lint, 162 unit tests, 10 browser tests and a production build all pass, and an import-graph sweep reports zero unreachable modules.
+
+## Backend integration order
+
+1. `GET /session` plus real authentication and branch scoping — everything else depends on the acting user's permission set.
+2. Reference data: `GET /settings`, `/branches`, `/membership-plans`, `/users`. These are read by nearly every dialog (payment methods, role discount limits, branch lists).
+3. Members: list, get, create (with duplicate detection), update, archive, timeline, notes.
+4. Memberships: list, get, sale, renewal, freeze, unfreeze, extension, cancellation — transactionally, with adjustments and audit events.
+5. Finance: charges, payments (idempotent), refunds, voids, receipts. Get `void` vs `refund` semantics right before moving on.
+6. Cash shifts and reconciliation, including expected cash computed from linked transaction facts.
+7. Check-in: preview, create, override, recent, occupancy. Port `evaluateCheckIn` server-side and keep the ordering.
+8. CRM: leads, contact attempts, tasks, conversion, renewal queue.
+9. Automations (rule evaluation, deduplication, retries) and the audit log.
+10. Dashboards last — they aggregate everything above.
+
+## Files to read first
+
+1. `apps/web/src/lib/api/GymOSApi.ts` — the contract you are implementing.
+2. `apps/web/src/lib/domain/types.ts` — every shape crossing the boundary.
+3. `apps/web/src/lib/domain/status.ts` — membership status derivation and the check-in decision engine, both of which must be reimplemented server-side.
+4. `apps/web/src/lib/mock/MockGymOSApi.ts` — reference behavior for validation, permissions, audit writes and error codes.
+5. `apps/web/src/lib/mock/MockGymOSApi.test.ts` — the behavioral contract as executable assertions; the HTTP implementation should satisfy the same expectations.
+6. `apps/web/src/lib/api/client.ts` — the single place to switch implementations.
+7. `apps/web/src/lib/domain/permissions.ts` — the permission catalogue to enforce server-side.
+
+## Do not break
+
+- **The client boundary.** No page or component may gain a `fetch` call or import seed data. Add capability to `GymOSApi`, not to pages.
+- **The error envelope and its codes.** UI logic branches on `ApiError.code`; `fieldErrors` keys must match form field names for inline validation to keep working. `FORBIDDEN` and `NOT_FOUND` must stay distinguishable — they render different screens and are deliberately not retried.
+- **Money as integer minor units with a currency code**, and JOD's three decimal places.
+- **Derived membership status and the check-in decision ordering**, including "final day is expiring" and "a hard block never becomes a warning".
+- **Void vs refund semantics**, the same-day void window measured in tenant-local time, and additive-only financial records.
+- **Mandatory reasons** on every sensitive action, enforced server-side.
+- **Idempotency** of `createPayment` keyed on the caller-supplied key.
+- **Route paths and `data-testid` attributes** — the Playwright suite and the component tests both depend on them (`reception-search`, `checkin-verdict` with its `data-decision`, `confirm-checkin`, `override-reason`, `confirm-override`, `member-row`, `renewal-row`, `renew-button`, `confirm-payment`, `audit-row`, `queue-*`, `transaction-row`, `shift-row`).
+- **Permission-gated pages render a forbidden state rather than 404 or a blank screen**, and the nav hides links purely as a nicety.
+- **The reception console's keyboard contract**: autofocus on the lane, Enter commits a check-in, Escape resets for the next member.
+- **`resetDemo()` and `setBehavior()`** should remain available in mock mode so the demo scenarios stay reviewable, even after the HTTP client exists.

@@ -7,7 +7,7 @@ The approved runtime is Next.js + Convex + Clerk + Vercel. `GymOSApi` remains th
 ## Read order
 
 1. `AGENTS.md`
-2. `FRONTEND_HANDOFF.md`
+2. `CURRENT_STATE.md`
 3. `docs/00_PRODUCT_BRIEF.md`
 4. `docs/01_SCOPE_AND_ROADMAP.md`
 5. `docs/05_DOMAIN_MODEL.md`
@@ -16,6 +16,9 @@ The approved runtime is Next.js + Convex + Clerk + Vercel. `GymOSApi` remains th
 8. `docs/08_ACCEPTANCE_CRITERIA.md`
 9. `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`
 10. `docs/10_CONVEX_INTEGRATION_COMPLETION_PLAN.md`
+11. `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`
+
+`FRONTEND_HANDOFF.md` is the frozen historical record of the frontend-only pass completed on 30 July 2026. It is retained for the original frontend → backend contract and should not be used as the living release-status document.
 
 ## Repository layout
 

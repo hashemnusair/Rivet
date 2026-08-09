@@ -6,20 +6,20 @@ Complete GymOS as an operationally credible MVP on the approved Next.js, Convex,
 
 This is one implementation program. Keep implementation on `main` for this repository unless the user explicitly requests a review branch, make logical checkpoint commits, run the complete verification suite, and push the verified result. Do not create a separate pull request for each phase.
 
-## Current baseline — 2026-08-08
+## Current baseline — 2026-08-09
 
 - `main` now includes the reviewed gym-application workflow: platform-admin queue, server-side decisions, applicant status email delivery, an immutable platform audit stream, and a protected idempotent provisioning action. Applications still do not self-provision a tenant; only a platform administrator can provision an approved application.
 - GitHub reports a successful Vercel deployment for the current commit.
 - `pnpm typecheck` passes.
 - `pnpm lint` passes with zero warnings.
-- `pnpm test` passes with 223 tests across 22 files, including the platform application review/provisioning and subscription-control paths, Convex security, adapter, schema, audit, domain-invariant, mock-mode, component, and reception coverage.
+- `pnpm test` passes with 230 tests across 22 files, including the platform application review/provisioning and subscription-control paths, Convex security, adapter, schema, audit, duplicate-conversion and reconciliation invariants, mock-mode, component, and reception coverage.
 - Preview Playwright journeys pass with 15 tests; the isolated staging Clerk-to-Convex smoke and opt-in operational write flow remain explicit credential-gated checks.
 - `pnpm build` passes with the Clerk request proxy enabled and generates the current 38 App Router routes, including the owner/manager reports workspace.
 - Approved workspace provisioning now publishes the gym directory record by default; platform administrators retain an audited public-listing toggle for existing tenants.
 - Clerk authenticates users and Convex persists tenant data plus public `gymApplications` records. A public application does not create an organization or membership; RIVET provisions approved gyms through a protected action that creates the organization, first branch, subscription, default roles/settings, owner membership, Clerk organization, and owner invitation.
 - Real Clerk identity, Convex tenant/role resolution, and the core gym operational adapter are integrated. Members, memberships, payments, check-ins, timelines, receipts, shifts, CRM, automations, settings, and audit pages route through `ConvexGymOSApi` whenever Convex mode is selected; `MockGymOSApi` remains an explicit preview/test adapter.
 - The highest-value write path has been verified against the isolated staging deployment: create member → sell membership with immediate card payment → check in → verify timeline and searchable payment/membership audit events. The opt-in Playwright test archives its disposable member after the run.
-- `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all four non-production inputs now configured.
+- `.github/workflows/ci.yml` covers static checks, build, preview Playwright, codegen, and a manually dispatched trusted smoke. The smoke remains secret-gated, with all five non-production inputs now configured.
 - Existing Playwright journeys use `NEXT_PUBLIC_RIVET_DEMO_AUTH=1`, so they verify the deterministic preview path rather than the production Clerk-to-Convex path.
 - `apps/web/e2e/convex-operational-flow.spec.ts` is intentionally excluded from ordinary CI; a manual workflow input `run_operational_flow` enables the staging write verification when an operator accepts the mutation/cleanup.
 - Manual GitHub Actions run `31257271522` passed the static/build checks, preview Playwright journeys, Convex codegen, and the authenticated Clerk-to-Convex smoke against the isolated staging deployment.
@@ -148,7 +148,7 @@ Extend the existing Convex schema to cover the current frontend contract. Prefer
 6. Preserve the existing mock-mode Playwright suite.
 7. Add a separate authenticated integration/smoke path for a dedicated Clerk development instance and Convex development/preview deployment. It may run only on trusted branches or manually when secrets are unavailable to forked pull requests.
 8. Remove deployment-trigger-only markers and document how to redeploy an existing commit through Vercel instead of creating empty product commits.
-9. Update stale test counts and authentication notes in `FRONTEND_HANDOFF.md` and `README.md`.
+9. Update stale test counts and authentication notes in `CURRENT_STATE.md` and `README.md`.
 10. Configure repository branch protection after CI exists: require pull requests, required checks, and an up-to-date branch before merge.
 
 Exit criteria:
@@ -375,7 +375,7 @@ Also run:
 Update:
 
 - `README.md` with exact local and deployment commands.
-- `FRONTEND_HANDOFF.md` with the final adapter state, removed seams, tests, and remaining compromises.
+- `CURRENT_STATE.md` with the final adapter state, removed seams, tests, and remaining compromises.
 - `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` with any material decisions made during implementation.
 - `.env.example` with variable names only and no secrets.
 - Backup/restore, seed, and rollback notes for Convex and Vercel.

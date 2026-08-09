@@ -4,6 +4,12 @@
 
 Implement GymOS according to the documentation in `/docs`. Optimize for an operationally credible MVP, not a demo full of disconnected screens.
 
+## Handoff document lifecycle
+
+- `FRONTEND_HANDOFF.md` is the frozen historical artifact from the completed frontend-only pass on 2026-07-30. Preserve it as the original frontend → backend contract.
+- `CURRENT_STATE.md` is the living implementation and release-status handoff. Current implementation agents update this file instead of rewriting the historical frontend handoff.
+- `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` is the living topology, environment-ownership, and release-verification guide.
+
 ## Non-negotiable product principles
 
 1. **Revenue and accountability first.** Every major workflow should help a gym sell, collect, retain, reconcile, or supervise.
@@ -24,6 +30,7 @@ Implement GymOS according to the documentation in `/docs`. Optimize for an opera
 - Do not create a fake backend server merely to simulate completeness.
 - Keep all data access behind the documented client interface.
 - Produce `FRONTEND_HANDOFF.md` before stopping.
+- After the original frontend pass, preserve that artifact and record current implementation changes in `CURRENT_STATE.md`.
 
 ### Pass 2 — Backend / integration agent
 

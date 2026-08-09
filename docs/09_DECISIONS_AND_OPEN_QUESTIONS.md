@@ -103,7 +103,7 @@ Until this checklist is complete, the site is a public marketing preview, not a 
 - Member CSV imports use a server-persisted preview followed by resumable chunks of at most 100 rows. Each chunk has an idempotency key; invalid and duplicate rows are reviewable/skipped, and preview/commit events are audited.
 - Automation evaluation runs from a Convex scheduled function every 15 minutes. The default delivery mode is sandbox/log, quiet hours suppress delivery, and execution/attempt records carry daily deduplication keys and retry metadata.
 - Platform billing collection and outbound messaging remain provider adapters. The MVP persists platform ledger/support records and exposes no fabricated external success.
-- The final real-data release sequence is credential-gated: Clerk production/custom-domain setup and access to the selected Convex/Vercel deployments are external steps, documented in the README and handoff rather than simulated in code.
+- The final real-data release sequence is credential-gated: Clerk production/custom-domain setup and access to the selected Convex/Vercel deployments are external steps, documented in the README and `CURRENT_STATE.md` rather than simulated in code.
 
 Agents may choose and document:
 
