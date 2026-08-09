@@ -256,7 +256,10 @@ export class ConvexGymOSApi implements GymOSApi {
   voidPayment(paymentId: T.UUID, input: T.VoidPaymentInput): Promise<T.ReceiptDetail> { return this.mutate("payments.void", { paymentId, ...input }); }
   getReceipt(receiptId: T.UUID): Promise<T.ReceiptDetail> { return this.query("receipts.get", { receiptId }); }
   openCashShift(input: T.OpenCashShiftInput): Promise<T.CashShift> { return this.mutate("shifts.open", input); }
-  getCurrentCashShift(branchId: T.UUID): Promise<T.CashShift | null> { return this.query("shifts.current", { branchId }); }
+  async getCurrentCashShift(branchId: T.UUID): Promise<T.CashShift | null> {
+    const current = await this.query<{ shift: T.CashShift; totals: T.ShiftTotals } | null>("shifts.current", { branchId });
+    return current?.shift ?? null;
+  }
   getCurrentShiftTotals(branchId: T.UUID): Promise<{ shift: T.CashShift; totals: T.ShiftTotals } | null> { return this.query("shifts.current", { branchId }); }
   closeCashShift(shiftId: T.UUID, input: T.CloseCashShiftInput): Promise<T.CashShift> { return this.mutate("shifts.close", { shiftId, ...input }); }
   listCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }): Promise<T.Page<T.CashShift>> { return this.query("shifts.list", query); }

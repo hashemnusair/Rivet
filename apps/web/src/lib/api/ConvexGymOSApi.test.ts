@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConvexGymOSApi, type ConvexTransport, dataMode } from "./ConvexGymOSApi";
 import { ApiError, ERR } from "./errors";
-import type { Session } from "@/lib/domain/types";
+import type { CashShift, Session, ShiftTotals } from "@/lib/domain/types";
 
 const session: Session = {
   user: { id: "10000000-0000-4a00-8a00-000000000010", name: "Omar Al-Khatib", email: "omar@example.com" },
@@ -51,6 +51,41 @@ describe("ConvexGymOSApi contract boundary", () => {
     await api.createPayment({ memberId: session.user.id, amount: { amount: 12_500, currency: "JOD" }, method: "card" }, "payment-key-1");
 
     expect(mutationArgs).toMatchObject({ operation: "payments.create", input: { idempotencyKey: "payment-key-1" } });
+  });
+
+  it("unwraps the current-shift envelope for the cash-shift view", async () => {
+    const shift: CashShift = {
+      id: "50000000-0000-4a00-8a00-000000000001",
+      organizationId: session.organization.id,
+      branchId: session.activeBranchId!,
+      openedById: session.user.id,
+      openedByName: session.user.name,
+      openedAt: "2026-08-09T18:12:00.000Z",
+      openingFloat: { amount: 50_000, currency: "JOD" },
+      varianceApprovalStatus: "none",
+      status: "open",
+    };
+    const totals: ShiftTotals = {
+      cashPayments: { amount: 0, currency: "JOD" },
+      cashRefunds: { amount: 0, currency: "JOD" },
+      cardPayments: { amount: 0, currency: "JOD" },
+      transferPayments: { amount: 0, currency: "JOD" },
+      otherPayments: { amount: 0, currency: "JOD" },
+      paymentCount: 0,
+      refundCount: 0,
+      discountsTotal: { amount: 0, currency: "JOD" },
+    };
+    const calls: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi(transportFor({ query: { shift, totals } }, (_kind, args) => calls.push(args)));
+
+    await expect(api.getCurrentCashShift(shift.branchId)).resolves.toEqual(shift);
+    expect(calls[0]).toMatchObject({ operation: "shifts.current", input: { branchId: shift.branchId } });
+  });
+
+  it("returns no current shift when the current-shift envelope is empty", async () => {
+    const api = new ConvexGymOSApi(transportFor({ query: null }));
+
+    await expect(api.getCurrentCashShift(session.activeBranchId!)).resolves.toBeNull();
   });
 
   it("routes operational policies and branch transfers through audited domain mutations", async () => {

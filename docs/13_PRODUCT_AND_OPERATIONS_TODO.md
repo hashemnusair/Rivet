@@ -10,6 +10,22 @@ Updated 9 August 2026. This is the living, prioritized follow-up list for issues
 - Exercise lead → member → membership → payment → check-in → timeline/audit → shift reconciliation with disposable data.
 - Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
 
+## P0 — Complete cash-shift recovery and Production verification
+
+### Observed problem
+
+Opening the first Production cash shift succeeded in Convex, but the subsequent shift-page refresh crashed with `Cannot read properties of undefined (reading 'amount')`. The `shifts.current` operation correctly returns `{ shift, totals }`, while `ConvexGymOSApi.getCurrentCashShift` incorrectly cast that whole envelope to `CashShift`. The page therefore tried to read `openingFloat.amount` from the envelope instead of its nested shift. The mutation dialog briefly disappeared before the route failed, creating a confusing flicker and leaving the operator unsure whether the financial action completed. The global error boundary then falsely claimed the Production application was an in-memory demo where nothing could be lost, and its reset-only **Try again** action simply rendered the same malformed data again.
+
+### Completion criteria
+
+- Unwrap the current-shift envelope at the Convex adapter boundary and cover both open-shift and no-open-shift responses with contract tests.
+- Replace demo-only global error copy with Production-safe guidance that does not claim a mutation failed or succeeded without evidence, and provide working reload/back recovery actions.
+- After deployment, confirm the already-open Production shift renders once with its JOD 50.000 opening float; do not create a duplicate shift to perform this check.
+- Verify duplicate-open attempts remain blocked with an inline `SHIFT_ALREADY_OPEN` error rather than a route crash.
+- Keep the opening dialog in a stable pending/success transition until refreshed shift data is renderable; do not flicker back through stale content.
+- Add focused UI coverage for open → refresh → render, mutation failure, ambiguous post-mutation recovery, duplicate open, and error-boundary recovery.
+- Resume and finish membership sale, cash payment, shift close, and reconciliation only after the deployed shift page passes this recovery check.
+
 ## P0 — Fix first-time invited-owner account creation
 
 ### Observed problem
@@ -109,23 +125,22 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 - Keep board counts, lead detail, dashboard funnel, timeline, and trial state consistent from the same source of truth.
 - Add tests for straight-through, skipped-trial, completed-trial, lost, converted, cancelled-trial, and no-show paths.
 
-## P0 — Make marketing consent explicit and safe by default
+## P1 — Make the default marketing preference transparent and attributable
 
 ### Observed problem
 
-The Production lead-conversion flow never asked for marketing consent, yet the resulting member record displayed **Marketing: Opted in**. The shared member-creation mutation defaults a missing `marketingOptIn` value to `true`, and the manual new-member form is also initially switched on. Absence of a choice is not affirmative consent; silently opting people in creates legal, trust, and deliverability risk.
+The Production lead-conversion flow did not show a marketing-preference choice, while the resulting member record displayed **Marketing: Opted in**. RIVET's chosen product policy is to keep **Opted in** as the default for newly created members. The remaining product gap is transparency and provenance: staff and members should be able to see the default, change it easily, and distinguish a system-applied default from an explicit member choice.
 
 ### Completion criteria
 
-- Default every member-creation, lead-conversion, import, API, and migration path to **opted out** unless valid affirmative consent is supplied.
-- Add an explicit, initially unchecked consent control with concise channel/purpose language where consent can legitimately be collected.
-- Store consent status with source, timestamp, actor, wording/version, and applicable channels; preserve revocation history as append-only facts.
-- Do not infer marketing consent from submitting a gym inquiry, creating a member account, joining a gym, accepting terms, or providing contact details.
+- Keep **Opted in** as RIVET's consistent default across manual member creation and lead conversion unless the operator or member selects **Opted out**.
+- Show the marketing preference clearly before member creation/conversion and never hide the value that will be persisted.
+- Store preference status with provenance such as `system_default`, `staff_selected`, or `member_selected`, plus timestamp, actor where applicable, wording/version, and applicable channels; preserve later changes as append-only facts.
+- Never describe a system-applied default as explicit consent or claim that the member actively selected it.
 - Keep essential transactional/service messages separate from marketing preferences.
-- Provide an authorized member-facing and staff-assisted opt-out path and apply suppressions before any campaign send.
-- Define safe treatment for existing records created under the old default; do not silently reinterpret them as proven opt-ins.
-- Add tests for omitted, false, true-with-evidence, import, conversion, withdrawal, cross-channel, and authorization cases.
-- Treat this as a release blocker before sending any marketing automation.
+- Provide an obvious member-facing and staff-assisted opt-out path and apply the current preference before any campaign send.
+- Make the default configurable by channel or market if a later compliance/product review requires different behavior; changing that configuration must not rewrite historical provenance.
+- Add tests for omitted/defaulted, explicit false, explicit true, import, conversion, preference changes, cross-channel behavior, and authorization.
 
 ## P1 — Build a branded transactional-email system
 
