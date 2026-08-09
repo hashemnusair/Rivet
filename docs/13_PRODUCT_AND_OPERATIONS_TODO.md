@@ -59,6 +59,21 @@ The owner dashboard says **Both branches, consolidated** whenever the branch sel
 - Remove assumptions tied to the seeded Forge Fitness tenant.
 - Add component coverage for zero/loading, one, two, and three-or-more accessible branches plus an explicitly selected branch.
 
+## P1 — Expose optional email during lead capture
+
+### Observed problem
+
+The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere.
+
+### Completion criteria
+
+- Add a clearly optional email field to **New lead**, with email autocomplete, normalization, validation, and accessible error text.
+- Keep phone-only lead creation valid; do not make email mandatory.
+- Persist and display the email in the lead context and carry it into the converted member record.
+- Include both phone and email in duplicate detection without leaking cross-tenant matches.
+- Define an authorized edit path for correcting or adding lead contact details after capture, with timeline/audit treatment appropriate to identity changes.
+- Add tests for phone-only, phone-plus-email, invalid email, normalization, conversion, and same-tenant/cross-tenant duplicate behavior.
+
 ## P1 — Build a branded transactional-email system
 
 ### Observed problem
@@ -139,7 +154,7 @@ Run this as a dedicated, broad launch-hardening pass only after the product work
 
 ### Observed problem
 
-During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. That is far too slow for routine operations. The current audit screen also starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; both the cold authenticated path and the query shape need measurement rather than assumption.
+During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. Opening the empty one-lead Pipeline also took roughly five seconds. Those waits are far too slow for routine operations. The current audit screen starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; the Pipeline similarly needs its route, authenticated bootstrap, reference-data queries, lead query, and rendering path measured rather than guessed. Both cold and warm navigation must be profiled.
 
 ### Required performance work
 
