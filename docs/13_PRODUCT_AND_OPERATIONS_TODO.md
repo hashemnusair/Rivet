@@ -6,7 +6,7 @@ Updated 9 August 2026. This is the living, prioritized follow-up list for issues
 
 - [x] Accept the Clerk owner invitation in a private/incognito browser so the platform-admin and gym-owner sessions cannot mix.
 - [x] Confirm the invited identity resolves to the provisioned `Hashem Test` organization with the `owner` role and the first branch.
-- Complete the first-owner setup: organization settings, branch details, and one membership plan.
+- [x] Complete the first-owner setup: organization settings, branch details, and one membership plan.
 - Exercise lead → member → membership → payment → check-in → timeline/audit → shift reconciliation with disposable data.
 - Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
 
@@ -94,6 +94,21 @@ The lead action says **Create offer**, its confirmation button says **Send offer
 - Add tests proving a failed or unattempted delivery can never display as **sent**.
 - Treat this as a release gate before real sales staff use the CRM.
 
+## P1 — Make CRM progression reflect actual events
+
+### Observed problem
+
+After a Production lead moved directly from **Contacted** to **Offer sent**, the lead stepper painted **Trial booked** and **Trial done** as completed even though no trial was booked or completed and no corresponding timeline facts existed. The UI currently treats every stage before the lead's current ordinal position as historical fact. That is misleading in a pipeline where valid paths can skip stages.
+
+### Completion criteria
+
+- Define which pipeline stages are current state, which are optional milestones, and which require an actual domain event.
+- Derive completed milestone presentation from persisted lead/timeline/trial facts rather than ordinal position alone.
+- Permit valid paths such as contacted → offer sent without visually fabricating a trial.
+- Preserve a clear current-stage indicator while distinguishing skipped, completed, and not-applicable milestones.
+- Keep board counts, lead detail, dashboard funnel, timeline, and trial state consistent from the same source of truth.
+- Add tests for straight-through, skipped-trial, completed-trial, lost, converted, cancelled-trial, and no-show paths.
+
 ## P1 — Build a branded transactional-email system
 
 ### Observed problem
@@ -174,13 +189,14 @@ Run this as a dedicated, broad launch-hardening pass only after the product work
 
 ### Observed problem
 
-During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. Opening the empty one-lead Pipeline also took roughly five seconds. Those waits are far too slow for routine operations. The current audit screen starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; the Pipeline similarly needs its route, authenticated bootstrap, reference-data queries, lead query, and rendering path measured rather than guessed. Both cold and warm navigation must be profiled.
+During the 9 August Production onboarding check, the owner navigated from branch settings to the audit log and waited roughly five seconds through a loading state before a single audit row appeared. Opening the empty one-lead Pipeline also took roughly five seconds. Opening that lead's detail screen took roughly five to ten seconds with no immediate navigation or loading feedback, making the application appear frozen. Those waits are far too slow for routine operations. The current audit screen starts its staff-filter query and audit-events query on entry, while the Convex audit query collects and filters the organization's full audit stream before producing a page; the Pipeline and lead detail similarly need their route, authenticated bootstrap, reference-data queries, domain queries, and rendering paths measured rather than guessed. Both cold and warm navigation must be profiled.
 
 ### Required performance work
 
 - Establish reproducible cold and warm baselines for every major owner, manager, salesperson, receptionist, member, and platform-admin route on realistic phones and laptops over realistic Jordan network conditions.
 - Add privacy-safe Real User Monitoring for Core Web Vitals, route-transition duration, authentication/session readiness, Convex query/mutation latency, error rate, and long tasks. Never include member, payment, invitation, or credential data in telemetry.
 - Define and enforce launch budgets for initial load, authenticated route transitions, useful-content paint, interaction latency, layout shift, JavaScript size, image/font delivery, and critical Convex operations. Treat a five-second routine route transition as a release failure.
+- Provide immediate interaction acknowledgement for every navigation. If useful content cannot appear near-instantly, show an accessible pending indicator or route-level skeleton promptly so a click never appears ignored or frozen.
 - Profile the full Clerk → Convex identity/session bootstrap and remove duplicated or serial readiness gates.
 - Audit Next.js route and component boundaries, server/client rendering, streaming, Suspense placement, dynamic imports, bundle composition, hydration work, font/image loading, and accidental client-only waterfalls.
 - Add deliberate route and data prefetching for likely navigation targets using Next.js link prefetch plus TanStack Query prefetching on safe idle, hover, or focus signals. Do not prefetch privileged data for an unauthorized identity.
