@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
@@ -17,6 +17,25 @@ describe("server domain invariants", () => {
     expect(isValidMinorUnit(12.5)).toBe(false);
     expect(isValidMinorUnit(-1)).toBe(false);
     expect(isValidMinorUnit(-1, true)).toBe(true);
+  });
+
+  it("normalizes duplicate contacts and ignores archived members", () => {
+    expect(
+      duplicateMemberMatches(
+        [
+          { id: "member-1", fullName: "Active Member", memberNumber: "AM-1001", phone: "079 111 2222", email: "active@example.com", status: "active" },
+          { id: "member-2", fullName: "Archived Member", memberNumber: "AM-1002", phone: "0791112222", email: "archived@example.com", status: "archived" },
+        ],
+        { phone: "079-111-2222" },
+      ),
+    ).toEqual([{ memberId: "member-1", fullName: "Active Member", memberNumber: "AM-1001", matchedOn: "phone" }]);
+
+    expect(
+      duplicateMemberMatches(
+        [{ id: "member-3", fullName: "Email Member", memberNumber: "EM-1003", email: "Member@Example.com" }],
+        { email: " member@example.com " },
+      ),
+    ).toEqual([{ memberId: "member-3", fullName: "Email Member", memberNumber: "EM-1003", matchedOn: "email" }]);
   });
 
   it("keeps money-changing allocations positive and bounded", () => {

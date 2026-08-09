@@ -2026,6 +2026,12 @@ export class MockGymOSApi implements GymOSApi {
       if (lead.stage === "won" && lead.convertedMemberId) {
         throw ApiError.of(ERR.VALIDATION, "Lead was already converted.");
       }
+      const duplicates = this.findDuplicates({ phone: lead.phone, email: lead.email });
+      if (duplicates.length > 0) {
+        throw ApiError.of(ERR.DUPLICATE_MEMBER, "This lead matches an existing member. Open that member instead of creating a duplicate.", {
+          details: { matches: duplicates },
+        });
+      }
       const result = this.createMemberSync({
         fullName: lead.fullName,
         phone: lead.phone,

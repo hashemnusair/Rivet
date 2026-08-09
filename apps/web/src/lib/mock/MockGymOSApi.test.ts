@@ -750,6 +750,24 @@ describe("CRM", () => {
     expect(after.convertedMemberId).toBe(member.id);
   });
 
+  it("blocks lead conversion when the contact already belongs to a member", async () => {
+    const membersBefore = await api.listMembers({ pageSize: 300 });
+    const existing = membersBefore.items[0]!;
+    const lead = await api.createLead({
+      fullName: "Duplicate conversion candidate",
+      phone: existing.phone,
+      email: existing.email,
+      branchId: existing.homeBranchId,
+      source: "walk_in",
+    });
+
+    await expect(api.convertLead(lead.id, { homeBranchId: existing.homeBranchId, preferredLanguage: "en" })).rejects.toMatchObject({
+      code: ERR.DUPLICATE_MEMBER,
+    });
+    expect((await api.listMembers({ pageSize: 300 })).totalItems).toBe(membersBefore.totalItems);
+    expect((await api.getLead(lead.id)).stage).toBe("new");
+  });
+
   it("refuses to convert the same lead twice", async () => {
     const leads = await api.listLeads({ pageSize: 30 });
     const lead = leads.items.find((l) => !l.convertedMemberId && l.stage !== "lost")!;
@@ -824,6 +842,20 @@ describe("cash shifts and reconciliation", () => {
 
     const after = (await api.getCurrentShiftTotals(branchId))!;
     expect(after.totals.cashPayments.amount).toBe(before.totals.cashPayments.amount + 20_000);
+  });
+
+  it("removes a voided payment from the expected drawer total", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const member = await anyMemberWithBalance();
+    const before = (await api.getCurrentShiftTotals(branchId))!;
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(15_000), method: "cash" }, "idem-shift-void-1");
+    const collected = (await api.getCurrentShiftTotals(branchId))!;
+    expect(collected.totals.cashPayments.amount).toBe(before.totals.cashPayments.amount + 15_000);
+
+    await api.voidPayment(receipt.payment.id, { reason: "Duplicate cash entry" });
+    const after = (await api.getCurrentShiftTotals(branchId))!;
+    expect(after.totals.cashPayments.amount).toBe(before.totals.cashPayments.amount);
   });
 
   it("closes a balanced shift without asking for an explanation", async () => {

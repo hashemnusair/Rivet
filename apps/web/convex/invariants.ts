@@ -23,6 +23,52 @@ export function isValidMinorUnit(amount: unknown, allowNegative = false): amount
   return typeof amount === "number" && Number.isSafeInteger(amount) && (allowNegative || amount >= 0);
 }
 
+export interface DuplicateMemberCandidate {
+  id?: unknown;
+  fullName?: unknown;
+  memberNumber?: unknown;
+  phone?: unknown;
+  email?: unknown;
+  status?: unknown;
+}
+
+export interface DuplicateMemberMatch {
+  memberId: string;
+  fullName: string;
+  memberNumber: string;
+  matchedOn: "phone" | "email";
+}
+
+function normalizeContact(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[\s+()-]/g, "").toLowerCase() : "";
+}
+
+/**
+ * Finds active member matches without deciding whether the caller should
+ * merely warn or reject. Manual member creation warns; lead conversion rejects.
+ */
+export function duplicateMemberMatches(
+  members: readonly DuplicateMemberCandidate[],
+  input: { phone?: unknown; email?: unknown },
+): DuplicateMemberMatch[] {
+  const phone = normalizeContact(input.phone);
+  const email = normalizeContact(input.email);
+  if (!phone && !email) return [];
+
+  return members.flatMap<DuplicateMemberMatch>((member) => {
+    if (member.status === "archived") return [];
+    const memberId = typeof member.id === "string" ? member.id : "";
+    if (!memberId) return [];
+    if (phone && normalizeContact(member.phone) === phone) {
+      return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "phone" }];
+    }
+    if (email && normalizeContact(member.email) === email) {
+      return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "email" }];
+    }
+    return [];
+  });
+}
+
 export function paymentAllocation(amount: number, outstanding: number): { ok: true; remaining: number } | { ok: false; code: "VALIDATION_ERROR" | "AMOUNT_EXCEEDS_OUTSTANDING" } {
   if (!isValidMinorUnit(amount) || amount <= 0 || !isValidMinorUnit(outstanding)) return { ok: false, code: "VALIDATION_ERROR" };
   if (amount > outstanding) return { ok: false, code: "AMOUNT_EXCEEDS_OUTSTANDING" };

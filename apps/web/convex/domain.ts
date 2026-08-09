@@ -19,7 +19,7 @@ import {
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
-import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
+import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, paymentAllocation, refundAllocation } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -1696,14 +1696,14 @@ async function auditPaymentCollection(ctx: MutationCtx, actor: ActorContext, pay
 }
 
 async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): Promise<Data> {
-  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.shiftId === shift.id);
+  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.shiftId === shift.id && payment.status !== "voided");
   const total = (method: string, type = "payment") => payments.filter((payment) => payment.method === method && payment.type === type).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
   const discounts = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter((charge) => payments.some((payment) => payment.chargeId === charge.id)).reduce((sum, charge) => sum + amountOf(charge.discount), 0);
   return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter((payment) => payment.type === "payment").length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency) };
 }
 
 async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branchId: string, date: string): Promise<Data> {
-  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
+  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && payment.status !== "voided" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
   const methods = ["cash", "card", "bank_transfer", "cliq", "other"];
   const totalsByMethod = methods.map((method) => {
     const rows = payments.filter((payment) => payment.method === method);
@@ -1832,7 +1832,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
   return result;
 }
 
-async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<{ member: Data; duplicates: Data[] }> {
+async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean } = {}): Promise<{ member: Data; duplicates: Data[] }> {
   requirePermission(actor, "members.write");
   const fullName = stringValue(input.fullName).trim();
   const phone = stringValue(input.phone).trim();
@@ -1841,11 +1841,16 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const branch = await branchByPublicId(ctx, actor.organization._id, homeBranchId);
   assertBranchAccess(actor, branch);
   const existingMembers = await memberRecords(ctx, actor);
-  const duplicates = existingMembers.map((record) => data(record.data)).filter((member) => member.status !== "archived").flatMap((member) => {
-    if (normalize(member.phone as string) === normalize(phone)) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
-    if (input.email && normalize(member.email as string) === normalize(stringValue(input.email))) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "email" }];
-    return [];
-  });
+  const duplicates = duplicateMemberMatches(
+    existingMembers.map((record) => data(record.data)),
+    { phone, email: input.email },
+  ) as Data[];
+  if (options.rejectDuplicates && duplicates.length > 0) {
+    domainError("DUPLICATE_MEMBER", "This lead matches an existing member. Open that member instead of creating a duplicate.", {
+      correlationId: actor.correlationId,
+      details: { matches: duplicates },
+    });
+  }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
   const member = await insertRecord(ctx, actor, "member", {
     id: newPublicId(),
@@ -2286,7 +2291,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const leadData = data(lead.data);
       if (leadData.stage === "won" && leadData.convertedMemberId) domainError("VALIDATION_ERROR", "Lead was already converted.", { correlationId: actor.correlationId });
-      const created = await createMemberMutation(ctx, actor, { ...input, fullName: leadData.fullName, phone: leadData.phone, email: leadData.email, homeBranchId: input.homeBranchId, preferredLanguage: input.preferredLanguage, source: leadData.source, assignedSalespersonId: leadData.ownerId });
+      const created = await createMemberMutation(ctx, actor, { ...input, fullName: leadData.fullName, phone: leadData.phone, email: leadData.email, homeBranchId: input.homeBranchId, preferredLanguage: input.preferredLanguage, source: leadData.source, assignedSalespersonId: leadData.ownerId }, { rejectDuplicates: true });
       const member = data(created.member);
       await patchRecord(ctx, actor, lead, { stage: "won", convertedMemberId: member.id, nextFollowUpAt: undefined, updatedAt: isoNow() });
       const tasks = await recordsOf(ctx, actor, "task");

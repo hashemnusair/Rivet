@@ -2,12 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, Check, FileText, Phone, UserCheck, XCircle } from "lucide-react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { isApiError } from "@/lib/api/errors";
+import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import type { LeadStage } from "@/lib/domain/types";
@@ -364,6 +365,16 @@ function ConvertLeadDialog({
   const [language, setLanguage] = useState<"en" | "ar">("en");
   const [gender, setGender] = useState<"male" | "female" | undefined>(undefined);
   const [homeBranch, setHomeBranch] = useState(branchId);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [duplicateMemberId, setDuplicateMemberId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setServerError(null);
+      setDuplicateMemberId(null);
+      setHomeBranch(branchId);
+    }
+  }, [branchId, open]);
 
   const mutation = useApiMutation(
     (api) => api.convertLead(leadId, { homeBranchId: homeBranch, preferredLanguage: language, gender }),
@@ -373,6 +384,15 @@ function ConvertLeadDialog({
         onOpenChange(false);
         await invalidate();
         router.push(`/members/${member.id}`);
+      },
+      onError: (error) => {
+        setServerError(isApiError(error) ? error.message : "Could not convert this lead.");
+        if (isApiError(error) && error.code === ERR.DUPLICATE_MEMBER) {
+          const firstMatch = Array.isArray(error.details?.matches) ? error.details.matches[0] : undefined;
+          if (firstMatch && typeof firstMatch === "object" && typeof (firstMatch as { memberId?: unknown }).memberId === "string") {
+            setDuplicateMemberId((firstMatch as { memberId: string }).memberId);
+          }
+        }
       },
     },
   );
@@ -427,6 +447,16 @@ function ConvertLeadDialog({
               </Select>
             </Field>
           </div>
+          {serverError ? (
+            <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger">
+              <p>{serverError}</p>
+              {duplicateMemberId ? (
+                <Link href={`/members/${duplicateMemberId}`} className="mt-1 inline-flex font-medium underline underline-offset-2">
+                  Open existing member
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
