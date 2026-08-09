@@ -74,6 +74,17 @@ describe("platform gym applications", () => {
     expect(reviewed).toMatchObject({ status: "rejected", reviewNotificationStatus: "sent", reviewNotes: "Could not verify the branch address." });
     await expect(api.reviewGymApplication({ applicationId: pending!.id, decision: "approved" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
+
+  it("saves and edits review notes after an application is finalized", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    const updated = await api.saveGymApplicationReviewNote({ applicationId: approved.id, note: "Follow up on the opening date." });
+    expect(updated).toMatchObject({ status: "approved", reviewNotes: "Follow up on the opening date." });
+
+    const cleared = await api.saveGymApplicationReviewNote({ applicationId: approved.id, note: "   " });
+    expect(cleared.reviewNotes).toBeUndefined();
+  });
 });
 
 describe("platform subscription controls", () => {

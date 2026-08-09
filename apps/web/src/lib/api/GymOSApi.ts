@@ -276,6 +276,12 @@ export interface ReviewGymApplicationInput {
   note?: string;
 }
 
+export interface SaveGymApplicationReviewNoteInput {
+  applicationId: UUID;
+  /** An empty string intentionally clears the platform-only note. */
+  note: string;
+}
+
 export interface ProvisionGymInput {
   applicationId: UUID;
 }
@@ -362,6 +368,7 @@ export interface GymOSApi {
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication>;
+  saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication>;
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;

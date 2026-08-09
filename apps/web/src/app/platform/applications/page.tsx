@@ -39,6 +39,7 @@ export default function PlatformApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyDecision, setBusyDecision] = useState<ReviewGymApplicationInput["decision"]>();
+  const [busyNote, setBusyNote] = useState(false);
   const [busyProvisioning, setBusyProvisioning] = useState(false);
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState<string>();
@@ -91,12 +92,14 @@ export default function PlatformApplicationsPage() {
   // Keep the detail pane inside the active filter/search result set. This
   // matters after a decision moves an application out of the current tab.
   const selected = visibleApplications.find((application) => application.id === selectedId) ?? visibleApplications[0];
+  const selectedApplicationId = selected?.id;
+  const selectedReviewNote = selected?.reviewNotes;
 
   useEffect(() => {
-    if (!selected) return;
-    setSelectedId(selected.id);
-    setNote(selected.reviewNotes ?? "");
-  }, [selected]);
+    if (!selectedApplicationId) return;
+    setSelectedId(selectedApplicationId);
+    setNote(selectedReviewNote ?? "");
+  }, [selectedApplicationId, selectedReviewNote]);
 
   const review = async (decision: ReviewGymApplicationInput["decision"]) => {
     if (!selected) return;
@@ -151,6 +154,23 @@ export default function PlatformApplicationsPage() {
       setError(message);
     } finally {
       setBusyProvisioning(false);
+    }
+  };
+
+  const saveNote = async () => {
+    if (!selected) return;
+    setBusyNote(true);
+    setError(undefined);
+    setFeedback(undefined);
+    try {
+      const updated = await getApi().saveGymApplicationReviewNote({ applicationId: selected.id, note });
+      setApplications((current) => current.map((application) => application.id === updated.id ? updated : application));
+      setNote(updated.reviewNotes ?? "");
+      setFeedback(updated.reviewNotes ? "Review note saved." : "Review note cleared.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The review note could not be saved.");
+    } finally {
+      setBusyNote(false);
     }
   };
 
@@ -209,7 +229,7 @@ export default function PlatformApplicationsPage() {
                 </div>
               </aside>
 
-              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} busyProvisioning={busyProvisioning} onReview={review} onProvision={() => void provision({ applicationId: selected.id })} /> : null}
+              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} busyNote={busyNote} busyProvisioning={busyProvisioning} onReview={review} onSaveNote={saveNote} onProvision={() => void provision({ applicationId: selected.id })} /> : null}
             </div>
           )}
         </section>
@@ -218,8 +238,9 @@ export default function PlatformApplicationsPage() {
   );
 }
 
-function ApplicationDetail({ application, note, setNote, busyDecision, busyProvisioning, onReview, onProvision }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyProvisioning: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onProvision: () => void }) {
+function ApplicationDetail({ application, note, setNote, busyDecision, busyNote, busyProvisioning, onReview, onSaveNote, onProvision }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void }) {
   const finalized = application.status === "approved" || application.status === "rejected";
+  const noteDirty = note.trim() !== (application.reviewNotes ?? "");
   return (
     <article className="flex min-w-0 flex-col">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line p-5 sm:p-6">
@@ -234,7 +255,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyProvi
       <div className="grid flex-1 gap-5 p-5 sm:p-6 xl:grid-cols-[1fr_280px]">
         <div className="space-y-5">
           <section><p className="eyebrow">Applicant details</p><div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-2"><Detail icon={<UserRound />} label="Owner" value={application.ownerName} /><Detail icon={<Mail />} label="Email" value={application.email} /><Detail icon={<Phone />} label="Contact number" value={application.contactNumber} /><Detail icon={<CheckCircle2 />} label="Chosen plan" value={application.plan} /></div></section>
-          <section><p className="eyebrow">Review notes</p><Textarea className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} disabled={finalized || Boolean(busyDecision)} placeholder="Record what you verified, or why the application was rejected." aria-label="Review notes" /><p className="mt-2 text-[10px] text-ink-3">A rejection requires a reason. Notes are visible to the platform team only.</p></section>
+          <section><p className="eyebrow">Review notes</p><Textarea className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} disabled={Boolean(busyDecision) || busyNote} placeholder="Record what you verified, or why the application was rejected." aria-label="Review notes" /><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[10px] text-ink-3">A rejection requires a reason. Notes are visible to the platform team only.</p><Button type="button" variant="secondary" size="sm" onClick={() => void onSaveNote()} loading={busyNote} disabled={!noteDirty || Boolean(busyDecision)}>{noteDirty ? "Save note" : "Saved"}</Button></div></section>
           {finalized ? <div className={cn("flex items-start gap-3 border p-4 text-[12px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4" /><div><strong>{application.status === "approved" ? "Application approved" : "Application rejected"}</strong><p className="mt-1 text-[11px] opacity-80">{application.reviewedBy ? `Decision by ${application.reviewedBy} on ${formatDate(application.reviewedAt ?? application.updatedAt)}.` : "Decision recorded."} {application.reviewNotificationStatus === "sent" ? "The owner was notified by email." : application.reviewNotificationStatus === "failed" ? "The decision was saved, but the email failed." : "The owner notification is not configured."}</p></div></div> : null}
           {application.status === "approved" ? <ProvisioningCard application={application} busy={busyProvisioning} onProvision={onProvision} /> : null}
         </div>

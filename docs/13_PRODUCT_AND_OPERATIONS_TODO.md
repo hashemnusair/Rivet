@@ -48,7 +48,7 @@ The Production owner invitation successfully carried a Clerk invitation ticket b
 
 ### Observed problem
 
-The application review textarea looks independently editable, but its value is only submitted when **Mark under review**, **Approve application**, or **Reject application** is clicked. There is no **Save note** action or save-state feedback. Once a decision is final, the textarea is disabled, so an operator cannot add a follow-up note. During the 9 August production verification, the application was approved successfully but no review note was persisted.
+The application review textarea looks independently editable, but its value was only submitted when **Mark under review**, **Approve application**, or **Reject application** was clicked. There was no **Save note** action or save-state feedback. Once a decision was final, the textarea was disabled, so an operator could not add a follow-up note. During the 9 August production verification, the application was approved successfully but no review note was persisted.
 
 ### Completion criteria
 
@@ -86,6 +86,10 @@ The hardcoded two-branch copy is replaced by `dashboardScopeDescription`, which 
 The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere. The owner selector also appeared blank during Production testing even though the current gym owner was silently assigned and later appeared on the lead card; its option query only requests active salespeople and therefore cannot render the selected owner identity.
 
 The dialog now keeps the current actor visible as an owner, includes active staff beyond salespeople when the caller can read them, and provides a real **Unassigned** choice. Server-side role/assignment authorization and the full email-field test matrix remain open.
+
+### Implementation status
+
+Review notes now have an explicit save mutation with platform-admin authorization, audit before/after values, save feedback, clear-note support, and editing after approval or rejection. Background refresh no longer overwrites unsaved note typing. Production visual verification of an edited final note remains open.
 
 ### Completion criteria
 

@@ -1963,6 +1963,38 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.register") return await registerCustomer(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "platform.application.note") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const applicationId = stringValue(input.applicationId);
+    const application = await ctx.db
+      .query("gymApplications")
+      .withIndex("by_public_id", (q) => q.eq("publicId", applicationId))
+      .unique();
+    if (!application) domainError("NOT_FOUND", "Gym application not found.", { correlationId: admin.correlationId });
+    if (typeof input.note !== "string") domainError("VALIDATION_ERROR", "Review note must be text.", { correlationId: admin.correlationId, fieldErrors: { note: ["Must be text"] } });
+    const note = input.note.trim();
+    if (note.length > 2_000) domainError("VALIDATION_ERROR", "Review note must be 2,000 characters or fewer.", { correlationId: admin.correlationId, fieldErrors: { note: ["Must be 2,000 characters or fewer"] } });
+    const previousNote = application.reviewNotes;
+    await ctx.db.patch(application._id, { reviewNotes: note || undefined, updatedAt: Date.now() });
+    await ctx.db.insert("platformAuditEvents", {
+      publicId: crypto.randomUUID(),
+      actorUserId: admin.user._id,
+      actorPublicId: publicUserId(admin.user),
+      actorName: admin.user.fullName,
+      action: "gym_application.review_note_update",
+      entityType: "gym_application",
+      entityPublicId: application.publicId,
+      entityLabel: application.gymName,
+      summary: note ? "Updated gym application review note" : "Cleared gym application review note",
+      before: { reviewNotes: previousNote ?? null },
+      after: { reviewNotes: note || null },
+      correlationId: admin.correlationId,
+      occurredAt: Date.now(),
+    });
+    const updated = await ctx.db.get(application._id);
+    if (!updated) domainError("NOT_FOUND", "Gym application not found.", { correlationId: admin.correlationId });
+    return gymApplicationView(updated);
+  }
   if (operation === "platform.gym.update") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const gymId = recordId(input.gymId);

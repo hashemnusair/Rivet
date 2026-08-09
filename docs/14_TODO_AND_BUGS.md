@@ -158,6 +158,12 @@ Last reviewed: 2026-08-09, current `main` feature slice plus the production foll
 - Risk: the system can avoid accidental opt-in, but cannot yet prove why an existing member was opted in or reliably suppress every future promotional channel.
 - Fix/acceptance: add consent source/version/actor/timestamp facts, a staff/member opt-out path, channel-specific suppression, migration treatment for historical records, and tests for affirmative consent, withdrawal, imports, conversion, and authorization.
 
+### TODO-010 — Verify application review-note editing in Production
+
+- Status: **Implemented locally; Production verification pending**.
+- Evidence: platform review notes now save independently, remain editable after final decisions, support clearing, and write platform audit before/after snapshots through both Convex and the mock adapter. Background application polling no longer resets unsaved text.
+- Fix/acceptance: use a disposable Production application to save, edit, clear, and reload a final review note; confirm the audit event and note survive the refresh. Do not use a real gym application for this test.
+
 ## P2 — Deliberately deferred until after the first pilot
 
 - Full class schedules, capacity, waitlists, and no-shows.

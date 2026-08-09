@@ -123,5 +123,8 @@ test.describe("RIVET platform administration", () => {
     await page.getByLabel("Review notes").fill("Verified the owner and branch address.");
     await page.getByRole("button", { name: /Approve application/i }).click();
     await expect(page.getByText(/Application approved\./)).toBeVisible();
+    await page.getByLabel("Review notes").fill("Follow up before the first billing cycle.");
+    await page.getByRole("button", { name: "Save note" }).click();
+    await expect(page.getByRole("status")).toContainText("Review note saved.");
   });
 });

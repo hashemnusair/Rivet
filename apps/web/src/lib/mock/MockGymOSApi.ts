@@ -23,6 +23,7 @@ import type {
   SubmitGymApplicationInput,
   SubmitGymApplicationResult,
   ReviewGymApplicationInput,
+  SaveGymApplicationReviewNoteInput,
   ProvisionGymInput,
   GymProvisioningResult,
   UpdatePlatformGymInput,
@@ -364,6 +365,29 @@ export class MockGymOSApi implements GymOSApi {
         entityLabel: application.gymName,
         summary: `${input.decision === "under_review" ? "Moved to review" : input.decision === "approved" ? "Approved" : "Rejected"} gym application`,
         reason: input.note,
+      });
+      return { ...application };
+    });
+  }
+
+  saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication> {
+    return this.respond(() => {
+      const application = this.gymApplications.find((item) => item.id === input.applicationId);
+      if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
+      const note = input.note.trim();
+      if (note.length > 2_000) throw ApiError.of(ERR.VALIDATION, "Review note must be 2,000 characters or fewer.", { fieldErrors: { note: ["Must be 2,000 characters or fewer"] } });
+      const previousNote = application.reviewNotes;
+      application.reviewNotes = note || undefined;
+      application.updatedAt = nowISO();
+      this.audit({
+        category: "settings",
+        action: "gym_application.review_note_update",
+        entityType: "gym_application",
+        entityId: application.id,
+        entityLabel: application.gymName,
+        summary: note ? "Updated gym application review note" : "Cleared gym application review note",
+        before: { reviewNotes: previousNote ?? null },
+        after: { reviewNotes: application.reviewNotes ?? null },
       });
       return { ...application };
     });

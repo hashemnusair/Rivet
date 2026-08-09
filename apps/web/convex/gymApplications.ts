@@ -178,13 +178,14 @@ export const reviewRecord = internalMutation({
 
     const now = Date.now();
     const reviewNotificationStatus = args.decision === "under_review" ? "not_configured" : "pending";
+    const nextReviewNotes = note ?? application.reviewNotes;
     await ctx.db.patch(application._id, {
       status: args.decision,
       reviewNotificationStatus,
       reviewNotificationError: undefined,
       reviewedAt: args.decision === "under_review" ? undefined : now,
       reviewedBy: admin.user.fullName,
-      reviewNotes: note,
+      reviewNotes: nextReviewNotes,
       updatedAt: now,
     });
     await ctx.db.insert("platformAuditEvents", {
@@ -218,7 +219,7 @@ export const reviewRecord = internalMutation({
       updatedAt: new Date(now).toISOString(),
       reviewedAt: args.decision === "under_review" ? undefined : new Date(now).toISOString(),
       reviewedBy: admin.user.fullName,
-      reviewNotes: note,
+      reviewNotes: nextReviewNotes,
     };
   },
 });

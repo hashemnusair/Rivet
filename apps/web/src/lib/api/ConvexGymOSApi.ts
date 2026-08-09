@@ -22,6 +22,7 @@ import type {
   SubmitGymApplicationResult,
   PlatformGymApplication,
   ReviewGymApplicationInput,
+  SaveGymApplicationReviewNoteInput,
   PlatformBillingInvoice,
   PlatformSnapshot,
   PlatformSupportCase,
@@ -191,6 +192,9 @@ export class ConvexGymOSApi implements GymOSApi {
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }
+  }
+  saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication> {
+    return this.mutate("platform.application.note", input);
   }
   async provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult> {
     try {

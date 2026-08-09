@@ -117,14 +117,17 @@ describe("ConvexGymOSApi contract boundary", () => {
       reviewNotificationStatus: "sent" as const,
       submittedAt: "2026-08-06T08:42:00.000Z",
       updatedAt: "2026-08-06T09:00:00.000Z",
+      reviewNotes: "Verified.",
     };
     const calls: Array<{ kind: string; args: Record<string, unknown> }> = [];
-    const api = new ConvexGymOSApi(transportFor({ query: [], action: application }, (kind, args) => calls.push({ kind, args })));
+    const api = new ConvexGymOSApi(transportFor({ query: [], mutation: { ...application, reviewNotes: "Follow up." }, action: application }, (kind, args) => calls.push({ kind, args })));
 
     await expect(api.listGymApplications({ status: "pending" })).resolves.toEqual([]);
     await expect(api.reviewGymApplication({ applicationId: application.id, decision: "approved", note: "Verified." })).resolves.toEqual(application);
     expect(calls[0]).toMatchObject({ kind: "query", args: { operation: "platform.applications", input: { status: "pending" } } });
     expect(calls[1]).toMatchObject({ kind: "action", args: { applicationId: application.id, decision: "approved", note: "Verified.", correlationId: expect.any(String) } });
+    await expect(api.saveGymApplicationReviewNote({ applicationId: application.id, note: "Follow up." })).resolves.toMatchObject({ id: application.id, reviewNotes: "Follow up." });
+    expect(calls[2]).toMatchObject({ kind: "mutation", args: { operation: "platform.application.note", input: { applicationId: application.id, note: "Follow up." } } });
   });
 
   it("keeps gym provisioning behind the protected action boundary", async () => {
