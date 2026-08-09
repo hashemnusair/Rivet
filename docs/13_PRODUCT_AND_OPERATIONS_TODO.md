@@ -4,11 +4,29 @@ Updated 9 August 2026. This is the living, prioritized follow-up list for issues
 
 ## P0 — Finish the disposable production onboarding
 
-- Accept the Clerk owner invitation in a private/incognito browser so the platform-admin and gym-owner sessions cannot mix.
-- Confirm the invited identity resolves to the provisioned `Hashem Test` organization with the `owner` role and the first branch.
+- [x] Accept the Clerk owner invitation in a private/incognito browser so the platform-admin and gym-owner sessions cannot mix.
+- [x] Confirm the invited identity resolves to the provisioned `Hashem Test` organization with the `owner` role and the first branch.
 - Complete the first-owner setup: organization settings, branch details, and one membership plan.
 - Exercise lead → member → membership → payment → check-in → timeline/audit → shift reconciliation with disposable data.
 - Hide/archive the disposable tenant after verification. Do not run `seed:seedDemoTenant` in Production.
+
+## P0 — Fix first-time invited-owner account creation
+
+### Observed problem
+
+The Production owner invitation successfully carried a Clerk invitation ticket back to RIVET, but provisioning configured its redirect as `/login`. That route renders RIVET's custom password-only sign-in form and does not consume `__clerk_ticket` or branch on Clerk's `__clerk_status`. A first-time owner therefore sees a required password even though no account or password exists. The only visible account-creation link says **Create a member account** and drops the invitation query parameters. During production verification, the owner had to preserve the ticket manually while navigating to the existing account-creation route.
+
+### Completion criteria
+
+- Add a dedicated, branded **Accept gym invitation** route and use it for owner and staff invitation redirects.
+- Preserve and consume the Clerk invitation ticket; never place the ticket in logs, analytics, screenshots, or repository fixtures.
+- Handle Clerk's `sign_up`, `sign_in`, `complete`, expired, revoked, and invalid invitation states explicitly.
+- For a new identity, say **Create your owner account**, collect the required profile fields, let the user set a password, and continue without exposing member-specific copy.
+- For an existing identity, say **Sign in to accept your invitation** and preserve the invitation through authentication and verification steps.
+- After acceptance, resolve the authenticated Convex membership, select the provisioned organization when necessary, and open the correct gym workspace automatically.
+- Provide clear recovery actions for an email mismatch, an already accepted invitation, and an expired invitation.
+- Add component and end-to-end coverage for new-owner signup, existing-user acceptance, query-parameter preservation, profile completion, and final owner-role routing.
+- Treat this as a release gate before inviting a real gym owner.
 
 ## P1 — Make application review notes explicit and auditable
 
