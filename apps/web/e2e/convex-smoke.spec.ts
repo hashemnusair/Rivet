@@ -10,6 +10,6 @@ test.describe("trusted Clerk → Convex smoke", () => {
     await expect(page).not.toHaveURL(/\/login/);
     await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening),/i })).toBeVisible();
     await expect(page.getByText("Both branches, consolidated.")).toBeVisible();
-    await expect(page.getByText(/Forge .* Abdoun/)).toBeVisible();
+    await expect(page.getByText(/^Forge .* Abdoun$/)).toBeVisible();
   });
 });
