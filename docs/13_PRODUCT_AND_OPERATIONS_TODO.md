@@ -43,6 +43,22 @@ The application review textarea looks independently editable, but its value is o
 - Warn before changing applications with unsaved text.
 - Add unit/component coverage for independent save, decision-with-note, failure recovery, finalized applications, and authorization.
 
+## P1 — Make dashboard branch-scope copy data-driven
+
+### Observed problem
+
+The owner dashboard says **Both branches, consolidated** whenever the branch selector is set to **All branches**. That sentence is hardcoded from the original two-branch preview scenario. The disposable Production tenant has exactly one active branch, so the dashboard currently makes a false claim about the tenant's structure.
+
+### Completion criteria
+
+- Derive the dashboard scope description from the authenticated session's actual accessible branches and selected branch.
+- For one accessible branch, name that branch or use accurate singular copy.
+- For multiple accessible branches with no branch selected, use accurate aggregate copy such as **All 3 branches, consolidated**.
+- For an explicitly selected branch, continue naming that branch.
+- Define a safe empty/loading fallback that does not claim a branch count.
+- Remove assumptions tied to the seeded Forge Fitness tenant.
+- Add component coverage for zero/loading, one, two, and three-or-more accessible branches plus an explicitly selected branch.
+
 ## P1 — Build a branded transactional-email system
 
 ### Observed problem
