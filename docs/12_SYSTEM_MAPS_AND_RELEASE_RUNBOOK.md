@@ -17,9 +17,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 - The application is a release candidate, not a blank scaffold.
 - `main` is deployed to Vercel Production and production Convex health is reachable.
-- Credential-free checks pass: frontend and Convex typecheck, lint, 256 unit/component tests, 20 preview browser journeys, and the production build.
+- Credential-free checks pass: frontend and Convex typecheck, lint, 267 unit/component tests, 21 preview browser journeys, and the production build.
 - The authenticated Development Clerk → Convex smoke and staged operational write flow passed on the current merged head in manual workflow `31325711295`.
-- Production environment alignment, Resend application mail, authenticated tenant resolution, and the supervised single-cash-path onboarding/operational sequence have been verified. Release remains held for the invited-owner onboarding defect, fabricated platform-gym detail facts, remaining adversarial authorization coverage, and the incomplete workflow/provider items in the canonical backlog.
+- Production environment alignment, Resend application mail, authenticated tenant resolution, and the supervised single-cash-path onboarding/operational sequence have been verified. The fabricated platform-gym detail facts were removed and the authorized target-scoped replacement passed a credentialed Production check on deployed head `6a3678b`. Release remains held for the invited-owner onboarding defect, the platform directory's omission of hidden/suspended tenants, remaining adversarial authorization coverage, and the incomplete workflow/provider items in the canonical backlog.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
 ## Map 1 — Provider and deployment topology
