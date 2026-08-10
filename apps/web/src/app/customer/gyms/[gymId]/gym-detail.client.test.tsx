@@ -44,6 +44,7 @@ const state = vi.hoisted(() => ({
       trialSlots: ["08:00"],
     }],
   },
+  previewSessionReady: true,
   bookTrial: vi.fn(),
   push: vi.fn(),
 }));
@@ -59,14 +60,32 @@ vi.mock("@/lib/api/ConvexGymOSApi", () => ({
 vi.mock("@/lib/providers/experience-provider", () => ({
   useCustomerPersona: () => state.customer ?? undefined,
   useMarketplaceGyms: () => [state.gym],
-  useExperience: () => ({ bookTrial: state.bookTrial, customerSignedIn: Boolean(state.customer) }),
+  useExperience: () => ({
+    bookTrial: state.bookTrial,
+    customerSignedIn: Boolean(state.customer),
+    previewSessionReady: state.previewSessionReady,
+  }),
 }));
 
 describe("GymDetailClient trial form", () => {
   beforeEach(() => {
     state.customer = null;
+    state.previewSessionReady = true;
     state.bookTrial.mockReset().mockResolvedValue({ id: "booking-1" });
     state.push.mockReset();
+  });
+
+  it("waits for preview session restoration before exposing editable fields", () => {
+    state.previewSessionReady = false;
+    const view = render(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading booking form");
+    expect(screen.queryByLabelText("Full name")).not.toBeInTheDocument();
+
+    state.previewSessionReady = true;
+    view.rerender(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByLabelText("Full name")).toBeInTheDocument();
   });
 
   it("preserves visitor input when customer defaults hydrate after typing begins", async () => {

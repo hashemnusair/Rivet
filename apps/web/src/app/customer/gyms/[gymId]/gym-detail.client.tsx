@@ -27,7 +27,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const gyms = useMarketplaceGyms();
   const gym = gyms.find((item) => item.id === gymId);
   const customer = useCustomerPersona();
-  const { bookTrial, customerSignedIn } = useExperience();
+  const { bookTrial, customerSignedIn, previewSessionReady } = useExperience();
   const router = useRouter();
   const [booked, setBooked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +78,11 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     });
   }, [customer, defaultDate, dirtyFields, formContextKey, gym, reset]);
 
+  // The preview session is restored in a client effect. Do not expose the
+  // server-rendered form before hydration, because a fast visitor (or assistive
+  // automation) could type into DOM that React is about to reconcile with the
+  // restored customer defaults.
+  if (!previewSessionReady) return <main className="px-5 py-20 text-center"><p role="status" className="text-[13px] text-ink-3">Loading booking form…</p></main>;
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
   const selectedBranch = gym.branches.find((branch) => branch.id === watch("branchId")) ?? gym.branches[0]!;
 
