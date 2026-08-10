@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -88,7 +89,60 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>{children}</SessionProvider>
+      <QueryRefreshNotice />
     </QueryClientProvider>
+  );
+}
+
+function QueryRefreshNotice() {
+  const queryClient = useQueryClient();
+  const [staleCount, setStaleCount] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    const update = () => {
+      const count = queryClient
+        .getQueryCache()
+        .getAll()
+        .filter(
+          (query) =>
+            query.isActive() && query.state.data !== undefined && query.state.error != null,
+        ).length;
+      setStaleCount(count);
+    };
+    update();
+    return queryClient.getQueryCache().subscribe(update);
+  }, [queryClient]);
+
+  if (staleCount === 0) return null;
+
+  const retry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await queryClient.refetchQueries({ type: "active" });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep shadow-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <span>Some live RIVET data is stale. Your last loaded data is still shown.</span>
+      <button
+        type="button"
+        onClick={() => void retry()}
+        className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline"
+        disabled={retrying}
+      >
+        <RefreshCcw className={retrying ? "size-3 animate-spin" : "size-3"} aria-hidden />
+        {retrying ? "Retrying…" : "Retry now"}
+      </button>
+    </div>
   );
 }
 

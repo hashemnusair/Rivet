@@ -19,11 +19,21 @@ export function useApiQuery<TData>(
   fn: (api: ReturnType<typeof getApi>) => Promise<TData>,
   options?: Omit<UseQueryOptions<TData, Error>, "queryKey" | "queryFn">,
 ) {
-  return useQuery<TData, Error>({
+  const query = useQuery<TData, Error>({
     queryKey: key,
     queryFn: () => fn(getApi()),
     ...options,
   });
+
+  // TanStack Query can retain a useful snapshot while a background refetch
+  // fails. Treat that as a stale-data warning rather than replacing a working
+  // table/card with a full-page error; initial failures still remain errors.
+  const hasRenderedData = query.data !== undefined;
+  return {
+    ...query,
+    isError: query.isError && !hasRenderedData,
+    isBackgroundError: query.isError && hasRenderedData,
+  };
 }
 
 /** Broad invalidation after commercial mutations so every surface agrees. */
