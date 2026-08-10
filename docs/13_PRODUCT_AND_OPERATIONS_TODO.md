@@ -370,10 +370,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-007 — Critical screens are polling, not truly realtime
 
-- Status: **Member My Gyms and platform applications subscription slices implemented; remaining operational surfaces still poll**.
-- Evidence: `GymOSApi.subscribeCustomerExperience` and `subscribePlatformApplications` now provide typed, disposable snapshot streams. `ConvexGymOSApi` uses a native `ConvexReactClient.watchQuery` in production and an injectable subscription seam in adapter tests; `ExperienceProvider` and the platform application queue apply updates without replacing the rendered snapshot or replaying a full-page loading gate. The mock adapter preserves the same lifecycle contracts.
-- Risk: reception, CRM, platform provisioning, payments, and shift totals can still show stale state for several seconds during concurrent work. A subscription error currently exposes the existing retryable stale-data notice; it does not yet start a separate polling fallback.
-- Fix/acceptance: migrate CRM/trials, reception occupancy/check-ins, and payment/shift totals next. Add two-context browser tests with no reload and no full-page loading flicker for each migrated surface. The member and platform adapter/mock lifecycle tests are now in place; credentialed Production verification remains pending.
+- Status: **Member My Gyms, platform applications, and CRM pipeline subscription slices implemented; reception/payments remain**.
+- Evidence: `GymOSApi.subscribeCustomerExperience`, `subscribePlatformApplications`, and `subscribeLeads` now provide typed, disposable snapshot streams. `ConvexGymOSApi` uses native `ConvexReactClient.watchQuery` in production and injectable subscription seams in adapter tests; the member provider, platform application queue, and CRM pipeline apply updates without replacing the rendered snapshot or replaying a full-page loading gate. The CRM pipeline starts its existing four-second refetch fallback if the watch fails, and the mock adapter preserves the same lifecycle contracts.
+- Risk: CRM lead detail/tasks, reception, platform provisioning detail, payments, and shift totals can still show stale state for several seconds during concurrent work. Credentialed Production verification and two-context browser coverage remain open for all realtime slices.
+- Fix/acceptance: migrate CRM detail/trials, reception occupancy/check-ins, and payment/shift totals next. Add two-context browser tests with no reload and no full-page loading flicker for each migrated surface. The member, platform, and CRM pipeline adapter/mock lifecycle tests are now in place.
 
 ### BUG-008 — Generated Next route types dirty the worktree during local dev and Playwright
 

@@ -142,7 +142,7 @@ This is the highest-priority engineering slice. Current helper-level customer ow
 
 The current four-second background refresh is an acceptable fallback, but the most operationally important screens should update through Convex subscriptions without manual refresh or full-page loading flicker.
 
-Progress on 2026-08-10: the typed subscription seam is implemented for member My Gyms/free-trial status and platform gym applications/provisioning status. CRM, reception, and payment/shift subscriptions remain next; credentialed Production and two-context browser verification are still required for the completed slices.
+Progress on 2026-08-10: the typed subscription seam is implemented for member My Gyms/free-trial status, platform gym applications/provisioning status, and the CRM pipeline. CRM detail/tasks, reception, and payment/shift subscriptions remain next; credentialed Production and two-context browser verification are still required for the completed slices.
 
 ### Work
 

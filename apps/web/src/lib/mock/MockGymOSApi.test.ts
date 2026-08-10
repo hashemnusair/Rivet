@@ -898,6 +898,16 @@ describe("refunds and voids", () => {
 });
 
 describe("CRM", () => {
+  it("delivers the branch-scoped pipeline snapshot through the mock subscription contract", async () => {
+    const session = await api.getSession();
+    const values: unknown[] = [];
+    const unsubscribe = await api.subscribeLeads({ branchId: session.activeBranchId, pageSize: 100 }, (page) => values.push(page));
+
+    expect(values).toHaveLength(1);
+    expect(values[0]).toMatchObject({ items: expect.any(Array), page: 1 });
+    expect(() => unsubscribe()).not.toThrow();
+  });
+
   it("logs a contact attempt, moves the stage and schedules the next follow-up", async () => {
     const leads = await api.listLeads({ pageSize: 20 });
     const lead = leads.items.find((l) => l.stage === "new")!;

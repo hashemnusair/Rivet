@@ -105,6 +105,30 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("carries CRM lead filters through the realtime subscription boundary", async () => {
+    const values: unknown[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    const stop = vi.fn();
+    const page = { items: [], page: 1, pageSize: 20, totalItems: 0, totalPages: 1 };
+    const base = transportFor();
+    const transport: ConvexTransport = {
+      ...base,
+      subscribe: (_reference, args, onValue) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        onValue(page);
+        return stop;
+      },
+    };
+    const api = new ConvexGymOSApi(transport);
+
+    const unsubscribe = await api.subscribeLeads({ branchId: session.activeBranchId, stage: ["trial_booked"], pageSize: 20 }, (value) => values.push(value));
+
+    expect(values).toEqual([page]);
+    expect(calls[0]).toMatchObject({ operation: "leads.list", input: { branchId: session.activeBranchId, stage: ["trial_booked"], pageSize: 20 } });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it("keeps idempotency keys inside the payment mutation boundary", async () => {
     let mutationArgs: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => { mutationArgs = args; }));

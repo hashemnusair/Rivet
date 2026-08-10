@@ -312,6 +312,9 @@ export class ConvexGymOSApi implements GymOSApi {
   transferMembership(membershipId: T.UUID, input: T.TransferMembershipInput): Promise<T.MembershipDetail> { return this.mutate("memberships.transfer", { membershipId, ...input }); }
 
   listLeads(query: LeadListQuery): Promise<T.Page<T.LeadSummary>> { return this.query("leads.list", query); }
+  subscribeLeads(query: LeadListQuery, onValue: (page: T.Page<T.LeadSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeQuery("leads.list", query, onValue, onError);
+  }
   getLead(leadId: T.UUID): Promise<T.LeadDetail> { return this.query("leads.get", { leadId }); }
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.create", input); }
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }

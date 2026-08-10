@@ -520,6 +520,7 @@ export interface GymOSApi {
 
   // CRM
   listLeads(query: LeadListQuery): Promise<Page<LeadSummary>>;
+  subscribeLeads(query: LeadListQuery, onValue: (page: Page<LeadSummary>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getLead(leadId: UUID): Promise<LeadDetail>;
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;

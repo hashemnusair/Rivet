@@ -2108,6 +2108,15 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  async subscribeLeads(query: LeadListQuery, onValue: (page: T.Page<T.LeadSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.listLeads(query));
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => undefined;
+  }
+
   getLead(leadId: T.UUID): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.read");
