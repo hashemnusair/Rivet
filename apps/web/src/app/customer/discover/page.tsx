@@ -42,7 +42,18 @@ export default function DiscoverGymsPage() {
       <section className="px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1280px]">
           {experienceStatus !== "ready" || gyms.length === 0 ? (
-            <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="No RIVET gyms are live yet" emptyDescription="Check back after the next gym joins the network." />
+            <ExperienceDataState
+              status={experienceStatus}
+              error={experienceError}
+              onRetry={retryExperience}
+              emptyTitle="No RIVET gyms are live yet"
+              emptyDescription="Gyms appear here after RIVET approves and publishes their workspace. Run a gym? Send an application and our team will follow up."
+              emptyAction={
+                <Button asChild variant="primary" size="sm">
+                  <Link href="/signup">Send a gym application <ArrowRight /></Link>
+                </Button>
+              }
+            />
           ) : <>
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <label className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by gym, area, or training style" className="h-11 ps-10" /></label>

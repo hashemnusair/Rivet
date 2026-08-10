@@ -16,6 +16,7 @@ import { TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState, ForbiddenState } from "@/components/ui/states";
 import { isApiError } from "@/lib/api/errors";
+import { auditApprovalStatusForDisplay } from "@/lib/domain/audit";
 
 const CATEGORY_LABELS: Record<AuditCategory, string> = {
   auth: "Auth",
@@ -141,6 +142,7 @@ function AuditPageInner() {
 
 function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: boolean; onToggle: () => void }) {
   const hasDetail = Boolean(event.before || event.after || event.reason);
+  const approvalStatus = auditApprovalStatusForDisplay(event);
   return (
     <li>
       <button
@@ -156,9 +158,9 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium">{event.summary}</span>
             <Badge variant="outline">{event.action}</Badge>
-            {event.approvalStatus === "pending" ? <Badge variant="warning">pending approval</Badge> : null}
-            {event.approvalStatus === "approved" ? <Badge variant="success">approved</Badge> : null}
-            {event.approvalStatus === "rejected" ? <Badge variant="signal">rejected</Badge> : null}
+            {approvalStatus === "pending" ? <Badge variant="warning">pending approval</Badge> : null}
+            {approvalStatus === "approved" ? <Badge variant="success">approved</Badge> : null}
+            {approvalStatus === "rejected" ? <Badge variant="signal">rejected</Badge> : null}
           </span>
           <span className="mt-0.5 block text-[12px] text-ink-3">
             {event.actorName} · {event.actorRole} · {event.entityLabel}

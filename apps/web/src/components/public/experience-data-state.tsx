@@ -1,6 +1,7 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
+import type { ReactNode } from "react";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import type { ExperienceStatus } from "@/lib/providers/experience-provider";
 
@@ -10,6 +11,7 @@ export function ExperienceDataState({
   onRetry,
   emptyTitle,
   emptyDescription,
+  emptyAction,
   compact,
   className,
 }: {
@@ -18,6 +20,7 @@ export function ExperienceDataState({
   onRetry: () => void;
   emptyTitle: string;
   emptyDescription: string;
+  emptyAction?: ReactNode;
   compact?: boolean;
   className?: string;
 }) {
@@ -32,5 +35,5 @@ export function ExperienceDataState({
   if (status === "error") {
     return <ErrorState title="Live RIVET data is unavailable" description={error ?? "The network could not be loaded. Try again in a moment."} onRetry={onRetry} className={className} />;
   }
-  return <EmptyState title={emptyTitle} description={emptyDescription} compact={compact} className={className} />;
+  return <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} compact={compact} className={className} />;
 }

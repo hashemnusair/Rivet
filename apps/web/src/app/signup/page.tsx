@@ -1,24 +1,18 @@
 "use client";
 
-import { ArrowRight, Building2, Check, CheckCircle2, Mail, Phone } from "lucide-react";
+import { AlertTriangle, ArrowRight, Building2, Check, CheckCircle2, Mail, Phone, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PublicHeader } from "@/components/public/public-shell";
-import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { PlatformSaasPlan, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
 import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
+import { resolveApplicationPlans } from "@/lib/public/application-plans";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-
-const DEFAULT_PLANS: PlatformSaasPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-];
 
 type FormErrors = Partial<Record<"ownerName" | "gymName" | "email" | "contactNumber", string>>;
 
@@ -27,7 +21,8 @@ export default function GymApplicationPage() {
   // Keep the public application usable while a production deployment has not
   // yet stored editable catalog rows. Convex still supplies the live catalog
   // whenever those rows exist; these are the approved launch defaults.
-  const plans = useMemo(() => (saasPlans.length > 0 ? saasPlans : DEFAULT_PLANS), [saasPlans]);
+  const plans = useMemo(() => resolveApplicationPlans(saasPlans), [saasPlans]);
+  const usingFallbackCatalog = saasPlans.length === 0;
   const [ownerName, setOwnerName] = useState("");
   const [gymName, setGymName] = useState("");
   const [email, setEmail] = useState("");
@@ -123,19 +118,24 @@ export default function GymApplicationPage() {
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
                   </Field>
-                  {experienceStatus !== "ready" || plans.length === 0 ? (
-                    <div className="mt-6"><ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Plans are not available yet" emptyDescription="The application catalog is not ready. Please try again shortly." compact /></div>
-                  ) : <div className="mt-6 grid gap-2" role="radiogroup" aria-label="RIVET plan">
+                  {usingFallbackCatalog ? (
+                    <div className="mt-6 flex items-start gap-2 border border-warning/30 bg-warning-bg px-3 py-2.5 text-[11.5px] text-warning-deep" role="status">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                      <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? "The live catalog is temporarily unavailable.") : "The live catalog is loading; approved launch choices are shown for now."}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label="Retry loading plans"><RefreshCcw /></Button>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 grid gap-2" role="radiogroup" aria-label="RIVET plan">
                     {plans.map((item) => (
                       <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
                         <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
                         <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {(item.priceMinor / 1000).toFixed(3)} / month · {item.branches} branch{item.branches > 1 ? "es" : ""}</span></span>
                       </button>
                     ))}
-                  </div>}
+                  </div>
                   <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan selection is a starting point for the conversation, not a payment or activation.</p>
                   {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
-                  <Button type="submit" variant="signal" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0 || experienceStatus !== "ready"} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
+                  <Button type="submit" variant="signal" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
                   <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
                 </section>
               </form>
