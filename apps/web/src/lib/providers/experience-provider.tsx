@@ -1,12 +1,14 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { RefreshCcw } from "lucide-react";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
+import { refreshFailureState } from "@/lib/public/experience-refresh";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -43,6 +45,8 @@ interface ExperienceContextValue {
   previewSessionReady: boolean;
   experienceStatus: ExperienceStatus;
   experienceError?: string;
+  /** True while a background refresh is checking the last rendered snapshot. */
+  experienceRefreshing: boolean;
   retryExperience: () => void;
   /** Seeded preview accounts plus anything created through member sign-up. */
   customers: CustomerPersona[];
@@ -101,6 +105,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [experienceReady, setExperienceReady] = useState(!convexMode);
   const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>(convexMode ? "loading" : "ready");
   const [experienceError, setExperienceError] = useState<string>();
+  const [experienceRefreshing, setExperienceRefreshing] = useState(false);
   const [experienceAttempt, setExperienceAttempt] = useState(0);
   const experienceHydratedRef = useRef(!convexMode);
   const [registered, setRegistered] = useState<CustomerPersona[]>([]);
@@ -145,9 +150,17 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         return;
       }
       let cancelled = false;
-      if (!experienceHydratedRef.current) setExperienceStatus("loading");
-      setExperienceError(undefined);
-      if (!experienceHydratedRef.current) setExperienceReady(false);
+      const hadRenderedData = experienceHydratedRef.current;
+      if (!hadRenderedData) {
+        setExperienceStatus("loading");
+        setExperienceError(undefined);
+        setExperienceReady(false);
+      } else {
+        // Keep the last good snapshot on screen during a refresh. A temporary
+        // Convex/Clerk failure must not replace usable operational data with a
+        // full-page error or force the operator to reload manually.
+        setExperienceRefreshing(true);
+      }
       const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
       void Promise.all([
         getApi().listMarketplaceGyms(),
@@ -177,13 +190,19 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         setCustomerId(experience.customer?.id);
         setPlatformAdminSignedIn(identity.status === "ready" && identity.platformAdmin);
         setExperienceError(undefined);
+        setExperienceRefreshing(false);
         setExperienceStatus("ready");
         setExperienceReady(true);
         experienceHydratedRef.current = true;
       }).catch((error: unknown) => {
         if (cancelled) return;
-        setExperienceError(error instanceof Error && error.message ? error.message : "RIVET could not load its live data.");
-        setExperienceStatus("error");
+        const message = error instanceof Error && error.message ? error.message : "RIVET could not load its live data.";
+        const failure = refreshFailureState(hadRenderedData, message);
+        setExperienceRefreshing(false);
+        setExperienceError(failure.message);
+        // Initial hydration still fails closed. Once a snapshot has rendered,
+        // preserve it and expose a retryable stale-data notice instead.
+        setExperienceStatus(failure.status);
       });
       return () => {
         cancelled = true;
@@ -204,6 +223,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (stored && known.some((persona) => persona.id === stored)) setCustomerId(stored);
     if (window.sessionStorage.getItem(STORAGE_KEYS.admin) === "1") setPlatformAdminSignedIn(true);
     setExperienceError(undefined);
+    setExperienceRefreshing(false);
     setExperienceStatus("ready");
     setExperienceReady(true);
     setPreviewSessionReady(true);
@@ -324,6 +344,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       experienceReady,
       experienceStatus,
       experienceError,
+      experienceRefreshing,
       retryExperience,
       customers,
       memberships,
@@ -347,6 +368,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       bookings,
       customerBookings,
       experienceError,
+      experienceRefreshing,
       experienceStatus,
       customerId,
       customerMemberships,
@@ -368,7 +390,21 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <ExperienceContext.Provider value={value}>{children}</ExperienceContext.Provider>;
+  const showStaleNotice = convexMode && experienceStatus === "ready" && Boolean(experienceError);
+
+  return (
+    <ExperienceContext.Provider value={value}>
+      {showStaleNotice ? (
+        <div className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep" role="status" aria-live="polite">
+          <span>Showing the last known RIVET data while the live connection recovers.</span>
+          <button type="button" onClick={retryExperience} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
+            <RefreshCcw className="size-3" aria-hidden /> Retry
+          </button>
+        </div>
+      ) : null}
+      {children}
+    </ExperienceContext.Provider>
+  );
 }
 
 export function useExperience() {
