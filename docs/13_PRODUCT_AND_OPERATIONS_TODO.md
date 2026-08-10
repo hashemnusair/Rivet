@@ -389,10 +389,16 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-010 — Public gym application can fail closed with no selectable plan catalog
 
-- Status: **Needs verification against the current production deployment**.
-- Evidence: a browser run on `/signup` showed “Plans are not available yet” and disabled the application action, even though the UI is designed to show the public catalog. The page currently has approved launch defaults, but it still gates the form while the Convex experience provider is loading or in an error state.
+- Status: **Fallback implemented in `9931a4a`; Production verification remains pending**.
+- Evidence: a browser run on `/signup` showed “Plans are not available yet” and disabled the application action, even though the UI is designed to show the public catalog. The page now keeps approved launch defaults selectable while the Convex experience provider is loading or in an error state.
 - Risk: a temporary public catalog/Convex read failure blocks every new gym application instead of preserving a usable application path and clearly reporting the degraded dependency.
 - Fix/acceptance: verify the live `public.catalog` query and the default-plan fallback in both Development and Production. If the catalog is unavailable, keep the approved fallback plans selectable when safe, show a non-blocking “catalog temporarily unavailable” notice, and add a retry/telemetry path. Add a browser test for catalog success, empty, timeout, and recovery.
+
+#### Implementation status
+
+- [x] Centralized the approved Starter/Growth/Pro launch defaults and resolve them whenever the live catalog is empty.
+- [x] Kept the application form and submit action usable during loading/error states, with a visible degraded-catalog message and retry control.
+- [x] Added focused success/fallback resolver coverage; live catalog timeout/recovery and Production browser verification remain open.
 
 ### BUG-011 — Provisioning retry/idempotency after an external Clerk failure needs fault-injection coverage
 
@@ -417,7 +423,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-013 — Balanced shifts are labeled “variance approved”
 
-- Status: **Shift-history fix verified in Production on 10 August 2026; legacy audit-badge compatibility remains open**.
+- Status: **Shift-history fix verified in Production on 10 August 2026; legacy audit-badge compatibility fixed in `9931a4a` and awaiting read-only Production verification**.
 - Evidence: the supervised `Hashem Test` shift closed with JOD 80.000 expected, JOD 80.000 counted, and JOD 0.000 variance. The audit correctly recorded `shift.close`, but shift history displayed **variance approved** because `apps/web/src/app/(app)/payments/shifts/page.tsx` prioritizes `varianceApprovalStatus === "approved"` without first checking that the variance amount is non-zero.
 - Risk: staff may believe a manager approved a discrepancy that never existed, weakening reconciliation semantics and audit confidence.
 - Fix/acceptance: display **balanced** or **closed** whenever variance is exactly zero; reserve pending/approved/rejected variance labels and review controls for non-zero discrepancies. Align mock and Convex projections, add focused zero/positive/negative variance tests, and verify history plus audit copy together.
@@ -427,7 +433,8 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - [x] History rendering and review controls now check the numeric variance before any approval status, so zero is always **balanced** and cannot be reviewed as a discrepancy.
 - [x] Mock and Convex close projections now use no approval workflow for zero and pending approval only for positive or negative discrepancies; zero, positive, and negative tests cover the server and UI state helpers.
 - [x] Credentialed Production shift history passed after a supervised temporary restore: the closed row showed JOD 80.000 expected, JOD 80.000 counted, JOD 0.000 variance, **balanced**, and no review action. The tenant was immediately resuspended and its public listing remained disabled.
-- [ ] Resolve the remaining historical-audit presentation: the immutable pre-fix `shift.close` event still stores/renders an **approved** badge. Do not rewrite the append-only event. Suppress approval-state UI for plain `shift.close` events or render an explicit legacy compatibility label, while retaining approval badges for `shift.close_variance` and other genuinely reviewed actions. Add a focused audit-row regression test and repeat the Production read-only check.
+- [x] Suppress the stale approval badge for immutable, zero-variance `shift.close` events at the audit presentation boundary while retaining approval badges for `shift.close_variance` and other genuinely reviewed actions. Added focused legacy and reviewed-variance tests; no append-only event was rewritten.
+- [ ] Repeat the read-only Production audit check against the deployed `9931a4a` build.
 
 ### BUG-014 — Hidden or suspended gyms disappear from the platform tenant directory
 
@@ -469,10 +476,15 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-004 — Discovery empty state needs an operational explanation
 
-- Status: **Needs verification / product copy**.
+- Status: **Implemented in `9931a4a`; Production listing verification remains pending**.
 - Evidence: Production can correctly show “No RIVET gyms are live yet” while no tenant has completed approve → provision and public-listing publication. The public catalog plans can still load.
 - Risk: visitors may interpret an intentionally empty catalog as a broken backend.
 - Fix/acceptance: keep the safe empty state, but explain that gyms appear after approval and publication, provide a clear application CTA, and add a platform/admin verification that provisioning publishes a listing. Do not seed fake Production gyms.
+
+#### Implementation status
+
+- [x] The public directory empty state now explains the approve → provision → publish lifecycle and links directly to **Send a gym application**.
+- [x] Added a focused empty-state action regression test; verify the real Production listing/public-directory path after the next deployment.
 
 ### TODO-005 — Error handling can silently hide background failures
 
@@ -559,3 +571,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | BUG-013 implementation slice | 2026-08-10 | `06c5872` deployed in `6a3678b` | Zero/positive/negative variance tests passed in Convex, mock, and UI reconciliation helpers. Credentialed Production verification confirmed the shift-history row is **balanced** with JOD 0.000 variance and no review action. The immutable pre-fix `shift.close` audit event still renders a generic **approved** badge; audit compatibility presentation remains open under BUG-013. |
 | Invited-owner acceptance flow | 2026-08-10 | `947e4d2` | Dedicated branded Clerk ticket route, owner signup form, existing-user sign-in finalization, explicit expiry/revocation/mismatch recovery, owner/staff provisioning redirect coverage, and cancelled/hidden platform-directory handling. Local 277-test suite, typechecks, lint, production build, and targeted invitation/filter tests pass. Credentialed Production fresh-owner, existing-user, and directory visibility acceptance remain required. |
 | BUG-014 | 2026-08-10 | `947e4d2` | Platform-only directory hook/filter preserves hidden, suspended, overdue, and cancelled tenants while public discovery stays filtered; 2 focused filter tests pass. Credentialed Production directory/detail verification remains required. |
+| BUG-010 / TODO-004 / BUG-013 presentation slice | 2026-08-10 | `9931a4a` | 283 unit tests across 32 files, typecheck, Convex typecheck, lint, and diff check passed. Public applications retain approved fallback plans during catalog failure, discovery explains the empty publication state with an application CTA, and historical balanced-shift audit rows no longer show a false approval badge. Production read-only checks remain required. |
