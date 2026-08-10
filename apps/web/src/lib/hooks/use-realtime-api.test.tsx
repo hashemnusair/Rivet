@@ -77,4 +77,22 @@ describe("useRealtimeApiQuery", () => {
     unmount();
     expect(disposers).toContain("second");
   });
+
+  it("keeps the last snapshot offline and reconnects after the browser returns online", async () => {
+    const { listeners, disposers } = renderRealtimeHarness();
+    await waitFor(() => expect(listeners.has("first")).toBe(true));
+    act(() => listeners.get("first")?.emit({ id: "first", value: "before-offline" }));
+    await waitFor(() => expect(screen.getByTestId("snapshot")).toHaveTextContent("before-offline"));
+
+    act(() => window.dispatchEvent(new Event("offline")));
+    await waitFor(() => expect(screen.getByTestId("stream-state")).toHaveTextContent("fallback"));
+    expect(screen.getByTestId("snapshot")).toHaveTextContent("before-offline");
+    expect(disposers).toContain("first");
+
+    act(() => window.dispatchEvent(new Event("online")));
+    await waitFor(() => expect(listeners.has("first")).toBe(true));
+    act(() => listeners.get("first")?.emit({ id: "first", value: "after-reconnect" }));
+    await waitFor(() => expect(screen.getByTestId("snapshot")).toHaveTextContent("after-reconnect"));
+    expect(screen.getByTestId("stream-state")).toHaveTextContent("live");
+  });
 });

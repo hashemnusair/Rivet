@@ -1,5 +1,6 @@
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { marketingSuppressionReason, normalizeMarketingChannel } from "./marketing";
 
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -130,6 +131,21 @@ async function subjectNameForRecord(ctx: MutationCtx, organizationId: Id<"organi
   return stringValue(candidate.planName, "Membership");
 }
 
+async function marketingPreferenceForCandidate(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  entityType: string,
+  candidate: Data,
+  memberId?: string,
+): Promise<Data> {
+  if (entityType === "member") return candidate;
+  if (memberId) {
+    const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", memberId)).unique();
+    if (member) return value(member.data);
+  }
+  return candidate;
+}
+
 async function notifyManagers(ctx: MutationCtx, organizationId: Id<"organizations">, branchId: Id<"branches"> | undefined, input: { title: string; body: string; href: string; dedupeKey: string }): Promise<void> {
   const memberships = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect())
     .filter((membership) => membership.active && (membership.role === "owner" || membership.role === "manager"))
@@ -199,9 +215,11 @@ export const evaluate = internalMutation({
               attemptHistory.push({ action, attempt: 1, status: "completed", occurredAt: isoNow() });
             } else if (action === "queue_message") {
               const messageId = newId();
-              const suppressionReason = quiet ? "Tenant quiet hours" : deliveryMode === "live" ? "Outbound delivery is not enabled for this message type" : undefined;
+              const marketingRecipient = await marketingPreferenceForCandidate(ctx, organization._id, entityType, candidate, memberId);
+              const suppressionReason = marketingSuppressionReason(marketingRecipient)
+                ?? (quiet ? "Tenant quiet hours" : deliveryMode === "live" ? "Outbound delivery is not enabled for this message type" : undefined);
               const messageStatus = suppressionReason ? "suppressed" : "queued";
-              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, channel: "sandbox", requestedChannel: stringValue(actionItem.channel, "whatsapp"), language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, memberId, leadId, queuedAt: isoNow(), suppressionReason, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason }], automationExecutionId: executionId };
+              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: "sandbox", requestedChannel: normalizeMarketingChannel(actionItem.channel), language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, memberId, leadId, queuedAt: isoNow(), suppressionReason, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });
               const attemptId = newId();
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationAttempt", publicId: attemptId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: attemptId, executionId, action, attempt: 1, status: messageStatus, reason: suppressionReason, nextAttemptAt: suppressionReason ? undefined : isoNow() } });

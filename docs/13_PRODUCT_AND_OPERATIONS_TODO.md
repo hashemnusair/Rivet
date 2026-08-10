@@ -512,7 +512,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-005 — Error handling can silently hide background failures
 
-- Status: **Implemented in `4a6eaea`; offline/reconnect browser coverage remains open**.
+- Status: **Implemented locally; credentialed offline/reconnect browser verification remains open**.
 - Evidence: provider/background refresh code contains deliberate `.catch(() => undefined)` paths for some snapshots and refreshes.
 - Risk: the UI can remain stale without a visible retry or diagnostic state, especially when Convex or Clerk is temporarily unavailable.
 - Fix/acceptance: classify expected unauthenticated/empty cases separately from network/configuration failures; preserve the last good data, surface a non-blocking stale/retry indicator, and log redacted correlation context server-side. Add offline/reconnect tests.
@@ -523,17 +523,19 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - [x] Initial hydration still fails closed with the existing actionable error state; focused tests cover both first-load and post-hydration failures.
 - [x] `useApiQuery` now masks background refetch failures from full-page `isError` gates while retaining `isBackgroundError`; `AppProviders` shows a global active-query stale notice with a retry action. Focused tests cover both initial and post-hydration query failures.
 - [x] `useRealtimeApiQuery` now preserves the last good cache snapshot, switches to bounded polling only after stream failure, stops polling after recovery, and disposes the previous subscription on tenant/branch/route/record key changes.
-- [ ] Add offline/reconnect browser coverage and redacted server-side correlation logging for refresh failures.
+- [x] Add redacted server-side correlation logging at the shared Convex domain boundary; logs include only operation, correlation ID, safe error name, and safe error code.
+- [x] Add unit coverage for last-snapshot retention, listener disposal while offline, and immediate reconnect after `online`.
+- [ ] Run the browser offline/reconnect journey against isolated staging and verify no duplicate listeners or stale full-screen loading state.
 
 ## P1 — Security, finance, and audit hardening
 
 ### TODO-006 — Expand real-handler isolation tests across money and entry flows
 
-- Status: **Expanded in `135a5f1`; broad money/staff matrix remains open**.
+- Status: **Expanded in the current hardening pass; full allow-path and production-volume evidence remains open**.
 - Scope: the customer profile/My Gyms/trial/entry-pass slice is complete. Remaining scope is operational member/lead/offer/task/payment/check-in identifiers, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope, and privilege escalation.
 - Acceptance: each has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required, idempotency, and immutable-audit assertions.
 
-Current evidence also covers exported platform invoice/subscription/support/notification/automation handlers with persisted identities, reason gates, audit assertions, recipient isolation, and idempotent dedupe. This does not close the remaining operational money, staff-escalation, and branch-scope families.
+Current evidence also covers exported platform invoice/subscription/support/notification/automation handlers with persisted identities, reason gates, audit assertions, recipient isolation, and idempotent dedupe. The new persisted authorization matrix covers selected-branch and cross-tenant member/lead reads/writes, payment/refund/void permission gates, shifts, check-in overrides, staff role/branch escalation, and manager/sales/reception boundaries. Full allow-path assertions for real payment/refund/void/variance records, deactivated-user rechecks, and two-tenant concurrent writes remain required.
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 
@@ -544,22 +546,22 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
-- Status: **Command center and handler coverage implemented in `135a5f1`; credentialed staging journey remains open**.
+- Status: **Scheduler/command coverage implemented locally; credentialed staging journey remains open**.
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
 - Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
 
-The UI/API now expose persisted execution/action/attempt history, dedupe keys, suppression and retry metadata, reason-gated previews/forced runs/manual retries, immutable audit facts, and manager attention notifications. The remaining acceptance work is a scheduler-driven credentialed staging journey covering quiet hours and transient retry recovery.
+The UI/API now expose persisted execution/action/attempt history, dedupe keys, suppression and retry metadata, reason-gated previews/forced runs/manual retries, immutable audit facts, and manager attention notifications. Scheduler tests now run the internal evaluator twice to prove one execution per dedupe window, verify manager notification fan-out, and suppress opted-out marketing messages. Existing command tests verify retry limits/reason gates and the pure scheduler tests cover quiet-hour boundaries. The remaining acceptance work is a credentialed scheduler-driven staging journey covering quiet hours and transient retry recovery.
 
 ### TODO-009 — Record marketing-preference provenance and revocation history
 
 - Status: **Member-facing preference/history slice implemented; channel scope, migration, and Production verification remain open**.
 - Evidence: RIVET intentionally defaults new members to **Opted in** across manual creation, lead conversion, imports, and consumer profiles, while explicit opt-out remains supported. Member details now expose source, timestamp/actor metadata, and wording version; staff edits create a `marketing_preference_changed` timeline fact and an immutable audit event. Imports are marked `imported`, while omitted legacy booleans are surfaced as a `system_default` compatibility fact. The member My Gyms surface now separates promotional updates from essential service messages, lets the member opt out or back in, and shows an append-only preference history. Convex stores the consumer preference and history globally by authenticated user, outside a gym tenant.
-- Risk: campaign/message scheduling does not yet enforce the consumer preference across every provider channel, and historical profiles still need an explicit migration/backfill decision before withdrawal can be treated as a complete operational guarantee.
-- Remaining acceptance: enforce the preference in every campaign/message channel (email, SMS, WhatsApp), define migration/backfill treatment for historical records, verify opt-out behavior in Production, and retain clear service-message exceptions. Never describe the system default as explicit consent.
+- Risk: historical profiles still need an explicit migration/backfill decision before withdrawal can be treated as a complete operational guarantee, and live provider delivery is still disabled by policy.
+- Remaining acceptance: define migration/backfill treatment for historical records, verify opt-out behavior in Production, and retain clear service-message exceptions. Never describe the system default as explicit consent.
 - Implementation checklist:
   - [x] Persist consumer preference metadata and append-only history in Convex; keep the mock adapter behaviorally aligned.
   - [x] Add member-facing opt-out/re-enable control and readable history with current-state labeling.
-  - [ ] Apply the preference at message scheduling/delivery boundaries for each provider channel.
+  - [x] Apply the preference at the shared automation message boundary for email, SMS, and WhatsApp requests; explicit opt-out suppresses the message while operational/service notifications remain separate.
   - [ ] Run a disposable Production member verification and document the migration/backfill decision.
 
 ### TODO-010 — Verify application review-note editing in Production
@@ -620,3 +622,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | BUG-002 / BUG-004 customer ownership slice | 2026-08-10 | This focused commit | Both typechecks, lint with zero warnings, Convex codegen/typecheck, the 304-test/37-file unit suite, the focused 8-test public-experience Playwright suite, the full 22-pass/2-environment-gated-skip Playwright suite, the 39-route production build, and `git diff --check` passed. Five persisted-fixture exported-handler tests cover subject-only identity, hostile IDs/email, cross-tenant My Gyms data, selected-gym/active-branch routing, private/suspended/inactive targets, staff/platform/deactivated denial, inactive membership behavior, anonymous transition isolation, and non-disclosing `NOT_FOUND`. Broader Milestone 1 identifier families remain under TODO-006; Production was not mutated or deployed. |
 | Pilot-readiness platform operations pass | 2026-08-10 | `135a5f1` | 324 tests across 44 files, both typechecks, zero-warning lint, 22 preview browser journeys with 2 credential-gated skips, production build, and diff check passed. Added persisted platform overview/subscriptions/invoices/support, role dashboards, notifications, automation controls, durable sandbox email attempts, broad typed realtime subscriptions, and platform handler tests. Live provider delivery, credentialed staging journeys, and remaining adversarial money/staff matrices stay open. |
 | BUG-015 implementation | 2026-08-10 | `76a28a8` | 324 tests across 44 files, both typechecks, zero-warning lint, 23 preview browser journeys with 2 credential-gated skips, production build, and diff check passed. Persisted-state action labels, explicit unsaved drafts, cancel/revert, navigation/reload protection, and realtime draft preservation are implemented; deployed read-only UI verification remains. |
+| Engineering/security hardening pass | 2026-08-10 | Current working slice | 332 tests across 49 files, both typechecks, zero-warning lint, production build, `git diff --check`, and 23 preview Playwright journeys passed; 3 credential-gated Convex journeys skipped without trusted staging credentials. Added persisted authorization matrices, immediate/next-renewal plan-change tests, redacted Convex correlation logging, offline/reconnect cache behavior, two-browser staging journey, automation scheduler dedupe/opt-out/manager tests, and shared email/SMS/WhatsApp marketing suppression. Staging credentialed execution, live delivery, and Production verification remain intentionally open. |

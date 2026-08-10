@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_realtime_flow:
+        description: "Run the credentialed two-browser realtime staging journey"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -152,5 +157,14 @@ jobs:
         env:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW: "1"
+          PLAYWRIGHT_TARGET_CLASSIFICATION: staging
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
+      - name: Run staged two-browser realtime flow
+        if: ${{ inputs.run_realtime_flow == true }}
+        env:
+          PLAYWRIGHT_CONVEX_SMOKE: "1"
+          PLAYWRIGHT_CONVEX_REALTIME: "1"
+          PLAYWRIGHT_TARGET_CLASSIFICATION: staging
+          PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
+        run: pnpm --filter web exec playwright test e2e/convex-realtime-two-browser.spec.ts

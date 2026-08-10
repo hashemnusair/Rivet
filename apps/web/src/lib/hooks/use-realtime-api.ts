@@ -79,8 +79,21 @@ export function useRealtimeApiQuery<T>(options: {
         scheduleReconnect();
       }
     };
-    const handleOffline = () => scheduleReconnect();
-    const handleOnline = () => { if (!disposed) void connect(); };
+    const handleOffline = () => {
+      // Do not leave a dead Convex watch alive while the browser is offline.
+      // The last good TanStack snapshot remains visible and reconnect starts
+      // only after the browser reports a usable network again.
+      stop?.();
+      stop = undefined;
+      scheduleReconnect();
+    };
+    const handleOnline = () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+      if (!disposed) void connect();
+    };
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
     void connect();

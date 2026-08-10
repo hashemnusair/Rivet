@@ -17,6 +17,7 @@ import type * as health from "../health.js";
 import type * as identity from "../identity.js";
 import type * as invariants from "../invariants.js";
 import type * as invitations from "../invitations.js";
+import type * as marketing from "../marketing.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
 import type * as permissions from "../permissions.js";
 import type * as platformGymDetail from "../platformGymDetail.js";
@@ -26,6 +27,7 @@ import type * as platformProvisioningAction from "../platformProvisioningAction.
 import type * as reconciliation from "../reconciliation.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
+import type * as telemetry from "../telemetry.js";
 import type * as users from "../users.js";
 
 import type {
@@ -44,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   identity: typeof identity;
   invariants: typeof invariants;
   invitations: typeof invitations;
+  marketing: typeof marketing;
   notificationDelivery: typeof notificationDelivery;
   permissions: typeof permissions;
   platformGymDetail: typeof platformGymDetail;
@@ -53,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   reconciliation: typeof reconciliation;
   security: typeof security;
   seed: typeof seed;
+  telemetry: typeof telemetry;
   users: typeof users;
 }>;
 

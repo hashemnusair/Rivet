@@ -24,6 +24,8 @@ import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfil
 import { buildPlatformGymDetail } from "./platformGymDetail";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
+import { logRedactedServerError } from "./telemetry";
+import { marketingSuppressionReason } from "./marketing";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -326,12 +328,17 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   recipientReference: string;
   recipientEmail?: string;
   dedupeKey: string;
+  messageClass?: "service" | "marketing";
+  marketingOptIn?: boolean;
 }): Promise<void> {
   const existing = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", input.organizationId).eq("entityType", "operationalEmailDelivery")).collect())
     .find((record) => stringValue(data(record.data).dedupeKey) === input.dedupeKey);
   if (existing) return;
   const now = Date.now();
   const id = `EMAIL-${newPublicId()}`;
+  const suppressionReason = input.messageClass === "marketing"
+    ? marketingSuppressionReason({ marketingOptIn: input.marketingOptIn })
+    : undefined;
   await ctx.db.insert("domainRecords", {
     organizationId: input.organizationId,
     entityType: "operationalEmailDelivery",
@@ -342,6 +349,7 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
     data: {
       id,
       kind: input.kind,
+      messageClass: input.messageClass ?? "service",
       templateVersion: input.templateVersion,
       language: input.language ?? "en",
       recipientReference: input.recipientReference,
@@ -352,7 +360,7 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
       retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
       nextAttemptAt: undefined,
       status: "suppressed",
-      suppressionReason: "Sandbox default; this message type is not enabled for external delivery",
+      suppressionReason: suppressionReason ?? "Sandbox default; this message type is not enabled for external delivery",
       queuedAt: utcIso(now),
       updatedAt: utcIso(now),
     },
@@ -4132,10 +4140,24 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
 
 export const query = convexQuery({
   args: OPERATION_ARGS,
-  handler: async (ctx, args) => await queryData(ctx, args.operation, data(args.input), args),
+  handler: async (ctx, args) => {
+    try {
+      return await queryData(ctx, args.operation, data(args.input), args);
+    } catch (error) {
+      logRedactedServerError({ operation: args.operation, correlationId: args.correlationId, error });
+      throw error;
+    }
+  },
 });
 
 export const mutate = convexMutation({
   args: OPERATION_ARGS,
-  handler: async (ctx, args) => await mutationData(ctx, args.operation, data(args.input), args),
+  handler: async (ctx, args) => {
+    try {
+      return await mutationData(ctx, args.operation, data(args.input), args);
+    } catch (error) {
+      logRedactedServerError({ operation: args.operation, correlationId: args.correlationId, error });
+      throw error;
+    }
+  },
 });
