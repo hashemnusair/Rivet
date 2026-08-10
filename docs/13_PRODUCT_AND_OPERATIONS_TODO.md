@@ -333,10 +333,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
 
-- Status: **Confirmed coverage gap**.
-- Evidence: customer tests currently prove ownership helpers, while the roadmap still requires handler-level attempts using attacker-controlled customer, membership, trial, payment, lead, entry-pass, and branch identifiers.
+- Status: **Customer/trial focused slice completed; broader identifier families remain open**.
+- Evidence: the new persisted-fixture `convex-test` suite invokes exported `domain.query` and `domain.mutate` handlers with authenticated Clerk identities. It proves subject-only profile resolution, customer/My Gyms/trial/membership isolation, entry-pass ownership, staff/platform denial, deactivated-user denial, inactive staff-membership transition, anonymous-request non-attachment, and stable `NOT_FOUND` behavior for foreign or inactive records. Payment, lead/offer/task staff workflows, refunds/voids, shifts, check-ins, role escalation, and the remaining Milestone 1 identifier families are still tracked under TODO-006.
 - Risk: a UI gate or a helper can look correct while a direct authenticated mutation/query still accepts an out-of-scope identifier.
-- Fix/acceptance: add authenticated allow/deny/cross-tenant/cross-branch tests for every private identifier family. Test deactivated users, inactive memberships, branch scope, role escalation, and non-disclosing `NOT_FOUND` behavior. Fix the server boundary if any test fails.
+- Fix/acceptance: retain the completed customer slice and add authenticated allow/deny/cross-tenant/cross-branch tests for every remaining private identifier family. Test deactivated users, inactive memberships, branch scope, role escalation, and non-disclosing `NOT_FOUND` behavior. Fix each server boundary exposed by those tests.
 
 ### BUG-003 — Production-shaped release sequence is incomplete
 
@@ -347,10 +347,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-004 — Customer trial ownership must be proven through real authenticated mutations
 
-- Status: **Confirmed coverage gap**.
-- Evidence: the current customer tests cover profile ownership helpers, but the high-risk behavior is the actual authenticated booking path.
+- Status: **Resolved in the focused BUG-002/BUG-004 implementation slice**.
+- Evidence: five focused handler tests execute the real exported Convex query/mutation boundary with persisted fixtures. They prove the Clerk subject owns the created booking regardless of supplied customer ID/email/membership/trial identifiers, My Gyms excludes foreign and anonymous records, the linked lead and booking persist only in the selected public gym and active mapped branch, and staff/platform/deactivated identities cannot use member-only operations.
 - Risk: a caller could submit another customer's email or ID and attach a booking to the wrong person, or route a booking outside the selected gym/branch.
-- Fix/acceptance: test authenticated customer profile resolution, caller-supplied ID rejection, selected gym/branch routing, and staff/platform denial of member-only operations through real Convex handlers.
+- Fix/acceptance: completed locally. Subject ownership now takes precedence over a legacy profile ID, trial creation rejects private/suspended gyms and inactive/cross-gym branches, inactive or foreign entry-pass memberships return non-disclosing `NOT_FOUND`, and intentionally anonymous stored requests remain unclaimed after sign-in. The explicit mock-mode unauthenticated preview behavior remains compatible through `GymOSApi`; Convex mode continues to require sign-in before trial submission.
 
 ## P0 — Confirmed user-facing and runtime issues
 
@@ -514,7 +514,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 ### TODO-006 — Expand real-handler isolation tests across money and entry flows
 
 - Status: **Confirmed roadmap item**.
-- Scope: member/lead/payment/check-in/entry-pass/trial IDs, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope.
+- Scope: the customer profile/My Gyms/trial/entry-pass slice is complete. Remaining scope is operational member/lead/offer/task/payment/check-in identifiers, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope, and privilege escalation.
 - Acceptance: each has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required, idempotency, and immutable-audit assertions.
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
@@ -597,3 +597,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | TODO-005 experience refresh recovery slice | 2026-08-10 | `110b0d3` | 285 unit tests across 33 files, typecheck, Convex typecheck, and lint passed. Initial live-data failures remain explicit; post-hydration failures preserve the last good snapshot and expose a retry notice. Broader operational-query and offline/reconnect coverage remains open. |
 | TODO-005 operational query recovery slice | 2026-08-10 | `4a6eaea` | 287 unit tests across 34 files, typecheck, Convex typecheck, lint, and the full unit suite passed. TanStack Query operational screens now preserve loaded snapshots after background refetch failures, expose `isBackgroundError`, and show a global retry notice; offline/reconnect browser coverage and redacted server-side logging remain open. |
 | TODO-009 member preference/history slice | 2026-08-10 | `0e42018` | 291 unit tests across 35 files, typecheck, Convex typecheck, lint, diff check, and production build passed. Consumer preference metadata, append-only history, member opt-out/re-enable UI, and mock/Convex adapter coverage are implemented. Channel enforcement, migration/backfill, Convex Production deployment, and Production member verification remain required before closing the item. |
+| BUG-002 / BUG-004 customer ownership slice | 2026-08-10 | This focused commit | Both typechecks, lint with zero warnings, Convex codegen/typecheck, the 304-test/37-file unit suite, the focused 8-test public-experience Playwright suite, the full 22-pass/2-environment-gated-skip Playwright suite, the 39-route production build, and `git diff --check` passed. Five persisted-fixture exported-handler tests cover subject-only identity, hostile IDs/email, cross-tenant My Gyms data, selected-gym/active-branch routing, private/suspended/inactive targets, staff/platform/deactivated denial, inactive membership behavior, anonymous transition isolation, and non-disclosing `NOT_FOUND`. Broader Milestone 1 identifier families remain under TODO-006; Production was not mutated or deployed. |

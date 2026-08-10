@@ -140,6 +140,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.6.0
         version: 4.7.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.0))
+      convex-test:
+        specifier: 0.0.54
+        version: 0.0.54(convex@1.42.3(@clerk/react@6.12.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))
       eslint:
         specifier: ^9.30.1
         version: 9.39.5(jiti@2.7.0)
@@ -2269,6 +2272,11 @@ packages:
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
+
+  convex-test@0.0.54:
+    resolution: {integrity: sha512-C0v2SQcuxrELAJRNzE6fQ686XDPor7UFoC22jcoJXeCRqhLo8ZIMZ4jyUHoo1UdAL2enCb0AbiprCVpLDN8u9Q==}
+    peerDependencies:
+      convex: ^1.32.0
 
   convex@1.42.3:
     resolution: {integrity: sha512-7Tz/lH6UlZdiqzLPF/zrlH6Rlo/DOp836dL+GZkUMEQ2jaGGNnBIiIDcOOiEqtfSehuQ65r/rdNMnb4LupowaA==}
@@ -5772,6 +5780,10 @@ snapshots:
   concat-map@0.0.1: {}
 
   convert-source-map@2.0.0: {}
+
+  convex-test@0.0.54(convex@1.42.3(@clerk/react@6.12.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)):
+    dependencies:
+      convex: 1.42.3(@clerk/react@6.12.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
 
   convex@1.42.3(@clerk/react@6.12.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8):
     dependencies:

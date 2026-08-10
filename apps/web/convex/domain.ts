@@ -972,6 +972,10 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
   };
 }
 
+function acceptsPublicTrialRequests(value: Data): boolean {
+  return booleanValue(value.isPublic) && ["active", "trial"].includes(stringValue(value.subscriptionStatus));
+}
+
 function gymApplicationView(application: Doc<"gymApplications">): Data {
   return {
     id: application.publicId,
@@ -1039,6 +1043,12 @@ async function customerProfileForUser(ctx: ReadContext, userId: string): Promise
   return await legacyCustomerProfileForUser(ctx, userId);
 }
 
+function belongsToAuthenticatedCustomer(value: Data, userId: string, profileId?: string): boolean {
+  const ownerUserId = optionalString(value.customerUserId);
+  if (ownerUserId) return ownerUserId === userId;
+  return Boolean(profileId && optionalString(value.customerId) === profileId);
+}
+
 async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): Promise<Data> {
   const userId = publicUserId(user);
   const email = user.email.trim().toLowerCase();
@@ -1092,11 +1102,11 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
   const preferenceHistory = history.length > 0 ? history : [preference];
   const memberships = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
     .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
-    .filter((value) => value.customerUserId === userId || value.customerId === profile?.id)
+    .filter((value) => belongsToAuthenticatedCustomer(value, userId, optionalString(profile?.id)))
     .map((value) => ({ ...value, qrValue: "" }));
   const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect())
     .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
-    .filter((value) => value.customerUserId === userId || value.customerId === profile?.id);
+    .filter((value) => belongsToAuthenticatedCustomer(value, userId, optionalString(profile?.id)));
   return {
     customer: profile
       ? {
@@ -1146,24 +1156,31 @@ async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
   if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass signing is not configured.");
   const { user } = await requireMember(ctx);
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
   const membershipId = recordId(input.membershipId);
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
-  const membership = rows.find((row) => row.publicId === membershipId && data(row.data).customerUserId === publicUserId(user));
+  const membership = rows.find((row) => row.publicId === membershipId && belongsToAuthenticatedCustomer(data(row.data), userId, optionalString(profile?.id)));
   if (!membership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(membership.organizationId);
-  if (!organization) domainError("NOT_FOUND", "Gym not found.");
   const membershipData = data(membership.data);
+  if (!organization || !["trial", "active"].includes(organization.status) || !["active", "expiring", "frozen"].includes(stringValue(membershipData.status))) {
+    domainError("NOT_FOUND", "Membership not found.");
+  }
+  const branch = membership.branchId ? await ctx.db.get(membership.branchId) : null;
+  if (membership.branchId && (!branch || !branch.active || branch.status === "inactive" || branch.organizationId !== membership.organizationId)) {
+    domainError("NOT_FOUND", "Membership not found.");
+  }
   const member = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", membership.organizationId).eq("entityType", "member")).collect())
     .find((row) => data(row.data).id === membershipData.memberId || data(row.data).memberNumber === membershipData.memberNumber);
   const passId = crypto.randomUUID();
   const expiresAt = Date.now() + ENTRY_PASS_TTL_MS;
-  const branch = membership.branchId ? await ctx.db.get(membership.branchId) : null;
   const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({
     v: 1,
     passId,
     organizationId: publicOrganizationId(organization),
     membershipId: membership.publicId,
-    customerUserId: publicUserId(user),
+    customerUserId: userId,
     memberId: member?.publicId,
     branchId: branch ? publicBranchId(branch) : undefined,
     exp: expiresAt,
@@ -1246,20 +1263,24 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   const { user } = await requireMember(ctx);
   const gyms = await marketplaceRows(ctx);
   const gymRecord = gyms.find((record) => record.publicId === stringValue(input.gymId));
-  if (!gymRecord || !booleanValue(data(gymRecord.data).isPublic)) domainError("NOT_FOUND", "Gym not found.");
+  if (!gymRecord || !acceptsPublicTrialRequests(data(gymRecord.data))) domainError("NOT_FOUND", "Gym not found.");
   const gym = data(gymRecord.data);
   const targetOrgPublicId = optionalString(gym.targetOrganizationId);
   const targetOrganization = targetOrgPublicId
     ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrgPublicId)).unique()
     : null;
-  if (!targetOrganization) domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
+  if (!targetOrganization || !["trial", "active"].includes(targetOrganization.status)) {
+    domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
+  }
   const storageOrganization = targetOrganization;
   const directoryBranch = arrayValue(gym.branches).map(data).find((branch) => branch.id === input.branchId);
   const actualBranchId = optionalString(directoryBranch?.internalBranchId);
   const branch = actualBranchId
     ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique()
     : null;
-  if (!branch) domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
+  if (!branch || !branch.active || branch.status === "inactive") {
+    domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
+  }
   const profile = await saveCustomerProfile(ctx, user, input);
   const ownership = customerProfileOwnership(publicUserId(user), profile.id);
   const bookingId = newPublicId();
@@ -1307,7 +1328,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
-    return rows.filter((row) => booleanValue(data(row.data).isPublic)).map((row) => marketplaceView(data(row.data)));
+    return rows.filter((row) => acceptsPublicTrialRequests(data(row.data))).map((row) => marketplaceView(data(row.data)));
   }
   if (operation === "public.catalog") {
     return await platformPlans(ctx);
