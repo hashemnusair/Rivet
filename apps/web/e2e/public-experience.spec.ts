@@ -144,4 +144,23 @@ test.describe("RIVET platform administration", () => {
     await expect(page.locator("body")).not.toContainText("RV-1041");
     await expect(page.locator("body")).not.toContainText("Last active today");
   });
+
+  test("keeps subscription shortcuts as an unsaved draft until an audited save", async ({ page }) => {
+    await page.goto("/login/admin");
+    await page.getByRole("button", { name: /Open platform console/i }).click();
+    await page.goto("/platform/gyms/forge-fitness");
+
+    const suspend = page.getByRole("button", { name: "Suspend", exact: true });
+    await expect(suspend).toBeVisible();
+    await suspend.click();
+
+    await expect(page.getByRole("status")).toContainText("Unsaved changes");
+    await expect(page.getByLabel("Subscription status")).toContainText("Suspended");
+    await expect(suspend).toBeVisible();
+    await expect(page.getByRole("button", { name: /Save controls/i })).toBeDisabled();
+
+    await page.getByRole("button", { name: /Cancel changes/i }).click();
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByLabel("Subscription status")).toContainText("Active");
+  });
 });

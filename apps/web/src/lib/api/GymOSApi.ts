@@ -321,7 +321,6 @@ export interface PlatformGymDetail {
     paymentMethod: PlatformData<string>;
     invoices: PlatformData<PlatformBillingInvoice[]>;
   };
-  health: PlatformData<number>;
   activity: PlatformData<PlatformGymActivity[]>;
 }
 

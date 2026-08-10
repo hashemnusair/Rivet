@@ -248,7 +248,6 @@ describe("ConvexGymOSApi contract boundary", () => {
         paymentMethod: { state: "not_configured" as const },
         invoices: { state: "not_configured" as const },
       },
-      health: { state: "not_configured" as const },
       activity: { state: "available" as const, value: [] },
     };
     let call: Record<string, unknown> | undefined;

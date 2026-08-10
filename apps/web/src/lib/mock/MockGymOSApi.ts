@@ -478,7 +478,6 @@ export class MockGymOSApi implements GymOSApi {
           paymentMethod: notConfigured(),
           invoices: notConfigured(),
         },
-        health: notConfigured(),
         activity: notConfigured(),
       };
     });

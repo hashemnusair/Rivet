@@ -2,7 +2,8 @@
 
 import { ArrowLeft, Ban, Building2, CalendarClock, Check, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
@@ -28,9 +29,10 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
   const [cancelledAt, setCancelledAt] = useState("");
   const [reason, setReason] = useState("");
+  const editing = useRef(false);
 
   useEffect(() => {
-    if (!detail) return;
+    if (!detail || editing.current) return;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setIsPublic(detail.controls.isPublic);
@@ -40,8 +42,29 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     setCancelledAt(dateInputValue(detail.subscription.cancelledAt));
   }, [detail]);
 
+  const dirty = detail ? subscriptionDraftIsDirty(detail, {
+    status,
+    plan,
+    isPublic,
+    trialEndsAt,
+    subscriptionStartedAt,
+    currentPeriodEndsAt,
+    cancelledAt,
+  }) : false;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [dirty]);
+
   const update = useApiMutation((api) => api.updatePlatformGym({ gymId, status, plan, isPublic, trialEndsAt: trialEndsAt || undefined, subscriptionStartedAt: subscriptionStartedAt || undefined, currentPeriodEndsAt: currentPeriodEndsAt || undefined, cancelledAt: cancelledAt || undefined, reason: reason.trim() }), {
     onSuccess: async () => {
+      editing.current = false;
       await invalidate([qk.platformGymDetail(gymId)]);
       setReason("");
       toast.success("Gym subscription controls saved and audited.");
@@ -55,10 +78,26 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     return <div className="space-y-5 p-6 sm:p-8" role="status" aria-label="Loading gym detail"><Skeleton className="h-4 w-24" /><Skeleton className="h-20 w-full" /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div></div>;
   }
 
+  const edit = <T,>(setter: (value: T) => void, value: T) => { editing.current = true; setter(value); };
+  const cancelDraft = () => {
+    editing.current = false;
+    setStatus(detail.controls.status);
+    setPlan(detail.controls.plan);
+    setIsPublic(detail.controls.isPublic);
+    setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
+    setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
+    setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
+    setCancelledAt(dateInputValue(detail.subscription.cancelledAt));
+    setReason("");
+  };
+  const protectNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (dirty && !window.confirm("Discard the unsaved subscription changes?")) event.preventDefault();
+  };
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
-        <Link href="/platform/gyms" className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5" />All gyms</Link>
+        <Link href="/platform/gyms" onClick={protectNavigation} className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5" />All gyms</Link>
 
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
           <div className="flex items-center gap-4">
@@ -69,33 +108,33 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Marketplace profile <ExternalLink /></Link></Button>
-            <Button variant={status === "suspended" ? "primary" : "danger"} onClick={() => setStatus(status === "suspended" ? "active" : "suspended")}><Ban />{status === "suspended" ? "Restore access" : "Suspend"}</Button>
+            <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`} onClick={protectNavigation}>Marketplace profile <ExternalLink /></Link></Button>
+            <Button variant={detail.controls.status === "suspended" ? "primary" : "danger"} onClick={() => edit(setStatus, detail.controls.status === "suspended" ? "active" : "suspended")}><Ban />{detail.controls.status === "suspended" ? "Restore access" : "Suspend"}</Button>
           </div>
         </div>
 
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">Changes update the tenant record, public directory state, and immutable platform audit trail.</p></div>
-            <Button variant="signal" onClick={() => update.mutate()} loading={update.isPending} disabled={!status || !plan || !reason.trim() || (status === "trial" && !trialEndsAt)}><Check />Save controls</Button>
+            <Button variant="signal" onClick={() => update.mutate()} loading={update.isPending} disabled={!dirty || !status || !plan || !reason.trim() || (status === "trial" && !trialEndsAt)}><Check />Save controls</Button>
           </div>
+          {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => setPlan(value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => setStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => edit(setStatus, value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label className="grid gap-1.5 text-[12px] font-medium">Trial ends<Input type="date" value={trialEndsAt} onChange={(event) => setTrialEndsAt(event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Subscription started<Input type="date" value={subscriptionStartedAt} onChange={(event) => setSubscriptionStartedAt(event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Current period ends<Input type="date" value={currentPeriodEndsAt} onChange={(event) => setCurrentPeriodEndsAt(event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Cancelled on<Input type="date" value={cancelledAt} onChange={(event) => setCancelledAt(event.target.value)} disabled={status !== "cancelled"} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Trial ends<Input type="date" value={trialEndsAt} onChange={(event) => edit(setTrialEndsAt, event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Subscription started<Input type="date" value={subscriptionStartedAt} onChange={(event) => edit(setSubscriptionStartedAt, event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Current period ends<Input type="date" value={currentPeriodEndsAt} onChange={(event) => edit(setCurrentPeriodEndsAt, event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Cancelled on<Input type="date" value={cancelledAt} onChange={(event) => edit(setCancelledAt, event.target.value)} disabled={status !== "cancelled"} /></label>
           </div>
           <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
-          <div className="mt-4 flex items-center justify-between border-t border-line pt-4"><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] text-ink-3">Let members discover this gym and request a free trial.</p></div><Switch checked={isPublic} onCheckedChange={setIsPublic} aria-label="Public directory listing" /></div>
+          <div className="mt-4 flex items-center justify-between border-t border-line pt-4"><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] text-ink-3">Let members discover this gym and request a free trial.</p></div><Switch checked={isPublic} onCheckedChange={(value) => edit(setIsPublic, value)} aria-label="Public directory listing" /></div>
         </section>
 
-        <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Stat label="RIVET plan" value={<FieldValue field={detail.subscription.plan} />} detail={<FieldValue field={detail.subscription.status} render={statusLabel} />} />
-          <Stat label="Platform health" value={<FieldValue field={detail.health} render={(value) => `${value} / 100`} />} detail="Only recorded health checks appear here" />
           <Stat label="Active members" value={<FieldValue field={detail.usage.memberCount} render={(value) => value.toLocaleString()} />} detail={<FieldValue field={detail.branches} render={(value) => `${value.length} branch${value.length === 1 ? "" : "es"}`} />} />
           <Stat label="Payment transactions" value={<FieldValue field={detail.usage.paymentTransactionCount} render={(value) => value.toLocaleString()} />} detail="Tenant payment records" />
         </section>
@@ -171,6 +210,27 @@ function statusLabel(value: string) {
 
 function dateInputValue(field: PlatformData<string>): string {
   return field.state === "available" ? field.value.slice(0, 10) : "";
+}
+
+export function subscriptionDraftIsDirty(
+  detail: PlatformGymDetail,
+  draft: {
+    status: PlatformGymDetail["controls"]["status"] | undefined;
+    plan: PlatformGymDetail["controls"]["plan"] | undefined;
+    isPublic: boolean;
+    trialEndsAt: string;
+    subscriptionStartedAt: string;
+    currentPeriodEndsAt: string;
+    cancelledAt: string;
+  },
+): boolean {
+  return draft.status !== detail.controls.status
+    || draft.plan !== detail.controls.plan
+    || draft.isPublic !== detail.controls.isPublic
+    || draft.trialEndsAt !== dateInputValue(detail.subscription.trialEndsAt)
+    || draft.subscriptionStartedAt !== dateInputValue(detail.subscription.startedAt)
+    || draft.currentPeriodEndsAt !== dateInputValue(detail.subscription.currentPeriodEndsAt)
+    || draft.cancelledAt !== dateInputValue(detail.subscription.cancelledAt);
 }
 
 function Stat({ label, value, detail }: { label: string; value: React.ReactNode; detail: React.ReactNode }) {

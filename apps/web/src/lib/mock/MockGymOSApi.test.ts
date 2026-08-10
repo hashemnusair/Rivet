@@ -170,7 +170,7 @@ describe("platform subscription controls", () => {
     expect(forge.branches).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ name: "Forge — Abdoun" })]) });
     expect(forge.usage.memberCount.state).toBe("available");
     expect(forge.usage.paymentTransactionCount.state).toBe("available");
-    expect(forge.health).toEqual({ state: "not_configured" });
+    expect(forge).not.toHaveProperty("health");
     expect(forge.subscription.paymentMethod).toEqual({ state: "not_configured" });
     expect(JSON.stringify(forge)).not.toContain("Dana Al-Khatib");
     expect(JSON.stringify(forge)).not.toContain("4041");

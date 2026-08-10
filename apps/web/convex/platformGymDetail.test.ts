@@ -69,15 +69,15 @@ describe("platform gym detail projection", () => {
     expect(detail.owner).toEqual({ state: "not_available" });
     expect(detail.usage.memberCount).toEqual({ state: "not_available" });
     expect(detail.usage.storage).toEqual({ state: "not_configured" });
-    expect(detail.health).toEqual({ state: "not_configured" });
+    expect(detail).not.toHaveProperty("health");
     expect(detail.subscription.invoices).toEqual({ state: "not_available" });
     expect(detail.activity).toEqual({ state: "not_available" });
   });
 
-  it("never marks a missing platform billing or health provider as a real fact", () => {
+  it("does not expose an invented health score and keeps missing billing providers explicit", () => {
     const detail = buildPlatformGymDetail(source());
 
-    expect(detail.health).toEqual({ state: "not_configured" });
+    expect(detail).not.toHaveProperty("health");
     expect(detail.subscription.recurringAmount).toEqual({ state: "not_configured" });
     expect(detail.subscription.renewalDate).toEqual({ state: "not_configured" });
     expect(detail.subscription.paymentMethod).toEqual({ state: "not_configured" });

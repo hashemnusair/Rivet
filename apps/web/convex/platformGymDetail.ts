@@ -142,7 +142,6 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
       paymentMethod: tenantAvailable ? notConfigured() : notAvailable(),
       invoices: tenantAvailable ? notConfigured() : notAvailable(),
     },
-    health: notConfigured(),
     activity: tenantAvailable ? available(source.activity) : notAvailable(),
   };
 }
