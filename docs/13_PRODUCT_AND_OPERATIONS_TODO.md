@@ -488,10 +488,16 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-005 — Error handling can silently hide background failures
 
-- Status: **Needs verification**.
+- Status: **Implemented in `110b0d3`; broader operational-query coverage remains open**.
 - Evidence: provider/background refresh code contains deliberate `.catch(() => undefined)` paths for some snapshots and refreshes.
 - Risk: the UI can remain stale without a visible retry or diagnostic state, especially when Convex or Clerk is temporarily unavailable.
 - Fix/acceptance: classify expected unauthenticated/empty cases separately from network/configuration failures; preserve the last good data, surface a non-blocking stale/retry indicator, and log redacted correlation context server-side. Add offline/reconnect tests.
+
+#### Implementation status
+
+- [x] Experience-provider refreshes now retain the last rendered snapshot after a transient failure, keep the route in its ready state, and show a non-blocking retry notice.
+- [x] Initial hydration still fails closed with the existing actionable error state; focused tests cover both first-load and post-hydration failures.
+- [ ] Extend the same stale/retry treatment to every TanStack Query operational screen and add offline/reconnect browser coverage.
 
 ## P1 — Security, finance, and audit hardening
 
@@ -572,3 +578,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Invited-owner acceptance flow | 2026-08-10 | `947e4d2` | Dedicated branded Clerk ticket route, owner signup form, existing-user sign-in finalization, explicit expiry/revocation/mismatch recovery, owner/staff provisioning redirect coverage, and cancelled/hidden platform-directory handling. Local 277-test suite, typechecks, lint, production build, and targeted invitation/filter tests pass. Credentialed Production fresh-owner, existing-user, and directory visibility acceptance remain required. |
 | BUG-014 | 2026-08-10 | `947e4d2` | Platform-only directory hook/filter preserves hidden, suspended, overdue, and cancelled tenants while public discovery stays filtered; 2 focused filter tests pass. Credentialed Production directory/detail verification remains required. |
 | BUG-010 / TODO-004 / BUG-013 presentation slice | 2026-08-10 | `9931a4a` | 283 unit tests across 32 files, typecheck, Convex typecheck, lint, and diff check passed. Public applications retain approved fallback plans during catalog failure, discovery explains the empty publication state with an application CTA, and historical balanced-shift audit rows no longer show a false approval badge. Production read-only checks remain required. |
+| TODO-005 experience refresh recovery slice | 2026-08-10 | `110b0d3` | 285 unit tests across 33 files, typecheck, Convex typecheck, and lint passed. Initial live-data failures remain explicit; post-hydration failures preserve the last good snapshot and expose a retry notice. Broader operational-query and offline/reconnect coverage remains open. |
