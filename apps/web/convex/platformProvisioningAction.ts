@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { provisioningIdentifiers } from "./platformProvisioning";
+import { INVITATION_REDIRECT_PATH, provisioningIdentifiers } from "./platformProvisioning";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -117,7 +117,7 @@ async function createOrFindClerkInvitation(secret: string, input: { organization
     email_address: input.email,
     role: "org:admin",
     notify: true,
-    ...(siteUrl ? { redirect_url: `${siteUrl}/login` } : {}),
+    ...(siteUrl ? { redirect_url: `${siteUrl}${INVITATION_REDIRECT_PATH}` } : {}),
     public_metadata: { rivetApplicationId: input.applicationId, rivetOrganizationPublicId: input.organizationPublicId },
   });
   const createdId = clerkId(created.payload);

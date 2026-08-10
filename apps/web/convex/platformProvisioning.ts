@@ -28,6 +28,15 @@ const DEFAULT_NOTIFICATIONS = {
 
 const PROVISIONING_LOCK_MS = 10 * 60_000;
 
+/**
+ * Clerk appends __clerk_ticket and __clerk_status to this route when an
+ * organization invitation is accepted. Keep it centralized so provisioning
+ * and the branded browser flow cannot drift apart.
+ */
+export const INVITATION_REDIRECT_PATH = "/login/accept-invitation";
+/** @deprecated Use INVITATION_REDIRECT_PATH for both owner and staff invites. */
+export const OWNER_INVITATION_REDIRECT_PATH = INVITATION_REDIRECT_PATH;
+
 function slugify(value: string): string {
   return value
     .trim()

@@ -58,6 +58,14 @@ The Production owner invitation successfully carried a Clerk invitation ticket b
 - Add component and end-to-end coverage for new-owner signup, existing-user acceptance, query-parameter preservation, profile completion, and final owner-role routing.
 - Treat this as a release gate before inviting a real gym owner.
 
+#### Implementation status
+
+- [x] Added the branded `/login/accept-invitation` route and changed protected provisioning invitations to land there instead of the generic member sign-in page.
+- [x] Preserved Clerk's ticket/status query parameters, handled sign-up, sign-in, complete, expired, revoked, invalid, already-accepted, and email-mismatch states, and kept ticket values out of surfaced error copy.
+- [x] Added the owner-specific profile/password form and finalized the Clerk ticket session through the current Clerk future-resource API; the existing role-routing handoff continues from `/login`.
+- [x] Added focused schema, signup, sign-in, error-sanitization, and provisioning redirect tests. Local typecheck, Convex typecheck, lint, and 277-test unit suite pass.
+- [ ] Run a credentialed Production acceptance with a fresh invited owner and an existing invited user, including profile completion and automatic owner-workspace routing. Keep the invitation release-gated until that browser check passes.
+
 ## P1 — Make application review notes explicit and auditable
 
 ### Observed problem
@@ -422,10 +430,17 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-014 — Hidden or suspended gyms disappear from the platform tenant directory
 
-- Status: **Confirmed in Production on deployed head `6a3678b`**.
+- Status: **Fixed in code; credentialed Production verification pending**.
 - Evidence: the known suspended `Hashem Test` tenant was absent from **Platform → Gyms** under both **All** and **Suspended**, while its authorized direct detail URL still loaded correctly. Code inspection confirmed that the platform-admin directory calls `useMarketplaceGyms()` and therefore inherits the public marketplace filter that excludes `isPublic: false` organizations.
 - Risk: removing a gym from public discovery can also make it unreachable from the platform administrator's normal tenant-management navigation, including when the operator needs to restore a suspended tenant or inspect an unpublished applicant workspace.
 - Fix/acceptance: add a dedicated authorized platform-tenant directory operation that returns every permitted tenant regardless of public-listing state. Keep the public marketplace query filtered for member/public discovery only. Add multi-tenant tests proving that hidden, suspended, and cancelled tenants remain visible and filterable to platform administrators while staying absent from public discovery; retain working links to the authorized detail route.
+
+#### Implementation status
+
+- [x] Added a shared public-directory filter that keeps member discovery limited to public active/trial gyms while preserving hidden, suspended, overdue, and cancelled records for platform use.
+- [x] Added `usePlatformGyms()` as the platform-only boundary and switched the platform gym and subscription screens to consume it. Hidden records are labeled **not public** and cancelled records receive danger styling.
+- [x] Added filter tests covering public exclusion and platform retention for hidden, suspended, and cancelled records.
+- [ ] Verify in credentialed Production that an unpublished/suspended/cancelled tenant is absent from `/customer/discover` but present under Platform → Gyms → All and its status filter, with a working detail link.
 
 ## P1 — Missing or incomplete MVP behavior
 
@@ -541,3 +556,5 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Supervised disposable Production pilot | 2026-08-10 | Production deployed head plus operator evidence | `Hashem Test` completed application, approval, provisioning, owner invitation/account creation, settings, branch and plan setup, CRM conversion, membership sale, JOD 30.000 cash receipt, check-in, unified timeline, sensitive-action audit review, JOD 80.000 balanced shift close, daily reconciliation, public-listing removal, subscription suspension, and audited platform-control save. BUG-012 and BUG-013 capture defects discovered during cleanup. |
 | BUG-012 | 2026-08-10 | `06c5872` deployed in `6a3678b` | 267 unit tests across 27 files, 21 preview Playwright journeys passed with 2 trusted Convex journeys skipped without credential switches, typecheck, Convex typecheck, lint, build, and diff check passed. GitHub Actions run `31378028265` and the Vercel Production deployment passed. Credentialed Production verification showed only target-scoped tenant facts and explicit provider configuration gaps; no fabricated preview owner, billing, health, or activity data remained. |
 | BUG-013 | 2026-08-10 | `06c5872` | Zero/positive/negative variance tests passed in Convex, mock, and UI reconciliation helpers; the full 267-test, 21-pass/2-skip e2e, typecheck, lint, build, and diff gate passed. Credentialed Production shift-history/audit verification remains required. |
+| Invited-owner acceptance flow | 2026-08-10 | `cd400a7` | Dedicated branded Clerk ticket route, owner signup form, existing-user sign-in finalization, explicit expiry/revocation/mismatch recovery, owner/staff provisioning redirect coverage, and cancelled/hidden platform-directory handling. Local 277-test suite, typechecks, lint, production build, and targeted invitation/filter tests pass. Credentialed Production fresh-owner, existing-user, and directory visibility acceptance remain required. |
+| BUG-014 | 2026-08-10 | `cd400a7` | Platform-only directory hook/filter preserves hidden, suspended, overdue, and cancelled tenants while public discovery stays filtered; 2 focused filter tests pass. Credentialed Production directory/detail verification remains required. |

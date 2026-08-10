@@ -10,10 +10,10 @@ import { Field } from "@/components/ui/field";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
-import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import { useExperience, usePlatformGyms } from "@/lib/providers/experience-provider";
 
 export default function SubscriptionsPage() {
-  const gyms = useMarketplaceGyms();
+  const gyms = usePlatformGyms();
   const { platformSnapshot } = useExperience();
   const customerGyms = platformSnapshot?.gyms ?? gyms;
   const [plans, setPlans] = useState<PlatformSaasPlan[]>(platformSnapshot?.plans ?? []);

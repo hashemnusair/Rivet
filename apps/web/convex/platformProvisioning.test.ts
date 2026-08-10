@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { provisioningIdentifiers } from "./platformProvisioning";
+import { INVITATION_REDIRECT_PATH, OWNER_INVITATION_REDIRECT_PATH, provisioningIdentifiers } from "./platformProvisioning";
 
 describe("gym provisioning identifiers", () => {
+  it("uses the dedicated branded invitation route", () => {
+    expect(INVITATION_REDIRECT_PATH).toBe("/login/accept-invitation");
+    expect(OWNER_INVITATION_REDIRECT_PATH).toBe("/login/accept-invitation");
+  });
+
   it("keeps retries tied to the application rather than the gym name", () => {
     const first = provisioningIdentifiers("20000000-0000-4a00-8a00-000000000042", "Northline Strength");
     const retry = provisioningIdentifiers("20000000-0000-4a00-8a00-000000000042", "Northline Strength");

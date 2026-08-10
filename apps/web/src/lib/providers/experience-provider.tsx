@@ -6,6 +6,7 @@ import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -383,5 +384,16 @@ export function useCustomerPersona() {
 
 export function useMarketplaceGyms() {
   const { marketplaceGyms } = useExperience();
-  return marketplaceGyms.filter((gym) => gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial");
+  return publicMarketplaceGyms(marketplaceGyms);
+}
+
+/**
+ * Platform-only directory. Unlike member discovery, this must retain hidden,
+ * suspended, overdue, and cancelled tenants so operators can restore or audit
+ * them from the normal navigation.
+ */
+export function usePlatformGyms() {
+  const { marketplaceGyms, platformSnapshot, platformAdminSignedIn } = useExperience();
+  if (!platformAdminSignedIn) return [];
+  return platformTenantDirectoryGyms(platformSnapshot?.gyms ?? marketplaceGyms);
 }

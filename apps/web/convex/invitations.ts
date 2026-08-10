@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireActor, requirePermission, type OrganizationRole } from "./security";
 import { rolePermissions, toFrontendRole } from "./permissions";
+import { INVITATION_REDIRECT_PATH } from "./platformProvisioning";
 
 type Data = Record<string, unknown>;
 
@@ -277,12 +278,14 @@ export const send = action({
     }
 
     const prepared: PreparedInvitation = await ctx.runMutation(internal.invitations.prepare, args);
+    const siteUrl = process.env.RIVET_SITE_URL?.replace(/\/$/, "");
     const response = await fetch("https://api.clerk.com/v1/invitations", {
       method: "POST",
       headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         email_address: prepared.email,
         notify: true,
+        ...(siteUrl ? { redirect_url: `${siteUrl}${INVITATION_REDIRECT_PATH}` } : {}),
         public_metadata: { rivetOrganizationId: prepared.organizationId, rivetUserId: prepared.userPublicId },
       }),
     });
