@@ -22,6 +22,20 @@ Baseline at the time this roadmap was written:
 
 Treat `CURRENT_STATE.md` as the living status document. Verify this baseline against the repository before relying on it because another commit may have landed.
 
+## Implementation progress — 10 August 2026 (`135a5f1` + `76a28a8`)
+
+The full pilot-readiness pass has advanced the roadmap substantially:
+
+- Completed the production data-integrity sweep for platform operations and the public landing/member-entry illustration. Operational values now come from persisted/derived contracts or explicit unavailable/configuration states; seeded operational facts remain confined to explicit mock mode.
+- Completed real platform overview, subscription lifecycle, manual invoice lifecycle including reason-gated past-due handling, platform audit projection, gym/platform support, role dashboards, the in-app notification center, automation command controls, and the durable sandbox operational-email ledger.
+- Completed the typed realtime seam for customer/member, CRM, reception, payments/shifts, platform, role dashboards, notifications, automation execution, and operational-email surfaces. The shared hook preserves the last snapshot, disposes on scope change, and polls only after stream failure.
+- Added `convex-test` coverage for customer ownership plus new platform invoice/subscription/support/notification/automation boundaries. The credential-free gate passes 324 tests across 44 files, 23 preview Playwright journeys (with 2 credential-gated Convex journeys skipped), both typechecks, zero-warning lint, production build, and `git diff --check`.
+- Closed the local BUG-015 implementation gap: platform subscription shortcuts now remain explicit drafts until a reason-gated audited save succeeds, support cancel/navigation protection, preserve drafts through realtime refreshes, and have a focused browser regression. The unapproved platform health-score field was removed from the contract, projection, and UI.
+- Added an explicit `PLAYWRIGHT_TARGET_CLASSIFICATION=staging` requirement before the existing staged write journey can mutate anything. The ten independent production-shaped staging journeys remain a release-gated milestone rather than being represented as completed.
+- Resolved generated Next route declarations dirtying Git by ignoring Next-owned `next-env.d.ts` and committing stable framework declarations in `apps/web/next-types.d.ts`.
+
+Still open in this roadmap: broader adversarial money/staff privilege-escalation handler matrices, two-context credentialed realtime verification, offline/reconnect browser coverage, live operational-email activation/worker/provider handling, the ten independent staging journeys, and supervised release verification. The implementation pass did not deploy Convex, mutate Production, seed data, or enable live automation/email.
+
 ## Read before editing
 
 Read these files completely:
@@ -142,7 +156,7 @@ This is the highest-priority engineering slice. Current helper-level customer ow
 
 The current four-second background refresh is an acceptable fallback, but the most operationally important screens should update through Convex subscriptions without manual refresh or full-page loading flicker.
 
-Progress on 2026-08-10: the typed subscription seam is implemented for member My Gyms/free-trial status, platform gym applications/provisioning status, and the CRM pipeline. CRM detail/tasks, reception, and payment/shift subscriptions remain next; credentialed Production and two-context browser verification are still required for the completed slices.
+Progress on 2026-08-10 (`135a5f1`): the typed subscription seam now covers member/customer experience, platform applications/snapshot/gym detail/support, CRM pipeline/lead detail/tasks/renewals, role dashboards, reception occupancy/check-ins, transactions/shifts, automations, notifications, and operational-email attempts. `useRealtimeApiQuery` preserves the last snapshot, updates TanStack caches, disposes on scope changes, polls only after failure, and stops polling on recovery. Unit coverage is green; credentialed two-context and offline/reconnect browser verification remain required before this milestone is fully release-verified.
 
 ### Work
 

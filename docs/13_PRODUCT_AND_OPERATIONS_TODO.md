@@ -454,10 +454,18 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-015 — Suspend/restore shortcuts imply a saved change before controls are persisted
 
-- Status: **Confirmed Production UX defect; implementation pending**.
+- Status: **Implemented in `76a28a8`; read-only Production UI verification pending**.
 - Evidence: on the Production gym-detail page, clicking the top-right **Suspend** or **Restore access** shortcut immediately changes the subscription selector and reverses the shortcut label, making the tenant appear suspended/restored. The change is only a local draft until the operator separately clicks **Save controls**; leaving the page before that save preserves the previous server state.
 - Risk: a platform operator can reasonably believe access was suspended or restored when no mutation or audit event occurred, potentially leaving a gym active unintentionally or telling an owner access was restored when it was not.
 - Fix/acceptance: keep persisted state visually distinct from draft state. Either make the shortcut an explicit confirmed mutation, or retain the two-step workflow with clear **Unsaved changes — click Save controls to apply** feedback, a cancel/revert action, navigation protection, and shortcut copy derived from persisted rather than draft status. Never show a success toast, completed-state label, or reversed action until the server confirms the save. Add component/browser coverage for draft, save success, save failure, cancel, navigation-away, and background-refresh behavior.
+
+#### Implementation status
+
+- [x] The shortcut and its label are derived from the persisted subscription status; clicking it changes the selector but does not reverse the completed-state action label.
+- [x] Unsaved drafts show explicit feedback, require an audit reason before save, support cancel/revert, prompt on internal navigation, and install a browser unload warning.
+- [x] Realtime detail snapshots do not overwrite an active local draft; successful saves clear draft protection before refreshing the authoritative projection.
+- [x] Preview Playwright verifies draft feedback, disabled save without a reason, persisted-state shortcut copy, and cancellation/revert.
+- [ ] Verify the deployed Production UI without saving or mutating a real tenant.
 
 ## P1 — Missing or incomplete MVP behavior
 
@@ -471,10 +479,17 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-002 — Operational messaging is sandbox-only outside gym applications
 
-- Status: **Confirmed deferred capability**.
+- Status: **Durable sandbox boundary implemented in `135a5f1`; live delivery remains deferred**.
 - Evidence: automation rules and templates show a sandbox provider; `CURRENT_STATE.md` defers live WhatsApp/SMS/email delivery. Resend is currently used for gym-application notifications, not the complete member lifecycle.
 - Risk: renewal reminders, trial confirmations, payment receipts, expiry alerts, and retry behavior are not yet a real-gym communication system.
 - Fix/acceptance: implement a provider boundary with durable delivery attempts, deduplication, retries, quiet hours, provider IDs, final status, and Arabic/English templates. Keep sandbox as the default until the product owner approves sender, recipient, and template policy.
+
+#### Implementation status
+
+- [x] Persist message kind/template version, language, recipient reference, dedupe key, provider ID, attempts, redacted failure, next retry, suppression, and queued/provider-accepted/delivered/failed state.
+- [x] Encode the 1/5/30-minute, maximum-three-attempt retry policy and per-message-type activation settings while keeping sandbox suppression as the default.
+- [x] Route trial, payment-receipt, renewal/expiry, support, invoice, and subscription lifecycle message intents through this boundary.
+- [ ] Implement and approve the live provider worker/delivery policy before enabling any message type outside sandbox.
 
 ### TODO-003 — Member documents/profile photos are not represented in the operational contract
 
@@ -507,15 +522,18 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - [x] Experience-provider refreshes now retain the last rendered snapshot after a transient failure, keep the route in its ready state, and show a non-blocking retry notice.
 - [x] Initial hydration still fails closed with the existing actionable error state; focused tests cover both first-load and post-hydration failures.
 - [x] `useApiQuery` now masks background refetch failures from full-page `isError` gates while retaining `isBackgroundError`; `AppProviders` shows a global active-query stale notice with a retry action. Focused tests cover both initial and post-hydration query failures.
+- [x] `useRealtimeApiQuery` now preserves the last good cache snapshot, switches to bounded polling only after stream failure, stops polling after recovery, and disposes the previous subscription on tenant/branch/route/record key changes.
 - [ ] Add offline/reconnect browser coverage and redacted server-side correlation logging for refresh failures.
 
 ## P1 — Security, finance, and audit hardening
 
 ### TODO-006 — Expand real-handler isolation tests across money and entry flows
 
-- Status: **Confirmed roadmap item**.
+- Status: **Expanded in `135a5f1`; broad money/staff matrix remains open**.
 - Scope: the customer profile/My Gyms/trial/entry-pass slice is complete. Remaining scope is operational member/lead/offer/task/payment/check-in identifiers, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope, and privilege escalation.
 - Acceptance: each has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required, idempotency, and immutable-audit assertions.
+
+Current evidence also covers exported platform invoice/subscription/support/notification/automation handlers with persisted identities, reason gates, audit assertions, recipient isolation, and idempotent dedupe. This does not close the remaining operational money, staff-escalation, and branch-scope families.
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 
@@ -526,9 +544,11 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
-- Status: **Confirmed staging gap**.
+- Status: **Command center and handler coverage implemented in `135a5f1`; credentialed staging journey remains open**.
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
 - Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
+
+The UI/API now expose persisted execution/action/attempt history, dedupe keys, suppression and retry metadata, reason-gated previews/forced runs/manual retries, immutable audit facts, and manager attention notifications. The remaining acceptance work is a scheduler-driven credentialed staging journey covering quiet hours and transient retry recovery.
 
 ### TODO-009 — Record marketing-preference provenance and revocation history
 
@@ -598,3 +618,5 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | TODO-005 operational query recovery slice | 2026-08-10 | `4a6eaea` | 287 unit tests across 34 files, typecheck, Convex typecheck, lint, and the full unit suite passed. TanStack Query operational screens now preserve loaded snapshots after background refetch failures, expose `isBackgroundError`, and show a global retry notice; offline/reconnect browser coverage and redacted server-side logging remain open. |
 | TODO-009 member preference/history slice | 2026-08-10 | `0e42018` | 291 unit tests across 35 files, typecheck, Convex typecheck, lint, diff check, and production build passed. Consumer preference metadata, append-only history, member opt-out/re-enable UI, and mock/Convex adapter coverage are implemented. Channel enforcement, migration/backfill, Convex Production deployment, and Production member verification remain required before closing the item. |
 | BUG-002 / BUG-004 customer ownership slice | 2026-08-10 | This focused commit | Both typechecks, lint with zero warnings, Convex codegen/typecheck, the 304-test/37-file unit suite, the focused 8-test public-experience Playwright suite, the full 22-pass/2-environment-gated-skip Playwright suite, the 39-route production build, and `git diff --check` passed. Five persisted-fixture exported-handler tests cover subject-only identity, hostile IDs/email, cross-tenant My Gyms data, selected-gym/active-branch routing, private/suspended/inactive targets, staff/platform/deactivated denial, inactive membership behavior, anonymous transition isolation, and non-disclosing `NOT_FOUND`. Broader Milestone 1 identifier families remain under TODO-006; Production was not mutated or deployed. |
+| Pilot-readiness platform operations pass | 2026-08-10 | `135a5f1` | 324 tests across 44 files, both typechecks, zero-warning lint, 22 preview browser journeys with 2 credential-gated skips, production build, and diff check passed. Added persisted platform overview/subscriptions/invoices/support, role dashboards, notifications, automation controls, durable sandbox email attempts, broad typed realtime subscriptions, and platform handler tests. Live provider delivery, credentialed staging journeys, and remaining adversarial money/staff matrices stay open. |
+| BUG-015 implementation | 2026-08-10 | `76a28a8` | 324 tests across 44 files, both typechecks, zero-warning lint, 23 preview browser journeys with 2 credential-gated skips, production build, and diff check passed. Persisted-state action labels, explicit unsaved drafts, cancel/revert, navigation/reload protection, and realtime draft preservation are implemented; deployed read-only UI verification remains. |
