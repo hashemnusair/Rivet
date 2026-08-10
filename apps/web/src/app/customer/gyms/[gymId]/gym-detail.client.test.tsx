@@ -1,0 +1,98 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import GymDetailClient from "./gym-detail.client";
+
+const state = vi.hoisted(() => ({
+  customer: null as null | {
+    id: string;
+    name: string;
+    nameAr: string;
+    email: string;
+    phone: string;
+    initials: string;
+    context: string;
+  },
+  gym: {
+    id: "forge-fitness",
+    name: "Forge Fitness Club",
+    shortName: "FORGE",
+    tagline: "Test gym",
+    description: "A gym used to verify trial-form hydration.",
+    city: "Amman",
+    areas: ["Abdoun"],
+    category: "Strength",
+    audience: "All members",
+    rating: 4.9,
+    reviewCount: 10,
+    memberCount: 100,
+    branchCount: 1,
+    fromPriceMinor: 40_000,
+    amenities: ["Weights"],
+    accent: "#111111",
+    featured: true,
+    subscriptionStatus: "active" as const,
+    rivetPlan: "Growth" as const,
+    joinedAt: "2026-01-01",
+    lastActiveAt: "2026-08-10T10:00:00+03:00",
+    monthlyRevenueMinor: 0,
+    branches: [{
+      id: "forge-abdoun",
+      name: "Forge — Abdoun",
+      area: "Abdoun",
+      address: "Amman",
+      trialSlots: ["08:00"],
+    }],
+  },
+  bookTrial: vi.fn(),
+  push: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: state.push }),
+}));
+
+vi.mock("@/lib/api/ConvexGymOSApi", () => ({
+  isConvexMode: () => false,
+}));
+
+vi.mock("@/lib/providers/experience-provider", () => ({
+  useCustomerPersona: () => state.customer ?? undefined,
+  useMarketplaceGyms: () => [state.gym],
+  useExperience: () => ({ bookTrial: state.bookTrial, customerSignedIn: Boolean(state.customer) }),
+}));
+
+describe("GymDetailClient trial form", () => {
+  beforeEach(() => {
+    state.customer = null;
+    state.bookTrial.mockReset().mockResolvedValue({ id: "booking-1" });
+    state.push.mockReset();
+  });
+
+  it("preserves visitor input when customer defaults hydrate after typing begins", async () => {
+    const user = userEvent.setup();
+    const view = render(<GymDetailClient gymId="forge-fitness" />);
+
+    await user.type(screen.getByLabelText("Full name"), "Unauthenticated QA");
+    await user.type(screen.getByLabelText("Phone"), "+962 79 321 4456");
+    await user.type(screen.getByLabelText("Email"), "unauthenticated.qa@example.com");
+    await user.clear(screen.getByLabelText("What are you looking for?"));
+    await user.type(screen.getByLabelText("What are you looking for?"), "Test hydration safety");
+
+    state.customer = {
+      id: "customer-late",
+      name: "Late Identity",
+      nameAr: "Late Identity",
+      email: "late@example.com",
+      phone: "+962 79 000 0000",
+      initials: "LI",
+      context: "RIVET member",
+    };
+    view.rerender(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByLabelText("Full name")).toHaveValue("Unauthenticated QA");
+    expect(screen.getByLabelText("Phone")).toHaveValue("+962 79 321 4456");
+    expect(screen.getByLabelText("Email")).toHaveValue("unauthenticated.qa@example.com");
+    expect(screen.getByLabelText("What are you looking for?")).toHaveValue("Test hydration safety");
+  });
+});

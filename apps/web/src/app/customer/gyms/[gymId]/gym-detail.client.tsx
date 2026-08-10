@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarCheck, Check, Clock, MapPin, ShieldCheck, Star, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,14 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     return date.toISOString().slice(0, 10);
   }, []);
 
-  const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<TrialValues>({
+  // The bundled preview gym is available on the first render, while Convex
+  // gyms can arrive after hydration. Track the identity of the defaults we
+  // actually initialized so background snapshot refreshes do not erase a
+  // visitor's in-progress form with an equivalent gym/customer object.
+  const formContextKey = gym ? `${gym.id}:${customer?.id ?? "guest"}` : "unavailable";
+  const initializedFormContextRef = useRef(formContextKey);
+
+  const { register, handleSubmit, watch, reset, formState: { errors, dirtyFields } } = useForm<TrialValues>({
     resolver: zodResolver(trialSchema),
     defaultValues: {
       fullName: customer?.name ?? "",
@@ -52,6 +59,8 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
   useEffect(() => {
     if (!gym) return;
+    if (initializedFormContextRef.current === formContextKey) return;
+    initializedFormContextRef.current = formContextKey;
     reset({
       fullName: customer?.name ?? "",
       email: customer?.email ?? "",
@@ -60,8 +69,14 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       preferredDate: defaultDate,
       preferredTime: gym.branches[0]?.trialSlots[0] ?? "18:00",
       goal: "Try the gym and discuss the right membership",
+    }, {
+      // If identity or asynchronously loaded gym defaults change after the
+      // visitor starts typing, retain their explicit input and refresh only
+      // untouched fields. Subscribing to dirtyFields is required by RHF for
+      // keepDirtyValues to preserve the correct controls.
+      keepDirtyValues: Object.keys(dirtyFields).length > 0,
     });
-  }, [customer, defaultDate, gym, reset]);
+  }, [customer, defaultDate, dirtyFields, formContextKey, gym, reset]);
 
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
   const selectedBranch = gym.branches.find((branch) => branch.id === watch("branchId")) ?? gym.branches[0]!;
