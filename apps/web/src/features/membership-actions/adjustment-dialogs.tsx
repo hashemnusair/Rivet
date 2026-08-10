@@ -7,6 +7,8 @@ import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { MembershipSummary } from "@/lib/domain/types";
+import { useApiQuery } from "@/lib/hooks/use-api";
+import { qk } from "@/lib/api/keys";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
 import {
@@ -369,6 +371,95 @@ export function UnfreezeDialog({
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Back</Button>
             <Button type="submit" loading={mutation.isPending}>End freeze today</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const planChangeSchema = z.object({
+  planId: z.string().min(1, "Choose a plan"),
+  effectiveDate: z.enum(["next_renewal", "immediate"]),
+  reason: z.string().min(3, "A reason is required (min 3 characters)"),
+});
+type PlanChangeValues = z.infer<typeof planChangeSchema>;
+
+export function ChangeMembershipPlanDialog({
+  open,
+  onOpenChange,
+  membership,
+  allowImmediate = false,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  membership: MembershipSummary;
+  allowImmediate?: boolean;
+  onDone?: () => void;
+}) {
+  const invalidate = useInvalidate();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 50 }));
+  const plans = (plansQuery.data?.items ?? []).filter((plan) => plan.id !== membership.planId);
+  const nextRenewalDate = membership.endDate >= todayISODate() ? addDays(membership.endDate, 1) : todayISODate();
+  const form = useForm<PlanChangeValues>({
+    resolver: zodResolver(planChangeSchema),
+    defaultValues: { planId: "", effectiveDate: "next_renewal", reason: "" },
+  });
+  useEffect(() => {
+    if (open) {
+      form.reset({ planId: plans[0]?.id ?? "", effectiveDate: "next_renewal", reason: "" });
+      setServerError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, plans.length]);
+  const selectedPlan = plans.find((plan) => plan.id === form.watch("planId"));
+  const effectiveDate = form.watch("effectiveDate");
+  const mutation = useApiMutation((api, values: PlanChangeValues) => api.changeMembershipPlan(membership.id, values), {
+    onSuccess: async () => {
+      await invalidate();
+      onOpenChange(false);
+      onDone?.();
+    },
+    onError: (error) => setServerError(isApiError(error) ? error.message : "Plan change failed."),
+  });
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change membership plan</DialogTitle>
+          <DialogDescription>
+            Move {membership.memberName} from {membership.planName}. A new successor term is created and linked to the existing history; RIVET does not invent proration or silently credit the old term.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+          <DialogBody className="space-y-4">
+            <Field label="New plan" required error={form.formState.errors.planId?.message}>
+              <Select value={form.watch("planId")} onValueChange={(value) => form.setValue("planId", value, { shouldValidate: true })}>
+                <SelectTrigger aria-label="New membership plan"><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Select plan"} /></SelectTrigger>
+                <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {plan.basePrice.currency} {(plan.basePrice.amount / 1000).toFixed(3)}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Effective date" required error={form.formState.errors.effectiveDate?.message}>
+              <Select value={effectiveDate} onValueChange={(value) => form.setValue("effectiveDate", value as PlanChangeValues["effectiveDate"], { shouldValidate: true })}>
+                <SelectTrigger aria-label="Plan change effective date"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="next_renewal">Next renewal · {nextRenewalDate}</SelectItem>
+                  {allowImmediate ? <SelectItem value="immediate">Immediately · no proration</SelectItem> : null}
+                </SelectContent>
+              </Select>
+            </Field>
+            {effectiveDate === "immediate" ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">Immediate changes end the current term and start the new plan today. The existing charge is preserved; any credit or refund must be handled separately.</p> : null}
+            {selectedPlan ? <BeforeAfter rows={[{ label: "Plan", before: membership.planName, after: selectedPlan.name }, { label: "New term starts", before: "—", after: effectiveDate === "immediate" ? todayISODate() : nextRenewalDate }, { label: "Price", before: "Existing term", after: `${selectedPlan.basePrice.currency} ${(selectedPlan.basePrice.amount / 1000).toFixed(3)} · full charge` }]} /> : null}
+            <Field label="Reason" required error={form.formState.errors.reason?.message}>
+              <Textarea placeholder="e.g. Member moving to unlimited access at next renewal" {...form.register("reason")} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={!selectedPlan}>Change plan</Button>
           </DialogFooter>
         </form>
       </DialogContent>

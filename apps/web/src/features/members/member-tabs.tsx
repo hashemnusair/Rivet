@@ -385,7 +385,7 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
     ["Emergency contact", member.emergencyContactName ? `${member.emergencyContactName} · ${member.emergencyContactPhone ?? ""}` : "—"],
     ["Source", member.source ? member.source.replace(/_/g, " ") : "—"],
     ["Salesperson", salespersonName ?? "Unassigned"],
-    ["Marketing", member.marketingOptIn ? "Opted in" : "Opted out"],
+    ["Marketing", <span key="marketing">{member.marketingOptIn ? "Opted in" : "Opted out"}{member.marketingPreference ? <span className="ms-1 text-ink-3">· {member.marketingPreference.source.replace("_", " ")}</span> : null}</span>],
     ["Member since", <DateText key="c" iso={member.createdAt} />],
   ];
   return (

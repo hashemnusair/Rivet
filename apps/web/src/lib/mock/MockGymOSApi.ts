@@ -61,6 +61,7 @@ import {
 } from "./store";
 
 const TZ = "Asia/Amman";
+const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 
 const MOCK_INVOICES: PlatformBillingInvoice[] = [
   { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
@@ -618,6 +619,18 @@ export class MockGymOSApi implements GymOSApi {
     return currentUser(this.db);
   }
 
+  private marketingPreferenceFor(input: { marketingOptIn?: boolean; marketingPreferenceSource?: T.MarketingPreferenceSource }, fallbackOptedIn = true): T.MarketingPreference {
+    const optedIn = input.marketingOptIn === undefined ? fallbackOptedIn : input.marketingOptIn !== false;
+    const source = input.marketingPreferenceSource ?? (input.marketingOptIn === undefined ? "system_default" : "staff_selected");
+    return {
+      optedIn,
+      source,
+      changedAt: nowISO(),
+      changedById: source === "system_default" ? undefined : this.actor().id,
+      wordingVersion: MARKETING_WORDING_VERSION,
+    };
+  }
+
   private branchScopedBranchId(requested?: T.UUID): T.UUID | undefined {
     // Managers/reception scoped to branches can only see their own.
     const user = this.actor();
@@ -740,6 +753,7 @@ export class MockGymOSApi implements GymOSApi {
       source: m.source,
       assignedSalespersonId: m.assignedSalespersonId,
       marketingOptIn: m.marketingOptIn,
+      marketingPreference: m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default", wordingVersion: "legacy-boolean" },
       notes: m.notes,
       sensitiveNotes: perms.includes("members.sensitive_notes.read") ? m.sensitiveNotes : undefined,
       archivedAt: m.archivedAt,
@@ -1216,6 +1230,7 @@ export class MockGymOSApi implements GymOSApi {
         source: input.source,
         assignedSalespersonId: input.assignedSalespersonId,
         marketingOptIn: input.marketingOptIn !== false,
+        marketingPreference: this.marketingPreferenceFor(input),
         notes: input.notes,
         createdAt: nowISO(),
       };
@@ -1244,10 +1259,37 @@ export class MockGymOSApi implements GymOSApi {
       this.require("members.write");
       const m = this.db.members.find((x) => x.id === memberId);
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;
+      const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
       Object.assign(m, {
         ...input,
         email: input.email === undefined ? m.email : input.email || undefined,
       });
+      delete (m as MemberRecord & { marketingPreferenceSource?: unknown }).marketingPreferenceSource;
+      if (marketingChanged) {
+        m.marketingOptIn = input.marketingOptIn === undefined ? m.marketingOptIn : input.marketingOptIn !== false;
+        m.marketingPreference = this.marketingPreferenceFor(input, m.marketingOptIn);
+        this.activity({
+          memberId: m.id,
+          type: "marketing_preference_changed",
+          title: `Marketing messages ${m.marketingOptIn ? "enabled" : "disabled"}`,
+          body: `Preference changed from ${beforePreference.optedIn ? "opted in" : "opted out"} to ${m.marketingOptIn ? "opted in" : "opted out"}.`,
+          actorId: this.actor().id,
+          actorName: this.actor().name,
+          meta: { optedIn: m.marketingOptIn, source: m.marketingPreference.source },
+        });
+        this.audit({
+          category: "members",
+          action: "member.marketing_preference.update",
+          entityType: "member",
+          entityId: m.id,
+          entityLabel: `${m.fullName} · ${m.memberNumber}`,
+          summary: `Marketing messages ${m.marketingOptIn ? "enabled" : "disabled"}`,
+          before: { optedIn: beforePreference.optedIn ? "true" : "false", source: beforePreference.source },
+          after: { optedIn: m.marketingOptIn ? "true" : "false", source: m.marketingPreference.source },
+          branchId: m.homeBranchId,
+        });
+      }
       return this.toMemberDetail(m);
     });
   }
@@ -1446,6 +1488,9 @@ export class MockGymOSApi implements GymOSApi {
     discountReason?: string;
     payment?: { amount: T.Money; method: T.PaymentMethodKey };
     previousMembershipId?: T.UUID;
+    operation?: "sale" | "renewal" | "plan_change";
+    previousPlanId?: T.UUID;
+    reason?: string;
     soldBy: T.UUID;
   }): T.MembershipSaleResult {
     const member = this.db.members.find((m) => m.id === args.memberId);
@@ -1478,8 +1523,9 @@ export class MockGymOSApi implements GymOSApi {
       );
       if (overlap) throw ApiError.of(ERR.CONFLICT, "This member already has a membership covering part of the selected term.");
     }
+    const recordId = mockUuid();
     const record: MembershipRecord = {
-      id: mockUuid(),
+      id: recordId,
       organizationId: this.db.organization.id,
       memberId: member.id,
       planId: plan.id,
@@ -1496,7 +1542,17 @@ export class MockGymOSApi implements GymOSApi {
       previousMembershipId: args.previousMembershipId,
       frozenDaysUsed: 0,
       freezes: [],
-      adjustments: [],
+      adjustments: args.operation === "plan_change" ? [{
+        id: mockUuid(),
+        membershipId: recordId,
+        type: "plan_change",
+        reason: args.reason ?? "Membership plan changed",
+        actorId: args.soldBy,
+        before: { planId: args.previousPlanId ?? "" },
+        after: { planId: plan.id, effectiveDate: args.startDate },
+        approvalStatus: "not_required",
+        createdAt: nowISO(),
+      }] : [],
       createdAt: nowISO(),
     };
     this.db.memberships.push(record);
@@ -1519,14 +1575,15 @@ export class MockGymOSApi implements GymOSApi {
     };
     this.db.charges.push(charge);
 
-    const isRenewal = Boolean(args.previousMembershipId);
+    const isPlanChange = args.operation === "plan_change";
+    const isRenewal = args.operation === "renewal" || (!args.operation && Boolean(args.previousMembershipId));
     const timelineIds: T.UUID[] = [];
     timelineIds.push(
       this.activity({
         memberId: member.id,
-        type: isRenewal ? "membership_renewed" : "membership_sold",
-        title: `${plan.name} ${isRenewal ? "membership renewed" : "membership sold"}`,
-        body: `Term ${record.startDate} → ${record.endDate}.`,
+        type: isPlanChange ? "membership_plan_changed" : isRenewal ? "membership_renewed" : "membership_sold",
+        title: isPlanChange ? `Membership plan changed to ${plan.name}` : `${plan.name} ${isRenewal ? "membership renewed" : "membership sold"}`,
+        body: isPlanChange ? `${args.reason ?? "Plan change"} Effective ${record.startDate}; no proration applied.` : `Term ${record.startDate} → ${record.endDate}.`,
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { membershipId: record.id },
@@ -1568,7 +1625,7 @@ export class MockGymOSApi implements GymOSApi {
 
     this.audit({
       category: "memberships",
-      action: isRenewal ? "membership.renew" : "membership.sale",
+      action: isPlanChange ? "membership.plan_change" : isRenewal ? "membership.renew" : "membership.sale",
       entityType: "membership",
       entityId: record.id,
       entityLabel: `${member.fullName} · ${member.memberNumber}`,
@@ -1605,8 +1662,65 @@ export class MockGymOSApi implements GymOSApi {
         discountReason: input.discountReason,
         payment: input.payment,
         previousMembershipId: old.id,
+        operation: "renewal",
         soldBy: this.actor().id,
       });
+    });
+  }
+
+  changeMembershipPlan(membershipId: T.UUID, input: T.ChangeMembershipPlanInput): Promise<T.MembershipSaleResult> {
+    return this.respond(() => {
+      this.require("memberships.sell");
+      this.requireReason(input.reason);
+      const old = this.db.memberships.find((membership) => membership.id === membershipId);
+      if (!old) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      const status = this.membershipStatusOf(old);
+      if (status === "cancelled") throw ApiError.of(ERR.MEMBERSHIP_NOT_ACTIVE, "Cancelled memberships cannot change plans.");
+      if (old.planId === input.planId) throw ApiError.of(ERR.VALIDATION, "Choose a different plan.");
+      const effectiveDate = input.effectiveDate ?? "next_renewal";
+      if (effectiveDate === "immediate") {
+        this.require("memberships.override_dates");
+        if (status !== "active" && status !== "expiring") throw ApiError.of(ERR.MEMBERSHIP_NOT_ACTIVE, "Immediate plan changes require an active membership.");
+      }
+      const result = this.buildSale({
+        memberId: old.memberId,
+        planId: input.planId,
+        startDate: effectiveDate === "immediate" ? this.today() : old.endDate >= this.today() ? addDays(old.endDate, 1) : this.today(),
+        previousMembershipId: old.id,
+        previousPlanId: old.planId,
+        operation: "plan_change",
+        reason: input.reason,
+        soldBy: this.actor().id,
+      });
+      if (effectiveDate === "immediate") {
+        const previousEndDate = old.endDate;
+        old.cancelledAt = nowISO();
+        old.cancellationReason = `Superseded by plan change: ${input.reason}`;
+        old.adjustments.push({
+          id: mockUuid(),
+          membershipId: old.id,
+          type: "plan_change",
+          reason: input.reason,
+          actorId: this.actor().id,
+          before: { planId: old.planId, endDate: previousEndDate },
+          after: { planId: input.planId, successorMembershipId: result.membership.id },
+          approvalStatus: "not_required",
+          createdAt: nowISO(),
+        });
+      }
+      this.audit({
+        category: "memberships",
+        action: "membership.plan_change",
+        entityType: "membership",
+        entityId: result.membership.id,
+        entityLabel: `${this.db.members.find((member) => member.id === old.memberId)?.fullName ?? "Member"}`,
+        summary: `Plan changed (${effectiveDate === "immediate" ? "immediate" : "next renewal"}) — no proration`,
+        reason: input.reason,
+        before: { planId: old.planId, effectiveDate },
+        after: { planId: input.planId, successorMembershipId: result.membership.id },
+        branchId: old.homeBranchId,
+      });
+      return result;
     });
   }
 
@@ -2246,6 +2360,8 @@ export class MockGymOSApi implements GymOSApi {
         dateOfBirth: input.dateOfBirth,
         emergencyContactName: input.emergencyContactName,
         emergencyContactPhone: input.emergencyContactPhone,
+        marketingOptIn: input.marketingOptIn,
+        marketingPreferenceSource: input.marketingPreferenceSource,
         source: lead.source,
         assignedSalespersonId: lead.ownerId,
       });
@@ -2294,6 +2410,7 @@ export class MockGymOSApi implements GymOSApi {
       source: input.source,
       assignedSalespersonId: input.assignedSalespersonId,
       marketingOptIn: input.marketingOptIn !== false,
+      marketingPreference: this.marketingPreferenceFor(input),
       notes: input.notes,
       createdAt: nowISO(),
     };

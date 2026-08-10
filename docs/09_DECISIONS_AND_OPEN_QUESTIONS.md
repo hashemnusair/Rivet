@@ -14,6 +14,7 @@
 - Public consumer and trainer marketplaces are future phases.
 - Raw biometric storage is out of scope.
 - New members default to **Marketing: Opted in** across manual creation, lead conversion, and imports. An explicit opt-out must be preserved. The system-applied default is a product preference, not a claim that the member actively gave consent; preference provenance and withdrawal history remain tracked in the canonical backlog.
+- Membership plan changes create a linked successor term and a full replacement-plan charge. Staff may schedule a change for the next renewal; roles with date-override authority may make it effective immediately, which supersedes the prior term with an auditable reason. RIVET does not invent proration, automatic credits, or refunds in the pilot; any financial adjustment is a separate deliberate operation.
 
 ## Approved architecture override — 2026-07-31
 

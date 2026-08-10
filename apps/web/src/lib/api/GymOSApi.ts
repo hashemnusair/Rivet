@@ -19,6 +19,7 @@ import type {
   CreateMemberInput,
   CreateMemberResult,
   CreateMembershipSaleInput,
+  ChangeMembershipPlanInput,
   CreatePaymentInput,
   CreatePlanInput,
   CreateTaskInput,
@@ -490,6 +491,7 @@ export interface GymOSApi {
   getMembership(membershipId: UUID): Promise<MembershipDetail>;
   createMembershipSale(input: CreateMembershipSaleInput): Promise<MembershipSaleResult>;
   renewMembership(membershipId: UUID, input: RenewMembershipInput): Promise<MembershipSaleResult>;
+  changeMembershipPlan(membershipId: UUID, input: ChangeMembershipPlanInput): Promise<MembershipSaleResult>;
   freezeMembership(membershipId: UUID, input: FreezeMembershipInput): Promise<MembershipDetail>;
   unfreezeMembership(membershipId: UUID, input: { reason: string }): Promise<MembershipDetail>;
   extendMembership(membershipId: UUID, input: ExtendMembershipInput): Promise<MembershipDetail>;

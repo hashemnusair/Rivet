@@ -194,6 +194,10 @@ The Production lead-conversion flow did not show a marketing-preference choice, 
 
 The approved product decision is **Opted in by default** across manual member creation, lead conversion, and imports. An explicit **Opted out** choice must always be preserved. The implementation is aligned with that policy after an overlapping feature slice temporarily changed omitted values to opt-out. Consent provenance, wording/version, revocation history, and a member-facing opt-out flow are still required before marketing automation is enabled.
 
+### Implementation status
+
+The current vertical slice adds an attributable preference object to member details, preserves legacy boolean records with a compatibility `system_default` fact, marks imports as `imported`, shows the choice during lead conversion and manual member creation, and records staff-assisted changes in the member timeline plus audit stream. Member-facing withdrawal, channel-specific suppression, and campaign enforcement remain intentionally open.
+
 ### Completion criteria
 
 - Keep **Opted in** as RIVET's consistent default across manual member creation and lead conversion unless the operator or member selects **Opted out**.
@@ -427,10 +431,11 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-001 — Membership upgrade and downgrade are not explicit API operations
 
-- Status: **Confirmed missing from the current `GymOSApi` contract**.
+- Status: **Implemented for the supervised pilot; production verification pending**.
 - Evidence: the contract exposes sale, renewal, freeze, unfreeze, extension, cancellation, and transfer, but no dedicated plan-change operation.
 - Risk: staff cannot safely change a member's plan while preserving historical terms and reconciling price differences.
-- Fix/acceptance: add a typed plan-change operation to mock and Convex adapters. Support immediate or next-renewal effective dates, required reason/permission, immutable successor or adjustment facts, explicit integer-minor-unit charge/credit, timeline, and audit. Do not invent proration; record the chosen pilot policy in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md`.
+- Implementation: `changeMembershipPlan` now exists in the typed API, mock adapter, Convex adapter, and server mutation. It requires a reason, creates an immutable successor term, records a `plan_change` adjustment, timeline event, and audit event, and supports next-renewal or permission-gated immediate changes. Both paths charge the replacement plan at its full integer-minor-unit price; RIVET does not invent proration or an automatic credit/refund. Immediate changes supersede the old term with an auditable cancellation reason.
+- Remaining acceptance: exercise both effective-date paths against a disposable Production member, confirm the old/new terms and charges after reload, and verify the permission boundary for immediate changes.
 
 ### TODO-002 — Operational messaging is sandbox-only outside gym applications
 
@@ -483,10 +488,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-009 — Record marketing-preference provenance and revocation history
 
-- Status: **Partially implemented; default policy confirmed by the product owner**.
-- Evidence: RIVET intentionally defaults new members to **Opted in** across manual creation, lead conversion, and imports, while explicit opt-out remains supported. The stored domain fact is still a boolean without source, wording version, timestamp, actor, channel scope, or append-only change history.
+- Status: **Partially implemented; provenance and staff-assisted withdrawal shipped, member-facing history/channel scope remain open**.
+- Evidence: RIVET intentionally defaults new members to **Opted in** across manual creation, lead conversion, and imports, while explicit opt-out remains supported. Member details now expose source, timestamp/actor metadata, and wording version; staff edits create a `marketing_preference_changed` timeline fact and an immutable audit event. Imports are marked `imported`, while omitted legacy booleans are surfaced as a `system_default` compatibility fact.
 - Risk: the current system cannot distinguish a system-applied product default from a preference actively selected by a member or staff user, prove why an existing preference has its value, or reliably suppress every future promotional channel after withdrawal.
-- Fix/acceptance: add preference source (`system_default`, `staff_selected`, or `member_selected`), version/actor/timestamp facts, an obvious staff/member opt-out path, channel-specific suppression, migration treatment for historical records, and tests for defaulted opt-in, explicit opt-in, explicit opt-out, withdrawal, imports, conversion, and authorization. Never describe the system default as explicit consent.
+- Remaining acceptance: add the member-facing opt-out/history surface, channel-specific suppression before campaigns, migration/backfill treatment for historical records, and Production verification. Never describe the system default as explicit consent.
 
 ### TODO-010 — Verify application review-note editing in Production
 

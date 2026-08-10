@@ -14,6 +14,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,9 +25,9 @@ import {
 import { Monogram } from "@/components/ui/misc";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
-import { CancelMembershipDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
+import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
 
-type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "cancel" | "archive" | null;
+type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | null;
 
 /**
  * Member 360 header: identity, current commercial state, and every action a
@@ -46,10 +47,10 @@ export function MemberHeader({
   const invalidate = useInvalidate();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [archiveReason, setArchiveReason] = useState("");
-  const [editForm, setEditForm] = useState({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "" });
+  const [editForm, setEditForm] = useState({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "", marketingOptIn: member.marketingOptIn, marketingPreferenceSource: undefined as "staff_selected" | undefined });
 
   useEffect(() => {
-    if (dialog === "edit") setEditForm({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "" });
+    if (dialog === "edit") setEditForm({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "", marketingOptIn: member.marketingOptIn, marketingPreferenceSource: undefined });
   }, [dialog, member]);
 
   const archive = useApiMutation((api) => api.archiveMember(member.id, { reason: archiveReason }), {
@@ -67,6 +68,8 @@ export function MemberHeader({
     emergencyContactPhone: editForm.emergencyContactPhone.trim() || undefined,
     notes: editForm.notes.trim() || undefined,
     tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+    marketingOptIn: editForm.marketingOptIn,
+    marketingPreferenceSource: editForm.marketingPreferenceSource,
   }), {
     onSuccess: async () => {
       toast.success("Member profile updated — audited.");
@@ -155,7 +158,7 @@ export function MemberHeader({
               <Banknote /> Collect
             </Button>
           ) : null}
-          {can("members.write") || can("memberships.freeze") || can("memberships.override_dates") || can("members.archive") ? (
+          {can("members.write") || canSell || can("memberships.freeze") || can("memberships.override_dates") || can("members.archive") ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="secondary" size="icon" aria-label="More actions">
@@ -186,6 +189,11 @@ export function MemberHeader({
                 {can("memberships.override_dates") && currentMembership && !currentMembership.cancelledAt && (session?.branches.length ?? 0) > 1 ? (
                   <DropdownMenuItem onClick={() => setDialog("transfer")}>
                     <ArrowRightLeft /> Transfer branch…
+                  </DropdownMenuItem>
+                ) : null}
+                {canSell && currentMembership && !currentMembership.cancelledAt ? (
+                  <DropdownMenuItem onClick={() => setDialog("plan-change")}>
+                    <ArrowRightLeft /> Change plan…
                   </DropdownMenuItem>
                 ) : null}
                 {can("memberships.freeze") && currentMembership && !currentMembership.cancelledAt ? (
@@ -242,6 +250,7 @@ export function MemberHeader({
           <ExtendDialog open={dialog === "extend"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership extended.")} />
           <TransferMembershipDialog open={dialog === "transfer"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} branches={session?.branches ?? []} onDone={() => toast.success("Membership transferred.")} />
           <CancelMembershipDialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership cancelled.")} />
+          <ChangeMembershipPlanDialog open={dialog === "plan-change"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} allowImmediate={can("memberships.override_dates")} onDone={() => toast.success("Membership plan changed — successor term created.")} />
         </>
       ) : null}
 
@@ -274,6 +283,13 @@ export function MemberHeader({
             </div>
             <Field label="Tags" hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder="VIP, morning, personal training" /></Field>
             <Field label="Service notes"><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Non-sensitive operational context for staff" /></Field>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/30 px-3 py-3">
+              <div>
+                <p className="text-[13px] font-medium">Marketing messages</p>
+                <p className="text-[12px] text-ink-3">Changing this records who changed the preference and when. Service messages are separate.</p>
+              </div>
+              <Switch checked={editForm.marketingOptIn} onCheckedChange={(checked) => setEditForm((form) => ({ ...form, marketingOptIn: checked, marketingPreferenceSource: "staff_selected" }))} aria-label="Marketing opt-in" />
+            </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>

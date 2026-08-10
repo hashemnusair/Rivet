@@ -86,6 +86,7 @@ const DEFAULT_PLATFORM_PLANS: Data[] = [
 ];
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
+const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -109,6 +110,22 @@ function booleanValue(value: unknown, fallback = false): boolean {
 
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = true): Data {
+  const optedIn = input.marketingOptIn === undefined ? fallbackOptedIn : marketingPreference(input.marketingOptIn);
+  const requestedSource = optionalString(input.marketingPreferenceSource);
+  const source = requestedSource ?? (input.marketingOptIn === undefined ? "system_default" : "staff_selected");
+  if (!["system_default", "staff_selected", "member_selected", "imported"].includes(source)) {
+    domainError("VALIDATION_ERROR", "Marketing preference source is invalid.", { correlationId: actor.correlationId });
+  }
+  return {
+    optedIn,
+    source,
+    changedAt: isoNow(),
+    changedById: source === "system_default" ? undefined : publicUserId(actor.user),
+    wordingVersion: MARKETING_WORDING_VERSION,
+  };
 }
 
 async function platformPlans(ctx: ReadContext): Promise<Data[]> {
@@ -666,6 +683,11 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
     .filter((payment) => payment.memberId === value.id && payment.status !== "voided")
     .reduce((sum, payment) => sum + amountOf(payment.amount), 0);
   const recent = checkins.map((checkin) => businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK)).sort().at(-1);
+  const storedPreference = data(value.marketingPreference);
+  const marketingOptIn = marketingPreference(storedPreference.optedIn ?? value.marketingOptIn);
+  const marketingPreferenceValue: Data = typeof storedPreference.source === "string"
+    ? { ...storedPreference, optedIn: marketingOptIn }
+    : { optedIn: marketingOptIn, source: "system_default", changedAt: optionalString(value.createdAt), wordingVersion: "legacy-boolean" };
   const detail: Data = {
     ...summary,
     gender: optionalString(value.gender),
@@ -675,7 +697,8 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
     emergencyContactPhone: optionalString(value.emergencyContactPhone),
     source: optionalString(value.source),
     assignedSalespersonId: optionalString(value.assignedSalespersonId),
-    marketingOptIn: marketingPreference(value.marketingOptIn),
+    marketingOptIn,
+    marketingPreference: marketingPreferenceValue,
     notes: optionalString(value.notes),
     archivedAt: optionalString(value.archivedAt),
       stats: {
@@ -1926,7 +1949,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: true });
+    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: true, marketingPreferenceSource: "imported" });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
     rows[index] = { ...row, status: "committed", memberId: member.id };
@@ -1979,6 +2002,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     source: optionalString(input.source),
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
     marketingOptIn: marketingPreference(input.marketingOptIn),
+    marketingPreference: marketingPreferenceRecord(input, actor),
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });
@@ -1987,7 +2011,13 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   return { member: await toMemberDetail(ctx, actor, member), duplicates };
 }
 
-async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, input: Data, previousMembershipId?: string): Promise<Data> {
+async function createMembershipMutation(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  input: Data,
+  previousMembershipId?: string,
+  options: { operation?: "sale" | "renewal" | "plan_change"; reason?: string; previousPlanId?: string; effectiveDate?: "immediate" | "next_renewal" } = {},
+): Promise<Data> {
   requirePermission(actor, "memberships.sell");
   const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
   const memberData = data(member.data);
@@ -2023,16 +2053,38 @@ async function createMembershipMutation(ctx: MutationCtx, actor: ActorContext, i
     );
     if (overlaps) domainError("CONFLICT", "This member already has a membership covering part of the selected term.", { correlationId: actor.correlationId });
   }
+  const operation = options.operation ?? (previousMembershipId ? "renewal" : "sale");
+  const membershipId = newPublicId();
+  const adjustments = operation === "plan_change" ? [{
+    id: newPublicId(),
+    membershipId,
+    type: "plan_change",
+    reason: options.reason ?? "Membership plan changed",
+    actorId: publicUserId(actor.user),
+    before: { planId: options.previousPlanId ?? previousMembershipId ?? "" },
+    after: { planId: planData.id, effectiveDate: startDate },
+    approvalStatus: "not_required",
+    createdAt: isoNow(),
+  }] : [];
   const membership = await insertRecord(ctx, actor, "membership", {
-    id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, planId: planData.id, homeBranchId: stringValue(memberData.homeBranchId), startDate, endDate, totalVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, remainingVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, salePrice: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), discountReason: optionalString(input.discountReason), discountApprovalStatus: discount > 0 ? (approvalPending ? "pending" : "approved") : "none", soldById: publicUserId(actor.user), previousMembershipId, frozenDaysUsed: 0, freezes: [], adjustments: [], createdAt: isoNow(),
+    id: membershipId, organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, planId: planData.id, homeBranchId: stringValue(memberData.homeBranchId), startDate, endDate, totalVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, remainingVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, salePrice: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), discountReason: optionalString(input.discountReason), discountApprovalStatus: discount > 0 ? (approvalPending ? "pending" : "approved") : "none", soldById: publicUserId(actor.user), previousMembershipId, frozenDaysUsed: 0, freezes: [], adjustments, createdAt: isoNow(),
   }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
   const total = price - discount;
   const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
-  const renewal = Boolean(previousMembershipId);
-  const event = await insertTimeline(ctx, actor, { memberId: memberData.id, branchId: memberData.homeBranchId, type: renewal ? "membership_renewed" : "membership_sold", title: `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`, body: `Term ${membership.startDate} → ${membership.endDate}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: membership.id } });
+  const renewal = operation === "renewal";
+  const event = await insertTimeline(ctx, actor, {
+    memberId: memberData.id,
+    branchId: memberData.homeBranchId,
+    type: operation === "plan_change" ? "membership_plan_changed" : renewal ? "membership_renewed" : "membership_sold",
+    title: operation === "plan_change" ? `Membership plan changed to ${stringValue(planData.name)}` : `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`,
+    body: operation === "plan_change" ? `${options.reason ?? "Plan change"} Effective ${membership.startDate}; no proration applied.` : `Term ${membership.startDate} → ${membership.endDate}.`,
+    actorId: publicUserId(actor.user),
+    actorName: actor.user.fullName,
+    meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
+  });
   if (override) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
   if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price }, after: { discount }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
-  await insertAudit(ctx, actor, { category: "memberships", action: renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}`, after: { startDate: membership.startDate, endDate: membership.endDate, total }, branchId: memberData.homeBranchId });
+  await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
   let payment: Data | undefined;
   let receipt: Data | undefined;
   if (input.payment && amountOf(data(input.payment).amount) > 0) {
@@ -2218,10 +2270,44 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       delete patch.memberId;
       const homeBranch = patch.homeBranchId ? await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId)) : null;
       if (patch.homeBranchId) assertBranchAccess(actor, homeBranch);
-      const before = { fullName: data(record.data).fullName, phone: data(record.data).phone, email: data(record.data).email, homeBranchId: data(record.data).homeBranchId };
+      const previous = data(record.data);
+      const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;
+      delete patch.marketingPreferenceSource;
+      delete patch.marketingOptIn;
+      delete patch.marketingPreference;
+      if (marketingChanged) {
+        const preferenceInput = { marketingOptIn: input.marketingOptIn, marketingPreferenceSource: input.marketingPreferenceSource };
+        const nextPreference = marketingPreferenceRecord(preferenceInput, actor, marketingPreference(previous.marketingOptIn));
+        patch.marketingOptIn = nextPreference.optedIn;
+        patch.marketingPreference = nextPreference;
+      }
+      const before = { fullName: previous.fullName, phone: previous.phone, email: previous.email, homeBranchId: previous.homeBranchId };
       const updated = await patchRecord(ctx, actor, record, patch);
       if (homeBranch) await ctx.db.patch(record._id, { branchId: homeBranch._id, updatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "members", action: "member.update", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member profile updated", before, after: { fullName: updated.fullName, phone: updated.phone, email: updated.email, homeBranchId: updated.homeBranchId }, branchId: optionalString(updated.homeBranchId) });
+      if (marketingChanged) {
+        await insertTimeline(ctx, actor, {
+          memberId: record.publicId,
+          branchId: optionalString(updated.homeBranchId),
+          type: "marketing_preference_changed",
+          title: `Marketing messages ${updated.marketingOptIn ? "enabled" : "disabled"}`,
+          body: `Preference changed from ${marketingPreference(previous.marketingOptIn) ? "opted in" : "opted out"} to ${updated.marketingOptIn ? "opted in" : "opted out"}.`,
+          actorId: publicUserId(actor.user),
+          actorName: actor.user.fullName,
+          meta: { optedIn: Boolean(updated.marketingOptIn), source: stringValue(data(updated.marketingPreference).source, "staff_selected") },
+        });
+        await insertAudit(ctx, actor, {
+          category: "members",
+          action: "member.marketing_preference.update",
+          entityType: "member",
+          entityId: record.publicId,
+          entityLabel: `${updated.fullName} · ${updated.memberNumber}`,
+          summary: `Marketing messages ${updated.marketingOptIn ? "enabled" : "disabled"}`,
+          before: { optedIn: marketingPreference(previous.marketingOptIn), source: data(previous.marketingPreference).source ?? "system_default" },
+          after: { optedIn: Boolean(updated.marketingOptIn), source: stringValue(data(updated.marketingPreference).source, "staff_selected") },
+          branchId: optionalString(updated.homeBranchId),
+        });
+      }
       return await toMemberDetail(ctx, actor, updated);
     }
     case "members.archive": {
@@ -2278,7 +2364,40 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const renewInput: Data = { ...input, memberId: oldData.memberId, planId: input.planId ?? oldData.planId, startDate: input.startDate ?? (stringValue(oldData.endDate) >= today ? addDays(stringValue(oldData.endDate), 1) : today) };
       delete renewInput.membershipId;
-      return await createMembershipMutation(ctx, actor, renewInput, old.publicId);
+      return await createMembershipMutation(ctx, actor, renewInput, old.publicId, { operation: "renewal" });
+    }
+    case "memberships.plan_change": {
+      requirePermission(actor, "memberships.sell");
+      requireReason(input.reason, actor.correlationId);
+      const old = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      const oldData = data(old.data);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const status = statusOfMembership(oldData, today);
+      if (status === "cancelled") domainError("MEMBERSHIP_NOT_ACTIVE", "Cancelled memberships cannot change plans.", { correlationId: actor.correlationId });
+      if (stringValue(input.planId) === stringValue(oldData.planId)) domainError("VALIDATION_ERROR", "Choose a different plan.", { correlationId: actor.correlationId });
+      const effectiveDate = stringValue(input.effectiveDate, "next_renewal");
+      if (effectiveDate !== "next_renewal" && effectiveDate !== "immediate") domainError("VALIDATION_ERROR", "Effective date must be immediate or next renewal.", { correlationId: actor.correlationId });
+      if (effectiveDate === "immediate") {
+        requirePermission(actor, "memberships.override_dates");
+        if (status !== "active" && status !== "expiring") domainError("MEMBERSHIP_NOT_ACTIVE", "Immediate plan changes require an active membership.", { correlationId: actor.correlationId });
+      }
+      const changeInput: Data = {
+        ...input,
+        memberId: oldData.memberId,
+        planId: input.planId,
+        startDate: effectiveDate === "immediate" ? today : stringValue(oldData.endDate) >= today ? addDays(stringValue(oldData.endDate), 1) : today,
+      };
+      delete changeInput.membershipId;
+      delete changeInput.effectiveDate;
+      const result = await createMembershipMutation(ctx, actor, changeInput, old.publicId, { operation: "plan_change", reason: stringValue(input.reason), previousPlanId: oldData.planId, effectiveDate });
+      if (effectiveDate === "immediate") {
+        await patchRecord(ctx, actor, old, {
+          cancelledAt: isoNow(),
+          cancellationReason: `Superseded by plan change: ${stringValue(input.reason)}`,
+          adjustments: [...arrayValue(oldData.adjustments), { id: newPublicId(), membershipId: old.publicId, type: "plan_change", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { planId: oldData.planId, endDate: oldData.endDate }, after: { planId: input.planId, successorMembershipId: data(result.membership).id }, approvalStatus: "not_required", createdAt: isoNow() }],
+        });
+      }
+      return result;
     }
     case "memberships.freeze": {
       requirePermission(actor, "memberships.freeze");

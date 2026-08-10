@@ -10,6 +10,7 @@ import type {
   Lead,
   MembershipAdjustment,
   MembershipPlan,
+  MarketingPreference,
   MessageTemplate,
   Money,
   NotificationSettings,
@@ -51,6 +52,7 @@ export interface MemberRecord {
   source?: Lead["source"];
   assignedSalespersonId?: UUID;
   marketingOptIn: boolean;
+  marketingPreference?: MarketingPreference;
   notes?: string;
   sensitiveNotes?: string;
   archivedAt?: string;

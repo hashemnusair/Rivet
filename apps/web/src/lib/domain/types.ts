@@ -143,10 +143,22 @@ export interface MemberDetail extends MemberSummary {
   source?: LeadSource;
   assignedSalespersonId?: UUID;
   marketingOptIn: boolean;
+  /** Attributable consent state; legacy records may omit this detail. */
+  marketingPreference?: MarketingPreference;
   notes?: string;
   sensitiveNotes?: string; // requires members.sensitive_notes.read
   archivedAt?: ISODateTime;
   stats: MemberStats;
+}
+
+export type MarketingPreferenceSource = "system_default" | "staff_selected" | "member_selected" | "imported";
+
+export interface MarketingPreference {
+  optedIn: boolean;
+  source: MarketingPreferenceSource;
+  changedAt?: ISODateTime;
+  changedById?: UUID;
+  wordingVersion?: string;
 }
 
 export interface MemberStats {
@@ -172,6 +184,7 @@ export interface CreateMemberInput {
   assignedSalespersonId?: UUID;
   tags?: string[];
   marketingOptIn?: boolean;
+  marketingPreferenceSource?: MarketingPreferenceSource;
   notes?: string;
 }
 
@@ -283,7 +296,8 @@ export type AdjustmentType =
   | "cancellation"
   | "branch_transfer"
   | "visit_adjustment"
-  | "date_correction";
+  | "date_correction"
+  | "plan_change";
 
 export interface MembershipAdjustment {
   id: UUID;
@@ -332,6 +346,14 @@ export interface RenewMembershipInput {
   discount?: Money;
   discountReason?: string;
   payment?: { amount: Money; method: PaymentMethodKey };
+}
+
+export type MembershipPlanChangeEffectiveDate = "immediate" | "next_renewal";
+
+export interface ChangeMembershipPlanInput {
+  planId: UUID;
+  effectiveDate?: MembershipPlanChangeEffectiveDate;
+  reason: string;
 }
 
 export interface MembershipSaleResult {
@@ -501,6 +523,8 @@ export interface ConvertLeadInput {
   dateOfBirth?: ISODate;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  marketingOptIn?: boolean;
+  marketingPreferenceSource?: MarketingPreferenceSource;
 }
 
 // Tasks
@@ -567,6 +591,8 @@ export type TimelineEventType =
   | "offer_sent"
   | "membership_sold"
   | "membership_renewed"
+  | "membership_plan_changed"
+  | "marketing_preference_changed"
   | "membership_frozen"
   | "membership_unfrozen"
   | "membership_extended"

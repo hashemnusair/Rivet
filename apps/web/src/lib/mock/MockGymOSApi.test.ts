@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
 import type { MemberSummary, OperationalPolicies } from "@/lib/domain/types";
-import { partsInTimeZone, todayISODate } from "@/lib/utils/dates";
+import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
 
@@ -228,6 +228,7 @@ describe("member creation", () => {
       preferredLanguage: "en",
     });
     expect(created.member.marketingOptIn).toBe(true);
+    expect(created.member.marketingPreference).toMatchObject({ optedIn: true, source: "system_default" });
 
     const optedOut = await api.createMember({
       fullName: "Preference Explicit Test",
@@ -237,6 +238,12 @@ describe("member creation", () => {
       marketingOptIn: false,
     });
     expect(optedOut.member.marketingOptIn).toBe(false);
+    expect(optedOut.member.marketingPreference).toMatchObject({ optedIn: false, source: "staff_selected" });
+
+    const updated = await api.updateMember(created.member.id, { marketingOptIn: false, marketingPreferenceSource: "staff_selected" });
+    expect(updated.marketingPreference).toMatchObject({ optedIn: false, source: "staff_selected" });
+    expect((await api.listMemberTimeline(created.member.id)).items.some((event) => event.type === "marketing_preference_changed")).toBe(true);
+    expect((await api.listAuditEvents({ entityId: created.member.id, pageSize: 20 })).items.some((event) => event.action === "member.marketing_preference.update")).toBe(true);
 
     const preview = await api.previewMemberImport({
       branchId: session.branches[0]!.id,
@@ -454,6 +461,50 @@ describe("membership sale and renewal", () => {
     await api.renewMembership(item.membership.id, {});
     const after = await api.listRenewalQueue({ bucket: "expiring", pageSize: 50 });
     expect(after.items.map((i) => i.membership.id)).not.toContain(item.membership.id);
+  });
+
+  it("changes a membership plan with explicit successor lineage and no proration", async () => {
+    const member = await freshMemberForSale();
+    const plans = (await api.listPlans({ status: "active", pageSize: 10 })).items;
+    const originalPlan = plans[0]!;
+    const replacement = plans.find((plan) => plan.id !== originalPlan.id)!;
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: "2026-08-01" });
+
+    const changed = await api.changeMembershipPlan(sale.membership.id, {
+      planId: replacement.id,
+      effectiveDate: "next_renewal",
+      reason: "Member chose a higher access tier at renewal.",
+    });
+
+    expect(changed.membership.previousMembershipId).toBe(sale.membership.id);
+    expect(changed.membership.planId).toBe(replacement.id);
+    expect(changed.membership.startDate).toBe(addDays(sale.membership.endDate, 1));
+    expect((await api.getMembership(sale.membership.id)).cancelledAt).toBeUndefined();
+    const timeline = await api.listMemberTimeline(member.id);
+    expect(timeline.items.some((event) => event.type === "membership_plan_changed")).toBe(true);
+    expect((await api.listAuditEvents({ entityId: changed.membership.id, pageSize: 20 })).items.some((event) => event.action === "membership.plan_change")).toBe(true);
+  });
+
+  it("requires date-override authority and supersedes the old term for immediate changes", async () => {
+    const member = await freshMemberForSale();
+    const plans = (await api.listPlans({ status: "active", pageSize: 10 })).items;
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: plans[0]!.id, startDate: todayISODate() });
+
+    const changed = await api.changeMembershipPlan(sale.membership.id, {
+      planId: plans.find((plan) => plan.id !== plans[0]!.id)!.id,
+      effectiveDate: "immediate",
+      reason: "Member needs the new access tier today.",
+    });
+
+    expect(changed.membership.startDate).toBe(todayISODate());
+    expect((await api.getMembership(sale.membership.id)).cancelledAt).toBeDefined();
+
+    await api.switchDemoRole("receptionist");
+    await expect(api.changeMembershipPlan(changed.membership.id, {
+      planId: plans[0]!.id,
+      effectiveDate: "immediate",
+      reason: "Attempted unauthorized plan change.",
+    })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 });
 

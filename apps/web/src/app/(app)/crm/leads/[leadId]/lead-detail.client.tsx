@@ -27,6 +27,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
@@ -489,6 +490,8 @@ function ConvertLeadDialog({
   const invalidate = useInvalidate();
   const [language, setLanguage] = useState<"en" | "ar">("en");
   const [gender, setGender] = useState<"male" | "female" | undefined>(undefined);
+  const [marketingOptIn, setMarketingOptIn] = useState(true);
+  const [marketingPreferenceTouched, setMarketingPreferenceTouched] = useState(false);
   const [homeBranch, setHomeBranch] = useState(branchId);
   const [serverError, setServerError] = useState<string | null>(null);
   const [duplicateMemberId, setDuplicateMemberId] = useState<string | null>(null);
@@ -498,11 +501,13 @@ function ConvertLeadDialog({
       setServerError(null);
       setDuplicateMemberId(null);
       setHomeBranch(branchId);
+      setMarketingOptIn(true);
+      setMarketingPreferenceTouched(false);
     }
   }, [branchId, open]);
 
   const mutation = useApiMutation(
-    (api) => api.convertLead(leadId, { homeBranchId: homeBranch, preferredLanguage: language, gender }),
+    (api) => api.convertLead(leadId, { homeBranchId: homeBranch, preferredLanguage: language, gender, marketingOptIn, marketingPreferenceSource: marketingPreferenceTouched ? "staff_selected" : undefined }),
     {
       onSuccess: async (member) => {
         toast.success(`${member.fullName} is now member ${member.memberNumber}. Sell the membership next.`);
@@ -571,6 +576,13 @@ function ConvertLeadDialog({
                 </SelectContent>
               </Select>
             </Field>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/30 px-3 py-3">
+            <div>
+              <p className="text-[13px] font-medium">Marketing messages</p>
+              <p className="text-[12px] text-ink-3">Opted in by default. Toggle to record an explicit staff selection; service messages are separate.</p>
+            </div>
+            <Switch checked={marketingOptIn} onCheckedChange={(checked) => { setMarketingOptIn(checked); setMarketingPreferenceTouched(true); }} aria-label="Marketing opt-in" />
           </div>
           {serverError ? (
             <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger">

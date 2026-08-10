@@ -40,6 +40,7 @@ const schema = z.object({
   assignedSalespersonId: z.string().optional(),
   notes: z.string().optional(),
   marketingOptIn: z.boolean(),
+  marketingPreferenceSource: z.enum(["system_default", "staff_selected", "member_selected", "imported"]).optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -81,6 +82,7 @@ export default function NewMemberPage() {
         assignedSalespersonId: values.assignedSalespersonId || undefined,
         notes: values.notes || undefined,
         marketingOptIn: values.marketingOptIn,
+        marketingPreferenceSource: values.marketingPreferenceSource,
       }),
     {
       onSuccess: async (result) => {
@@ -288,7 +290,7 @@ export default function NewMemberPage() {
             <Controller
               control={form.control}
               name="marketingOptIn"
-              render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Marketing opt-in" />}
+              render={({ field }) => <Switch checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); form.setValue("marketingPreferenceSource", "staff_selected"); }} aria-label="Marketing opt-in" />}
             />
           </label>
         </section>

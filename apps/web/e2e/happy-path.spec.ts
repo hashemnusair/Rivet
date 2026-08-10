@@ -65,6 +65,27 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await expect(page.getByText(/renewed|membership sold/i).first()).toBeVisible();
   });
 
+  test("changes an expiring member's plan with an explicit successor term", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/crm/queues");
+    await page.getByRole("button", { name: /Expiring/ }).click();
+    const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
+    await firstRow.click();
+    await page.getByTestId("queue-work-panel").getByRole("link", { name: /^Open$/ }).click();
+    await expect(page).toHaveURL(/\/members\//);
+
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: /Change plan/ }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText(/no proration/i);
+    await dialog.getByLabel("New membership plan").click();
+    await page.getByRole("option").first().click();
+    await dialog.getByPlaceholder("e.g. Member moving to unlimited access at next renewal").fill("Member selected a different tier at renewal.");
+    await dialog.getByRole("button", { name: "Change plan" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/successor term created/i)).toBeVisible();
+  });
+
   test("reception collects an outstanding balance and the receipt is reachable", async ({ page }) => {
     await signIn(page, "Reception");
 

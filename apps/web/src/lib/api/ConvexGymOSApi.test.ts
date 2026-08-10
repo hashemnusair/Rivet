@@ -155,6 +155,15 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(calls[1]).toMatchObject({ operation: "memberships.transfer", input: { membershipId: "membership-1", branchId: "branch-2", reason: "Member relocated" } });
   });
 
+  it("routes explicit membership plan changes with the effective-date policy", async () => {
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => { call = args; }));
+
+    await api.changeMembershipPlan("membership-1", { planId: "plan-2", effectiveDate: "next_renewal", reason: "Member selected a different tier." });
+
+    expect(call).toMatchObject({ operation: "memberships.plan_change", input: { membershipId: "membership-1", planId: "plan-2", effectiveDate: "next_renewal", reason: "Member selected a different tier." } });
+  });
+
   it("keeps platform application review behind the platform query/action boundary", async () => {
     const application = {
       id: "20000000-0000-4a00-8a00-000000000001",

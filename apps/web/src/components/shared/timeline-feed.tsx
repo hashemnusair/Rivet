@@ -34,6 +34,8 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   offer_sent: { icon: FileText, tone: "text-warning-deep" },
   membership_sold: { icon: CreditCard, tone: "text-success-deep" },
   membership_renewed: { icon: RotateCcw, tone: "text-success-deep" },
+  membership_plan_changed: { icon: ArrowRightLeft, tone: "text-warning-deep" },
+  marketing_preference_changed: { icon: MessageSquare, tone: "text-ink-2" },
   membership_frozen: { icon: Snowflake, tone: "text-ink-2" },
   membership_unfrozen: { icon: Sun, tone: "text-ink-2" },
   membership_extended: { icon: CalendarClock, tone: "text-ink-2" },
