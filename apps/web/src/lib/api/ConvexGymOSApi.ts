@@ -173,6 +173,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listMarketplaceGyms(): Promise<MarketplaceGym[]> { return this.query("public.marketplace"); }
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> { return this.query("customer.experience"); }
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
+  updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }

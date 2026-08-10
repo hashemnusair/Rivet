@@ -16,6 +16,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CustomerCommunicationPreferences } from "@/components/public/customer-communication-preferences";
 import type { CustomerMembership, MarketplaceGym } from "@/lib/public/experience-data";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -181,6 +182,7 @@ export default function MemberDashboardPage() {
               ) : null}
             </ul>
           </div>
+          <CustomerCommunicationPreferences />
         </aside>
       </div>
 

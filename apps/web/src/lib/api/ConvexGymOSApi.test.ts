@@ -44,6 +44,14 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(calls[1]).toMatchObject({ operation: "members.list", organizationId: session.organization.id, activeBranchId: session.activeBranchId });
   });
 
+  it("routes member marketing preferences through the authenticated mutation boundary", async () => {
+    let mutationArgs: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: { id: "customer-1" } }, (_kind, args) => { mutationArgs = args; }));
+
+    await expect(api.updateCustomerMarketingPreference({ optedIn: false, customerId: "customer-1" })).resolves.toEqual({ id: "customer-1" });
+    expect(mutationArgs).toMatchObject({ operation: "customer.marketingPreference.update", input: { optedIn: false, customerId: "customer-1" } });
+  });
+
   it("keeps idempotency keys inside the payment mutation boundary", async () => {
     let mutationArgs: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => { mutationArgs = args; }));

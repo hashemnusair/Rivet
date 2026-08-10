@@ -54,6 +54,7 @@ interface ExperienceContextValue {
   bookings: TrialBooking[];
   signInCustomer: (customerId: string) => void;
   registerCustomer: (input: RegisterCustomerInput) => Promise<CustomerPersona>;
+  updateMarketingPreference: (optedIn: boolean) => Promise<CustomerPersona>;
   /** Signs in the authenticated person as themselves, creating their member profile once. */
   signInAsIdentity: (input: { email: string; fullName: string }) => Promise<CustomerPersona>;
   emailTaken: (email: string) => boolean;
@@ -116,10 +117,12 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [platformSnapshot, setPlatformSnapshot] = useState<PlatformSnapshot>();
   const [saasPlans, setSaasPlans] = useState<PlatformSaasPlan[]>([]);
 
-  const customers = useMemo(
-    () => (convexMode ? (customer ? [customer] : []) : [...registered, ...CUSTOMER_PERSONAS]),
-    [convexMode, customer, registered],
-  );
+  const customers = useMemo(() => {
+    if (convexMode) return customer ? [customer] : [];
+    const previewCustomers = [...registered, ...CUSTOMER_PERSONAS].filter((persona, index, all) => all.findIndex((candidate) => candidate.id === persona.id) === index);
+    if (!customer) return previewCustomers;
+    return [customer, ...previewCustomers.filter((persona) => persona.id !== customer.id)];
+  }, [convexMode, customer, registered]);
 
   const retryExperience = useCallback(() => {
     setExperienceAttempt((attempt) => attempt + 1);
@@ -269,15 +272,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       setCustomerId(persona.id);
       return persona;
     }
-    const persona: CustomerPersona = {
-      id: `customer-${Date.now()}`,
-      name: input.fullName.trim(),
-      nameAr: input.fullName.trim(),
-      email: input.email.trim().toLowerCase(),
-      phone: input.phone.trim(),
-      initials: initialsOf(input.fullName),
-      context: "New member account",
-    };
+    const persona = await getApi().registerCustomer(input);
     setRegistered((current) => {
       const next = [persona, ...current];
       window.sessionStorage.setItem(STORAGE_KEYS.registered, JSON.stringify(next));
@@ -287,6 +282,22 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setCustomerId(persona.id);
     return persona;
   }, [convexMode]);
+
+  const updateMarketingPreference = useCallback(async (optedIn: boolean) => {
+    const current = customer ?? customers.find((persona) => persona.id === customerId);
+    const next = await getApi().updateCustomerMarketingPreference({ optedIn, customerId: current?.id });
+    setCustomer(next);
+    setCustomerId(next.id);
+    if (!convexMode) {
+      setRegistered((existing) => {
+        const updated = [next, ...existing.filter((persona) => persona.id !== next.id)];
+        window.sessionStorage.setItem(STORAGE_KEYS.registered, JSON.stringify(updated));
+        window.sessionStorage.setItem(STORAGE_KEYS.customer, next.id);
+        return updated;
+      });
+    }
+    return next;
+  }, [convexMode, customer, customerId, customers]);
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
@@ -351,6 +362,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       bookings,
       signInCustomer,
       registerCustomer,
+      updateMarketingPreference,
       signInAsIdentity,
       emailTaken: (email) => customers.some((persona) => persona.email.toLowerCase() === email.trim().toLowerCase()),
       signOutCustomer,
@@ -379,6 +391,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       previewSessionReady,
       retryExperience,
       registerCustomer,
+      updateMarketingPreference,
       signInAsIdentity,
       signInCustomer,
       signOutCustomer,

@@ -128,6 +128,28 @@ function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOpt
   };
 }
 
+function customerPreferenceFromProfile(value: Data): Data {
+  const optedIn = value.marketingOptIn === undefined ? true : booleanValue(value.marketingOptIn, true);
+  const requestedSource = stringValue(value.marketingPreferenceSource, "system_default");
+  const source = requestedSource === "member_selected" ? "member_selected" : "system_default";
+  const changedAt = numberValue(value.marketingPreferenceChangedAt);
+  return {
+    optedIn,
+    source,
+    changedAt: changedAt > 0 ? new Date(changedAt).toISOString() : optionalString(value.createdAt),
+    wordingVersion: stringValue(value.marketingPreferenceWordingVersion, "legacy-boolean"),
+  };
+}
+
+function customerPreferenceEventView(value: Data): Data {
+  return {
+    optedIn: booleanValue(value.optedIn, true),
+    source: stringValue(value.source, "system_default") === "member_selected" ? "member_selected" : "system_default",
+    changedAt: new Date(numberValue(value.changedAt)).toISOString(),
+    wordingVersion: stringValue(value.wordingVersion, MARKETING_WORDING_VERSION),
+  };
+}
+
 async function platformPlans(ctx: ReadContext): Promise<Data[]> {
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
   return rows.length > 0
@@ -999,7 +1021,17 @@ async function legacyCustomerProfileForUser(ctx: ReadContext, userId: string): P
 async function customerProfileForUser(ctx: ReadContext, userId: string): Promise<Data | undefined> {
   const profile = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
   if (profile) {
-    return { id: profile.publicId, userId: profile.userId, name: profile.name, nameAr: profile.nameAr, email: profile.email, phone: profile.phone, initials: profile.initials, context: profile.context };
+    return {
+      id: profile.publicId,
+      userId: profile.userId,
+      name: profile.name,
+      nameAr: profile.nameAr,
+      email: profile.email,
+      phone: profile.phone,
+      initials: profile.initials,
+      context: profile.context,
+      marketingPreference: customerPreferenceFromProfile(profile),
+    };
   }
   // Keep existing preview/pilot profiles readable during the table migration,
   // but never fall back to email matching: only the authenticated user ID can
@@ -1016,16 +1048,48 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
   const profileId = existing?.publicId ?? optionalString(legacy?.id) ?? newPublicId();
   const value = buildCustomerProfileDraft({ userId, email, fullName: user.fullName, phone: user.phone }, input, profileId);
   const now = Date.now();
-  const stored = { publicId: value.id, userId: value.userId, name: value.name, nameAr: value.nameAr, email: value.email, phone: value.phone, initials: value.initials, context: value.context };
-  if (existing) await ctx.db.patch(existing._id, { ...stored, updatedAt: now });
-  else await ctx.db.insert("customerProfiles", { ...stored, createdAt: now, updatedAt: now });
-  return value;
+  const preference = existing ? customerPreferenceFromProfile(existing) : customerPreferenceFromProfile(legacy ?? { createdAt: now });
+  const preferenceChangedAt = preference.changedAt ? Date.parse(stringValue(preference.changedAt)) : now;
+  const stored = {
+    publicId: value.id,
+    userId: value.userId,
+    name: value.name,
+    nameAr: value.nameAr,
+    email: value.email,
+    phone: value.phone,
+    initials: value.initials,
+    context: value.context,
+    marketingOptIn: booleanValue(preference.optedIn, true),
+    marketingPreferenceSource: stringValue(preference.source, "system_default") === "member_selected" ? "member_selected" as const : "system_default" as const,
+    marketingPreferenceChangedAt: Number.isFinite(preferenceChangedAt) ? preferenceChangedAt : now,
+    marketingPreferenceWordingVersion: stringValue(preference.wordingVersion, MARKETING_WORDING_VERSION),
+  };
+  if (existing) {
+    await ctx.db.patch(existing._id, { ...stored, updatedAt: now });
+  } else {
+    await ctx.db.insert("customerProfiles", { ...stored, createdAt: now, updatedAt: now });
+    await ctx.db.insert("customerMarketingPreferenceEvents", {
+      userId,
+      customerProfileId: value.id,
+      optedIn: preference.optedIn,
+      source: "system_default",
+      wordingVersion: stringValue(preference.wordingVersion, MARKETING_WORDING_VERSION),
+      changedAt: now,
+    });
+  }
+  return { ...value, marketingPreference: preference };
 }
 
-async function customerExperience(ctx: QueryCtx): Promise<Data> {
+async function customerExperience(ctx: ReadContext): Promise<Data> {
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
+  const preferenceEvents = await ctx.db.query("customerMarketingPreferenceEvents").withIndex("by_user_id", (q) => q.eq("userId", userId)).collect();
+  const history = preferenceEvents
+    .sort((a, b) => a.changedAt - b.changedAt)
+    .map((event) => customerPreferenceEventView(event));
+  const preference = history.at(-1) ?? data(profile?.marketingPreference ?? customerPreferenceFromProfile({ createdAt: Date.now() }));
+  const preferenceHistory = history.length > 0 ? history : [preference];
   const memberships = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
     .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
     .filter((value) => value.customerUserId === userId || value.customerId === profile?.id)
@@ -1043,6 +1107,8 @@ async function customerExperience(ctx: QueryCtx): Promise<Data> {
           phone: stringValue(profile.phone),
           initials: stringValue(profile.initials),
           context: stringValue(profile.context, "RIVET member"),
+          marketingPreference: preference,
+          marketingPreferenceHistory: preferenceHistory,
         }
       : undefined,
     memberships,
@@ -1118,6 +1184,62 @@ async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
 async function registerCustomer(ctx: MutationCtx, input: Data): Promise<Data> {
   const { user } = await requireMember(ctx);
   return await saveCustomerProfile(ctx, user, input);
+}
+
+async function updateCustomerMarketingPreference(ctx: MutationCtx, input: Data): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  if (typeof input.optedIn !== "boolean") {
+    domainError("VALIDATION_ERROR", "Choose whether to receive marketing messages.", { fieldErrors: { optedIn: ["Required"] } });
+  }
+
+  const userId = publicUserId(user);
+  let profile = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
+  if (!profile) {
+    await saveCustomerProfile(ctx, user, {});
+    profile = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
+  }
+  if (!profile) domainError("CONFIGURATION_ERROR", "The member profile could not be created.");
+
+  const optedIn = input.optedIn;
+  const currentOptedIn = profile.marketingOptIn ?? true;
+  const currentSource = profile.marketingPreferenceSource ?? "system_default";
+  const existingPreferenceEvents = await ctx.db.query("customerMarketingPreferenceEvents").withIndex("by_user_id", (q) => q.eq("userId", userId)).collect();
+  if (existingPreferenceEvents.length === 0) {
+    await ctx.db.insert("customerMarketingPreferenceEvents", {
+      userId,
+      customerProfileId: profile.publicId,
+      optedIn: true,
+      source: "system_default",
+      wordingVersion: MARKETING_WORDING_VERSION,
+      changedAt: profile.createdAt,
+    });
+  }
+  if (currentOptedIn === optedIn && currentSource === "member_selected") {
+    const experience = await customerExperience(ctx);
+    if (!experience.customer) domainError("NOT_FOUND", "Member profile not found.");
+    return experience.customer;
+  }
+
+  const changedAt = Date.now();
+  await ctx.db.patch(profile._id, {
+    marketingOptIn: optedIn,
+    marketingPreferenceSource: "member_selected",
+    marketingPreferenceChangedAt: changedAt,
+    marketingPreferenceWordingVersion: MARKETING_WORDING_VERSION,
+    updatedAt: changedAt,
+  });
+  await ctx.db.insert("customerMarketingPreferenceEvents", {
+    userId,
+    customerProfileId: profile.publicId,
+    optedIn,
+    source: "member_selected",
+    wordingVersion: MARKETING_WORDING_VERSION,
+    changedAt,
+  });
+
+  const experience = await customerExperience(ctx);
+  if (!experience.customer) domainError("NOT_FOUND", "Member profile not found.");
+  return experience.customer;
 }
 
 async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data> {
@@ -2116,6 +2238,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   if (operation === "customer.register") return await registerCustomer(ctx, input);
+  if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
   if (operation === "platform.application.note") {

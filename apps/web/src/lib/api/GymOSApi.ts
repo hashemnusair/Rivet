@@ -451,6 +451,8 @@ export interface GymOSApi {
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }>;
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
+  /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
+  updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;

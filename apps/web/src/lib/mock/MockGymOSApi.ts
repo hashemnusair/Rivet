@@ -49,7 +49,7 @@ import {
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import {
   currentRole,
   currentUser,
@@ -174,8 +174,11 @@ export class MockGymOSApi implements GymOSApi {
   private platformGyms: MarketplaceGym[];
   private platformPlans: PlatformSaasPlan[];
   private trialBookings: TrialBooking[];
+  private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
+  private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
+  private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -194,20 +197,60 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => this.platformGyms.filter((gym) => (gym.isPublic ?? true) && (gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial")));
   }
 
+  private customerWithPreference(persona: CustomerPersona): CustomerPersona {
+    const history = this.customerPreferenceHistory.get(persona.id) ?? [];
+    const fallback: CustomerMarketingPreference = { optedIn: true, source: "system_default", wordingVersion: MARKETING_WORDING_VERSION };
+    const preference = history[history.length - 1] ?? fallback;
+    return { ...persona, marketingPreference: preference, marketingPreferenceHistory: history.length > 0 ? history.map((item) => ({ ...item })) : [fallback] };
+  }
+
   getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
-    return this.respond(() => ({ customer: CUSTOMER_PERSONAS[0], memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) }));
+    return this.respond(() => {
+      const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
+      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+    });
   }
 
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> {
-    return this.respond(() => ({
-      id: `customer-${Date.now()}`,
-      name: input.fullName,
-      nameAr: input.fullName,
-      email: input.email.trim().toLowerCase(),
-      phone: input.phone,
-      initials: input.fullName.split(/\s+/).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase(),
-      context: "New member account",
-    }));
+    return this.respond(() => {
+      const persona = {
+        id: `customer-${Date.now()}`,
+        name: input.fullName,
+        nameAr: input.fullName,
+        email: input.email.trim().toLowerCase(),
+        phone: input.phone,
+        initials: input.fullName.split(/\s+/).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase(),
+        context: "New member account",
+      };
+      this.registeredCustomers.set(persona.id, persona);
+      this.activeCustomerId = persona.id;
+      return this.customerWithPreference(persona);
+    });
+  }
+
+  updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> {
+    return this.respond(() => {
+      if (typeof input.optedIn !== "boolean") throw ApiError.of(ERR.VALIDATION, "Choose whether to receive marketing messages.");
+      const customerId = input.customerId ?? this.activeCustomerId;
+      const persona = this.registeredCustomers.get(customerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === customerId);
+      const current = persona ?? {
+        id: customerId,
+        name: "RIVET member",
+        nameAr: "RIVET member",
+        email: "member@example.com",
+        phone: "",
+        initials: "RM",
+        context: "RIVET member",
+      };
+      const history = this.customerPreferenceHistory.get(current.id) ?? [{ optedIn: true, source: "system_default" as const, wordingVersion: MARKETING_WORDING_VERSION }];
+      const previous = history[history.length - 1];
+      if (!previous || previous.optedIn !== input.optedIn || previous.source !== "member_selected") {
+        history.push({ optedIn: input.optedIn, source: "member_selected", changedAt: nowISO(), wordingVersion: MARKETING_WORDING_VERSION });
+        this.customerPreferenceHistory.set(current.id, history);
+      }
+      this.activeCustomerId = current.id;
+      return this.customerWithPreference(current);
+    });
   }
 
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {

@@ -46,6 +46,18 @@ export interface CustomerPersona {
   phone: string;
   initials: string;
   context: string;
+  /** Member-owned promotional communication preference, separate from service messages. */
+  marketingPreference?: CustomerMarketingPreference;
+  marketingPreferenceHistory?: CustomerMarketingPreference[];
+}
+
+export type CustomerMarketingPreferenceSource = "system_default" | "member_selected";
+
+export interface CustomerMarketingPreference {
+  optedIn: boolean;
+  source: CustomerMarketingPreferenceSource;
+  changedAt?: string;
+  wordingVersion?: string;
 }
 
 export interface CustomerMembership {

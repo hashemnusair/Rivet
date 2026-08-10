@@ -25,6 +25,8 @@ const gymApplicationNotificationStatus = v.union(
   v.literal("not_configured"),
 );
 
+const customerMarketingPreferenceSource = v.union(v.literal("system_default"), v.literal("member_selected"));
+
 export const organizationRole = v.union(
   v.literal("owner"),
   v.literal("manager"),
@@ -101,11 +103,28 @@ export default defineSchema({
     phone: v.string(),
     initials: v.string(),
     context: v.string(),
+    marketingOptIn: v.optional(v.boolean()),
+    marketingPreferenceSource: v.optional(customerMarketingPreferenceSource),
+    marketingPreferenceChangedAt: v.optional(v.number()),
+    marketingPreferenceWordingVersion: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user_id", ["userId"])
     .index("by_public_id", ["publicId"]),
+
+  // Global, append-only member preference history. A consumer profile is not
+  // tenant-owned, so this intentionally has no organizationId.
+  customerMarketingPreferenceEvents: defineTable({
+    userId: v.string(),
+    customerProfileId: v.string(),
+    optedIn: v.boolean(),
+    source: customerMarketingPreferenceSource,
+    wordingVersion: v.string(),
+    changedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_profile", ["customerProfileId"]),
 
   // Public gym applications remain outside a tenant until RIVET approves and
   // provisions the gym. Only platform-admin workflows may read or change them.

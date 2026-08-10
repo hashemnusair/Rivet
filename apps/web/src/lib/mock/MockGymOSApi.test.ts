@@ -197,6 +197,22 @@ describe("tenant/branch scoping and authorization", () => {
 });
 
 describe("member creation", () => {
+  it("keeps a member-owned marketing preference and its history separate from staff records", async () => {
+    const initial = await api.getCustomerExperience();
+    const customerId = initial.customer?.id;
+    expect(customerId).toBeDefined();
+    expect(initial.customer?.marketingPreference).toMatchObject({ optedIn: true, source: "system_default" });
+    expect(initial.customer?.marketingPreferenceHistory).toHaveLength(1);
+
+    const optedOut = await api.updateCustomerMarketingPreference({ optedIn: false, customerId });
+    expect(optedOut.marketingPreference).toMatchObject({ optedIn: false, source: "member_selected" });
+    expect(optedOut.marketingPreferenceHistory).toHaveLength(2);
+
+    const optedIn = await api.updateCustomerMarketingPreference({ optedIn: true, customerId });
+    expect(optedIn.marketingPreference).toMatchObject({ optedIn: true, source: "member_selected" });
+    expect(optedIn.marketingPreferenceHistory).toHaveLength(3);
+  });
+
   it("creates a member, assigns a branch-prefixed number and starts a timeline", async () => {
     const session = await api.getSession();
     const branch = session.branches[0]!;
