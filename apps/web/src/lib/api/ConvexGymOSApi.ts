@@ -35,11 +35,12 @@ import type {
   UpdatePlatformPlanInput,
   CreateOfferInput,
   MarkOfferDeliveredInput,
+  CustomerExperience,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
-import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 
 export type ConvexOperationArgs = {
   operation: string;
@@ -52,6 +53,13 @@ export type ConvexOperationArgs = {
 export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
+  /** Optional injectable seam used by tests and alternate Convex transports. */
+  subscribe?: (
+    reference: typeof api.domain.query,
+    args: ConvexOperationArgs,
+    onValue: (value: unknown) => void,
+    onError: (error: unknown) => void,
+  ) => () => void;
   action(reference: typeof api.gymApplications.submit, args: SubmitGymApplicationInput): Promise<unknown>;
   action(reference: typeof api.gymApplications.review, args: ReviewGymApplicationInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
@@ -139,6 +147,62 @@ export class ConvexGymOSApi implements GymOSApi {
     }
   }
 
+  private async subscribeQuery<T>(operation: string, input: object, onValue: (value: T) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    if (!this.transport) {
+      const error = ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      onError?.(error);
+      return () => undefined;
+    }
+
+    const args: ConvexOperationArgs = {
+      operation,
+      input: this.input(input),
+      organizationId: this.organizationId,
+      activeBranchId: this.activeBranchId,
+      correlationId: correlationId(),
+    };
+
+    if (this.transport.subscribe) {
+      try {
+        return this.transport.subscribe(
+          api.domain.query,
+          args,
+          (value) => onValue(value as T),
+          (error) => onError?.(error instanceof ApiError ? error : errorFromConvex(error)),
+        );
+      } catch (error) {
+        onError?.(error instanceof ApiError ? error : errorFromConvex(error));
+        return () => undefined;
+      }
+    }
+
+    // ConvexReactClient exposes reactive watches rather than a browser-style
+    // onUpdate method. Keep this implementation here so pages stay unaware
+    // of Convex and test transports can still inject a deterministic stream.
+    if (!convexClient) {
+      const error = ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      onError?.(error);
+      return () => undefined;
+    }
+
+    const watch = convexClient.watchQuery(api.domain.query, args);
+    const stop = watch.onUpdate(() => {
+      try {
+        const value = watch.localQueryResult();
+        if (value !== undefined) onValue(value as T);
+      } catch (error) {
+        onError?.(error instanceof ApiError ? error : errorFromConvex(error));
+      }
+    });
+
+    try {
+      onValue(await this.query<T>(operation, input));
+    } catch (error) {
+      onError?.(error instanceof ApiError ? error : errorFromConvex(error));
+    }
+    return stop;
+  }
+
   async getSession(): Promise<T.Session> {
     const session = await this.query<T.Session>("session");
     this.organizationId = session.organization.id;
@@ -171,7 +235,10 @@ export class ConvexGymOSApi implements GymOSApi {
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> { return this.query("public.marketplace"); }
-  getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> { return this.query("customer.experience"); }
+  getCustomerExperience(): Promise<CustomerExperience> { return this.query("customer.experience"); }
+  subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeQuery("customer.experience", {}, onValue, onError);
+  }
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
@@ -189,6 +256,9 @@ export class ConvexGymOSApi implements GymOSApi {
   }
   listGymApplications(query: { status?: PlatformGymApplication["status"]; search?: string } = {}): Promise<PlatformGymApplication[]> {
     return this.query("platform.applications", query);
+  }
+  subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeQuery("platform.applications", {}, onValue, onError);
   }
   async reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication> {
     try {

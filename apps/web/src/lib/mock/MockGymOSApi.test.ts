@@ -63,6 +63,15 @@ describe("session and role switching", () => {
 });
 
 describe("platform gym applications", () => {
+  it("delivers the current application queue through the mock subscription contract", async () => {
+    const values: unknown[] = [];
+    const unsubscribe = await api.subscribePlatformApplications((applications) => values.push(applications));
+
+    expect(values).toHaveLength(1);
+    expect(values[0]).toEqual(expect.arrayContaining([expect.objectContaining({ gymName: "Northline Strength" })]));
+    expect(() => unsubscribe()).not.toThrow();
+  });
+
   it("lists applications and records a review decision with a rejection reason", async () => {
     const applications = await api.listGymApplications();
     expect(applications.length).toBeGreaterThan(0);
@@ -211,6 +220,17 @@ describe("member creation", () => {
     const optedIn = await api.updateCustomerMarketingPreference({ optedIn: true, customerId });
     expect(optedIn.marketingPreference).toMatchObject({ optedIn: true, source: "member_selected" });
     expect(optedIn.marketingPreferenceHistory).toHaveLength(3);
+  });
+
+  it("delivers the member snapshot and returns a safe mock disposer", async () => {
+    const values: unknown[] = [];
+    const errors: unknown[] = [];
+    const unsubscribe = await api.subscribeCustomerExperience((value) => values.push(value), (error) => errors.push(error));
+
+    expect(values).toHaveLength(1);
+    expect(values[0]).toMatchObject({ memberships: expect.any(Array), bookings: expect.any(Array) });
+    expect(errors).toHaveLength(0);
+    expect(() => unsubscribe()).not.toThrow();
   });
 
   it("creates a member, assigns a branch-prefixed number and starts a timeline", async () => {

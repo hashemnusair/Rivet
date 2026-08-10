@@ -64,16 +64,37 @@ export default function PlatformApplicationsPage() {
     void loadApplications();
   }, [loadApplications]);
 
-  // The platform applications screen uses the shared API seam rather than a
-  // direct Convex React query. Refresh the active list frequently so a form
-  // submission, review decision, or provisioning failure made in another tab
-  // appears without asking the operator to reload the page.
+  // The platform applications screen uses a typed, identity-scoped Convex
+  // subscription rather than a direct Convex React query or a polling loop.
+  // A review/provisioning change made in another tab now updates this queue
+  // without a manual reload or a full-page loading flicker.
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void loadApplications(true);
-    }, 4_000);
-    return () => window.clearInterval(interval);
-  }, [loadApplications]);
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const handleError = (cause: unknown) => {
+      if (cancelled) return;
+      setError(cause instanceof Error ? cause.message : "Applications could not be refreshed.");
+      setLoading(false);
+      setRefreshing(false);
+    };
+
+    void getApi().subscribePlatformApplications((rows) => {
+      if (cancelled) return;
+      setApplications(rows);
+      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows[0]?.id);
+      setError(undefined);
+      setLoading(false);
+      setRefreshing(false);
+    }, handleError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(handleError);
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   const counts = useMemo(() => FILTERS.reduce<Record<Filter, number>>((result, item) => {
     result[item.value] = item.value === "all" ? applications.length : applications.filter((application) => application.status === item.value).length;

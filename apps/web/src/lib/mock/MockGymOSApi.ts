@@ -34,6 +34,7 @@ import type {
   MemberImportCommitResult,
   MemberImportPreview,
   MemberImportRow,
+  CustomerExperience,
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
@@ -49,7 +50,7 @@ import {
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import {
   currentRole,
   currentUser,
@@ -204,11 +205,22 @@ export class MockGymOSApi implements GymOSApi {
     return { ...persona, marketingPreference: preference, marketingPreferenceHistory: history.length > 0 ? history.map((item) => ({ ...item })) : [fallback] };
   }
 
-  getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }> {
+  getCustomerExperience(): Promise<CustomerExperience> {
     return this.respond(() => {
       const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
       return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) };
     });
+  }
+
+  async subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.getCustomerExperience());
+    } catch (error) {
+      onError?.(error);
+    }
+    // Mock mode has no server socket. Returning the same disposer contract
+    // keeps provider lifecycle code identical in preview and production.
+    return () => undefined;
   }
 
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> {
@@ -443,6 +455,15 @@ export class MockGymOSApi implements GymOSApi {
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
         .map((application) => ({ ...application }));
     });
+  }
+
+  async subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.listGymApplications());
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => undefined;
   }
 
   reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication> {

@@ -142,6 +142,8 @@ This is the highest-priority engineering slice. Current helper-level customer ow
 
 The current four-second background refresh is an acceptable fallback, but the most operationally important screens should update through Convex subscriptions without manual refresh or full-page loading flicker.
 
+Progress on 2026-08-10: the typed subscription seam is implemented for member My Gyms/free-trial status and platform gym applications/provisioning status. CRM, reception, and payment/shift subscriptions remain next; credentialed Production and two-context browser verification are still required for the completed slices.
+
 ### Work
 
 1. Design a typed subscription capability at the data-access boundary. Extend `GymOSApi` or add a provider-owned subscription seam; do not let pages directly import Convex operations.

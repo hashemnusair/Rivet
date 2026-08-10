@@ -430,6 +430,17 @@ export interface EntryPass {
   membershipId: string;
 }
 
+/**
+ * Identity-scoped member data used by the My Gyms experience. Keeping this
+ * response together at the API boundary lets adapters add a realtime delivery
+ * mechanism without exposing Convex records to page components.
+ */
+export interface CustomerExperience {
+  customer?: CustomerPersona;
+  memberships: CustomerMembership[];
+  bookings: TrialBooking[];
+}
+
 // ---------------------------------------------------------------------------
 // The page-facing client boundary. Production uses ConvexGymOSApi; mock mode
 // remains available only for explicit preview/test workflows.
@@ -449,7 +460,13 @@ export interface GymOSApi {
 
   // Public directory, customer identity, and platform snapshots
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
-  getCustomerExperience(): Promise<{ customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }>;
+  getCustomerExperience(): Promise<CustomerExperience>;
+  /**
+   * Subscribe to identity-scoped member changes. The disposer is returned in
+   * a promise so a native Convex watch can perform its initial read before the
+   * caller considers the subscription established.
+   */
+  subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
   registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
   /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
@@ -460,6 +477,7 @@ export interface GymOSApi {
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
+  subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   reviewGymApplication(input: ReviewGymApplicationInput): Promise<PlatformGymApplication>;
   saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication>;
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;

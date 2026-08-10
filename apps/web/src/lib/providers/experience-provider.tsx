@@ -128,17 +128,6 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceAttempt((attempt) => attempt + 1);
   }, []);
 
-  // The page-facing API remains the only data boundary, so customer records
-  // use the same quiet background refresh cadence as the operational shell.
-  // Keeping the hydrated flag in a ref prevents every refresh from flashing
-  // the full-page loading gate.
-  useEffect(() => {
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
-    if (!convexMode || !memberIdentity) return;
-    const timer = window.setInterval(() => setExperienceAttempt((attempt) => attempt + 1), 4_000);
-    return () => window.clearInterval(timer);
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
-
   // Mock mode restores its deterministic browser session. Convex mode loads
   // identity-linked records from the server and never uses sessionStorage as a
   // source of truth.
@@ -231,6 +220,63 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceReady(true);
     setPreviewSessionReady(true);
   }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status]);
+
+  // My Gyms is the first member-facing surface moved from polling to a native
+  // Convex query watch. The adapter owns the transport details; this provider
+  // only applies the identity-scoped snapshot and keeps the existing QR
+  // hydration/error semantics. Other operational surfaces intentionally keep
+  // their bounded TanStack Query refresh until their own subscriptions land.
+  useEffect(() => {
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    if (!convexMode || !memberIdentity) return;
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    const applySnapshot = async (experience: { customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }) => {
+      const hydratedMemberships = await Promise.all(experience.memberships.map(async (membership) => {
+        if (membership.qrValue) return membership;
+        try {
+          const pass = await getApi().getEntryPass(membership.id);
+          return { ...membership, qrValue: pass.token };
+        } catch {
+          return membership;
+        }
+      }));
+      if (cancelled) return;
+      setMemberships(hydratedMemberships);
+      setBookings(experience.bookings);
+      setCustomer(experience.customer);
+      setCustomerId(experience.customer?.id);
+      setExperienceError(undefined);
+      setExperienceRefreshing(false);
+      setExperienceStatus("ready");
+      setExperienceReady(true);
+      experienceHydratedRef.current = true;
+    };
+
+    const handleSubscriptionError = (error: unknown) => {
+      if (cancelled) return;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh member data.";
+      const failure = refreshFailureState(experienceHydratedRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(false);
+      setExperienceStatus(failure.status);
+      if (!experienceHydratedRef.current) setExperienceReady(false);
+    };
+
+    void getApi().subscribeCustomerExperience((experience) => {
+      void applySnapshot(experience).catch(handleSubscriptionError);
+    }, handleSubscriptionError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(handleSubscriptionError);
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded

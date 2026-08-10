@@ -52,6 +52,59 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(mutationArgs).toMatchObject({ operation: "customer.marketingPreference.update", input: { optedIn: false, customerId: "customer-1" } });
   });
 
+  it("exposes member experience updates through a disposable subscription seam", async () => {
+    const values: unknown[] = [];
+    const errors: unknown[] = [];
+    const stop = vi.fn();
+    const calls: Array<Record<string, unknown>> = [];
+    const experience = { customer: undefined, memberships: [], bookings: [] };
+    const base = transportFor();
+    const transport: ConvexTransport = {
+      ...base,
+      subscribe: (_reference, args, onValue, onError) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        try {
+          onValue(experience);
+        } catch (error) {
+          onError(error);
+        }
+        return stop;
+      },
+    };
+    const api = new ConvexGymOSApi(transport);
+
+    const unsubscribe = await api.subscribeCustomerExperience((value) => values.push(value), (error) => errors.push(error));
+
+    expect(values).toEqual([experience]);
+    expect(errors).toHaveLength(0);
+    expect(calls[0]).toMatchObject({ operation: "customer.experience", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("uses the same subscription boundary for the platform application queue", async () => {
+    const values: unknown[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    const stop = vi.fn();
+    const base = transportFor();
+    const transport: ConvexTransport = {
+      ...base,
+      subscribe: (_reference, args, onValue) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        onValue([]);
+        return stop;
+      },
+    };
+    const api = new ConvexGymOSApi(transport);
+
+    const unsubscribe = await api.subscribePlatformApplications((value) => values.push(value));
+
+    expect(values).toEqual([[]]);
+    expect(calls[0]).toMatchObject({ operation: "platform.applications", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it("keeps idempotency keys inside the payment mutation boundary", async () => {
     let mutationArgs: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: {} }, (_kind, args) => { mutationArgs = args; }));
