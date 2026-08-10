@@ -9,6 +9,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  CircleHelp,
   Users,
   WalletCards,
   Zap,
@@ -64,6 +65,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/automations", label: "Automations", icon: Zap, anyPermission: ["automations.manage"] },
       { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
+      { href: "/support", label: "RIVET support", icon: CircleHelp },
       { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
     ],
   },

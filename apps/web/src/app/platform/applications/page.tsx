@@ -12,7 +12,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { StatePanel } from "@/components/ui/states";
@@ -43,6 +43,14 @@ export default function PlatformApplicationsPage() {
   const [busyProvisioning, setBusyProvisioning] = useState(false);
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState<string>();
+  const requestedApplicationId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("application")?.trim();
+    if (!requested) return;
+    requestedApplicationId.current = requested;
+    setSelectedId(requested);
+  }, []);
 
   const loadApplications = useCallback(async (background = false) => {
     if (background) setRefreshing(true);
@@ -51,7 +59,7 @@ export default function PlatformApplicationsPage() {
     try {
       const rows = await getApi().listGymApplications();
       setApplications(rows);
-      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows[0]?.id);
+      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationId.current)?.id ?? rows[0]?.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Applications could not be loaded.");
     } finally {
@@ -81,7 +89,7 @@ export default function PlatformApplicationsPage() {
     void getApi().subscribePlatformApplications((rows) => {
       if (cancelled) return;
       setApplications(rows);
-      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows[0]?.id);
+      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationId.current)?.id ?? rows[0]?.id);
       setError(undefined);
       setLoading(false);
       setRefreshing(false);

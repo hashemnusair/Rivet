@@ -3,13 +3,13 @@ import { DecorativeQr } from "./decorative-qr";
 /**
  * The hero's product shot: the owner dashboard on a laptop with the member app
  * on a phone in front of it. Drawn entirely with the design system — no
- * screenshots to go stale, and the numbers match the seeded Forge tenant, so
- * the art stays honest about what the product shows.
+ * screenshots to go stale. Values are deliberately non-numeric so the
+ * illustration cannot be mistaken for a live customer claim.
  */
 const FEED = [
-  { time: "14:18", name: "Omar H.", note: "renews in 41d", verdict: "VALID", tone: "text-success" },
-  { time: "14:17", name: "Tariq M.", note: "3 days left", verdict: "EXPIRING", tone: "text-warning" },
-  { time: "14:16", name: "Noor S.", note: "until 12 Aug", verdict: "FROZEN", tone: "text-[#86a7d5]" },
+  { id: "entry-valid", time: "now", name: "Member entry", note: "membership active", verdict: "VALID", tone: "text-success" },
+  { id: "entry-expiring", time: "now", name: "Member entry", note: "renewal due", verdict: "EXPIRING", tone: "text-warning" },
+  { id: "entry-frozen", time: "now", name: "Member entry", note: "membership frozen", verdict: "FROZEN", tone: "text-[#86a7d5]" },
 ] as const;
 
 /** Weekly revenue bars — the last one is the week in progress. */
@@ -42,7 +42,7 @@ export function HeroDevices() {
                 ))}
                 <div className="mt-auto flex items-center gap-1.5 border-t border-night-line px-1 pt-1.5">
                   <span className="flex size-3 items-center justify-center rounded-full bg-night-3 font-mono text-[5px] text-night-ink-2">OA</span>
-                  <span className="text-[6px] text-night-ink-3">Omar · Owner</span>
+                  <span className="text-[6px] text-night-ink-3">Gym owner</span>
                 </div>
               </div>
 
@@ -51,7 +51,7 @@ export function HeroDevices() {
                 <div className="flex items-center justify-between border-b border-line bg-surface px-2.5 py-1.5">
                   <span className="text-[8px] font-semibold">Dashboard</span>
                   <div className="flex items-center gap-1.5">
-                    <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[6px] text-ink-2">Forge — Abdoun</span>
+                    <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[6px] text-ink-2">Selected branch</span>
                     <span className="flex items-center gap-1 font-mono text-[6px] uppercase tracking-[0.1em] text-success">
                       <span className="size-1 animate-pulse rounded-full bg-success" /> Live
                     </span>
@@ -61,9 +61,9 @@ export function HeroDevices() {
                 <div className="grid flex-1 grid-rows-[auto_1fr] gap-1.5 p-1.5">
                   {/* KPI row */}
                   <div className="grid grid-cols-3 gap-1.5">
-                    <Kpi label="Revenue · month" value="JD 48,750" note="+14% vs June" noteTone="text-success" />
-                    <Kpi label="Active members" value="1,050" note="2 branches" />
-                    <Kpi label="Renewals · 7d" value="23" note="JD 805 at stake" noteTone="text-signal" />
+                    <Kpi label="Revenue · month" value="Ledger" note="persisted payments" noteTone="text-success" />
+                    <Kpi label="Active members" value="Live" note="all branches" />
+                    <Kpi label="Renewals · 7d" value="Queue" note="actionable records" noteTone="text-signal" />
                   </div>
 
                   <div className="grid min-h-0 grid-cols-[1.15fr_1fr] gap-1.5">
@@ -83,10 +83,10 @@ export function HeroDevices() {
 
                     {/* reception feed */}
                     <div className="flex min-h-0 flex-col rounded-md border border-line bg-surface p-2">
-                      <span className="font-mono text-[6px] uppercase tracking-[0.12em] text-ink-3">Reception · today 215</span>
+                      <span className="font-mono text-[6px] uppercase tracking-[0.12em] text-ink-3">Reception · live feed</span>
                       <div className="mt-1.5 space-y-1">
                         {FEED.map((row) => (
-                          <div key={row.time} className="flex items-center gap-1.5 rounded-sm border border-line px-1.5 py-1">
+                          <div key={row.id} className="flex items-center gap-1.5 rounded-sm border border-line px-1.5 py-1">
                             <span className="font-mono text-[6px] text-ink-3">{row.time}</span>
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-[7px] font-medium leading-tight">{row.name}</span>
@@ -117,19 +117,19 @@ export function HeroDevices() {
                 <div className="p-2.5 pt-2">
                   <div className="flex items-center justify-between font-mono text-[6px] uppercase tracking-[0.14em] text-ink-3">
                     <span>RIVET MEMBER</span>
-                    <span>19:41</span>
+                    <span>LIVE</span>
                   </div>
-                  <p className="mt-2 text-[10px] font-semibold leading-tight">Lina Haddad</p>
-                  <p className="font-mono text-[6px] text-ink-3">FORGE · 6-MONTH · #ABD-2214</p>
+                  <p className="mt-2 text-[10px] font-semibold leading-tight">Member account</p>
+                  <p className="font-mono text-[6px] text-ink-3">ACTIVE MEMBERSHIP</p>
 
                   <div className="mt-2 grid grid-cols-2 gap-1">
                     <div className="rounded-sm border border-line bg-surface p-1.5">
-                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Renews in</p>
-                      <p className="mt-0.5 text-[9px] font-semibold leading-none text-warning-deep">12 days</p>
+                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Membership</p>
+                      <p className="mt-0.5 text-[9px] font-semibold leading-none text-success-deep">Current</p>
                     </div>
                     <div className="rounded-sm border border-line bg-surface p-1.5">
-                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Visits · Jul</p>
-                      <p className="mt-0.5 text-[9px] font-semibold leading-none">14</p>
+                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Visits</p>
+                      <p className="mt-0.5 text-[9px] font-semibold leading-none">History</p>
                     </div>
                   </div>
 
@@ -138,7 +138,7 @@ export function HeroDevices() {
                       <DecorativeQr />
                     </div>
                     <p className="mt-1 text-center font-mono text-[5px] uppercase tracking-[0.12em] text-night-ink-3">
-                      Entry pass · Abdoun
+                      Entry pass · selected gym
                     </p>
                   </div>
 
@@ -151,8 +151,7 @@ export function HeroDevices() {
       </div>
 
       <p className="sr-only">
-        The RIVET owner dashboard on a laptop — live check-ins, monthly revenue and renewals due — with the member app
-        on a phone in front of it, showing membership status and an entry QR pass.
+        Illustrative RIVET dashboard and member app preview with no customer or operational data.
       </p>
     </>
   );

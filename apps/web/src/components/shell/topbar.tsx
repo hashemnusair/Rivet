@@ -26,6 +26,7 @@ import { AuthTransition } from "@/components/auth/auth-transition";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
+import { NotificationCenter } from "./notification-center";
 
 const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
   { role: "owner", blurb: "Full visibility — every branch, finance, audit, settings." },
@@ -159,6 +160,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
       >
         <Languages />
       </Button>
+
+      {session ? <NotificationCenter /> : null}
 
       {/* Preview-only controls never appear in a real Clerk + Convex deployment. */}
       {demoControlsEnabled ? <Popover>

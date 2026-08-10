@@ -11,6 +11,7 @@ import { z } from "zod";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadStage, OfferDeliveryChannel, TrialBookingStatus } from "@/lib/domain/types";
 import { LEAD_STAGE_PROGRESS, leadStageProgress } from "@/lib/crm/lead-stage-progress";
 import { useApp } from "@/lib/providers/app-providers";
@@ -54,7 +55,7 @@ export default function LeadDetailPageClient() {
   const [trialOutcome, setTrialOutcome] = useState<Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">>();
   const [trialNote, setTrialNote] = useState("");
 
-  const leadQuery = useApiQuery(qk.lead(leadId), (api) => api.getLead(leadId));
+  const leadQuery = useRealtimeApiQuery({ queryKey: qk.lead(leadId), query: (api) => api.getLead(leadId), subscribe: (api, onValue, onError) => api.subscribeLead(leadId, onValue, onError) });
 
   const markLost = useApiMutation((api, reason: string) => api.updateLead(leadId, { stage: "lost", lostReason: reason }), {
     onSuccess: async () => {

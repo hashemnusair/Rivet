@@ -9,7 +9,7 @@ export default function NotFound() {
       <p className="eyebrow mt-6">404</p>
       <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">This page is not on the floor plan</h1>
       <p className="mt-2 max-w-sm text-[13.5px] text-ink-2">
-        The record may have been removed, the link may be wrong, or the demo data was reset.
+        The record may have been removed, or the link may be incorrect.
       </p>
       <Button asChild className="mt-6">
         <Link href="/dashboard">Back to dashboard</Link>

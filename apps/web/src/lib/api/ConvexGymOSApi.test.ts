@@ -105,6 +105,41 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("subscribes to the complete platform operations projection", async () => {
+    const values: unknown[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    const stop = vi.fn();
+    const snapshot = { gyms: [], bookings: [], invoices: [], supportCases: [], plans: [], applications: [], overview: {} };
+    const base = transportFor();
+    const api = new ConvexGymOSApi({
+      ...base,
+      subscribe: (_reference, args, onValue) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        onValue(snapshot);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribePlatformSnapshot((value) => values.push(value));
+    expect(values).toEqual([snapshot]);
+    expect(calls[0]).toMatchObject({ operation: "platform.snapshot", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("maps the manual platform invoice lifecycle without a payment retry shortcut", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi(transportFor({ mutation: { id: "INV-1" } }, (_kind, args) => calls.push(args)));
+
+    await api.createPlatformInvoice({ gymId: "gym-1", amountMinor: 149_000, currency: "JOD", periodStart: "2026-08-01", periodEnd: "2026-08-31", dueAt: "2026-09-07" });
+    await api.issuePlatformInvoice("INV-1");
+    await api.recordPlatformInvoicePayment({ invoiceId: "INV-1", reference: "BANK-123", reason: "Transfer confirmed." });
+    await api.voidPlatformInvoice("INV-2", "Duplicate draft.");
+
+    expect(calls.map((call) => call.operation)).toEqual(["platform.invoice.create", "platform.invoice.issue", "platform.invoice.payment", "platform.invoice.void"]);
+    expect(calls[2]).toMatchObject({ input: { invoiceId: "INV-1", reference: "BANK-123", reason: "Transfer confirmed." } });
+  });
+
   it("carries CRM lead filters through the realtime subscription boundary", async () => {
     const values: unknown[] = [];
     const calls: Array<Record<string, unknown>> = [];
@@ -326,7 +361,7 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false })).resolves.toEqual(gym);
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
     expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false } });
   });
 

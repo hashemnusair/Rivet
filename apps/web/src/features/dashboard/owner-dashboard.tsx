@@ -3,9 +3,8 @@
 import { AlertTriangle, ArrowRight, ArrowUpRight, Info, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 
-import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
@@ -23,11 +22,13 @@ export function OwnerDashboard() {
   const branchId = session?.activeBranchId;
   const today = todayISODate();
 
-  const { data, isLoading, isError, refetch } = useApiQuery(
-    qk.dashboard(branchId),
-    (api: ReturnType<typeof getApi>) => api.getDashboard({ branchId, from: addDays(today, -29), to: today }),
-    { enabled: Boolean(session) },
-  );
+  const dashboardQuery = { branchId, from: addDays(today, -29), to: today };
+  const { data, isLoading, isError, refetch } = useRealtimeApiQuery({
+    queryKey: qk.dashboard(branchId),
+    query: (api) => api.getDashboard(dashboardQuery),
+    subscribe: (api, onValue, onError) => api.subscribeDashboard(dashboardQuery, onValue, onError),
+    enabled: Boolean(session),
+  });
 
   if (isError) {
     return <ErrorState onRetry={() => refetch()} />;

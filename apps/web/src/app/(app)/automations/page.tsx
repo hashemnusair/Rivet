@@ -1,12 +1,13 @@
 "use client";
 
-import { Plus, Zap } from "lucide-react";
+import { Plus, RefreshCw, Zap } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { AutomationAction, AutomationActionKey, AutomationTriggerKey } from "@/lib/domain/types";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
+import type { AutomationAction, AutomationActionKey, AutomationExecution, AutomationTriggerKey } from "@/lib/domain/types";
 import { DateTimeText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,7 +29,7 @@ export default function AutomationsPage() {
       <PageHeader
         eyebrow="System"
         title="Automations"
-        description="Rules that never forget: expiry reminders, win-backs, inactivity nudges and overdue follow-ups. Delivery runs in sandbox mode for the demo."
+        description="Expiry, win-back, inactivity and overdue-follow-up rules with persisted execution history. Outbound delivery remains sandboxed by default."
         actions={<NewRuleDialog />}
       />
       <Gate
@@ -90,10 +91,13 @@ function NewRuleDialog() {
 function AutomationContent() {
   const invalidate = useInvalidate();
   const [execPage, setExecPage] = useState(1);
+  const [emailPage, setEmailPage] = useState(1);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string>();
   const rulesQuery = useApiQuery(qk.automationRules, (api) => api.listAutomationRules());
-  const executionsQuery = useApiQuery(qk.automationExecutions({ page: execPage }), (api) =>
-    api.listAutomationExecutions({ page: execPage, pageSize: 15 }),
-  );
+  const executionInput = { page: execPage, pageSize: 15 };
+  const executionsQuery = useRealtimeApiQuery({ queryKey: qk.automationExecutions({ page: execPage }), query: (api) => api.listAutomationExecutions(executionInput), subscribe: (api, onValue, onError) => api.subscribeAutomationExecutions(executionInput, onValue, onError) });
+  const operationalEmailInput = { page: emailPage, pageSize: 15 };
+  const operationalEmailsQuery = useRealtimeApiQuery({ queryKey: qk.operationalEmails({ page: emailPage }), query: (api) => api.listOperationalEmailDeliveries(operationalEmailInput), subscribe: (api, onValue, onError) => api.subscribeOperationalEmailDeliveries(operationalEmailInput, onValue, onError) });
 
   const toggle = useApiMutation((api, v: { id: string; enabled: boolean }) => api.updateAutomationRule(v.id, { enabled: v.enabled }), {
     onSuccess: async (_d, v) => {
@@ -111,6 +115,7 @@ function AutomationContent() {
       <TabsList>
         <TabsTrigger value="rules">Rules</TabsTrigger>
         <TabsTrigger value="activity">Activity log</TabsTrigger>
+        <TabsTrigger value="email">Operational email</TabsTrigger>
       </TabsList>
 
       <TabsContent value="rules" className="space-y-4">
@@ -201,7 +206,7 @@ function AutomationContent() {
                 </TableHeader>
                 <TableBody>
                   {executions.map((e) => (
-                    <TableRow key={e.id}>
+                    <TableRow key={e.id} interactive onClick={() => setSelectedExecutionId(e.id)}>
                       <TableCell className="text-[12px] text-ink-2 whitespace-nowrap">
                         <DateTimeText iso={e.executedAt} />
                       </TableCell>
@@ -211,7 +216,7 @@ function AutomationContent() {
                         </Link>
                       </TableCell>
                       <TableCell className="text-[12.5px]">{e.subjectName}</TableCell>
-                      <TableCell className="text-[12.5px] text-ink-2">{ACTION_LABELS[e.action]}</TableCell>
+                      <TableCell className="text-[12.5px] text-ink-2">{e.action ? ACTION_LABELS[e.action] : `${e.actionResults?.length ?? 0} actions`}</TableCell>
                       <TableCell>
                         <Badge variant={e.status === "success" ? "success" : e.status === "failed" ? "signal" : "neutral"}>
                           {e.status === "skipped_duplicate" ? "skipped" : e.status}
@@ -233,8 +238,45 @@ function AutomationContent() {
           )}
         </section>
       </TabsContent>
+      <TabsContent value="email">
+        <section className="panel overflow-hidden">
+          <header className="border-b border-line px-4 py-3"><h2 className="text-[13px] font-semibold">Operational email ledger</h2><p className="mt-1 text-[10.5px] text-ink-3">Sandbox is the default. A suppressed record proves the trigger was captured without claiming provider delivery.</p></header>
+          {operationalEmailsQuery.isLoading ? <div className="p-4"><TableSkeleton rows={8} cols={5} /></div> : operationalEmailsQuery.isError ? <div className="p-4"><ErrorState onRetry={() => operationalEmailsQuery.refetch()} /></div> : (operationalEmailsQuery.data?.items.length ?? 0) === 0 ? <EmptyState title="No operational email records" description="Trial, receipt, support, invoice, and subscription events will appear here when they occur." className="border-0" /> : <><Table><TableHeader><TableRow><TableHead>Queued</TableHead><TableHead>Message kind</TableHead><TableHead>Recipient</TableHead><TableHead>Template</TableHead><TableHead>Status</TableHead><TableHead>Attempts</TableHead></TableRow></TableHeader><TableBody>{operationalEmailsQuery.data!.items.map((delivery) => <TableRow key={delivery.id}><TableCell className="text-[11px]"><DateTimeText iso={delivery.queuedAt} /></TableCell><TableCell className="text-[12px] font-medium">{delivery.kind.replaceAll("_", " ")}</TableCell><TableCell className="max-w-56 truncate text-[11px] text-ink-2" title={delivery.recipientEmail ?? delivery.recipientReference}>{delivery.recipientEmail ?? delivery.recipientReference}</TableCell><TableCell><p className="font-mono text-[9px]">{delivery.templateVersion}</p><p className="mt-1 text-[9px] uppercase text-ink-3">{delivery.language}</p></TableCell><TableCell><Badge variant={delivery.status === "failed" ? "signal" : delivery.status === "delivered" ? "success" : "neutral"}>{delivery.status.replaceAll("_", " ")}</Badge>{delivery.suppressionReason ? <p className="mt-1 max-w-64 text-[9px] text-ink-3">{delivery.suppressionReason}</p> : null}</TableCell><TableCell className="text-[11px] tabular">{delivery.attempts.length} / {delivery.retryPolicy.maxAttempts}</TableCell></TableRow>)}</TableBody></Table><div className="px-4 pb-2"><DataPagination page={operationalEmailsQuery.data!} onPage={setEmailPage} /></div></>}
+        </section>
+      </TabsContent>
+      <ExecutionDialog executionId={selectedExecutionId} onOpenChange={(open) => { if (!open) setSelectedExecutionId(undefined); }} />
     </Tabs>
   );
+}
+
+function statusLabel(status: AutomationExecution["status"]): string {
+  if (status === "success") return "completed";
+  if (status === "skipped_duplicate") return "duplicate";
+  return status;
+}
+
+function ExecutionDialog({ executionId, onOpenChange }: { executionId?: string; onOpenChange: (open: boolean) => void }) {
+  const invalidate = useInvalidate();
+  const [reason, setReason] = useState("");
+  const detailQuery = useApiQuery(
+    qk.automationExecution(executionId ?? "closed"),
+    (api) => api.getAutomationExecution(executionId!),
+    { enabled: Boolean(executionId) },
+  );
+  const retry = useApiMutation((api) => api.retryAutomationExecution(executionId!, reason.trim()), {
+    onSuccess: async () => {
+      toast.success("Retry queued in the sandbox execution pipeline.");
+      setReason("");
+      await invalidate([["automationExecutions"]]);
+    },
+  });
+  const execution = detailQuery.data;
+  const canRetry = execution?.status === "failed" || execution?.actionResults.some((item) => item.status === "failed");
+  return <Dialog open={Boolean(executionId)} onOpenChange={onOpenChange}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Automation execution</DialogTitle><DialogDescription>Persisted action and attempt history. Provider errors are redacted before display.</DialogDescription></DialogHeader><DialogBody className="space-y-4">{detailQuery.isLoading ? <TableSkeleton rows={4} cols={3} /> : detailQuery.isError || !execution ? <ErrorState onRetry={() => detailQuery.refetch()} /> : <>
+    <div className="grid gap-3 rounded-md border border-line bg-sunken/40 p-3 sm:grid-cols-2"><div><p className="eyebrow">Rule</p><p className="mt-1 text-[13px] font-medium">{execution.ruleName}</p></div><div><p className="eyebrow">Status</p><Badge className="mt-1" variant={execution.status === "failed" ? "signal" : execution.status === "completed" || execution.status === "success" ? "success" : "neutral"}>{statusLabel(execution.status)}</Badge></div><div><p className="eyebrow">Subject</p><p className="mt-1 text-[13px]">{execution.subjectName}</p></div><div><p className="eyebrow">Executed</p><p className="mt-1 text-[12px]"><DateTimeText iso={execution.executedAt} /></p></div>{execution.dedupeKey ? <div className="sm:col-span-2"><p className="eyebrow">Dedupe key</p><p className="mt-1 break-all font-mono text-[11px] text-ink-2">{execution.dedupeKey}</p></div> : null}{execution.suppressionReason ? <div className="sm:col-span-2"><p className="eyebrow">Suppression</p><p className="mt-1 text-[12px] text-ink-2">{execution.suppressionReason}</p></div> : null}</div>
+    <div><p className="eyebrow mb-2">Attempts</p><div className="overflow-hidden rounded-md border border-line"><Table><TableHeader><TableRow><TableHead>Action</TableHead><TableHead>Attempt</TableHead><TableHead>Status</TableHead><TableHead>When / next attempt</TableHead></TableRow></TableHeader><TableBody>{execution.attemptHistory.map((attempt, index) => <TableRow key={`${attempt.action}:${attempt.attempt}:${index}`}><TableCell>{ACTION_LABELS[attempt.action]}</TableCell><TableCell>{attempt.attempt} / {execution.retryPolicy.maxAttempts}</TableCell><TableCell><Badge variant={attempt.status === "failed" ? "signal" : attempt.status === "completed" ? "success" : "neutral"}>{attempt.status}</Badge></TableCell><TableCell className="text-[11px] text-ink-3"><DateTimeText iso={attempt.occurredAt} />{attempt.nextAttemptAt ? <> · next <DateTimeText iso={attempt.nextAttemptAt} /></> : null}{attempt.reason ? <p className="mt-1 max-w-72 truncate" title={attempt.reason}>{attempt.reason}</p> : null}</TableCell></TableRow>)}</TableBody></Table></div></div>
+    {canRetry ? <Field label="Retry reason" required hint="Manual retries are audited and remain sandboxed."><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why should this failed execution be retried?" /></Field> : null}
+  </>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button>{canRetry ? <Button onClick={() => retry.mutate()} loading={retry.isPending} disabled={!reason.trim()}><RefreshCw /> Retry failed actions</Button> : null}</DialogFooter></DialogContent></Dialog>;
 }
 
 function Cell({ label, value, mono, tone }: { label: string; value: React.ReactNode; mono?: boolean; tone?: "warn" }) {

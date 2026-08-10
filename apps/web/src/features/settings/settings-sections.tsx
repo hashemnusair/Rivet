@@ -327,7 +327,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
   const mutation = useApiMutation((api) => api.inviteUser(form), {
     onSuccess: async () => {
-      toast.success("Invitation recorded (email delivery is sandboxed in demo).");
+      toast.success("Invitation created. Its current status is available in the staff list.");
       onOpenChange(false);
       await invalidate();
     },
@@ -739,16 +739,16 @@ export function NotificationsSection() {
 
       <section className="panel self-start p-5">
         <h2 className="mb-1 font-display text-[15px] font-semibold">Automation delivery</h2>
-        <p className="mb-4 text-[12.5px] text-ink-3">Sandbox logs messages instead of sending them — perfect for the demo.</p>
+        <p className="mb-4 text-[12.5px] text-ink-3">Automation messages are retained in the sandbox delivery ledger. No external WhatsApp or SMS provider is configured.</p>
         <label className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5 cursor-pointer">
           <div>
-            <p className="text-[13px] font-medium">Live delivery</p>
-            <p className="text-[11.5px] text-ink-3">Off = sandbox (log only). On = real WhatsApp/SMS provider.</p>
+            <p className="text-[13px] font-medium">External delivery</p>
+            <p className="text-[11.5px] text-ink-3">Not configured. Sandbox remains enforced until individual message types are approved.</p>
           </div>
           <Switch
-            checked={notifications.automationDeliveryMode === "live"}
-            onCheckedChange={(v) => save.mutate({ ...notifications, automationDeliveryMode: v ? "live" : "sandbox" })}
-            aria-label="Live delivery"
+            checked={false}
+            disabled
+            aria-label="External delivery not configured"
           />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">

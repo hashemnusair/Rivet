@@ -70,13 +70,15 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
   });
 
-  test("labels the local QR as preview-only", async ({ page }) => {
+  test("does not manufacture a signed entry QR in preview mode", async ({ page }) => {
     await page.goto("/login/member");
     await page.getByRole("radio", { name: /Lina Haddad/i }).click();
     await page.getByRole("button", { name: /Continue as Lina/i }).click();
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
-    await expect(page.getByText(/Preview code for the local demo/i)).toBeVisible();
+    await expect(page.getByText(/Signed entry pass unavailable/i)).toBeVisible();
+    await expect(page.getByText(/configured production signing service/i)).toBeVisible();
+    await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
   });
 });
 

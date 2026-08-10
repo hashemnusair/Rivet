@@ -29,5 +29,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Note: next-env.d.ts is intentionally committed so `pnpm typecheck` works on a
-# fresh clone before `next dev` has had a chance to regenerate it.
+# Next rewrites this file differently in development, Playwright, and build
+# output directories. Keep stable framework references in next-types.d.ts and
+# ignore the generated file so normal verification never dirties the worktree.
+apps/web/next-env.d.ts

@@ -1,19 +1,21 @@
 "use client";
 
-import { MessageSquareText, Save } from "lucide-react";
+import { MessageSquareText, Play, Save } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { AutomationAction, AutomationActionKey, MessageTemplate } from "@/lib/domain/types";
 import { formatDateTime } from "@/lib/utils/dates";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { DateTimeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
@@ -28,9 +30,9 @@ export default function RuleEditorPageClient() {
 
   const ruleQuery = useApiQuery(qk.automationRule(ruleId), (api) => api.getAutomationRule(ruleId));
   const templatesQuery = useApiQuery(qk.templates, (api) => api.listMessageTemplates());
-  const executionsQuery = useApiQuery(qk.automationExecutions({ ruleId }), (api) =>
-    api.listAutomationExecutions({ ruleId, pageSize: 10 }),
-  );
+  const executionInput = { ruleId, pageSize: 10 };
+  const executionsQuery = useRealtimeApiQuery({ queryKey: qk.automationExecutions({ ruleId }), query: (api) => api.listAutomationExecutions(executionInput), subscribe: (api, onValue, onError) => api.subscribeAutomationExecutions(executionInput, onValue, onError) });
+  const runPreviewQuery = useApiQuery(qk.automationRunPreview(ruleId), (api) => api.previewAutomationRun(ruleId));
 
   const [name, setName] = useState("");
   const [daysBefore, setDaysBefore] = useState("14, 3");
@@ -38,6 +40,8 @@ export default function RuleEditorPageClient() {
   const [dedupe, setDedupe] = useState(72);
   const [actions, setActions] = useState<AutomationAction[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [runOpen, setRunOpen] = useState(false);
+  const [runReason, setRunReason] = useState("");
 
   const rule = ruleQuery.data;
 
@@ -89,6 +93,18 @@ export default function RuleEditorPageClient() {
     },
   );
 
+  const runNow = useApiMutation(
+    (api) => api.runAutomationRuleNow(ruleId, runReason.trim()),
+    {
+      onSuccess: async (result) => {
+        toast.success(`Created ${result.created} execution${result.created === 1 ? "" : "s"}; ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? "" : "s"} skipped.`);
+        setRunOpen(false);
+        setRunReason("");
+        await invalidate([qk.automationRules, ["automationExecutions"]]);
+      },
+    },
+  );
+
   if (ruleQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -128,6 +144,9 @@ export default function RuleEditorPageClient() {
               <span className={rule.enabled ? "text-success-deep font-medium" : "text-ink-3"}>{rule.enabled ? "Enabled" : "Paused"}</span>
               <Switch checked={rule.enabled} onCheckedChange={(v) => toggle.mutate(v)} aria-label="Enable rule" />
             </label>
+            <Button variant="secondary" onClick={() => setRunOpen(true)} disabled={dirty} title={dirty ? "Save configuration changes before running" : undefined}>
+              <Play /> Run now
+            </Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>
               <Save /> Save changes
             </Button>
@@ -257,6 +276,33 @@ export default function RuleEditorPageClient() {
           </section>
         </div>
       </div>
+
+      <Dialog open={runOpen} onOpenChange={setRunOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run automation now</DialogTitle>
+            <DialogDescription>This uses the same trigger and dedupe rules as the scheduler. Messages remain sandboxed unless that message type is explicitly enabled.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            {runPreviewQuery.isLoading ? <Skeleton className="h-24 w-full" /> : runPreviewQuery.isError ? <ErrorState onRetry={() => runPreviewQuery.refetch()} /> : (
+              <div className="rounded-md border border-line bg-sunken/40 p-3">
+                <div className="grid grid-cols-2 gap-3 text-[12px]">
+                  <div><p className="eyebrow">Eligible records</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.eligibleCount ?? 0}</p></div>
+                  <div><p className="eyebrow">Dedupe suppressed</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.duplicateCount ?? 0}</p></div>
+                </div>
+                {(runPreviewQuery.data?.candidates.length ?? 0) > 0 ? <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto border-t border-line text-[12px]">{runPreviewQuery.data!.candidates.map((candidate) => <li key={`${candidate.subjectType}:${candidate.subjectId}`} className="flex items-center justify-between gap-3 py-2"><span className="truncate">{candidate.subjectName}</span><Badge variant={candidate.duplicate ? "neutral" : "success"}>{candidate.duplicate ? "duplicate" : "eligible"}</Badge></li>)}</ul> : <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-3">No persisted records match this trigger right now.</p>}
+              </div>
+            )}
+            <Field label="Reason" required hint="Stored in the immutable audit trail.">
+              <Textarea value={runReason} onChange={(event) => setRunReason(event.target.value)} placeholder="Why is a manual run required?" />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setRunOpen(false)}>Cancel</Button>
+            <Button onClick={() => runNow.mutate()} loading={runNow.isPending} disabled={!runReason.trim() || runPreviewQuery.isLoading || runPreviewQuery.isError}><Play /> Run eligible records</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

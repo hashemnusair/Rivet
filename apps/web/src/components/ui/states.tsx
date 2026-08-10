@@ -56,7 +56,7 @@ export function EmptyState(props: {
 
 export function ErrorState({
   title = "Something went wrong",
-  description = "The request failed. Your demo data is safe — try again, or disable “Fail next request” in demo controls.",
+  description = "The request could not be completed. Your last loaded data is preserved; try again.",
   onRetry,
   className,
 }: {
@@ -83,7 +83,7 @@ export function ErrorState({
 }
 
 export function ForbiddenState({
-  description = "Your current demo role does not have permission to view this area. Switch roles from the user menu to compare experiences.",
+  description = "Your account role does not have permission to view this area.",
   className,
 }: {
   description?: string;

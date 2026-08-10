@@ -26,6 +26,10 @@ export interface PlatformGymDetailSource {
     createdAt?: number;
     subscriptionPlan?: PlatformPlan;
     subscriptionStartedAt?: number;
+    trialEndsAt?: number;
+    currentPeriodEndsAt?: number;
+    cancelledAt?: number;
+    subscriptionStatusReason?: string;
   };
   branches: Array<{
     id: string;
@@ -96,6 +100,9 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
   const tenantAvailable = Boolean(organization);
   const joinedAt = iso(organization?.createdAt);
   const startedAt = iso(organization?.subscriptionStartedAt);
+  const trialEndsAt = iso(organization?.trialEndsAt);
+  const currentPeriodEndsAt = iso(organization?.currentPeriodEndsAt);
+  const cancelledAt = iso(organization?.cancelledAt);
   const status = organization ? subscriptionStatus(organization.status) : undefined;
   const controlStatus = status ?? source.gym.subscriptionStatus;
   const controlPlan = organization?.subscriptionPlan ?? source.gym.rivetPlan;
@@ -126,8 +133,12 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
       plan: organization?.subscriptionPlan ? available(organization.subscriptionPlan) : organization ? notConfigured() : notAvailable(),
       status: status ? available(status) : notAvailable(),
       startedAt: startedAt ? available(startedAt) : notAvailable(),
+      trialEndsAt: trialEndsAt ? available(trialEndsAt) : organization ? notConfigured() : notAvailable(),
+      currentPeriodEndsAt: currentPeriodEndsAt ? available(currentPeriodEndsAt) : organization ? notConfigured() : notAvailable(),
+      cancelledAt: cancelledAt ? available(cancelledAt) : organization ? notConfigured() : notAvailable(),
+      statusReason: organization?.subscriptionStatusReason ? available(organization.subscriptionStatusReason) : organization ? notConfigured() : notAvailable(),
       recurringAmount: tenantAvailable ? notConfigured() : notAvailable(),
-      renewalDate: tenantAvailable ? notConfigured() : notAvailable(),
+      renewalDate: currentPeriodEndsAt ? available(currentPeriodEndsAt) : tenantAvailable ? notConfigured() : notAvailable(),
       paymentMethod: tenantAvailable ? notConfigured() : notAvailable(),
       invoices: tenantAvailable ? notConfigured() : notAvailable(),
     },

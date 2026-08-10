@@ -17,7 +17,10 @@ export default defineConfig({
     locale: "en-US",
   },
   webServer: {
-    command: "pnpm exec next dev -p 3100",
+    // Use the lockfile-installed binary directly. This keeps browser tests
+    // hermetic when Corepack has a newer pnpm available than the workspace
+    // node_modules metadata and avoids an unnecessary registry lookup.
+    command: "./node_modules/.bin/next dev -p 3100",
     url: "http://localhost:3100/login",
     // Browser tests exercise the seeded preview personas. Real local and
     // deployed sessions always go through Clerk before this chooser appears.

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export default function MemberDetailPageClient() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
 
-  const memberQuery = useApiQuery(qk.member(memberId), (api) => api.getMember(memberId));
+  const memberQuery = useRealtimeApiQuery({ queryKey: qk.member(memberId), query: (api) => api.getMember(memberId), subscribe: (api, onValue, onError) => api.subscribeMember(memberId, onValue, onError) });
   const membershipsQuery = useApiQuery(qk.memberships({ memberId }), (api) =>
     api.listMemberships({ memberId, pageSize: 20, sort: "-startDate" }),
   );

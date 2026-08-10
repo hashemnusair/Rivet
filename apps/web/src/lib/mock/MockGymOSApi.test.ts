@@ -97,11 +97,61 @@ describe("platform gym applications", () => {
 });
 
 describe("platform subscription controls", () => {
+  it("persists gym support cases and their append-only platform conversation", async () => {
+    const reception = await api.switchDemoRole("receptionist");
+    const supportCase = await api.createSupportCase({ email: reception.user.email, subject: "Scanner unavailable", body: "The scanner is not detected.", priority: "urgent", branchId: reception.activeBranchId });
+    expect(await api.listSupportCases()).toEqual([expect.objectContaining({ id: supportCase.id, creatorId: reception.user.id, status: "open" })]);
+
+    await api.switchDemoRole("owner");
+    expect((await api.listSupportCases()).some((item) => item.id === supportCase.id)).toBe(true);
+    const replied = await api.replyToPlatformSupportCase(supportCase.id, "We are reviewing the device logs.");
+    expect(replied).toMatchObject({ status: "waiting", messages: [{ authorType: "gym" }, { authorType: "platform", body: "We are reviewing the device logs." }] });
+    await api.switchDemoRole("receptionist");
+    const notifications = await api.listNotifications();
+    expect(notifications).toEqual([expect.objectContaining({ kind: "support_reply", href: `/support?case=${supportCase.id}` })]);
+    await expect(api.setNotificationRead(notifications[0]!.id, true)).resolves.toMatchObject({ readAt: expect.any(String) });
+    await api.switchDemoRole("owner");
+    await expect(api.resolvePlatformSupportCase(supportCase.id, "")).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const resolved = await api.resolvePlatformSupportCase(supportCase.id, "Scanner permissions were restored.");
+    expect(resolved).toMatchObject({ status: "resolved", resolutionSummary: "Scanner permissions were restored." });
+    await expect(api.reopenPlatformSupportCase(supportCase.id)).resolves.toMatchObject({ status: "open" });
+  });
+
+  it("keeps platform invoices as a manual audited-style lifecycle", async () => {
+    const gym = (await api.getPlatformSnapshot()).gyms[0]!;
+    const invoice = await api.createPlatformInvoice({
+      gymId: gym.id,
+      amountMinor: 149_000,
+      currency: "JOD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    });
+    expect(invoice).toMatchObject({ gymId: gym.id, amountMinor: 149_000, currency: "JOD", status: "draft" });
+
+    const issued = await api.issuePlatformInvoice(invoice.id);
+    expect(issued).toMatchObject({ status: "open", issuedAt: expect.any(String) });
+    await expect(api.recordPlatformInvoicePayment({ invoiceId: invoice.id, reference: "BANK-123", reason: "" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+
+    const paid = await api.recordPlatformInvoicePayment({ invoiceId: invoice.id, reference: "BANK-123", reason: "Bank transfer confirmed." });
+    expect(paid).toMatchObject({ status: "paid", paymentReference: "BANK-123", paidAt: expect.any(String) });
+    await expect(api.voidPlatformInvoice(invoice.id, "Duplicate invoice.")).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
+  it("delivers the complete platform projection through the realtime contract", async () => {
+    const values: unknown[] = [];
+    const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => values.push(snapshot));
+
+    expect(values).toHaveLength(1);
+    expect(values[0]).toEqual(expect.objectContaining({ gyms: expect.any(Array), overview: expect.any(Object), invoices: expect.any(Array) }));
+    expect(() => unsubscribe()).not.toThrow();
+  });
+
   it("updates a gym subscription and plan catalog in the shared platform snapshot", async () => {
     const before = await api.getPlatformSnapshot();
     const gym = before.gyms[0]!;
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(true);
-    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false });
+    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." });
     expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth", isPublic: false });
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
 

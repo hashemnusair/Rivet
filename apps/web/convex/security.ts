@@ -49,6 +49,10 @@ type MaybeOrganization = {
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionPlan?: "Starter" | "Growth" | "Pro";
   subscriptionStartedAt?: number;
+  trialEndsAt?: number;
+  currentPeriodEndsAt?: number;
+  cancelledAt?: number;
+  subscriptionStatusReason?: string;
   clerkOrganizationId?: string;
   timezone: string;
   currency: string;

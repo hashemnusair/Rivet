@@ -11,9 +11,14 @@ import { expect, test, type Page } from "@playwright/test";
 test.describe("staged Convex operational flow", () => {
   test("persists a commercial loop across member, finance, reception, timeline and audit", async ({ page }) => {
     test.skip(
-      process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW !== "1" || process.env.PLAYWRIGHT_CONVEX_SMOKE !== "1",
-      "Set PLAYWRIGHT_CONVEX_SMOKE=1 and PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 for the isolated staging write test.",
+      process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW !== "1" || process.env.PLAYWRIGHT_CONVEX_SMOKE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging",
+      "Set the Convex smoke/write switches and PLAYWRIGHT_TARGET_CLASSIFICATION=staging for the isolated staging write test.",
     );
+
+    // The classification is deliberately independent from URL naming. A
+    // production hostname that happens to contain "dev" must never bypass the
+    // release gate, and a staging deployment must be opted into explicitly.
+    expect(process.env.PLAYWRIGHT_TARGET_CLASSIFICATION).toBe("staging");
 
     const marker = `${Date.now()}`;
     const fullName = `Convex Flow ${marker}`;

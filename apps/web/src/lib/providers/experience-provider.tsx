@@ -278,6 +278,49 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     };
   }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
 
+  // Platform operations use one live projection. Convex invalidates this
+  // query whenever an application, subscription, invoice, support case, or
+  // underlying tenant total changes, so operator screens update without a
+  // refresh and retain their last good snapshot through transient failures.
+  useEffect(() => {
+    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
+    if (!convexMode || !platformIdentity) return;
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const handleError = (error: unknown) => {
+      if (cancelled) return;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh platform operations.";
+      setExperienceError(message);
+      setExperienceRefreshing(false);
+      if (!experienceHydratedRef.current) {
+        setExperienceStatus("error");
+        setExperienceReady(false);
+      }
+    };
+
+    void getApi().subscribePlatformSnapshot((snapshot) => {
+      if (cancelled) return;
+      setPlatformSnapshot(snapshot);
+      setMarketplaceGyms(snapshot.gyms);
+      setSaasPlans(snapshot.plans);
+      setBookings(snapshot.bookings);
+      setExperienceError(undefined);
+      setExperienceRefreshing(false);
+      setExperienceStatus("ready");
+      setExperienceReady(true);
+      experienceHydratedRef.current = true;
+    }, handleError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(handleError);
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [convexMode, identity.platformAdmin, identity.status]);
+
   /**
    * A real signed-in person is their own member, not one of the seeded
    * personas. Keyed on email so a reload or a second sign-in reuses the same

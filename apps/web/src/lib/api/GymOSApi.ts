@@ -2,7 +2,9 @@ import type {
   AuditCategory,
   AuditEvent,
   AutomationExecution,
+  AutomationExecutionDetail,
   AutomationRule,
+  AutomationRunPreview,
   Branch,
   CancelMembershipInput,
   CashShift,
@@ -43,6 +45,7 @@ import type {
   MessageTemplate,
   Money,
   NotificationSettings,
+  OperationalEmailDelivery,
   OccupancySnapshot,
   Offer,
   OfferDeliveryChannel,
@@ -209,10 +212,37 @@ export interface DashboardQuery {
 
 export interface PlatformBillingInvoice {
   id: string;
+  gymId?: string;
   gym: string;
   amount: string;
+  amountMinor?: number;
+  currency?: string;
   date: string;
-  status: "paid" | "failed" | "trial";
+  issuedAt?: string;
+  dueAt?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  paymentReference?: string;
+  paidAt?: string;
+  pastDueAt?: string;
+  voidedAt?: string;
+  status: "draft" | "open" | "paid" | "past_due" | "void" | "failed" | "trial";
+}
+
+export interface CreatePlatformInvoiceInput {
+  gymId: string;
+  amountMinor: number;
+  currency?: string;
+  dueAt: string;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface RecordPlatformInvoicePaymentInput {
+  invoiceId: string;
+  reference: string;
+  reason: string;
+  paidAt?: string;
 }
 
 export type PlatformDataState = "available" | "not_available" | "not_configured";
@@ -282,6 +312,10 @@ export interface PlatformGymDetail {
     plan: PlatformData<MarketplaceGym["rivetPlan"]>;
     status: PlatformData<MarketplaceGym["subscriptionStatus"]>;
     startedAt: PlatformData<string>;
+    trialEndsAt: PlatformData<string>;
+    currentPeriodEndsAt: PlatformData<string>;
+    cancelledAt: PlatformData<string>;
+    statusReason: PlatformData<string>;
     recurringAmount: PlatformData<Money>;
     renewalDate: PlatformData<string>;
     paymentMethod: PlatformData<string>;
@@ -293,11 +327,95 @@ export interface PlatformGymDetail {
 
 export interface PlatformSupportCase {
   id: string;
+  gymId?: string;
   gym: string;
+  branchId?: string;
+  branchName?: string;
+  creatorId?: string;
+  creatorName?: string;
+  creatorEmail?: string;
   subject: string;
-  age: string;
+  body?: string;
+  age?: string;
   priority: "urgent" | "normal";
   status: "open" | "waiting" | "resolved";
+  assigneeId?: string;
+  assigneeName?: string;
+  createdAt?: string;
+  firstResponseAt?: string;
+  updatedAt?: string;
+  resolvedAt?: string;
+  resolutionSummary?: string;
+  messages?: PlatformSupportMessage[];
+}
+
+export interface PlatformSupportMessage {
+  id: string;
+  caseId: string;
+  authorType: "gym" | "platform";
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface CreateSupportCaseInput {
+  branchId?: string;
+  email: string;
+  subject: string;
+  body: string;
+  priority: PlatformSupportCase["priority"];
+}
+
+export interface PlatformOperatorQueueItem {
+  id: string;
+  severity: "danger" | "warning" | "info";
+  title: string;
+  detail: string;
+  href: string;
+  occurredAt?: string;
+}
+
+export interface OperationalNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  href: string;
+  dedupeKey: string;
+  organizationId?: string;
+  branchId?: string;
+  readAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface PlatformOverview {
+  gymCounts: Record<"trial" | "active" | "past_due" | "suspended" | "cancelled", number>;
+  branchCount: number;
+  memberCount: number;
+  activeStaffCount: number;
+  activeMrr: Money;
+  invoiceTotals: {
+    collected: Money;
+    outstanding: Money;
+    overdue: Money;
+  };
+  trialRequests: number;
+  trialConversions: number;
+  pendingApplications: number;
+  provisioningFailures: number;
+  pastDueAccounts: number;
+  trialsExpiringSoon: number;
+  openSupportCases: number;
+  urgentSupportCases: number;
+  billingHistory: Array<{
+    month: string;
+    issued: Money;
+    collected: Money;
+    outstanding: Money;
+  }>;
+  operatorQueue: PlatformOperatorQueueItem[];
 }
 
 export interface PlatformSaasPlan {
@@ -392,6 +510,9 @@ export interface PlatformSnapshot {
   invoices: PlatformBillingInvoice[];
   supportCases: PlatformSupportCase[];
   plans: PlatformSaasPlan[];
+  applications: PlatformGymApplication[];
+  auditEvents: PlatformGymActivity[];
+  overview: PlatformOverview;
 }
 
 export interface CreateOfferInput {
@@ -414,6 +535,11 @@ export interface UpdatePlatformGymInput {
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
   isPublic?: boolean;
+  trialEndsAt?: string;
+  subscriptionStartedAt?: string;
+  currentPeriodEndsAt?: string;
+  cancelledAt?: string;
+  reason: string;
 }
 
 export interface UpdatePlatformPlanInput {
@@ -473,7 +599,9 @@ export interface GymOSApi {
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
+  subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
+  subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
@@ -483,16 +611,31 @@ export interface GymOSApi {
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
-  retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
-  resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
+  createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice>;
+  issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
+  markPlatformInvoicePastDue(invoiceId: string, reason: string): Promise<PlatformBillingInvoice>;
+  recordPlatformInvoicePayment(input: RecordPlatformInvoicePaymentInput): Promise<PlatformBillingInvoice>;
+  voidPlatformInvoice(invoiceId: string, reason: string): Promise<PlatformBillingInvoice>;
+  listSupportCases(): Promise<PlatformSupportCase[]>;
+  subscribeSupportCases(onValue: (cases: PlatformSupportCase[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase>;
+  resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase>;
+  reopenPlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
+  assignPlatformSupportCase(caseId: string, assigneeId?: string): Promise<PlatformSupportCase>;
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;
+  listNotifications(): Promise<OperationalNotification[]>;
+  subscribeNotifications(onValue: (notifications: OperationalNotification[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  setNotificationRead(notificationId: string, read: boolean): Promise<OperationalNotification>;
+  markAllNotificationsRead(): Promise<void>;
 
   // Dashboard
   getDashboard(query: DashboardQuery): Promise<DashboardData>;
+  subscribeDashboard(query: DashboardQuery, onValue: (dashboard: DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Members
   listMembers(query: MemberListQuery): Promise<Page<MemberSummary>>;
   getMember(memberId: UUID): Promise<MemberDetail>;
+  subscribeMember(memberId: UUID, onValue: (member: MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createMember(input: CreateMemberInput): Promise<CreateMemberResult>;
   updateMember(memberId: UUID, input: UpdateMemberInput): Promise<MemberDetail>;
   archiveMember(memberId: UUID, input: { reason: string }): Promise<void>;
@@ -509,6 +652,7 @@ export interface GymOSApi {
   // Memberships
   listMemberships(query: MembershipListQuery): Promise<Page<MembershipSummary>>;
   getMembership(membershipId: UUID): Promise<MembershipDetail>;
+  subscribeMembership(membershipId: UUID, onValue: (membership: MembershipDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createMembershipSale(input: CreateMembershipSaleInput): Promise<MembershipSaleResult>;
   renewMembership(membershipId: UUID, input: RenewMembershipInput): Promise<MembershipSaleResult>;
   changeMembershipPlan(membershipId: UUID, input: ChangeMembershipPlanInput): Promise<MembershipSaleResult>;
@@ -522,6 +666,7 @@ export interface GymOSApi {
   listLeads(query: LeadListQuery): Promise<Page<LeadSummary>>;
   subscribeLeads(query: LeadListQuery, onValue: (page: Page<LeadSummary>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getLead(leadId: UUID): Promise<LeadDetail>;
+  subscribeLead(leadId: UUID, onValue: (lead: LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;
   logContactAttempt(leadId: UUID, input: ContactAttemptInput): Promise<LeadDetail>;
@@ -532,20 +677,25 @@ export interface GymOSApi {
   createOffer(input: CreateOfferInput): Promise<Offer>;
   markOfferDelivered(offerId: UUID, input: MarkOfferDeliveredInput): Promise<Offer>;
   listTasks(query: TaskListQuery): Promise<Page<Task>>;
+  subscribeTasks(query: TaskListQuery, onValue: (page: Page<Task>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createFollowUp(input: CreateTaskInput): Promise<Task>;
   completeTask(taskId: UUID, input: CompleteTaskInput): Promise<Task>;
   convertLead(leadId: UUID, input: ConvertLeadInput): Promise<MemberDetail>;
   listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>;
+  subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: Page<RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Check-in
   previewCheckIn(input: { branchId: UUID; query: string }): Promise<CheckInPreview>;
   createCheckIn(input: CreateCheckInInput): Promise<CheckInResult>;
   overrideCheckIn(input: OverrideCheckInInput): Promise<CheckInResult>;
   listRecentCheckIns(query: RecentCheckInQuery): Promise<Page<CheckInSummary>>;
+  subscribeRecentCheckIns(query: RecentCheckInQuery, onValue: (page: Page<CheckInSummary>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getOccupancy(branchId: UUID): Promise<OccupancySnapshot>;
+  subscribeOccupancy(branchId: UUID, onValue: (occupancy: OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Payments & shifts
   listTransactions(query: TransactionListQuery): Promise<Page<TransactionSummary>>;
+  subscribeTransactions(query: TransactionListQuery, onValue: (page: Page<TransactionSummary>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createPayment(input: CreatePaymentInput, idempotencyKey: string): Promise<ReceiptDetail>;
   refundPayment(paymentId: UUID, input: RefundPaymentInput): Promise<ReceiptDetail>;
   voidPayment(paymentId: UUID, input: VoidPaymentInput): Promise<ReceiptDetail>;
@@ -553,8 +703,10 @@ export interface GymOSApi {
   openCashShift(input: OpenCashShiftInput): Promise<CashShift>;
   getCurrentCashShift(branchId: UUID): Promise<CashShift | null>;
   getCurrentShiftTotals(branchId: UUID): Promise<{ shift: CashShift; totals: import("@/lib/domain/types").ShiftTotals } | null>;
+  subscribeCurrentShiftTotals(branchId: UUID, onValue: (value: { shift: CashShift; totals: import("@/lib/domain/types").ShiftTotals } | null) => void, onError?: (error: unknown) => void): Promise<() => void>;
   closeCashShift(shiftId: UUID, input: CloseCashShiftInput): Promise<CashShift>;
   listCashShifts(query: { branchId?: UUID; page?: number; pageSize?: number }): Promise<Page<CashShift>>;
+  subscribeCashShifts(query: { branchId?: UUID; page?: number; pageSize?: number }, onValue: (page: Page<CashShift>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   reviewVariance(shiftId: UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<CashShift>;
   getDailyReconciliation(query: { branchId: UUID; date: ISODate }): Promise<ReconciliationReport>;
 
@@ -564,7 +716,14 @@ export interface GymOSApi {
   createAutomationRule(input: CreateAutomationRuleInput): Promise<AutomationRule>;
   updateAutomationRule(id: UUID, input: UpdateAutomationRuleInput): Promise<AutomationRule>;
   listAutomationExecutions(query: ExecutionQuery): Promise<Page<AutomationExecution>>;
+  subscribeAutomationExecutions(query: ExecutionQuery, onValue: (page: Page<AutomationExecution>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getAutomationExecution(id: UUID): Promise<AutomationExecutionDetail>;
+  previewAutomationRun(ruleId: UUID): Promise<AutomationRunPreview>;
+  runAutomationRuleNow(ruleId: UUID, reason: string): Promise<{ created: number; skippedDuplicates: number }>;
+  retryAutomationExecution(executionId: UUID, reason: string): Promise<AutomationExecutionDetail>;
   listMessageTemplates(): Promise<MessageTemplate[]>;
+  listOperationalEmailDeliveries(query?: ListQuery): Promise<Page<OperationalEmailDelivery>>;
+  subscribeOperationalEmailDeliveries(query: ListQuery, onValue: (page: Page<OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Audit
   listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>;

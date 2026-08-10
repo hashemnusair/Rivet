@@ -44,6 +44,10 @@ export default defineSchema({
     status: organizationStatus,
     subscriptionPlan: v.optional(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"))),
     subscriptionStartedAt: v.optional(v.number()),
+    trialEndsAt: v.optional(v.number()),
+    currentPeriodEndsAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    subscriptionStatusReason: v.optional(v.string()),
     clerkOrganizationId: v.optional(v.string()),
     timezone: v.string(),
     currency: v.string(),
@@ -90,6 +94,24 @@ export default defineSchema({
     .index("by_auth_subject", ["authSubject"])
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
+
+  operationalNotifications: defineTable({
+    publicId: v.string(),
+    recipientUserId: v.id("users"),
+    organizationId: v.optional(v.id("organizations")),
+    branchId: v.optional(v.id("branches")),
+    kind: v.string(),
+    title: v.string(),
+    body: v.string(),
+    href: v.string(),
+    dedupeKey: v.string(),
+    readAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_recipient_created", ["recipientUserId", "createdAt"])
+    .index("by_recipient_dedupe", ["recipientUserId", "dedupeKey"]),
 
   // Consumer profiles are global authenticated identities, not tenant-owned
   // staff/member records. Gym memberships and trial bookings may reference

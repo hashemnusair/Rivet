@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireActor, requirePermission, type OrganizationRole } from "./security";
 import { rolePermissions, toFrontendRole } from "./permissions";
 import { INVITATION_REDIRECT_PATH } from "./platformProvisioning";
+import { notifyOrganizationSupervisors } from "./notificationDelivery";
 
 type Data = Record<string, unknown>;
 
@@ -263,6 +264,14 @@ export const markFailed = internalMutation({
       correlationId: args.correlationId,
       occurredAt: args.attemptedAt,
       details: { reason: args.message },
+    });
+    await notifyOrganizationSupervisors(ctx, {
+      organizationId: args.organizationId,
+      kind: "staff_invitation_failure",
+      title: "Staff invitation needs attention",
+      body: `${args.userName} · invitation delivery failed`,
+      href: "/settings?section=users",
+      dedupeKey: `staff-invitation-failed:${args.userPublicId}:${args.attemptedAt}`,
     });
     return undefined;
   },

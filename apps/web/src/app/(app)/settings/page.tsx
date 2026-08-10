@@ -27,7 +27,7 @@ function SettingsPageInner() {
         title="Settings"
         description="Organization, branches, people, permissions and receipts. Everything sensitive here is audited."
       />
-      <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions in the demo." />}>
+      <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
         <Tabs defaultValue={section} key={section}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="organization">Organization</TabsTrigger>

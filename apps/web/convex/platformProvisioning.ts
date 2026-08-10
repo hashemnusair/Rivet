@@ -3,6 +3,7 @@ import { internalMutation, type MutationCtx, type QueryCtx } from "./_generated/
 import type { Doc, Id } from "./_generated/dataModel";
 import { DEFAULT_ROLE_DEFINITIONS } from "./permissions";
 import { domainError, publicBranchId, publicOrganizationId, publicUserId, requirePlatformAdmin, type OrganizationRole } from "./security";
+import { notifyPlatformAdmins } from "./notificationDelivery";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -403,6 +404,13 @@ export const fail = internalMutation({
       after: { provisioningStatus: "failed" },
       correlationId: args.correlationId,
       occurredAt: now,
+    });
+    await notifyPlatformAdmins(ctx, {
+      kind: "provisioning_failure",
+      title: "Gym provisioning failed",
+      body: `${application.gymName} · ${message}`,
+      href: `/platform/applications?application=${application.publicId}`,
+      dedupeKey: `gym-provisioning-failed:${application.publicId}:${now}`,
     });
     return undefined;
   },

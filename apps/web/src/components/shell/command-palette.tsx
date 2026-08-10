@@ -4,6 +4,7 @@ import { Command } from "cmdk";
 import {
   ArrowRight,
   Banknote,
+  CircleHelp,
   FileBarChart,
   Gauge,
   KanbanSquare,
@@ -108,6 +109,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { href: "/reports", label: "Reports", icon: FileBarChart, perm: ["reports.financial.read"] },
     { href: "/automations", label: "Automations", icon: Zap, perm: ["automations.manage"] },
     { href: "/audit", label: "Audit log", icon: ScrollText, perm: ["audit.read"] },
+    { href: "/support", label: "RIVET support", icon: CircleHelp },
     { href: "/settings", label: "Settings", icon: Settings, perm: ["settings.manage", "users.manage"] },
   ].filter((p) => !p.perm || canAny(p.perm));
 

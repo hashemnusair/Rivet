@@ -33,6 +33,10 @@ import type {
   GymProvisioningResult,
   UpdatePlatformGymInput,
   UpdatePlatformPlanInput,
+  CreatePlatformInvoiceInput,
+  RecordPlatformInvoicePaymentInput,
+  CreateSupportCaseInput,
+  OperationalNotification,
   CreateOfferInput,
   MarkOfferDeliveredInput,
   CustomerExperience,
@@ -244,7 +248,9 @@ export class ConvexGymOSApi implements GymOSApi {
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
+  subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.snapshot", {}, onValue, onError); }
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> { return this.query("platform.gym.detail", { gymId }); }
+  subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.gym.detail", { gymId }, onValue, onError); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {
@@ -281,13 +287,28 @@ export class ConvexGymOSApi implements GymOSApi {
   }
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutate("platform.gym.update", input); }
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
-  retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.billing.retry", { invoiceId }); }
-  resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.resolve", { caseId }); }
+  createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.create", input); }
+  issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.issue", { invoiceId }); }
+  markPlatformInvoicePastDue(invoiceId: string, reason: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.past_due", { invoiceId, reason }); }
+  recordPlatformInvoicePayment(input: RecordPlatformInvoicePaymentInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.payment", input); }
+  voidPlatformInvoice(invoiceId: string, reason: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.void", { invoiceId, reason }); }
+  listSupportCases(): Promise<PlatformSupportCase[]> { return this.query("support.list"); }
+  subscribeSupportCases(onValue: (cases: PlatformSupportCase[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("support.list", {}, onValue, onError); }
+  createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase> { return this.mutate("support.create", input); }
+  resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.resolve", { caseId, resolutionSummary }); }
+  reopenPlatformSupportCase(caseId: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.reopen", { caseId }); }
+  assignPlatformSupportCase(caseId: string, assigneeId?: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.assign", { caseId, assigneeId }); }
   replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.reply", { caseId, body }); }
+  listNotifications(): Promise<OperationalNotification[]> { return this.query("notifications.list"); }
+  subscribeNotifications(onValue: (notifications: OperationalNotification[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("notifications.list", {}, onValue, onError); }
+  setNotificationRead(notificationId: string, read: boolean): Promise<OperationalNotification> { return this.mutate("notifications.read", { notificationId, read }); }
+  async markAllNotificationsRead(): Promise<void> { await this.mutate("notifications.readAll", {}); }
 
   getDashboard(query: DashboardQuery): Promise<T.DashboardData> { return this.query("dashboard", query); }
+  subscribeDashboard(query: DashboardQuery, onValue: (dashboard: T.DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("dashboard", query, onValue, onError); }
   listMembers(query: MemberListQuery): Promise<T.Page<T.MemberSummary>> { return this.query("members.list", query); }
   getMember(memberId: T.UUID): Promise<T.MemberDetail> { return this.query("members.get", { memberId }); }
+  subscribeMember(memberId: T.UUID, onValue: (member: T.MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("members.get", { memberId }, onValue, onError); }
   createMember(input: T.CreateMemberInput): Promise<T.CreateMemberResult> { return this.mutate("members.create", input); }
   updateMember(memberId: T.UUID, input: T.UpdateMemberInput): Promise<T.MemberDetail> { return this.mutate("members.update", { memberId, ...input }); }
   async archiveMember(memberId: T.UUID, input: { reason: string }): Promise<void> { await this.mutate("members.archive", { memberId, ...input }); }
@@ -302,6 +323,7 @@ export class ConvexGymOSApi implements GymOSApi {
 
   listMemberships(query: MembershipListQuery): Promise<T.Page<T.MembershipSummary>> { return this.query("memberships.list", query); }
   getMembership(membershipId: T.UUID): Promise<T.MembershipDetail> { return this.query("memberships.get", { membershipId }); }
+  subscribeMembership(membershipId: T.UUID, onValue: (membership: T.MembershipDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("memberships.get", { membershipId }, onValue, onError); }
   createMembershipSale(input: T.CreateMembershipSaleInput): Promise<T.MembershipSaleResult> { return this.mutate("memberships.sale", input); }
   renewMembership(membershipId: T.UUID, input: T.RenewMembershipInput): Promise<T.MembershipSaleResult> { return this.mutate("memberships.renew", { membershipId, ...input }); }
   changeMembershipPlan(membershipId: T.UUID, input: T.ChangeMembershipPlanInput): Promise<T.MembershipSaleResult> { return this.mutate("memberships.plan_change", { membershipId, ...input }); }
@@ -316,6 +338,7 @@ export class ConvexGymOSApi implements GymOSApi {
     return this.subscribeQuery("leads.list", query, onValue, onError);
   }
   getLead(leadId: T.UUID): Promise<T.LeadDetail> { return this.query("leads.get", { leadId }); }
+  subscribeLead(leadId: T.UUID, onValue: (lead: T.LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("leads.get", { leadId }, onValue, onError); }
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.create", input); }
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
@@ -323,18 +346,23 @@ export class ConvexGymOSApi implements GymOSApi {
   createOffer(input: CreateOfferInput): Promise<T.Offer> { return this.mutate("offers.create", input); }
   markOfferDelivered(offerId: T.UUID, input: MarkOfferDeliveredInput): Promise<T.Offer> { return this.mutate("offers.deliver", { offerId, ...input }); }
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> { return this.query("tasks.list", query); }
+  subscribeTasks(query: TaskListQuery, onValue: (page: T.Page<T.Task>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("tasks.list", query, onValue, onError); }
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> { return this.mutate("tasks.create", input); }
   completeTask(taskId: T.UUID, input: T.CompleteTaskInput): Promise<T.Task> { return this.mutate("tasks.complete", { taskId, ...input }); }
   convertLead(leadId: T.UUID, input: T.ConvertLeadInput): Promise<T.MemberDetail> { return this.mutate("leads.convert", { leadId, ...input }); }
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> { return this.query("renewal.queue", query); }
+  subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: T.Page<T.RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("renewal.queue", query, onValue, onError); }
 
   previewCheckIn(input: { branchId: T.UUID; query: string }): Promise<T.CheckInPreview> { return this.query("checkins.preview", input); }
   createCheckIn(input: T.CreateCheckInInput): Promise<T.CheckInResult> { return this.mutate("checkins.create", input); }
   overrideCheckIn(input: T.OverrideCheckInInput): Promise<T.CheckInResult> { return this.mutate("checkins.override", input); }
   listRecentCheckIns(query: RecentCheckInQuery): Promise<T.Page<T.CheckInSummary>> { return this.query("checkins.list", query); }
+  subscribeRecentCheckIns(query: RecentCheckInQuery, onValue: (page: T.Page<T.CheckInSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("checkins.list", query, onValue, onError); }
   getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> { return this.query("checkins.occupancy", { branchId }); }
+  subscribeOccupancy(branchId: T.UUID, onValue: (occupancy: T.OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("checkins.occupancy", { branchId }, onValue, onError); }
 
   listTransactions(query: TransactionListQuery): Promise<T.Page<T.TransactionSummary>> { return this.query("transactions.list", query); }
+  subscribeTransactions(query: TransactionListQuery, onValue: (page: T.Page<T.TransactionSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("transactions.list", query, onValue, onError); }
   createPayment(input: T.CreatePaymentInput, idempotencyKey: string): Promise<T.ReceiptDetail> { return this.mutate("payments.create", { ...input, idempotencyKey }); }
   refundPayment(paymentId: T.UUID, input: T.RefundPaymentInput): Promise<T.ReceiptDetail> { return this.mutate("payments.refund", { paymentId, ...input }); }
   voidPayment(paymentId: T.UUID, input: T.VoidPaymentInput): Promise<T.ReceiptDetail> { return this.mutate("payments.void", { paymentId, ...input }); }
@@ -345,8 +373,10 @@ export class ConvexGymOSApi implements GymOSApi {
     return current?.shift ?? null;
   }
   getCurrentShiftTotals(branchId: T.UUID): Promise<{ shift: T.CashShift; totals: T.ShiftTotals } | null> { return this.query("shifts.current", { branchId }); }
+  subscribeCurrentShiftTotals(branchId: T.UUID, onValue: (value: { shift: T.CashShift; totals: T.ShiftTotals } | null) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("shifts.current", { branchId }, onValue, onError); }
   closeCashShift(shiftId: T.UUID, input: T.CloseCashShiftInput): Promise<T.CashShift> { return this.mutate("shifts.close", { shiftId, ...input }); }
   listCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }): Promise<T.Page<T.CashShift>> { return this.query("shifts.list", query); }
+  subscribeCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }, onValue: (page: T.Page<T.CashShift>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("shifts.list", query, onValue, onError); }
   reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<T.CashShift> { return this.mutate("shifts.review", { shiftId, ...input }); }
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> { return this.query("reconciliation.daily", query); }
 
@@ -355,7 +385,14 @@ export class ConvexGymOSApi implements GymOSApi {
   createAutomationRule(input: T.CreateAutomationRuleInput): Promise<T.AutomationRule> { return this.mutate("automations.rule.create", input); }
   updateAutomationRule(id: T.UUID, input: T.UpdateAutomationRuleInput): Promise<T.AutomationRule> { return this.mutate("automations.rule.update", { id, ...input }); }
   listAutomationExecutions(query: ExecutionQuery): Promise<T.Page<T.AutomationExecution>> { return this.query("automations.executions", query); }
+  subscribeAutomationExecutions(query: ExecutionQuery, onValue: (page: T.Page<T.AutomationExecution>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("automations.executions", query, onValue, onError); }
+  getAutomationExecution(id: T.UUID): Promise<T.AutomationExecutionDetail> { return this.query("automations.execution", { id }); }
+  previewAutomationRun(ruleId: T.UUID): Promise<T.AutomationRunPreview> { return this.query("automations.run.preview", { ruleId }); }
+  runAutomationRuleNow(ruleId: T.UUID, reason: string): Promise<{ created: number; skippedDuplicates: number }> { return this.mutate("automations.run", { ruleId, reason }); }
+  retryAutomationExecution(executionId: T.UUID, reason: string): Promise<T.AutomationExecutionDetail> { return this.mutate("automations.execution.retry", { executionId, reason }); }
   listMessageTemplates(): Promise<T.MessageTemplate[]> { return this.query("automations.templates"); }
+  listOperationalEmailDeliveries(query: T.ListQuery = {}): Promise<T.Page<T.OperationalEmailDelivery>> { return this.query("operationalEmails.list", query); }
+  subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("operationalEmails.list", query, onValue, onError); }
   listAuditEvents(query: AuditQuery): Promise<T.Page<T.AuditEvent>> { return this.query("audit.list", query); }
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> { return this.query("settings.get"); }

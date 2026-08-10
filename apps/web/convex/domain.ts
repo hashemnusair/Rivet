@@ -22,6 +22,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRol
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
+import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -169,6 +170,204 @@ function isoNow(): string {
 
 function newPublicId(): string {
   return crypto.randomUUID();
+}
+
+type PlatformAdminContext = Awaited<ReturnType<typeof requirePlatformAdmin>>;
+
+async function insertPlatformAudit(
+  ctx: MutationCtx,
+  admin: PlatformAdminContext,
+  event: {
+    action: string;
+    entityType: string;
+    entityPublicId: string;
+    entityLabel: string;
+    summary: string;
+    reason?: string;
+    before?: Data;
+    after?: Data;
+  },
+): Promise<void> {
+  await ctx.db.insert("platformAuditEvents", {
+    publicId: crypto.randomUUID(),
+    actorUserId: admin.user._id,
+    actorPublicId: publicUserId(admin.user),
+    actorName: admin.user.fullName,
+    action: event.action,
+    entityType: event.entityType,
+    entityPublicId: event.entityPublicId,
+    entityLabel: event.entityLabel,
+    summary: event.summary,
+    ...(event.reason ? { reason: event.reason } : {}),
+    ...(event.before ? { before: event.before } : {}),
+    ...(event.after ? { after: event.after } : {}),
+    correlationId: admin.correlationId,
+    occurredAt: Date.now(),
+  });
+}
+
+function platformInvoiceAmount(amountMinor: number, currency: string): string {
+  return `${currency} ${(amountMinor / 1_000).toFixed(3)}`;
+}
+
+function validTimestamp(value: string): number | undefined {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+async function supportCaseView(ctx: ReadContext, record: DomainRecord): Promise<Data> {
+  const value = data(record.data);
+  const messages = (await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type", (q) => q.eq("organizationId", record.organizationId).eq("entityType", "supportMessage"))
+    .collect())
+    .map((message): Data => ({ id: message.publicId, ...data(message.data) }))
+    .filter((message) => stringValue(message.caseId) === record.publicId)
+    .sort((left, right) => stringValue(left.createdAt).localeCompare(stringValue(right.createdAt)));
+  return {
+    id: record.publicId,
+    ...value,
+    createdAt: optionalString(value.createdAt) ?? utcIso(record.createdAt),
+    updatedAt: optionalString(value.updatedAt) ?? utcIso(record.updatedAt),
+    messages,
+  };
+}
+
+async function notificationView(ctx: ReadContext, notification: Doc<"operationalNotifications">): Promise<Data> {
+  const organization = notification.organizationId ? await ctx.db.get(notification.organizationId) : null;
+  const branch = notification.branchId ? await ctx.db.get(notification.branchId) : null;
+  return {
+    id: notification.publicId,
+    kind: notification.kind,
+    title: notification.title,
+    body: notification.body,
+    href: notification.href,
+    dedupeKey: notification.dedupeKey,
+    organizationId: organization ? publicOrganizationId(organization) : undefined,
+    branchId: branch ? publicBranchId(branch) : undefined,
+    readAt: notification.readAt ? utcIso(notification.readAt) : undefined,
+    expiresAt: notification.expiresAt ? utcIso(notification.expiresAt) : undefined,
+    createdAt: utcIso(notification.createdAt),
+  };
+}
+
+async function insertOperationalNotification(ctx: MutationCtx, input: {
+  recipientUserId: Id<"users">;
+  organizationId?: Id<"organizations">;
+  branchId?: Id<"branches">;
+  kind: string;
+  title: string;
+  body: string;
+  href: string;
+  dedupeKey: string;
+  expiresAt?: number;
+}): Promise<void> {
+  const existing = await ctx.db
+    .query("operationalNotifications")
+    .withIndex("by_recipient_dedupe", (q) => q.eq("recipientUserId", input.recipientUserId).eq("dedupeKey", input.dedupeKey))
+    .unique();
+  if (existing && (!existing.expiresAt || existing.expiresAt > Date.now())) return;
+  if (!input.href.startsWith("/") || input.href.startsWith("//")) domainError("VALIDATION_ERROR", "Notification links must be internal RIVET routes.");
+  await ctx.db.insert("operationalNotifications", {
+    publicId: `NOT-${newPublicId()}`,
+    recipientUserId: input.recipientUserId,
+    organizationId: input.organizationId,
+    branchId: input.branchId,
+    kind: input.kind,
+    title: input.title,
+    body: input.body,
+    href: input.href,
+    dedupeKey: input.dedupeKey,
+    expiresAt: input.expiresAt,
+    createdAt: Date.now(),
+  });
+}
+
+async function notifyOrganizationRoles(ctx: MutationCtx, input: {
+  organizationId: Id<"organizations">;
+  branchId?: Id<"branches">;
+  roles: OrganizationRole[];
+  kind: string;
+  title: string;
+  body: string;
+  href: string;
+  dedupeKey: string;
+  excludeUserId?: Id<"users">;
+}): Promise<void> {
+  const memberships = (await ctx.db
+    .query("organizationMemberships")
+    .withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId))
+    .collect())
+    .filter((membership) => membership.active && input.roles.includes(membership.role))
+    .filter((membership) => !input.branchId || membership.branchScope === "all" || membership.branchIds.includes(input.branchId));
+  await Promise.all(memberships.map(async (membership) => {
+    if (input.excludeUserId && membership.userId === input.excludeUserId) return;
+    const user = await ctx.db.get(membership.userId);
+    if (!user || user.status === "deactivated") return;
+    await insertOperationalNotification(ctx, {
+      recipientUserId: user._id,
+      organizationId: input.organizationId,
+      branchId: input.branchId,
+      kind: input.kind,
+      title: input.title,
+      body: input.body,
+      href: input.href,
+      dedupeKey: input.dedupeKey,
+    });
+  }));
+}
+
+async function queueOperationalEmail(ctx: MutationCtx, input: {
+  organizationId: Id<"organizations">;
+  branchId?: Id<"branches">;
+  kind: string;
+  templateVersion: string;
+  language?: "en" | "ar";
+  recipientReference: string;
+  recipientEmail?: string;
+  dedupeKey: string;
+}): Promise<void> {
+  const existing = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", input.organizationId).eq("entityType", "operationalEmailDelivery")).collect())
+    .find((record) => stringValue(data(record.data).dedupeKey) === input.dedupeKey);
+  if (existing) return;
+  const now = Date.now();
+  const id = `EMAIL-${newPublicId()}`;
+  await ctx.db.insert("domainRecords", {
+    organizationId: input.organizationId,
+    entityType: "operationalEmailDelivery",
+    publicId: id,
+    branchId: input.branchId,
+    createdAt: now,
+    updatedAt: now,
+    data: {
+      id,
+      kind: input.kind,
+      templateVersion: input.templateVersion,
+      language: input.language ?? "en",
+      recipientReference: input.recipientReference,
+      recipientEmail: input.recipientEmail,
+      dedupeKey: input.dedupeKey,
+      providerId: undefined,
+      attempts: [],
+      retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+      nextAttemptAt: undefined,
+      status: "suppressed",
+      suppressionReason: "Sandbox default; this message type is not enabled for external delivery",
+      queuedAt: utcIso(now),
+      updatedAt: utcIso(now),
+    },
+  });
+}
+
+async function platformGymOwnerRecipient(ctx: MutationCtx, gymId: string): Promise<{ organization: Organization; user: User } | null> {
+  const listing = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((record) => record.publicId === gymId);
+  const targetOrganizationId = optionalString(data(listing?.data).targetOrganizationId);
+  const organization = targetOrganizationId ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique() : null;
+  if (!organization) return null;
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+  const ownerMembership = memberships.find((membership) => membership.active && membership.role === "owner");
+  const user = ownerMembership ? await ctx.db.get(ownerMembership.userId) : null;
+  return user && user.status !== "deactivated" ? { organization, user } : null;
 }
 
 function utcIso(timestamp: number): string {
@@ -958,7 +1157,14 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
     // Revenue is platform-private. Public discovery receives a zero placeholder
     // to preserve the existing view model without disclosing tenant finances.
     monthlyRevenueMinor: includePlatformFields ? numberValue(value.monthlyRevenueMinor) : 0,
-    ...(includePlatformFields ? { isPublic: booleanValue(value.isPublic) } : {}),
+    ...(includePlatformFields ? {
+      isPublic: booleanValue(value.isPublic),
+      trialEndsAt: optionalString(value.trialEndsAt),
+      subscriptionStartedAt: optionalString(value.subscriptionStartedAt),
+      currentPeriodEndsAt: optionalString(value.currentPeriodEndsAt),
+      cancelledAt: optionalString(value.cancelledAt),
+      subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
+    } : {}),
     branches: arrayValue(value.branches).map((item) => {
       const branch = data(item);
       return {
@@ -1308,12 +1514,146 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: "other", expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: new Date(`${base.preferredDate}T${base.preferredTime}:00+03:00`).toISOString(), notes: `Free trial requested through RIVET Member. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
     await ctx.db.insert("domainRecords", { organizationId: targetOrganization._id, entityType: "lead", publicId: leadId, branchId: branch._id, leadPublicId: leadId, createdAt: Date.now(), updatedAt: Date.now(), data: lead });
     await ctx.db.patch((await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique())!._id, { data: { ...base, leadId }, updatedAt: Date.now() });
+    await notifyOrganizationRoles(ctx, {
+      organizationId: targetOrganization._id,
+      branchId: branch._id,
+      roles: ["owner", "manager", "sales", "receptionist"],
+      kind: "trial_request",
+      title: "New free-trial request",
+      body: `${base.fullName} · ${branch.name} · ${base.preferredDate} ${base.preferredTime}`,
+      href: `/crm/leads/${leadId}`,
+      dedupeKey: `trial-request:${bookingId}`,
+    });
   }
+  await queueOperationalEmail(ctx, {
+    organizationId: storageOrganization._id,
+    branchId: branch?._id,
+    kind: "trial_request_confirmation",
+    templateVersion: "trial-request-v1",
+    language: stringValue(profile.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    recipientReference: publicUserId(user),
+    recipientEmail: profile.email,
+    dedupeKey: `trial-request-confirmation:${bookingId}`,
+  });
   return { ...base, ...(leadId ? { leadId } : {}) };
 }
 
 async function linkedTrialBooking(ctx: ReadContext, actor: ActorContext, leadId: string) {
   return (await recordsOf(ctx, actor, "trialBooking")).find((record) => optionalString(data(record.data).leadId) === leadId);
+}
+
+type AutomationCandidate = {
+  record: DomainRecord;
+  value: Data;
+  subjectType: "member" | "membership" | "lead" | "task" | "charge";
+  subjectId: string;
+  subjectName: string;
+  branchId?: string;
+  duplicate: boolean;
+  dedupeKey: string;
+};
+
+function automationEntityType(trigger: string): AutomationCandidate["subjectType"] {
+  if (trigger === "member_inactive") return "member";
+  if (trigger === "lead_untouched") return "lead";
+  if (trigger === "follow_up_overdue") return "task";
+  if (trigger === "payment_outstanding") return "charge";
+  return "membership";
+}
+
+function automationTriggerMatches(rule: Data, candidate: Data, today: string): boolean {
+  const trigger = stringValue(rule.trigger);
+  const params = data(rule.triggerParams);
+  if (trigger === "membership_expiring") {
+    const days = diffDays(today, stringValue(candidate.endDate));
+    return arrayValue(params.daysBefore).map((item) => numberValue(item)).includes(days);
+  }
+  if (trigger === "membership_expired") {
+    const days = diffDays(stringValue(candidate.endDate), today);
+    return days === numberValue(params.daysAfter, 0);
+  }
+  if (trigger === "member_inactive") {
+    const lastActivity = optionalString(candidate.lastCheckInAt) ?? optionalString(candidate.createdAt);
+    return Boolean(lastActivity) && diffDays(stringValue(lastActivity).slice(0, 10), today) >= numberValue(params.days, 21);
+  }
+  if (trigger === "lead_untouched") {
+    const createdAt = Date.parse(stringValue(candidate.createdAt));
+    return ["new", "attempted"].includes(stringValue(candidate.stage)) && Number.isFinite(createdAt) && Date.now() - createdAt >= numberValue(params.hours, 24) * 3_600_000;
+  }
+  if (trigger === "follow_up_overdue") {
+    const dueAt = Date.parse(stringValue(candidate.dueAt));
+    return stringValue(candidate.status, "open") === "open" && Number.isFinite(dueAt) && dueAt < Date.now() - numberValue(params.hours, 4) * 3_600_000;
+  }
+  if (trigger === "payment_outstanding") {
+    const createdAt = optionalString(candidate.createdAt);
+    return amountOf(candidate.outstandingAmount) > 0 && Boolean(createdAt) && diffDays(stringValue(createdAt).slice(0, 10), today) >= numberValue(params.days, 7);
+  }
+  return false;
+}
+
+async function automationSubjectName(ctx: ReadContext, actor: ActorContext, subjectType: AutomationCandidate["subjectType"], value: Data): Promise<string> {
+  if (subjectType === "member" || subjectType === "lead") return stringValue(value.fullName, stringValue(value.name, "Record"));
+  const linkedMemberId = optionalString(value.memberId);
+  if (linkedMemberId) {
+    const member = await recordOfOptional(ctx, actor, "member", linkedMemberId);
+    if (member) return stringValue(data(member.data).fullName, linkedMemberId);
+  }
+  if (subjectType === "task") return stringValue(value.title, "Follow-up task");
+  if (subjectType === "charge") return stringValue(value.description, "Outstanding charge");
+  return stringValue(value.planName, "Membership");
+}
+
+async function automationCandidates(ctx: ReadContext, actor: ActorContext, ruleRecord: DomainRecord): Promise<AutomationCandidate[]> {
+  const rule = data(ruleRecord.data);
+  const subjectType = automationEntityType(stringValue(rule.trigger));
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const candidates = (await recordsOf(ctx, actor, subjectType)).filter((record) => automationTriggerMatches(rule, data(record.data), today));
+  return await Promise.all(candidates.map(async (record): Promise<AutomationCandidate> => {
+    const value = data(record.data);
+    const dedupeKey = `${ruleRecord.publicId}:${record.publicId}:${today}`;
+    const existing = await ctx.db
+      .query("idempotencyRecords")
+      .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "automation.execute").eq("key", dedupeKey))
+      .unique();
+    return {
+      record,
+      value,
+      subjectType,
+      subjectId: record.publicId,
+      subjectName: await automationSubjectName(ctx, actor, subjectType, value),
+      branchId: record.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, record.branchId) : optionalString(value.branchId) ?? optionalString(value.homeBranchId),
+      duplicate: Boolean(existing?.expiresAt && existing.expiresAt > Date.now()),
+      dedupeKey,
+    };
+  }));
+}
+
+async function automationExecutionView(ctx: ReadContext, actor: ActorContext, record: DomainRecord): Promise<Data> {
+  const value = data(record.data);
+  const rule = await recordOfOptional(ctx, actor, "automationRule", stringValue(value.ruleId));
+  const storedSubjectType = stringValue(value.subjectType);
+  const subjectType = ["member", "membership", "lead", "task", "charge"].includes(storedSubjectType)
+    ? storedSubjectType
+    : automationEntityType(stringValue(value.trigger));
+  const actionResults = arrayValue(value.actionResults).map(data);
+  const attemptHistory = arrayValue(value.attemptHistory).map(data);
+  const legacyAction = optionalString(value.action);
+  const status = stringValue(value.status, "completed");
+  return {
+    id: record.publicId,
+    ...value,
+    ruleName: stringValue(value.ruleName, stringValue(data(rule?.data).name, "Deleted rule")),
+    subjectType,
+    subjectId: stringValue(value.subjectId, stringValue(value.entityId, record.publicId)),
+    subjectName: stringValue(value.subjectName, "Record"),
+    action: legacyAction ?? optionalString(actionResults[0]?.key),
+    status,
+    detail: optionalString(value.detail) ?? optionalString(value.suppressionReason) ?? `${actionResults.length} action${actionResults.length === 1 ? "" : "s"}`,
+    actionResults,
+    attemptHistory,
+    retryPolicy: Object.keys(data(value.retryPolicy)).length > 0 ? data(value.retryPolicy) : { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+    executedAt: optionalString(value.executedAt) ?? utcIso(record.createdAt),
+  };
 }
 
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
@@ -1324,6 +1664,18 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "health") {
     return { status: "ok", serverTime: Date.now() };
+  }
+
+  if (operation === "notifications.list") {
+    const { user } = await requireAuthenticated(ctx);
+    const notifications = (await ctx.db
+      .query("operationalNotifications")
+      .withIndex("by_recipient_created", (q) => q.eq("recipientUserId", user._id))
+      .collect())
+      .filter((notification) => !notification.expiresAt || notification.expiresAt > Date.now())
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, 100);
+    return await Promise.all(notifications.map((notification) => notificationView(ctx, notification)));
   }
 
   if (operation === "public.marketplace") {
@@ -1350,9 +1702,59 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const gyms = (await marketplaceRows(ctx)).map((row) => marketplaceView(data(row.data), true));
     const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
     const invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
-    const supportCases = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
+    const supportCaseRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect();
+    const supportCases = await Promise.all(supportCaseRows.map((row) => supportCaseView(ctx, row)));
+    const applications = (await ctx.db.query("gymApplications").collect()).map(gymApplicationView);
+    const auditEvents = (await ctx.db.query("platformAuditEvents").withIndex("by_occurred").collect())
+      .sort((left, right) => right.occurredAt - left.occurredAt)
+      .slice(0, 100)
+      .map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     const plans = await platformPlans(ctx);
-    return { gyms, bookings, invoices, supportCases, plans };
+    const [organizations, branches, staffMemberships, memberRows] = await Promise.all([
+      ctx.db.query("organizations").collect(),
+      ctx.db.query("branches").collect(),
+      ctx.db.query("organizationMemberships").collect(),
+      ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect(),
+    ]);
+    const overview = buildPlatformOverview({
+      gyms: gyms.map((gym) => ({ id: stringValue(gym.id), subscriptionStatus: stringValue(gym.subscriptionStatus), trialEndsAt: optionalString(gym.trialEndsAt) })),
+      organizations: organizations.map((organization) => ({ status: organization.status, subscriptionPlan: organization.subscriptionPlan })),
+      plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
+      branches: branches.map((branch) => ({ active: branch.active, status: branch.status })),
+      members: memberRows.map((member) => ({ status: optionalString(data(member.data).status) })),
+      staffMemberships: staffMemberships.map((membership) => ({ active: membership.active })),
+      bookings: bookings.map((booking) => ({ status: optionalString(booking.status) })),
+      applications: applications.map((application) => ({
+        id: stringValue(application.id),
+        gymName: stringValue(application.gymName),
+        plan: stringValue(application.plan),
+        status: stringValue(application.status),
+        updatedAt: stringValue(application.updatedAt),
+        provisioningStatus: optionalString(application.provisioningStatus),
+        provisioningError: optionalString(application.provisioningError),
+      })),
+      invoices: invoices.map((invoice) => ({
+        id: stringValue(invoice.id),
+        gymId: optionalString(invoice.gymId),
+        gym: optionalString(invoice.gym),
+        amount: optionalString(invoice.amount),
+        amountMinor: typeof invoice.amountMinor === "number" ? invoice.amountMinor : undefined,
+        currency: optionalString(invoice.currency),
+        status: optionalString(invoice.status),
+        date: optionalString(invoice.date),
+        issuedAt: optionalString(invoice.issuedAt),
+        occurredAt: optionalString(invoice.occurredAt),
+      })),
+      supportCases: supportCases.map((supportCase) => ({
+        id: stringValue(supportCase.id),
+        gym: optionalString(supportCase.gym),
+        subject: optionalString(supportCase.subject),
+        priority: optionalString(supportCase.priority),
+        status: optionalString(supportCase.status),
+        createdAt: optionalString(supportCase.createdAt),
+      })),
+    });
+    return { gyms, bookings, invoices, supportCases, applications, auditEvents, plans, overview };
   }
   if (operation === "platform.gym.detail") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
@@ -1447,6 +1849,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
             createdAt: organization.createdAt,
             subscriptionPlan: organization.subscriptionPlan,
             subscriptionStartedAt: organization.subscriptionStartedAt,
+            trialEndsAt: organization.trialEndsAt,
+            currentPeriodEndsAt: organization.currentPeriodEndsAt,
+            cancelledAt: organization.cancelledAt,
+            subscriptionStatusReason: organization.subscriptionStatusReason,
           }
         : undefined,
       branches,
@@ -1460,6 +1866,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "support.list": {
+      const records = await recordsOf(ctx, actor, "supportCase");
+      const visible = actor.role === "owner" || actor.role === "manager"
+        ? records
+        : records.filter((record) => stringValue(data(record.data).creatorId) === publicUserId(actor.user));
+      return await Promise.all(visible.sort((left, right) => right.updatedAt - left.updatedAt).map((record) => supportCaseView(ctx, record)));
+    }
     case "settings.get": {
       const branches = await accessibleBranches(ctx, actor);
       const settings = await settingsData(ctx, actor);
@@ -1711,14 +2124,44 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "automations.executions": {
       requirePermission(actor, "automations.manage");
-      let executions = (await recordsOf(ctx, actor, "automationExecution")).map((record) => data(record.data));
-      if (input.ruleId) executions = executions.filter((execution) => execution.ruleId === input.ruleId);
+      let executionRecords = await recordsOf(ctx, actor, "automationExecution");
+      if (input.ruleId) executionRecords = executionRecords.filter((record) => data(record.data).ruleId === input.ruleId);
+      const executions = await Promise.all(executionRecords.map((record) => automationExecutionView(ctx, actor, record)));
       executions.sort((a, b) => stringValue(b.executedAt).localeCompare(stringValue(a.executedAt)));
       return page(executions, input);
+    }
+    case "automations.execution": {
+      requirePermission(actor, "automations.manage");
+      return await automationExecutionView(ctx, actor, await recordOf(ctx, actor, "automationExecution", recordId(input.id)));
+    }
+    case "automations.run.preview": {
+      requirePermission(actor, "automations.manage");
+      const ruleRecord = await recordOf(ctx, actor, "automationRule", recordId(input.ruleId));
+      const candidates = await automationCandidates(ctx, actor, ruleRecord);
+      return {
+        ruleId: ruleRecord.publicId,
+        ruleName: stringValue(data(ruleRecord.data).name),
+        eligibleCount: candidates.filter((candidate) => !candidate.duplicate).length,
+        duplicateCount: candidates.filter((candidate) => candidate.duplicate).length,
+        candidates: candidates.map((candidate) => ({
+          subjectType: candidate.subjectType,
+          subjectId: candidate.subjectId,
+          subjectName: candidate.subjectName,
+          branchId: candidate.branchId,
+          duplicate: candidate.duplicate,
+        })),
+      };
     }
     case "automations.templates": {
       requirePermission(actor, "automations.manage");
       return (await recordsOf(ctx, actor, "messageTemplate")).map((record) => data(record.data));
+    }
+    case "operationalEmails.list": {
+      requirePermission(actor, "automations.manage");
+      let deliveries: Data[] = (await recordsOf(ctx, actor, "operationalEmailDelivery")).map((record): Data => ({ id: record.publicId, ...data(record.data) }));
+      deliveries = deliveries.filter((delivery) => matchesSearch([delivery.kind, delivery.templateVersion, delivery.recipientReference, delivery.recipientEmail, delivery.status], optionalString(input.search)));
+      deliveries.sort((left, right) => stringValue(right.queuedAt).localeCompare(stringValue(left.queuedAt)));
+      return page(deliveries, input);
     }
     case "audit.list":
       return await auditPage(ctx, actor, input);
@@ -1942,6 +2385,17 @@ async function paymentRecord(
   await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, outstanding - amount), actor.organization.currency), status: paymentStatusForCharge(amountOf(chargeData.total), paid) });
   await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${(amount / 1000).toFixed(3)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.create", key: idempotencyKey, requestHash, result: { paymentId: payment.id, receiptId: receipt.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
+  const member = data(memberRecord.data);
+  await queueOperationalEmail(ctx, {
+    organizationId: actor.organization._id,
+    branchId: branch?._id,
+    kind: "payment_receipt",
+    templateVersion: "payment-receipt-v1",
+    language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    recipientReference: memberId,
+    recipientEmail: optionalString(member.email),
+    dedupeKey: `payment-receipt:${receipt.id}`,
+  });
   return { payment, receipt, receiptId: receipt.id };
 }
 
@@ -2252,6 +2706,139 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   return task;
 }
 
+function automationQuietHours(timezone: string, start: string, end: string): boolean {
+  const current = localSchedulePosition(timezone).time;
+  if (start === end) return false;
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
+async function automationTaskOwner(ctx: MutationCtx, actor: ActorContext, requestedRole: string): Promise<User | null> {
+  const normalizedRole = requestedRole === "salesperson" ? "sales" : requestedRole;
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const membership = memberships.find((item) => item.active && item.role === normalizedRole && (actor.branchScope === "all" || item.branchIds.some((id) => actor.branchIds.includes(id))));
+  return membership ? await ctx.db.get(membership.userId) : null;
+}
+
+async function executeAutomationCandidate(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  ruleRecord: DomainRecord,
+  candidate: AutomationCandidate,
+): Promise<Data> {
+  const rule = data(ruleRecord.data);
+  const now = Date.now();
+  const executionId = newPublicId();
+  await ctx.db.insert("idempotencyRecords", {
+    organizationId: actor.organization._id,
+    operation: "automation.execute",
+    key: candidate.dedupeKey,
+    requestHash: candidate.dedupeKey,
+    result: { executionId },
+    createdAt: now,
+    expiresAt: now + Math.max(1, numberValue(rule.dedupeWindowHours, 24)) * 3_600_000,
+  });
+
+  const settings = await settingsData(ctx, actor);
+  const notifications = data(settings.notifications);
+  const quiet = automationQuietHours(
+    actor.organization.timezone || TZ_FALLBACK,
+    stringValue(notifications.quietHoursStart, "22:00"),
+    stringValue(notifications.quietHoursEnd, "08:00"),
+  );
+  const deliveryMode = stringValue(notifications.automationDeliveryMode, "sandbox");
+  const actionResults: Data[] = [];
+  const attemptHistory: Data[] = [];
+  const memberId = candidate.subjectType === "member" ? candidate.subjectId : optionalString(candidate.value.memberId);
+  const leadId = candidate.subjectType === "lead" ? candidate.subjectId : optionalString(candidate.value.leadId);
+  const occurredAt = isoNow();
+
+  for (const action of arrayValue(rule.actions).map(data)) {
+    const key = stringValue(action.key);
+    if (key === "create_task") {
+      const owner = await automationTaskOwner(ctx, actor, stringValue(action.taskOwnerRole, "salesperson"));
+      const task = await insertRecord(ctx, actor, "task", {
+        id: newPublicId(),
+        title: stringValue(action.taskTitle, `Follow up with ${candidate.subjectName}`),
+        type: "general",
+        status: "open",
+        ownerId: owner ? publicUserId(owner) : undefined,
+        ownerName: owner?.fullName,
+        memberId,
+        leadId,
+        subjectName: candidate.subjectName,
+        dueAt: occurredAt,
+        createdById: publicUserId(actor.user),
+        createdAt: occurredAt,
+        automationExecutionId: executionId,
+      }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
+      actionResults.push({ key, taskId: task.id, status: "completed" });
+      attemptHistory.push({ action: key, attempt: 1, status: "completed", occurredAt });
+      continue;
+    }
+    if (key === "queue_message") {
+      const suppressionReason = quiet
+        ? "Tenant quiet hours"
+        : deliveryMode === "live"
+          ? "Outbound delivery is not enabled for this message type"
+          : undefined;
+      const status = suppressionReason ? "suppressed" : "queued";
+      const message = await insertRecord(ctx, actor, "messageDelivery", {
+        id: newPublicId(),
+        status,
+        channel: "sandbox",
+        requestedChannel: stringValue(action.channel, "whatsapp"),
+        language: stringValue(candidate.value.preferredLanguage, "en"),
+        templateId: optionalString(action.templateId),
+        memberId,
+        leadId,
+        queuedAt: occurredAt,
+        suppressionReason,
+        retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+        attempts: [{ attempt: 1, status, occurredAt, reason: suppressionReason }],
+        automationExecutionId: executionId,
+      }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
+      actionResults.push({ key, messageId: message.id, status, suppressionReason });
+      attemptHistory.push({ action: key, attempt: 1, status, occurredAt, reason: suppressionReason });
+      continue;
+    }
+    if (key === "notify_manager") {
+      await notifyOrganizationRoles(ctx, {
+        organizationId: actor.organization._id,
+        branchId: candidate.record.branchId,
+        roles: ["owner", "manager"],
+        kind: "automation_attention",
+        title: stringValue(rule.name, "Automation requires attention"),
+        body: candidate.subjectName,
+        href: memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/automations",
+        dedupeKey: `automation-notification:${executionId}`,
+      });
+      actionResults.push({ key, status: "completed" });
+      attemptHistory.push({ action: key, attempt: 1, status: "completed", occurredAt });
+    }
+  }
+
+  const status = actionResults.length > 0 && actionResults.every((item) => item.status === "suppressed")
+    ? "suppressed"
+    : actionResults.some((item) => item.status === "queued")
+      ? "queued"
+      : "completed";
+  return await insertRecord(ctx, actor, "automationExecution", {
+    id: executionId,
+    ruleId: ruleRecord.publicId,
+    ruleName: stringValue(rule.name),
+    subjectType: candidate.subjectType,
+    subjectId: candidate.subjectId,
+    subjectName: candidate.subjectName,
+    dedupeKey: candidate.dedupeKey,
+    status,
+    executedAt: occurredAt,
+    actionResults,
+    attemptHistory,
+    retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+    suppressionReason: status === "suppressed" ? actionResults.map((item) => stringValue(item.suppressionReason)).filter(Boolean).join("; ") : undefined,
+  }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
+}
+
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
@@ -2262,6 +2849,23 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "notifications.read" || operation === "notifications.readAll") {
+    const { user } = await requireAuthenticated(ctx);
+    if (operation === "notifications.readAll") {
+      const rows = await ctx.db.query("operationalNotifications").withIndex("by_recipient_created", (q) => q.eq("recipientUserId", user._id)).collect();
+      const readAt = Date.now();
+      await Promise.all(rows.filter((row) => !row.readAt && (!row.expiresAt || row.expiresAt > readAt)).map((row) => ctx.db.patch(row._id, { readAt })));
+      return undefined;
+    }
+    const notificationId = recordId(input.notificationId);
+    if (typeof input.read !== "boolean") domainError("VALIDATION_ERROR", "Notification read state must be a boolean.", { correlationId: request.correlationId });
+    const notification = await ctx.db.query("operationalNotifications").withIndex("by_public_id", (q) => q.eq("publicId", notificationId)).unique();
+    if (!notification || notification.recipientUserId !== user._id) domainError("NOT_FOUND", "Notification not found.", { correlationId: request.correlationId });
+    await ctx.db.patch(notification._id, { readAt: input.read ? Date.now() : undefined });
+    const updated = await ctx.db.get(notification._id);
+    if (!updated) domainError("NOT_FOUND", "Notification not found.", { correlationId: request.correlationId });
+    return await notificationView(ctx, updated);
+  }
   if (operation === "platform.application.note") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const applicationId = stringValue(input.applicationId);
@@ -2300,21 +2904,44 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const requestedStatus = optionalString(input.status);
     const requestedPlan = optionalString(input.plan);
     const requestedPublic = input.isPublic === undefined ? undefined : booleanValue(input.isPublic);
+    requireReason(input.reason, admin.correlationId);
+    const reason = input.reason.trim();
     const statuses = new Set(["trial", "active", "overdue", "suspended", "cancelled"]);
     const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
     if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
     if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
-    if (!requestedStatus && !requestedPlan && requestedPublic === undefined) domainError("VALIDATION_ERROR", "Choose a status, plan, or listing change.", { correlationId: request.correlationId });
+    const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.currentPeriodEndsAt, input.cancelledAt];
+    if (!requestedStatus && !requestedPlan && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
+    const lifecycleDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt"): { iso?: string; timestamp?: number } => {
+      if (input[key] === undefined) return {};
+      const timestamp = validTimestamp(stringValue(input[key]));
+      if (timestamp === undefined) domainError("VALIDATION_ERROR", "Subscription lifecycle dates are invalid.", { correlationId: admin.correlationId, fieldErrors: { [key]: ["Enter a valid date"] } });
+      return { iso: new Date(timestamp).toISOString(), timestamp };
+    };
+    const trialEnds = lifecycleDate("trialEndsAt");
+    const subscriptionStarted = lifecycleDate("subscriptionStartedAt");
+    const currentPeriodEnds = lifecycleDate("currentPeriodEndsAt");
+    const cancelled = lifecycleDate("cancelledAt");
+    if (requestedStatus === "trial" && !trialEnds.iso && !optionalString(current.trialEndsAt)) domainError("VALIDATION_ERROR", "A trial end date is required when starting a trial.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Required for trials"] } });
+    const now = isoNow();
     const updated = {
       ...current,
       ...(requestedStatus ? { subscriptionStatus: requestedStatus } : {}),
       ...(requestedPlan ? { rivetPlan: requestedPlan } : {}),
       ...(requestedPublic !== undefined ? { isPublic: requestedPublic } : {}),
-      lastActiveAt: isoNow(),
+      ...(trialEnds.iso ? { trialEndsAt: trialEnds.iso } : {}),
+      ...(subscriptionStarted.iso ? { subscriptionStartedAt: subscriptionStarted.iso } : {}),
+      ...(currentPeriodEnds.iso ? { currentPeriodEndsAt: currentPeriodEnds.iso } : {}),
+      ...(cancelled.iso ? { cancelledAt: cancelled.iso } : {}),
+      ...(requestedStatus === "active" && !subscriptionStarted.iso && !optionalString(current.subscriptionStartedAt) ? { subscriptionStartedAt: now } : {}),
+      ...(requestedStatus === "cancelled" && !cancelled.iso ? { cancelledAt: now } : {}),
+      ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
+      subscriptionStatusReason: reason,
+      lastActiveAt: now,
     };
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
     const targetOrganizationId = optionalString(current.targetOrganizationId);
@@ -2325,25 +2952,39 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.patch(organization._id, {
           ...(requestedStatus ? { status: statusMap[requestedStatus] } : {}),
           ...(requestedPlan && requestedPlan !== "Enterprise" ? { subscriptionPlan: requestedPlan as "Starter" | "Growth" | "Pro" } : {}),
+          ...(trialEnds.timestamp !== undefined ? { trialEndsAt: trialEnds.timestamp } : {}),
+          ...(subscriptionStarted.timestamp !== undefined ? { subscriptionStartedAt: subscriptionStarted.timestamp } : {}),
+          ...(currentPeriodEnds.timestamp !== undefined ? { currentPeriodEndsAt: currentPeriodEnds.timestamp } : {}),
+          ...(cancelled.timestamp !== undefined ? { cancelledAt: cancelled.timestamp } : {}),
+          ...(requestedStatus === "active" && subscriptionStarted.timestamp === undefined && !organization.subscriptionStartedAt ? { subscriptionStartedAt: Date.now() } : {}),
+          ...(requestedStatus === "cancelled" && cancelled.timestamp === undefined ? { cancelledAt: Date.now() } : {}),
+          ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
+          subscriptionStatusReason: reason,
           updatedAt: Date.now(),
         });
       }
     }
-    await ctx.db.insert("platformAuditEvents", {
-      publicId: crypto.randomUUID(),
-      actorUserId: admin.user._id,
-      actorPublicId: publicUserId(admin.user),
-      actorName: admin.user.fullName,
+    await insertPlatformAudit(ctx, admin, {
       action: "gym.subscription.update",
       entityType: "platform_gym",
       entityPublicId: gymId,
       entityLabel: stringValue(current.name, gymId),
       summary: "Updated gym subscription controls",
-      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan, isPublic: current.isPublic },
-      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan, isPublic: updated.isPublic },
-      correlationId: admin.correlationId,
-      occurredAt: Date.now(),
+      reason,
+      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan, isPublic: current.isPublic, trialEndsAt: current.trialEndsAt, subscriptionStartedAt: current.subscriptionStartedAt, currentPeriodEndsAt: current.currentPeriodEndsAt, cancelledAt: current.cancelledAt },
+      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan, isPublic: updated.isPublic, trialEndsAt: updated.trialEndsAt, subscriptionStartedAt: updated.subscriptionStartedAt, currentPeriodEndsAt: updated.currentPeriodEndsAt, cancelledAt: updated.cancelledAt },
     });
+    if (requestedStatus === "suspended" || requestedStatus === "cancelled") {
+      const recipient = await platformGymOwnerRecipient(ctx, gymId);
+      if (recipient) await queueOperationalEmail(ctx, {
+        organizationId: recipient.organization._id,
+        kind: requestedStatus === "suspended" ? "platform_subscription_suspended" : "platform_subscription_cancelled",
+        templateVersion: requestedStatus === "suspended" ? "subscription-suspended-v1" : "subscription-cancelled-v1",
+        recipientReference: publicUserId(recipient.user),
+        recipientEmail: recipient.user.email,
+        dedupeKey: `subscription-${requestedStatus}:${gymId}:${now}`,
+      });
+    }
     return marketplaceView(updated, true);
   }
 
@@ -2382,25 +3023,313 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return { id: record.publicId, ...updated };
   }
 
-  if (operation === "platform.billing.retry" || operation === "platform.support.resolve" || operation === "platform.support.reply") {
-    await requirePlatformAdmin(ctx, request.correlationId);
-    const entityType = operation === "platform.billing.retry" ? "platformInvoice" : "supportCase";
-    const publicId = stringValue(operation === "platform.billing.retry" ? input.invoiceId : input.caseId);
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", entityType)).collect()).find((row) => row.publicId === publicId);
-    if (!record) domainError("NOT_FOUND", "Platform record not found.", { correlationId: request.correlationId });
+  if (operation === "platform.invoice.create") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    const amountMinor = numberValue(input.amountMinor, -1);
+    const currency = stringValue(input.currency, JOD).trim().toUpperCase();
+    const dueAtValue = stringValue(input.dueAt);
+    const periodStartValue = stringValue(input.periodStart);
+    const periodEndValue = stringValue(input.periodEnd);
+    const dueAt = validTimestamp(dueAtValue);
+    const periodStart = validTimestamp(periodStartValue);
+    const periodEnd = validTimestamp(periodEndValue);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+      domainError("VALIDATION_ERROR", "Invoice amount must be a positive integer in minor units.", { correlationId: admin.correlationId });
+    }
+    if (!/^[A-Z]{3}$/.test(currency)) domainError("VALIDATION_ERROR", "Invoice currency must be a three-letter ISO code.", { correlationId: admin.correlationId });
+    if (dueAt === undefined || periodStart === undefined || periodEnd === undefined || periodEnd < periodStart) {
+      domainError("VALIDATION_ERROR", "Invoice dates are invalid.", { correlationId: admin.correlationId });
+    }
+    const gymRecord = (await marketplaceRows(ctx)).find((row) => row.publicId === gymId);
+    if (!gymRecord) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+    const gym = data(gymRecord.data);
+    const targetOrganizationId = optionalString(gym.targetOrganizationId);
+    const organization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
+    const invoiceId = `INV-${newPublicId()}`;
+    const createdAt = isoNow();
+    const invoice: Data = {
+      id: invoiceId,
+      gymId,
+      gym: stringValue(gym.name, "Gym"),
+      amountMinor,
+      amount: platformInvoiceAmount(amountMinor, currency),
+      currency,
+      date: "",
+      dueAt: new Date(dueAt).toISOString(),
+      periodStart: new Date(periodStart).toISOString(),
+      periodEnd: new Date(periodEnd).toISOString(),
+      status: "draft",
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await ctx.db.insert("domainRecords", {
+      organizationId: organization._id,
+      entityType: "platformInvoice",
+      publicId: invoiceId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      data: invoice,
+    });
+    await insertPlatformAudit(ctx, admin, {
+      action: "invoice.create",
+      entityType: "platform_invoice",
+      entityPublicId: invoiceId,
+      entityLabel: invoiceId,
+      summary: `Created draft invoice for ${stringValue(gym.name, "gym")}`,
+      after: { gymId, amountMinor, currency, dueAt: invoice.dueAt, periodStart: invoice.periodStart, periodEnd: invoice.periodEnd, status: "draft" },
+    });
+    return invoice;
+  }
+
+  if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment", "platform.invoice.void"].includes(operation)) {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const invoiceId = recordId(input.invoiceId);
+    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).find((row) => row.publicId === invoiceId);
+    if (!record) domainError("NOT_FOUND", "Invoice not found.", { correlationId: admin.correlationId });
     const current = data(record.data);
-    const updated = operation === "platform.billing.retry"
-      ? { ...current, status: "paid" }
-      : operation === "platform.support.resolve"
-        ? { ...current, status: "resolved" }
-        : { ...current, lastReply: stringValue(input.body), lastReplyAt: isoNow() };
+    const status = stringValue(current.status);
+    const now = isoNow();
+    let updated: Data;
+    let action: string;
+    let summary: string;
+    let reason: string | undefined;
+
+    if (operation === "platform.invoice.issue") {
+      if (status !== "draft") domainError("VALIDATION_ERROR", "Only draft invoices can be issued.", { correlationId: admin.correlationId });
+      updated = { ...current, status: "open", issuedAt: now, date: now, updatedAt: now };
+      action = "invoice.issue";
+      summary = "Issued platform invoice";
+    } else if (operation === "platform.invoice.past_due") {
+      if (status !== "open") domainError("VALIDATION_ERROR", "Only an open invoice can be marked past due.", { correlationId: admin.correlationId });
+      requireReason(input.reason, admin.correlationId);
+      reason = input.reason.trim();
+      updated = { ...current, status: "past_due", pastDueAt: now, updatedAt: now };
+      action = "invoice.mark_past_due";
+      summary = "Marked platform invoice past due";
+    } else if (operation === "platform.invoice.payment") {
+      if (!["open", "past_due", "failed"].includes(status)) domainError("VALIDATION_ERROR", "Only an outstanding invoice can be marked paid.", { correlationId: admin.correlationId });
+      requireReason(input.reason, admin.correlationId);
+      reason = input.reason.trim();
+      const reference = stringValue(input.reference).trim();
+      if (!reference) domainError("VALIDATION_ERROR", "A manual payment reference is required.", { correlationId: admin.correlationId, fieldErrors: { reference: ["Required"] } });
+      const paidTimestamp = input.paidAt === undefined ? Date.now() : validTimestamp(stringValue(input.paidAt));
+      if (paidTimestamp === undefined) domainError("VALIDATION_ERROR", "Payment date is invalid.", { correlationId: admin.correlationId });
+      updated = { ...current, status: "paid", paidAt: new Date(paidTimestamp).toISOString(), paymentReference: reference, updatedAt: now };
+      action = "invoice.manual_payment";
+      summary = "Recorded an offline payment against platform invoice";
+    } else {
+      if (status === "paid" || status === "void") domainError("VALIDATION_ERROR", "Paid or void invoices cannot be voided.", { correlationId: admin.correlationId });
+      requireReason(input.reason, admin.correlationId);
+      reason = input.reason.trim();
+      updated = { ...current, status: "void", voidedAt: now, updatedAt: now };
+      action = "invoice.void";
+      summary = "Voided platform invoice";
+    }
+
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    await insertPlatformAudit(ctx, admin, {
+      action,
+      entityType: "platform_invoice",
+      entityPublicId: invoiceId,
+      entityLabel: invoiceId,
+      summary,
+      reason,
+      before: { status: current.status, paidAt: current.paidAt, paymentReference: current.paymentReference, pastDueAt: current.pastDueAt, voidedAt: current.voidedAt },
+      after: { status: updated.status, paidAt: updated.paidAt, paymentReference: updated.paymentReference, pastDueAt: updated.pastDueAt, voidedAt: updated.voidedAt },
+    });
+    if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment"].includes(operation)) {
+      const recipient = await platformGymOwnerRecipient(ctx, stringValue(current.gymId));
+      if (recipient) await queueOperationalEmail(ctx, {
+        organizationId: recipient.organization._id,
+        kind: operation === "platform.invoice.issue" ? "platform_invoice_issued" : operation === "platform.invoice.past_due" ? "platform_invoice_past_due" : "platform_invoice_paid",
+        templateVersion: operation === "platform.invoice.issue" ? "platform-invoice-issued-v1" : operation === "platform.invoice.past_due" ? "platform-invoice-past-due-v1" : "platform-invoice-paid-v1",
+        recipientReference: publicUserId(recipient.user),
+        recipientEmail: recipient.user.email,
+        dedupeKey: `${operation}:${invoiceId}:${now}`,
+      });
+      if (recipient && operation === "platform.invoice.past_due") {
+        await notifyOrganizationRoles(ctx, {
+          organizationId: recipient.organization._id,
+          roles: ["owner", "manager"],
+          kind: "platform_invoice_past_due",
+          title: "RIVET invoice marked past due",
+          body: `${invoiceId} · ${platformInvoiceAmount(numberValue(current.amountMinor), stringValue(current.currency, "JOD"))}`,
+          href: "/support",
+          dedupeKey: `platform-invoice-past-due:${invoiceId}`,
+        });
+      }
+    }
     return { id: record.publicId, ...updated };
+  }
+
+  if (["platform.support.resolve", "platform.support.reply", "platform.support.reopen", "platform.support.assign"].includes(operation)) {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const publicId = recordId(input.caseId);
+    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect()).find((row) => row.publicId === publicId);
+    if (!record) domainError("NOT_FOUND", "Support case not found.", { correlationId: admin.correlationId });
+    const current = data(record.data);
+    const now = isoNow();
+    let updated: Data;
+    let action: string;
+    let summary: string;
+
+    if (operation === "platform.support.reply") {
+      const body = stringValue(input.body).trim();
+      if (!body) domainError("VALIDATION_ERROR", "A support reply is required.", { correlationId: admin.correlationId, fieldErrors: { body: ["Required"] } });
+      const messageId = `SUP-MSG-${newPublicId()}`;
+      await ctx.db.insert("domainRecords", {
+        organizationId: record.organizationId,
+        entityType: "supportMessage",
+        publicId: messageId,
+        branchId: record.branchId,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        data: { id: messageId, caseId: publicId, authorType: "platform", authorId: publicUserId(admin.user), authorName: admin.user.fullName, body, createdAt: now },
+      });
+      updated = { ...current, status: "waiting", firstResponseAt: optionalString(current.firstResponseAt) ?? now, updatedAt: now };
+      action = "support.reply";
+      summary = "Replied to gym support case";
+    } else if (operation === "platform.support.resolve") {
+      const resolutionSummary = stringValue(input.resolutionSummary).trim();
+      if (!resolutionSummary) domainError("VALIDATION_ERROR", "A resolution summary is required.", { correlationId: admin.correlationId, fieldErrors: { resolutionSummary: ["Required"] } });
+      if (stringValue(current.status) === "resolved") domainError("VALIDATION_ERROR", "This support case is already resolved.", { correlationId: admin.correlationId });
+      updated = { ...current, status: "resolved", resolutionSummary, resolvedAt: now, updatedAt: now };
+      action = "support.resolve";
+      summary = "Resolved gym support case";
+    } else if (operation === "platform.support.reopen") {
+      if (stringValue(current.status) !== "resolved") domainError("VALIDATION_ERROR", "Only a resolved support case can be reopened.", { correlationId: admin.correlationId });
+      updated = { ...current, status: "open", resolutionSummary: undefined, resolvedAt: undefined, updatedAt: now };
+      action = "support.reopen";
+      summary = "Reopened gym support case";
+    } else {
+      const assigneeId = optionalString(input.assigneeId);
+      const assignee = assigneeId ? await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", assigneeId)).unique() : null;
+      if (assigneeId && (!assignee || !assignee.platformAdmin || assignee.status !== "active")) domainError("NOT_FOUND", "Platform operator not found.", { correlationId: admin.correlationId });
+      updated = { ...current, assigneeId: assignee ? publicUserId(assignee) : undefined, assigneeName: assignee?.fullName, updatedAt: now };
+      action = assignee ? "support.assign" : "support.unassign";
+      summary = assignee ? "Assigned gym support case" : "Unassigned gym support case";
+    }
+    await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    await insertPlatformAudit(ctx, admin, {
+      action,
+      entityType: "support_case",
+      entityPublicId: publicId,
+      entityLabel: stringValue(current.subject, publicId),
+      summary,
+      before: { status: current.status, assigneeId: current.assigneeId, resolutionSummary: current.resolutionSummary },
+      after: { status: updated.status, assigneeId: updated.assigneeId, resolutionSummary: updated.resolutionSummary },
+    });
+    if (operation === "platform.support.reply" || operation === "platform.support.resolve") {
+      const creatorId = optionalString(current.creatorId);
+      const creator = creatorId ? await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", creatorId)).unique() : null;
+      if (creator && creator.status !== "deactivated") await insertOperationalNotification(ctx, {
+        recipientUserId: creator._id,
+        organizationId: record.organizationId,
+        branchId: record.branchId,
+        kind: operation === "platform.support.reply" ? "support_reply" : "support_resolved",
+        title: operation === "platform.support.reply" ? "RIVET replied to your support case" : "RIVET resolved your support case",
+        body: stringValue(current.subject, publicId),
+        href: `/support?case=${publicId}`,
+        dedupeKey: `${operation}:${publicId}:${now}`,
+      });
+      await queueOperationalEmail(ctx, {
+        organizationId: record.organizationId,
+        branchId: record.branchId,
+        kind: operation === "platform.support.reply" ? "support_reply" : "support_resolved",
+        templateVersion: operation === "platform.support.reply" ? "support-reply-v1" : "support-resolved-v1",
+        recipientReference: creatorId ?? stringValue(current.creatorEmail),
+        recipientEmail: optionalString(current.creatorEmail),
+        dedupeKey: `${operation}:email:${publicId}:${now}`,
+      });
+    }
+    if (operation === "platform.support.assign" && updated.assigneeId) {
+      const assignee = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", stringValue(updated.assigneeId))).unique();
+      if (assignee) await insertOperationalNotification(ctx, {
+        recipientUserId: assignee._id,
+        organizationId: record.organizationId,
+        branchId: record.branchId,
+        kind: "support_assignment",
+        title: "Support case assigned to you",
+        body: `${stringValue(current.gym, "Gym")} · ${stringValue(current.subject, publicId)}`,
+        href: `/platform/support?case=${publicId}`,
+        dedupeKey: `support-assigned:${publicId}:${publicUserId(assignee)}`,
+      });
+    }
+    const refreshed = await ctx.db.get(record._id);
+    if (!refreshed) domainError("NOT_FOUND", "Support case not found.", { correlationId: admin.correlationId });
+    return await supportCaseView(ctx, refreshed);
   }
 
   const actor = await requireActor(ctx, request);
 
   switch (operation) {
+    case "support.create": {
+      const email = stringValue(input.email).trim().toLowerCase();
+      const subject = stringValue(input.subject).trim();
+      const body = stringValue(input.body).trim();
+      const priority = stringValue(input.priority, "normal");
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) domainError("VALIDATION_ERROR", "A valid contact email is required.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
+      if (!subject) domainError("VALIDATION_ERROR", "A support subject is required.", { correlationId: actor.correlationId, fieldErrors: { subject: ["Required"] } });
+      if (!body) domainError("VALIDATION_ERROR", "A support message is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });
+      if (!["normal", "urgent"].includes(priority)) domainError("VALIDATION_ERROR", "Support priority is invalid.", { correlationId: actor.correlationId });
+      const requestedBranchId = optionalString(input.branchId);
+      const branch = requestedBranchId ? await branchByPublicId(ctx, actor.organization._id, requestedBranchId) : undefined;
+      if (requestedBranchId) assertBranchAccess(actor, branch ?? null);
+      const caseId = `SUP-${newPublicId()}`;
+      const createdAt = isoNow();
+      await insertRecord(ctx, actor, "supportCase", {
+        id: caseId,
+        gymId: publicOrganizationId(actor.organization),
+        gym: actor.organization.name,
+        branchId: branch ? publicBranchId(branch) : undefined,
+        branchName: branch?.name,
+        creatorId: publicUserId(actor.user),
+        creatorName: actor.user.fullName,
+        creatorEmail: email,
+        subject,
+        body,
+        priority,
+        status: "open",
+        createdAt,
+        updatedAt: createdAt,
+      }, { branchId: branch ? publicBranchId(branch) : undefined });
+      await insertRecord(ctx, actor, "supportMessage", {
+        id: `SUP-MSG-${newPublicId()}`,
+        caseId,
+        authorType: "gym",
+        authorId: publicUserId(actor.user),
+        authorName: actor.user.fullName,
+        body,
+        createdAt,
+      }, { branchId: branch ? publicBranchId(branch) : undefined });
+      const record = await recordOf(ctx, actor, "supportCase", caseId);
+      await insertAudit(ctx, actor, { category: "settings", action: "support.case.create", entityType: "support_case", entityId: caseId, entityLabel: subject, summary: "Created a RIVET support case", branchId: branch ? publicBranchId(branch) : undefined });
+      const platformOperators = (await ctx.db.query("users").collect()).filter((user) => user.platformAdmin && user.status !== "deactivated");
+      await Promise.all(platformOperators.map((operator) => insertOperationalNotification(ctx, {
+        recipientUserId: operator._id,
+        organizationId: actor.organization._id,
+        branchId: branch?._id,
+        kind: "support_case_created",
+        title: priority === "urgent" ? "Urgent gym support case" : "New gym support case",
+        body: `${actor.organization.name} · ${subject}`,
+        href: `/platform/support?case=${caseId}`,
+        dedupeKey: `support-created:${caseId}`,
+      })));
+      await queueOperationalEmail(ctx, {
+        organizationId: actor.organization._id,
+        branchId: branch?._id,
+        kind: "support_acknowledgement",
+        templateVersion: "support-ack-v1",
+        recipientReference: publicUserId(actor.user),
+        recipientEmail: email,
+        dedupeKey: `support-ack:${caseId}`,
+      });
+      return await supportCaseView(ctx, record);
+    }
     case "members.import.preview":
       return await previewMemberImport(ctx, actor, input);
     case "members.import.commit":
@@ -2819,6 +3748,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
       if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "checkins", action: "checkin.override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Manual check-in override (${arrayValue(evaluation.reasonCodes).join(", ")})`, reason: stringValue(input.reason), before: { decision: evaluation.decision }, after: { decision: "overridden" }, branchId });
+      const overrideBranch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
       return { checkInId: checkIn.id, decision: "overridden", reasonCodes: checkIn.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: `Overridden by ${actor.user.fullName}: ${input.reason}` };
     }
     case "payments.create": {
@@ -2859,6 +3790,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      const refundBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${(amount / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
       return await receiptDetail(ctx, actor, receipt.id);
     }
     case "payments.void": {
@@ -2875,6 +3808,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (original.chargeId) { const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId)); const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      const voidBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
     }
     case "shifts.open": {
@@ -2898,6 +3833,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (variance !== 0) requireReason(input.varianceExplanation, actor.correlationId, "varianceExplanation");
       const updated = await patchRecord(ctx, actor, record, { status: "closed", closedAt: isoNow(), closedById: publicUserId(actor.user), expectedCash: money(expected, actor.organization.currency), countedCash: money(counted, actor.organization.currency), variance: signedMoney(variance, actor.organization.currency), varianceExplanation: optionalString(input.varianceExplanation), varianceApprovalStatus: varianceApprovalStatusForAmount(variance) });
       await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${(variance / 1000).toFixed(3)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
+      if (variance !== 0) {
+        const shiftBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(shift.branchId));
+        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${(variance / 1000).toFixed(3)} · ${actor.user.fullName}`, href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
+      }
       return updated;
     }
     case "shifts.review": {
@@ -2925,6 +3864,85 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updated = await patchRecord(ctx, actor, record, patch);
       await insertAudit(ctx, actor, { category: "automations", action: "automation.rule_updated", entityType: "automation_rule", entityId: record.publicId, entityLabel: stringValue(updated.name), summary: "Automation rule updated" });
       return updated;
+    }
+    case "automations.run": {
+      requirePermission(actor, "automations.manage");
+      requireReason(input.reason, actor.correlationId);
+      const ruleRecord = await recordOf(ctx, actor, "automationRule", recordId(input.ruleId));
+      const rule = data(ruleRecord.data);
+      const candidates = await automationCandidates(ctx, actor, ruleRecord);
+      const eligible = candidates.filter((candidate) => !candidate.duplicate);
+      for (const candidate of eligible) await executeAutomationCandidate(ctx, actor, ruleRecord, candidate);
+      await patchRecord(ctx, actor, ruleRecord, {
+        lastRunAt: isoNow(),
+        executionsLast30Days: numberValue(rule.executionsLast30Days) + eligible.length,
+        updatedAt: isoNow(),
+      });
+      await insertAudit(ctx, actor, {
+        category: "automations",
+        action: "automation.rule_run_now",
+        entityType: "automation_rule",
+        entityId: ruleRecord.publicId,
+        entityLabel: stringValue(rule.name),
+        summary: `Automation run created ${eligible.length} execution${eligible.length === 1 ? "" : "s"}`,
+        reason: stringValue(input.reason),
+        before: { eligible: eligible.length, duplicates: candidates.length - eligible.length },
+        after: { created: eligible.length, skippedDuplicates: candidates.length - eligible.length },
+      });
+      return { created: eligible.length, skippedDuplicates: candidates.length - eligible.length };
+    }
+    case "automations.execution.retry": {
+      requirePermission(actor, "automations.manage");
+      requireReason(input.reason, actor.correlationId);
+      const executionRecord = await recordOf(ctx, actor, "automationExecution", recordId(input.executionId));
+      const execution = data(executionRecord.data);
+      const actionResults = arrayValue(execution.actionResults).map(data);
+      const failedActions = actionResults.filter((item) => item.status === "failed");
+      if (stringValue(execution.status) !== "failed" && failedActions.length === 0) {
+        domainError("VALIDATION_ERROR", "Only failed automation executions can be retried.", { correlationId: actor.correlationId });
+      }
+      const retryPolicy = data(execution.retryPolicy);
+      const maxAttempts = Math.max(1, numberValue(retryPolicy.maxAttempts, 3));
+      const attemptHistory = arrayValue(execution.attemptHistory).map(data);
+      const currentAttempt = Math.max(0, ...attemptHistory.map((item) => numberValue(item.attempt)));
+      if (currentAttempt >= maxAttempts) {
+        await notifyOrganizationRoles(ctx, {
+          organizationId: actor.organization._id,
+          branchId: executionRecord.branchId,
+          roles: ["owner", "manager"],
+          kind: "automation_failed",
+          title: "Automation retries exhausted",
+          body: stringValue(execution.subjectName, stringValue(execution.ruleName)),
+          href: `/automations/${stringValue(execution.ruleId)}`,
+          dedupeKey: `automation-exhausted:${executionRecord.publicId}`,
+        });
+        domainError("VALIDATION_ERROR", "This execution has exhausted its retry limit.", { correlationId: actor.correlationId });
+      }
+      const occurredAt = isoNow();
+      const retryActions = failedActions.length > 0 ? failedActions : actionResults;
+      const nextActionResults = actionResults.map((item) => retryActions.some((failed) => failed.key === item.key) ? { ...item, status: "queued", suppressionReason: undefined } : item);
+      const updated = await patchRecord(ctx, actor, executionRecord, {
+        status: "retrying",
+        actionResults: nextActionResults,
+        attemptHistory: [
+          ...attemptHistory,
+          ...retryActions.map((item) => ({ action: item.key, attempt: currentAttempt + 1, status: "queued", occurredAt, reason: "Manual retry queued in sandbox" })),
+        ],
+        nextAttemptAt: occurredAt,
+        detail: "Manual retry queued in sandbox.",
+      });
+      await insertAudit(ctx, actor, {
+        category: "automations",
+        action: "automation.execution_retry",
+        entityType: "automation_execution",
+        entityId: executionRecord.publicId,
+        entityLabel: stringValue(execution.ruleName, executionRecord.publicId),
+        summary: `Automation retry ${currentAttempt + 1} queued`,
+        reason: stringValue(input.reason),
+        before: { status: execution.status, attempt: currentAttempt },
+        after: { status: "retrying", attempt: currentAttempt + 1 },
+      });
+      return await automationExecutionView(ctx, actor, { ...executionRecord, data: updated, updatedAt: Date.now() });
     }
     case "settings.organization.update": {
       requirePermission(actor, "settings.manage");

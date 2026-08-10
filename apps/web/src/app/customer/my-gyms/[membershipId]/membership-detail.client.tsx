@@ -71,7 +71,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="signal">Renew membership</Button>
+          <Button variant="signal" disabled>Online renewal not available</Button>
           <Button asChild variant="secondary">
             <Link href={`/customer/gyms/${gym.id}`}>Gym page</Link>
           </Button>
@@ -88,12 +88,12 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           </div>
           <div className="p-4">
             <div className="rounded-md bg-white p-4">
-              {membership.qrValue ? <QRCodeSVG value={membership.qrValue} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" className="h-auto w-full" aria-label="Membership entry QR code" /> : <p className="px-3 py-16 text-center text-[12px] text-ink-3">Entry pass unavailable. Refresh to try again.</p>}
+              {signedEntryPass && membership.qrValue ? <QRCodeSVG value={membership.qrValue} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" className="h-auto w-full" aria-label="Membership entry QR code" /> : <p className="px-3 py-16 text-center text-[12px] text-ink-3">Signed entry pass unavailable.</p>}
             </div>
             <p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p>
             <p className="mt-0.5 text-[11.5px] text-night-ink-3">{branch.name}</p>
             <p className="mt-4 border-t border-night-line pt-3 text-[11px] leading-relaxed text-night-ink-3">
-              {signedEntryPass ? "Short-lived signed entry pass. Refresh before entry if it expires." : "Preview code for the local demo. Production uses a short-lived signed token validated at the desk."}
+              {signedEntryPass ? "Short-lived signed entry pass. Refresh before entry if it expires." : "Entry passes require the configured production signing service."}
             </p>
           </div>
         </div>

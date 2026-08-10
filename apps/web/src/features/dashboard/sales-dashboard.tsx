@@ -4,7 +4,9 @@ import { ArrowRight, CheckCircle2, PhoneCall } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
-import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
+import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, todayISODate, formatDate, formatTime } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
@@ -25,15 +27,12 @@ export function SalesDashboard() {
   const today = todayISODate();
   const invalidate = useInvalidate();
 
-  const tasksQuery = useApiQuery(qk.tasks({ mine: true }), (api) =>
-    api.listTasks({ ownerId: session?.user.id, status: "open", pageSize: 10 }),
-  );
-  const leadsQuery = useApiQuery(qk.leads({ mine: true, open: true }), (api) =>
-    api.listLeads({ ownerId: session?.user.id, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 8, sort: "nextFollowUpAt" }),
-  );
-  const dashQuery = useApiQuery(qk.dashboard(session?.activeBranchId), (api) =>
-    api.getDashboard({ branchId: session?.activeBranchId, from: addDays(today, -29), to: today }),
-  );
+  const taskInput = { ownerId: session?.user.id, status: "open" as const, pageSize: 10 };
+  const tasksQuery = useRealtimeApiQuery({ queryKey: qk.tasks({ mine: true }), query: (api) => api.listTasks(taskInput), subscribe: (api, onValue, onError) => api.subscribeTasks(taskInput, onValue, onError), enabled: Boolean(session) });
+  const leadInput: LeadListQuery = { ownerId: session?.user.id, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 8, sort: "nextFollowUpAt" };
+  const leadsQuery = useRealtimeApiQuery({ queryKey: qk.leads({ mine: true, open: true }), query: (api) => api.listLeads(leadInput), subscribe: (api, onValue, onError) => api.subscribeLeads(leadInput, onValue, onError), enabled: Boolean(session) });
+  const dashboardInput = { branchId: session?.activeBranchId, from: addDays(today, -29), to: today };
+  const dashQuery = useRealtimeApiQuery({ queryKey: qk.dashboard(session?.activeBranchId), query: (api) => api.getDashboard(dashboardInput), subscribe: (api, onValue, onError) => api.subscribeDashboard(dashboardInput, onValue, onError), enabled: Boolean(session) });
 
   const completeTask = useApiMutation((api, v: { taskId: string; outcome: string }) => api.completeTask(v.taskId, { outcome: v.outcome }), {
     onSuccess: async () => {

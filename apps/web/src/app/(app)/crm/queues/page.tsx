@@ -226,9 +226,10 @@ export default function QueuesPage() {
                     variant="secondary"
                     size="sm"
                     className="flex-1"
-                    onClick={() => toast.info("In production this opens WhatsApp with the template pre-filled (sandbox in demo).")}
+                    disabled
+                    title="WhatsApp delivery is not configured"
                   >
-                    <MessageCircle /> WhatsApp
+                    <MessageCircle /> WhatsApp unavailable
                   </Button>
                   {selected.kind === "lead" ? (
                     <Button asChild variant="secondary" size="sm">

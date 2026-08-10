@@ -35,6 +35,12 @@ export interface MarketplaceGym {
   monthlyRevenueMinor: number;
   /** Platform-only visibility flag; public API responses omit it. */
   isPublic?: boolean;
+  /** Platform-only subscription lifecycle facts. */
+  trialEndsAt?: string;
+  subscriptionStartedAt?: string;
+  currentPeriodEndsAt?: string;
+  cancelledAt?: string;
+  subscriptionStatusReason?: string;
   branches: MarketplaceBranch[];
 }
 

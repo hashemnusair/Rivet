@@ -30,6 +30,10 @@ import type {
   GymProvisioningResult,
   UpdatePlatformGymInput,
   UpdatePlatformPlanInput,
+  CreatePlatformInvoiceInput,
+  RecordPlatformInvoicePaymentInput,
+  CreateSupportCaseInput,
+  OperationalNotification,
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
@@ -44,6 +48,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
 import { money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
+import { buildPlatformOverview } from "../../../convex/platformOverview";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -63,6 +68,7 @@ import {
 
 const TZ = "Asia/Amman";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
+type MockOperationalNotification = OperationalNotification & { recipientId: string };
 
 const MOCK_INVOICES: PlatformBillingInvoice[] = [
   { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
@@ -174,6 +180,9 @@ export class MockGymOSApi implements GymOSApi {
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private platformPlans: PlatformSaasPlan[];
+  private platformInvoices: PlatformBillingInvoice[];
+  private platformSupportCases: PlatformSupportCase[];
+  private operationalNotifications: MockOperationalNotification[] = [];
   private trialBookings: TrialBooking[];
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
@@ -191,6 +200,8 @@ export class MockGymOSApi implements GymOSApi {
       branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
     }));
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
   }
 
@@ -373,7 +384,44 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getPlatformSnapshot(): Promise<PlatformSnapshot> {
-    return this.respond(() => ({ gyms: this.platformGyms, bookings: INITIAL_TRIAL_BOOKINGS, invoices: MOCK_INVOICES, supportCases: MOCK_SUPPORT_CASES, plans: this.platformPlans }));
+    return this.respond(() => ({
+      gyms: this.platformGyms,
+      bookings: this.trialBookings,
+      invoices: this.platformInvoices,
+      supportCases: this.platformSupportCases,
+      applications: this.gymApplications.map((application) => ({ ...application })),
+      auditEvents: [],
+      plans: this.platformPlans,
+      overview: buildPlatformOverview({
+        gyms: this.platformGyms.map((gym) => ({ id: gym.id, subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt })),
+        organizations: [{ status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan }],
+        plans: this.platformPlans.map((plan) => ({ name: plan.name, priceMinor: plan.priceMinor })),
+        branches: this.db.branches.map((branch) => ({ active: branch.status === "active", status: branch.status })),
+        members: this.db.members.map((member) => ({ status: member.status })),
+        staffMemberships: this.db.users.map((user) => ({ active: user.status === "active" })),
+        bookings: this.trialBookings.map((booking) => ({ status: booking.status })),
+        applications: this.gymApplications.map((application) => ({
+          id: application.id,
+          gymName: application.gymName,
+          plan: application.plan,
+          status: application.status,
+          updatedAt: application.updatedAt,
+          provisioningStatus: application.provisioningStatus,
+          provisioningError: application.provisioningError,
+        })),
+        invoices: this.platformInvoices,
+        supportCases: this.platformSupportCases,
+      }),
+    }));
+  }
+
+  async subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.getPlatformSnapshot());
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => undefined;
   }
 
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> {
@@ -420,7 +468,11 @@ export class MockGymOSApi implements GymOSApi {
         subscription: {
           plan: organization ? field(organization.subscriptionPlan, "not_configured") : notAvailable(),
           status: organization ? available(organization.status === "active" ? "active" : "suspended") : notAvailable(),
-          startedAt: notAvailable(),
+          startedAt: organization ? field(gym.subscriptionStartedAt, "not_configured") : notAvailable(),
+          trialEndsAt: organization ? field(gym.trialEndsAt, "not_configured") : notAvailable(),
+          currentPeriodEndsAt: organization ? field(gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
+          cancelledAt: organization ? field(gym.cancelledAt, "not_configured") : notAvailable(),
+          statusReason: organization ? field(gym.subscriptionStatusReason, "not_configured") : notAvailable(),
           recurringAmount: notConfigured(),
           renewalDate: notConfigured(),
           paymentMethod: notConfigured(),
@@ -430,6 +482,10 @@ export class MockGymOSApi implements GymOSApi {
         activity: notConfigured(),
       };
     });
+  }
+
+  subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getPlatformGymDetail(gymId), onValue, onError);
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
@@ -563,11 +619,25 @@ export class MockGymOSApi implements GymOSApi {
 
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
     return this.respond(() => {
+      this.requireReason(input.reason);
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
       if (input.status) gym.subscriptionStatus = input.status;
       if (input.plan) gym.rivetPlan = input.plan;
       if (input.isPublic !== undefined) gym.isPublic = input.isPublic;
+      const applyDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt", value?: string) => {
+        if (value === undefined) return;
+        const timestamp = Date.parse(value);
+        if (!Number.isFinite(timestamp)) throw ApiError.of(ERR.VALIDATION, "Subscription lifecycle dates are invalid.");
+        gym[key] = new Date(timestamp).toISOString();
+      };
+      applyDate("trialEndsAt", input.trialEndsAt);
+      applyDate("subscriptionStartedAt", input.subscriptionStartedAt);
+      applyDate("currentPeriodEndsAt", input.currentPeriodEndsAt);
+      applyDate("cancelledAt", input.cancelledAt);
+      if (input.status === "cancelled" && !input.cancelledAt) gym.cancelledAt = nowISO();
+      if (input.status && input.status !== "cancelled") gym.cancelledAt = undefined;
+      gym.subscriptionStatusReason = input.reason.trim();
       gym.lastActiveAt = nowISO();
       return { ...gym, areas: [...gym.areas], amenities: [...gym.amenities], branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })) };
     });
@@ -585,29 +655,208 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  retryPlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {
+  createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
-      const invoice = MOCK_INVOICES.find((item) => item.id === invoiceId);
-      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
-      invoice.status = "paid";
-      return invoice;
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Invoice amount must be a positive integer.");
+      const periodStart = Date.parse(input.periodStart);
+      const periodEnd = Date.parse(input.periodEnd);
+      const dueAt = Date.parse(input.dueAt);
+      if (![periodStart, periodEnd, dueAt].every(Number.isFinite) || periodEnd < periodStart) throw ApiError.of(ERR.VALIDATION, "Invoice dates are invalid.");
+      const currency = input.currency ?? "JOD";
+      const invoice: PlatformBillingInvoice = {
+        id: `INV-${crypto.randomUUID()}`,
+        gymId: gym.id,
+        gym: gym.name,
+        amountMinor: input.amountMinor,
+        amount: `${currency} ${(input.amountMinor / 1_000).toFixed(3)}`,
+        currency,
+        date: "Not issued",
+        dueAt: new Date(dueAt).toISOString(),
+        periodStart: new Date(periodStart).toISOString(),
+        periodEnd: new Date(periodEnd).toISOString(),
+        status: "draft",
+      };
+      this.platformInvoices.unshift(invoice);
+      return { ...invoice };
     });
   }
 
-  resolvePlatformSupportCase(caseId: string): Promise<PlatformSupportCase> {
+  issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
-      const supportCase = MOCK_SUPPORT_CASES.find((item) => item.id === caseId);
+      const invoice = this.platformInvoices.find((item) => item.id === invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (invoice.status !== "draft") throw ApiError.of(ERR.VALIDATION, "Only draft invoices can be issued.");
+      invoice.status = "open";
+      invoice.issuedAt = nowISO();
+      invoice.date = invoice.issuedAt;
+      return { ...invoice };
+    });
+  }
+
+  markPlatformInvoicePastDue(invoiceId: string, reason: string): Promise<PlatformBillingInvoice> {
+    return this.respond(() => {
+      this.requireReason(reason);
+      const invoice = this.platformInvoices.find((item) => item.id === invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (invoice.status !== "open") throw ApiError.of(ERR.VALIDATION, "Only an open invoice can be marked past due.");
+      invoice.status = "past_due";
+      return { ...invoice };
+    });
+  }
+
+  recordPlatformInvoicePayment(input: RecordPlatformInvoicePaymentInput): Promise<PlatformBillingInvoice> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      if (!input.reference.trim()) throw ApiError.of(ERR.VALIDATION, "A payment reference is required.");
+      const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (!["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.VALIDATION, "Only an outstanding invoice can be marked paid.");
+      invoice.status = "paid";
+      invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();
+      invoice.paymentReference = input.reference.trim();
+      return { ...invoice };
+    });
+  }
+
+  voidPlatformInvoice(invoiceId: string, reason: string): Promise<PlatformBillingInvoice> {
+    return this.respond(() => {
+      this.requireReason(reason);
+      const invoice = this.platformInvoices.find((item) => item.id === invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (invoice.status === "paid" || invoice.status === "void") throw ApiError.of(ERR.VALIDATION, "Paid or void invoices cannot be voided.");
+      invoice.status = "void";
+      invoice.voidedAt = nowISO();
+      return { ...invoice };
+    });
+  }
+
+  listSupportCases(): Promise<PlatformSupportCase[]> {
+    return this.respond(() => {
+      const actor = this.actor();
+      const canViewAll = currentRole(this.db) === "owner" || currentRole(this.db) === "manager";
+      return this.platformSupportCases
+        .filter((supportCase) => canViewAll || supportCase.creatorId === actor.id)
+        .map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
+    });
+  }
+
+  async subscribeSupportCases(onValue: (cases: PlatformSupportCase[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try { onValue(await this.listSupportCases()); } catch (error) { onError?.(error); }
+    return () => undefined;
+  }
+
+  createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      if (!input.email.trim() || !input.subject.trim() || !input.body.trim()) throw ApiError.of(ERR.VALIDATION, "Email, subject, and message are required.");
+      if (!["normal", "urgent"].includes(input.priority)) throw ApiError.of(ERR.VALIDATION, "Support priority is invalid.");
+      const actor = this.actor();
+      const createdAt = nowISO();
+      const caseId = `SUP-${crypto.randomUUID()}`;
+      const supportCase: PlatformSupportCase = {
+        id: caseId,
+        gymId: this.db.organization.id,
+        gym: this.db.organization.name,
+        branchId: input.branchId,
+        branchName: this.db.branches.find((branch) => branch.id === input.branchId)?.name,
+        creatorId: actor.id,
+        creatorName: actor.name,
+        creatorEmail: input.email.trim().toLowerCase(),
+        subject: input.subject.trim(),
+        body: input.body.trim(),
+        priority: input.priority,
+        status: "open",
+        createdAt,
+        updatedAt: createdAt,
+        messages: [{ id: `SUP-MSG-${crypto.randomUUID()}`, caseId, authorType: "gym", authorId: actor.id, authorName: actor.name, body: input.body.trim(), createdAt }],
+      };
+      this.platformSupportCases.unshift(supportCase);
+      return { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) };
+    });
+  }
+
+  resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      this.requireReason(resolutionSummary, "resolutionSummary");
+      const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
       if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
       supportCase.status = "resolved";
-      return supportCase;
+      supportCase.resolutionSummary = resolutionSummary.trim();
+      supportCase.resolvedAt = nowISO();
+      supportCase.updatedAt = supportCase.resolvedAt;
+      return { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) };
     });
   }
 
-  replyToPlatformSupportCase(caseId: string, _body: string): Promise<PlatformSupportCase> {
+  reopenPlatformSupportCase(caseId: string): Promise<PlatformSupportCase> {
     return this.respond(() => {
-      const supportCase = MOCK_SUPPORT_CASES.find((item) => item.id === caseId);
+      const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
       if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
-      return supportCase;
+      if (supportCase.status !== "resolved") throw ApiError.of(ERR.VALIDATION, "Only resolved cases can be reopened.");
+      supportCase.status = "open";
+      supportCase.resolvedAt = undefined;
+      supportCase.resolutionSummary = undefined;
+      supportCase.updatedAt = nowISO();
+      return { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) };
+    });
+  }
+
+  assignPlatformSupportCase(caseId: string, assigneeId?: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
+      if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
+      supportCase.assigneeId = assigneeId;
+      supportCase.assigneeName = assigneeId ? this.actor().name : undefined;
+      supportCase.updatedAt = nowISO();
+      return { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) };
+    });
+  }
+
+  replyToPlatformSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      if (!body.trim()) throw ApiError.of(ERR.VALIDATION, "A reply is required.");
+      const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
+      if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
+      const createdAt = nowISO();
+      supportCase.messages = [...(supportCase.messages ?? []), { id: `SUP-MSG-${crypto.randomUUID()}`, caseId, authorType: "platform", authorId: this.actor().id, authorName: this.actor().name, body: body.trim(), createdAt }];
+      supportCase.firstResponseAt ??= createdAt;
+      supportCase.updatedAt = createdAt;
+      supportCase.status = "waiting";
+      if (supportCase.creatorId) this.operationalNotifications.unshift({ id: `NOT-${crypto.randomUUID()}`, kind: "support_reply", title: "RIVET replied to your support case", body: supportCase.subject, href: `/support?case=${supportCase.id}`, dedupeKey: `support-reply:${supportCase.id}:${createdAt}`, createdAt, organizationId: this.db.organization.id, branchId: supportCase.branchId, recipientId: supportCase.creatorId });
+      return { ...supportCase, messages: supportCase.messages.map((message) => ({ ...message })) };
+    });
+  }
+
+  listNotifications(): Promise<OperationalNotification[]> {
+    return this.respond(() => {
+      const actorId = this.actor().id;
+      return this.operationalNotifications
+        .filter((notification) => notification.recipientId === actorId)
+        .map((notification) => ({ ...notification }));
+    });
+  }
+
+  async subscribeNotifications(onValue: (notifications: OperationalNotification[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try { onValue(await this.listNotifications()); } catch (error) { onError?.(error); }
+    return () => undefined;
+  }
+
+  setNotificationRead(notificationId: string, read: boolean): Promise<OperationalNotification> {
+    return this.respond(() => {
+      const actorId = this.actor().id;
+      const notification = this.operationalNotifications.find((item) => item.id === notificationId && item.recipientId === actorId);
+      if (!notification) throw ApiError.of(ERR.NOT_FOUND, "Notification not found.");
+      notification.readAt = read ? nowISO() : undefined;
+      return { ...notification };
+    });
+  }
+
+  markAllNotificationsRead(): Promise<void> {
+    return this.respond(() => {
+      const actorId = this.actor().id;
+      const now = nowISO();
+      this.operationalNotifications.filter((item) => item.recipientId === actorId).forEach((notification) => { notification.readAt = now; });
     });
   }
 
@@ -637,6 +886,9 @@ export class MockGymOSApi implements GymOSApi {
       branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
     }));
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
+    this.operationalNotifications = [];
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
@@ -645,14 +897,19 @@ export class MockGymOSApi implements GymOSApi {
     return Promise.resolve();
   }
 
-  private async respond<R>(fn: () => R): Promise<R> {
+  private async respond<R>(fn: () => R | Promise<R>): Promise<R> {
     const latency = this.behavior.latencyMs;
     if (latency > 0) await new Promise((r) => setTimeout(r, latency));
     if (this.behavior.failNextRequest) {
       this.behavior.failNextRequest = false;
       throw ApiError.of(ERR.FORCED_FAILURE, "Simulated failure (demo controls). Disable “Fail next request” and retry.");
     }
-    return fn();
+    return await fn();
+  }
+
+  private async subscribeOnce<R>(load: () => Promise<R>, onValue: (value: R) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try { onValue(await load()); } catch (error) { onError?.(error); }
+    return () => undefined;
   }
 
   private today(): string {
@@ -1126,6 +1383,10 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeDashboard(query: DashboardQuery, onValue: (dashboard: T.DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getDashboard(query), onValue, onError);
+  }
+
   private branchRevenue(branchId: T.UUID, from: string, to: string): number {
     return this.db.payments
       .filter((p) => {
@@ -1242,6 +1503,10 @@ export class MockGymOSApi implements GymOSApi {
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
       return this.toMemberDetail(m);
     });
+  }
+
+  subscribeMember(memberId: T.UUID, onValue: (member: T.MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getMember(memberId), onValue, onError);
   }
 
   checkMemberDuplicates(input: { phone?: string; email?: string }): Promise<T.DuplicateMatch[]> {
@@ -1541,6 +1806,10 @@ export class MockGymOSApi implements GymOSApi {
         freezes: record.freezes,
       };
     });
+  }
+
+  subscribeMembership(membershipId: T.UUID, onValue: (membership: T.MembershipDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getMembership(membershipId), onValue, onError);
   }
 
   private buildSale(args: {
@@ -2129,6 +2398,10 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeLead(leadId: T.UUID, onValue: (lead: T.LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getLead(leadId), onValue, onError);
+  }
+
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.write");
@@ -2350,6 +2623,10 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeTasks(query: TaskListQuery, onValue: (page: T.Page<T.Task>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listTasks(query), onValue, onError);
+  }
+
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> {
     return this.respond(() => {
       this.require("crm.write");
@@ -2538,6 +2815,10 @@ export class MockGymOSApi implements GymOSApi {
   // check-in
   // -------------------------------------------------------------------------
 
+  subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: T.Page<T.RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listRenewalQueue(query), onValue, onError);
+  }
+
   private evaluateForMember(member: MemberRecord, branchId: T.UUID): {
     decision: T.CheckInDecision;
     reasonCodes: T.CheckInReasonCode[];
@@ -2718,6 +2999,10 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeRecentCheckIns(query: RecentCheckInQuery, onValue: (page: T.Page<T.CheckInSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listRecentCheckIns(query), onValue, onError);
+  }
+
   getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> {
     return this.respond(() => {
       const branch = this.db.branches.find((b) => b.id === branchId);
@@ -2750,6 +3035,10 @@ export class MockGymOSApi implements GymOSApi {
   // -------------------------------------------------------------------------
   // payments
   // -------------------------------------------------------------------------
+
+  subscribeOccupancy(branchId: T.UUID, onValue: (occupancy: T.OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getOccupancy(branchId), onValue, onError);
+  }
 
   private nextReceiptNumber(): string {
     const n = `${this.db.organization.receiptPrefix}${this.db.counters.receiptNumber}`;
@@ -2865,6 +3154,10 @@ export class MockGymOSApi implements GymOSApi {
       items = applySort(items, query.sort ?? "-occurredAt", (p, k) => (k === "occurredAt" ? p.occurredAt : p.amount.amount));
       return paginate(this.maybeEmpty(items), query);
     });
+  }
+
+  subscribeTransactions(query: TransactionListQuery, onValue: (page: T.Page<T.TransactionSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listTransactions(query), onValue, onError);
   }
 
   createPayment(input: T.CreatePaymentInput, idempotencyKey: string): Promise<T.ReceiptDetail> {
@@ -3090,6 +3383,10 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeCurrentShiftTotals(branchId: T.UUID, onValue: (value: { shift: T.CashShift; totals: T.ShiftTotals } | null) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getCurrentShiftTotals(branchId), onValue, onError);
+  }
+
   private shiftTotals(shift: T.CashShift): T.ShiftTotals {
     const inShift = this.db.payments.filter((p) => p.shiftId === shift.id && p.status !== "voided");
     const sum = (fn: (p: T.Payment) => boolean) => inShift.filter(fn).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
@@ -3158,6 +3455,10 @@ export class MockGymOSApi implements GymOSApi {
       if (branchId) items = items.filter((s) => s.branchId === branchId);
       return paginate(this.maybeEmpty(items), query);
     });
+  }
+
+  subscribeCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }, onValue: (page: T.Page<T.CashShift>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listCashShifts(query), onValue, onError);
   }
 
   reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<T.CashShift> {
@@ -3296,8 +3597,97 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  subscribeAutomationExecutions(query: ExecutionQuery, onValue: (page: T.Page<T.AutomationExecution>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listAutomationExecutions(query), onValue, onError);
+  }
+
+  getAutomationExecution(id: T.UUID): Promise<T.AutomationExecutionDetail> {
+    return this.respond(() => {
+      this.require("automations.manage");
+      const execution = this.db.executions.find((item) => item.id === id);
+      if (!execution) throw ApiError.of(ERR.NOT_FOUND, "Automation execution not found.");
+      const action = execution.action ?? "notify_manager";
+      const normalizedStatus = execution.status === "success" ? "completed" : execution.status === "skipped_duplicate" ? "suppressed" : execution.status;
+      return {
+        ...execution,
+        status: normalizedStatus,
+        actionResults: execution.actionResults ?? [{ key: action, status: normalizedStatus === "failed" ? "failed" : normalizedStatus === "suppressed" ? "suppressed" : "completed" }],
+        attemptHistory: execution.attemptHistory ?? [{ action, attempt: 1, status: normalizedStatus === "failed" ? "failed" : normalizedStatus === "suppressed" ? "suppressed" : "completed", occurredAt: execution.executedAt, reason: execution.detail }],
+        retryPolicy: execution.retryPolicy ?? { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+      };
+    });
+  }
+
+  previewAutomationRun(ruleId: T.UUID): Promise<T.AutomationRunPreview> {
+    return this.respond(() => {
+      this.require("automations.manage");
+      const rule = this.db.rules.find((item) => item.id === ruleId);
+      if (!rule) throw ApiError.of(ERR.NOT_FOUND, "Automation rule not found.");
+      const source = rule.trigger.startsWith("lead") || rule.trigger === "follow_up_overdue" ? this.db.leads : this.db.members;
+      const candidates = source.slice(0, 10).map((item) => ({
+        subjectType: (rule.trigger.startsWith("lead") || rule.trigger === "follow_up_overdue" ? "lead" : "member") as T.AutomationExecution["subjectType"],
+        subjectId: item.id,
+        subjectName: item.fullName,
+        branchId: "branchId" in item ? item.branchId : item.homeBranchId,
+        duplicate: false,
+      }));
+      return { ruleId, ruleName: rule.name, eligibleCount: candidates.length, duplicateCount: 0, candidates };
+    });
+  }
+
+  runAutomationRuleNow(ruleId: T.UUID, reason: string): Promise<{ created: number; skippedDuplicates: number }> {
+    return this.respond(async () => {
+      this.require("automations.manage");
+      if (!reason.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required.");
+      const preview = await this.previewAutomationRun(ruleId);
+      const rule = this.db.rules.find((item) => item.id === ruleId)!;
+      for (const candidate of preview.candidates.filter((item) => !item.duplicate)) {
+        const action = rule.actions[0]?.key ?? "notify_manager";
+        this.db.executions.unshift({
+          id: crypto.randomUUID(),
+          ruleId,
+          ruleName: rule.name,
+          subjectType: candidate.subjectType,
+          subjectId: candidate.subjectId,
+          subjectName: candidate.subjectName,
+          action,
+          status: "completed",
+          detail: "Executed in explicit mock mode.",
+          actionResults: rule.actions.map((item) => ({ key: item.key, status: "completed" as const })),
+          attemptHistory: rule.actions.map((item) => ({ action: item.key, attempt: 1, status: "completed" as const, occurredAt: new Date().toISOString() })),
+          retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
+          executedAt: new Date().toISOString(),
+        });
+      }
+      this.audit({ category: "automations", action: "automation.rule_run_now", entityType: "automation_rule", entityId: ruleId, entityLabel: rule.name, summary: "Automation rule run manually", reason });
+      return { created: preview.eligibleCount, skippedDuplicates: preview.duplicateCount };
+    });
+  }
+
+  retryAutomationExecution(executionId: T.UUID, reason: string): Promise<T.AutomationExecutionDetail> {
+    return this.respond(async () => {
+      this.require("automations.manage");
+      if (!reason.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required.");
+      const execution = this.db.executions.find((item) => item.id === executionId);
+      if (!execution) throw ApiError.of(ERR.NOT_FOUND, "Automation execution not found.");
+      if (execution.status !== "failed") throw ApiError.of(ERR.VALIDATION, "Only failed executions can be retried.");
+      execution.status = "completed";
+      execution.detail = "Retry completed in explicit mock mode.";
+      this.audit({ category: "automations", action: "automation.execution_retry", entityType: "automation_execution", entityId: executionId, entityLabel: execution.ruleName, summary: "Automation execution retried", reason });
+      return await this.getAutomationExecution(executionId);
+    });
+  }
+
   listMessageTemplates(): Promise<T.MessageTemplate[]> {
     return this.respond(() => [...this.db.templates]);
+  }
+
+  listOperationalEmailDeliveries(query: T.ListQuery = {}): Promise<T.Page<T.OperationalEmailDelivery>> {
+    return this.respond(() => paginate([], query));
+  }
+
+  subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listOperationalEmailDeliveries(query), onValue, onError);
   }
 
   // -------------------------------------------------------------------------

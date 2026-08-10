@@ -26,6 +26,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { NotificationCenter } from "@/components/shell/notification-center";
 
 const NAVIGATION = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
@@ -128,6 +129,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             <Input className="ps-9" placeholder="Search gyms, invoices, or support cases" />
           </div>
           <div className="ms-auto flex items-center gap-3">
+            <NotificationCenter />
             <div className="hidden text-end sm:block">
               <p className="text-[12px] font-semibold">{administratorName}</p>
               <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Platform owner</p>

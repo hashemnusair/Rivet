@@ -118,6 +118,31 @@ async function ownerForRole(ctx: MutationCtx, organizationId: Id<"organizations"
   return membership ? await ctx.db.get(membership.userId) : null;
 }
 
+async function subjectNameForRecord(ctx: MutationCtx, organizationId: Id<"organizations">, entityType: string, candidate: Data): Promise<string> {
+  if (entityType === "member" || entityType === "lead") return stringValue(candidate.fullName, stringValue(candidate.name, "Record"));
+  const memberId = stringValue(candidate.memberId);
+  if (memberId) {
+    const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", memberId)).unique();
+    if (member) return stringValue(value(member.data).fullName, memberId);
+  }
+  if (entityType === "task") return stringValue(candidate.title, "Follow-up task");
+  if (entityType === "charge") return stringValue(candidate.description, "Outstanding charge");
+  return stringValue(candidate.planName, "Membership");
+}
+
+async function notifyManagers(ctx: MutationCtx, organizationId: Id<"organizations">, branchId: Id<"branches"> | undefined, input: { title: string; body: string; href: string; dedupeKey: string }): Promise<void> {
+  const memberships = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect())
+    .filter((membership) => membership.active && (membership.role === "owner" || membership.role === "manager"))
+    .filter((membership) => !branchId || membership.branchScope === "all" || membership.branchIds.includes(branchId));
+  for (const membership of memberships) {
+    const user = await ctx.db.get(membership.userId);
+    if (!user || user.status === "deactivated") continue;
+    const existing = await ctx.db.query("operationalNotifications").withIndex("by_recipient_dedupe", (q) => q.eq("recipientUserId", user._id).eq("dedupeKey", input.dedupeKey)).unique();
+    if (existing && (!existing.expiresAt || existing.expiresAt > Date.now())) continue;
+    await ctx.db.insert("operationalNotifications", { publicId: `NOT-${newId()}`, recipientUserId: user._id, organizationId, branchId, kind: "automation_attention", title: input.title, body: input.body, href: input.href, dedupeKey: input.dedupeKey, createdAt: Date.now() });
+  }
+}
+
 export const evaluate = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -140,8 +165,10 @@ export const evaluate = internalMutation({
           ? "membership"
           : stringValue(rule.trigger) === "member_inactive"
             ? "member"
-            : stringValue(rule.trigger).startsWith("lead") || stringValue(rule.trigger) === "follow_up_overdue"
+            : stringValue(rule.trigger).startsWith("lead")
               ? "lead"
+              : stringValue(rule.trigger) === "follow_up_overdue"
+                ? "task"
               : "charge";
         const candidates = await records(ctx, organization._id, entityType);
         for (const candidateRecord of candidates) {
@@ -160,6 +187,7 @@ export const evaluate = internalMutation({
           const attemptHistory: Data[] = [];
           const memberId = stringValue(candidate.memberId) || (entityType === "member" ? candidateRecord.publicId : undefined);
           const leadId = stringValue(candidate.leadId) || (entityType === "lead" ? candidateRecord.publicId : undefined);
+          const subjectName = await subjectNameForRecord(ctx, organization._id, entityType, candidate);
           for (const actionItem of arrayValue(rule.actions).map(value)) {
             const action = stringValue(actionItem.key);
             if (action === "create_task") {
@@ -171,21 +199,25 @@ export const evaluate = internalMutation({
               attemptHistory.push({ action, attempt: 1, status: "completed", occurredAt: isoNow() });
             } else if (action === "queue_message") {
               const messageId = newId();
-              const suppressionReason = quiet ? "Tenant quiet hours" : deliveryMode === "live" ? "No outbound provider is configured" : undefined;
+              const suppressionReason = quiet ? "Tenant quiet hours" : deliveryMode === "live" ? "Outbound delivery is not enabled for this message type" : undefined;
               const messageStatus = suppressionReason ? "suppressed" : "queued";
-              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, channel: stringValue(actionItem.channel, "sandbox"), language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, memberId, leadId, queuedAt: isoNow(), suppressionReason, retryPolicy: { maxAttempts: 3, backoffMinutes: [5, 30, 120] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason }], automationExecutionId: executionId };
+              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, channel: "sandbox", requestedChannel: stringValue(actionItem.channel, "whatsapp"), language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, memberId, leadId, queuedAt: isoNow(), suppressionReason, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });
               const attemptId = newId();
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationAttempt", publicId: attemptId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: attemptId, executionId, action, attempt: 1, status: messageStatus, reason: suppressionReason, nextAttemptAt: suppressionReason ? undefined : isoNow() } });
               actionResults.push({ key: action, messageId, status: messageStatus, suppressionReason });
               attemptHistory.push({ action, attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason });
             } else if (action === "notify_manager") {
-              actionResults.push({ key: action, status: "queued" });
-              attemptHistory.push({ action, attempt: 1, status: "queued", occurredAt: isoNow() });
+              await notifyManagers(ctx, organization._id, candidateRecord.branchId, { title: stringValue(rule.name, "Automation requires attention"), body: subjectName, href: memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/automations", dedupeKey: `automation-notification:${executionId}` });
+              actionResults.push({ key: action, status: "completed" });
+              attemptHistory.push({ action, attempt: 1, status: "completed", occurredAt: isoNow() });
             }
           }
-          const executionStatus = actionResults.length > 0 && actionResults.every((item) => item.status === "suppressed") ? "suppressed" : "completed";
-          await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationExecution", publicId: executionId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: executionId, ruleId: ruleRecord.publicId, entityId: candidateRecord.publicId, dedupeKey, status: executionStatus, executedAt: isoNow(), actionResults, attemptHistory, retryPolicy: { maxAttempts: 3, backoffMinutes: [5, 30, 120] }, suppressionReason: executionStatus === "suppressed" ? actionResults.map((item) => stringValue(item.suppressionReason)).filter(Boolean).join("; ") : undefined } });
+          const executionStatus = actionResults.length > 0 && actionResults.every((item) => item.status === "suppressed") ? "suppressed" : actionResults.some((item) => item.status === "queued") ? "queued" : "completed";
+          await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationExecution", publicId: executionId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: executionId, ruleId: ruleRecord.publicId, ruleName: stringValue(rule.name), subjectType: entityType, subjectId: candidateRecord.publicId, subjectName, entityId: candidateRecord.publicId, dedupeKey, status: executionStatus, executedAt: isoNow(), actionResults, attemptHistory, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, suppressionReason: executionStatus === "suppressed" ? actionResults.map((item) => stringValue(item.suppressionReason)).filter(Boolean).join("; ") : undefined } });
+          const currentRule = await ctx.db.get(ruleRecord._id);
+          const currentRuleData = value(currentRule?.data);
+          await ctx.db.patch(ruleRecord._id, { data: { ...currentRuleData, lastRunAt: isoNow(), executionsLast30Days: numberValue(currentRuleData.executionsLast30Days) + 1, updatedAt: isoNow() }, updatedAt: now });
           summary.executions += 1;
         }
       }

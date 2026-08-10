@@ -5,35 +5,45 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
 import type { PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Input, Textarea } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { formatDateTime } from "@/lib/utils/dates";
 
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
-  const detailQuery = useApiQuery(qk.platformGymDetail(gymId), (api) => api.getPlatformGymDetail(gymId), {
-    enabled: Boolean(gymId),
-  });
+  const detailQuery = useRealtimeApiQuery({ queryKey: qk.platformGymDetail(gymId), query: (api) => api.getPlatformGymDetail(gymId), subscribe: (api, onValue, onError) => api.subscribePlatformGymDetail(gymId, onValue, onError), enabled: Boolean(gymId) });
   const invalidate = useInvalidate();
   const detail = detailQuery.data;
   const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
   const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
   const [isPublic, setIsPublic] = useState(false);
+  const [trialEndsAt, setTrialEndsAt] = useState("");
+  const [subscriptionStartedAt, setSubscriptionStartedAt] = useState("");
+  const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
+  const [cancelledAt, setCancelledAt] = useState("");
+  const [reason, setReason] = useState("");
 
   useEffect(() => {
     if (!detail) return;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setIsPublic(detail.controls.isPublic);
+    setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
+    setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
+    setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
+    setCancelledAt(dateInputValue(detail.subscription.cancelledAt));
   }, [detail]);
 
-  const update = useApiMutation((api) => api.updatePlatformGym({ gymId, status, plan, isPublic }), {
+  const update = useApiMutation((api) => api.updatePlatformGym({ gymId, status, plan, isPublic, trialEndsAt: trialEndsAt || undefined, subscriptionStartedAt: subscriptionStartedAt || undefined, currentPeriodEndsAt: currentPeriodEndsAt || undefined, cancelledAt: cancelledAt || undefined, reason: reason.trim() }), {
     onSuccess: async () => {
       await invalidate([qk.platformGymDetail(gymId)]);
+      setReason("");
       toast.success("Gym subscription controls saved and audited.");
     },
   });
@@ -67,12 +77,19 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">Changes update the tenant record, public directory state, and immutable platform audit trail.</p></div>
-            <Button variant="signal" onClick={() => update.mutate()} loading={update.isPending} disabled={!status || !plan}><Check />Save controls</Button>
+            <Button variant="signal" onClick={() => update.mutate()} loading={update.isPending} disabled={!status || !plan || !reason.trim() || (status === "trial" && !trialEndsAt)}><Check />Save controls</Button>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => setPlan(value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
             <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => setStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
           </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="grid gap-1.5 text-[12px] font-medium">Trial ends<Input type="date" value={trialEndsAt} onChange={(event) => setTrialEndsAt(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Subscription started<Input type="date" value={subscriptionStartedAt} onChange={(event) => setSubscriptionStartedAt(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Current period ends<Input type="date" value={currentPeriodEndsAt} onChange={(event) => setCurrentPeriodEndsAt(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Cancelled on<Input type="date" value={cancelledAt} onChange={(event) => setCancelledAt(event.target.value)} disabled={status !== "cancelled"} /></label>
+          </div>
+          <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
           <div className="mt-4 flex items-center justify-between border-t border-line pt-4"><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] text-ink-3">Let members discover this gym and request a free trial.</p></div><Switch checked={isPublic} onCheckedChange={setIsPublic} aria-label="Public directory listing" /></div>
         </section>
 
@@ -114,6 +131,10 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                 <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
                 <FactRow label="Status"><FieldValue field={detail.subscription.status} render={statusLabel} /></FactRow>
                 <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
                 <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => `${value.currency} ${(value.amount / 1000).toFixed(3)}`} /></FactRow>
                 <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} /></FactRow>
                 <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
@@ -146,6 +167,10 @@ function UnavailableBlock<T>({ field, empty }: { field: PlatformData<T>; empty: 
 
 function statusLabel(value: string) {
   return value === "overdue" ? "Past due" : value.replaceAll("_", " ");
+}
+
+function dateInputValue(field: PlatformData<string>): string {
+  return field.state === "available" ? field.value.slice(0, 10) : "";
 }
 
 function Stat({ label, value, detail }: { label: string; value: React.ReactNode; detail: React.ReactNode }) {

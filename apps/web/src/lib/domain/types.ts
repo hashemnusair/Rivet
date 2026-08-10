@@ -904,13 +904,53 @@ export interface AutomationExecution {
   id: UUID;
   ruleId: UUID;
   ruleName: string;
-  subjectType: "member" | "lead" | "task" | "charge";
+  subjectType: "member" | "membership" | "lead" | "task" | "charge";
   subjectId: UUID;
   subjectName: string;
-  action: AutomationActionKey;
-  status: "success" | "failed" | "skipped_duplicate";
+  action?: AutomationActionKey;
+  status: "queued" | "running" | "completed" | "suppressed" | "retrying" | "failed" | "success" | "skipped_duplicate";
   detail?: string;
+  dedupeKey?: string;
+  suppressionReason?: string;
+  actionResults?: Array<{
+    key: AutomationActionKey;
+    status: "queued" | "completed" | "suppressed" | "retrying" | "failed";
+    taskId?: UUID;
+    messageId?: UUID;
+    notificationId?: UUID;
+    suppressionReason?: string;
+  }>;
+  attemptHistory?: Array<{
+    action: AutomationActionKey;
+    attempt: number;
+    status: "queued" | "completed" | "suppressed" | "retrying" | "failed";
+    occurredAt: ISODateTime;
+    reason?: string;
+    nextAttemptAt?: ISODateTime;
+  }>;
+  retryPolicy?: { maxAttempts: number; backoffMinutes: number[] };
+  nextAttemptAt?: ISODateTime;
   executedAt: ISODateTime;
+}
+
+export interface AutomationExecutionDetail extends AutomationExecution {
+  actionResults: NonNullable<AutomationExecution["actionResults"]>;
+  attemptHistory: NonNullable<AutomationExecution["attemptHistory"]>;
+  retryPolicy: NonNullable<AutomationExecution["retryPolicy"]>;
+}
+
+export interface AutomationRunPreview {
+  ruleId: UUID;
+  ruleName: string;
+  eligibleCount: number;
+  duplicateCount: number;
+  candidates: Array<{
+    subjectType: AutomationExecution["subjectType"];
+    subjectId: UUID;
+    subjectName: string;
+    branchId?: UUID;
+    duplicate: boolean;
+  }>;
 }
 
 export interface MessageTemplate {
@@ -920,6 +960,24 @@ export interface MessageTemplate {
   bodyEn: string;
   bodyAr: string;
   variables: string[];
+}
+
+export interface OperationalEmailDelivery {
+  id: UUID;
+  kind: string;
+  templateVersion: string;
+  language: "en" | "ar";
+  recipientReference: string;
+  recipientEmail?: string;
+  dedupeKey: string;
+  providerId?: string;
+  attempts: Array<{ attempt: number; status: string; occurredAt: ISODateTime; error?: string }>;
+  retryPolicy: { maxAttempts: number; backoffMinutes: number[] };
+  nextAttemptAt?: ISODateTime;
+  status: "queued" | "provider_accepted" | "delivered" | "failed" | "suppressed";
+  suppressionReason?: string;
+  queuedAt: ISODateTime;
+  updatedAt: ISODateTime;
 }
 
 // ---------------------------------------------------------------------------

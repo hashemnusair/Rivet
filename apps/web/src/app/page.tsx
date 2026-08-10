@@ -12,7 +12,6 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import { Reveal } from "@/components/marketing/reveal";
 import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
@@ -56,7 +55,7 @@ export default function LandingPage() {
                   <Link href="#product">See how it works</Link>
                 </Button>
               </div>
-              <p className="mt-4 text-[12.5px] text-ink-3">14 days · No card required · Your data stays yours</p>
+              <p className="mt-4 text-[12.5px] text-ink-3">Gym access is issued after application review and operator onboarding.</p>
 
               <dl className="mt-12 grid max-w-2xl grid-cols-2 gap-x-8 gap-y-6 border-t border-ink/10 pt-8 xl:grid-cols-4">
                 {[
@@ -81,10 +80,10 @@ export default function LandingPage() {
         <section className="border-b border-ink/10 bg-sunken">
           <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
             {[
-              ["4", "gyms live in Amman"],
-              ["3,160", "members under management"],
-              ["JD 154K", "collected and reconciled monthly"],
-              ["0", "spreadsheets required"],
+              ["Live", "branch operations in one workspace"],
+              ["One", "chronological member timeline"],
+              ["Audited", "payments, shifts and overrides"],
+              ["Scoped", "roles, branches and tenant access"],
             ].map(([value, label], index) => (
               <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
                 <p className="text-[34px] font-semibold leading-none tabular">{value}</p>
@@ -135,7 +134,7 @@ export default function LandingPage() {
             <div className="mt-10">
               <Button asChild variant="night" size="lg">
                 <Link href="/login">
-                  Open the gym demo <ArrowRight />
+                  Sign in to RIVET <ArrowRight />
                 </Link>
               </Button>
             </div>
@@ -302,8 +301,7 @@ export default function LandingPage() {
               See it on your own numbers.
             </h2>
             <p className="mx-auto mt-6 max-w-xl text-[15.5px] leading-relaxed text-ink-2">
-              Fourteen days, your own members, no card. Import last month, open a shift, and watch where the money
-              actually goes.
+              We configure a pilot around your own branches, members and operating rules so the team can validate the complete workflow on authoritative data.
             </p>
             {/* One action here — the header already carries sign-in, and the ops
                 section owns the demo link. */}
@@ -330,26 +328,28 @@ function MemberCard() {
     <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
       <div className="flex items-center justify-between border-b border-night-line pb-4 font-mono text-[9px] uppercase tracking-[0.15em] text-night-ink-3">
         <span>RIVET MEMBER</span>
-        <span>19:41</span>
+        <span>LIVE WORKSPACE</span>
       </div>
-      <p className="mt-6 eyebrow-night">Forge Fitness · Abdoun</p>
-      <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">Lina Haddad</h3>
-      <p className="mt-1 font-mono text-[10px] text-night-ink-3">6-MONTH · #ABD-2214</p>
+      <p className="mt-6 eyebrow-night">Your gym membership</p>
+      <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">One verified member record</h3>
+      <p className="mt-1 font-mono text-[10px] text-night-ink-3">PLAN · BRANCH · MEMBER NUMBER</p>
       <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
         <div className="bg-night-2 p-4">
-          <p className="eyebrow-night">Renews in</p>
-          <p className="mt-2 text-[25px] font-semibold text-warning">12 days</p>
+          <p className="eyebrow-night">Membership</p>
+          <p className="mt-2 text-[14px] font-semibold">Live gym status</p>
         </div>
         <div className="bg-night-2 p-4">
-          <p className="eyebrow-night">Visits · Jul</p>
-          <p className="mt-2 text-[25px] font-semibold">14</p>
+          <p className="eyebrow-night">Visits</p>
+          <p className="mt-2 text-[14px] font-semibold">Recorded check-ins</p>
         </div>
       </div>
-      <div className="mt-5 rounded-md bg-night-ink p-5 text-night">
-        <DecorativeQr />
+      <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-md bg-night-ink p-5 text-center text-night">
+        <ScanLine className="size-8" />
+        <p className="mt-3 text-[12px] font-semibold">Entry QR after activation</p>
+        <p className="mt-1 text-[10px] text-ink-3">Issued only from an active persisted membership.</p>
       </div>
       <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-night-ink-3">
-        Check-in identity · refreshes securely
+        Check-in identity · authorized by the gym
       </p>
     </div>
   );

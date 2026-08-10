@@ -3,6 +3,7 @@ import { action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
+import { notifyPlatformAdmins } from "./notificationDelivery";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
@@ -121,6 +122,13 @@ export const create = internalMutation({
       notificationStatus: "pending",
       submittedAt: now,
       updatedAt: now,
+    });
+    await notifyPlatformAdmins(ctx, {
+      kind: "application_awaiting_review",
+      title: "Gym application awaiting review",
+      body: `${values.gymName} · ${values.plan}`,
+      href: `/platform/applications?application=${publicId}`,
+      dedupeKey: `gym-application:${publicId}`,
     });
     return { applicationDocumentId, applicationId: publicId, status: "pending" as const, notificationStatus: "pending" as const, submittedAt: now, duplicate: false };
   },
