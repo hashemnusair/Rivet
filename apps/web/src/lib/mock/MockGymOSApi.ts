@@ -188,6 +188,8 @@ export class MockGymOSApi implements GymOSApi {
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
+  private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
+  private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
   private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
 
   constructor(db?: MockDb) {
@@ -1825,6 +1827,7 @@ export class MockGymOSApi implements GymOSApi {
     previousPlanId?: T.UUID;
     reason?: string;
     standardStartDate?: T.ISODate;
+    idempotencyKey?: string;
     soldBy: T.UUID;
   }): T.MembershipSaleResult {
     const member = this.db.members.find((m) => m.id === args.memberId);
@@ -1847,6 +1850,17 @@ export class MockGymOSApi implements GymOSApi {
       }
     }
     const approvalPending = discountNeedsApproval(this.db.roles, currentRole(this.db), discountMinor);
+    const operation = args.operation ?? (args.previousMembershipId ? "renewal" : "sale");
+    const idempotencyKey = args.idempotencyKey?.trim();
+    const idempotencyMapKey = idempotencyKey ? `${operation}:${idempotencyKey}` : undefined;
+    const idempotencySignature = idempotencyKey ? JSON.stringify({ ...args, idempotencyKey }) : undefined;
+    if (idempotencyMapKey && idempotencySignature) {
+      const existing = this.membershipSaleIdempotency.get(idempotencyMapKey);
+      if (existing) {
+        if (existing.signature !== idempotencySignature) throw ApiError.of(ERR.VALIDATION, "This idempotency key was already used for a different membership sale.");
+        return existing.result;
+      }
+    }
 
     const duration = plan.kind === "visits" ? (plan.visitValidityDays ?? 90) : (plan.durationDays ?? 30);
     const endDate = addDays(args.startDate, duration);
@@ -1912,8 +1926,8 @@ export class MockGymOSApi implements GymOSApi {
     };
     this.db.charges.push(charge);
 
-    const isPlanChange = args.operation === "plan_change";
-    const isRenewal = args.operation === "renewal" || (!args.operation && Boolean(args.previousMembershipId));
+    const isPlanChange = operation === "plan_change";
+    const isRenewal = operation === "renewal";
     const timelineIds: T.UUID[] = [];
     timelineIds.push(
       this.activity({
@@ -1938,8 +1952,8 @@ export class MockGymOSApi implements GymOSApi {
           ? `Discount of JOD ${(discountMinor / 1000).toFixed(3)} exceeds limit — approval requested`
           : `Discount of JOD ${(discountMinor / 1000).toFixed(3)} applied`,
         reason: args.discountReason,
-        before: { price: priceMinor },
-        after: { discount: discountMinor },
+        before: { price: priceMinor, discount: 0, approvalStatus: "none" },
+        after: { price: priceMinor, discount: discountMinor, approvalStatus: approvalPending ? "pending" : "approved" },
         approvalStatus: approvalPending ? "pending" : "approved",
         branchId: member.homeBranchId,
       });
@@ -2000,7 +2014,9 @@ export class MockGymOSApi implements GymOSApi {
       branchId: member.homeBranchId,
     });
 
-    return { membership: this.toMembership(record), charge, payment, receipt, timelineEventIds: timelineIds };
+    const result = { membership: this.toMembership(record), charge, payment, receipt, timelineEventIds: timelineIds };
+    if (idempotencyMapKey && idempotencySignature) this.membershipSaleIdempotency.set(idempotencyMapKey, { signature: idempotencySignature, result });
+    return result;
   }
 
   createMembershipSale(input: T.CreateMembershipSaleInput): Promise<T.MembershipSaleResult> {
@@ -2028,6 +2044,7 @@ export class MockGymOSApi implements GymOSApi {
         discount: input.discount,
         discountReason: input.discountReason,
         payment: input.payment,
+        idempotencyKey: input.idempotencyKey,
         previousMembershipId: old.id,
         operation: "renewal",
         standardStartDate: old.endDate >= today ? addDays(old.endDate, 1) : today,
@@ -2318,10 +2335,20 @@ export class MockGymOSApi implements GymOSApi {
       this.requireReason(input.reason);
       const record = this.db.memberships.find((membership) => membership.id === membershipId);
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      if (!this.branchIsVisible(record.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       if (record.cancelledAt) throw ApiError.of(ERR.VALIDATION, "Cancelled memberships cannot be transferred.");
       const branch = this.db.branches.find((candidate) => candidate.id === input.branchId && candidate.status === "active");
       if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Destination branch not found or inactive.");
       if (!this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to the destination branch.");
+      const transferKey = input.idempotencyKey?.trim();
+      const transferSignature = transferKey ? JSON.stringify({ membershipId, branchId: input.branchId, reason: input.reason }) : undefined;
+      if (transferKey && transferSignature) {
+        const existing = this.membershipTransferIdempotency.get(transferKey);
+        if (existing) {
+          if (existing.signature !== transferSignature) throw ApiError.of(ERR.VALIDATION, "This idempotency key was already used for a different membership transfer.");
+          return existing.result;
+        }
+      }
       const plan = this.db.plans.find((candidate) => candidate.id === record.planId);
       if (plan?.branchAccess === "selected" && !plan.branchIds.includes(input.branchId)) {
         throw ApiError.of(ERR.VALIDATION, "This membership plan is not available at the destination branch.");
@@ -2364,7 +2391,9 @@ export class MockGymOSApi implements GymOSApi {
         after: { branchId: input.branchId },
         branchId: input.branchId,
       });
-      return this.getMembershipSync(record);
+      const result = this.getMembershipSync(record);
+      if (transferKey && transferSignature) this.membershipTransferIdempotency.set(transferKey, { signature: transferSignature, result });
+      return result;
     });
   }
 
@@ -3768,6 +3797,9 @@ export class MockGymOSApi implements GymOSApi {
       else if (event.action === "payment.refund") this.require("payments.refund");
       else if (event.action === "shift.close_variance") this.require("reconciliation.approve_variance");
       else throw ApiError.of(ERR.VALIDATION, "This audit event does not support approval review.");
+      this.requireReason(input.note, "note");
+      const before = { ...event.before, approvalStatus: "pending" as const };
+      const after = { ...event.after, approvalStatus: input.decision };
       event.approvalStatus = input.decision;
       if (event.action === "membership.discount") {
         const membership = this.db.memberships.find((m) => m.id === event.entityId);
@@ -3785,6 +3817,8 @@ export class MockGymOSApi implements GymOSApi {
         entityLabel: event.entityLabel,
         summary: `${input.decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`,
         reason: input.note,
+        before,
+        after,
         branchId: event.branchId,
       });
     });

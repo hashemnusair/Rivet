@@ -330,6 +330,8 @@ export interface CreateMembershipSaleInput {
   memberId: UUID;
   planId: UUID;
   startDate: ISODate;
+  /** Replays the complete sale, including its charge/payment, safely. */
+  idempotencyKey?: string;
   priceOverride?: Money;
   /** Required only when the listed price or standard start date is overridden. */
   overrideReason?: string;
@@ -344,6 +346,8 @@ export interface CreateMembershipSaleInput {
 export interface RenewMembershipInput {
   planId?: UUID; // defaults to same plan
   startDate?: ISODate; // defaults to day after current end (or today if expired)
+  /** Replays the complete renewal, including its charge/payment, safely. */
+  idempotencyKey?: string;
   priceOverride?: Money;
   /** Required only when the listed price or standard renewal date is overridden. */
   overrideReason?: string;
@@ -386,6 +390,8 @@ export interface CancelMembershipInput {
 export interface TransferMembershipInput {
   branchId: UUID;
   reason: string;
+  /** Replays the transfer without appending another timeline or audit fact. */
+  idempotencyKey?: string;
 }
 
 // ---------------------------------------------------------------------------

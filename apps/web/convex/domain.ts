@@ -2650,6 +2650,30 @@ async function createMembershipMutation(
   }
   const roleDefinition = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", actor.role)).unique();
   const approvalPending = discount > roleDiscountLimit(actor.role, roleDefinition?.discountLimitMinor);
+  const operation = options.operation ?? (previousMembershipId ? "renewal" : "sale");
+  const idempotencyKey = optionalString(input.idempotencyKey);
+  const requestHash = idempotencyKey ? JSON.stringify({ input, previousMembershipId, options }) : undefined;
+  if (idempotencyKey && requestHash) {
+    const existing = await ctx.db
+      .query("idempotencyRecords")
+      .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", `membership.${operation}`).eq("key", idempotencyKey))
+      .unique();
+    if (existing) {
+      if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership sale.", { correlationId: actor.correlationId });
+      const stored = data(existing.result);
+      const replayMembership = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
+      const replayCharge = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
+      const replayPayment = stored.paymentId ? await recordOf(ctx, actor, "payment", stringValue(stored.paymentId)) : null;
+      const replayReceipt = stored.receiptId ? await recordOf(ctx, actor, "receipt", stringValue(stored.receiptId)) : null;
+      return {
+        membership: await toMembership(ctx, actor, data(replayMembership.data)),
+        charge: data(replayCharge.data),
+        payment: replayPayment ? data(replayPayment.data) : undefined,
+        receipt: replayReceipt ? data(replayReceipt.data) : undefined,
+        timelineEventIds: arrayValue(stored.timelineEventIds).map(String),
+      };
+    }
+  }
   const duration = stringValue(planData.kind) === "visits" ? numberValue(planData.visitValidityDays, 90) : numberValue(planData.durationDays, 30);
   const endDate = addDays(startDate, duration);
   const allowOverlappingMemberships = booleanValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).allowOverlappingMemberships);
@@ -2663,7 +2687,6 @@ async function createMembershipMutation(
     );
     if (overlaps) domainError("CONFLICT", "This member already has a membership covering part of the selected term.", { correlationId: actor.correlationId });
   }
-  const operation = options.operation ?? (previousMembershipId ? "renewal" : "sale");
   const membershipId = newPublicId();
   const adjustments = operation === "plan_change" ? [{
     id: newPublicId(),
@@ -2694,7 +2717,7 @@ async function createMembershipMutation(
   });
   if (priceOverride) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, reason: stringValue(input.overrideReason), before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
   if (dateOverride) await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Start date overridden to ${startDate}`, reason: stringValue(input.overrideReason), before: { startDate: options.standardStartDate }, after: { startDate }, branchId: memberData.homeBranchId });
-  if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price }, after: { discount }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
+  if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price, discount: 0, approvalStatus: "none" }, after: { price, discount, approvalStatus: approvalPending ? "pending" : "approved" }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
   await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
   let payment: Data | undefined;
   let receipt: Data | undefined;
@@ -2704,7 +2727,19 @@ async function createMembershipMutation(
     receipt = paymentResult.receipt;
     await auditPaymentCollection(ctx, actor, payment);
   }
-  return { membership: await toMembership(ctx, actor, membership), charge, payment, receipt, timelineEventIds: [event.id] };
+  const result = { membership: await toMembership(ctx, actor, membership), charge, payment, receipt, timelineEventIds: [event.id] };
+  if (idempotencyKey && requestHash) {
+    await ctx.db.insert("idempotencyRecords", {
+      organizationId: actor.organization._id,
+      operation: `membership.${operation}`,
+      key: idempotencyKey,
+      requestHash,
+      result: { membershipId: membership.id, chargeId: charge.id, paymentId: payment?.id, receiptId: receipt?.id, timelineEventIds: result.timelineEventIds },
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 86_400_000 * 365,
+    });
+  }
+  return result;
 }
 
 async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -3562,11 +3597,26 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const status = statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK));
-      if (["cancelled", "expired", "depleted"].includes(status)) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      if (["cancelled", "expired", "depleted"].includes(status) || (value.status !== undefined && stringValue(value.status) !== "active")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      const member = await recordOf(ctx, actor, "member", stringValue(value.memberId));
+      const memberValue = data(member.data);
+      if (["inactive", "archived"].includes(stringValue(memberValue.status))) domainError("MEMBERSHIP_NOT_ACTIVE", "Cannot transfer a membership for an inactive member.", { correlationId: actor.correlationId });
       const destinationBranchId = recordId(input.branchId);
       const destination = await branchByPublicId(ctx, actor.organization._id, destinationBranchId);
       assertBranchAccess(actor, destination);
       if (!destination || !destination.active || destination.status === "inactive") domainError("NOT_FOUND", "Destination branch not found or inactive.", { correlationId: actor.correlationId });
+      const idempotencyKey = optionalString(input.idempotencyKey);
+      const requestHash = idempotencyKey ? JSON.stringify({ membershipId: record.publicId, branchId: destinationBranchId, reason: stringValue(input.reason) }) : undefined;
+      if (idempotencyKey && requestHash) {
+        const existing = await ctx.db
+          .query("idempotencyRecords")
+          .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "membership.transfer").eq("key", idempotencyKey))
+          .unique();
+        if (existing) {
+          if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership transfer.", { correlationId: actor.correlationId });
+          return await toMembershipDetail(ctx, actor, data(record.data));
+        }
+      }
       const previousBranchId = stringValue(value.homeBranchId);
       if (previousBranchId === destinationBranchId) domainError("VALIDATION_ERROR", "Membership is already assigned to this branch.", { correlationId: actor.correlationId });
       const plan = await recordOf(ctx, actor, "plan", stringValue(value.planId));
@@ -3577,14 +3627,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "branch_transfer", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, approvalStatus: "not_required", createdAt: isoNow() };
       const nextValue = { ...value, homeBranchId: destinationBranchId, adjustments: [...arrayValue(value.adjustments), adjustment] };
       await ctx.db.patch(record._id, { branchId: destination._id, data: nextValue, updatedAt: Date.now() });
-      const member = await recordOf(ctx, actor, "member", stringValue(value.memberId));
-      const memberValue = data(member.data);
       if (stringValue(memberValue.homeBranchId) === previousBranchId) {
         await ctx.db.patch(member._id, { branchId: destination._id, data: { ...memberValue, homeBranchId: destinationBranchId }, updatedAt: Date.now() });
       }
       const previousBranch = await branchByPublicId(ctx, actor.organization._id, previousBranchId);
       await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.branch_transfer", entityType: "membership", entityId: record.publicId, entityLabel: `${memberValue.fullName} · ${memberValue.memberNumber}`, summary: `Transferred ${previousBranch?.name ?? "branch"} → ${destination.name}`, reason: stringValue(input.reason), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, branchId: destinationBranchId });
+      if (idempotencyKey && requestHash) {
+        await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "membership.transfer", key: idempotencyKey, requestHash, result: { membershipId: record.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
+      }
       return await toMembershipDetail(ctx, actor, nextValue);
     }
     case "leads.create": {
@@ -4099,10 +4150,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const approvalPermission = approvalPermissionForAction(event.action);
       if (!approvalPermission) domainError("VALIDATION_ERROR", "This audit event does not support approval review.", { correlationId: actor.correlationId });
       requirePermission(actor, approvalPermission);
-      await insertRecord(ctx, actor, "approvalReview", { id: newPublicId(), auditEventId: eventId, decision, note: optionalString(input.note), reviewedById: publicUserId(actor.user), reviewedAt: isoNow() }, { branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
+      const note = stringValue(input.note);
+      requireReason(note, actor.correlationId, "note");
+      const before = { ...data(event.before), approvalStatus: "pending" };
+      const after = { ...data(event.after), approvalStatus: decision };
+      await insertRecord(ctx, actor, "approvalReview", { id: newPublicId(), auditEventId: eventId, decision, note, before, after, reviewedById: publicUserId(actor.user), reviewedAt: isoNow() }, { branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       if (event.entityType === "membership") { const membership = await recordOf(ctx, actor, "membership", event.entityPublicId); await patchRecord(ctx, actor, membership, { discountApprovalStatus: decision }); }
       if (event.entityType === "cash_shift") { const shift = await recordOf(ctx, actor, "shift", event.entityPublicId); await patchRecord(ctx, actor, shift, { varianceApprovalStatus: decision }); }
-      await insertAudit(ctx, actor, { category: event.category, action: `${event.action}.${decision}`, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: `${decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`, reason: optionalString(input.note), branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
+      await insertAudit(ctx, actor, { category: event.category, action: `${event.action}.${decision}`, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: `${decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`, reason: note, before, after, branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       return undefined;
     }
     case "demo.reset":
