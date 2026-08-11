@@ -1,6 +1,13 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-11 after the TODO-006 money/staff real-handler evidence release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-11 after the credentialed owner verification and navigation/cash-shift safety fixes. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Latest credentialed owner verification and safety fixes — `991d7e2`
+
+- A live owner session was exercised read-only across dashboard, reception, members, memberships, plans, PT, CRM, payments, shifts, reports, automations, audit, support, and settings. All routes rendered their expected headings and no visible runtime, authorization, or data-loading errors appeared. Platform routes correctly returned the owner to sign-in.
+- The deployed pre-fix build exposed a navigation boundary defect: `/memberships` marked both **Members** and **Memberships** active because the shared matcher used an unbounded prefix check. `navIsActive` now matches only the route segment or a descendant, with regression coverage shared by desktop and mobile navigation. A post-deploy visual check remains required.
+- The cash-shift opening dialog no longer pre-populates or silently falls back to JOD 50.000. Operators must enter the counted opening float; invalid and negative values are rejected before the mutation. Focused schema tests cover blank, zero, valid, invalid, and negative amounts.
+- Verification after the fix: 64 Vitest files / 379 tests, TypeScript typecheck, Convex typecheck, zero-warning lint, production build, Playwright preview suite (23 passed / 4 credential-gated staging journeys skipped), and `git diff --check` passed. No Production mutation, payment, member creation, shift opening, or email was performed.
 
 ## Production release alignment — integrated code `1f29af3`, handoff head `d200ba5`
 
