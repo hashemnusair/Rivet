@@ -331,6 +331,8 @@ export interface CreateMembershipSaleInput {
   planId: UUID;
   startDate: ISODate;
   priceOverride?: Money;
+  /** Required only when the listed price or standard start date is overridden. */
+  overrideReason?: string;
   discount?: Money;
   discountReason?: string;
   payment?: {
@@ -343,6 +345,8 @@ export interface RenewMembershipInput {
   planId?: UUID; // defaults to same plan
   startDate?: ISODate; // defaults to day after current end (or today if expired)
   priceOverride?: Money;
+  /** Required only when the listed price or standard renewal date is overridden. */
+  overrideReason?: string;
   discount?: Money;
   discountReason?: string;
   payment?: { amount: Money; method: PaymentMethodKey };
@@ -792,10 +796,12 @@ export interface CreatePaymentInput {
 export interface RefundPaymentInput {
   amount?: Money; // defaults to full remaining amount
   reason: string;
+  idempotencyKey: string;
 }
 
 export interface VoidPaymentInput {
   reason: string;
+  idempotencyKey: string;
 }
 
 // Cash shifts & reconciliation

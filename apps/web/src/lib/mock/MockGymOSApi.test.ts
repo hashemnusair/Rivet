@@ -194,7 +194,7 @@ describe("tenant/branch scoping and authorization", () => {
     const tx = await api.listTransactions({ type: "payment", pageSize: 1 });
     const payment = tx.items[0]!;
     await api.switchDemoRole("salesperson");
-    await expect(api.refundPayment(payment.id, { reason: "trying it on" })).rejects.toMatchObject({
+    await expect(api.refundPayment(payment.id, { reason: "trying it on", idempotencyKey: "refund-role-gate" })).rejects.toMatchObject({
       code: ERR.FORBIDDEN,
     });
   });
@@ -476,6 +476,7 @@ describe("membership sale and renewal", () => {
       memberId: member.id,
       planId: plan.id,
       startDate: "2026-08-01",
+      overrideReason: "Historical test sale date.",
       payment: { amount: plan.basePrice, method: "cash" },
     });
 
@@ -498,6 +499,7 @@ describe("membership sale and renewal", () => {
       memberId: member.id,
       planId: plan.id,
       startDate: "2026-08-01",
+      overrideReason: "Historical test sale date.",
       payment: { amount: deposit, method: "cash" },
     });
 
@@ -514,6 +516,7 @@ describe("membership sale and renewal", () => {
       memberId: member.id,
       planId: plan.id,
       startDate: "2026-08-01",
+      overrideReason: "Historical test sale date.",
       discount,
       discountReason: "Ramadan promotion",
     });
@@ -554,7 +557,7 @@ describe("membership sale and renewal", () => {
     const plans = (await api.listPlans({ status: "active", pageSize: 10 })).items;
     const originalPlan = plans[0]!;
     const replacement = plans.find((plan) => plan.id !== originalPlan.id)!;
-    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: "2026-08-01" });
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: "2026-08-01", overrideReason: "Historical test sale date." });
 
     const changed = await api.changeMembershipPlan(sale.membership.id, {
       planId: replacement.id,
@@ -804,7 +807,7 @@ describe("refunds and voids", () => {
     const receipt = await api.createPayment({ memberId: member.id, amount: money(owed), method: "cash" }, "idem-ref-1");
     expect((await api.getMember(member.id)).outstanding.amount).toBe(0);
 
-    const refund = await api.refundPayment(receipt.payment.id, { reason: "Member cancelled within cooling-off" });
+    const refund = await api.refundPayment(receipt.payment.id, { reason: "Member cancelled within cooling-off", idempotencyKey: "refund-cooling-off" });
 
     expect(refund.payment.type).toBe("refund");
     expect(refund.payment.amount.amount).toBe(-owed);
@@ -824,7 +827,7 @@ describe("refunds and voids", () => {
     const owed = member.outstanding.amount;
     const receipt = await api.createPayment({ memberId: member.id, amount: money(owed), method: "cash" }, "idem-ref-1b");
 
-    await api.refundPayment(receipt.payment.id, { reason: "Sale reversed by manager" });
+    await api.refundPayment(receipt.payment.id, { reason: "Sale reversed by manager", idempotencyKey: "refund-sale-reversed" });
 
     const after = await api.getMember(member.id);
     expect(after.outstanding.amount).toBe(0);
@@ -837,7 +840,7 @@ describe("refunds and voids", () => {
     const owed = member.outstanding.amount;
     const receipt = await api.createPayment({ memberId: member.id, amount: money(owed), method: "cash" }, "idem-ref-2");
 
-    await api.refundPayment(receipt.payment.id, { amount: money(Math.floor(owed / 2)), reason: "Half term unused" });
+    await api.refundPayment(receipt.payment.id, { amount: money(Math.floor(owed / 2)), reason: "Half term unused", idempotencyKey: "refund-half-term" });
 
     const original = await api.getReceipt(receipt.receipt.id);
     expect(original.payment.status).toBe("partially_refunded");
@@ -846,8 +849,8 @@ describe("refunds and voids", () => {
   it("refuses to refund more than was taken", async () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-3");
-    await api.refundPayment(receipt.payment.id, { reason: "full refund" });
-    await expect(api.refundPayment(receipt.payment.id, { reason: "again" })).rejects.toMatchObject({
+    await api.refundPayment(receipt.payment.id, { reason: "full refund", idempotencyKey: "refund-full" });
+    await expect(api.refundPayment(receipt.payment.id, { reason: "again", idempotencyKey: "refund-again" })).rejects.toMatchObject({
       code: ERR.PAYMENT_ALREADY_REFUNDED,
     });
   });
@@ -856,7 +859,7 @@ describe("refunds and voids", () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-overage");
 
-    await expect(api.refundPayment(receipt.payment.id, { amount: money(10_001), reason: "Incorrect overage" })).rejects.toMatchObject({
+    await expect(api.refundPayment(receipt.payment.id, { amount: money(10_001), reason: "Incorrect overage", idempotencyKey: "refund-overage" })).rejects.toMatchObject({
       code: ERR.REFUND_EXCEEDS_AMOUNT,
     });
 
@@ -869,7 +872,7 @@ describe("refunds and voids", () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-currency");
 
-    await expect(api.refundPayment(receipt.payment.id, { amount: { amount: 5_000, currency: "USD" }, reason: "Currency mismatch" })).rejects.toMatchObject({
+    await expect(api.refundPayment(receipt.payment.id, { amount: { amount: 5_000, currency: "USD" }, reason: "Currency mismatch", idempotencyKey: "refund-currency" })).rejects.toMatchObject({
       code: ERR.VALIDATION,
     });
 
@@ -896,7 +899,7 @@ describe("refunds and voids", () => {
   it("requires a reason for a refund", async () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(5_000), method: "cash" }, "idem-ref-4");
-    await expect(api.refundPayment(receipt.payment.id, { reason: "" })).rejects.toMatchObject({
+    await expect(api.refundPayment(receipt.payment.id, { reason: "", idempotencyKey: "refund-missing-reason" })).rejects.toMatchObject({
       code: ERR.VALIDATION,
     });
   });
@@ -906,7 +909,7 @@ describe("refunds and voids", () => {
     const owed = member.outstanding.amount;
     const receipt = await api.createPayment({ memberId: member.id, amount: money(owed), method: "cash" }, "idem-void-1");
 
-    const voided = await api.voidPayment(receipt.payment.id, { reason: "Wrong amount keyed in" });
+    const voided = await api.voidPayment(receipt.payment.id, { reason: "Wrong amount keyed in", idempotencyKey: "void-wrong-amount" });
     expect(voided.payment.status).toBe("voided");
 
     const after = await api.getMember(member.id);
@@ -916,8 +919,8 @@ describe("refunds and voids", () => {
   it("refuses to void a payment that has already been refunded", async () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(5_000), method: "cash" }, "idem-void-2");
-    await api.refundPayment(receipt.payment.id, { reason: "refunded first" });
-    await expect(api.voidPayment(receipt.payment.id, { reason: "now void it" })).rejects.toMatchObject({
+    await api.refundPayment(receipt.payment.id, { reason: "refunded first", idempotencyKey: "refund-before-void" });
+    await expect(api.voidPayment(receipt.payment.id, { reason: "now void it", idempotencyKey: "void-after-refund" })).rejects.toMatchObject({
       code: ERR.PAYMENT_ALREADY_REFUNDED,
     });
   });
@@ -930,7 +933,7 @@ describe("refunds and voids", () => {
       (t) => t.status === "completed" && partsInTimeZone(new Date(t.occurredAt)).date !== today,
     );
     if (!stale) throw new Error("seed should contain a completed payment from a previous day");
-    await expect(api.voidPayment(stale.id, { reason: "too late" })).rejects.toMatchObject({
+    await expect(api.voidPayment(stale.id, { reason: "too late", idempotencyKey: "void-too-late" })).rejects.toMatchObject({
       code: ERR.VOID_WINDOW_EXPIRED,
     });
   });
@@ -938,7 +941,7 @@ describe("refunds and voids", () => {
   it("writes an audit event naming the actor for every refund", async () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment({ memberId: member.id, amount: money(30_000), method: "cash" }, "idem-ref-5");
-    await api.refundPayment(receipt.payment.id, { reason: "Equipment closure goodwill" });
+    await api.refundPayment(receipt.payment.id, { reason: "Equipment closure goodwill", idempotencyKey: "refund-goodwill" });
 
     const audit = await api.listAuditEvents({ category: "payments", pageSize: 20 });
     const event = audit.items.find((e) => e.action === "payment.refund" && e.entityId === receipt.payment.id)!;
@@ -1127,7 +1130,7 @@ describe("cash shifts and reconciliation", () => {
     const collected = (await api.getCurrentShiftTotals(branchId))!;
     expect(collected.totals.cashPayments.amount).toBe(before.totals.cashPayments.amount + 15_000);
 
-    await api.voidPayment(receipt.payment.id, { reason: "Duplicate cash entry" });
+    await api.voidPayment(receipt.payment.id, { reason: "Duplicate cash entry", idempotencyKey: "void-duplicate-cash" });
     const after = (await api.getCurrentShiftTotals(branchId))!;
     expect(after.totals.cashPayments.amount).toBe(before.totals.cashPayments.amount);
   });
@@ -1189,7 +1192,7 @@ describe("cash shifts and reconciliation", () => {
 
     expect(closed.variance!.amount).toBe(3_000);
     expect(closed.varianceApprovalStatus).toBe("pending");
-    const reviewed = await api.reviewVariance(closed.id, { decision: "approved" });
+    const reviewed = await api.reviewVariance(closed.id, { decision: "approved", note: "Count sheet and till recount verified." });
     expect(reviewed.varianceApprovalStatus).toBe("approved");
   });
 

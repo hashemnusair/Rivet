@@ -44,6 +44,7 @@ const schema = z.object({
   planId: z.string().min(1, "Choose a plan"),
   startDate: z.string().min(1, "Start date is required"),
   priceOverride: z.string().optional(),
+  overrideReason: z.string().optional(),
   discount: z.string().optional(),
   discountReason: z.string().optional(),
   payNow: z.boolean(),
@@ -94,6 +95,7 @@ export function MembershipSaleDialog({
           : todayISODate()
         : todayISODate(),
       priceOverride: "",
+      overrideReason: "",
       discount: "",
       discountReason: "",
       payNow: true,
@@ -112,6 +114,7 @@ export function MembershipSaleDialog({
             : todayISODate()
           : todayISODate(),
         priceOverride: "",
+        overrideReason: "",
         discount: "",
         discountReason: "",
         payNow: true,
@@ -139,6 +142,13 @@ export function MembershipSaleDialog({
     discount.amount > 0 && role ? discountNeedsApproval(settingsQuery.data?.roles ?? [], role, discount.amount) : false;
   const canOverridePrice = can("memberships.override_dates");
   const canDiscount = can("payments.discount");
+  const standardStartDate = isRenewal && renewalOf
+    ? renewalOf.endDate >= todayISODate() ? addDays(renewalOf.endDate, 1) : todayISODate()
+    : todayISODate();
+  const needsOverrideReason = Boolean(
+    (plan && parseMoneyInput(watchPrice ?? "")?.amount !== undefined && parseMoneyInput(watchPrice ?? "")!.amount !== plan.basePrice.amount)
+    || form.watch("startDate") !== standardStartDate,
+  );
 
   const mutation = useApiMutation(
     (api, input: { sale?: CreateMembershipSaleInput; renew?: { id: UUID; input: RenewMembershipInput } }) =>
@@ -161,6 +171,10 @@ export function MembershipSaleDialog({
       form.setError("discountReason", { message: "A reason is required for discounts" });
       return;
     }
+    if (needsOverrideReason && !values.overrideReason?.trim()) {
+      form.setError("overrideReason", { message: "A reason is required for price or date overrides" });
+      return;
+    }
     const payment =
       values.payNow && payingNow.amount > 0
         ? { amount: payingNow, method: values.payMethod as PaymentMethodKey }
@@ -173,6 +187,7 @@ export function MembershipSaleDialog({
             planId: values.planId !== renewalOf.planId ? values.planId : undefined,
             startDate: values.startDate,
             priceOverride: parseMoneyInput(values.priceOverride ?? "") ?? undefined,
+            overrideReason: values.overrideReason || undefined,
             discount: parseMoneyInput(values.discount ?? "") ?? undefined,
             discountReason: values.discountReason || undefined,
             payment,
@@ -186,6 +201,7 @@ export function MembershipSaleDialog({
           planId: values.planId,
           startDate: values.startDate,
           priceOverride: parseMoneyInput(values.priceOverride ?? "") ?? undefined,
+          overrideReason: values.overrideReason || undefined,
           discount: parseMoneyInput(values.discount ?? "") ?? undefined,
           discountReason: values.discountReason || undefined,
           payment,
@@ -253,6 +269,12 @@ export function MembershipSaleDialog({
                   />
                 </Field>
               </div>
+
+              {needsOverrideReason ? (
+                <Field label="Override reason" required error={form.formState.errors.overrideReason?.message} hint="Price and date changes are recorded in the audit trail.">
+                  <Input placeholder="Why does this sale need an exception?" {...form.register("overrideReason")} />
+                </Field>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Discount (JOD)" hint={canDiscount ? undefined : "No discount permission"}>

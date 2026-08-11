@@ -1816,6 +1816,7 @@ export class MockGymOSApi implements GymOSApi {
     planId: T.UUID;
     startDate: T.ISODate;
     priceOverride?: T.Money;
+    overrideReason?: string;
     discount?: T.Money;
     discountReason?: string;
     payment?: { amount: T.Money; method: T.PaymentMethodKey };
@@ -1823,6 +1824,7 @@ export class MockGymOSApi implements GymOSApi {
     operation?: "sale" | "renewal" | "plan_change";
     previousPlanId?: T.UUID;
     reason?: string;
+    standardStartDate?: T.ISODate;
     soldBy: T.UUID;
   }): T.MembershipSaleResult {
     const member = this.db.members.find((m) => m.id === args.memberId);
@@ -1831,8 +1833,11 @@ export class MockGymOSApi implements GymOSApi {
     if (!plan || plan.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Plan not found or inactive.");
 
     const priceMinor = args.priceOverride?.amount ?? plan.basePrice.amount;
-    if (args.priceOverride && args.priceOverride.amount !== plan.basePrice.amount) {
+    const priceOverride = Boolean(args.priceOverride && args.priceOverride.amount !== plan.basePrice.amount);
+    const dateOverride = Boolean(args.standardStartDate && args.startDate !== args.standardStartDate);
+    if (priceOverride || dateOverride) {
       this.require("memberships.override_dates");
+      this.requireReason(args.overrideReason);
     }
     const discountMinor = Math.min(args.discount?.amount ?? 0, priceMinor);
     if (discountMinor > 0) {
@@ -1940,6 +1945,35 @@ export class MockGymOSApi implements GymOSApi {
       });
     }
 
+    if (priceOverride) {
+      this.audit({
+        category: "payments",
+        action: "membership.price_override",
+        entityType: "membership",
+        entityId: record.id,
+        entityLabel: `${member.fullName} · ${member.memberNumber}`,
+        summary: `Price override: JOD ${(priceMinor / 1000).toFixed(3)}`,
+        reason: args.overrideReason,
+        before: { price: plan.basePrice.amount },
+        after: { price: priceMinor },
+        branchId: member.homeBranchId,
+      });
+    }
+    if (dateOverride) {
+      this.audit({
+        category: "memberships",
+        action: "membership.date_override",
+        entityType: "membership",
+        entityId: record.id,
+        entityLabel: `${member.fullName} · ${member.memberNumber}`,
+        summary: `Start date overridden to ${args.startDate}`,
+        reason: args.overrideReason,
+        before: { startDate: args.standardStartDate ?? null },
+        after: { startDate: args.startDate },
+        branchId: member.homeBranchId,
+      });
+    }
+
     let payment: T.Payment | undefined;
     let receipt: T.Receipt | undefined;
     if (args.payment && args.payment.amount.amount > 0) {
@@ -1972,7 +2006,7 @@ export class MockGymOSApi implements GymOSApi {
   createMembershipSale(input: T.CreateMembershipSaleInput): Promise<T.MembershipSaleResult> {
     return this.respond(() => {
       this.require("memberships.sell");
-      return this.buildSale({ ...input, soldBy: this.actor().id });
+      return this.buildSale({ ...input, standardStartDate: this.today(), soldBy: this.actor().id });
     });
   }
 
@@ -1990,11 +2024,13 @@ export class MockGymOSApi implements GymOSApi {
         planId: input.planId ?? old.planId,
         startDate,
         priceOverride: input.priceOverride,
+        overrideReason: input.overrideReason,
         discount: input.discount,
         discountReason: input.discountReason,
         payment: input.payment,
         previousMembershipId: old.id,
         operation: "renewal",
+        standardStartDate: old.endDate >= today ? addDays(old.endDate, 1) : today,
         soldBy: this.actor().id,
       });
     });
@@ -3460,9 +3496,10 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.listCashShifts(query), onValue, onError);
   }
 
-  reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<T.CashShift> {
+  reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<T.CashShift> {
     return this.respond(() => {
       this.require("reconciliation.approve_variance");
+      this.requireReason(input.note);
       const shift = this.db.shifts.find((s) => s.id === shiftId);
       if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
       shift.varianceApprovalStatus = input.decision;

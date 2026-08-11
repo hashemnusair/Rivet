@@ -16,7 +16,8 @@ import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
 import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton, TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -34,6 +35,8 @@ export default function ShiftsPage() {
   const [page, setPage] = useState(1);
   const [openShiftOpen, setOpenShiftOpen] = useState(false);
   const [closeShiftTarget, setCloseShiftTarget] = useState<CashShift | null>(null);
+  const [varianceReview, setVarianceReview] = useState<{ shiftId: string; decision: "approved" | "rejected" } | null>(null);
+  const [varianceReviewNote, setVarianceReviewNote] = useState("");
 
   const currentShiftQuery = useApiQuery(qk.currentShift(effectiveBranch), (api) => api.getCurrentCashShift(effectiveBranch), {
     enabled: Boolean(effectiveBranch),
@@ -49,10 +52,12 @@ export default function ShiftsPage() {
   { enabled: Boolean(effectiveBranch) });
 
   const reviewVariance = useApiMutation(
-    (api, v: { shiftId: string; decision: "approved" | "rejected" }) => api.reviewVariance(v.shiftId, { decision: v.decision }),
+    (api, v: { shiftId: string; decision: "approved" | "rejected"; note: string }) => api.reviewVariance(v.shiftId, { decision: v.decision, note: v.note }),
     {
       onSuccess: async (_d, v) => {
         toast.success(`Variance ${v.decision}.`);
+        setVarianceReview(null);
+        setVarianceReviewNote("");
         await invalidate();
       },
     },
@@ -271,7 +276,7 @@ export default function ShiftsPage() {
                             size="icon-sm"
                             aria-label="Approve variance"
                             title={s.varianceExplanation ?? "Approve"}
-                            onClick={() => reviewVariance.mutate({ shiftId: s.id, decision: "approved" })}
+                            onClick={() => setVarianceReview({ shiftId: s.id, decision: "approved" })}
                           >
                             <Check className="text-success" />
                           </Button>
@@ -279,7 +284,7 @@ export default function ShiftsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label="Reject variance"
-                            onClick={() => reviewVariance.mutate({ shiftId: s.id, decision: "rejected" })}
+                            onClick={() => setVarianceReview({ shiftId: s.id, decision: "rejected" })}
                           >
                             <X className="text-danger" />
                           </Button>
@@ -308,6 +313,36 @@ export default function ShiftsPage() {
         toast.success("Shift open.");
         await invalidate();
       }} />
+      <Dialog open={Boolean(varianceReview)} onOpenChange={(open) => {
+        if (!open) {
+          setVarianceReview(null);
+          setVarianceReviewNote("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{varianceReview?.decision === "approved" ? "Approve cash variance" : "Reject cash variance"}</DialogTitle>
+            <DialogDescription>This exception decision is immutable and records your reason in the audit trail.</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <label className="grid gap-2 text-[13px] font-medium">
+              Decision reason
+              <Textarea value={varianceReviewNote} onChange={(event) => setVarianceReviewNote(event.target.value)} placeholder="What evidence supports this decision?" autoFocus />
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => { setVarianceReview(null); setVarianceReviewNote(""); }}>Cancel</Button>
+            <Button
+              variant={varianceReview?.decision === "rejected" ? "danger" : "primary"}
+              loading={reviewVariance.isPending}
+              disabled={!varianceReviewNote.trim() || !varianceReview}
+              onClick={() => varianceReview && reviewVariance.mutate({ ...varianceReview, note: varianceReviewNote.trim() })}
+            >
+              {varianceReview?.decision === "approved" ? "Approve variance" : "Reject variance"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {closeShiftTarget ? (
         <CloseShiftDialog
           open

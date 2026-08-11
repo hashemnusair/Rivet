@@ -2324,7 +2324,7 @@ async function paymentRecord(
   actor: ActorContext,
   input: Data,
   idempotencyKey: string,
-): Promise<{ payment: Data; receipt: Data; receiptId: string }> {
+): Promise<{ payment: Data; receipt: Data; receiptId: string; replayed: boolean }> {
   const requestHash = JSON.stringify({ input, idempotencyKey });
   const existing = await ctx.db
     .query("idempotencyRecords")
@@ -2335,7 +2335,7 @@ async function paymentRecord(
     const result = data(existing.result);
     const payment = await recordOf(ctx, actor, "payment", stringValue(result.paymentId));
     const receipt = await recordOf(ctx, actor, "receipt", stringValue(result.receiptId));
-    return { payment: data(payment.data), receipt: data(receipt.data), receiptId: stringValue(result.receiptId) };
+    return { payment: data(payment.data), receipt: data(receipt.data), receiptId: stringValue(result.receiptId), replayed: true };
   }
   const memberId = recordId(input.memberId);
   const memberRecord = await recordOf(ctx, actor, "member", memberId);
@@ -2404,7 +2404,7 @@ async function paymentRecord(
     recipientEmail: optionalString(member.email),
     dedupeKey: `payment-receipt:${receipt.id}`,
   });
-  return { payment, receipt, receiptId: receipt.id };
+  return { payment, receipt, receiptId: receipt.id, replayed: false };
 }
 
 async function paymentAuditEntityLabel(ctx: ReadContext, actor: ActorContext, payment: Data): Promise<string> {
@@ -2621,7 +2621,7 @@ async function createMembershipMutation(
   actor: ActorContext,
   input: Data,
   previousMembershipId?: string,
-  options: { operation?: "sale" | "renewal" | "plan_change"; reason?: string; previousPlanId?: string; effectiveDate?: "immediate" | "next_renewal" } = {},
+  options: { operation?: "sale" | "renewal" | "plan_change"; reason?: string; previousPlanId?: string; effectiveDate?: "immediate" | "next_renewal"; standardStartDate?: string } = {},
 ): Promise<Data> {
   requirePermission(actor, "memberships.sell");
   const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
@@ -2636,7 +2636,12 @@ async function createMembershipMutation(
   const startDate = stringValue(input.startDate);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) domainError("VALIDATION_ERROR", "Start date must be a calendar date.", { correlationId: actor.correlationId });
   const override = input.priceOverride != null;
-  if (override && amountOf(input.priceOverride) !== amountOf(planData.basePrice)) requirePermission(actor, "memberships.override_dates");
+  const priceOverride = override && amountOf(input.priceOverride) !== amountOf(planData.basePrice);
+  const dateOverride = Boolean(options.standardStartDate && startDate !== options.standardStartDate);
+  if (priceOverride || dateOverride) {
+    requirePermission(actor, "memberships.override_dates");
+    requireReason(input.overrideReason, actor.correlationId, "overrideReason");
+  }
   const price = override ? amountOf(input.priceOverride) : amountOf(planData.basePrice);
   const discount = Math.min(amountOf(input.discount), price);
   if (discount > 0) {
@@ -2687,7 +2692,8 @@ async function createMembershipMutation(
     actorName: actor.user.fullName,
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
   });
-  if (override) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
+  if (priceOverride) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, reason: stringValue(input.overrideReason), before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
+  if (dateOverride) await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Start date overridden to ${startDate}`, reason: stringValue(input.overrideReason), before: { startDate: options.standardStartDate }, after: { startDate }, branchId: memberData.homeBranchId });
   if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price }, after: { discount }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
   await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
   let payment: Data | undefined;
@@ -3435,7 +3441,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await toPlan(ctx, actor, updated);
     }
     case "memberships.sale": {
-      return await createMembershipMutation(ctx, actor, input);
+      return await createMembershipMutation(ctx, actor, input, undefined, { standardStartDate: todayIn(actor.organization.timezone || TZ_FALLBACK) });
     }
     case "memberships.renew": {
       requirePermission(actor, "memberships.sell");
@@ -3445,7 +3451,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const renewInput: Data = { ...input, memberId: oldData.memberId, planId: input.planId ?? oldData.planId, startDate: input.startDate ?? (stringValue(oldData.endDate) >= today ? addDays(stringValue(oldData.endDate), 1) : today) };
       delete renewInput.membershipId;
-      return await createMembershipMutation(ctx, actor, renewInput, old.publicId, { operation: "renewal" });
+      const standardStartDate = stringValue(oldData.endDate) >= today ? addDays(stringValue(oldData.endDate), 1) : today;
+      return await createMembershipMutation(ctx, actor, renewInput, old.publicId, { operation: "renewal", standardStartDate });
     }
     case "memberships.plan_change": {
       requirePermission(actor, "memberships.sell");
@@ -3765,13 +3772,21 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const idempotencyKey = recordId(input.idempotencyKey);
       const result = await paymentRecord(ctx, actor, input, idempotencyKey);
       const payment = result.payment;
-      await auditPaymentCollection(ctx, actor, payment);
+      if (!result.replayed) await auditPaymentCollection(ctx, actor, payment);
       return await receiptDetail(ctx, actor, result.receiptId);
     }
     case "payments.refund": {
       requirePermission(actor, "payments.refund");
       requireReason(input.reason, actor.correlationId);
-      const originalRecord = await recordOf(ctx, actor, "payment", recordId(input.paymentId));
+      const paymentId = recordId(input.paymentId);
+      const idempotencyKey = recordId(input.idempotencyKey);
+      const requestHash = JSON.stringify({ paymentId, amount: input.amount, reason: input.reason, idempotencyKey });
+      const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.refund").eq("key", idempotencyKey)).unique();
+      if (existing) {
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different refund.", { correlationId: actor.correlationId });
+        return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
+      }
+      const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
       const original = data(originalRecord.data);
       if (original.type !== "payment") domainError("VALIDATION_ERROR", "Only payments can be refunded.", { correlationId: actor.correlationId });
       if (original.status === "voided") domainError("PAYMENT_ALREADY_VOIDED", "Voided payments cannot be refunded.", { correlationId: actor.correlationId });
@@ -3798,6 +3813,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.refund", key: idempotencyKey, requestHash, result: { receiptId: receipt.id, paymentId: refund.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const refundBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
       await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${(amount / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
       return await receiptDetail(ctx, actor, receipt.id);
@@ -3805,7 +3821,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "payments.void": {
       requirePermission(actor, "payments.void");
       requireReason(input.reason, actor.correlationId);
-      const originalRecord = await recordOf(ctx, actor, "payment", recordId(input.paymentId));
+      const paymentId = recordId(input.paymentId);
+      const idempotencyKey = recordId(input.idempotencyKey);
+      const requestHash = JSON.stringify({ paymentId, reason: input.reason, idempotencyKey });
+      const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.void").eq("key", idempotencyKey)).unique();
+      if (existing) {
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different void.", { correlationId: actor.correlationId });
+        return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
+      }
+      const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
       const original = data(originalRecord.data);
       if (original.type !== "payment") domainError("VALIDATION_ERROR", "Only payments can be voided.", { correlationId: actor.correlationId });
       if (original.status === "voided") domainError("PAYMENT_ALREADY_VOIDED", "Payment is already voided.", { correlationId: actor.correlationId });
@@ -3816,6 +3840,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (original.chargeId) { const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId)); const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.void", key: idempotencyKey, requestHash, result: { receiptId: original.receiptId, paymentId: original.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const voidBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
       await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
@@ -3849,6 +3874,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "shifts.review": {
       requirePermission(actor, "reconciliation.approve_variance");
+      requireReason(input.note, actor.correlationId, "note");
       const record = await recordOf(ctx, actor, "shift", recordId(input.shiftId));
       const shift = data(record.data);
       if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no pending variance approval.", { correlationId: actor.correlationId });

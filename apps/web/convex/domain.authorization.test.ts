@@ -67,8 +67,8 @@ describe("Convex authorization matrix", () => {
 
     // The owner has the permission, so a missing record reaches the resource
     // boundary rather than being rejected by the role gate.
-    await expectCode(owner.mutation(api.domain.mutate, operation("payments.refund", { paymentId: "missing", reason: "Owner verification" })), "NOT_FOUND");
-    await expectCode(owner.mutation(api.domain.mutate, operation("payments.void", { paymentId: "missing", reason: "Owner verification" })), "NOT_FOUND");
+    await expectCode(owner.mutation(api.domain.mutate, operation("payments.refund", { paymentId: "missing", reason: "Owner verification", idempotencyKey: "missing-owner-refund" })), "NOT_FOUND");
+    await expectCode(owner.mutation(api.domain.mutate, operation("payments.void", { paymentId: "missing", reason: "Owner verification", idempotencyKey: "missing-owner-void" })), "NOT_FOUND");
     await expectCode(owner.mutation(api.domain.mutate, operation("checkins.override", { branchId: "auth-branch-a", memberId: "missing", reason: "Owner verification" })), "NOT_FOUND");
   });
 });

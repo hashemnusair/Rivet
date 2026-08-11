@@ -531,11 +531,24 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-006 — Expand real-handler isolation tests across money and entry flows
 
-- Status: **Expanded in the current hardening pass; full allow-path and production-volume evidence remains open**.
-- Scope: the customer profile/My Gyms/trial/entry-pass slice is complete. Remaining scope is operational member/lead/offer/task/payment/check-in identifiers, refund/void, cash-shift variance review, branch transfer, discount approval, invitation role/branch scope, and privilege escalation.
-- Acceptance: each has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required, idempotency, and immutable-audit assertions.
+- Status: **Money/staff real-handler matrix expanded; remaining families and Production-volume evidence remain open**.
+- Scope: the customer profile/My Gyms/trial/entry-pass slice is complete. Persisted exported-handler evidence now covers routine payment collection, refund/void reason and replay paths, non-zero shift-variance review, check-in overrides, member/lead/offer/task identifiers, invitation role/branch escalation, post-state-change deactivation, and concurrent two-tenant writes. Branch transfer and discount-approval allow-path matrices remain open.
+- Acceptance: each family has allow, forbidden, cross-tenant, cross-branch, deactivated-user, reason-required where applicable, idempotency/replay where applicable, and immutable-audit assertions. Routine actions must not acquire a reason gate merely to satisfy this matrix.
 
-Current evidence also covers exported platform invoice/subscription/support/notification/automation handlers with persisted identities, reason gates, audit assertions, recipient isolation, and idempotent dedupe. The new persisted authorization matrix covers selected-branch and cross-tenant member/lead reads/writes, payment/refund/void permission gates, shifts, check-in overrides, staff role/branch escalation, and manager/sales/reception boundaries. Full allow-path assertions for real payment/refund/void/variance records, deactivated-user rechecks, and two-tenant concurrent writes remain required.
+Current evidence also covers exported platform invoice/subscription/support/notification/automation handlers with persisted identities, reason gates, audit assertions, recipient isolation, and idempotent dedupe. The current TODO-006 matrix adds real payment/refund/void/variance records, duplicate payment-audit prevention on replay, same-day void replay, post-write deactivation rechecks, and concurrent two-tenant member-number allocation. Cross-tenant resources return non-disclosing `NOT_FOUND` after the caller reaches the authorized resource boundary; an attempted explicit foreign organization selection without membership remains `FORBIDDEN`.
+
+#### Reason-gate policy (verified at the handler and relevant UX boundary)
+
+- A non-empty reason is required for subscription suspension, refunds, voids, price/date overrides, non-zero variance close and review decisions, permission changes, destructive membership changes, and forced automation actions.
+- A reason is not required for routine member/lead creation, standard check-in, listed-price membership sale, ordinary payment collection, contact logging, or task creation.
+- New members remain opted in by default; this policy does not alter the existing marketing default.
+
+### BUG-016 — Owner “Needs attention” treats ordinary cash-shift lifecycle as an exception
+
+- Status: **Open; canonical backlog issue**.
+- Evidence: the owner dashboard builds `alerts` from every reconciliation audit category, so ordinary `shift.open`/balanced `shift.close` events can appear in **Needs attention**. At least one rendered item exposes the raw audit UUID instead of a useful operational detail.
+- Risk: owners are trained to ignore genuine exceptions, and an internal identifier leaks into an executive-facing surface.
+- Fix/acceptance: move balanced/normal lifecycle facts to **Recent activity**. Keep **Needs attention** for actionable exceptions only: non-zero variance awaiting/requiring decision, failed automation, overdue follow-up, failed delivery, or equivalent unresolved operational failure. Render a human detail, never a raw UUID. Add persisted dashboard tests for normal versus exceptional events.
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 

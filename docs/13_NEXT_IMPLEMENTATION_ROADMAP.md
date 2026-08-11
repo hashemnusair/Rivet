@@ -38,7 +38,7 @@ The full pilot-readiness pass has advanced the roadmap substantially:
 - Added a single marketing-preference boundary for automation email/SMS/WhatsApp actions. Explicit opt-outs suppress messages while manager/service notifications remain separate. Scheduler tests now cover dedupe, suppression, manager notifications, and execution projection; existing command tests cover reason-gated retries and quiet-hour helpers.
 - Added offline listener behavior that closes stale watches, preserves the last good snapshot, and reconnects immediately on `online`, plus an opt-in credentialed two-browser staging journey and workflow switch.
 
-Still open in this roadmap: running the credentialed two-context and offline browser checks against isolated staging, the ten independent staging journeys, live operational-email activation/worker/provider handling, migration/backfill policy for historical marketing preferences, and supervised Production verification. The implementation pass did not deploy Convex, mutate Production, seed data, or enable live automation/email.
+Historical status note: this paragraph previously described the pre-`009b1b8` state. Current status is that the Production Convex deploy completed without index deletion, and the credentialed isolated-staging two-context and offline browser checks passed before release. Still open in this roadmap: the ten independent staging journeys, live operational-email activation/worker/provider handling, migration/backfill policy for historical marketing preferences, dedicated read-only Production realtime observation, and supervised Production verification for later feature changes. No Production seed, import, or live automation/email was enabled.
 
 ## Read before editing
 
@@ -160,7 +160,7 @@ This is the highest-priority engineering slice. Current helper-level customer ow
 
 The current four-second background refresh is an acceptable fallback, but the most operationally important screens should update through Convex subscriptions without manual refresh or full-page loading flicker.
 
-Progress on 2026-08-10 (`135a5f1` plus the current hardening pass): the typed subscription seam now covers member/customer experience, platform applications/snapshot/gym detail/support, CRM pipeline/lead detail/tasks/renewals, role dashboards, reception occupancy/check-ins, transactions/shifts, automations, notifications, and operational-email attempts. `useRealtimeApiQuery` preserves the last snapshot, updates TanStack caches, disposes on scope changes, polls only after failure, and stops polling on recovery; offline watches now close and reconnect on browser recovery. Unit coverage includes offline/reconnect behavior, while the credentialed two-context and offline browser journeys remain release-gated.
+Progress on 2026-08-10 (`135a5f1` plus the current hardening pass): the typed subscription seam now covers member/customer experience, platform applications/snapshot/gym detail/support, CRM pipeline/lead detail/tasks/renewals, role dashboards, reception occupancy/check-ins, transactions/shifts, automations, notifications, and operational-email attempts. `useRealtimeApiQuery` preserves the last snapshot, updates TanStack caches, disposes on scope changes, polls only after failure, and stops polling on recovery; offline watches now close and reconnect on browser recovery. Unit coverage and the credentialed isolated-staging two-context/offline browser journeys are complete; dedicated read-only Production observation remains open.
 
 ### Work
 

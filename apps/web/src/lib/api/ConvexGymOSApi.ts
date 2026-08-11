@@ -377,7 +377,7 @@ export class ConvexGymOSApi implements GymOSApi {
   closeCashShift(shiftId: T.UUID, input: T.CloseCashShiftInput): Promise<T.CashShift> { return this.mutate("shifts.close", { shiftId, ...input }); }
   listCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }): Promise<T.Page<T.CashShift>> { return this.query("shifts.list", query); }
   subscribeCashShifts(query: { branchId?: T.UUID; page?: number; pageSize?: number }, onValue: (page: T.Page<T.CashShift>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("shifts.list", query, onValue, onError); }
-  reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<T.CashShift> { return this.mutate("shifts.review", { shiftId, ...input }); }
+  reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<T.CashShift> { return this.mutate("shifts.review", { shiftId, ...input }); }
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> { return this.query("reconciliation.daily", query); }
 
   listAutomationRules(): Promise<T.AutomationRule[]> { return this.query("automations.rules"); }

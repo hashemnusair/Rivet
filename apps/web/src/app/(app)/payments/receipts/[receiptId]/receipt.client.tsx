@@ -252,6 +252,7 @@ function RefundDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
   void receiptId;
 
@@ -260,6 +261,7 @@ function RefundDialog({
       api.refundPayment(paymentId, {
         amount: amount ? money(Math.round(Number(amount) * 1000)) : undefined,
         reason,
+        idempotencyKey,
       }),
     {
       onSuccess: () => onDone(),
@@ -317,9 +319,10 @@ function VoidDialog({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState("");
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
 
-  const mutation = useApiMutation((api) => api.voidPayment(paymentId, { reason }), {
+  const mutation = useApiMutation((api) => api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),
     onError: (e) => setError(isApiError(e) ? e.message : "Void failed."),
   });

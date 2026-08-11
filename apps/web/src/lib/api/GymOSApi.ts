@@ -706,7 +706,7 @@ export interface GymOSApi {
   closeCashShift(shiftId: UUID, input: CloseCashShiftInput): Promise<CashShift>;
   listCashShifts(query: { branchId?: UUID; page?: number; pageSize?: number }): Promise<Page<CashShift>>;
   subscribeCashShifts(query: { branchId?: UUID; page?: number; pageSize?: number }, onValue: (page: Page<CashShift>) => void, onError?: (error: unknown) => void): Promise<() => void>;
-  reviewVariance(shiftId: UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<CashShift>;
+  reviewVariance(shiftId: UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<CashShift>;
   getDailyReconciliation(query: { branchId: UUID; date: ISODate }): Promise<ReconciliationReport>;
 
   // Automations
