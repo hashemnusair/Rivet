@@ -370,17 +370,17 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-007 — Critical screens are polling, not truly realtime
 
-- Status: **Member My Gyms, platform applications, and CRM pipeline subscription slices implemented; reception/payments remain**.
-- Evidence: `GymOSApi.subscribeCustomerExperience`, `subscribePlatformApplications`, and `subscribeLeads` now provide typed, disposable snapshot streams. `ConvexGymOSApi` uses native `ConvexReactClient.watchQuery` in production and injectable subscription seams in adapter tests; the member provider, platform application queue, and CRM pipeline apply updates without replacing the rendered snapshot or replaying a full-page loading gate. The CRM pipeline starts its existing four-second refetch fallback if the watch fails, and the mock adapter preserves the same lifecycle contracts.
-- Risk: CRM lead detail/tasks, reception, platform provisioning detail, payments, and shift totals can still show stale state for several seconds during concurrent work. Credentialed Production verification and two-context browser coverage remain open for all realtime slices.
-- Fix/acceptance: migrate CRM detail/trials, reception occupancy/check-ins, and payment/shift totals next. Add two-context browser tests with no reload and no full-page loading flicker for each migrated surface. The member, platform, and CRM pipeline adapter/mock lifecycle tests are now in place.
+- Status: **Implementation complete locally across the critical operational surfaces; credentialed staging confirmation is blocked by a stale smoke assertion, and an explicit offline two-context browser journey remains open**.
+- Evidence: the typed `GymOSApi` subscription seam now covers customer/member experience, platform applications/provisioning/snapshot/gym detail/support, CRM pipeline/lead detail/tasks/renewals, role dashboards, reception occupancy/check-ins, payments/shifts, automations, notifications, and operational-email attempts. `ConvexGymOSApi` uses native `ConvexReactClient.watchQuery`; `useRealtimeApiQuery` preserves the last good TanStack snapshot, closes watches on `offline`, reconnects on `online`, and uses bounded polling only after stream failure. Unit coverage verifies snapshot retention, disposal, and reconnect behavior; the opt-in staging two-browser member-propagation journey is present. Staging workflow `31479371938` verified its required credentials and reached an authenticated dashboard, then failed because `convex-smoke.spec.ts` still requires the obsolete seeded copy `Both branches, consolidated.`; its operational and realtime steps were correctly skipped.
+- Risk: browser-level confirmation of offline → stale snapshot → reconnect → fresh data with two authenticated contexts is not yet a dedicated automated journey. Production realtime verification also remains open.
+- Fix/acceptance: keep the existing staging-only two-browser propagation journey and add/run an explicit offline/reconnect two-context check that proves no duplicate listener, full-screen loading gate, or stale post-reconnect snapshot. Record target classification, cleanup outcome, and no-reload evidence before considering this release gate closed.
 
 ### BUG-008 — Generated Next route types dirty the worktree during local dev and Playwright
 
-- Status: **Confirmed tooling issue**.
+- Status: **Resolved locally and verified on current main**.
 - Evidence: running `next dev`/Playwright rewrote `apps/web/next-env.d.ts` from `./.next/types/routes.d.ts` to a mode-specific path such as `./.next-playwright/dev/types/routes.d.ts`. A typecheck before a successful build also reported a missing generated route module.
 - Risk: routine tests create unrelated diffs, and a clean checkout may depend on generated `.next` files before `typecheck` is run.
-- Fix/acceptance: make generated route typing deterministic for dev, Playwright, CI, and production; ensure a clean checkout can run the documented static checks in CI order; do not commit generated `.next` output. Add a CI/fixture check for a clean workspace.
+- Fix/acceptance: `next-env.d.ts` is no longer tracked, and stable framework declarations are committed in `apps/web/next-types.d.ts`; generated `.next` output remains untracked. The current-main local typecheck, Convex codegen, lint, unit suite, Production build, and `git diff --check` completed without creating a worktree diff. Retain the CI clean-workspace assertion after preview/Playwright execution.
 
 ### BUG-009 — Login and role-routing regressions need permanent browser coverage
 

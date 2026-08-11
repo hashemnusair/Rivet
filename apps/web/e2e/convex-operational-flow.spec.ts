@@ -77,16 +77,11 @@ test.describe("staged Convex operational flow", () => {
 });
 
 async function archiveDisposableMember(page: Page, memberUrl: string) {
-  try {
-    await page.goto(memberUrl, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "More actions" }).click();
-    await page.getByRole("menuitem", { name: /Archive member/i }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByRole("textbox").fill("Disposable staging verification member");
-    await dialog.getByRole("button", { name: "Archive member" }).click();
-    await expect(dialog).toBeHidden();
-  } catch {
-    // Preserve the original assertion failure. The staging cleanup can be
-    // retried manually from the member URL if a browser session expires.
-  }
+  await page.goto(memberUrl, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: /Archive member/i }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("Disposable staging verification member");
+  await dialog.getByRole("button", { name: "Archive member" }).click();
+  await expect(dialog).toBeHidden();
 }

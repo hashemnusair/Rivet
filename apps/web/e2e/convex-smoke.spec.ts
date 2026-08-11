@@ -9,7 +9,19 @@ test.describe("trusted Clerk → Convex smoke", () => {
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/login/);
     await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening),/i })).toBeVisible();
-    await expect(page.getByText("Both branches, consolidated.")).toBeVisible();
-    await expect(page.getByText(/^Forge .* Abdoun$/)).toBeVisible();
+
+    // These values are the authenticated tenant's live dashboard projection,
+    // not fixed seed copy. Waiting for the KPI cells to resolve proves the
+    // Clerk-authenticated Convex query returned a durable operational snapshot.
+    const keyNumbers = page.getByLabel("Key numbers");
+    await expect(keyNumbers).toBeVisible();
+    await expect(keyNumbers.getByText("Collected today", { exact: true })).toBeVisible();
+    await expect(keyNumbers.getByText("New members", { exact: true })).toBeVisible();
+    await expect(keyNumbers.locator(".animate-pulse")).toHaveCount(0);
+
+    await expect(page.getByRole("heading", { name: "Sales this month" })).toBeVisible();
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
+    await expect(page.getByText("Both branches, consolidated.")).toHaveCount(0);
   });
 });
