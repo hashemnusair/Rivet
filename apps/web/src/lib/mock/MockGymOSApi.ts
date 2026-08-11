@@ -43,6 +43,7 @@ import type {
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
 import { discountNeedsApproval, type Permission } from "@/lib/domain/permissions";
+import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
@@ -191,6 +192,16 @@ export class MockGymOSApi implements GymOSApi {
   private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
   private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
   private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
+  private ptTrainers: T.PtTrainerProfile[] = [];
+  private ptPackages: T.PtPackage[] = [];
+  private ptRules: T.PtAvailabilityRule[] = [];
+  private ptExceptions: T.PtAvailabilityException[] = [];
+  private ptEntitlements: T.PtEntitlement[] = [];
+  private ptBookings: T.PtBooking[] = [];
+  private ptOrders: T.PtPackageOrder[] = [];
+  private gymPublicProfile!: T.GymPublicProfile;
+  private gymProfileVersions: T.GymProfileVersion[] = [];
+  private operationalEmailKinds: string[] = [];
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -205,10 +216,82 @@ export class MockGymOSApi implements GymOSApi {
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
+    const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
+    if (trainer) {
+      const createdAt = nowISO();
+      const profileId = mockUuid();
+      this.ptTrainers = [{ id: profileId, organizationId: this.db.organization.id, userId: trainer.id, displayName: trainer.name, specialties: ["Strength", "Mobility"], languages: ["en", "ar"], branchIds: trainer.branchScope === "all" ? this.db.branches.map((branch) => branch.id) : trainer.branchIds, status: "published", createdAt, updatedAt: createdAt }];
+      this.ptRules = this.ptTrainers[0]!.branchIds.flatMap((branchId) => (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ id: mockUuid(), trainerProfileId: profileId, branchId, weekday, startMinute: 8 * 60, endMinute: 17 * 60, active: true })));
+    }
+    this.ptPackages = ([
+      [12, 240_000, 90],
+      [20, 360_000, 120],
+      [30, 480_000, 180],
+    ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
+    const listing = this.platformGyms[0];
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
     return this.respond(() => this.platformGyms.filter((gym) => (gym.isPublic ?? true) && (gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial")));
+  }
+
+  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listMarketplaceGyms(), onValue, onError);
+  }
+
+  getGymPublicProfile(): Promise<T.GymPublicProfile> {
+    return this.respond(() => ({ ...this.gymPublicProfile, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
+  }
+
+  subscribeGymPublicProfile(onValue: (profile: T.GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getGymPublicProfile(), onValue, onError);
+  }
+
+  listGymProfileVersions(): Promise<T.GymProfileVersion[]> {
+    return this.respond(() => this.gymProfileVersions.map((item) => ({ ...item, profile: { ...item.profile, amenities: [...item.profile.amenities], gallery: [...item.profile.gallery] } })));
+  }
+
+  saveGymPublicProfile(input: T.UpdateGymPublicProfileInput): Promise<T.GymPublicProfile> {
+    return this.respond(() => {
+      this.require("profiles.manage");
+      if (!input.shortName.trim() || !input.taglineEn.trim() || !input.descriptionEn.trim()) throw ApiError.of(ERR.VALIDATION, "Short name, tagline, and description are required.");
+      if (!/^#[0-9a-f]{6}$/i.test(input.accentColor)) throw ApiError.of(ERR.VALIDATION, "Accent color must be a six-digit hex color.");
+      const nextVersion = this.gymPublicProfile.status === "published" ? this.gymPublicProfile.version + 1 : this.gymPublicProfile.version;
+      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: nowISO() };
+      return { ...this.gymPublicProfile };
+    });
+  }
+
+  publishGymPublicProfile(): Promise<T.GymPublicProfile> {
+    return this.respond(() => {
+      this.require("profiles.manage");
+      const now = nowISO();
+      this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
+      this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
+      const listing = this.platformGyms[0];
+      if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version });
+      return { ...this.gymPublicProfile };
+    });
+  }
+
+  unpublishGymPublicProfile(reason: string): Promise<T.GymPublicProfile> {
+    return this.respond(() => {
+      this.require("profiles.manage");
+      if (!reason.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to unpublish the gym profile.");
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "unpublished", updatedAt: nowISO() };
+      return { ...this.gymPublicProfile };
+    });
+  }
+
+  uploadMediaAsset(input: { ownerType: T.MediaAssetOwnerType; ownerId: string; altText?: string; file: Blob }): Promise<T.MediaAsset> {
+    return this.respond(() => {
+      if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
+      const now = nowISO();
+      return { id: mockUuid(), organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: "active", url: URL.createObjectURL(input.file), createdAt: now, updatedAt: now };
+    });
   }
 
   private customerWithPreference(persona: CustomerPersona): CustomerPersona {
@@ -415,6 +498,14 @@ export class MockGymOSApi implements GymOSApi {
         supportCases: this.platformSupportCases,
       }),
     }));
+  }
+
+  async previewMarketingPreferenceMigration(): Promise<import("@/lib/api/GymOSApi").MarketingPreferenceMigrationPreview> {
+    return { profileCount: 0, memberCount: 0, totalCount: 0, targetStatus: "unknown", marketingDelivery: "suppressed" };
+  }
+
+  async applyMarketingPreferenceMigration(): Promise<import("@/lib/api/GymOSApi").MarketingPreferenceMigrationProgress> {
+    return { id: `mock-marketing-${Date.now()}`, status: "completed", previewCount: 0, processedCount: 0, failedCount: 0, remainingCount: 0 };
   }
 
   async subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -891,6 +982,31 @@ export class MockGymOSApi implements GymOSApi {
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
+    this.membershipSaleIdempotency.clear();
+    this.membershipTransferIdempotency.clear();
+    this.ptTrainers = [];
+    this.ptPackages = [];
+    this.ptRules = [];
+    this.ptExceptions = [];
+    this.ptEntitlements = [];
+    this.ptBookings = [];
+    this.ptOrders = [];
+    this.operationalEmailKinds = [];
+    const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
+    if (trainer) {
+      const createdAt = nowISO();
+      const profileId = mockUuid();
+      this.ptTrainers = [{ id: profileId, organizationId: this.db.organization.id, userId: trainer.id, displayName: trainer.name, specialties: ["Strength", "Mobility"], languages: ["en", "ar"], branchIds: trainer.branchScope === "all" ? this.db.branches.map((branch) => branch.id) : trainer.branchIds, status: "published", createdAt, updatedAt: createdAt }];
+      this.ptRules = this.ptTrainers[0]!.branchIds.flatMap((branchId) => (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ id: mockUuid(), trainerProfileId: profileId, branchId, weekday, startMinute: 8 * 60, endMinute: 17 * 60, active: true })));
+    }
+    this.ptPackages = ([
+      [12, 240_000, 90],
+      [20, 360_000, 120],
+      [30, 480_000, 180],
+    ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
+    const listing = this.platformGyms[0];
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
@@ -1143,7 +1259,26 @@ export class MockGymOSApi implements GymOSApi {
       const s = this.membershipStatusOf(m);
       return s === "active" || s === "expiring" || s === "frozen";
     }).length;
-    return { ...plan, activeSubscribers };
+    return { ...plan, includedPtSessions: plan.includedPtSessions ?? 0, activeSubscribers };
+  }
+
+  private ensureIncludedPtEntitlement(membershipId: T.UUID): T.PtEntitlement | undefined {
+    const existing = this.ptEntitlements.find((item) => item.membershipId === membershipId && item.source === "included");
+    if (existing) return existing;
+    const membership = this.db.memberships.find((item) => item.id === membershipId);
+    if (!membership) return undefined;
+    const plan = this.db.plans.find((item) => item.id === membership.planId);
+    const sessions = plan?.includedPtSessions ?? 0;
+    if (sessions <= 0) return undefined;
+    const now = nowISO();
+    const entitlement: T.PtEntitlement = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, source: "included", membershipId, granted: sessions, reserved: 0, consumed: 0, revoked: 0, available: sessions, expiresAt: `${membership.endDate}T23:59:59.999Z`, status: "active", createdAt: now, updatedAt: now };
+    this.ptEntitlements.push(entitlement);
+    this.activity({ memberId: membership.memberId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} granted`, meta: { membershipId, entitlementId: entitlement.id } });
+    return entitlement;
+  }
+
+  private ptBookingView(booking: T.PtBooking): T.PtBooking {
+    return { ...booking };
   }
 
   private toLeadSummary(lead: T.Lead): T.LeadSummary {
@@ -1729,6 +1864,7 @@ export class MockGymOSApi implements GymOSApi {
         organizationId: this.db.organization.id,
         activeSubscribers: 0,
         status: "active",
+        includedPtSessions: input.includedPtSessions ?? 0,
         ...input,
       };
       this.db.plans.push(plan);
@@ -1766,9 +1902,300 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   // -------------------------------------------------------------------------
-  // memberships
-  // -------------------------------------------------------------------------
+  // personal training
+  getPtWorkspace(): Promise<T.PtWorkspace> {
+    return this.respond(() => {
+      this.require("pt.reports.read");
+      const paidOrderIds = new Set(this.ptOrders.filter((order) => order.status !== "pending_payment" && order.status !== "cancelled").map((order) => order.id));
+      const packageRevenue = this.ptOrders.reduce((total, order) => {
+        if (!paidOrderIds.has(order.id)) return total;
+        return total + (this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
+      }, 0);
+      return {
+        trainers: this.ptTrainers.map((item) => ({ ...item, availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
+        packages: this.ptPackages.map((item) => ({ ...item })),
+        bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
+        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item })),
+        metrics: {
+          packageRevenue: money(packageRevenue),
+          sessionsUsed: this.ptEntitlements.reduce((total, item) => total + item.consumed, 0),
+          sessionsReserved: this.ptEntitlements.reduce((total, item) => total + item.reserved, 0),
+          upcomingBookings: this.ptBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && Date.parse(item.startsAt) > Date.now()).length,
+          noShows: this.ptBookings.filter((item) => item.status === "no_show").length,
+        },
+      };
+    });
+  }
 
+  subscribePtWorkspace(onValue: (workspace: T.PtWorkspace) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getPtWorkspace(), onValue, onError);
+  }
+
+  getPtMemberExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> {
+    return this.respond(() => {
+      this.require("members.read");
+      const membership = this.db.memberships.find((item) => item.id === membershipId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      this.ensureIncludedPtEntitlement(membershipId);
+      const entitlements = this.ptEntitlements.filter((item) => item.memberId === membership.memberId).map((item) => ({ ...item, available: ptAvailableCredits(item) }));
+      return {
+        organizationId: this.db.organization.id,
+        membershipId,
+        availableSessions: entitlements.reduce((total, item) => total + item.available, 0),
+        reservedSessions: entitlements.reduce((total, item) => total + item.reserved, 0),
+        entitlements,
+        upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).map((item) => this.ptBookingView(item)),
+        orders: this.ptOrders.filter((item) => item.memberId === membership.memberId).map((item) => ({ ...item })),
+        trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => ({ ...item })),
+        packages: this.ptPackages.filter((item) => item.status === "active").map((item) => ({ ...item })),
+      };
+    });
+  }
+
+  subscribePtMemberExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getPtMemberExperience(membershipId), onValue, onError);
+  }
+
+  getCustomerPtExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> {
+    const internal = this.db.memberships.find((item) => item.id === membershipId);
+    if (internal) return this.getPtMemberExperience(membershipId);
+    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), packages: this.ptPackages.filter((item) => item.status === "active") }));
+  }
+
+  subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getCustomerPtExperience(membershipId), onValue, onError);
+  }
+
+  upsertPtTrainerProfile(input: T.UpsertPtTrainerProfileInput): Promise<T.PtTrainerProfile> {
+    return this.respond(() => {
+      this.require("pt.manage");
+      const staff = this.db.users.find((item) => item.id === input.userId && item.role === "trainer" && item.status === "active");
+      if (!staff) throw ApiError.of(ERR.VALIDATION, "Trainer profiles must link to an active trainer account.");
+      if (input.status === "published" && input.photoAssetId && !input.photoAlt?.trim()) throw ApiError.of(ERR.VALIDATION, "Published trainer photos require alt text.");
+      const existing = input.id ? this.ptTrainers.find((item) => item.id === input.id) : undefined;
+      const now = nowISO();
+      const value: T.PtTrainerProfile = { id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, userId: input.userId, displayName: input.displayName.trim(), bioEn: input.bioEn?.trim() || undefined, bioAr: input.bioAr?.trim() || undefined, specialties: [...input.specialties], languages: [...input.languages], branchIds: [...input.branchIds], photoAlt: input.photoAlt?.trim() || undefined, status: input.status, createdAt: existing?.createdAt ?? now, updatedAt: now };
+      if (existing) this.ptTrainers.splice(this.ptTrainers.indexOf(existing), 1, value); else this.ptTrainers.push(value);
+      this.audit({ category: "users", action: existing ? "pt.trainer.update" : "pt.trainer.create", entityType: "pt_trainer", entityId: value.id, entityLabel: value.displayName, summary: existing ? "Updated trainer profile" : "Created trainer profile" });
+      return { ...value };
+    });
+  }
+
+  upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> {
+    return this.respond(() => {
+      this.require("pt.manage");
+      if (!Number.isSafeInteger(input.totalPrice.amount) || input.totalPrice.amount <= 0 || input.validityDays < 1) throw ApiError.of(ERR.VALIDATION, "Package price and validity must be positive.");
+      const existing = input.id ? this.ptPackages.find((item) => item.id === input.id) : undefined;
+      const now = nowISO();
+      const value: T.PtPackage = { id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, name: input.name.trim(), sessionCount: input.sessionCount, totalPrice: { ...input.totalPrice }, validityDays: input.validityDays, branchAccess: input.branchAccess, branchIds: input.branchAccess === "all" ? [] : [...input.branchIds], status: input.status, createdAt: existing?.createdAt ?? now, updatedAt: now };
+      const candidate = [...this.ptPackages.filter((item) => item.id !== value.id && item.status === "active"), value].filter((item) => item.status === "active");
+      if (!ptPackageLadderIsValid(candidate)) throw ApiError.of(ERR.VALIDATION, "Larger PT packages cannot cost more per session than smaller packages.");
+      if (existing) this.ptPackages.splice(this.ptPackages.indexOf(existing), 1, value); else this.ptPackages.push(value);
+      this.audit({ category: "settings", action: existing ? "pt.package.update" : "pt.package.create", entityType: "pt_package", entityId: value.id, entityLabel: value.name, summary: existing ? "Updated PT package" : "Created PT package" });
+      return { ...value };
+    });
+  }
+
+  replacePtAvailability(input: T.ReplacePtAvailabilityInput): Promise<T.PtTrainerProfile> {
+    return this.respond(() => {
+      const profile = this.ptTrainers.find((item) => item.id === input.trainerProfileId);
+      if (!profile) throw ApiError.of(ERR.NOT_FOUND, "Trainer profile not found.");
+      const actor = this.actor();
+      if (profile.userId !== actor.id) this.require("pt.manage"); else this.require("pt.schedule.self");
+      for (const rule of input.rules) {
+        if (rule.startMinute < 0 || rule.endMinute > 1440 || rule.endMinute - rule.startMinute < 60) throw ApiError.of(ERR.VALIDATION, "Availability windows must contain at least one 60-minute session.");
+        if (input.rules.some((other) => other !== rule && other.branchId === rule.branchId && other.weekday === rule.weekday && rule.startMinute < other.endMinute && other.startMinute < rule.endMinute)) throw ApiError.of(ERR.CONFLICT, "Availability windows cannot overlap.");
+      }
+      this.ptRules = this.ptRules.filter((item) => item.trainerProfileId !== profile.id).concat(input.rules.map((rule) => ({ ...rule, id: mockUuid(), trainerProfileId: profile.id })));
+      this.ptExceptions = this.ptExceptions.filter((item) => item.trainerProfileId !== profile.id).concat(input.exceptions.map((exception) => ({ ...exception, id: mockUuid(), trainerProfileId: profile.id })));
+      this.audit({ category: "settings", action: "pt.availability.replace", entityType: "pt_trainer", entityId: profile.id, entityLabel: profile.displayName, summary: "Updated trainer availability" });
+      return { ...profile };
+    });
+  }
+
+  listPtAvailableSlots(input: { trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> {
+    return this.respond(() => {
+      const profile = this.ptTrainers.find((item) => item.id === input.trainerProfileId && item.status === "published");
+      if (!profile || !profile.branchIds.includes(input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trainer is not available at this branch.");
+      const slots: T.PtAvailableSlot[] = [];
+      for (let date = input.from; date <= input.to; date = addDays(date, 1)) {
+        const weekday = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as T.WeekdayKey[])[new Date(`${date}T12:00:00Z`).getUTCDay()]!;
+        const blocked = this.ptExceptions.filter((item) => item.trainerProfileId === profile.id && item.branchId === input.branchId && item.date === date);
+        for (const rule of this.ptRules.filter((item) => item.trainerProfileId === profile.id && item.branchId === input.branchId && item.weekday === weekday && item.active)) {
+          for (let minute = rule.startMinute; minute + 60 <= rule.endMinute; minute += 60) {
+            if (blocked.some((item) => item.startMinute === undefined || (minute < (item.endMinute ?? 1440) && (item.startMinute ?? 0) < minute + 60))) continue;
+            const hour = String(Math.floor(minute / 60)).padStart(2, "0");
+            const min = String(minute % 60).padStart(2, "0");
+            const startsAt = new Date(`${date}T${hour}:${min}:00+03:00`).toISOString();
+            const endsAt = new Date(Date.parse(startsAt) + 3_600_000).toISOString();
+            if (Date.parse(startsAt) <= Date.now()) continue;
+            if (this.ptBookings.some((item) => item.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(item.status) && item.startsAt < endsAt && startsAt < item.endsAt)) continue;
+            slots.push({ trainerProfileId: profile.id, branchId: input.branchId, startsAt, endsAt });
+          }
+        }
+      }
+      return slots;
+    });
+  }
+
+  listCustomerPtAvailableSlots(input: { membershipId: T.UUID; trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> {
+    return this.listPtAvailableSlots(input);
+  }
+
+  createPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => {
+      this.require("pt.book_for_member");
+      const existing = this.ptBookings.find((item) => item.id === input.idempotencyKey);
+      if (existing) return { ...existing };
+      const membership = this.db.memberships.find((item) => item.id === input.membershipId);
+      if (!membership || !["active", "expiring"].includes(this.membershipStatusOf(membership))) throw ApiError.of(ERR.VALIDATION, "An active, unfrozen membership is required for the session date.");
+      const member = this.db.members.find((item) => item.id === membership.memberId)!;
+      const trainer = this.ptTrainers.find((item) => item.id === input.trainerProfileId && item.status === "published");
+      const branch = this.db.branches.find((item) => item.id === input.branchId);
+      if (!trainer || !branch) throw ApiError.of(ERR.NOT_FOUND, "Trainer or branch not found.");
+      const date = input.startsAt.slice(0, 10) as T.ISODate;
+      const slots = await this.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId: branch.id, from: date, to: date });
+      if (!slots.some((slot) => slot.startsAt === input.startsAt)) throw ApiError.of(ERR.CONFLICT, "This PT slot is no longer available.");
+      this.ensureIncludedPtEntitlement(membership.id);
+      const entitlement = selectPtEntitlement(this.ptEntitlements.filter((item) => item.memberId === member.id), Date.parse(input.startsAt));
+      if (!entitlement) throw ApiError.of(ERR.VALIDATION, "No PT session credit is available.");
+      entitlement.reserved += 1; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
+      const now = nowISO();
+      const booking: T.PtBooking = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: member.id, memberName: member.fullName, trainerProfileId: trainer.id, trainerName: trainer.displayName, branchId: branch.id, branchName: branch.name, entitlementId: entitlement.id, startsAt: input.startsAt, endsAt: new Date(Date.parse(input.startsAt) + 3_600_000).toISOString(), status: "reserved", bookedById: this.actor().id, createdAt: now, updatedAt: now };
+      this.ptBookings.push(booking);
+      this.activity({ memberId: member.id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.id } });
+      this.audit({ category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.id, entityLabel: `${member.fullName} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: branch.id });
+      return { ...booking };
+    });
+  }
+
+  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> { return this.createPtBooking(input); }
+
+  cancelPtBooking(bookingId: T.UUID, input: { reason: string; cancelledByGym?: boolean }): Promise<T.PtBooking> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const booking = this.ptBookings.find((item) => item.id === bookingId);
+      if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      const policy = this.db.operationalPolicies.personalTraining;
+      const result = ptCancellationResult({ startsAt: Date.parse(booking.startsAt), cancelledAt: Date.now(), cutoffHours: policy.cancellationCutoffHours, cancelledByGym: Boolean(input.cancelledByGym) });
+      const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
+      entitlement.reserved = Math.max(0, entitlement.reserved - 1);
+      if (!result.restoreCredit) entitlement.consumed += 1;
+      entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
+      booking.status = result.status; booking.cancellationReason = input.reason.trim(); booking.updatedAt = nowISO();
+      this.activity({ memberId: booking.memberId, type: "pt_booking_cancelled", title: result.restoreCredit ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: input.reason, meta: { bookingId } });
+      return { ...booking };
+    });
+  }
+
+  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> { return this.cancelPtBooking(bookingId, { reason }); }
+
+  reschedulePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => {
+      this.requireReason(input.reason);
+      const booking = this.ptBookings.find((item) => item.id === input.bookingId);
+      if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId);
+      const trainer = this.ptTrainers.find((item) => item.id === input.trainerProfileId && item.status === "published");
+      const branch = this.db.branches.find((item) => item.id === input.branchId);
+      if (!trainer || !branch || !entitlement || Date.parse(input.startsAt) > Date.parse(entitlement.expiresAt)) throw ApiError.of(ERR.NOT_FOUND, "The new PT slot or its reserved credit is unavailable.");
+      const date = input.startsAt.slice(0, 10) as T.ISODate;
+      const priorStatus = booking.status;
+      booking.status = "cancelled";
+      const slots = await this.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId: branch.id, from: date, to: date });
+      booking.status = priorStatus;
+      if (!slots.some((slot) => slot.startsAt === input.startsAt)) throw ApiError.of(ERR.CONFLICT, "This PT slot is no longer available.");
+      const collision = this.ptBookings.some((item) => item.id !== booking.id && item.memberId === booking.memberId && ["reserved", "confirmed"].includes(item.status) && item.startsAt < new Date(Date.parse(input.startsAt) + 3_600_000).toISOString() && input.startsAt < item.endsAt);
+      if (collision) throw ApiError.of(ERR.CONFLICT, "The member already has a PT booking at this time.");
+      booking.trainerProfileId = trainer.id; booking.trainerName = trainer.displayName; booking.branchId = branch.id; booking.branchName = branch.name; booking.startsAt = input.startsAt; booking.endsAt = new Date(Date.parse(input.startsAt) + 3_600_000).toISOString(); booking.updatedAt = nowISO();
+      this.activity({ memberId: booking.memberId, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: input.reason, meta: { bookingId: booking.id, startsAt: booking.startsAt } });
+      this.audit({ category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.id, entityLabel: booking.memberName, summary: "Rescheduled PT booking without changing credit balance", reason: input.reason, branchId: branch.id });
+      return { ...booking };
+    });
+  }
+
+  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> { return this.reschedulePtBooking(input); }
+
+  completePtBooking(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "completed", input.reason); }
+  markPtBookingNoShow(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "no_show", input.reason); }
+
+  private finishPtBooking(bookingId: T.UUID, status: "completed" | "no_show", reason?: string): Promise<T.PtBooking> {
+    return this.respond(() => {
+      const booking = this.ptBookings.find((item) => item.id === bookingId);
+      if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
+      if (trainer?.userId !== this.actor().id) this.require("pt.manage"); else this.require("pt.outcome.self");
+      const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
+      entitlement.reserved = Math.max(0, entitlement.reserved - 1); entitlement.consumed += 1; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
+      booking.status = status; booking.outcomeReason = reason?.trim() || undefined; booking.updatedAt = nowISO();
+      this.activity({ memberId: booking.memberId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", body: reason, meta: { bookingId } });
+      return { ...booking };
+    });
+  }
+
+  requestPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> {
+    return this.respond(() => {
+      const prior = this.ptOrders.find((item) => item.id === input.idempotencyKey);
+      if (prior) return { ...prior };
+      const membership = this.db.memberships.find((item) => item.id === input.membershipId);
+      const ptPackage = this.ptPackages.find((item) => item.id === input.packageId && item.status === "active");
+      if (!membership || !ptPackage) throw ApiError.of(ERR.NOT_FOUND, "Membership or PT package not found.");
+      const charge: T.Charge = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, membershipId: membership.id, description: ptPackage.name, subtotal: { ...ptPackage.totalPrice }, discount: money(0), tax: money(0), total: { ...ptPackage.totalPrice }, paidAmount: money(0), outstandingAmount: { ...ptPackage.totalPrice }, status: "unpaid", createdAt: nowISO() };
+      this.db.charges.push(charge);
+      const now = nowISO();
+      const order: T.PtPackageOrder = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: membership.memberId, packageId: ptPackage.id, chargeId: charge.id, status: "pending_payment", createdAt: now, updatedAt: now };
+      this.ptOrders.push(order);
+      this.activity({ memberId: membership.memberId, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.id, chargeId: charge.id } });
+      return { ...order };
+    });
+  }
+
+  requestCustomerPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.requestPtPackage(input); }
+
+  refundPtPackage(orderId: T.UUID, input: T.RefundPtPackageInput): Promise<T.PtPackageOrder> {
+    return this.respond(() => {
+      this.require("pt.refund"); this.requireReason(input.reason);
+      const order = this.ptOrders.find((item) => item.id === orderId);
+      const entitlement = order?.entitlementId ? this.ptEntitlements.find((item) => item.id === order.entitlementId) : undefined;
+      if (!order || !entitlement || input.sessions < 1 || input.sessions > ptAvailableCredits(entitlement)) throw ApiError.of(ERR.VALIDATION, "Only unused PT credits can be refunded.");
+      entitlement.revoked += input.sessions; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
+      const ptPackage = this.ptPackages.find((item) => item.id === order.packageId)!;
+      const refundedSessions = (order.refundedSessions ?? 0) + input.sessions;
+      order.refundedSessions = refundedSessions;
+      order.refundedAmount = money(Math.floor((ptPackage.totalPrice.amount * refundedSessions) / ptPackage.sessionCount));
+      order.status = entitlement.available === 0 ? "refunded" : "partially_refunded"; order.updatedAt = nowISO();
+      this.activity({ memberId: order.memberId, type: "pt_credit_refunded", title: `${input.sessions} PT credit${input.sessions === 1 ? "" : "s"} refunded`, body: input.reason, meta: { orderId } });
+      return { ...order };
+    });
+  }
+
+  previewPtIntroductoryCredits(sessionCount = 2): Promise<T.PtIntroductoryCreditPreview> {
+    return this.respond(() => {
+      this.require("pt.manage");
+      const active = this.db.memberships.filter((membership) => ["active", "expiring"].includes(this.membershipStatusOf(membership)));
+      const alreadyGranted = active.filter((membership) => this.ptEntitlements.some((item) => item.membershipId === membership.id && item.source === "manual")).length;
+      return { eligibleMemberships: active.length - alreadyGranted, alreadyGranted, sessionCount };
+    });
+  }
+
+  applyPtIntroductoryCredits(input: { sessionCount: number; reason: string; idempotencyKey: string }): Promise<T.PtIntroductoryCreditApplyResult> {
+    return this.respond(() => {
+      this.require("pt.manage"); this.requireReason(input.reason);
+      const preview = this.db.memberships.filter((membership) => ["active", "expiring"].includes(this.membershipStatusOf(membership)));
+      let grantedMemberships = 0;
+      for (const membership of preview) {
+        if (this.ptEntitlements.some((item) => item.membershipId === membership.id && item.source === "manual")) continue;
+        const now = nowISO();
+        this.ptEntitlements.push({ id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, source: "manual", membershipId: membership.id, granted: input.sessionCount, reserved: 0, consumed: 0, revoked: 0, available: input.sessionCount, expiresAt: `${membership.endDate}T23:59:59.999Z`, status: "active", createdAt: now, updatedAt: now });
+        grantedMemberships += 1;
+      }
+      this.audit({ category: "memberships", action: "pt.introductory_credits.apply", entityType: "pt_credit_migration", entityId: input.idempotencyKey, entityLabel: "Existing active memberships", summary: `Granted introductory PT credits to ${grantedMemberships} memberships`, reason: input.reason });
+      return { eligibleMemberships: 0, alreadyGranted: preview.length, sessionCount: input.sessionCount, grantedMemberships, migrationId: input.idempotencyKey };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // memberships
   listMemberships(query: MembershipListQuery): Promise<T.Page<T.MembershipSummary>> {
     return this.respond(() => {
       this.require("members.read");
@@ -3906,6 +4333,20 @@ export class MockGymOSApi implements GymOSApi {
         summary: "Entry, membership, and operating-hour policies updated",
       });
       return this.getOrganizationSettingsSync();
+    });
+  }
+
+  getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {
+    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false }));
+  }
+
+  updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.requireReason(input.reason);
+      this.operationalEmailKinds = [...new Set(input.enabledKinds)];
+      this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} operational email types`, reason: input.reason });
+      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason };
     });
   }
 

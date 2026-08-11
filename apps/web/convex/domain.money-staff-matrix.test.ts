@@ -85,7 +85,7 @@ describe("TODO-006 persisted money and staff handler matrix", () => {
     const sales = t.withIdentity({ subject: "clerk-sales-a1" });
     const reception = t.withIdentity({ subject: "clerk-reception-a1" });
     const foreign = t.withIdentity({ subject: "clerk-owner-b" });
-    const input = { memberId: "member-a1", chargeId: "charge-a-refund", branchId: "branch-a1", amount: money(50_000), method: "card", idempotencyKey: "collect-a1" };
+    const input = { memberId: "member-a1", chargeId: "charge-a-refund", branchId: "branch-a1", amount: money(50_000), method: "card", externalReference: "POS-TODO-006-1", idempotencyKey: "collect-a1" };
 
     const first = await sales.mutation(api.domain.mutate, operation("payments.create", input)) as { receipt: { id: string }; payment: { id: string } };
     const replay = await sales.mutation(api.domain.mutate, operation("payments.create", input)) as { receipt: { id: string }; payment: { id: string } };
@@ -105,7 +105,7 @@ describe("TODO-006 persisted money and staff handler matrix", () => {
     const sales = t.withIdentity({ subject: "clerk-sales-a1" });
     const manager = t.withIdentity({ subject: "clerk-manager-a1" });
     const foreign = t.withIdentity({ subject: "clerk-owner-b" });
-    const collect = async (chargeId: string, key: string) => await sales.mutation(api.domain.mutate, operation("payments.create", { memberId: "member-a1", chargeId, branchId: "branch-a1", amount: chargeId === "charge-a-void" ? money(40_000) : money(50_000), method: "card", idempotencyKey: key })) as { payment: { id: string } };
+    const collect = async (chargeId: string, key: string) => await sales.mutation(api.domain.mutate, operation("payments.create", { memberId: "member-a1", chargeId, branchId: "branch-a1", amount: chargeId === "charge-a-void" ? money(40_000) : money(50_000), method: "card", externalReference: `POS-${key}`, idempotencyKey: key })) as { payment: { id: string } };
     const refundable = await collect("charge-a-refund", "for-refund");
     await expectCode(manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: refundable.payment.id, idempotencyKey: "refund-missing" })), "VALIDATION_ERROR");
     await expectCode(sales.mutation(api.domain.mutate, operation("payments.refund", { paymentId: refundable.payment.id, reason: "No permission", idempotencyKey: "refund-sales" })), "FORBIDDEN");
@@ -225,7 +225,7 @@ describe("TODO-006 persisted money and staff handler matrix", () => {
     const withinLimitAudit = facts.audits.find((event) => event.action === "membership.discount" && event.entityPublicId === withinLimit.membership.id);
     expect(withinLimitAudit).toMatchObject({ reason: "Approved member retention offer.", approvalStatus: "approved", before: { price: 50_000, discount: 0, approvalStatus: "none" }, after: { price: 50_000, discount: 10_000, approvalStatus: "approved" } });
 
-    const overLimitInput = { memberId: "member-a-over", discount: money(15_000), discountReason: "Manager-approved recovery offer.", payment: { amount: money(35_000), method: "card" }, idempotencyKey: "discount-sale-replay" };
+    const overLimitInput = { memberId: "member-a-over", discount: money(15_000), discountReason: "Manager-approved recovery offer.", payment: { amount: money(35_000), method: "card", externalReference: "POS-TODO-006-discount" }, idempotencyKey: "discount-sale-replay" };
     const overLimit = await sale(salesA1, overLimitInput) as { membership: { id: string; discountApprovalStatus: string }; charge: { id: string }; payment: { id: string }; receipt: { id: string } };
     const beforeSaleReplay = await factCounts(t);
     const overLimitReplay = await sale(salesA1, overLimitInput) as { membership: { id: string }; charge: { id: string }; payment: { id: string }; receipt: { id: string } };

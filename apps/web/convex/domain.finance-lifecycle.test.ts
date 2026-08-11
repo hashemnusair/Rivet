@@ -43,14 +43,14 @@ describe("Convex finance and reconciliation lifecycle", () => {
     await expectCode(reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", chargeId: "charge-card", amount: { amount: 1, currency: "JOD" }, method: "card", externalReference: "POS-OVER", idempotencyKey: "finance-card-over" })), "VALIDATION_ERROR");
 
     const cliq = await reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", chargeId: "charge-cliq", amount: { amount: 15_000, currency: "JOD" }, method: "cliq", externalReference: "CLIQ-200", idempotencyKey: "finance-cliq-1" })) as ReceiptDetail;
-    const voided = await manager.mutation(api.domain.mutate, operation("payments.void", { paymentId: cliq.payment.id, reason: "Duplicate CliQ transfer verified against the bank reference" })) as ReceiptDetail;
+    const voided = await manager.mutation(api.domain.mutate, operation("payments.void", { paymentId: cliq.payment.id, reason: "Duplicate CliQ transfer verified against the bank reference", idempotencyKey: "finance-void-1" })) as ReceiptDetail;
     expect(voided.payment.status).toBe("voided");
     expect(voided.charge).toMatchObject({ paidAmount: { amount: 0 }, outstandingAmount: { amount: 15_000 }, status: "unpaid" });
-    await expectCode(manager.mutation(api.domain.mutate, operation("payments.void", { paymentId: cliq.payment.id, reason: "Duplicate request" })), "PAYMENT_ALREADY_VOIDED");
+    await expectCode(manager.mutation(api.domain.mutate, operation("payments.void", { paymentId: cliq.payment.id, reason: "Duplicate request", idempotencyKey: "finance-void-duplicate" })), "PAYMENT_ALREADY_VOIDED");
 
-    const cardRefund = await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cardPaid.payment.id, amount: { amount: 4_000, currency: "JOD" }, reason: "Approved partial service refund" })) as ReceiptDetail;
+    const cardRefund = await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cardPaid.payment.id, amount: { amount: 4_000, currency: "JOD" }, reason: "Approved partial service refund", idempotencyKey: "finance-refund-1" })) as ReceiptDetail;
     expect(cardRefund.payment).toMatchObject({ status: "completed" });
-    await expectCode(manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cardPaid.payment.id, amount: { amount: 12_000, currency: "JOD" }, reason: "Exceeds remaining payment amount" })), "REFUND_EXCEEDS_AMOUNT");
+    await expectCode(manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cardPaid.payment.id, amount: { amount: 12_000, currency: "JOD" }, reason: "Exceeds remaining payment amount", idempotencyKey: "finance-refund-over" })), "REFUND_EXCEEDS_AMOUNT");
 
     const closedPositive = await reception.mutation(api.domain.mutate, operation("shifts.close", { shiftId: shiftOne.id, countedCash: { amount: 17_000, currency: "JOD" }, varianceExplanation: "Two dinars found above the expected drawer total" })) as Shift;
     expect(closedPositive).toMatchObject({ variance: { amount: 2_000 }, varianceApprovalStatus: "pending" });
@@ -59,7 +59,7 @@ describe("Convex finance and reconciliation lifecycle", () => {
     expect(approved.varianceApprovalStatus).toBe("approved");
 
     const shiftTwo = await reception.mutation(api.domain.mutate, operation("shifts.open", { branchId: "finance-branch", openingFloat: { amount: 5_000, currency: "JOD" } })) as Shift;
-    await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cash.payment.id, amount: { amount: 4_000, currency: "JOD" }, reason: "Approved cash service refund" }));
+    await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cash.payment.id, amount: { amount: 4_000, currency: "JOD" }, reason: "Approved cash service refund", idempotencyKey: "finance-cash-refund" }));
     const closedNegative = await reception.mutation(api.domain.mutate, operation("shifts.close", { shiftId: shiftTwo.id, countedCash: { amount: 0, currency: "JOD" }, varianceExplanation: "Drawer is one dinar below the expected balance after cash refund" })) as Shift;
     expect(closedNegative).toMatchObject({ variance: { amount: -1_000 }, varianceApprovalStatus: "pending" });
     const rejected = await manager.mutation(api.domain.mutate, operation("shifts.review", { shiftId: shiftTwo.id, decision: "rejected", note: "Recount did not support the submitted drawer explanation" })) as Shift;

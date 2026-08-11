@@ -672,6 +672,7 @@ describe("operational policies", () => {
       entry: { outstandingBalance: "block", expiryWarningDays: 10, duplicateScanWindowMinutes: 4, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
       operatingHours: [{ branchId: branch.id, days }],
+      personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
     });
 
     expect(updated.operationalPolicies.entry.outstandingBalance).toBe("block");
