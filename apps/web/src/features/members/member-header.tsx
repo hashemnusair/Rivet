@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, MoreHorizontal, Pencil, Phone, Snowflake, Sun, WalletCards } from "lucide-react";
+import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
@@ -77,6 +77,7 @@ export function MemberHeader({
       await invalidate();
     },
   });
+  const uploadPhoto = useApiMutation((api, file: File) => api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file }), { onSuccess: async () => { toast.success("Member photo uploaded and sanitized."); await invalidate(); } });
 
   const outstanding = member.outstanding;
   const canSell = can("memberships.sell");
@@ -101,7 +102,7 @@ export function MemberHeader({
       ) : null}
 
       <div className="flex flex-wrap items-start gap-5 px-5 py-5">
-        <Monogram name={member.fullName} size="xl" />
+        <div className="grid shrink-0 gap-1.5">{member.photoUrl ? <span role="img" aria-label={`${member.fullName} profile photo`} className="size-14 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(${member.photoUrl})` }} /> : <Monogram name={member.fullName} size="xl" />}{can("members.write") ? <label className="inline-flex cursor-pointer items-center justify-center gap-1 text-[9px] font-medium text-ink-3 hover:text-ink"><Camera className="size-3" />{uploadPhoto.isPending ? "Uploading…" : "Photo"}<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadPhoto.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadPhoto.mutate(file); event.currentTarget.value = ""; }} /></label> : null}</div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <h1 className="font-display text-[24px] font-semibold leading-none tracking-tight">{member.fullName}</h1>

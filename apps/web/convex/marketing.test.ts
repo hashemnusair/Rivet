@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { marketingOptedIn, marketingSuppressionReason, normalizeMarketingChannel } from "./marketing";
+import { marketingOptedIn, marketingPreferenceStatus, marketingSuppressionReason, normalizeMarketingChannel } from "./marketing";
 
 describe("marketing preference boundary", () => {
   it("honours an explicit preference object before legacy fields", () => {
-    expect(marketingOptedIn({ marketingOptIn: true, marketingPreference: { optedIn: false } })).toBe(false);
-    expect(marketingSuppressionReason({ marketingPreference: { optedIn: false } })).toBe("Recipient opted out of marketing messages");
+    expect(marketingOptedIn({ marketingOptIn: true, marketingPreference: { optedIn: false, source: "member_selected" } })).toBe(false);
+    expect(marketingSuppressionReason({ marketingPreference: { optedIn: false, source: "member_selected" } })).toBe("Recipient opted out of marketing messages");
     expect(marketingOptedIn({ marketingOptIn: false })).toBe(false);
-    expect(marketingOptedIn({})).toBe(true);
+    expect(marketingOptedIn({})).toBe(false);
+    expect(marketingOptedIn({ marketingOptIn: true })).toBe(false);
+    expect(marketingOptedIn({ marketingPreference: { optedIn: true, source: "member_selected" } })).toBe(true);
+    expect(marketingPreferenceStatus({})).toBe("unknown");
+    expect(marketingSuppressionReason({})).toBe("Recipient marketing preference is unknown");
   });
 
   it("normalizes every supported outbound channel through one boundary", () => {

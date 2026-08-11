@@ -26,6 +26,7 @@ import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
 import { marketingSuppressionReason } from "./marketing";
+import { enqueueOperationalEmail } from "./operationalEmail";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -76,6 +77,11 @@ const DEFAULT_OPERATIONAL_POLICIES = {
     minimumFreezeDays: 1,
     maximumExtensionDays: 365,
   },
+  personalTraining: {
+    sessionDurationMinutes: 60,
+    bookingHorizonDays: 30,
+    cancellationCutoffHours: 12,
+  },
   operatingHours: [],
 };
 // The public SaaS catalog is configuration, not demo tenant data. Production
@@ -89,7 +95,8 @@ const DEFAULT_PLATFORM_PLANS: Data[] = [
 ];
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
-const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
+const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
+const OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -115,38 +122,49 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = true): Data {
-  const optedIn = input.marketingOptIn === undefined ? fallbackOptedIn : marketingPreference(input.marketingOptIn);
+function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = false): Data {
   const requestedSource = optionalString(input.marketingPreferenceSource);
-  const source = requestedSource ?? (input.marketingOptIn === undefined ? "system_default" : "staff_selected");
+  const source = requestedSource ?? "system_default";
   if (!["system_default", "staff_selected", "member_selected", "imported"].includes(source)) {
     domainError("VALIDATION_ERROR", "Marketing preference source is invalid.", { correlationId: actor.correlationId });
   }
+  const explicit = source !== "system_default" && typeof input.marketingOptIn === "boolean";
+  const optedIn = explicit ? marketingPreference(input.marketingOptIn) : fallbackOptedIn && explicit;
+  const status = explicit ? (optedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
   return {
     optedIn,
+    status,
     source,
-    changedAt: isoNow(),
-    changedById: source === "system_default" ? undefined : publicUserId(actor.user),
-    wordingVersion: MARKETING_WORDING_VERSION,
+    changedAt: explicit ? isoNow() : undefined,
+    changedById: explicit ? publicUserId(actor.user) : undefined,
+    wordingVersion: explicit ? MARKETING_WORDING_VERSION : undefined,
   };
 }
 
 function customerPreferenceFromProfile(value: Data): Data {
-  const optedIn = value.marketingOptIn === undefined ? true : booleanValue(value.marketingOptIn, true);
+  const storedStatus = optionalString(value.marketingPreferenceStatus);
   const requestedSource = stringValue(value.marketingPreferenceSource, "system_default");
   const source = requestedSource === "member_selected" ? "member_selected" : "system_default";
+  const legacyOptedIn = booleanValue(value.marketingOptIn, false);
+  const status = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
+    ? storedStatus
+    : source === "member_selected" ? (legacyOptedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
+  const optedIn = status === "explicit_opt_in";
   const changedAt = numberValue(value.marketingPreferenceChangedAt);
   return {
     optedIn,
+    status,
     source,
-    changedAt: changedAt > 0 ? new Date(changedAt).toISOString() : optionalString(value.createdAt),
-    wordingVersion: stringValue(value.marketingPreferenceWordingVersion, "legacy-boolean"),
+    changedAt: status !== "unknown" && changedAt > 0 ? new Date(changedAt).toISOString() : undefined,
+    wordingVersion: status !== "unknown" ? stringValue(value.marketingPreferenceWordingVersion, MARKETING_WORDING_VERSION) : undefined,
   };
 }
 
 function customerPreferenceEventView(value: Data): Data {
+  const status = optionalString(value.status) ?? (stringValue(value.source, "system_default") === "system_default" ? "unknown" : booleanValue(value.optedIn, false) ? "explicit_opt_in" : "explicit_opt_out");
   return {
-    optedIn: booleanValue(value.optedIn, true),
+    optedIn: status === "explicit_opt_in",
+    status,
     source: stringValue(value.source, "system_default") === "member_selected" ? "member_selected" : "system_default",
     changedAt: new Date(numberValue(value.changedAt)).toISOString(),
     wordingVersion: stringValue(value.wordingVersion, MARKETING_WORDING_VERSION),
@@ -331,39 +349,20 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   messageClass?: "service" | "marketing";
   marketingOptIn?: boolean;
 }): Promise<void> {
-  const existing = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", input.organizationId).eq("entityType", "operationalEmailDelivery")).collect())
-    .find((record) => stringValue(data(record.data).dedupeKey) === input.dedupeKey);
-  if (existing) return;
-  const now = Date.now();
-  const id = `EMAIL-${newPublicId()}`;
   const suppressionReason = input.messageClass === "marketing"
     ? marketingSuppressionReason({ marketingOptIn: input.marketingOptIn })
     : undefined;
-  await ctx.db.insert("domainRecords", {
+  await enqueueOperationalEmail(ctx, {
     organizationId: input.organizationId,
-    entityType: "operationalEmailDelivery",
-    publicId: id,
     branchId: input.branchId,
-    createdAt: now,
-    updatedAt: now,
-    data: {
-      id,
-      kind: input.kind,
-      messageClass: input.messageClass ?? "service",
-      templateVersion: input.templateVersion,
-      language: input.language ?? "en",
-      recipientReference: input.recipientReference,
-      recipientEmail: input.recipientEmail,
-      dedupeKey: input.dedupeKey,
-      providerId: undefined,
-      attempts: [],
-      retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
-      nextAttemptAt: undefined,
-      status: "suppressed",
-      suppressionReason: suppressionReason ?? "Sandbox default; this message type is not enabled for external delivery",
-      queuedAt: utcIso(now),
-      updatedAt: utcIso(now),
-    },
+    kind: input.kind,
+    messageClass: input.messageClass,
+    templateVersion: input.templateVersion,
+    language: input.language,
+    recipientReference: input.recipientReference,
+    recipientEmail: input.recipientEmail,
+    dedupeKey: input.dedupeKey,
+    suppressionReason,
   });
 }
 
@@ -692,6 +691,7 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
     operationalPolicies: {
       entry: { ...DEFAULT_OPERATIONAL_POLICIES.entry, ...data(operational.entry) },
       membership: { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operational.membership) },
+      personalTraining: { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(operational.personalTraining) },
       operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
     },
   };
@@ -701,6 +701,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const value = data(raw);
   const entry = data(value.entry);
   const membership = data(value.membership);
+  const personalTraining = data(value.personalTraining);
   const outstandingBalance = stringValue(entry.outstandingBalance, "warn");
   if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Outstanding-balance policy is invalid.", { correlationId: actor.correlationId });
   const expiryWarningDays = numberValue(entry.expiryWarningDays, 7);
@@ -708,12 +709,16 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const renewalWindowDays = numberValue(membership.renewalWindowDays, 14);
   const minimumFreezeDays = numberValue(membership.minimumFreezeDays, 1);
   const maximumExtensionDays = numberValue(membership.maximumExtensionDays, 365);
+  const bookingHorizonDays = numberValue(personalTraining.bookingHorizonDays, 30);
+  const cancellationCutoffHours = numberValue(personalTraining.cancellationCutoffHours, 12);
   const integerInRange = (candidate: number, minimum: number, maximum: number) => Number.isInteger(candidate) && candidate >= minimum && candidate <= maximum;
   if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "Expiry warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
   if (!integerInRange(duplicateScanWindowMinutes, 1, 15)) domainError("VALIDATION_ERROR", "Duplicate-scan window must be between 1 and 15 minutes.", { correlationId: actor.correlationId });
   if (!integerInRange(renewalWindowDays, 1, 90)) domainError("VALIDATION_ERROR", "Renewal window must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(minimumFreezeDays, 1, 30)) domainError("VALIDATION_ERROR", "Minimum freeze must be between 1 and 30 days.", { correlationId: actor.correlationId });
   if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(bookingHorizonDays, 1, 90)) domainError("VALIDATION_ERROR", "PT booking horizon must be between 1 and 90 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(cancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "PT cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
   const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
   const operatingHours: Data[] = [];
   for (const rawSchedule of arrayValue(value.operatingHours)) {
@@ -737,6 +742,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   return {
     entry: { outstandingBalance, expiryWarningDays, duplicateScanWindowMinutes, enforceOperatingHours: booleanValue(entry.enforceOperatingHours) },
     membership: { allowOverlappingMemberships: booleanValue(membership.allowOverlappingMemberships), renewalWindowDays, minimumFreezeDays, maximumExtensionDays },
+    personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays, cancellationCutoffHours },
     operatingHours,
   };
 }
@@ -913,12 +919,21 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
     .reduce((sum, payment) => sum + amountOf(payment.amount), 0);
   const recent = checkins.map((checkin) => businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK)).sort().at(-1);
   const storedPreference = data(value.marketingPreference);
-  const marketingOptIn = marketingPreference(storedPreference.optedIn ?? value.marketingOptIn);
+  const storedStatus = optionalString(storedPreference.status);
+  const marketingStatus = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
+    ? storedStatus
+    : optionalString(storedPreference.source) && storedPreference.source !== "system_default"
+      ? (marketingPreference(storedPreference.optedIn) ? "explicit_opt_in" : "explicit_opt_out")
+      : value.marketingOptIn === false ? "explicit_opt_out" : "unknown";
+  const marketingOptIn = marketingStatus === "explicit_opt_in";
   const marketingPreferenceValue: Data = typeof storedPreference.source === "string"
-    ? { ...storedPreference, optedIn: marketingOptIn }
-    : { optedIn: marketingOptIn, source: "system_default", changedAt: optionalString(value.createdAt), wordingVersion: "legacy-boolean" };
+    ? { ...storedPreference, optedIn: marketingOptIn, status: marketingStatus }
+    : { optedIn: false, status: "unknown", source: "system_default" };
+  const photoAsset = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", stringValue(value.id))).collect()).find((asset) => asset.status === "active" && asset.visibility === "private");
+  const photoUrl = photoAsset ? (await ctx.storage.getUrl(photoAsset.storageId)) ?? undefined : undefined;
   const detail: Data = {
     ...summary,
+    photoUrl,
     gender: optionalString(value.gender),
     dateOfBirth: optionalString(value.dateOfBirth),
     preferredLanguage: stringValue(value.preferredLanguage, "en"),
@@ -947,7 +962,7 @@ async function toPlan(ctx: ReadContext, actor: ActorContext, value: Data): Promi
     .map((record) => data(record.data))
     .filter((membership) => membership.planId === value.id)
     .filter((membership) => ["active", "expiring", "frozen"].includes(statusOfMembership(membership, todayIn(actor.organization.timezone || TZ_FALLBACK)))).length;
-  return { ...value, activeSubscribers: subscribers, basePrice: { ...data(value.basePrice), currency: currencyOf(value.basePrice, actor.organization.currency) } };
+  return { ...value, includedPtSessions: numberValue(value.includedPtSessions), activeSubscribers: subscribers, basePrice: { ...data(value.basePrice), currency: currencyOf(value.basePrice, actor.organization.currency) } };
 }
 
 async function toMembership(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
@@ -1117,7 +1132,7 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined,
     actorId: row.actorPublicId,
     actorName: row.actorName,
-    actorRole: frontendRole(row.actorRole),
+    actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole),
     category: row.category,
     action: row.action,
     entityType: row.entityType,
@@ -1150,12 +1165,19 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
     areas: arrayValue(value.areas),
     category: stringValue(value.category),
     audience: stringValue(value.audience),
-    rating: numberValue(value.rating),
-    reviewCount: numberValue(value.reviewCount),
+    rating: typeof value.rating === "number" ? numberValue(value.rating) : undefined,
+    reviewCount: typeof value.reviewCount === "number" ? numberValue(value.reviewCount) : undefined,
     memberCount: numberValue(value.memberCount),
     branchCount: numberValue(value.branchCount),
     fromPriceMinor: numberValue(value.fromPriceMinor),
     amenities: arrayValue(value.amenities),
+    taglineAr: optionalString(value.taglineAr),
+    descriptionAr: optionalString(value.descriptionAr),
+    contactEmail: optionalString(value.contactEmail),
+    contactPhone: optionalString(value.contactPhone),
+    websiteUrl: optionalString(value.websiteUrl),
+    instagramUrl: optionalString(value.instagramUrl),
+    profileVersion: value.profileVersion === undefined ? undefined : numberValue(value.profileVersion),
     accent: stringValue(value.accent),
     featured: booleanValue(value.featured),
     subscriptionStatus: stringValue(value.subscriptionStatus),
@@ -1187,7 +1209,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
 }
 
 function acceptsPublicTrialRequests(value: Data): boolean {
-  return booleanValue(value.isPublic) && ["active", "trial"].includes(stringValue(value.subscriptionStatus));
+  return booleanValue(value.isPublic) && booleanValue(value.profilePublished, true) && ["active", "trial"].includes(stringValue(value.subscriptionStatus));
 }
 
 function gymApplicationView(application: Doc<"gymApplications">): Data {
@@ -1283,7 +1305,8 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
     phone: value.phone,
     initials: value.initials,
     context: value.context,
-    marketingOptIn: booleanValue(preference.optedIn, true),
+    marketingOptIn: booleanValue(preference.optedIn, false),
+    marketingPreferenceStatus: stringValue(preference.status, "unknown") as "explicit_opt_in" | "explicit_opt_out" | "unknown",
     marketingPreferenceSource: stringValue(preference.source, "system_default") === "member_selected" ? "member_selected" as const : "system_default" as const,
     marketingPreferenceChangedAt: Number.isFinite(preferenceChangedAt) ? preferenceChangedAt : now,
     marketingPreferenceWordingVersion: stringValue(preference.wordingVersion, MARKETING_WORDING_VERSION),
@@ -1292,10 +1315,11 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
     await ctx.db.patch(existing._id, { ...stored, updatedAt: now });
   } else {
     await ctx.db.insert("customerProfiles", { ...stored, createdAt: now, updatedAt: now });
-    await ctx.db.insert("customerMarketingPreferenceEvents", {
+    if (preference.status !== "unknown") await ctx.db.insert("customerMarketingPreferenceEvents", {
       userId,
       customerProfileId: value.id,
       optedIn: preference.optedIn,
+      status: preference.status as "explicit_opt_in" | "explicit_opt_out",
       source: "system_default",
       wordingVersion: stringValue(preference.wordingVersion, MARKETING_WORDING_VERSION),
       changedAt: now,
@@ -1314,10 +1338,55 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     .map((event) => customerPreferenceEventView(event));
   const preference = history.at(-1) ?? data(profile?.marketingPreference ?? customerPreferenceFromProfile({ createdAt: Date.now() }));
   const preferenceHistory = history.length > 0 ? history : [preference];
-  const memberships = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
-    .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
-    .filter((value) => belongsToAuthenticatedCustomer(value, userId, optionalString(profile?.id)))
-    .map((value) => ({ ...value, qrValue: "" }));
+  const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const ownedMembershipRows = membershipRows
+    .map((record): { record: DomainRecord; projection: Data } => ({ record, projection: { id: record.publicId, ...data(record.data) } }))
+    .filter(({ projection }) => belongsToAuthenticatedCustomer(projection, userId, optionalString(profile?.id)));
+  const memberships = await Promise.all(ownedMembershipRows.map(async ({ record: projectionRecord, projection }) => {
+    const internalMembershipId = optionalString(projection.membershipId) ?? stringValue(projection.id);
+    const tenant = await ctx.db.get(projectionRecord.organizationId);
+    if (!tenant) return { ...projection, qrValue: "" };
+    const [membershipRecord, memberRecord, marketplace] = await Promise.all([
+      ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", tenant._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique(),
+      optionalString(projection.memberId)
+        ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", tenant._id).eq("entityType", "member").eq("publicId", stringValue(projection.memberId))).unique()
+        : Promise.resolve(null),
+      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "marketplaceGym")).first(),
+    ]);
+    if (!membershipRecord) return { ...projection, qrValue: "" };
+    const membership = data(membershipRecord.data);
+    const member = memberRecord ? data(memberRecord.data) : {};
+    const timezone = tenant.timezone || TZ_FALLBACK;
+    const [planRecord, checkIns, charges] = await Promise.all([
+      optionalString(membership.planId)
+        ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", tenant._id).eq("entityType", "plan").eq("publicId", stringValue(membership.planId))).unique()
+        : Promise.resolve(null),
+      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "checkIn")).collect(),
+      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "charge")).collect(),
+    ]);
+    const memberId = optionalString(member.id) ?? optionalString(membership.memberId) ?? stringValue(projection.memberId);
+    const validCheckIns = checkIns.map((row) => data(row.data)).filter((item) => item.memberId === memberId && item.decision !== "blocked").sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+    const month = todayIn(timezone).slice(0, 7);
+    const balanceMinor = charges.map((row) => data(row.data)).filter((item) => item.memberId === memberId && item.status !== "void").reduce((sum, item) => sum + amountOf(item.outstandingAmount), 0);
+    const marketplaceValue = data(marketplace?.data);
+    const branch = membershipRecord.branchId ? await ctx.db.get(membershipRecord.branchId) : null;
+    const directoryBranch = arrayValue(marketplaceValue.branches).map(data).find((item) => item.internalBranchId === membership.homeBranchId || item.internalBranchId === (branch ? publicBranchId(branch) : undefined));
+    return {
+      ...projection,
+      gymId: marketplace?.publicId ?? stringValue(projection.gymId, publicOrganizationId(tenant)),
+      branchId: optionalString(directoryBranch?.id) ?? stringValue(projection.branchId),
+      memberNumber: optionalString(member.memberNumber) ?? stringValue(projection.memberNumber),
+      planName: stringValue(data(planRecord?.data).name, stringValue(projection.planName)),
+      status: statusOfMembership(membership, todayIn(timezone)),
+      startDate: stringValue(membership.startDate, stringValue(projection.startDate)),
+      endDate: stringValue(membership.endDate, stringValue(projection.endDate)),
+      visitsThisMonth: validCheckIns.filter((item) => businessDate(stringValue(item.occurredAt), timezone).startsWith(month)).length,
+      remainingVisits: membership.remainingVisits,
+      balanceMinor,
+      lastCheckInAt: optionalString(validCheckIns[0]?.occurredAt) ?? optionalString(projection.lastCheckInAt),
+      qrValue: "",
+    };
+  }));
   const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect())
     .map((record): Data => ({ id: record.publicId, ...data(record.data) }))
     .filter((value) => belongsToAuthenticatedCustomer(value, userId, optionalString(profile?.id)));
@@ -1432,19 +1501,8 @@ async function updateCustomerMarketingPreference(ctx: MutationCtx, input: Data):
   if (!profile) domainError("CONFIGURATION_ERROR", "The member profile could not be created.");
 
   const optedIn = input.optedIn;
-  const currentOptedIn = profile.marketingOptIn ?? true;
+  const currentOptedIn = profile.marketingPreferenceStatus === "explicit_opt_in";
   const currentSource = profile.marketingPreferenceSource ?? "system_default";
-  const existingPreferenceEvents = await ctx.db.query("customerMarketingPreferenceEvents").withIndex("by_user_id", (q) => q.eq("userId", userId)).collect();
-  if (existingPreferenceEvents.length === 0) {
-    await ctx.db.insert("customerMarketingPreferenceEvents", {
-      userId,
-      customerProfileId: profile.publicId,
-      optedIn: true,
-      source: "system_default",
-      wordingVersion: MARKETING_WORDING_VERSION,
-      changedAt: profile.createdAt,
-    });
-  }
   if (currentOptedIn === optedIn && currentSource === "member_selected") {
     const experience = await customerExperience(ctx);
     if (!experience.customer) domainError("NOT_FOUND", "Member profile not found.");
@@ -1454,6 +1512,7 @@ async function updateCustomerMarketingPreference(ctx: MutationCtx, input: Data):
   const changedAt = Date.now();
   await ctx.db.patch(profile._id, {
     marketingOptIn: optedIn,
+    marketingPreferenceStatus: optedIn ? "explicit_opt_in" : "explicit_opt_out",
     marketingPreferenceSource: "member_selected",
     marketingPreferenceChangedAt: changedAt,
     marketingPreferenceWordingVersion: MARKETING_WORDING_VERSION,
@@ -1463,6 +1522,7 @@ async function updateCustomerMarketingPreference(ctx: MutationCtx, input: Data):
     userId,
     customerProfileId: profile.publicId,
     optedIn,
+    status: optedIn ? "explicit_opt_in" : "explicit_opt_out",
     source: "member_selected",
     wordingVersion: MARKETING_WORDING_VERSION,
     changedAt,
@@ -1664,6 +1724,301 @@ async function automationExecutionView(ctx: ReadContext, actor: ActorContext, re
   };
 }
 
+function ptAvailable(value: { granted: number; reserved: number; consumed: number; revoked: number }): number {
+  return Math.max(0, value.granted - value.reserved - value.consumed - value.revoked);
+}
+
+async function ptPackageView(ctx: ReadContext, organization: Organization, value: Doc<"ptPackages">): Promise<Data> {
+  const branchIds = await Promise.all(value.branchIds.map(async (id) => {
+    const branch = await ctx.db.get(id);
+    return branch ? publicBranchId(branch) : undefined;
+  }));
+  return {
+    id: value.publicId,
+    organizationId: publicOrganizationId(organization),
+    name: value.name,
+    sessionCount: value.sessionCount,
+    totalPrice: money(value.totalPriceMinor, value.currency),
+    validityDays: value.validityDays,
+    branchAccess: value.branchAccess,
+    branchIds: branchIds.filter((id): id is string => Boolean(id)),
+    status: value.status,
+    createdAt: utcIso(value.createdAt),
+    updatedAt: utcIso(value.updatedAt),
+  };
+}
+
+async function ptTrainerView(ctx: ReadContext, organization: Organization, value: Doc<"ptTrainerProfiles">): Promise<Data> {
+  const [branchIds, rules, exceptions] = await Promise.all([Promise.all(value.branchIds.map(async (id) => {
+    const branch = await ctx.db.get(id);
+    return branch ? publicBranchId(branch) : undefined;
+  })), ctx.db.query("ptAvailabilityRules").withIndex("by_trainer", (q) => q.eq("trainerProfileId", value._id)).collect(), ctx.db.query("ptAvailabilityExceptions").withIndex("by_trainer_date", (q) => q.eq("trainerProfileId", value._id)).collect()]);
+  const branchPublicIds = new Map<string, string>();
+  await Promise.all([...new Set([...rules.map((item) => item.branchId), ...exceptions.map((item) => item.branchId)])].map(async (branchId) => {
+    const branch = await ctx.db.get(branchId);
+    if (branch) branchPublicIds.set(String(branchId), publicBranchId(branch));
+  }));
+  let photoUrl: string | undefined;
+  if (value.photoAssetId) {
+    const asset = await ctx.db
+      .query("mediaAssets")
+      .withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", value.photoAssetId!))
+      .unique();
+    if (asset && asset.status === "active" && asset.visibility === "public") photoUrl = (await ctx.storage.getUrl(asset.storageId)) ?? undefined;
+  }
+  return {
+    id: value.publicId,
+    organizationId: publicOrganizationId(organization),
+    userId: publicUserId((await ctx.db.get(value.userId))!),
+    displayName: value.displayName,
+    bioEn: value.bioEn,
+    bioAr: value.bioAr,
+    specialties: value.specialties,
+    languages: value.languages,
+    branchIds: branchIds.filter((id): id is string => Boolean(id)),
+    photoUrl,
+    photoAlt: value.photoAlt,
+    status: value.status,
+    availabilityRules: rules.map((rule) => ({ id: rule.publicId, trainerProfileId: value.publicId, branchId: branchPublicIds.get(String(rule.branchId)) ?? String(rule.branchId), weekday: rule.weekday, startMinute: rule.startMinute, endMinute: rule.endMinute, active: rule.active })),
+    availabilityExceptions: exceptions.map((exception) => ({ id: exception.publicId, trainerProfileId: value.publicId, branchId: branchPublicIds.get(String(exception.branchId)) ?? String(exception.branchId), date: exception.date, startMinute: exception.startMinute, endMinute: exception.endMinute, reason: exception.reason })),
+    createdAt: utcIso(value.createdAt),
+    updatedAt: utcIso(value.updatedAt),
+  };
+}
+
+function ptEntitlementView(organization: Organization, value: Doc<"ptEntitlements">): Data {
+  const expired = value.expiresAt < Date.now();
+  const notStarted = (value.startsAt ?? 0) > Date.now();
+  return {
+    id: value.publicId,
+    organizationId: publicOrganizationId(organization),
+    memberId: value.memberPublicId,
+    source: value.source,
+    membershipId: value.membershipPublicId,
+    packageOrderId: value.packageOrderId,
+    granted: value.granted,
+    reserved: value.reserved,
+    consumed: value.consumed,
+    revoked: value.revoked,
+    available: expired || notStarted || value.status !== "active" ? 0 : ptAvailable(value),
+    startsAt: value.startsAt ? utcIso(value.startsAt) : undefined,
+    expiresAt: utcIso(value.expiresAt),
+    status: expired && value.status === "active" ? "expired" : value.status,
+    createdAt: utcIso(value.createdAt),
+    updatedAt: utcIso(value.updatedAt),
+  };
+}
+
+async function ptBookingView(ctx: ReadContext, organization: Organization, value: Doc<"ptBookings">): Promise<Data> {
+  const [memberRecord, trainer, branch, bookedBy] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", value.memberPublicId)).unique(),
+    ctx.db.get(value.trainerProfileId),
+    ctx.db.get(value.branchId),
+    value.bookedByUserId ? ctx.db.get(value.bookedByUserId) : null,
+  ]);
+  return {
+    id: value.publicId,
+    organizationId: publicOrganizationId(organization),
+    memberId: value.memberPublicId,
+    memberName: stringValue(data(memberRecord?.data).fullName, "Member"),
+    trainerProfileId: trainer?.publicId ?? "",
+    trainerName: trainer?.displayName ?? "Trainer",
+    branchId: branch ? publicBranchId(branch) : "",
+    branchName: branch?.name ?? "Branch",
+    entitlementId: (await ctx.db.get(value.entitlementId))?.publicId ?? "",
+    startsAt: utcIso(value.startsAt),
+    endsAt: utcIso(value.endsAt),
+    status: value.status,
+    cancellationReason: value.cancellationReason,
+    outcomeReason: value.outcomeReason,
+    bookedById: bookedBy ? publicUserId(bookedBy) : undefined,
+    createdAt: utcIso(value.createdAt),
+    updatedAt: utcIso(value.updatedAt),
+  };
+}
+
+async function ptPackageOrderView(ctx: ReadContext, organization: Organization, value: Doc<"ptPackageOrders">): Promise<Data> {
+  return {
+    id: value.publicId,
+    organizationId: publicOrganizationId(organization),
+    memberId: value.memberPublicId,
+    packageId: (await ctx.db.get(value.packageId))?.publicId ?? "",
+    chargeId: value.chargePublicId,
+    status: value.status,
+    entitlementId: value.entitlementId ? (await ctx.db.get(value.entitlementId))?.publicId : undefined,
+    paidAt: value.paidAt ? utcIso(value.paidAt) : undefined,
+    refundedSessions: value.refundedSessions,
+    refundedAmount: value.refundedMinor === undefined ? undefined : money(value.refundedMinor, organization.currency),
+    createdAt: utcIso(value.createdAt),
+    updatedAt: utcIso(value.updatedAt),
+  };
+}
+
+function ptPackageLadderIsValid(packages: Array<{ sessionCount: number; totalPriceMinor: number }>): boolean {
+  const sorted = [...packages].sort((left, right) => left.sessionCount - right.sessionCount);
+  return sorted.every((item, index) => {
+    const previous = sorted[index - 1];
+    return !previous || item.totalPriceMinor * previous.sessionCount <= previous.totalPriceMinor * item.sessionCount;
+  });
+}
+
+function ptWallTime(date: string, minute: number, timezone: string): number {
+  const [year, month, day] = dateParts(date);
+  const target = Date.UTC(year, month - 1, day, Math.floor(minute / 60), minute % 60);
+  let guess = target;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23" }).formatToParts(new Date(guess));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const rendered = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour) % 24, Number(values.minute));
+    guess += target - rendered;
+  }
+  return guess;
+}
+
+function weekdayForDate(date: string): typeof WEEKDAYS[number] {
+  return WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()] ?? "sun";
+}
+
+async function ptSlots(
+  ctx: ReadContext,
+  organization: Organization,
+  trainer: Doc<"ptTrainerProfiles">,
+  branch: Branch,
+  from: string,
+  to: string,
+): Promise<Data[]> {
+  if (diffDays(from, to) < 0 || diffDays(from, to) > 90) domainError("VALIDATION_ERROR", "PT availability may be requested for at most 90 days.");
+  const [rules, exceptions, bookings] = await Promise.all([
+    ctx.db.query("ptAvailabilityRules").withIndex("by_trainer", (q) => q.eq("trainerProfileId", trainer._id)).collect(),
+    ctx.db.query("ptAvailabilityExceptions").withIndex("by_trainer_date", (q) => q.eq("trainerProfileId", trainer._id).gte("date", from).lte("date", to)).collect(),
+    ctx.db.query("ptBookings").withIndex("by_trainer_start", (q) => q.eq("trainerProfileId", trainer._id).gte("startsAt", ptWallTime(from, 0, organization.timezone || TZ_FALLBACK)).lte("startsAt", ptWallTime(addDays(to, 1), 0, organization.timezone || TZ_FALLBACK))).collect(),
+  ]);
+  const slots: Data[] = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) {
+    const dayRules = rules.filter((rule) => rule.active && rule.branchId === branch._id && rule.weekday === weekdayForDate(date));
+    const dayExceptions = exceptions.filter((exception) => exception.branchId === branch._id && exception.date === date);
+    for (const rule of dayRules) {
+      for (let minute = rule.startMinute; minute + 60 <= rule.endMinute; minute += 60) {
+        const startsAt = ptWallTime(date, minute, organization.timezone || TZ_FALLBACK);
+        const endsAt = startsAt + 3_600_000;
+        if (startsAt <= Date.now()) continue;
+        if (dayExceptions.some((exception) => exception.startMinute === undefined || (minute < (exception.endMinute ?? 1_440) && (exception.startMinute ?? 0) < minute + 60))) continue;
+        if (bookings.some((booking) => ["reserved", "confirmed"].includes(booking.status) && booking.startsAt < endsAt && startsAt < booking.endsAt)) continue;
+        slots.push({ trainerProfileId: trainer.publicId, branchId: publicBranchId(branch), startsAt: utcIso(startsAt), endsAt: utcIso(endsAt) });
+      }
+    }
+  }
+  return slots;
+}
+
+async function ptMemberExperience(ctx: ReadContext, actor: ActorContext, membershipRecord: DomainRecord): Promise<Data> {
+  const membership = data(membershipRecord.data);
+  const [entitlements, bookings, orders, trainers, packages] = await Promise.all([
+    ctx.db.query("ptEntitlements").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(membership.memberId))).collect(),
+    ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(membership.memberId))).collect(),
+    ctx.db.query("ptPackageOrders").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(membership.memberId))).collect(),
+    ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
+  ]);
+  const entitlementViews = entitlements.map((item) => ptEntitlementView(actor.organization, item));
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    membershipId: membershipRecord.publicId,
+    availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
+    reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    entitlements: entitlementViews,
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
+    orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, actor.organization, item))),
+    trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, actor.organization, item))),
+    packages: await Promise.all(packages.map((item) => ptPackageView(ctx, actor.organization, item))),
+  };
+}
+
+async function customerPtExperience(ctx: ReadContext, membershipId: string): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
+  const customerMembership = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
+    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  if (!customerMembership) domainError("NOT_FOUND", "Membership not found.");
+  const organization = await ctx.db.get(customerMembership.organizationId);
+  if (!organization || organization.status === "suspended" || organization.status === "cancelled") domainError("NOT_FOUND", "Membership not found.");
+  const customerValue = data(customerMembership.data);
+  const internalMembershipId = optionalString(customerValue.membershipId) ?? optionalString(customerValue.internalMembershipId) ?? customerMembership.publicId;
+  const internalMembership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique();
+  const memberId = optionalString(customerValue.memberId) ?? optionalString(data(internalMembership?.data).memberId);
+  const [entitlements, bookings, orders, trainers, packages] = await Promise.all([
+    memberId ? ctx.db.query("ptEntitlements").withIndex("by_organization_member", (q) => q.eq("organizationId", organization._id).eq("memberPublicId", memberId)).collect() : [],
+    memberId ? ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", organization._id).eq("memberPublicId", memberId)).collect() : [],
+    memberId ? ctx.db.query("ptPackageOrders").withIndex("by_organization_member", (q) => q.eq("organizationId", organization._id).eq("memberPublicId", memberId)).collect() : [],
+    ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
+    ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", organization._id).eq("status", "active")).collect(),
+  ]);
+  const entitlementViews = entitlements.map((item) => ptEntitlementView(organization, item));
+  return {
+    organizationId: publicOrganizationId(organization),
+    membershipId,
+    availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
+    reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    entitlements: entitlementViews,
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
+    orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, organization, item))),
+    trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
+    packages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
+  };
+}
+
+async function gymMediaAssetView(ctx: ReadContext, organization: Organization, publicId: string | undefined): Promise<Data | undefined> {
+  if (!publicId) return undefined;
+  const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", publicId)).unique();
+  if (!asset || asset.status !== "active") return undefined;
+  const url = await ctx.storage.getUrl(asset.storageId);
+  return { id: asset.publicId, organizationId: publicOrganizationId(organization), ownerType: asset.ownerType, ownerId: asset.ownerPublicId, contentType: asset.contentType, sizeBytes: asset.sizeBytes, altText: asset.altText, visibility: asset.visibility, status: asset.status, url: url ?? undefined, deleteAfter: asset.deleteAfter ? utcIso(asset.deleteAfter) : undefined, createdAt: utcIso(asset.createdAt), updatedAt: utcIso(asset.updatedAt) };
+}
+
+async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, source?: Data): Promise<Data> {
+  const value = source ?? {};
+  const listing = (await recordsOf(ctx, actor, "marketplaceGym"))[0];
+  const listingValue = data(listing?.data);
+  const [trainers, packages, logo, cover, gallery] = await Promise.all([
+    ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.logoAssetId)),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId)),
+    Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id)))),
+  ]);
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    version: numberValue(value.version, numberValue(listingValue.profileVersion, 1)),
+    status: stringValue(value.status, booleanValue(listingValue.profilePublished, true) ? "published" : "unpublished"),
+    shortName: stringValue(value.shortName, stringValue(listingValue.shortName, actor.organization.name.slice(0, 16))),
+    taglineEn: stringValue(value.taglineEn, stringValue(listingValue.tagline)),
+    taglineAr: optionalString(value.taglineAr) ?? optionalString(listingValue.taglineAr),
+    descriptionEn: stringValue(value.descriptionEn, stringValue(listingValue.description)),
+    descriptionAr: optionalString(value.descriptionAr) ?? optionalString(listingValue.descriptionAr),
+    category: stringValue(value.category, stringValue(listingValue.category, "Gym")),
+    audience: stringValue(value.audience, stringValue(listingValue.audience, "All members")),
+    amenities: arrayValue(value.amenities ?? listingValue.amenities).map(String),
+    contactEmail: optionalString(value.contactEmail) ?? optionalString(listingValue.contactEmail),
+    contactPhone: optionalString(value.contactPhone) ?? optionalString(listingValue.contactPhone),
+    websiteUrl: optionalString(value.websiteUrl) ?? optionalString(listingValue.websiteUrl),
+    instagramUrl: optionalString(value.instagramUrl) ?? optionalString(listingValue.instagramUrl),
+    accentColor: stringValue(value.accentColor, stringValue(listingValue.accent, "#15140f")),
+    logo,
+    cover,
+    gallery: gallery.filter((item): item is Data => Boolean(item)),
+    trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, actor.organization, item))),
+    ptPackages: await Promise.all(packages.map((item) => ptPackageView(ctx, actor.organization, item))),
+    publishedAt: optionalString(value.publishedAt),
+    updatedAt: stringValue(value.updatedAt, listing ? utcIso(listing.updatedAt) : utcIso(actor.organization.updatedAt)),
+  };
+}
+
+async function currentGymProfile(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+  const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+  return await gymPublicProfileView(ctx, actor, draft ? data(draft.data) : undefined);
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -1688,12 +2043,46 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
-    return rows.filter((row) => acceptsPublicTrialRequests(data(row.data))).map((row) => marketplaceView(data(row.data)));
+    return await Promise.all(rows.filter((row) => acceptsPublicTrialRequests(data(row.data))).map(async (row) => {
+      const organization = await ctx.db.get(row.organizationId);
+      if (!organization) return marketplaceView(data(row.data));
+      const listingValue = data(row.data);
+      const [trainers, packages, plans, members, branches, logo, cover, gallery] = await Promise.all([
+        ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
+        ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", organization._id).eq("status", "active")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "plan")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
+        ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.logoAssetId)),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId)),
+        Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id)))),
+      ]);
+      const activePrices = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active").map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
+      return {
+        ...marketplaceView(data(row.data)),
+        memberCount: members.filter((item) => stringValue(data(item.data).status, "active") === "active").length,
+        branchCount: branches.filter((branch) => branch.active && branch.status !== "inactive").length,
+        fromPriceMinor: activePrices.length ? Math.min(...activePrices) : 0,
+        trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
+        ptPackages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
+        logo,
+        cover,
+        gallery: gallery.filter((asset): asset is Data => Boolean(asset)),
+      };
+    }));
   }
   if (operation === "public.catalog") {
     return await platformPlans(ctx);
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
+  if (operation === "customer.pt") return await customerPtExperience(ctx, recordId(input.membershipId));
+  if (operation === "customer.pt.slots") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const trainer = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique();
+    const branch = await branchByPublicId(ctx, context.organization._id, recordId(input.branchId));
+    if (!trainer || trainer.status !== "published" || !branch || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer availability not found.");
+    return await ptSlots(ctx, context.organization, trainer, branch, stringValue(input.from), stringValue(input.to));
+  }
   if (operation === "platform.applications") {
     await requirePlatformAdmin(ctx, request.correlationId);
     const requestedStatus = optionalString(input.status);
@@ -1704,6 +2093,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       .filter((row) => matchesSearch([row.gymName, row.ownerName, row.email, row.contactNumber, row.plan, row.status], search))
       .sort((a, b) => b.submittedAt - a.submittedAt);
     return rows.map(gymApplicationView);
+  }
+  if (operation === "platform.marketingMigration.preview") {
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const profiles = await ctx.db.query("customerProfiles").collect();
+    const members = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect();
+    const profileCount = profiles.filter((profile) => !profile.marketingPreferenceStatus || profile.marketingPreferenceSource === "system_default").length;
+    const memberCount = members.filter((record) => {
+      const preference = data(data(record.data).marketingPreference);
+      return !optionalString(preference.status) && (!optionalString(preference.source) || preference.source === "system_default");
+    }).length;
+    return { profileCount, memberCount, totalCount: profileCount + memberCount, targetStatus: "unknown", marketingDelivery: "suppressed" };
   }
   if (operation === "platform.snapshot") {
     await requirePlatformAdmin(ctx, request.correlationId);
@@ -1893,8 +2293,27 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         operationalPolicies: settings.operationalPolicies,
       };
     }
+    case "settings.operationalEmail.get": {
+      requirePermission(actor, "settings.manage");
+      const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+      const updatedBy = settings ? await ctx.db.get(settings.updatedByUserId) : undefined;
+      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...OPERATIONAL_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true", providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
+    }
     case "branches.list":
       return (await accessibleBranches(ctx, actor)).map((branch) => branchView(branch, orgId));
+    case "profiles.gym.get": {
+      requirePermission(actor, "profiles.manage");
+      return await currentGymProfile(ctx, actor);
+    }
+    case "profiles.gym.versions": {
+      requirePermission(actor, "profiles.manage");
+      const versions = (await recordsOf(ctx, actor, "gymProfileVersion")).sort((left, right) => numberValue(data(right.data).version) - numberValue(data(left.data).version));
+      return await Promise.all(versions.map(async (record) => {
+        const value = data(record.data);
+        const profile = await gymPublicProfileView(ctx, actor, value);
+        return { id: record.publicId, organizationId: orgId, version: numberValue(value.version), status: stringValue(value.status, "unpublished"), profile, publishedAt: optionalString(value.publishedAt), unpublishedAt: optionalString(value.unpublishedAt), updatedAt: stringValue(value.updatedAt, utcIso(record.updatedAt)) };
+      }));
+    }
     case "plans.list": {
       requirePermission(actor, "members.read");
       let records = await recordsOf(ctx, actor, "plan");
@@ -1904,6 +2323,62 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       items = items.filter((plan) => matchesSearch([plan.name, plan.code], optionalString(input.search)));
       items = sortRecords(items, input.sort ?? "name", (plan, key) => stringValue(plan[key]));
       return page(items, input);
+    }
+    case "pt.workspace": {
+      const canReadReports = hasPermission(actor, "pt.reports.read");
+      if (!canReadReports && !hasPermission(actor, "pt.schedule.self")) requirePermission(actor, "pt.reports.read");
+      const [allTrainers, allPackages, allBookings, allOrders, entitlements, paymentRows] = await Promise.all([
+        ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+        ctx.db.query("ptPackages").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+        ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+        ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+        ctx.db.query("ptEntitlements").withIndex("by_expiry", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "payment")).collect(),
+      ]);
+      const ownTrainer = allTrainers.find((item) => item.userId === actor.user._id);
+      const visibleTrainers = canReadReports ? allTrainers : ownTrainer ? [ownTrainer] : [];
+      const visibleTrainerIds = new Set(visibleTrainers.map((item) => item._id));
+      const visibleBookings = allBookings.filter((item) => visibleTrainerIds.has(item.trainerProfileId) && (actor.branchScope === "all" || actor.branchIds.includes(item.branchId)));
+      const visibleEntitlementIds = new Set(visibleBookings.map((item) => item.entitlementId));
+      const visibleEntitlements = canReadReports ? entitlements : entitlements.filter((item) => visibleEntitlementIds.has(item._id));
+      const ptChargeIds = new Set(allOrders.map((order) => order.chargePublicId));
+      const packageRevenue = canReadReports ? paymentRows.map((row) => data(row.data)).filter((payment) => ptChargeIds.has(stringValue(payment.chargeId)) && payment.status !== "voided").reduce((total, payment) => total + amountOf(payment.amount), 0) : 0;
+      return {
+        trainers: await Promise.all(visibleTrainers.map((item) => ptTrainerView(ctx, actor.organization, item))),
+        packages: canReadReports ? await Promise.all(allPackages.map((item) => ptPackageView(ctx, actor.organization, item))) : [],
+        bookings: await Promise.all(visibleBookings.sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
+        pendingOrders: canReadReports ? await Promise.all(allOrders.filter((item) => item.status === "pending_payment").map((item) => ptPackageOrderView(ctx, actor.organization, item))) : [],
+        metrics: {
+          packageRevenue: money(packageRevenue, actor.organization.currency),
+          sessionsUsed: visibleEntitlements.reduce((total, item) => total + item.consumed, 0),
+          sessionsReserved: visibleEntitlements.reduce((total, item) => total + item.reserved, 0),
+          upcomingBookings: visibleBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.startsAt > Date.now()).length,
+          noShows: visibleBookings.filter((item) => item.status === "no_show").length,
+        },
+      };
+    }
+    case "pt.member": {
+      requirePermission(actor, "members.read");
+      const membership = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      return await ptMemberExperience(ctx, actor, membership);
+    }
+    case "pt.slots": {
+      const trainer = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique();
+      const branch = await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId));
+      if (!trainer || !branch || trainer.status !== "published" || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer availability not found.", { correlationId: actor.correlationId });
+      assertBranchAccess(actor, branch);
+      return await ptSlots(ctx, actor.organization, trainer, branch, stringValue(input.from), stringValue(input.to));
+    }
+    case "pt.introductory.preview": {
+      requirePermission(actor, "pt.manage");
+      const sessionCount = numberValue(input.sessionCount, 2);
+      if (!Number.isInteger(sessionCount) || sessionCount < 1 || sessionCount > 100) domainError("VALIDATION_ERROR", "Introductory PT credits must be between 1 and 100 sessions.", { correlationId: actor.correlationId });
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const memberships = (await membershipRecords(ctx, actor)).filter((record) => ["active", "expiring"].includes(statusOfMembership(data(record.data), today)));
+      const grants = await ctx.db.query("ptEntitlements").withIndex("by_expiry", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect();
+      const grantedMembershipIds = new Set(grants.filter((item) => item.grantKind === "introductory").map((item) => item.membershipPublicId));
+      const alreadyGranted = memberships.filter((record) => grantedMembershipIds.has(record.publicId)).length;
+      return { eligibleMemberships: memberships.length - alreadyGranted, alreadyGranted, sessionCount };
     }
     case "members.list": {
       requirePermission(actor, "members.read");
@@ -2179,7 +2654,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (actor.branchScope === "selected") rows = rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
       const reviews = await recordsOf(ctx, actor, "approvalReview");
       const reviewedIds = new Set(reviews.map((review) => optionalString(data(review.data).auditEventId)).filter(Boolean));
-      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
+      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
     }
     case "users.list": {
       if (!hasPermission(actor, "users.manage") && !hasPermission(actor, "crm.assign")) requirePermission(actor, "users.manage");
@@ -2356,6 +2831,10 @@ async function paymentRecord(
   const allocation = paymentAllocation(amount, outstanding);
   if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the outstanding balance." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed outstanding balance" : "Must be a positive integer"] } });
   const method = stringValue(input.method, "cash");
+  const externalReference = optionalString(input.externalReference)?.trim();
+  if (["card", "bank_transfer", "cliq"].includes(method) && !externalReference) {
+    domainError("VALIDATION_ERROR", "An external reference is required for card, bank transfer, and CliQ payments.", { correlationId: actor.correlationId, fieldErrors: { externalReference: ["Required for this payment method"] } });
+  }
   const settings = await settingsData(ctx, actor);
   const paymentMethod = arrayValue(settings.paymentMethods).map(data).find((item) => item.key === method);
   if (paymentMethod && !booleanValue(paymentMethod.enabled, true)) domainError("VALIDATION_ERROR", "This payment method is disabled.", { correlationId: actor.correlationId });
@@ -2382,7 +2861,7 @@ async function paymentRecord(
     collectedById: publicUserId(actor.user),
     collectedByName: actor.user.fullName,
     shiftId,
-    externalReference: optionalString(input.externalReference),
+    externalReference,
     idempotencyKey,
     occurredAt: now,
   };
@@ -2391,6 +2870,7 @@ async function paymentRecord(
   await insertRecord(ctx, actor, "receipt", receipt, { branchId, memberPublicId: memberId });
   const paid = amountOf(chargeData.paidAmount) + amount;
   await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, outstanding - amount), actor.organization.currency), status: paymentStatusForCharge(amountOf(chargeData.total), paid) });
+  if (paid >= amountOf(chargeData.total)) await activatePtOrderForCharge(ctx, actor, charge.publicId);
   await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${(amount / 1000).toFixed(3)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.create", key: idempotencyKey, requestHash, result: { paymentId: payment.id, receiptId: receipt.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
   const member = data(memberRecord.data);
@@ -2554,7 +3034,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en", marketingOptIn: true, marketingPreferenceSource: "imported" });
+    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en" });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
     rows[index] = { ...row, status: "committed", memberId: member.id };
@@ -2588,6 +3068,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     });
   }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
+  const preference = marketingPreferenceRecord(input, actor);
   const member = await insertRecord(ctx, actor, "member", {
     id: newPublicId(),
     organizationId: publicOrganizationId(actor.organization),
@@ -2606,8 +3087,8 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     emergencyContactPhone: optionalString(input.emergencyContactPhone),
     source: optionalString(input.source),
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
-    marketingOptIn: marketingPreference(input.marketingOptIn),
-    marketingPreference: marketingPreferenceRecord(input, actor),
+    marketingOptIn: preference.optedIn,
+    marketingPreference: preference,
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });
@@ -2702,6 +3183,7 @@ async function createMembershipMutation(
   const membership = await insertRecord(ctx, actor, "membership", {
     id: membershipId, organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, planId: planData.id, homeBranchId: stringValue(memberData.homeBranchId), startDate, endDate, totalVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, remainingVisits: stringValue(planData.kind) === "visits" ? numberValue(planData.visitAllowance) : undefined, salePrice: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), discountReason: optionalString(input.discountReason), discountApprovalStatus: discount > 0 ? (approvalPending ? "pending" : "approved") : "none", soldById: publicUserId(actor.user), previousMembershipId, frozenDaysUsed: 0, freezes: [], adjustments, createdAt: isoNow(),
   }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
+  await grantIncludedPtCredits(ctx, actor, membership, planData);
   const total = price - discount;
   const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
   const renewal = operation === "renewal";
@@ -2739,6 +3221,7 @@ async function createMembershipMutation(
       expiresAt: Date.now() + 86_400_000 * 365,
     });
   }
+  await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
   return result;
 }
 
@@ -2888,16 +3371,469 @@ async function executeAutomationCandidate(
   }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
 }
 
+async function insertPtLedger(ctx: MutationCtx, actor: ActorContext, input: {
+  entitlementId: Id<"ptEntitlements">;
+  memberPublicId: string;
+  bookingPublicId?: string;
+  type: Doc<"ptCreditLedger">["type"];
+  quantity: number;
+  reason?: string;
+}): Promise<void> {
+  await ctx.db.insert("ptCreditLedger", {
+    organizationId: actor.organization._id,
+    publicId: newPublicId(),
+    entitlementId: input.entitlementId,
+    memberPublicId: input.memberPublicId,
+    bookingPublicId: input.bookingPublicId,
+    type: input.type,
+    quantity: input.quantity,
+    reason: input.reason,
+    actorUserId: actor.user._id,
+    occurredAt: Date.now(),
+  });
+}
+
+async function grantIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, membership: Data, plan: Data): Promise<void> {
+  const sessions = numberValue(plan.includedPtSessions);
+  if (!Number.isInteger(sessions) || sessions <= 0) return;
+  const membershipId = stringValue(membership.id);
+  const existing = await ctx.db.query("ptEntitlements").withIndex("by_membership", (q) => q.eq("organizationId", actor.organization._id).eq("membershipPublicId", membershipId)).unique();
+  if (existing) return;
+  const now = Date.now();
+  const startsAt = ptWallTime(stringValue(membership.startDate), 0, actor.organization.timezone || TZ_FALLBACK);
+  const entitlementId = await ctx.db.insert("ptEntitlements", {
+    organizationId: actor.organization._id,
+    publicId: newPublicId(),
+    memberPublicId: stringValue(membership.memberId),
+    source: "included",
+    membershipPublicId: membershipId,
+    granted: sessions,
+    reserved: 0,
+    consumed: 0,
+    revoked: 0,
+    startsAt,
+    expiresAt: ptWallTime(addDays(stringValue(membership.endDate), 1), 0, actor.organization.timezone || TZ_FALLBACK) - 1,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: stringValue(membership.memberId), type: "grant", quantity: sessions, reason: `Included with ${stringValue(plan.name)} membership term` });
+  const scheduled = startsAt > now;
+  await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} ${scheduled ? "scheduled" : "granted"}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, startsAt: utcIso(startsAt) } });
+  await insertAudit(ctx, actor, { category: "memberships", action: scheduled ? "pt.credit.schedule" : "pt.credit.grant", entityType: "pt_entitlement", entityId: (await ctx.db.get(entitlementId))?.publicId ?? membershipId, entityLabel: stringValue(membership.memberId), summary: `${scheduled ? "Scheduled" : "Granted"} ${sessions} included PT session${sessions === 1 ? "" : "s"}`, branchId: stringValue(membership.homeBranchId), after: { sessions, membershipId, startsAt: utcIso(startsAt) } });
+}
+
+async function syncCustomerMembershipProjection(ctx: MutationCtx, actor: ActorContext, membership: Data, member: Data, plan: Data): Promise<void> {
+  const email = optionalString(member.email)?.trim().toLowerCase();
+  if (!email) return;
+  const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).unique();
+  if (!user || user.status === "deactivated") return;
+  const staffMemberships = await ctx.db.query("organizationMemberships").withIndex("by_user", (q) => q.eq("userId", user._id)).collect();
+  if (staffMemberships.some((item) => item.active)) return;
+  const profile = await customerProfileForUser(ctx, publicUserId(user));
+  const marketplace = (await marketplaceRows(ctx)).find((row) => row.organizationId === actor.organization._id);
+  const marketplaceValue = data(marketplace?.data);
+  const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
+  const directoryBranch = arrayValue(marketplaceValue.branches).map(data).find((item) => item.internalBranchId === membership.homeBranchId);
+  const checks = (await recordsOf(ctx, actor, "checkIn")).map((row) => data(row.data)).filter((item) => item.memberId === member.id && item.decision !== "blocked").sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const month = todayIn(actor.organization.timezone || TZ_FALLBACK).slice(0, 7);
+  const visitsThisMonth = checks.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK).startsWith(month)).length;
+  const value = {
+    customerUserId: publicUserId(user),
+    customerId: optionalString(profile?.id),
+    gymId: marketplace?.publicId ?? publicOrganizationId(actor.organization),
+    branchId: optionalString(directoryBranch?.id) ?? (branch ? publicBranchId(branch) : stringValue(membership.homeBranchId)),
+    internalBranchId: branch ? publicBranchId(branch) : stringValue(membership.homeBranchId),
+    memberId: stringValue(member.id),
+    membershipId: stringValue(membership.id),
+    memberNumber: stringValue(member.memberNumber),
+    planName: stringValue(plan.name),
+    status: statusOfMembership(membership, todayIn(actor.organization.timezone || TZ_FALLBACK)),
+    startDate: stringValue(membership.startDate),
+    endDate: stringValue(membership.endDate),
+    visitsThisMonth,
+    remainingVisits: membership.remainingVisits,
+    balanceMinor: amountOf(await outstandingForMember(ctx, actor, stringValue(member.id))),
+    lastCheckInAt: optionalString(checks[0]?.occurredAt),
+  };
+  const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership").eq("publicId", stringValue(membership.id))).unique();
+  if (existing) await ctx.db.patch(existing._id, { branchId: branch?._id, memberPublicId: stringValue(member.id), data: { ...data(existing.data), ...value }, updatedAt: Date.now() });
+  else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "customerMembership", publicId: stringValue(membership.id), branchId: branch?._id, memberPublicId: stringValue(member.id), createdAt: Date.now(), updatedAt: Date.now(), data: value });
+}
+
+async function revokeUnusedIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, membershipId: string, reason: string): Promise<void> {
+  const entitlement = await ctx.db.query("ptEntitlements").withIndex("by_membership", (q) => q.eq("organizationId", actor.organization._id).eq("membershipPublicId", membershipId)).unique();
+  if (!entitlement || entitlement.status !== "active") return;
+  const unused = ptAvailable(entitlement);
+  if (unused <= 0) return;
+  await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + unused, status: entitlement.reserved > 0 ? "active" : "revoked", updatedAt: Date.now() });
+  await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -unused, reason });
+  await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_refunded", title: `${unused} unused included PT session${unused === 1 ? "" : "s"} revoked`, body: reason, meta: { membershipId, entitlementId: entitlement.publicId } });
+  await insertAudit(ctx, actor, { category: "memberships", action: "pt.credit.revoke", entityType: "pt_entitlement", entityId: entitlement.publicId, entityLabel: entitlement.memberPublicId, summary: `Revoked ${unused} unused included PT session${unused === 1 ? "" : "s"}`, reason, before: { available: unused }, after: { available: 0 } });
+}
+
+async function activatePtOrderForCharge(ctx: MutationCtx, actor: ActorContext, chargeId: string): Promise<void> {
+  const order = await ctx.db.query("ptPackageOrders").withIndex("by_charge", (q) => q.eq("organizationId", actor.organization._id).eq("chargePublicId", chargeId)).unique();
+  if (!order || order.status !== "pending_payment") return;
+  const [charge, ptPackage] = await Promise.all([
+    recordOf(ctx, actor, "charge", chargeId),
+    ctx.db.get(order.packageId),
+  ]);
+  if (!ptPackage || amountOf(data(charge.data).outstandingAmount) > 0 || stringValue(data(charge.data).status) !== "paid") return;
+  const now = Date.now();
+  const entitlementId = await ctx.db.insert("ptEntitlements", {
+    organizationId: actor.organization._id,
+    publicId: newPublicId(),
+    memberPublicId: order.memberPublicId,
+    source: "package",
+    packageOrderId: order._id,
+    granted: ptPackage.sessionCount,
+    reserved: 0,
+    consumed: 0,
+    revoked: 0,
+    startsAt: now,
+    expiresAt: ptWallTime(addDays(todayIn(actor.organization.timezone || TZ_FALLBACK), ptPackage.validityDays + 1), 0, actor.organization.timezone || TZ_FALLBACK) - 1,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.patch(order._id, { status: "active", entitlementId, paidAt: now, updatedAt: now });
+  await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: order.memberPublicId, type: "grant", quantity: ptPackage.sessionCount, reason: `Activated ${ptPackage.name} after full payment` });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_activated", title: `${ptPackage.name} activated`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, chargeId } });
+  await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, roles: ["owner", "manager", "receptionist"], kind: "pt_package_activated", title: "PT package activated", body: ptPackage.name, href: `/members/${order.memberPublicId}`, dedupeKey: `pt-package-activated:${order.publicId}` });
+  const memberRecord = await recordOfOptional(ctx, actor, "member", order.memberPublicId);
+  const member = data(memberRecord?.data);
+  await queueOperationalEmail(ctx, { organizationId: actor.organization._id, kind: "pt_package_paid", templateVersion: "pt-package-paid-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: order.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-package-paid:${order.publicId}` });
+}
+
+async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorContext, chargeId: string, reason: string): Promise<void> {
+  const order = await ctx.db.query("ptPackageOrders").withIndex("by_charge", (q) => q.eq("organizationId", actor.organization._id).eq("chargePublicId", chargeId)).unique();
+  if (!order || order.status === "pending_payment" || !order.entitlementId) return;
+  const entitlement = await ctx.db.get(order.entitlementId);
+  if (!entitlement) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+  if (entitlement.reserved > 0 || entitlement.consumed > 0 || entitlement.revoked > 0) {
+    domainError("VALIDATION_ERROR", "This payment cannot be voided after PT credits were reserved, used, or refunded. Use the audited PT package refund workflow.", { correlationId: actor.correlationId });
+  }
+  const available = ptAvailable(entitlement);
+  await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + available, status: "revoked", updatedAt: Date.now() });
+  await ctx.db.patch(order._id, { status: "pending_payment", updatedAt: Date.now() });
+  await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -available, reason });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: "PT package activation reversed after payment void", body: reason, meta: { orderId: order.publicId, chargeId } });
+  await insertAudit(ctx, actor, { category: "payments", action: "pt.package.activation_reverse", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Revoked ${available} unused PT credit${available === 1 ? "" : "s"} after payment void`, reason, before: { orderStatus: order.status, available }, after: { orderStatus: "pending_payment", available: 0 } });
+}
+
+async function selectPtEntitlementForBooking(ctx: MutationCtx, actor: ActorContext, memberId: string, membershipId: string, startsAt: number): Promise<Doc<"ptEntitlements">> {
+  const candidates = (await ctx.db.query("ptEntitlements").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", memberId)).collect())
+    .filter((item) => item.status === "active" && (item.startsAt ?? 0) <= startsAt && item.expiresAt >= startsAt && ptAvailable(item) > 0)
+    .filter((item) => item.source !== "included" || item.membershipPublicId === membershipId)
+    .sort((left, right) => left.expiresAt - right.expiresAt || (left.source === "included" ? -1 : right.source === "included" ? 1 : 0));
+  const entitlement = candidates[0];
+  if (!entitlement) domainError("VALIDATION_ERROR", "No PT session credit is available for this booking.", { correlationId: actor.correlationId });
+  return entitlement;
+}
+
+async function customerPtContext(ctx: ReadContext, membershipId: string) {
+  const { user } = await requireMember(ctx);
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
+  const projection = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
+    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  if (!projection) domainError("NOT_FOUND", "Membership not found.");
+  const organization = await ctx.db.get(projection.organizationId);
+  if (!organization || !["trial", "active", "past_due"].includes(organization.status)) domainError("NOT_FOUND", "Membership not found.");
+  const projectionData = data(projection.data);
+  const internalMembershipId = optionalString(projectionData.membershipId) ?? projection.publicId;
+  const membership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique();
+  const memberId = optionalString(projectionData.memberId) ?? optionalString(data(membership?.data).memberId);
+  const member = memberId ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", memberId)).unique() : null;
+  if (!membership || !member) domainError("CONFIGURATION_ERROR", "This member portal membership is not linked to an operational membership. Ask the gym to refresh the membership record.");
+  return { user, organization, projection, membership, member };
+}
+
+async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization: Organization; memberId: string; branchId?: Id<"branches">; type: string; title: string; body?: string; meta?: Data; user: User }): Promise<void> {
+  const now = Date.now();
+  const id = newPublicId();
+  await ctx.db.insert("domainRecords", {
+    organizationId: input.organization._id,
+    entityType: "timeline",
+    publicId: id,
+    branchId: input.branchId,
+    memberPublicId: input.memberId,
+    createdAt: now,
+    updatedAt: now,
+    data: { id, organizationId: publicOrganizationId(input.organization), memberId: input.memberId, type: input.type, title: input.title, body: input.body, actorId: publicUserId(input.user), actorName: input.user.fullName, occurredAt: utcIso(now), meta: input.meta },
+  });
+}
+
+async function insertCustomerPtAudit(ctx: MutationCtx, input: { organization: Organization; user: User; branchId?: Id<"branches">; action: string; entityType: string; entityId: string; entityLabel: string; summary: string; reason?: string; before?: Data; after?: Data; correlationId?: string }): Promise<void> {
+  await ctx.db.insert("auditEvents", {
+    organizationId: input.organization._id,
+    publicId: newPublicId(),
+    branchId: input.branchId,
+    actorUserId: input.user._id,
+    actorPublicId: publicUserId(input.user),
+    actorName: input.user.fullName,
+    actorRole: "member",
+    category: "memberships",
+    action: input.action,
+    entityType: input.entityType,
+    entityPublicId: input.entityId,
+    entityLabel: input.entityLabel,
+    summary: input.summary,
+    reason: input.reason,
+    before: input.before,
+    after: input.after,
+    correlationId: input.correlationId ?? newPublicId(),
+    occurredAt: Date.now(),
+  });
+}
+
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
     return user._id;
   }
 
+  if (operation === "platform.marketingMigration.apply") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    requireReason(input.reason, admin.correlationId);
+    const batchSize = Math.max(1, Math.min(100, numberValue(input.batchSize, 100)));
+    const migrationPublicId = optionalString(input.migrationId) ?? `MKT-MIG-${newPublicId()}`;
+    let migration = await ctx.db.query("marketingPreferenceMigrations").withIndex("by_public_id", (q) => q.eq("publicId", migrationPublicId)).unique();
+    if (migration?.status === "completed") return { id: migration.publicId, status: migration.status, previewCount: migration.previewCount, processedCount: migration.processedCount, failedCount: migration.failedCount, remainingCount: 0 };
+    const profiles = (await ctx.db.query("customerProfiles").collect()).filter((profile) => !profile.marketingPreferenceStatus || profile.marketingPreferenceSource === "system_default");
+    const members = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect()).filter((record) => {
+      const preference = data(data(record.data).marketingPreference);
+      return !optionalString(preference.status) && (!optionalString(preference.source) || preference.source === "system_default");
+    });
+    const previewCount = migration?.previewCount ?? profiles.length + members.length;
+    const now = Date.now();
+    if (!migration) {
+      const id = await ctx.db.insert("marketingPreferenceMigrations", {
+        publicId: migrationPublicId,
+        status: "running",
+        previewCount,
+        processedCount: 0,
+        failedCount: 0,
+        startedByUserId: admin.user._id,
+        correlationId: admin.correlationId,
+        reason: stringValue(input.reason),
+        createdAt: now,
+        updatedAt: now,
+      });
+      migration = (await ctx.db.get(id))!;
+    }
+    const targets = [...profiles.map((value) => ({ kind: "profile" as const, value })), ...members.map((value) => ({ kind: "member" as const, value }))].slice(0, batchSize);
+    let processed = 0;
+    let failed = 0;
+    for (const target of targets) {
+      try {
+        if (target.kind === "profile") {
+          await ctx.db.patch(target.value._id, {
+            marketingOptIn: false,
+            marketingPreferenceStatus: "unknown",
+            marketingPreferenceSource: "system_default",
+            marketingPreferenceChangedAt: undefined,
+            marketingPreferenceWordingVersion: undefined,
+            updatedAt: now,
+          });
+        } else {
+          const current = data(target.value.data);
+          await ctx.db.patch(target.value._id, {
+            data: { ...current, marketingOptIn: false, marketingPreference: { optedIn: false, status: "unknown", source: "system_default" } },
+            updatedAt: now,
+          });
+        }
+        processed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    const remainingCount = Math.max(0, profiles.length + members.length - targets.length + failed);
+    const status = remainingCount === 0 ? "completed" as const : failed > 0 && processed === 0 ? "failed" as const : "running" as const;
+    await ctx.db.patch(migration._id, {
+      status,
+      processedCount: migration.processedCount + processed,
+      failedCount: migration.failedCount + failed,
+      updatedAt: now,
+    });
+    await ctx.db.insert("platformAuditEvents", {
+      publicId: crypto.randomUUID(),
+      actorUserId: admin.user._id,
+      actorPublicId: publicUserId(admin.user),
+      actorName: admin.user.fullName,
+      action: status === "completed" ? "marketing_preferences.migration_completed" : "marketing_preferences.migration_batch",
+      entityType: "marketing_preference_migration",
+      entityPublicId: migrationPublicId,
+      entityLabel: "Historical marketing preferences",
+      summary: `Marked ${processed} historical preference record${processed === 1 ? "" : "s"} as unknown`,
+      reason: stringValue(input.reason),
+      before: { eligible: profiles.length + members.length },
+      after: { processed, failed, remaining: remainingCount, status },
+      correlationId: admin.correlationId,
+      occurredAt: now,
+    });
+    return { id: migrationPublicId, status, previewCount, processedCount: migration.processedCount + processed, failedCount: migration.failedCount + failed, remainingCount };
+  }
+
   if (operation === "customer.register") return await registerCustomer(ctx, input);
   if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "customer.pt.package.request") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const idempotencyKey = stringValue(input.idempotencyKey).trim();
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
+    const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", context.organization._id).eq("operation", "customer.pt.package.request").eq("key", idempotencyKey)).unique();
+    if (existingKey) {
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: request.correlationId });
+      const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", stringValue(data(existingKey.result).orderId))).unique();
+      if (!order) domainError("NOT_FOUND", "PT package order not found.");
+      return await ptPackageOrderView(ctx, context.organization, order);
+    }
+    const membership = data(context.membership.data);
+    const today = todayIn(context.organization.timezone || TZ_FALLBACK);
+    if (!["active", "expiring"].includes(statusOfMembership(membership, today))) domainError("MEMBERSHIP_NOT_ACTIVE", "An active, unfrozen membership is required to request a PT package.");
+    const ptPackage = await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", recordId(input.packageId))).unique();
+    if (!ptPackage || ptPackage.status !== "active") domainError("NOT_FOUND", "PT package not found.");
+    const branch = await branchByPublicId(ctx, context.organization._id, stringValue(membership.homeBranchId));
+    if (!branch || (ptPackage.branchAccess === "selected" && !ptPackage.branchIds.includes(branch._id))) domainError("NOT_FOUND", "This PT package is not available for the membership branch.");
+    const chargeId = newPublicId();
+    const now = Date.now();
+    await ctx.db.insert("domainRecords", { organizationId: context.organization._id, entityType: "charge", publicId: chargeId, branchId: branch._id, memberPublicId: context.member.publicId, createdAt: now, updatedAt: now, data: { id: chargeId, organizationId: publicOrganizationId(context.organization), memberId: context.member.publicId, membershipId: context.membership.publicId, description: ptPackage.name, subtotal: money(ptPackage.totalPriceMinor, context.organization.currency), discount: money(0, context.organization.currency), tax: money(0, context.organization.currency), total: money(ptPackage.totalPriceMinor, context.organization.currency), paidAmount: money(0, context.organization.currency), outstandingAmount: money(ptPackage.totalPriceMinor, context.organization.currency), status: "unpaid", createdAt: utcIso(now) } });
+    const orderId = await ctx.db.insert("ptPackageOrders", { organizationId: context.organization._id, publicId: newPublicId(), memberPublicId: context.member.publicId, membershipPublicId: context.membership.publicId, packageId: ptPackage._id, chargePublicId: chargeId, status: "pending_payment", createdAt: now, updatedAt: now });
+    const order = (await ctx.db.get(orderId))!;
+    await ctx.db.insert("idempotencyRecords", { organizationId: context.organization._id, operation: "customer.pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.publicId, chargeId } });
+    await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: context.member.publicId, summary: `Member requested ${ptPackage.name}`, after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId }, correlationId: request.correlationId });
+    await notifyOrganizationRoles(ctx, { organizationId: context.organization._id, branchId: branch._id, roles: ["owner", "manager", "sales", "receptionist"], kind: "pt_package_request", title: "PT package payment requested", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${ptPackage.name}`, href: `/members/${context.member.publicId}`, dedupeKey: `pt-package-request:${order.publicId}` });
+    return await ptPackageOrderView(ctx, context.organization, order);
+  }
+  if (operation === "customer.pt.booking.create") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const idempotencyKey = stringValue(input.idempotencyKey).trim();
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", context.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
+    if (existing) {
+      if (existing.membershipPublicId !== context.membership.publicId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: request.correlationId });
+      return await ptBookingView(ctx, context.organization, existing);
+    }
+    const membership = data(context.membership.data);
+    const startsAt = Date.parse(stringValue(input.startsAt));
+    if (!Number.isFinite(startsAt)) domainError("VALIDATION_ERROR", "PT booking start time is invalid.", { correlationId: request.correlationId });
+    const endsAt = startsAt + 3_600_000;
+    const sessionDate = businessDate(stringValue(input.startsAt), context.organization.timezone || TZ_FALLBACK);
+    const today = todayIn(context.organization.timezone || TZ_FALLBACK);
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const policies = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
+    if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`);
+    if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.");
+    const freeze = data(membership.activeFreeze);
+    if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.");
+    const trainer = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique();
+    const branch = await branchByPublicId(ctx, context.organization._id, recordId(input.branchId));
+    if (!trainer || trainer.status !== "published" || !branch || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer slot not found.");
+    const plan = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "plan").eq("publicId", stringValue(membership.planId))).unique();
+    if (!plan) domainError("NOT_FOUND", "Membership plan not found.");
+    const planData = data(plan.data);
+    if (stringValue(planData.branchAccess, "all") === "selected" && !arrayValue(planData.branchIds).map(String).includes(publicBranchId(branch))) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT branch.");
+    const slots = await ptSlots(ctx, context.organization, trainer, branch, sessionDate, sessionDate);
+    if (!slots.some((slot) => stringValue(slot.startsAt) === new Date(startsAt).toISOString())) domainError("CONFLICT", "This PT slot is no longer available.");
+    const memberCollision = await ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", context.organization._id).eq("memberPublicId", context.member.publicId).gte("startsAt", startsAt - 3_600_000).lte("startsAt", endsAt)).collect();
+    if (memberCollision.some((booking) => ["reserved", "confirmed"].includes(booking.status) && booking.startsAt < endsAt && startsAt < booking.endsAt)) domainError("CONFLICT", "You already have a PT booking at this time.");
+    const entitlements = (await ctx.db.query("ptEntitlements").withIndex("by_organization_member", (q) => q.eq("organizationId", context.organization._id).eq("memberPublicId", context.member.publicId)).collect())
+      .filter((item) => item.status === "active" && (item.startsAt ?? 0) <= startsAt && item.expiresAt >= startsAt && ptAvailable(item) > 0 && (item.source !== "included" || item.membershipPublicId === context.membership.publicId))
+      .sort((left, right) => left.expiresAt - right.expiresAt || (left.source === "included" ? -1 : right.source === "included" ? 1 : 0));
+    const entitlement = entitlements[0];
+    if (!entitlement) domainError("VALIDATION_ERROR", "No PT session credit is available for this booking.");
+    await ctx.db.patch(entitlement._id, { reserved: entitlement.reserved + 1, updatedAt: Date.now() });
+    const now = Date.now();
+    const bookingId = await ctx.db.insert("ptBookings", { organizationId: context.organization._id, publicId: newPublicId(), memberPublicId: context.member.publicId, membershipPublicId: context.membership.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: context.user._id, idempotencyKey, createdAt: now, updatedAt: now });
+    const booking = (await ctx.db.get(bookingId))!;
+    await ctx.db.insert("ptCreditLedger", { organizationId: context.organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: context.member.publicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "Member reserved PT booking", actorUserId: context.user._id, occurredAt: now });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data(context.member.data).fullName)} · ${trainer.displayName}`, summary: "Member reserved one PT credit", after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId }, correlationId: request.correlationId });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${utcIso(startsAt)}`, href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+    await queueOperationalEmail(ctx, { organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(data(context.member.data).preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: publicUserId(context.user), recipientEmail: context.user.email, dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+    return await ptBookingView(ctx, context.organization, booking);
+  }
+  if (operation === "customer.pt.booking.cancel") {
+    const { user } = await requireMember(ctx);
+    requireReason(input.reason, request.correlationId);
+    const userId = publicUserId(user);
+    const profile = await customerProfileForUser(ctx, userId);
+    const booking = await ctx.db.query("ptBookings").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.bookingId))).unique();
+    if (!booking) domainError("NOT_FOUND", "PT booking not found.");
+    const ownedProjection = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", booking.organizationId).eq("entityType", "customerMembership")).collect())
+      .find((record) => (optionalString(data(record.data).memberId) === booking.memberPublicId || optionalString(data(record.data).membershipId) === booking.membershipPublicId) && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+    if (!ownedProjection || !["reserved", "confirmed"].includes(booking.status)) domainError("NOT_FOUND", "PT booking not found.");
+    const organization = await ctx.db.get(booking.organizationId);
+    const entitlement = await ctx.db.get(booking.entitlementId);
+    if (!organization || !entitlement) domainError("NOT_FOUND", "PT booking not found.");
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const policy = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
+    const timely = booking.startsAt - Date.now() >= numberValue(policy.cancellationCutoffHours, 12) * 3_600_000;
+    const status = timely ? "cancelled" : "late_cancelled";
+    await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
+    await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
+    await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason), actorUserId: user._id, occurredAt: Date.now() });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: booking.branchId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+    await insertCustomerPtAudit(ctx, { organization, user, branchId: booking.branchId, action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Member cancelled PT booking and restored credit" : "Member late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, correlationId: request.correlationId });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-cancelled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+    return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
+  }
+  if (operation === "customer.pt.booking.reschedule") {
+    const { user } = await requireMember(ctx);
+    requireReason(input.reason, request.correlationId);
+    const idempotencyKey = stringValue(input.idempotencyKey).trim();
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    const booking = await ctx.db.query("ptBookings").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.bookingId))).unique();
+    if (!booking) domainError("NOT_FOUND", "PT booking not found.", { correlationId: request.correlationId });
+    const organization = await ctx.db.get(booking.organizationId);
+    const profile = await customerProfileForUser(ctx, publicUserId(user));
+    const ownedProjection = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", booking.organizationId).eq("entityType", "customerMembership")).collect())
+      .find((record) => (optionalString(data(record.data).memberId) === booking.memberPublicId || optionalString(data(record.data).membershipId) === booking.membershipPublicId) && belongsToAuthenticatedCustomer(data(record.data), publicUserId(user), optionalString(profile?.id)));
+    if (!organization || !ownedProjection || !["reserved", "confirmed"].includes(booking.status)) domainError("NOT_FOUND", "PT booking not found.", { correlationId: request.correlationId });
+    const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
+    const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", organization._id).eq("operation", "customer.pt.booking.reschedule").eq("key", idempotencyKey)).unique();
+    if (existingKey) {
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: request.correlationId });
+      return await ptBookingView(ctx, organization, booking);
+    }
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const policy = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
+    if (booking.startsAt - Date.now() < numberValue(policy.cancellationCutoffHours, 12) * 3_600_000) domainError("VALIDATION_ERROR", "This booking is inside the cancellation cutoff and cannot be rescheduled by the member.", { correlationId: request.correlationId });
+    const startsAt = Date.parse(stringValue(input.startsAt));
+    if (!Number.isFinite(startsAt) || startsAt <= Date.now()) domainError("VALIDATION_ERROR", "PT booking start time is invalid.", { correlationId: request.correlationId });
+    const endsAt = startsAt + 3_600_000;
+    const membership = data(ownedProjection.data);
+    const sessionDate = businessDate(stringValue(input.startsAt), organization.timezone || TZ_FALLBACK);
+    const today = todayIn(organization.timezone || TZ_FALLBACK);
+    if (diffDays(today, sessionDate) > numberValue(policy.bookingHorizonDays, 30) || membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover the new PT session date.", { correlationId: request.correlationId });
+    const freeze = data(membership.activeFreeze);
+    if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot reschedule PT sessions into the freeze.", { correlationId: request.correlationId });
+    const [trainer, branch, entitlement] = await Promise.all([
+      ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", recordId(input.trainerProfileId))).unique(),
+      branchByPublicId(ctx, organization._id, recordId(input.branchId)),
+      ctx.db.get(booking.entitlementId),
+    ]);
+    if (!trainer || trainer.status !== "published" || !branch || !trainer.branchIds.includes(branch._id) || !entitlement || (entitlement.startsAt ?? 0) > startsAt || entitlement.expiresAt < startsAt) domainError("NOT_FOUND", "The new PT slot or its reserved credit is unavailable.", { correlationId: request.correlationId });
+    const slots = await ptSlots(ctx, organization, trainer, branch, sessionDate, sessionDate);
+    if (!slots.some((slot) => stringValue(slot.startsAt) === new Date(startsAt).toISOString())) domainError("CONFLICT", "This PT slot is no longer available.", { correlationId: request.correlationId });
+    const memberCollision = await ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", organization._id).eq("memberPublicId", booking.memberPublicId).gte("startsAt", startsAt - 3_600_000).lte("startsAt", endsAt)).collect();
+    if (memberCollision.some((item) => item._id !== booking._id && ["reserved", "confirmed"].includes(item.status) && item.startsAt < endsAt && startsAt < item.endsAt)) domainError("CONFLICT", "You already have a PT booking at this time.", { correlationId: request.correlationId });
+    const before = { startsAt: utcIso(booking.startsAt), trainerProfileId: (await ctx.db.get(booking.trainerProfileId))?.publicId, branchId: await publicBranchIdFromId(ctx, organization._id, booking.branchId) };
+    await ctx.db.patch(booking._id, { trainerProfileId: trainer._id, branchId: branch._id, startsAt, endsAt, updatedAt: Date.now() });
+    await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
+    await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
+    await ctx.db.insert("idempotencyRecords", { organizationId: organization._id, operation: "customer.pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: branch._id, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtAudit(ctx, { organization, user, branchId: branch._id, action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Member rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, correlationId: request.correlationId });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+    return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
+  }
   if (operation === "notifications.read" || operation === "notifications.readAll") {
     const { user } = await requireAuthenticated(ctx);
     if (operation === "notifications.readAll") {
@@ -3437,7 +4373,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.reason, actor.correlationId);
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const updated = await patchRecord(ctx, actor, record, { status: "archived", archivedAt: isoNow() });
-      await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member archived", reason: stringValue(input.reason), before: { status: data(record.data).status }, after: { status: "archived" }, branchId: optionalString(updated.homeBranchId) });
+      const photos = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", record.publicId)).collect()).filter((asset) => asset.status === "active");
+      const deleteAfter = Date.now() + 90 * 86_400_000;
+      await Promise.all(photos.map((asset) => ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter, updatedAt: Date.now() })));
+      await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member archived", reason: stringValue(input.reason), before: { status: data(record.data).status }, after: { status: "archived", privatePhotosScheduledForDeletion: photos.length, photoDeleteAfter: photos.length ? utcIso(deleteAfter) : undefined }, branchId: optionalString(updated.homeBranchId) });
       return undefined;
     }
     case "members.note": {
@@ -3460,7 +4399,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!name || !code) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
       const branches = arrayValue(input.branchIds).map(String);
       if (stringValue(input.branchAccess, "all") === "selected") for (const branchId of branches) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      const plan = await insertRecord(ctx, actor, "plan", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), name, code, kind: stringValue(input.kind, "time"), durationDays: input.durationDays, visitAllowance: input.visitAllowance, visitValidityDays: input.visitValidityDays, basePrice: money(amountOf(input.basePrice), actor.organization.currency), branchAccess: stringValue(input.branchAccess, "all"), branchIds: branches, freezeAllowanceDays: numberValue(input.freezeAllowanceDays), status: "active" });
+      const includedPtSessions = numberValue(input.includedPtSessions);
+      if (!Number.isInteger(includedPtSessions) || includedPtSessions < 0 || includedPtSessions > 100) domainError("VALIDATION_ERROR", "Included PT sessions must be between 0 and 100.", { correlationId: actor.correlationId });
+      const plan = await insertRecord(ctx, actor, "plan", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), name, code, kind: stringValue(input.kind, "time"), durationDays: input.durationDays, visitAllowance: input.visitAllowance, visitValidityDays: input.visitValidityDays, basePrice: money(amountOf(input.basePrice), actor.organization.currency), branchAccess: stringValue(input.branchAccess, "all"), branchIds: branches, freezeAllowanceDays: numberValue(input.freezeAllowanceDays), includedPtSessions, status: "active" });
       await insertAudit(ctx, actor, { category: "settings", action: "plan.create", entityType: "plan", entityId: plan.id, entityLabel: `${plan.name} · ${plan.code}`, summary: "Membership plan created" });
       return await toPlan(ctx, actor, plan);
     }
@@ -3470,10 +4411,474 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const patch: Data = { ...input };
       delete patch.planId;
       if (patch.basePrice) patch.basePrice = money(amountOf(patch.basePrice), actor.organization.currency);
+      if (patch.includedPtSessions !== undefined && (!Number.isInteger(patch.includedPtSessions) || numberValue(patch.includedPtSessions) < 0 || numberValue(patch.includedPtSessions) > 100)) domainError("VALIDATION_ERROR", "Included PT sessions must be between 0 and 100.", { correlationId: actor.correlationId });
       if (patch.branchIds) for (const branchId of arrayValue(patch.branchIds).map(String)) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const updated = await patchRecord(ctx, actor, record, patch);
       await insertAudit(ctx, actor, { category: "settings", action: "plan.update", entityType: "plan", entityId: record.publicId, entityLabel: stringValue(updated.name), summary: "Membership plan updated" });
       return await toPlan(ctx, actor, updated);
+    }
+    case "profiles.gym.save": {
+      requirePermission(actor, "profiles.manage");
+      const shortName = stringValue(input.shortName).trim();
+      const taglineEn = stringValue(input.taglineEn).trim();
+      const descriptionEn = stringValue(input.descriptionEn).trim();
+      const accentColor = stringValue(input.accentColor).trim();
+      if (!shortName || !taglineEn || !descriptionEn) domainError("VALIDATION_ERROR", "Short name, English tagline, and English description are required.", { correlationId: actor.correlationId });
+      if (shortName.length > 24 || taglineEn.length > 180 || descriptionEn.length > 2_000) domainError("VALIDATION_ERROR", "Public profile text exceeds the allowed length.", { correlationId: actor.correlationId });
+      if (!/^#[0-9a-f]{6}$/i.test(accentColor)) domainError("VALIDATION_ERROR", "Accent color must be a six-digit hex color.", { correlationId: actor.correlationId });
+      for (const field of ["websiteUrl", "instagramUrl"] as const) {
+        const candidate = optionalString(input[field])?.trim();
+        if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { correlationId: actor.correlationId }); } }
+      }
+      const assetIds = [optionalString(input.logoAssetId), optionalString(input.coverAssetId), ...arrayValue(input.galleryAssetIds).map((item) => optionalString(item))].filter((item): item is string => Boolean(item));
+      for (const assetId of assetIds) {
+        const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", assetId)).unique();
+        if (!asset || asset.visibility !== "public" || asset.status !== "active") domainError("NOT_FOUND", "Public profile media was not found.", { correlationId: actor.correlationId });
+      }
+      const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+      const versions = await recordsOf(ctx, actor, "gymProfileVersion");
+      const publishedVersion = Math.max(0, ...versions.map((record) => numberValue(data(record.data).version)));
+      const now = Date.now();
+      const value = { shortName, taglineEn, taglineAr: optionalString(input.taglineAr)?.trim(), descriptionEn, descriptionAr: optionalString(input.descriptionAr)?.trim(), category: stringValue(input.category, "Gym").trim(), audience: stringValue(input.audience, "All members").trim(), amenities: arrayValue(input.amenities).map(String).map((item) => item.trim()).filter(Boolean).slice(0, 40), contactEmail: optionalString(input.contactEmail)?.trim().toLowerCase(), contactPhone: optionalString(input.contactPhone)?.trim(), websiteUrl: optionalString(input.websiteUrl)?.trim(), instagramUrl: optionalString(input.instagramUrl)?.trim(), accentColor, logoAssetId: optionalString(input.logoAssetId), coverAssetId: optionalString(input.coverAssetId), galleryAssetIds: arrayValue(input.galleryAssetIds).map(String), version: publishedVersion + 1, status: "draft", updatedAt: utcIso(now) };
+      if (existing) await ctx.db.patch(existing._id, { data: { ...data(existing.data), ...value }, updatedAt: now });
+      else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileDraft", publicId: "current", createdAt: now, updatedAt: now, data: value });
+      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.save_draft", entityType: "gym_public_profile", entityId: "current", entityLabel: actor.organization.name, summary: `Saved public profile draft v${publishedVersion + 1}`, before: existing ? { version: data(existing.data).version, status: data(existing.data).status } : undefined, after: { version: publishedVersion + 1, status: "draft" } });
+      return await currentGymProfile(ctx, actor);
+    }
+    case "profiles.gym.publish": {
+      requirePermission(actor, "profiles.manage");
+      const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+      if (!draft) domainError("VALIDATION_ERROR", "Save the public profile draft before publishing.", { correlationId: actor.correlationId });
+      const draftValue = data(draft.data);
+      if (!stringValue(draftValue.taglineEn).trim() || !stringValue(draftValue.descriptionEn).trim()) domainError("VALIDATION_ERROR", "Complete the English tagline and description before publishing.", { correlationId: actor.correlationId });
+      const listing = (await marketplaceRows(ctx)).find((record) => record.organizationId === actor.organization._id);
+      if (!listing) domainError("CONFIGURATION_ERROR", "The platform listing must exist before this gym profile can be published.", { correlationId: actor.correlationId });
+      const now = Date.now();
+      const publishedAt = utcIso(now);
+      const oldVersions = (await recordsOf(ctx, actor, "gymProfileVersion")).filter((record) => stringValue(data(record.data).status) === "published");
+      for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
+      const versionId = newPublicId();
+      const versionValue = { ...draftValue, status: "published", publishedAt, updatedAt: publishedAt };
+      await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
+      await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
+      const listingBefore = data(listing.data);
+      await ctx.db.patch(listing._id, { data: { ...listingBefore, shortName: draftValue.shortName, tagline: draftValue.taglineEn, taglineAr: draftValue.taglineAr, description: draftValue.descriptionEn, descriptionAr: draftValue.descriptionAr, category: draftValue.category, audience: draftValue.audience, amenities: draftValue.amenities, contactEmail: draftValue.contactEmail, contactPhone: draftValue.contactPhone, websiteUrl: draftValue.websiteUrl, instagramUrl: draftValue.instagramUrl, accent: draftValue.accentColor, logoAssetId: draftValue.logoAssetId, coverAssetId: draftValue.coverAssetId, galleryAssetIds: draftValue.galleryAssetIds, profilePublished: true, profileVersion: draftValue.version }, updatedAt: now });
+      const referencedMedia = new Set([optionalString(draftValue.logoAssetId), optionalString(draftValue.coverAssetId), ...arrayValue(draftValue.galleryAssetIds).map(String)].filter((id): id is string => Boolean(id)));
+      const publicMedia = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_gallery").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
+        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_logo").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
+        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_cover").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect());
+      for (const asset of publicMedia.filter((item) => item.status === "active" && !referencedMedia.has(item.publicId))) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.publish", entityType: "gym_public_profile", entityId: versionId, entityLabel: actor.organization.name, summary: `Published gym profile v${numberValue(draftValue.version)}`, before: { profilePublished: booleanValue(listingBefore.profilePublished, true), version: listingBefore.profileVersion }, after: { profilePublished: true, version: draftValue.version } });
+      return await currentGymProfile(ctx, actor);
+    }
+    case "profiles.gym.unpublish": {
+      requirePermission(actor, "profiles.manage");
+      requireReason(input.reason, actor.correlationId);
+      const listing = (await marketplaceRows(ctx)).find((record) => record.organizationId === actor.organization._id);
+      if (!listing) domainError("NOT_FOUND", "Gym public profile not found.", { correlationId: actor.correlationId });
+      const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+      const now = Date.now();
+      const changedAt = utcIso(now);
+      await ctx.db.patch(listing._id, { data: { ...data(listing.data), profilePublished: false }, updatedAt: now });
+      if (draft) await ctx.db.patch(draft._id, { data: { ...data(draft.data), status: "unpublished", updatedAt: changedAt }, updatedAt: now });
+      const published = (await recordsOf(ctx, actor, "gymProfileVersion")).filter((record) => stringValue(data(record.data).status) === "published");
+      for (const record of published) await ctx.db.patch(record._id, { data: { ...data(record.data), status: "unpublished", unpublishedAt: changedAt, updatedAt: changedAt }, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.unpublish", entityType: "gym_public_profile", entityId: "current", entityLabel: actor.organization.name, summary: "Unpublished gym profile", reason: stringValue(input.reason), before: { profilePublished: booleanValue(data(listing.data).profilePublished, true) }, after: { profilePublished: false } });
+      return await currentGymProfile(ctx, actor);
+    }
+    case "pt.trainer.upsert": {
+      requirePermission(actor, "pt.manage");
+      const displayName = stringValue(input.displayName).trim();
+      if (displayName.length < 2) domainError("VALIDATION_ERROR", "Trainer name is required.", { correlationId: actor.correlationId, fieldErrors: { displayName: ["Required"] } });
+      const user = await userByPublicId(ctx, actor.organization._id, recordId(input.userId));
+      if (!user || user.status === "deactivated") domainError("NOT_FOUND", "Active trainer account not found.", { correlationId: actor.correlationId });
+      const staffMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
+      if (!staffMembership?.active || staffMembership.role !== "trainer") domainError("VALIDATION_ERROR", "Trainer profiles must link to an active staff member with the trainer role.", { correlationId: actor.correlationId });
+      const requestedBranchIds = arrayValue(input.branchIds).map(String);
+      if (requestedBranchIds.length === 0) domainError("VALIDATION_ERROR", "Select at least one trainer branch.", { correlationId: actor.correlationId });
+      const branches = await Promise.all(requestedBranchIds.map((id) => branchByPublicId(ctx, actor.organization._id, id)));
+      if (branches.some((branch) => !branch)) domainError("NOT_FOUND", "Trainer branch not found.", { correlationId: actor.correlationId });
+      for (const branch of branches) assertBranchAccess(actor, branch);
+      if (branches.some((branch) => staffMembership.branchScope !== "all" && !staffMembership.branchIds.includes(branch!._id))) domainError("FORBIDDEN", "Trainer profile cannot include a branch outside the staff member's access.", { correlationId: actor.correlationId });
+      const status = stringValue(input.status, "draft");
+      if (!(["draft", "published", "archived"] as string[]).includes(status)) domainError("VALIDATION_ERROR", "Trainer profile status is invalid.", { correlationId: actor.correlationId });
+      const photoAssetId = optionalString(input.photoAssetId);
+      if (status === "published" && photoAssetId && !stringValue(input.photoAlt).trim()) domainError("VALIDATION_ERROR", "Published trainer photos require alt text.", { correlationId: actor.correlationId, fieldErrors: { photoAlt: ["Required for published photos"] } });
+      const existingById = input.id ? await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(input.id))).unique() : null;
+      const existingByUser = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
+      const existing = existingById ?? existingByUser;
+      if (photoAssetId) {
+        const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", photoAssetId)).unique();
+        if (!asset || asset.ownerType !== "trainer_photo" || asset.ownerPublicId !== (existing?.publicId ?? stringValue(input.id))) domainError("NOT_FOUND", "Trainer photo not found.", { correlationId: actor.correlationId });
+      }
+      if (existingById && existingByUser && existingById._id !== existingByUser._id) domainError("CONFLICT", "This trainer account already has a profile.", { correlationId: actor.correlationId });
+      if (existing && status === "archived") {
+        const future = await ctx.db.query("ptBookings").withIndex("by_trainer_start", (q) => q.eq("trainerProfileId", existing._id).gte("startsAt", Date.now())).collect();
+        if (future.some((booking) => ["reserved", "confirmed"].includes(booking.status))) domainError("CONFLICT", "Reassign or cancel future bookings before archiving this trainer.", { correlationId: actor.correlationId });
+      }
+      const now = Date.now();
+      const value = {
+        userId: user._id,
+        displayName,
+        bioEn: optionalString(input.bioEn),
+        bioAr: optionalString(input.bioAr),
+        specialties: arrayValue(input.specialties).map(String).map((item) => item.trim()).filter(Boolean),
+        languages: arrayValue(input.languages).map(String).filter((item): item is "en" | "ar" => item === "en" || item === "ar"),
+        branchIds: branches.map((branch) => branch!._id),
+        photoAssetId,
+        photoAlt: optionalString(input.photoAlt),
+        status: status as "draft" | "published" | "archived",
+        updatedAt: now,
+      };
+      let profile: Doc<"ptTrainerProfiles">;
+      if (existing) {
+        const before = { displayName: existing.displayName, status: existing.status, branchCount: existing.branchIds.length };
+        await ctx.db.patch(existing._id, value);
+        profile = (await ctx.db.get(existing._id))!;
+        await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.update", entityType: "pt_trainer", entityId: profile.publicId, entityLabel: displayName, summary: "Updated trainer profile", before, after: { displayName, status, branchCount: branches.length } });
+        if (photoAssetId && existing.photoAssetId && existing.photoAssetId !== photoAssetId) {
+          const replaced = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", existing.photoAssetId!)).unique();
+          if (replaced?.status === "active") await ctx.db.patch(replaced._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+        }
+      } else {
+        const id = await ctx.db.insert("ptTrainerProfiles", { organizationId: actor.organization._id, publicId: newPublicId(), ...value, createdAt: now });
+        profile = (await ctx.db.get(id))!;
+        await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.create", entityType: "pt_trainer", entityId: profile.publicId, entityLabel: displayName, summary: "Created trainer profile", after: { status, branchCount: branches.length } });
+      }
+      return await ptTrainerView(ctx, actor.organization, profile);
+    }
+    case "pt.package.upsert": {
+      requirePermission(actor, "pt.manage");
+      const name = stringValue(input.name).trim();
+      const sessionCount = numberValue(input.sessionCount);
+      const totalPriceMinor = amountOf(input.totalPrice);
+      const validityDays = numberValue(input.validityDays);
+      if (!name || ![12, 20, 30].includes(sessionCount)) domainError("VALIDATION_ERROR", "PT packages must contain 12, 20, or 30 sessions.", { correlationId: actor.correlationId });
+      if (!Number.isSafeInteger(totalPriceMinor) || totalPriceMinor <= 0 || !Number.isInteger(validityDays) || validityDays < 1 || validityDays > 730) domainError("VALIDATION_ERROR", "Package price and validity must be positive.", { correlationId: actor.correlationId });
+      if (currencyOf(input.totalPrice, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Package currency does not match the organization.", { correlationId: actor.correlationId });
+      const branchAccess = stringValue(input.branchAccess, "all");
+      const requestedBranches = branchAccess === "selected" ? arrayValue(input.branchIds).map(String) : [];
+      if (branchAccess === "selected" && requestedBranches.length === 0) domainError("VALIDATION_ERROR", "Select at least one package branch.", { correlationId: actor.correlationId });
+      const branches = await Promise.all(requestedBranches.map((id) => branchByPublicId(ctx, actor.organization._id, id)));
+      if (branches.some((branch) => !branch)) domainError("NOT_FOUND", "Package branch not found.", { correlationId: actor.correlationId });
+      for (const branch of branches) assertBranchAccess(actor, branch);
+      const status = stringValue(input.status, "active");
+      if (status !== "active" && status !== "archived") domainError("VALIDATION_ERROR", "Package status is invalid.", { correlationId: actor.correlationId });
+      const existing = input.id ? await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(input.id))).unique() : null;
+      if (input.id && !existing) domainError("NOT_FOUND", "PT package not found.", { correlationId: actor.correlationId });
+      const activePackages = await ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect();
+      const candidate = [...activePackages.filter((item) => item._id !== existing?._id).map((item) => ({ sessionCount: item.sessionCount, totalPriceMinor: item.totalPriceMinor })), ...(status === "active" ? [{ sessionCount, totalPriceMinor }] : [])];
+      if (!ptPackageLadderIsValid(candidate)) domainError("VALIDATION_ERROR", "Larger PT packages cannot cost more per session than smaller packages.", { correlationId: actor.correlationId });
+      const now = Date.now();
+      const value = { name, sessionCount: sessionCount as 12 | 20 | 30, totalPriceMinor, currency: actor.organization.currency, validityDays, branchAccess: branchAccess as "all" | "selected", branchIds: branches.map((branch) => branch!._id), status: status as "active" | "archived", updatedAt: now };
+      let ptPackage: Doc<"ptPackages">;
+      if (existing) { await ctx.db.patch(existing._id, value); ptPackage = (await ctx.db.get(existing._id))!; }
+      else { const id = await ctx.db.insert("ptPackages", { organizationId: actor.organization._id, publicId: newPublicId(), ...value, createdAt: now }); ptPackage = (await ctx.db.get(id))!; }
+      await insertAudit(ctx, actor, { category: "settings", action: existing ? "pt.package.update" : "pt.package.create", entityType: "pt_package", entityId: ptPackage.publicId, entityLabel: name, summary: existing ? "Updated PT package" : "Created PT package", before: existing ? { sessions: existing.sessionCount, price: existing.totalPriceMinor, status: existing.status } : undefined, after: { sessions: sessionCount, price: totalPriceMinor, status } });
+      return await ptPackageView(ctx, actor.organization, ptPackage);
+    }
+    case "pt.availability.replace": {
+      const trainer = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique();
+      if (!trainer) domainError("NOT_FOUND", "Trainer profile not found.", { correlationId: actor.correlationId });
+      if (trainer.userId === actor.user._id) requirePermission(actor, "pt.schedule.self"); else requirePermission(actor, "pt.manage");
+      const rules = arrayValue(input.rules).map(data);
+      const resolvedRules: Array<{ branch: Branch; weekday: typeof WEEKDAYS[number]; startMinute: number; endMinute: number; active: boolean }> = [];
+      for (const rule of rules) {
+        const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(rule.branchId));
+        const weekday = stringValue(rule.weekday) as typeof WEEKDAYS[number];
+        const startMinute = numberValue(rule.startMinute);
+        const endMinute = numberValue(rule.endMinute);
+        if (!branch || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer branch not found.", { correlationId: actor.correlationId });
+        assertBranchAccess(actor, branch);
+        if (!WEEKDAYS.includes(weekday) || !Number.isInteger(startMinute) || !Number.isInteger(endMinute) || startMinute < 0 || endMinute > 1_440 || endMinute - startMinute < 60) domainError("VALIDATION_ERROR", "Availability must contain complete 60-minute sessions.", { correlationId: actor.correlationId });
+        if (resolvedRules.some((item) => item.branch._id === branch._id && item.weekday === weekday && startMinute < item.endMinute && item.startMinute < endMinute)) domainError("CONFLICT", "Trainer availability windows cannot overlap.", { correlationId: actor.correlationId });
+        resolvedRules.push({ branch, weekday, startMinute, endMinute, active: booleanValue(rule.active, true) });
+      }
+      const exceptions = arrayValue(input.exceptions).map(data);
+      const resolvedExceptions: Array<{ branch: Branch; date: string; startMinute?: number; endMinute?: number; reason?: string }> = [];
+      for (const exception of exceptions) {
+        const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(exception.branchId));
+        const date = stringValue(exception.date);
+        if (!branch || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer branch not found.", { correlationId: actor.correlationId });
+        assertBranchAccess(actor, branch);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) domainError("VALIDATION_ERROR", "Availability exception date is invalid.", { correlationId: actor.correlationId });
+        const startMinute = exception.startMinute === undefined ? undefined : numberValue(exception.startMinute);
+        const endMinute = exception.endMinute === undefined ? undefined : numberValue(exception.endMinute);
+        if ((startMinute === undefined) !== (endMinute === undefined) || (startMinute !== undefined && (startMinute < 0 || endMinute! > 1_440 || startMinute >= endMinute!))) domainError("VALIDATION_ERROR", "Availability exception time is invalid.", { correlationId: actor.correlationId });
+        resolvedExceptions.push({ branch, date, startMinute, endMinute, reason: optionalString(exception.reason) });
+      }
+      const [oldRules, oldExceptions] = await Promise.all([
+        ctx.db.query("ptAvailabilityRules").withIndex("by_trainer", (q) => q.eq("trainerProfileId", trainer._id)).collect(),
+        ctx.db.query("ptAvailabilityExceptions").withIndex("by_trainer_date", (q) => q.eq("trainerProfileId", trainer._id)).collect(),
+      ]);
+      await Promise.all([...oldRules.map((item) => ctx.db.delete(item._id)), ...oldExceptions.map((item) => ctx.db.delete(item._id))]);
+      const now = Date.now();
+      await Promise.all(resolvedRules.map((rule) => ctx.db.insert("ptAvailabilityRules", { organizationId: actor.organization._id, publicId: newPublicId(), trainerProfileId: trainer._id, branchId: rule.branch._id, weekday: rule.weekday, startMinute: rule.startMinute, endMinute: rule.endMinute, active: rule.active, createdAt: now, updatedAt: now })));
+      await Promise.all(resolvedExceptions.map((exception) => ctx.db.insert("ptAvailabilityExceptions", { organizationId: actor.organization._id, publicId: newPublicId(), trainerProfileId: trainer._id, branchId: exception.branch._id, date: exception.date, startMinute: exception.startMinute, endMinute: exception.endMinute, reason: exception.reason, createdAt: now })));
+      await insertAudit(ctx, actor, { category: "settings", action: "pt.availability.replace", entityType: "pt_trainer", entityId: trainer.publicId, entityLabel: trainer.displayName, summary: "Replaced trainer availability", before: { rules: oldRules.length, exceptions: oldExceptions.length }, after: { rules: resolvedRules.length, exceptions: resolvedExceptions.length } });
+      return await ptTrainerView(ctx, actor.organization, trainer);
+    }
+    case "pt.package.request": {
+      requirePermission(actor, "pt.book_for_member");
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
+      const idempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.request").eq("key", idempotencyKey)).unique();
+      if (idempotency) {
+        if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: actor.correlationId });
+        const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(idempotency.result).orderId))).unique();
+        if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+        return await ptPackageOrderView(ctx, actor.organization, order);
+      }
+      const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      const membership = data(membershipRecord.data);
+      const status = statusOfMembership(membership, todayIn(actor.organization.timezone || TZ_FALLBACK));
+      if (!["active", "expiring"].includes(status)) domainError("MEMBERSHIP_NOT_ACTIVE", "An active, unfrozen membership is required to request a PT package.", { correlationId: actor.correlationId });
+      const ptPackage = await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.packageId))).unique();
+      if (!ptPackage || ptPackage.status !== "active") domainError("NOT_FOUND", "PT package not found.", { correlationId: actor.correlationId });
+      const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
+      if (!branch) domainError("NOT_FOUND", "Membership branch not found.", { correlationId: actor.correlationId });
+      assertBranchAccess(actor, branch);
+      if (ptPackage.branchAccess === "selected" && !ptPackage.branchIds.includes(branch._id)) domainError("NOT_FOUND", "This PT package is not available at the membership branch.", { correlationId: actor.correlationId });
+      const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), memberId: membership.memberId, membershipId: membershipRecord.publicId, description: ptPackage.name, subtotal: money(ptPackage.totalPriceMinor, actor.organization.currency), discount: money(0, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(ptPackage.totalPriceMinor, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(ptPackage.totalPriceMinor, actor.organization.currency), status: "unpaid", createdAt: isoNow() }, { branchId: publicBranchId(branch), memberPublicId: stringValue(membership.memberId) });
+      const now = Date.now();
+      const orderId = await ctx.db.insert("ptPackageOrders", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), membershipPublicId: membershipRecord.publicId, packageId: ptPackage._id, chargePublicId: stringValue(charge.id), status: "pending_payment", createdAt: now, updatedAt: now });
+      const order = (await ctx.db.get(orderId))!;
+      await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_package_requested", title: `${ptPackage.name} requested`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, chargeId: charge.id } });
+      await insertAudit(ctx, actor, { category: "memberships", action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: stringValue(membership.memberId), summary: `Created unpaid charge for ${ptPackage.name}`, branchId: stringValue(membership.homeBranchId), after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId: charge.id } });
+      return await ptPackageOrderView(ctx, actor.organization, order);
+    }
+    case "pt.introductory.apply": {
+      requirePermission(actor, "pt.manage");
+      requireReason(input.reason, actor.correlationId);
+      const sessionCount = numberValue(input.sessionCount, 2);
+      if (!Number.isInteger(sessionCount) || sessionCount < 1 || sessionCount > 100) domainError("VALIDATION_ERROR", "Introductory PT credits must be between 1 and 100 sessions.", { correlationId: actor.correlationId });
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      const requestHash = JSON.stringify({ sessionCount, reason: stringValue(input.reason).trim() });
+      const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.introductory.apply").eq("key", idempotencyKey)).unique();
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another credit grant.", { correlationId: actor.correlationId });
+        return data(existingKey.result);
+      }
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const memberships = (await membershipRecords(ctx, actor)).filter((record) => ["active", "expiring"].includes(statusOfMembership(data(record.data), today)));
+      const existingGrants = await ctx.db.query("ptEntitlements").withIndex("by_expiry", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect();
+      const grantedMembershipIds = new Set(existingGrants.filter((item) => item.grantKind === "introductory").map((item) => item.membershipPublicId));
+      let grantedMemberships = 0;
+      const migrationId = newPublicId();
+      for (const membershipRecord of memberships.slice(0, 500)) {
+        if (grantedMembershipIds.has(membershipRecord.publicId)) continue;
+        const membership = data(membershipRecord.data);
+        const now = Date.now();
+        const entitlementId = await ctx.db.insert("ptEntitlements", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), source: "manual", grantKind: "introductory", membershipPublicId: membershipRecord.publicId, granted: sessionCount, reserved: 0, consumed: 0, revoked: 0, startsAt: now, expiresAt: ptWallTime(addDays(stringValue(membership.endDate), 1), 0, actor.organization.timezone || TZ_FALLBACK) - 1, status: "active", createdAt: now, updatedAt: now });
+        const entitlement = (await ctx.db.get(entitlementId))!;
+        await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "grant", quantity: sessionCount, reason: stringValue(input.reason) });
+        await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_granted", title: `${sessionCount} introductory PT credits granted`, body: stringValue(input.reason), meta: { entitlementId: entitlement.publicId, migrationId } });
+        grantedMemberships += 1;
+      }
+      const result = { eligibleMemberships: Math.max(0, memberships.length - grantedMembershipIds.size - grantedMemberships), alreadyGranted: grantedMembershipIds.size + grantedMemberships, sessionCount, grantedMemberships, migrationId };
+      await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.introductory.apply", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
+      await insertAudit(ctx, actor, { category: "memberships", action: "pt.introductory_credits.apply", entityType: "pt_credit_migration", entityId: migrationId, entityLabel: "Existing active memberships", summary: `Granted ${sessionCount} introductory PT credits to ${grantedMemberships} memberships`, reason: stringValue(input.reason), after: result });
+      return result;
+    }
+    case "pt.package.refund": {
+      requirePermission(actor, "pt.refund");
+      requireReason(input.reason, actor.correlationId);
+      const sessions = numberValue(input.sessions);
+      if (!Number.isInteger(sessions) || sessions < 1) domainError("VALIDATION_ERROR", "Refund at least one unused PT session.", { correlationId: actor.correlationId });
+      const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.orderId))).unique();
+      if (!order || !order.entitlementId || !["active", "partially_refunded"].includes(order.status)) domainError("NOT_FOUND", "Active PT package order not found.", { correlationId: actor.correlationId });
+      const [entitlement, ptPackage, charge] = await Promise.all([ctx.db.get(order.entitlementId), ctx.db.get(order.packageId), recordOf(ctx, actor, "charge", order.chargePublicId)]);
+      if (!entitlement || !ptPackage) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+      const available = ptAvailable(entitlement);
+      if (sessions > available) domainError("VALIDATION_ERROR", "Only unused, unreserved PT sessions can be refunded.", { correlationId: actor.correlationId, details: { availableSessions: available } });
+      const previousSessions = order.refundedSessions ?? 0;
+      const nextSessions = previousSessions + sessions;
+      const previousMinor = order.refundedMinor ?? 0;
+      const cumulativeMinor = Math.floor((ptPackage.totalPriceMinor * nextSessions) / ptPackage.sessionCount);
+      const refundMinor = cumulativeMinor - previousMinor;
+      if (refundMinor <= 0) domainError("VALIDATION_ERROR", "No refundable package amount remains.", { correlationId: actor.correlationId });
+      const originalPayments = (await paymentRecords(ctx, actor)).filter((record) => {
+        const payment = data(record.data);
+        return payment.chargeId === order.chargePublicId && payment.type === "payment" && payment.status !== "voided";
+      }).sort((left, right) => right.createdAt - left.createdAt);
+      const refundable = originalPayments.reduce((total, record) => total + Math.max(0, amountOf(data(record.data).amount) - amountOf(data(record.data).refundedAmount)), 0);
+      if (refundMinor > refundable) domainError("VALIDATION_ERROR", "Recorded payments do not cover this PT refund.", { correlationId: actor.correlationId });
+      let remaining = refundMinor;
+      for (const originalRecord of originalPayments) {
+        if (remaining <= 0) break;
+        const original = data(originalRecord.data);
+        const alreadyRefunded = amountOf(original.refundedAmount);
+        const part = Math.min(remaining, Math.max(0, amountOf(original.amount) - alreadyRefunded));
+        if (part <= 0) continue;
+        const allocated = await allocateReceipt(ctx, actor);
+        const occurredAt = isoNow();
+        const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: order.memberPublicId, chargeId: order.chargePublicId, type: "refund", amount: signedMoney(-part, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: original.shiftId, idempotencyKey: `pt-refund:${order.publicId}:${nextSessions}:${original.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt };
+        await insertRecord(ctx, actor, "payment", refund, { branchId: stringValue(original.branchId), memberPublicId: order.memberPublicId });
+        await insertRecord(ctx, actor, "receipt", { id: allocated.id, receiptNumber: allocated.number, paymentId: refund.id, issuedAt: occurredAt }, { branchId: stringValue(original.branchId), memberPublicId: order.memberPublicId });
+        const newRefunded = alreadyRefunded + part;
+        await patchRecord(ctx, actor, originalRecord, { refundedAmount: money(newRefunded, actor.organization.currency), refundReason: stringValue(input.reason), status: newRefunded >= amountOf(original.amount) ? "refunded" : "partially_refunded" });
+        remaining -= part;
+      }
+      await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + sessions, status: ptAvailable({ ...entitlement, revoked: entitlement.revoked + sessions }) === 0 && entitlement.reserved === 0 ? "revoked" : "active", updatedAt: Date.now() });
+      await ctx.db.patch(order._id, { refundedSessions: nextSessions, refundedMinor: cumulativeMinor, status: nextSessions >= ptPackage.sessionCount ? "refunded" : "partially_refunded", updatedAt: Date.now() });
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: order.memberPublicId, type: "refund_revoke", quantity: -sessions, reason: stringValue(input.reason) });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, body: `${actor.organization.currency} ${(refundMinor / 1_000).toFixed(3)} · ${stringValue(input.reason)}`, meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
+      await insertAudit(ctx, actor, { category: "payments", action: "pt.package.refund", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Refunded ${sessions} unused PT session${sessions === 1 ? "" : "s"} — ${actor.organization.currency} ${(refundMinor / 1_000).toFixed(3)}`, reason: stringValue(input.reason), before: { available, refundedSessions: previousSessions, refundedMinor: previousMinor }, after: { available: available - sessions, refundedSessions: nextSessions, refundedMinor: cumulativeMinor } });
+      return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
+    }
+    case "pt.booking.create": {
+      requirePermission(actor, "pt.book_for_member");
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", actor.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
+      if (existing) {
+        if (existing.membershipPublicId !== input.membershipId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: actor.correlationId });
+        return await ptBookingView(ctx, actor.organization, existing);
+      }
+      const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      const membership = data(membershipRecord.data);
+      const startsAt = Date.parse(stringValue(input.startsAt));
+      if (!Number.isFinite(startsAt)) domainError("VALIDATION_ERROR", "PT booking start time is invalid.", { correlationId: actor.correlationId });
+      const endsAt = startsAt + 3_600_000;
+      const sessionDate = businessDate(stringValue(input.startsAt), actor.organization.timezone || TZ_FALLBACK);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
+      if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { correlationId: actor.correlationId });
+      if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.", { correlationId: actor.correlationId });
+      const freeze = data(membership.activeFreeze);
+      if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.", { correlationId: actor.correlationId });
+      const [trainer, branch, plan] = await Promise.all([
+        ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique(),
+        branchByPublicId(ctx, actor.organization._id, recordId(input.branchId)),
+        recordOf(ctx, actor, "plan", stringValue(membership.planId)),
+      ]);
+      if (!trainer || trainer.status !== "published" || !branch || !trainer.branchIds.includes(branch._id)) domainError("NOT_FOUND", "Trainer slot not found.", { correlationId: actor.correlationId });
+      assertBranchAccess(actor, branch);
+      const planData = data(plan.data);
+      if (stringValue(planData.branchAccess, "all") === "selected" && !arrayValue(planData.branchIds).map(String).includes(publicBranchId(branch))) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT branch.", { correlationId: actor.correlationId });
+      const slots = await ptSlots(ctx, actor.organization, trainer, branch, sessionDate, sessionDate);
+      if (!slots.some((slot) => stringValue(slot.startsAt) === new Date(startsAt).toISOString())) domainError("CONFLICT", "This PT slot is no longer available.", { correlationId: actor.correlationId });
+      const memberCollision = await ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(membership.memberId)).gte("startsAt", startsAt - 3_600_000).lte("startsAt", endsAt)).collect();
+      if (memberCollision.some((booking) => ["reserved", "confirmed"].includes(booking.status) && booking.startsAt < endsAt && startsAt < booking.endsAt)) domainError("CONFLICT", "The member already has a PT booking at this time.", { correlationId: actor.correlationId });
+      const entitlement = await selectPtEntitlementForBooking(ctx, actor, stringValue(membership.memberId), membershipRecord.publicId, startsAt);
+      await ctx.db.patch(entitlement._id, { reserved: entitlement.reserved + 1, updatedAt: Date.now() });
+      const now = Date.now();
+      const bookingId = await ctx.db.insert("ptBookings", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), membershipPublicId: membershipRecord.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: actor.user._id, idempotencyKey, createdAt: now, updatedAt: now });
+      const booking = (await ctx.db.get(bookingId))!;
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "PT booking reserved" });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: publicBranchId(branch), type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+      await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data((await recordOf(ctx, actor, "member", stringValue(membership.memberId))).data).fullName)} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: publicBranchId(branch), after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId } });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+      const memberRecord = await recordOf(ctx, actor, "member", stringValue(membership.memberId));
+      const member = data(memberRecord.data);
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: stringValue(membership.memberId), recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+      return await ptBookingView(ctx, actor.organization, booking);
+    }
+    case "pt.booking.cancel": {
+      requireReason(input.reason, actor.correlationId);
+      const booking = await ctx.db.query("ptBookings").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.bookingId))).unique();
+      if (!booking || (actor.branchScope === "selected" && !actor.branchIds.includes(booking.branchId))) domainError("NOT_FOUND", "PT booking not found.", { correlationId: actor.correlationId });
+      if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an upcoming PT booking can be cancelled.", { correlationId: actor.correlationId });
+      const trainer = await ctx.db.get(booking.trainerProfileId);
+      const cancelledByGym = booleanValue(input.cancelledByGym);
+      if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else requirePermission(actor, "pt.book_for_member");
+      const policy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
+      const timely = cancelledByGym || booking.startsAt - Date.now() >= numberValue(policy.cancellationCutoffHours, 12) * 3_600_000;
+      const entitlement = await ctx.db.get(booking.entitlementId);
+      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
+      const status = cancelledByGym ? "gym_cancelled" : timely ? "cancelled" : "late_cancelled";
+      await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason) });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+      await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Cancelled PT booking and restored credit" : "Late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
+      const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
+      const member = data(memberRecord?.data);
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: cancelledByGym ? "pt-booking-gym-cancelled-v1" : "pt-booking-cancelled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+      return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
+    }
+    case "pt.booking.reschedule": {
+      requirePermission(actor, "pt.book_for_member");
+      requireReason(input.reason, actor.correlationId);
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      const booking = await ctx.db.query("ptBookings").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.bookingId))).unique();
+      if (!booking || (actor.branchScope === "selected" && !actor.branchIds.includes(booking.branchId))) domainError("NOT_FOUND", "PT booking not found.", { correlationId: actor.correlationId });
+      if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an upcoming PT booking can be rescheduled.", { correlationId: actor.correlationId });
+      const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
+      const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.booking.reschedule").eq("key", idempotencyKey)).unique();
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: actor.correlationId });
+        return await ptBookingView(ctx, actor.organization, booking);
+      }
+      const membershipRecord = await recordOf(ctx, actor, "membership", booking.membershipPublicId);
+      const membership = data(membershipRecord.data);
+      const startsAt = Date.parse(stringValue(input.startsAt));
+      if (!Number.isFinite(startsAt) || startsAt <= Date.now()) domainError("VALIDATION_ERROR", "PT booking start time is invalid.", { correlationId: actor.correlationId });
+      const endsAt = startsAt + 3_600_000;
+      const sessionDate = businessDate(stringValue(input.startsAt), actor.organization.timezone || TZ_FALLBACK);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
+      if (diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30) || membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover the new PT session date.", { correlationId: actor.correlationId });
+      const freeze = data(membership.activeFreeze);
+      if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot reschedule PT sessions into the freeze.", { correlationId: actor.correlationId });
+      const [trainer, branch, entitlement, oldTrainer] = await Promise.all([
+        ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique(),
+        branchByPublicId(ctx, actor.organization._id, recordId(input.branchId)),
+        ctx.db.get(booking.entitlementId),
+        ctx.db.get(booking.trainerProfileId),
+      ]);
+      if (!trainer || trainer.status !== "published" || !branch || !trainer.branchIds.includes(branch._id) || !entitlement || (entitlement.startsAt ?? 0) > startsAt || entitlement.expiresAt < startsAt) domainError("NOT_FOUND", "The new PT slot or its reserved credit is unavailable.", { correlationId: actor.correlationId });
+      assertBranchAccess(actor, branch);
+      const slots = await ptSlots(ctx, actor.organization, trainer, branch, sessionDate, sessionDate);
+      if (!slots.some((slot) => stringValue(slot.startsAt) === new Date(startsAt).toISOString())) domainError("CONFLICT", "This PT slot is no longer available.", { correlationId: actor.correlationId });
+      const memberCollision = await ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", booking.memberPublicId).gte("startsAt", startsAt - 3_600_000).lte("startsAt", endsAt)).collect();
+      if (memberCollision.some((item) => item._id !== booking._id && ["reserved", "confirmed"].includes(item.status) && item.startsAt < endsAt && startsAt < item.endsAt)) domainError("CONFLICT", "The member already has a PT booking at this time.", { correlationId: actor.correlationId });
+      const before = { startsAt: utcIso(booking.startsAt), trainerProfileId: oldTrainer?.publicId, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) };
+      await ctx.db.patch(booking._id, { trainerProfileId: trainer._id, branchId: branch._id, startsAt, endsAt, updatedAt: Date.now() });
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}` });
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}` });
+      await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, branchId: publicBranchId(branch), type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+      await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, branchId: publicBranchId(branch) });
+      if (oldTrainer && oldTrainer.userId !== trainer.userId) await insertOperationalNotification(ctx, { recipientUserId: oldTrainer.userId, organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_reassigned", title: "PT booking reassigned", body: utcIso(booking.startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reassigned-old:${booking.publicId}:${startsAt}` });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+      const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
+      const member = data(memberRecord?.data);
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+      return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
+    }
+    case "pt.booking.complete":
+    case "pt.booking.no_show": {
+      const booking = await ctx.db.query("ptBookings").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.bookingId))).unique();
+      if (!booking || (actor.branchScope === "selected" && !actor.branchIds.includes(booking.branchId))) domainError("NOT_FOUND", "PT booking not found.", { correlationId: actor.correlationId });
+      if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an active PT booking can receive an outcome.", { correlationId: actor.correlationId });
+      if (booking.startsAt > Date.now()) domainError("VALIDATION_ERROR", "PT outcomes can only be recorded after the session begins.", { correlationId: actor.correlationId });
+      const trainer = await ctx.db.get(booking.trainerProfileId);
+      if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else { requirePermission(actor, "pt.manage"); requireReason(input.reason, actor.correlationId); }
+      const entitlement = await ctx.db.get(booking.entitlementId);
+      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      const status = operation === "pt.booking.complete" ? "completed" : "no_show";
+      await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
+      await ctx.db.patch(booking._id, { status, outcomeReason: optionalString(input.reason), updatedAt: Date.now() });
+      await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "consume", quantity: -1, reason: status === "completed" ? "PT session completed" : "PT session no-show" });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", body: optionalString(input.reason), meta: { bookingId: booking.publicId } });
+      await insertAudit(ctx, actor, { category: "memberships", action: `pt.booking.${status}`, entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: status === "completed" ? "Completed PT session and consumed credit" : "Recorded PT no-show and consumed credit", reason: optionalString(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
+      if (status === "no_show") {
+        const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
+        const member = data(memberRecord?.data);
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-no-show-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-no-show:${booking.publicId}` });
+      }
+      const remainingCredits = ptAvailable({ ...entitlement, reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1 });
+      if (remainingCredits <= 2) {
+        const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
+        const member = data(memberRecord?.data);
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_low_balance", templateVersion: "pt-low-balance-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-low-balance:${entitlement.publicId}:${remainingCredits}` });
+      }
+      return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
     case "memberships.sale": {
       return await createMembershipMutation(ctx, actor, input, undefined, { standardStartDate: todayIn(actor.organization.timezone || TZ_FALLBACK) });
@@ -3519,6 +4924,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           cancellationReason: `Superseded by plan change: ${stringValue(input.reason)}`,
           adjustments: [...arrayValue(oldData.adjustments), { id: newPublicId(), membershipId: old.publicId, type: "plan_change", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { planId: oldData.planId, endDate: oldData.endDate }, after: { planId: input.planId, successorMembershipId: data(result.membership).id }, approvalStatus: "not_required", createdAt: isoNow() }],
         });
+        await revokeUnusedIncludedPtCredits(ctx, actor, old.publicId, `Superseded by immediate plan change: ${stringValue(input.reason)}`);
       }
       return result;
     }
@@ -3841,6 +5247,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const original = data(originalRecord.data);
       if (original.type !== "payment") domainError("VALIDATION_ERROR", "Only payments can be refunded.", { correlationId: actor.correlationId });
       if (original.status === "voided") domainError("PAYMENT_ALREADY_VOIDED", "Voided payments cannot be refunded.", { correlationId: actor.correlationId });
+      const ptOrder = original.chargeId
+        ? await ctx.db.query("ptPackageOrders").withIndex("by_charge", (q) => q.eq("organizationId", actor.organization._id).eq("chargePublicId", stringValue(original.chargeId))).unique()
+        : null;
+      if (ptOrder && ptOrder.status !== "pending_payment") {
+        domainError("VALIDATION_ERROR", "Use the PT package refund workflow so refundable credits and money remain synchronized.", { correlationId: actor.correlationId });
+      }
       const related = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.originalPaymentId === original.id && payment.type === "refund");
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
@@ -3888,7 +5300,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const paymentDay = todayIn(actor.organization.timezone || TZ_FALLBACK);
       if (businessDate(stringValue(original.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== paymentDay) domainError("VOID_WINDOW_EXPIRED", "Payments can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
       await patchRecord(ctx, actor, originalRecord, { status: "voided", voidReason: stringValue(input.reason) });
-      if (original.chargeId) { const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId)); const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount)); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" }); }
+      if (original.chargeId) {
+        const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
+        const chargeData = data(charge.data);
+        const paid = Math.max(0, amountOf(chargeData.paidAmount) - amountOf(original.amount));
+        await reverseUnusedPtOrderAfterVoid(ctx, actor, charge.publicId, stringValue(input.reason));
+        await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" });
+      }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.void", key: idempotencyKey, requestHash, result: { receiptId: original.receiptId, paymentId: original.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
@@ -3932,7 +5350,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision is invalid.", { correlationId: actor.correlationId });
       const updated = await patchRecord(ctx, actor, record, { varianceApprovalStatus: decision });
-      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash variance`, reason: optionalString(input.note), after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
+      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash variance`, reason: stringValue(input.note), before: { varianceApprovalStatus: "pending" }, after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
       return updated;
     }
     case "automations.rule.create": {
@@ -4056,6 +5474,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "settings", action: "settings.notifications", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Notification settings updated" });
       return await settingsView(ctx, actor);
     }
+    case "settings.operationalEmail.update": {
+      requirePermission(actor, "settings.manage");
+      requireReason(input.reason, actor.correlationId);
+      const enabledKinds = [...new Set(arrayValue(input.enabledKinds).map(String))];
+      if (enabledKinds.some((kind) => !OPERATIONAL_EMAIL_KINDS.includes(kind as typeof OPERATIONAL_EMAIL_KINDS[number]))) domainError("VALIDATION_ERROR", "An operational email type is not supported.", { correlationId: actor.correlationId });
+      const existing = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+      const now = Date.now();
+      if (existing) await ctx.db.patch(existing._id, { enabledKinds, updatedByUserId: actor.user._id, reason: stringValue(input.reason).trim(), updatedAt: now });
+      else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason: stringValue(input.reason).trim(), createdAt: now, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} operational email type${enabledKinds.length === 1 ? "" : "s"}`, reason: stringValue(input.reason), before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
+      return { enabledKinds, availableKinds: [...OPERATIONAL_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true", providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: stringValue(input.reason).trim() };
+    }
     case "settings.operationalPolicies": {
       requirePermission(actor, "settings.manage");
       const settings = await settingsRecord(ctx, actor);
@@ -4096,6 +5526,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (user._id === actor.user._id && input.status === "deactivated") domainError("VALIDATION_ERROR", "You cannot deactivate your own account.", { correlationId: actor.correlationId });
       const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
       if (!membership) domainError("NOT_FOUND", "User not found.", { correlationId: actor.correlationId });
+      if (input.status === "deactivated") {
+        const trainerProfile = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
+        if (trainerProfile) {
+          const futureBookings = await ctx.db.query("ptBookings").withIndex("by_trainer_start", (q) => q.eq("trainerProfileId", trainerProfile._id).gte("startsAt", Date.now())).collect();
+          if (futureBookings.some((booking) => ["reserved", "confirmed"].includes(booking.status))) domainError("CONFLICT", "Reassign or cancel this trainer's future PT bookings before deactivating the account.", { correlationId: actor.correlationId });
+        }
+      }
       if (membership.role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can change owner access.", { correlationId: actor.correlationId });
       const branchIds = input.branchIds ? arrayValue(input.branchIds).map(String) : membership.branchIds.map((id) => id);
       const branchScope = input.branchScope ? (input.branchScope === "all" ? "all" : "selected") : (membership.branchScope ?? "selected");

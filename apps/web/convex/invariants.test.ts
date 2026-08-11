@@ -19,11 +19,11 @@ describe("server domain invariants", () => {
     expect(isValidMinorUnit(-1, true)).toBe(true);
   });
 
-  it("defaults marketing preference to opted in while preserving explicit opt-out", () => {
+  it("only treats an explicit boolean true as opted in", () => {
     expect(marketingPreference(true)).toBe(true);
     expect(marketingPreference(false)).toBe(false);
-    expect(marketingPreference(undefined)).toBe(true);
-    expect(marketingPreference("true")).toBe(true);
+    expect(marketingPreference(undefined)).toBe(false);
+    expect(marketingPreference("true")).toBe(false);
   });
 
   it("normalizes duplicate contacts and ignores archived members", () => {

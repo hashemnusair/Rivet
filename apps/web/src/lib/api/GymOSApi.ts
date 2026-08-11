@@ -514,6 +514,23 @@ export interface PlatformSnapshot {
   overview: PlatformOverview;
 }
 
+export interface MarketingPreferenceMigrationPreview {
+  profileCount: number;
+  memberCount: number;
+  totalCount: number;
+  targetStatus: "unknown";
+  marketingDelivery: "suppressed";
+}
+
+export interface MarketingPreferenceMigrationProgress {
+  id: string;
+  status: "running" | "completed" | "failed";
+  previewCount: number;
+  processedCount: number;
+  failedCount: number;
+  remainingCount: number;
+}
+
 export interface CreateOfferInput {
   leadId: UUID;
   planId: UUID;
@@ -585,6 +602,7 @@ export interface GymOSApi {
 
   // Public directory, customer identity, and platform snapshots
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
+  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getCustomerExperience(): Promise<CustomerExperience>;
   /**
    * Subscribe to identity-scoped member changes. The disposer is returned in
@@ -626,6 +644,8 @@ export interface GymOSApi {
   subscribeNotifications(onValue: (notifications: OperationalNotification[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   setNotificationRead(notificationId: string, read: boolean): Promise<OperationalNotification>;
   markAllNotificationsRead(): Promise<void>;
+  previewMarketingPreferenceMigration(): Promise<MarketingPreferenceMigrationPreview>;
+  applyMarketingPreferenceMigration(input: { migrationId?: string; batchSize?: number; reason: string }): Promise<MarketingPreferenceMigrationProgress>;
 
   // Dashboard
   getDashboard(query: DashboardQuery): Promise<DashboardData>;
@@ -647,6 +667,41 @@ export interface GymOSApi {
   listPlans(query: PlanListQuery): Promise<Page<MembershipPlan>>;
   createPlan(input: CreatePlanInput): Promise<MembershipPlan>;
   updatePlan(planId: UUID, input: UpdatePlanInput): Promise<MembershipPlan>;
+
+  // Public gym profile
+  getGymPublicProfile(): Promise<import("@/lib/domain/types").GymPublicProfile>;
+  subscribeGymPublicProfile(onValue: (profile: import("@/lib/domain/types").GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  listGymProfileVersions(): Promise<import("@/lib/domain/types").GymProfileVersion[]>;
+  saveGymPublicProfile(input: import("@/lib/domain/types").UpdateGymPublicProfileInput): Promise<import("@/lib/domain/types").GymPublicProfile>;
+  publishGymPublicProfile(): Promise<import("@/lib/domain/types").GymPublicProfile>;
+  unpublishGymPublicProfile(reason: string): Promise<import("@/lib/domain/types").GymPublicProfile>;
+  uploadMediaAsset(input: { ownerType: import("@/lib/domain/types").MediaAssetOwnerType; ownerId: UUID; altText?: string; file: Blob }): Promise<import("@/lib/domain/types").MediaAsset>;
+
+  // Personal training
+  getPtWorkspace(): Promise<import("@/lib/domain/types").PtWorkspace>;
+  subscribePtWorkspace(onValue: (workspace: import("@/lib/domain/types").PtWorkspace) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getPtMemberExperience(membershipId: UUID): Promise<import("@/lib/domain/types").PtMemberExperience>;
+  subscribePtMemberExperience(membershipId: UUID, onValue: (experience: import("@/lib/domain/types").PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getCustomerPtExperience(membershipId: UUID): Promise<import("@/lib/domain/types").PtMemberExperience>;
+  subscribeCustomerPtExperience(membershipId: UUID, onValue: (experience: import("@/lib/domain/types").PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  upsertPtTrainerProfile(input: import("@/lib/domain/types").UpsertPtTrainerProfileInput): Promise<import("@/lib/domain/types").PtTrainerProfile>;
+  upsertPtPackage(input: import("@/lib/domain/types").UpsertPtPackageInput): Promise<import("@/lib/domain/types").PtPackage>;
+  replacePtAvailability(input: import("@/lib/domain/types").ReplacePtAvailabilityInput): Promise<import("@/lib/domain/types").PtTrainerProfile>;
+  listPtAvailableSlots(input: { trainerProfileId: UUID; branchId: UUID; from: ISODate; to: ISODate }): Promise<import("@/lib/domain/types").PtAvailableSlot[]>;
+  listCustomerPtAvailableSlots(input: { membershipId: UUID; trainerProfileId: UUID; branchId: UUID; from: ISODate; to: ISODate }): Promise<import("@/lib/domain/types").PtAvailableSlot[]>;
+  createPtBooking(input: import("@/lib/domain/types").CreatePtBookingInput): Promise<import("@/lib/domain/types").PtBooking>;
+  createCustomerPtBooking(input: import("@/lib/domain/types").CreatePtBookingInput): Promise<import("@/lib/domain/types").PtBooking>;
+  cancelPtBooking(bookingId: UUID, input: { reason: string; cancelledByGym?: boolean }): Promise<import("@/lib/domain/types").PtBooking>;
+  cancelCustomerPtBooking(bookingId: UUID, reason: string): Promise<import("@/lib/domain/types").PtBooking>;
+  reschedulePtBooking(input: import("@/lib/domain/types").ReschedulePtBookingInput): Promise<import("@/lib/domain/types").PtBooking>;
+  rescheduleCustomerPtBooking(input: import("@/lib/domain/types").ReschedulePtBookingInput): Promise<import("@/lib/domain/types").PtBooking>;
+  completePtBooking(bookingId: UUID, input?: { reason?: string }): Promise<import("@/lib/domain/types").PtBooking>;
+  markPtBookingNoShow(bookingId: UUID, input?: { reason?: string }): Promise<import("@/lib/domain/types").PtBooking>;
+  requestPtPackage(input: import("@/lib/domain/types").RequestPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
+  requestCustomerPtPackage(input: import("@/lib/domain/types").RequestPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
+  refundPtPackage(orderId: UUID, input: import("@/lib/domain/types").RefundPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
+  previewPtIntroductoryCredits(sessionCount?: number): Promise<import("@/lib/domain/types").PtIntroductoryCreditPreview>;
+  applyPtIntroductoryCredits(input: { sessionCount: number; reason: string; idempotencyKey: string }): Promise<import("@/lib/domain/types").PtIntroductoryCreditApplyResult>;
 
   // Memberships
   listMemberships(query: MembershipListQuery): Promise<Page<MembershipSummary>>;
@@ -733,6 +788,8 @@ export interface GymOSApi {
   updatePaymentMethods(input: PaymentMethod[]): Promise<OrganizationSettings>;
   updateNotificationSettings(input: NotificationSettings): Promise<OrganizationSettings>;
   updateOperationalPolicies(input: OperationalPolicies): Promise<OrganizationSettings>;
+  getOperationalEmailSettings(): Promise<import("@/lib/domain/types").OperationalEmailActivationSettings>;
+  updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<import("@/lib/domain/types").OperationalEmailActivationSettings>;
   listBranches(): Promise<Branch[]>;
   upsertBranch(input: { id?: UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<Branch>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;

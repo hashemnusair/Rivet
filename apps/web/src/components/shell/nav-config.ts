@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   CircleHelp,
+  Dumbbell,
   Users,
   WalletCards,
   Zap,
@@ -43,6 +44,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
       { href: "/memberships", label: "Memberships", icon: WalletCards, anyPermission: ["members.read"] },
       { href: "/plans", label: "Plans", icon: ClipboardList, anyPermission: ["members.read"] },
+      { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     ],
   },
   {

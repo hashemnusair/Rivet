@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, StickyNote } from "lucide-react";
+import { CalendarClock, Dumbbell, StickyNote } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ import {
   MembershipsTab,
   OverviewTab,
   PaymentsTab,
+  PersonalTrainingTab,
   TimelineTab,
 } from "@/features/members/member-tabs";
 
@@ -86,6 +87,7 @@ export default function MemberDetailPageClient() {
             <TabsTrigger value="memberships">Memberships</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="checkins">Check-ins</TabsTrigger>
+            <TabsTrigger value="pt"><Dumbbell className="size-3.5" /> PT</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
             <OverviewTab member={member} />
@@ -101,6 +103,9 @@ export default function MemberDetailPageClient() {
           </TabsContent>
           <TabsContent value="checkins">
             <CheckInsTab memberId={member.id} />
+          </TabsContent>
+          <TabsContent value="pt">
+            <PersonalTrainingTab membershipId={currentMembership?.id} />
           </TabsContent>
         </Tabs>
 

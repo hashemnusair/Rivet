@@ -29,6 +29,13 @@ export const PERMISSIONS = [
   "settings.manage",
   "checkins.override",
   "automations.manage",
+  "profiles.manage",
+  "pt.manage",
+  "pt.book_for_member",
+  "pt.schedule.self",
+  "pt.outcome.self",
+  "pt.refund",
+  "pt.reports.read",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -43,6 +50,7 @@ const SALESPERSON: Permission[] = [
   "payments.discount",
   "crm.read",
   "crm.write",
+  "pt.book_for_member",
 ];
 const RECEPTIONIST: Permission[] = [
   "members.read",
@@ -51,8 +59,9 @@ const RECEPTIONIST: Permission[] = [
   "reconciliation.open_shift",
   "reconciliation.close_shift",
   "crm.read",
+  "pt.book_for_member",
 ];
-const TRAINER: Permission[] = ["members.read"];
+const TRAINER: Permission[] = ["members.read", "pt.schedule.self", "pt.outcome.self"];
 const AUDITOR: Permission[] = ["members.read", "crm.read", "reports.financial.read", "audit.read", "reconciliation.read"];
 
 export const DEFAULT_ROLE_DEFINITIONS: Record<OrganizationRole, { label: string; description: string; permissions: Permission[]; discountLimitMinor: number }> = {

@@ -40,6 +40,8 @@ import type {
   CreateOfferInput,
   MarkOfferDeliveredInput,
   CustomerExperience,
+  MarketingPreferenceMigrationPreview,
+  MarketingPreferenceMigrationProgress,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
@@ -57,6 +59,7 @@ export type ConvexOperationArgs = {
 export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
+  mutation(reference: typeof api.media.generateUploadUrl, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string }): Promise<unknown>;
   /** Optional injectable seam used by tests and alternate Convex transports. */
   subscribe?: (
     reference: typeof api.domain.query,
@@ -68,6 +71,7 @@ export interface ConvexTransport {
   action(reference: typeof api.gymApplications.review, args: ReviewGymApplicationInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: ConvexOperationArgs): Promise<unknown>;
+  action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
 }
 
 function correlationId(): string {
@@ -239,6 +243,7 @@ export class ConvexGymOSApi implements GymOSApi {
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> { return this.query("public.marketplace"); }
+  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.marketplace", {}, onValue, onError); }
   getCustomerExperience(): Promise<CustomerExperience> { return this.query("customer.experience"); }
   subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeQuery("customer.experience", {}, onValue, onError);
@@ -248,6 +253,8 @@ export class ConvexGymOSApi implements GymOSApi {
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
+  previewMarketingPreferenceMigration(): Promise<MarketingPreferenceMigrationPreview> { return this.query("platform.marketingMigration.preview"); }
+  applyMarketingPreferenceMigration(input: { migrationId?: string; batchSize?: number; reason: string }): Promise<MarketingPreferenceMigrationProgress> { return this.mutate("platform.marketingMigration.apply", input); }
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.snapshot", {}, onValue, onError); }
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> { return this.query("platform.gym.detail", { gymId }); }
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.gym.detail", { gymId }, onValue, onError); }
@@ -320,6 +327,52 @@ export class ConvexGymOSApi implements GymOSApi {
   listPlans(query: PlanListQuery): Promise<T.Page<T.MembershipPlan>> { return this.query("plans.list", query); }
   createPlan(input: T.CreatePlanInput): Promise<T.MembershipPlan> { return this.mutate("plans.create", input); }
   updatePlan(planId: T.UUID, input: T.UpdatePlanInput): Promise<T.MembershipPlan> { return this.mutate("plans.update", { planId, ...input }); }
+
+  getGymPublicProfile(): Promise<T.GymPublicProfile> { return this.query("profiles.gym.get"); }
+  subscribeGymPublicProfile(onValue: (profile: T.GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("profiles.gym.get", {}, onValue, onError); }
+  listGymProfileVersions(): Promise<T.GymProfileVersion[]> { return this.query("profiles.gym.versions"); }
+  saveGymPublicProfile(input: T.UpdateGymPublicProfileInput): Promise<T.GymPublicProfile> { return this.mutate("profiles.gym.save", input); }
+  publishGymPublicProfile(): Promise<T.GymPublicProfile> { return this.mutate("profiles.gym.publish", {}); }
+  unpublishGymPublicProfile(reason: string): Promise<T.GymPublicProfile> { return this.mutate("profiles.gym.unpublish", { reason }); }
+  async uploadMediaAsset(input: { ownerType: T.MediaAssetOwnerType; ownerId: T.UUID; altText?: string; file: Blob }): Promise<T.MediaAsset> {
+    if (!this.transport || !this.organizationId) throw ApiError.of(ERR.CONFIGURATION, "Select a gym workspace before uploading media.");
+    const request = { organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId(), ownerType: input.ownerType, ownerPublicId: input.ownerId };
+    try {
+      const uploadUrl = await this.transport.mutation(api.media.generateUploadUrl, request) as string;
+      const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": input.file.type || "application/octet-stream" }, body: input.file });
+      if (!response.ok) throw ApiError.of(ERR.VALIDATION, "The image upload could not be completed.");
+      const payload = await response.json() as { storageId?: string };
+      if (!payload.storageId) throw ApiError.of(ERR.VALIDATION, "The image upload did not return a storage identifier.");
+      return await this.transport.action(api.media.finalizeUpload, { ...request, altText: input.altText, storageId: payload.storageId }) as T.MediaAsset;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+
+  getPtWorkspace(): Promise<T.PtWorkspace> { return this.query("pt.workspace"); }
+  subscribePtWorkspace(onValue: (workspace: T.PtWorkspace) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("pt.workspace", {}, onValue, onError); }
+  getPtMemberExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> { return this.query("pt.member", { membershipId }); }
+  subscribePtMemberExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("pt.member", { membershipId }, onValue, onError); }
+  getCustomerPtExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> { return this.query("customer.pt", { membershipId }); }
+  subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("customer.pt", { membershipId }, onValue, onError); }
+  upsertPtTrainerProfile(input: T.UpsertPtTrainerProfileInput): Promise<T.PtTrainerProfile> { return this.mutate("pt.trainer.upsert", input); }
+  upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> { return this.mutate("pt.package.upsert", input); }
+  replacePtAvailability(input: T.ReplacePtAvailabilityInput): Promise<T.PtTrainerProfile> { return this.mutate("pt.availability.replace", input); }
+  listPtAvailableSlots(input: { trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> { return this.query("pt.slots", input); }
+  listCustomerPtAvailableSlots(input: { membershipId: T.UUID; trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> { return this.query("customer.pt.slots", input); }
+  createPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> { return this.mutate("pt.booking.create", input); }
+  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> { return this.mutate("customer.pt.booking.create", input); }
+  cancelPtBooking(bookingId: T.UUID, input: { reason: string; cancelledByGym?: boolean }): Promise<T.PtBooking> { return this.mutate("pt.booking.cancel", { bookingId, ...input }); }
+  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> { return this.mutate("customer.pt.booking.cancel", { bookingId, reason }); }
+  reschedulePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> { return this.mutate("pt.booking.reschedule", input); }
+  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> { return this.mutate("customer.pt.booking.reschedule", input); }
+  completePtBooking(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.mutate("pt.booking.complete", { bookingId, ...input }); }
+  markPtBookingNoShow(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.mutate("pt.booking.no_show", { bookingId, ...input }); }
+  requestPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("pt.package.request", input); }
+  requestCustomerPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("customer.pt.package.request", input); }
+  refundPtPackage(orderId: T.UUID, input: T.RefundPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("pt.package.refund", { orderId, ...input }); }
+  previewPtIntroductoryCredits(sessionCount = 2): Promise<T.PtIntroductoryCreditPreview> { return this.query("pt.introductory.preview", { sessionCount }); }
+  applyPtIntroductoryCredits(input: { sessionCount: number; reason: string; idempotencyKey: string }): Promise<T.PtIntroductoryCreditApplyResult> { return this.mutate("pt.introductory.apply", input); }
 
   listMemberships(query: MembershipListQuery): Promise<T.Page<T.MembershipSummary>> { return this.query("memberships.list", query); }
   getMembership(membershipId: T.UUID): Promise<T.MembershipDetail> { return this.query("memberships.get", { membershipId }); }
@@ -400,6 +453,8 @@ export class ConvexGymOSApi implements GymOSApi {
   updatePaymentMethods(input: T.PaymentMethod[]): Promise<T.OrganizationSettings> { return this.mutate("settings.paymentMethods", { paymentMethods: input }); }
   updateNotificationSettings(input: T.NotificationSettings): Promise<T.OrganizationSettings> { return this.mutate("settings.notifications", { notifications: input }); }
   updateOperationalPolicies(input: T.OperationalPolicies): Promise<T.OrganizationSettings> { return this.mutate("settings.operationalPolicies", { operationalPolicies: input }); }
+  getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> { return this.query("settings.operationalEmail.get"); }
+  updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> { return this.mutate("settings.operationalEmail.update", input); }
   listBranches(): Promise<T.Branch[]> { return this.query("branches.list"); }
   upsertBranch(input: { id?: T.UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<T.Branch> { return this.mutate("branches.upsert", input); }
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> { return this.query("users.list", query); }

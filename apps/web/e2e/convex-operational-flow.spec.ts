@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 /**
  * Production-shaped write verification for the highest-value operational loop:
@@ -9,7 +10,7 @@ import { expect, test, type Page } from "@playwright/test";
  * never mutate a shared environment.
  */
 test.describe("staged Convex operational flow", () => {
-  test("persists a commercial loop across member, finance, reception, timeline and audit", async ({ page }) => {
+  test("persists a commercial loop across member, finance, reception, timeline and audit", async ({ page, baseURL }, testInfo) => {
     test.skip(
       process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW !== "1" || process.env.PLAYWRIGHT_CONVEX_SMOKE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging",
       "Set the Convex smoke/write switches and PLAYWRIGHT_TARGET_CLASSIFICATION=staging for the isolated staging write test.",
@@ -18,12 +19,14 @@ test.describe("staged Convex operational flow", () => {
     // The classification is deliberately independent from URL naming. A
     // production hostname that happens to contain "dev" must never bypass the
     // release gate, and a staging deployment must be opted into explicitly.
-    expect(process.env.PLAYWRIGHT_TARGET_CLASSIFICATION).toBe("staging");
+    const guard = requireStagingJourney("membership-lifecycle", baseURL);
+    const cleanup = new StagingCleanupLedger(guard.runId, "membership-lifecycle");
 
-    const marker = `${Date.now()}`;
+    const marker = `${guard.runId}-${Date.now()}`;
     const fullName = `Convex Flow ${marker}`;
     const phone = `+962 79 ${marker.slice(-7)}`;
     let memberUrl: string | undefined;
+    let cleanupEntry: number | undefined;
 
     try {
       await page.goto("/members/new", { waitUntil: "domcontentloaded" });
@@ -34,6 +37,7 @@ test.describe("staged Convex operational flow", () => {
       await page.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
       await expect(page).toHaveURL(/\/members\/[0-9a-f-]+$/);
       memberUrl = page.url();
+      cleanupEntry = cleanup.plan({ targetType: "member", targetId: memberUrl.split("/").at(-1), action: "archive", reason: "Disposable staging commercial journey" });
 
       await page.getByTestId("sell-membership").click();
       const sale = page.getByRole("dialog");
@@ -71,17 +75,31 @@ test.describe("staged Convex operational flow", () => {
       await expect(page.getByRole("button", { name: /membership\.sale/i })).toBeVisible();
       await expect(page.getByRole("button", { name: /payment\.collect/i })).toBeVisible();
     } finally {
-      if (memberUrl) await archiveDisposableMember(page, memberUrl);
+      if (memberUrl) {
+        const archived = await archiveDisposableMember(page, memberUrl);
+        if (cleanupEntry !== undefined) {
+          if (archived) cleanup.complete(cleanupEntry);
+          else cleanup.fail(cleanupEntry, "Member archive did not complete");
+        }
+      }
+      await cleanup.attach(testInfo);
     }
   });
 });
 
-async function archiveDisposableMember(page: Page, memberUrl: string) {
-  await page.goto(memberUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: /Archive member/i }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("textbox").fill("Disposable staging verification member");
-  await dialog.getByRole("button", { name: "Archive member" }).click();
-  await expect(dialog).toBeHidden();
+async function archiveDisposableMember(page: Page, memberUrl: string): Promise<boolean> {
+  try {
+    await page.goto(memberUrl, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: /Archive member/i }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("textbox").fill("Disposable staging verification member");
+    await dialog.getByRole("button", { name: "Archive member" }).click();
+    await expect(dialog).toBeHidden();
+    return true;
+  } catch {
+    // Preserve the original assertion failure. The staging cleanup can be
+    // retried manually from the member URL if a browser session expires.
+    return false;
+  }
 }

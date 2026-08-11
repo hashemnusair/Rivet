@@ -221,6 +221,27 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setPreviewSessionReady(true);
   }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status]);
 
+  // Public discovery is a live projection too: profile publication, trainer
+  // visibility, package pricing, subscription eligibility, and branch counts
+  // update without asking visitors to refresh the page.
+  useEffect(() => {
+    if (!convexMode) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void getApi().subscribeMarketplaceGyms((gyms) => {
+      if (!cancelled) setMarketplaceGyms(gyms);
+    }, (error) => {
+      if (cancelled) return;
+      setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
+    }).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch((error: unknown) => {
+      if (!cancelled) setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
+    });
+    return () => { cancelled = true; unsubscribe?.(); };
+  }, [convexMode]);
+
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider
   // only applies the identity-scoped snapshot and keeps the existing QR

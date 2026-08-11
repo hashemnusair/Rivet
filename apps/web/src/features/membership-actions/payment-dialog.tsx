@@ -68,6 +68,8 @@ export function CollectPaymentDialog({
 
   const outstanding = member.outstanding;
   const amountValue = parseMoneyInput(form.watch("amount") ?? "") ?? money(0);
+  const selectedMethod = form.watch("method");
+  const referenceRequired = selectedMethod === "card" || selectedMethod === "bank_transfer" || selectedMethod === "cliq";
   const after = money(Math.max(0, outstanding.amount - amountValue.amount));
 
   const mutation = useApiMutation(
@@ -105,6 +107,10 @@ export function CollectPaymentDialog({
             setServerError(null);
             if (amountValue.amount <= 0) {
               form.setError("amount", { message: "Amount must be greater than zero" });
+              return;
+            }
+            if (referenceRequired && !values.reference?.trim()) {
+              form.setError("reference", { message: "Reference is required for this payment method" });
               return;
             }
             mutation.mutate(values);
@@ -146,7 +152,7 @@ export function CollectPaymentDialog({
                     />
                   </Field>
                 </div>
-                <Field label="External reference" hint="POS slip or transfer reference, optional.">
+                <Field label="External reference" required={referenceRequired} error={form.formState.errors.reference?.message} hint={referenceRequired ? "Enter the POS slip or provider reference." : "Optional for this payment method."}>
                   <Input {...form.register("reference")} placeholder="e.g. POS-88213" />
                 </Field>
                 <div className="flex items-center justify-between border-t border-line pt-3 text-[13px]">

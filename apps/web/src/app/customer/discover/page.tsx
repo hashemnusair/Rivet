@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Dumbbell, MapPin, Search, SlidersHorizontal, Star, Users } from "lucide-react";
+import { ArrowRight, Dumbbell, MapPin, Search, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Reveal } from "@/components/marketing/reveal";
@@ -83,7 +83,7 @@ export default function DiscoverGymsPage() {
                     <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{gym.tagline}</p>
 
                     <div className="mt-4 grid grid-cols-3 gap-2 border-y border-line py-3 text-[11px] text-ink-3">
-                      <span className="flex items-center gap-1.5"><Star className="size-3.5 fill-warning text-warning" /> {gym.rating}</span>
+                      <span className="flex items-center gap-1.5"><Dumbbell className="size-3.5" /> {gym.trainers?.length ?? 0} PT</span>
                       <span className="flex items-center gap-1.5"><Users className="size-3.5" /> {gym.memberCount.toLocaleString()}</span>
                       <span className="flex items-center gap-1.5"><MapPin className="size-3.5" /> {gym.areas[0]}</span>
                     </div>

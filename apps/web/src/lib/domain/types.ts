@@ -50,6 +50,8 @@ export type RoleKey =
   | "trainer"
   | "auditor";
 
+export type AuditActorRole = RoleKey | "member";
+
 export type BranchScope = "all" | "selected";
 
 export interface Organization {
@@ -132,6 +134,7 @@ export interface MemberSummary {
   outstanding: Money;
   lastCheckInAt?: ISODateTime;
   createdAt: ISODateTime;
+  photoUrl?: string;
 }
 
 export interface MemberDetail extends MemberSummary {
@@ -155,6 +158,8 @@ export type MarketingPreferenceSource = "system_default" | "staff_selected" | "m
 
 export interface MarketingPreference {
   optedIn: boolean;
+  /** Missing legacy values are migrated to unknown and suppressed for marketing. */
+  status?: "explicit_opt_in" | "explicit_opt_out" | "unknown";
   source: MarketingPreferenceSource;
   changedAt?: ISODateTime;
   changedById?: UUID;
@@ -221,6 +226,8 @@ export interface MembershipPlan {
   branchAccess: "all" | "selected";
   branchIds: UUID[];
   freezeAllowanceDays: number;
+  /** PT credits granted for each new membership term. Legacy plans default to zero. */
+  includedPtSessions: number;
   status: "active" | "archived";
   activeSubscribers: number;
 }
@@ -322,6 +329,7 @@ export interface CreatePlanInput {
   branchAccess: "all" | "selected";
   branchIds: UUID[];
   freezeAllowanceDays: number;
+  includedPtSessions?: number;
 }
 
 export type UpdatePlanInput = Partial<CreatePlanInput> & { status?: "active" | "archived" };
@@ -392,6 +400,256 @@ export interface TransferMembershipInput {
   reason: string;
   /** Replays the transfer without appending another timeline or audit fact. */
   idempotencyKey?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Personal training
+// ---------------------------------------------------------------------------
+
+export type PtPackageSize = 12 | 20 | 30;
+export type PtBookingStatus =
+  | "reserved"
+  | "confirmed"
+  | "completed"
+  | "cancelled"
+  | "late_cancelled"
+  | "no_show"
+  | "gym_cancelled";
+export type PtEntitlementSource = "included" | "package" | "manual";
+export type PtEntitlementStatus = "active" | "expired" | "revoked";
+export type PtCreditLedgerType = "grant" | "reserve" | "release" | "consume" | "expire" | "refund_revoke" | "adjustment";
+
+export interface PtTrainerProfile {
+  id: UUID;
+  organizationId: UUID;
+  userId: UUID;
+  displayName: string;
+  bioEn?: string;
+  bioAr?: string;
+  specialties: string[];
+  languages: PreferredLanguage[];
+  branchIds: UUID[];
+  photoUrl?: string;
+  photoAlt?: string;
+  status: "draft" | "published" | "archived";
+  availabilityRules?: PtAvailabilityRule[];
+  availabilityExceptions?: PtAvailabilityException[];
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface PtAvailabilityRule {
+  id: UUID;
+  trainerProfileId: UUID;
+  branchId: UUID;
+  weekday: WeekdayKey;
+  startMinute: number;
+  endMinute: number;
+  active: boolean;
+}
+
+export interface PtAvailabilityException {
+  id: UUID;
+  trainerProfileId: UUID;
+  branchId: UUID;
+  date: ISODate;
+  startMinute?: number;
+  endMinute?: number;
+  reason?: string;
+}
+
+export interface PtPackage {
+  id: UUID;
+  organizationId: UUID;
+  name: string;
+  sessionCount: PtPackageSize;
+  totalPrice: Money;
+  validityDays: number;
+  branchAccess: "all" | "selected";
+  branchIds: UUID[];
+  status: "active" | "archived";
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface PtPackageOrder {
+  id: UUID;
+  organizationId: UUID;
+  memberId: UUID;
+  packageId: UUID;
+  chargeId: UUID;
+  status: "pending_payment" | "active" | "partially_refunded" | "refunded" | "cancelled";
+  entitlementId?: UUID;
+  paidAt?: ISODateTime;
+  refundedSessions?: number;
+  refundedAmount?: Money;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface PtEntitlement {
+  id: UUID;
+  organizationId: UUID;
+  memberId: UUID;
+  source: PtEntitlementSource;
+  membershipId?: UUID;
+  packageOrderId?: UUID;
+  granted: number;
+  reserved: number;
+  consumed: number;
+  revoked: number;
+  available: number;
+  startsAt?: ISODateTime;
+  expiresAt: ISODateTime;
+  status: PtEntitlementStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface PtCreditLedgerEntry {
+  id: UUID;
+  entitlementId: UUID;
+  memberId: UUID;
+  bookingId?: UUID;
+  type: PtCreditLedgerType;
+  quantity: number;
+  reason?: string;
+  actorId?: UUID;
+  occurredAt: ISODateTime;
+}
+
+export interface PtBooking {
+  id: UUID;
+  organizationId: UUID;
+  memberId: UUID;
+  memberName: string;
+  trainerProfileId: UUID;
+  trainerName: string;
+  branchId: UUID;
+  branchName: string;
+  entitlementId: UUID;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  status: PtBookingStatus;
+  cancellationReason?: string;
+  outcomeReason?: string;
+  bookedById?: UUID;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface PtAvailableSlot {
+  trainerProfileId: UUID;
+  branchId: UUID;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+}
+
+export interface PtMemberExperience {
+  organizationId: UUID;
+  membershipId: UUID;
+  availableSessions: number;
+  reservedSessions: number;
+  entitlements: PtEntitlement[];
+  upcomingBookings: PtBooking[];
+  orders: PtPackageOrder[];
+  trainers: PtTrainerProfile[];
+  packages: PtPackage[];
+}
+
+export interface PtWorkspace {
+  trainers: PtTrainerProfile[];
+  packages: PtPackage[];
+  bookings: PtBooking[];
+  pendingOrders: PtPackageOrder[];
+  metrics: {
+    packageRevenue: Money;
+    sessionsUsed: number;
+    sessionsReserved: number;
+    upcomingBookings: number;
+    noShows: number;
+  };
+}
+
+export interface UpsertPtTrainerProfileInput {
+  id?: UUID;
+  userId: UUID;
+  displayName: string;
+  bioEn?: string;
+  bioAr?: string;
+  specialties: string[];
+  languages: PreferredLanguage[];
+  branchIds: UUID[];
+  photoAssetId?: UUID;
+  photoAlt?: string;
+  status: "draft" | "published" | "archived";
+}
+
+export interface UpsertPtPackageInput {
+  id?: UUID;
+  name: string;
+  sessionCount: PtPackageSize;
+  totalPrice: Money;
+  validityDays: number;
+  branchAccess: "all" | "selected";
+  branchIds: UUID[];
+  status: "active" | "archived";
+}
+
+export interface ReplacePtAvailabilityInput {
+  trainerProfileId: UUID;
+  rules: Omit<PtAvailabilityRule, "id" | "trainerProfileId">[];
+  exceptions: Omit<PtAvailabilityException, "id" | "trainerProfileId">[];
+}
+
+export interface CreatePtBookingInput {
+  membershipId: UUID;
+  trainerProfileId: UUID;
+  branchId: UUID;
+  startsAt: ISODateTime;
+  idempotencyKey: string;
+}
+
+export interface ReschedulePtBookingInput {
+  bookingId: UUID;
+  trainerProfileId: UUID;
+  branchId: UUID;
+  startsAt: ISODateTime;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface PtIntroductoryCreditPreview {
+  eligibleMemberships: number;
+  alreadyGranted: number;
+  sessionCount: number;
+}
+
+export interface PtIntroductoryCreditApplyResult extends PtIntroductoryCreditPreview {
+  grantedMemberships: number;
+  migrationId: UUID;
+}
+
+export interface OperationalEmailActivationSettings {
+  enabledKinds: string[];
+  availableKinds: string[];
+  liveWorkerEnabled: boolean;
+  providerConfigured: boolean;
+  webhookConfigured: boolean;
+  updatedAt?: ISODateTime;
+  updatedBy?: string;
+  reason?: string;
+}
+
+export interface RequestPtPackageInput {
+  membershipId: UUID;
+  packageId: UUID;
+  idempotencyKey: string;
+}
+
+export interface RefundPtPackageInput {
+  sessions: number;
+  reason: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +875,15 @@ export type TimelineEventType =
   | "trial_no_show"
   | "trial_cancelled"
   | "lead_converted"
+  | "pt_credit_granted"
+  | "pt_package_requested"
+  | "pt_package_activated"
+  | "pt_booking_reserved"
+  | "pt_booking_rescheduled"
+  | "pt_booking_cancelled"
+  | "pt_session_completed"
+  | "pt_session_no_show"
+  | "pt_credit_refunded"
   | "automation";
 
 export interface TimelineEvent {
@@ -1014,7 +1281,7 @@ export interface AuditEvent {
   branchId?: UUID;
   actorId: UUID;
   actorName: string;
-  actorRole: RoleKey;
+  actorRole: AuditActorRole;
   category: AuditCategory;
   action: string; // e.g. "payment.refund", "membership.freeze"
   entityType: string;
@@ -1127,6 +1394,81 @@ export interface OrganizationSettings {
   operationalPolicies: OperationalPolicies;
 }
 
+export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo";
+
+export interface MediaAsset {
+  id: UUID;
+  organizationId: UUID;
+  ownerType: MediaAssetOwnerType;
+  ownerId: UUID;
+  storageId: string;
+  contentType: "image/jpeg" | "image/png" | "image/webp";
+  sizeBytes: number;
+  altText?: string;
+  visibility: "public" | "private";
+  status: "pending" | "active" | "replaced" | "scheduled_for_deletion";
+  url?: string;
+  deleteAfter?: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface GymPublicProfile {
+  organizationId: UUID;
+  version: number;
+  status: "draft" | "published" | "unpublished";
+  shortName: string;
+  taglineEn: string;
+  taglineAr?: string;
+  descriptionEn: string;
+  descriptionAr?: string;
+  category: string;
+  audience: string;
+  amenities: string[];
+  contactEmail?: string;
+  contactPhone?: string;
+  websiteUrl?: string;
+  instagramUrl?: string;
+  accentColor: string;
+  logo?: MediaAsset;
+  cover?: MediaAsset;
+  gallery: MediaAsset[];
+  trainers: PtTrainerProfile[];
+  ptPackages: PtPackage[];
+  publishedAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface GymProfileVersion {
+  id: UUID;
+  organizationId: UUID;
+  version: number;
+  status: "published" | "unpublished";
+  profile: GymPublicProfile;
+  publishedAt?: ISODateTime;
+  unpublishedAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpdateGymPublicProfileInput {
+  shortName: string;
+  taglineEn: string;
+  taglineAr?: string;
+  descriptionEn: string;
+  descriptionAr?: string;
+  category: string;
+  audience: string;
+  amenities: string[];
+  contactEmail?: string;
+  contactPhone?: string;
+  websiteUrl?: string;
+  instagramUrl?: string;
+  accentColor: string;
+  logoAssetId?: UUID;
+  coverAssetId?: UUID;
+  galleryAssetIds: UUID[];
+}
+
 export type WeekdayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
 
 export interface OperatingHoursDay {
@@ -1154,6 +1496,11 @@ export interface OperationalPolicies {
     maximumExtensionDays: number;
   };
   operatingHours: BranchOperatingHours[];
+  personalTraining: {
+    sessionDurationMinutes: 60;
+    bookingHorizonDays: number;
+    cancellationCutoffHours: number;
+  };
 }
 
 export interface NotificationSettings {

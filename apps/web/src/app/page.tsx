@@ -8,7 +8,6 @@ import {
   MapPin,
   ScanLine,
   ShieldCheck,
-  Star,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -204,7 +203,7 @@ export default function LandingPage() {
                     <span className="relative flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.16em]">
                       {gym.shortName}
                       <span className="flex items-center gap-1">
-                        <Star className="size-3 fill-current" /> {gym.rating}
+                        <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
                       </span>
                     </span>
                     <Dumbbell className="absolute bottom-3 end-4 size-8 opacity-30" strokeWidth={1.4} />

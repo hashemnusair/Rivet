@@ -576,7 +576,21 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
   - [x] Persist consumer preference metadata and append-only history in Convex; keep the mock adapter behaviorally aligned.
   - [x] Add member-facing opt-out/re-enable control and readable history with current-state labeling.
   - [x] Apply the preference at the shared automation message boundary for email, SMS, and WhatsApp requests; explicit opt-out suppresses the message while operational/service notifications remain separate.
+  - [x] Add `explicit_opt_in`, `explicit_opt_out`, and `unknown`; migrate historical missing/system defaults to unknown without fabricated consent facts.
+  - [x] Add migration preview counts, bounded idempotent apply batches, progress/failure state, and immutable audit summary.
   - [ ] Run a disposable Production member verification and document the migration/backfill decision.
+
+### TODO-011 — Complete PT staging and Production acceptance
+
+- Status: **Core domain, adapters, UI surfaces, notifications, and handler tests implemented; credentialed acceptance remains open**.
+- Scope: trainer profile/publication, availability/time off, included and purchased credits, partial/full payment, member/staff booking, cancellation/no-show/completion/reschedule, proportional unused-credit refund, realtime balances, and deactivation safety.
+- Acceptance: implement and run the `personal-training` staging journey with owner, manager, trainer, member, and foreign-tenant storage states; prove two-browser slot/credit updates and concurrency; then obtain explicit approval for one named disposable Production PT path and cleanup.
+
+### TODO-012 — Complete all registered production-shaped staging journeys
+
+- Status: **Safety/dispatch/role/cleanup harness complete; the membership-lifecycle body and separate realtime smoke exist; ten product journey bodies remain**.
+- Registered journeys: provisioning, owner settings, staff authorization, trial/CRM, membership lifecycle, reception entry, finance/reconciliation, automation, member portal, isolation/audit, and personal training. A separate `realtime-smoke` is also registered.
+- Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The complete suite must pass against the exact isolated staging deployment before additional Production mutation.
 
 ### TODO-010 — Verify application review-note editing in Production
 
@@ -587,7 +601,6 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 ## P2 — Deliberately deferred until after the first pilot
 
 - Full class schedules, capacity, waitlists, and no-shows.
-- PT packages and trainer availability.
 - Corporate accounts and commissions.
 - POS/inventory and equipment maintenance.
 - Native mobile app and offline-tolerant reception queue.
@@ -639,3 +652,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Engineering/security hardening pass | 2026-08-10 | Current working slice | 332 tests across 49 files, both typechecks, zero-warning lint, production build, `git diff --check`, and 23 preview Playwright journeys passed; 3 credential-gated Convex journeys skipped without trusted staging credentials. Added persisted authorization matrices, immediate/next-renewal plan-change tests, redacted Convex correlation logging, offline/reconnect cache behavior, two-browser staging journey, automation scheduler dedupe/opt-out/manager tests, and shared email/SMS/WhatsApp marketing suppression. Staging credentialed execution, live delivery, and Production verification remain intentionally open. |
 | Production frontend/backend alignment | 2026-08-11 | `009b1b8` | `main` fast-forwarded without rewriting partner work; Actions run `31481872192` passed and Vercel Production `dpl_5M3xaECxsTtqxEqcN1NfLNmQ3g2x` is `READY` at the commit. Production Convex `descriptive-meerkat-589` passed dry-run and deploy with no index deletions; health and persisted platform surfaces passed; `Hashem Test` stayed hidden/suspended and the unsaved restore draft was cancelled. Vercel showed no release runtime errors and the latest 20 Convex events had no schema/missing-function/auth/uncaught/JavaScript-runtime error. No Production product data was seeded, imported, restored, or mutated. Owner-dashboard and automation-ledger visual checks require a separate gym-owner session. |
 | TODO-006 code-shaped money/staff matrix | 2026-08-11 | `1f29af3` (handoff/main `d200ba5`) | Persisted branch-transfer and discount-approval matrices, sale-dialog reason-gate tests, and mock/Convex idempotency parity passed. Local gates passed: 51 files/340 tests, both typechecks, Convex codegen, lint, build, 23 preview E2E passes, and diff check. Final credentialed staging run `31488471463` at `d200ba5`, with both operational/realtime switches enabled, passed authenticated smoke, ungated routine membership/payment flow, cleanup, two-browser realtime, and offline/reconnect. Main run `31488715756` passed ordinary checks. Vercel Production `dpl_Ai7fZ2X64q4eTNWrvW4DJspK89NC` is `READY`; Convex Production `descriptive-meerkat-589` passed exact-target dry-run/deploy from `d200ba5`, with no index deletions, and `health:check` returned `status: ok`. Realistic Production-volume/concurrency proof remains under TODO-007/staging; no Production mutation or seed was run. |
+| Pilot completion and gym-owned PT implementation | 2026-08-11 | current release commit | 365 tests across 60 files, both typechecks, zero-warning lint, Convex codegen consistency, `git diff --check`, all 23 credential-free browser journeys, and the 41-route Production build passed. Added PT commercial/scheduling/credit surfaces, public gym/trainer profiles and photos-only media, explicit consent migration, durable Resend queue/webhooks/templates/application queue, PT reminders, finance lifecycle evidence, trainer dashboard, and staging journey safety/dispatch. Convex Production was deployed separately; Vercel frontend deployment follows the matching main push. Live email activation and Production test-data mutation remain disabled. |

@@ -104,6 +104,7 @@ export default function PlansPage() {
                 <TableHead className="text-end">Price</TableHead>
                 <TableHead>Access</TableHead>
                 <TableHead className="text-end">Freeze</TableHead>
+                <TableHead className="text-end">Included PT</TableHead>
                 <TableHead className="text-end">Subscribers</TableHead>
                 <TableHead aria-label="Actions" />
               </TableRow>
@@ -130,6 +131,9 @@ export default function PlansPage() {
                   <TableCell className="text-[12.5px] text-ink-2">{branchLabel(plan)}</TableCell>
                   <TableCell className="text-end text-[12.5px] tabular text-ink-2">
                     {plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays}d` : "—"}
+                  </TableCell>
+                  <TableCell className="text-end text-[12.5px] tabular text-ink-2">
+                    {plan.includedPtSessions > 0 ? plan.includedPtSessions : "—"}
                   </TableCell>
                   <TableCell className="text-end">
                     <Badge variant={plan.activeSubscribers > 0 ? "neutral" : "outline"}>{plan.activeSubscribers}</Badge>

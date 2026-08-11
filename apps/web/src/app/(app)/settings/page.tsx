@@ -15,6 +15,8 @@ import {
   RolesSection,
   UsersSection,
 } from "@/features/settings/settings-sections";
+import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-section";
+import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 
 function SettingsPageInner() {
   const searchParams = useSearchParams();
@@ -31,16 +33,21 @@ function SettingsPageInner() {
         <Tabs defaultValue={section} key={section}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="organization">Organization</TabsTrigger>
+            <TabsTrigger value="profile">Public profile</TabsTrigger>
             <TabsTrigger value="branches">Branches</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="roles">Roles & permissions</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
             <TabsTrigger value="receipts">Receipts & tax</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="email">Operational email</TabsTrigger>
             <TabsTrigger value="operations">Rules & hours</TabsTrigger>
           </TabsList>
           <TabsContent value="organization">
             <OrganizationSection />
+          </TabsContent>
+          <TabsContent value="profile">
+            <GymPublicProfileSection />
           </TabsContent>
           <TabsContent value="branches">
             <BranchesSection />
@@ -59,6 +66,9 @@ function SettingsPageInner() {
           </TabsContent>
           <TabsContent value="notifications">
             <NotificationsSection />
+          </TabsContent>
+          <TabsContent value="email">
+            <OperationalEmailSection />
           </TabsContent>
           <TabsContent value="operations">
             <OperationalRulesSection />

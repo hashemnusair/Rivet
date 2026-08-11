@@ -20,12 +20,24 @@ export interface MarketplaceGym {
   areas: string[];
   category: string;
   audience: string;
-  rating: number;
-  reviewCount: number;
+  rating?: number;
+  reviewCount?: number;
   memberCount: number;
   branchCount: number;
   fromPriceMinor: number;
   amenities: string[];
+  taglineAr?: string;
+  descriptionAr?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  websiteUrl?: string;
+  instagramUrl?: string;
+  profileVersion?: number;
+  trainers?: import("@/lib/domain/types").PtTrainerProfile[];
+  ptPackages?: import("@/lib/domain/types").PtPackage[];
+  logo?: import("@/lib/domain/types").MediaAsset;
+  cover?: import("@/lib/domain/types").MediaAsset;
+  gallery?: import("@/lib/domain/types").MediaAsset[];
   accent: string;
   featured: boolean;
   subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
@@ -61,6 +73,7 @@ export type CustomerMarketingPreferenceSource = "system_default" | "member_selec
 
 export interface CustomerMarketingPreference {
   optedIn: boolean;
+  status?: "explicit_opt_in" | "explicit_opt_out" | "unknown";
   source: CustomerMarketingPreferenceSource;
   changedAt?: string;
   wordingVersion?: string;

@@ -26,6 +26,7 @@ const gymApplicationNotificationStatus = v.union(
 );
 
 const customerMarketingPreferenceSource = v.union(v.literal("system_default"), v.literal("member_selected"));
+const customerMarketingPreferenceStatus = v.union(v.literal("explicit_opt_in"), v.literal("explicit_opt_out"), v.literal("unknown"));
 
 export const organizationRole = v.union(
   v.literal("owner"),
@@ -34,6 +35,16 @@ export const organizationRole = v.union(
   v.literal("receptionist"),
   v.literal("trainer"),
   v.literal("auditor"),
+);
+
+const auditActorRole = v.union(
+  v.literal("owner"),
+  v.literal("manager"),
+  v.literal("sales"),
+  v.literal("receptionist"),
+  v.literal("trainer"),
+  v.literal("auditor"),
+  v.literal("member"),
 );
 
 export default defineSchema({
@@ -126,6 +137,7 @@ export default defineSchema({
     initials: v.string(),
     context: v.string(),
     marketingOptIn: v.optional(v.boolean()),
+    marketingPreferenceStatus: v.optional(customerMarketingPreferenceStatus),
     marketingPreferenceSource: v.optional(customerMarketingPreferenceSource),
     marketingPreferenceChangedAt: v.optional(v.number()),
     marketingPreferenceWordingVersion: v.optional(v.string()),
@@ -141,12 +153,84 @@ export default defineSchema({
     userId: v.string(),
     customerProfileId: v.string(),
     optedIn: v.boolean(),
+    status: v.optional(customerMarketingPreferenceStatus),
     source: customerMarketingPreferenceSource,
     wordingVersion: v.string(),
     changedAt: v.number(),
   })
     .index("by_user_id", ["userId"])
     .index("by_profile", ["customerProfileId"]),
+
+  // Durable outbound-message queue. Live delivery is separately gated by a
+  // global kill switch and tenant/message-type settings. Applications may be
+  // queued before a tenant exists, hence the optional organization reference.
+  operationalEmailDeliveries: defineTable({
+    publicId: v.string(),
+    organizationId: v.optional(v.id("organizations")),
+    branchId: v.optional(v.id("branches")),
+    kind: v.string(),
+    messageClass: v.union(v.literal("service"), v.literal("marketing")),
+    templateVersion: v.string(),
+    language: v.union(v.literal("en"), v.literal("ar")),
+    recipientReference: v.string(),
+    recipientEmail: v.optional(v.string()),
+    relatedEntityType: v.optional(v.string()),
+    relatedEntityPublicId: v.optional(v.string()),
+    subject: v.optional(v.string()),
+    html: v.optional(v.string()),
+    text: v.optional(v.string()),
+    dedupeKey: v.string(),
+    providerId: v.optional(v.string()),
+    providerEventAt: v.optional(v.number()),
+    attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()) })),
+    status: v.union(v.literal("queued"), v.literal("leased"), v.literal("provider_accepted"), v.literal("delivered"), v.literal("retrying"), v.literal("failed"), v.literal("suppressed")),
+    suppressionReason: v.optional(v.string()),
+    nextAttemptAt: v.optional(v.number()),
+    leaseToken: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    lastErrorCode: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_dedupe", ["dedupeKey"])
+    .index("by_status_next_attempt", ["status", "nextAttemptAt"])
+    .index("by_provider_id", ["providerId"])
+    .index("by_related_entity", ["relatedEntityType", "relatedEntityPublicId"])
+    .index("by_organization_created", ["organizationId", "createdAt"]),
+
+  operationalEmailSettings: defineTable({
+    organizationId: v.id("organizations"),
+    enabledKinds: v.array(v.string()),
+    updatedByUserId: v.id("users"),
+    reason: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
+  operationalEmailWebhookEvents: defineTable({
+    webhookId: v.string(),
+    providerId: v.optional(v.string()),
+    eventType: v.string(),
+    occurredAt: v.number(),
+    receivedAt: v.number(),
+  }).index("by_webhook_id", ["webhookId"]),
+
+  marketingPreferenceMigrations: defineTable({
+    publicId: v.string(),
+    status: v.union(v.literal("previewed"), v.literal("running"), v.literal("completed"), v.literal("failed")),
+    previewCount: v.number(),
+    processedCount: v.number(),
+    failedCount: v.number(),
+    cursor: v.optional(v.string()),
+    startedByUserId: v.id("users"),
+    correlationId: v.string(),
+    reason: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_created", ["createdAt"]),
 
   // Public gym applications remain outside a tenant until RIVET approves and
   // provisions the gym. Only platform-admin workflows may read or change them.
@@ -235,6 +319,180 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_organization_role", ["organizationId", "role"]),
 
+  ptTrainerProfiles: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    userId: v.id("users"),
+    displayName: v.string(),
+    bioEn: v.optional(v.string()),
+    bioAr: v.optional(v.string()),
+    specialties: v.array(v.string()),
+    languages: v.array(v.union(v.literal("en"), v.literal("ar"))),
+    branchIds: v.array(v.id("branches")),
+    photoAssetId: v.optional(v.string()),
+    photoAlt: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_user", ["organizationId", "userId"]),
+
+  ptAvailabilityRules: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    trainerProfileId: v.id("ptTrainerProfiles"),
+    branchId: v.id("branches"),
+    weekday: v.union(v.literal("sun"), v.literal("mon"), v.literal("tue"), v.literal("wed"), v.literal("thu"), v.literal("fri"), v.literal("sat")),
+    startMinute: v.number(),
+    endMinute: v.number(),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_trainer", ["trainerProfileId"])
+    .index("by_trainer_weekday", ["trainerProfileId", "weekday"])
+    .index("by_branch_weekday", ["branchId", "weekday"]),
+
+  ptAvailabilityExceptions: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    trainerProfileId: v.id("ptTrainerProfiles"),
+    branchId: v.id("branches"),
+    date: v.string(),
+    startMinute: v.optional(v.number()),
+    endMinute: v.optional(v.number()),
+    reason: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_trainer_date", ["trainerProfileId", "date"])
+    .index("by_branch_date", ["branchId", "date"]),
+
+  ptPackages: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    name: v.string(),
+    sessionCount: v.union(v.literal(12), v.literal(20), v.literal(30)),
+    totalPriceMinor: v.number(),
+    currency: v.string(),
+    validityDays: v.number(),
+    branchAccess: v.union(v.literal("all"), v.literal("selected")),
+    branchIds: v.array(v.id("branches")),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_status", ["organizationId", "status"]),
+
+  ptPackageOrders: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    memberPublicId: v.string(),
+    membershipPublicId: v.string(),
+    packageId: v.id("ptPackages"),
+    chargePublicId: v.string(),
+    status: v.union(v.literal("pending_payment"), v.literal("active"), v.literal("partially_refunded"), v.literal("refunded"), v.literal("cancelled")),
+    entitlementId: v.optional(v.id("ptEntitlements")),
+    paidAt: v.optional(v.number()),
+    refundedSessions: v.optional(v.number()),
+    refundedMinor: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_member", ["organizationId", "memberPublicId"])
+    .index("by_charge", ["organizationId", "chargePublicId"]),
+
+  ptEntitlements: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    memberPublicId: v.string(),
+    source: v.union(v.literal("included"), v.literal("package"), v.literal("manual")),
+    grantKind: v.optional(v.union(v.literal("introductory"), v.literal("manual_adjustment"))),
+    membershipPublicId: v.optional(v.string()),
+    packageOrderId: v.optional(v.id("ptPackageOrders")),
+    granted: v.number(),
+    reserved: v.number(),
+    consumed: v.number(),
+    revoked: v.number(),
+    startsAt: v.optional(v.number()),
+    expiresAt: v.number(),
+    status: v.union(v.literal("active"), v.literal("expired"), v.literal("revoked")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_member", ["organizationId", "memberPublicId"])
+    .index("by_membership", ["organizationId", "membershipPublicId"])
+    .index("by_expiry", ["organizationId", "status", "expiresAt"]),
+
+  ptCreditLedger: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    entitlementId: v.id("ptEntitlements"),
+    memberPublicId: v.string(),
+    bookingPublicId: v.optional(v.string()),
+    type: v.union(v.literal("grant"), v.literal("reserve"), v.literal("release"), v.literal("consume"), v.literal("expire"), v.literal("refund_revoke"), v.literal("adjustment")),
+    quantity: v.number(),
+    reason: v.optional(v.string()),
+    actorUserId: v.optional(v.id("users")),
+    occurredAt: v.number(),
+  })
+    .index("by_entitlement", ["entitlementId", "occurredAt"])
+    .index("by_organization_member", ["organizationId", "memberPublicId", "occurredAt"])
+    .index("by_booking", ["organizationId", "bookingPublicId"]),
+
+  ptBookings: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    memberPublicId: v.string(),
+    membershipPublicId: v.string(),
+    trainerProfileId: v.id("ptTrainerProfiles"),
+    branchId: v.id("branches"),
+    entitlementId: v.id("ptEntitlements"),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    status: v.union(v.literal("reserved"), v.literal("confirmed"), v.literal("completed"), v.literal("cancelled"), v.literal("late_cancelled"), v.literal("no_show"), v.literal("gym_cancelled")),
+    cancellationReason: v.optional(v.string()),
+    outcomeReason: v.optional(v.string()),
+    bookedByUserId: v.optional(v.id("users")),
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_trainer_start", ["trainerProfileId", "startsAt"])
+    .index("by_member_start", ["organizationId", "memberPublicId", "startsAt"])
+    .index("by_branch_start", ["branchId", "startsAt"])
+    .index("by_status_start", ["status", "startsAt"])
+    .index("by_organization_status", ["organizationId", "status"])
+    .index("by_organization_idempotency", ["organizationId", "idempotencyKey"]),
+
+  mediaAssets: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo")),
+    ownerPublicId: v.string(),
+    storageId: v.id("_storage"),
+    contentType: v.union(v.literal("image/jpeg"), v.literal("image/png"), v.literal("image/webp")),
+    sizeBytes: v.number(),
+    altText: v.optional(v.string()),
+    visibility: v.union(v.literal("public"), v.literal("private")),
+    status: v.union(v.literal("pending"), v.literal("active"), v.literal("replaced"), v.literal("scheduled_for_deletion")),
+    deleteAfter: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_owner", ["organizationId", "ownerType", "ownerPublicId"])
+    .index("by_cleanup", ["status", "deleteAfter"]),
+
   domainRecords: defineTable({
     organizationId: v.id("organizations"),
     entityType: v.string(),
@@ -261,7 +519,7 @@ export default defineSchema({
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
-    actorRole: organizationRole,
+    actorRole: auditActorRole,
     category: v.string(),
     action: v.string(),
     entityType: v.string(),

@@ -1,0 +1,148 @@
+"use client";
+
+import { Eye, Globe2, History, ImagePlus, Save, Send, Undo2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/states";
+import { qk } from "@/lib/api/keys";
+import type { MediaAsset, MediaAssetOwnerType, UpdateGymPublicProfileInput } from "@/lib/domain/types";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
+import { formatDateTime } from "@/lib/utils/dates";
+
+const emptyForm: UpdateGymPublicProfileInput = {
+  shortName: "",
+  taglineEn: "",
+  taglineAr: "",
+  descriptionEn: "",
+  descriptionAr: "",
+  category: "Gym",
+  audience: "All members",
+  amenities: [],
+  contactEmail: "",
+  contactPhone: "",
+  websiteUrl: "",
+  instagramUrl: "",
+  accentColor: "#15140f",
+  galleryAssetIds: [],
+};
+
+export function GymPublicProfileSection() {
+  const invalidate = useInvalidate();
+  const profile = useRealtimeApiQuery({ queryKey: qk.gymProfile, query: (api) => api.getGymPublicProfile(), subscribe: (api, onValue, onError) => api.subscribeGymPublicProfile(onValue, onError) });
+  const versions = useApiQuery(qk.gymProfileVersions, (api) => api.listGymProfileVersions());
+  const [form, setForm] = useState<UpdateGymPublicProfileInput>(emptyForm);
+  const [amenities, setAmenities] = useState("");
+  const [unpublishOpen, setUnpublishOpen] = useState(false);
+  const [unpublishReason, setUnpublishReason] = useState("");
+  const [uploadedAssets, setUploadedAssets] = useState<Record<string, MediaAsset>>({});
+
+  useEffect(() => {
+    if (!profile.data) return;
+    setForm({
+      shortName: profile.data.shortName,
+      taglineEn: profile.data.taglineEn,
+      taglineAr: profile.data.taglineAr ?? "",
+      descriptionEn: profile.data.descriptionEn,
+      descriptionAr: profile.data.descriptionAr ?? "",
+      category: profile.data.category,
+      audience: profile.data.audience,
+      amenities: [...profile.data.amenities],
+      contactEmail: profile.data.contactEmail ?? "",
+      contactPhone: profile.data.contactPhone ?? "",
+      websiteUrl: profile.data.websiteUrl ?? "",
+      instagramUrl: profile.data.instagramUrl ?? "",
+      accentColor: profile.data.accentColor,
+      logoAssetId: profile.data.logo?.id,
+      coverAssetId: profile.data.cover?.id,
+      galleryAssetIds: profile.data.gallery.map((asset) => asset.id),
+    });
+    setAmenities(profile.data.amenities.join(", "));
+  }, [profile.data]);
+
+  const save = useApiMutation((api) => api.saveGymPublicProfile({ ...form, amenities: amenities.split(",").map((item) => item.trim()).filter(Boolean) }), { onSuccess: async () => { toast.success("Public profile draft saved and audited."); await invalidate([qk.gymProfile]); } });
+  const publish = useApiMutation((api) => api.publishGymPublicProfile(), { onSuccess: async () => { toast.success("Public profile published. Discovery will update in realtime when platform eligibility is active."); await invalidate([qk.gymProfile]); } });
+  const unpublish = useApiMutation((api) => api.unpublishGymPublicProfile(unpublishReason), { onSuccess: async () => { toast.success("Public profile unpublished."); setUnpublishOpen(false); setUnpublishReason(""); await invalidate([qk.gymProfile]); } });
+  const upload = useApiMutation((api, input: { ownerType: MediaAssetOwnerType; altText: string; file: File }) => api.uploadMediaAsset({ ...input, ownerId: profile.data?.organizationId ?? "" }), {
+    onSuccess: (asset) => {
+      setUploadedAssets((current) => ({ ...current, [asset.id]: asset }));
+      setForm((current) => asset.ownerType === "gym_logo" ? { ...current, logoAssetId: asset.id } : asset.ownerType === "gym_cover" ? { ...current, coverAssetId: asset.id } : { ...current, galleryAssetIds: [...current.galleryAssetIds, asset.id] });
+      toast.success("Image sanitized and attached to this draft. Save the draft to keep the selection.");
+    },
+  });
+
+  if (profile.isLoading) return <Skeleton className="h-[620px] w-full" />;
+  if (profile.isError) return <ErrorState title="Public profile could not be loaded" onRetry={() => profile.refetch()} />;
+  const value = profile.data!;
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
+      <section className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><p className="eyebrow">Public gym profile</p><h2 className="mt-1 font-display text-[17px] font-semibold">Draft and publication</h2><p className="mt-1 text-[12px] text-ink-3">Owners and managers control the content. RIVET subscription eligibility controls final directory visibility.</p></div>
+          <Badge variant={value.status === "published" ? "success" : value.status === "draft" ? "warning" : "neutral"}>{value.status} · v{value.version}</Badge>
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <MediaUploadField label="Logo" ownerType="gym_logo" current={form.logoAssetId ? uploadedAssets[form.logoAssetId] ?? value.logo : undefined} loading={upload.isPending} onUpload={(file, altText) => upload.mutate({ ownerType: "gym_logo", file, altText })} />
+          <MediaUploadField label="Cover image" ownerType="gym_cover" current={form.coverAssetId ? uploadedAssets[form.coverAssetId] ?? value.cover : undefined} loading={upload.isPending} onUpload={(file, altText) => upload.mutate({ ownerType: "gym_cover", file, altText })} />
+          <Field label="Short name" required><Input value={form.shortName} maxLength={24} onChange={(event) => setForm((current) => ({ ...current, shortName: event.target.value }))} /></Field>
+          <Field label="Category"><Input value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} /></Field>
+          <Field label="English tagline" required><Input value={form.taglineEn} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineEn: event.target.value }))} /></Field>
+          <Field label="Arabic tagline"><Input dir="rtl" lang="ar" value={form.taglineAr} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineAr: event.target.value }))} /></Field>
+          <Field label="English description" required className="sm:col-span-1"><Textarea className="min-h-32" maxLength={2000} value={form.descriptionEn} onChange={(event) => setForm((current) => ({ ...current, descriptionEn: event.target.value }))} /></Field>
+          <Field label="Arabic description" className="sm:col-span-1"><Textarea dir="rtl" lang="ar" className="min-h-32" maxLength={2000} value={form.descriptionAr} onChange={(event) => setForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></Field>
+          <Field label="Audience"><Input value={form.audience} onChange={(event) => setForm((current) => ({ ...current, audience: event.target.value }))} /></Field>
+          <Field label="Amenities" hint="Comma separated"><Input value={amenities} onChange={(event) => setAmenities(event.target.value)} placeholder="Free weights, showers, parking" /></Field>
+          <Field label="Contact email"><Input type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></Field>
+          <Field label="Contact phone"><Input dir="ltr" value={form.contactPhone} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} /></Field>
+          <Field label="Website"><Input type="url" value={form.websiteUrl} onChange={(event) => setForm((current) => ({ ...current, websiteUrl: event.target.value }))} placeholder="https://" /></Field>
+          <Field label="Instagram"><Input type="url" value={form.instagramUrl} onChange={(event) => setForm((current) => ({ ...current, instagramUrl: event.target.value }))} placeholder="https://instagram.com/" /></Field>
+          <Field label="Accent color"><div className="flex gap-2"><Input type="color" className="w-14 p-1" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /><Input value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></div></Field>
+          <MediaUploadField label="Add gallery image" ownerType="gym_gallery" loading={upload.isPending} onUpload={(file, altText) => upload.mutate({ ownerType: "gym_gallery", file, altText })} />
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {value.status === "published" ? <Button variant="secondary" onClick={() => setUnpublishOpen(true)}><Undo2 /> Unpublish</Button> : null}
+          <Button variant="secondary" loading={save.isPending} disabled={!form.shortName.trim() || !form.taglineEn.trim() || !form.descriptionEn.trim()} onClick={() => save.mutate()}><Save /> Save draft</Button>
+          <Button loading={publish.isPending} disabled={value.status !== "draft"} onClick={() => publish.mutate()}><Send /> Publish draft</Button>
+        </div>
+      </section>
+
+      <div className="space-y-5">
+        <section className="overflow-hidden rounded-lg border border-line bg-surface">
+          <header className="flex items-center gap-2 border-b border-line px-4 py-3"><Eye className="size-4 text-ink-3" /><div><p className="eyebrow">Preview</p><p className="text-[12px] text-ink-3">Content preview; final visibility still depends on RIVET eligibility.</p></div></header>
+          <div className="h-32 bg-cover bg-center" style={{ backgroundColor: form.accentColor, backgroundImage: (form.coverAssetId ? uploadedAssets[form.coverAssetId]?.url ?? value.cover?.url : undefined) ? `url(${form.coverAssetId ? uploadedAssets[form.coverAssetId]?.url ?? value.cover?.url : undefined})` : undefined }} />
+          <div className="p-5"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-ink-3">{form.category || "Gym"} · {form.audience || "All members"}</p><h3 className="mt-2 font-display text-[25px] font-semibold">{form.shortName || "Gym name"}</h3><p className="mt-3 text-[13px] leading-relaxed text-ink-2">{form.taglineEn || "Add the gym's public tagline."}</p><div className="mt-4 flex flex-wrap gap-1.5">{amenities.split(",").map((item) => item.trim()).filter(Boolean).map((item) => <span key={item} className="rounded-full border border-line px-2 py-1 text-[10px]">{item}</span>)}</div><div className="mt-5 border-t border-line pt-4 text-[11.5px] text-ink-3">{value.trainers.length} published trainer{value.trainers.length === 1 ? "" : "s"} · {value.ptPackages.length} active PT package{value.ptPackages.length === 1 ? "" : "s"}</div></div>
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-line bg-surface">
+          <header className="flex items-center gap-2 border-b border-line px-4 py-3"><History className="size-4 text-ink-3" /><div><p className="eyebrow">Version history</p><p className="text-[12px] text-ink-3">Published snapshots remain available for audit.</p></div></header>
+          {versions.isLoading ? <Skeleton className="m-4 h-24" /> : versions.data?.length ? <div className="divide-y divide-line">{versions.data.map((item) => <article key={item.id} className="flex items-center justify-between gap-3 px-4 py-3"><div><p className="text-[12.5px] font-medium">Version {item.version}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{formatDateTime(item.publishedAt ?? item.updatedAt)}</p></div><Badge variant={item.status === "published" ? "success" : "neutral"}>{item.status}</Badge></article>)}</div> : <p className="p-5 text-[12px] text-ink-3">No profile version has been published yet.</p>}
+        </section>
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-sunken p-4 text-[11.5px] text-ink-2"><Globe2 className="mt-0.5 size-4 shrink-0" /><p>Published trainers and active PT packages are read from their authoritative records; this form cannot fabricate ratings, member totals, or popularity.</p></div>
+      </div>
+
+      <Dialog open={unpublishOpen} onOpenChange={setUnpublishOpen}><DialogContent><DialogHeader><DialogTitle>Unpublish gym profile?</DialogTitle><DialogDescription>The gym disappears from public discovery, while its subscription and operational records remain intact.</DialogDescription></DialogHeader><DialogBody><Field label="Reason" required><Textarea value={unpublishReason} onChange={(event) => setUnpublishReason(event.target.value)} placeholder="Why is this profile being unpublished?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setUnpublishOpen(false)}>Cancel</Button><Button variant="danger" loading={unpublish.isPending} disabled={unpublishReason.trim().length < 3} onClick={() => unpublish.mutate()}>Unpublish profile</Button></DialogFooter></DialogContent></Dialog>
+    </div>
+  );
+}
+
+function MediaUploadField({ label, ownerType, current, loading, onUpload }: { label: string; ownerType: MediaAssetOwnerType; current?: MediaAsset; loading: boolean; onUpload: (file: File, altText: string) => void }) {
+  const [altText, setAltText] = useState(current?.altText ?? "");
+  const [file, setFile] = useState<File>();
+  return (
+    <div className="rounded-md border border-line p-3">
+      <div className="flex items-center gap-2"><ImagePlus className="size-4 text-ink-3" /><p className="text-[12.5px] font-medium">{label}</p></div>
+      {current?.url ? <div role="img" aria-label={current.altText ?? "Uploaded profile image"} className="mt-3 h-24 w-full rounded-sm bg-cover bg-center" style={{ backgroundImage: `url(${current.url})` }} /> : null}
+      <input className="mt-3 block w-full text-[11px] file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-1" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0])} />
+      <Input className="mt-2" value={altText} maxLength={180} onChange={(event) => setAltText(event.target.value)} placeholder="Required accessible image description" />
+      <Button className="mt-2" type="button" size="sm" variant="secondary" loading={loading} disabled={!file || altText.trim().length < 3} onClick={() => file && onUpload(file, altText.trim())}>Upload and sanitize</Button>
+      <p className="mt-2 text-[9.5px] text-ink-3">JPEG, PNG, or WebP · 5 MB maximum · metadata is removed server-side.</p>
+      <span className="sr-only">{ownerType}</span>
+    </div>
+  );
+}

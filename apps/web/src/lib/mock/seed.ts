@@ -191,14 +191,14 @@ export function buildSeed(now: Date = new Date()): MockDb {
   // Plans
   // -------------------------------------------------------------------------
   const planDefs: Array<Omit<MembershipPlan, "activeSubscribers">> = [
-    { id: P.monthly, organizationId: ORG_ID, name: "Monthly Standard", code: "M1", kind: "time", durationDays: 30, basePrice: money(40_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 7, status: "active" },
-    { id: P.quarterly, organizationId: ORG_ID, name: "Quarterly", code: "Q3", kind: "time", durationDays: 90, basePrice: money(105_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 10, status: "active" },
-    { id: P.semi, organizationId: ORG_ID, name: "Semi-Annual", code: "S6", kind: "time", durationDays: 180, basePrice: money(190_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 15, status: "active" },
-    { id: P.annual, organizationId: ORG_ID, name: "Annual All-Access", code: "A12", kind: "time", durationDays: 365, basePrice: money(350_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 30, status: "active" },
-    { id: P.student, organizationId: ORG_ID, name: "Student Monthly", code: "STU", kind: "time", durationDays: 30, basePrice: money(30_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 0, status: "active" },
-    { id: P.visits10, organizationId: ORG_ID, name: "10-Visit Pass", code: "V10", kind: "visits", visitAllowance: 10, visitValidityDays: 90, basePrice: money(50_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, status: "active" },
-    { id: P.day, organizationId: ORG_ID, name: "Day Pass", code: "DAY", kind: "time", durationDays: 1, basePrice: money(8_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 0, status: "active" },
-    { id: P.summer24, organizationId: ORG_ID, name: "Summer Promo 2024", code: "SUM24", kind: "time", durationDays: 90, basePrice: money(89_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, status: "archived" },
+    { id: P.monthly, organizationId: ORG_ID, name: "Monthly Standard", code: "M1", kind: "time", durationDays: 30, basePrice: money(40_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 7, includedPtSessions: 2, status: "active" },
+    { id: P.quarterly, organizationId: ORG_ID, name: "Quarterly", code: "Q3", kind: "time", durationDays: 90, basePrice: money(105_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 10, includedPtSessions: 2, status: "active" },
+    { id: P.semi, organizationId: ORG_ID, name: "Semi-Annual", code: "S6", kind: "time", durationDays: 180, basePrice: money(190_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 15, includedPtSessions: 4, status: "active" },
+    { id: P.annual, organizationId: ORG_ID, name: "Annual All-Access", code: "A12", kind: "time", durationDays: 365, basePrice: money(350_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 30, includedPtSessions: 6, status: "active" },
+    { id: P.student, organizationId: ORG_ID, name: "Student Monthly", code: "STU", kind: "time", durationDays: 30, basePrice: money(30_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 0, includedPtSessions: 0, status: "active" },
+    { id: P.visits10, organizationId: ORG_ID, name: "10-Visit Pass", code: "V10", kind: "visits", visitAllowance: 10, visitValidityDays: 90, basePrice: money(50_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 0, status: "active" },
+    { id: P.day, organizationId: ORG_ID, name: "Day Pass", code: "DAY", kind: "time", durationDays: 1, basePrice: money(8_000), branchAccess: "selected", branchIds: [BRANCH_ABD, BRANCH_SWF], freezeAllowanceDays: 0, includedPtSessions: 0, status: "active" },
+    { id: P.summer24, organizationId: ORG_ID, name: "Summer Promo 2024", code: "SUM24", kind: "time", durationDays: 90, basePrice: money(89_000), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 0, status: "archived" },
   ];
 
   // -------------------------------------------------------------------------
@@ -1883,6 +1883,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
         minimumFreezeDays: 1,
         maximumExtensionDays: 365,
       },
+      personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [],
     },
     members,

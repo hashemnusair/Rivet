@@ -23,12 +23,11 @@ export function isValidMinorUnit(amount: unknown, allowNegative = false): amount
   return typeof amount === "number" && Number.isSafeInteger(amount) && (allowNegative || amount >= 0);
 }
 
-/**
- * RIVET's approved product default is opted in. Preserve an explicit opt-out;
- * omitted or legacy values inherit the opted-in default.
- */
+/** A boolean is explicit only when it is truly a boolean; omitted legacy data
+ * is represented as false at boolean-only compatibility boundaries and its
+ * separate preference status remains `unknown`. */
 export function marketingPreference(value: unknown): boolean {
-  return value !== false;
+  return value === true;
 }
 
 export interface DuplicateMemberCandidate {

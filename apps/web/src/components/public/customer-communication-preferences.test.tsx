@@ -11,8 +11,8 @@ const state = vi.hoisted(() => ({
     phone: "+962 79 440 2211",
     initials: "LH",
     context: "RIVET member",
-    marketingPreference: { optedIn: true, source: "system_default" as const, wordingVersion: "2026-08-default-opt-in-v1" },
-    marketingPreferenceHistory: [{ optedIn: true, source: "system_default" as const, wordingVersion: "2026-08-default-opt-in-v1" }],
+    marketingPreference: { optedIn: false, status: "unknown" as const, source: "system_default" as const },
+    marketingPreferenceHistory: [{ optedIn: false, status: "unknown" as const, source: "system_default" as const }],
   },
   updateMarketingPreference: vi.fn(),
 }));
@@ -24,23 +24,24 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 describe("CustomerCommunicationPreferences", () => {
   beforeEach(() => {
-    state.updateMarketingPreference.mockReset().mockResolvedValue({ ...state.customer, marketingPreference: { ...state.customer.marketingPreference, optedIn: false, source: "member_selected" } });
+    state.updateMarketingPreference.mockReset().mockResolvedValue({ ...state.customer, marketingPreference: { ...state.customer.marketingPreference, optedIn: true, status: "explicit_opt_in", source: "member_selected" } });
   });
 
-  it("explains the service-message exception and shows the default history", () => {
+  it("explains the service-message exception and shows unknown history", () => {
     render(<CustomerCommunicationPreferences />);
 
     expect(screen.getByText(/Service messages about bookings, payments, and entry remain separate/)).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Receive marketing updates" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Receive marketing updates" })).not.toBeChecked();
+    expect(screen.getByText(/No marketing choice is recorded/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View preference history (1)" })).toBeInTheDocument();
   });
 
-  it("persists an opt-out and lets the member inspect the history", async () => {
+  it("persists an explicit opt-in and lets the member inspect the history", async () => {
     render(<CustomerCommunicationPreferences />);
 
     fireEvent.click(screen.getByRole("switch", { name: "Receive marketing updates" }));
-    await waitFor(() => expect(state.updateMarketingPreference).toHaveBeenCalledWith(false));
-    expect(screen.getByRole("status")).toHaveTextContent("Marketing updates disabled.");
+    await waitFor(() => expect(state.updateMarketingPreference).toHaveBeenCalledWith(true));
+    expect(screen.getByRole("status")).toHaveTextContent("Marketing updates enabled.");
 
     fireEvent.click(screen.getByRole("button", { name: "View preference history (1)" }));
     expect(await screen.findByRole("heading", { name: "Communication preference history" })).toBeInTheDocument();

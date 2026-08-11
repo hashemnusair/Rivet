@@ -72,8 +72,8 @@ describe("least privilege per role", () => {
     }
   });
 
-  it("limits the trainer to reading the member directory", () => {
-    expect(byKey("trainer").permissions).toEqual(["members.read"]);
+  it("limits the trainer to member lookup and their own PT schedule/outcomes", () => {
+    expect(byKey("trainer").permissions).toEqual(["members.read", "pt.schedule.self", "pt.outcome.self"]);
   });
 
   it("keeps sensitive notes away from every role except manager and above", () => {

@@ -266,6 +266,7 @@ describe("ConvexGymOSApi contract boundary", () => {
     await api.updateOperationalPolicies({
       entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
+      personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [{ branchId: session.activeBranchId!, days }],
     });
     await api.transferMembership("membership-1", { branchId: "branch-2", reason: "Member relocated" });

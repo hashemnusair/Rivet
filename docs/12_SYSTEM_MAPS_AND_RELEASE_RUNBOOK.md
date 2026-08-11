@@ -1,6 +1,6 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-10 after the supervised disposable-tenant Production pilot.
+Last reviewed: 2026-08-11 after the local pilot-completion and personal-training implementation pass.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 - The application is a release candidate, not a blank scaffold.
 - `main` is deployed to Vercel Production and production Convex health is reachable.
-- Credential-free checks pass: frontend and Convex typecheck, lint, 297 unit/component tests, 22 preview browser journeys, and the production build.
+- Current local credential-free checks pass: frontend and Convex typecheck, zero-warning lint, 365 unit/handler/component tests across 60 files, all 23 preview browser journeys, and the 41-route production build. Three trusted Clerk/Convex journeys were correctly skipped without their isolated-staging credentials and remain release gates.
 - The authenticated Development Clerk → Convex smoke and staged operational write flow passed on the current merged head in manual workflow `31325711295`.
 - Production environment alignment, Resend application mail, authenticated tenant resolution, and the supervised single-cash-path onboarding/operational sequence have been verified. The fabricated platform-gym detail facts were removed and the authorized target-scoped replacement passed a credentialed Production check on deployed head `6a3678b`. Release remains held for the invited-owner onboarding defect, the platform directory's omission of hidden/suspended tenants, remaining adversarial authorization coverage, and the incomplete workflow/provider items in the canonical backlog.
 - Production must never be seeded with `seed:seedDemoTenant`.
@@ -321,6 +321,36 @@ flowchart LR
 
 Frontend gates are usability. Convex checks are the authority.
 
+## Map 11 — Personal-training commercial and scheduling lifecycle
+
+```mermaid
+flowchart LR
+    PLAN["Membership term<br/>included sessions"] --> ENT["PT entitlement<br/>activation + expiry"]
+    PACKAGE["12 / 20 / 30 package"] --> ORDER["Pending package order"]
+    ORDER --> CHARGE["Authoritative charge"]
+    CHARGE --> PARTIAL{"Fully paid?"}
+    PARTIAL -->|"No"| WAIT["No credits granted"]
+    PARTIAL -->|"Yes, atomic"| ENT
+
+    TRAINER["Published trainer<br/>active staff + branches"] --> AVAIL["Weekly availability<br/>and time off"]
+    AVAIL --> SLOT["60-minute gym-timezone slot"]
+    ENT --> BOOK["Reserve one credit"]
+    SLOT --> BOOK
+    BOOK --> OUTCOME{"Outcome"}
+    OUTCOME -->|"Timely member or gym cancel"| RELEASE["Release same credit"]
+    OUTCOME -->|"Complete / no-show / late cancel"| CONSUME["Consume credit"]
+    OUTCOME -->|"Atomic reschedule"| MOVE["Release and reserve<br/>without balance drift"]
+
+    ENT --> LEDGER["Immutable PT credit ledger"]
+    BOOK --> LEDGER
+    RELEASE --> LEDGER
+    CONSUME --> LEDGER
+    MOVE --> LEDGER
+    LEDGER --> TIMELINE["Member timeline + audit"]
+```
+
+PT always belongs to one gym tenant. An active, unfrozen membership must cover the booking date and branch. Package payment uses the existing charge/payment/receipt ledger; RIVET does not pretend to charge a card.
+
 ## Environment ownership map
 
 | Variable or group | Local development | Vercel Preview | Vercel Production | Convex deployment | GitHub Actions |
@@ -335,10 +365,14 @@ Frontend gates are usability. Convex checks are the authority.
 | `RIVET_SITE_URL` | — | — | — | Correct environment origin | — |
 | `RESEND_API_KEY` | — | — | — | Production or sandbox key | — |
 | `RESEND_FROM_EMAIL` | — | — | — | Verified sender | — |
+| `RESEND_WEBHOOK_SECRET` | — | — | — | Resend signing secret | — |
 | `RIVET_APPLICATION_RECIPIENTS` | — | — | — | Partner recipient list | — |
+| `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Global kill switch; default `false` | — |
+| `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Staging session JSON secret |
+| `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Required for write journeys |
 
 ### Environment rules
 
@@ -349,6 +383,8 @@ Frontend gates are usability. Convex checks are the authority.
 5. A configured local deploy key takes precedence over `--prod`; the Convex CLI may warn that it is ignoring `--prod`. Use the Production dashboard or an isolated production-operator shell.
 6. The Vercel application build and Convex function deployment are separate release operations.
 7. Keep production secret values out of local project files whenever possible.
+8. Live operational email requires the global kill switch and the tenant/global message-type allowlist. Configuring Resend alone must not activate delivery.
+9. Staging write tests require an exact expected Convex URL, a non-Production host, a unique run ID, and the required role-specific Clerk storage states.
 
 ## Release runbook
 

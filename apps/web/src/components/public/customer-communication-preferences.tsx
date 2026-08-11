@@ -8,8 +8,6 @@ import type { CustomerMarketingPreference } from "@/lib/public/experience-data";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { formatDate } from "@/lib/utils/dates";
 
-const DEFAULT_WORDING_VERSION = "2026-08-default-opt-in-v1";
-
 export function CustomerCommunicationPreferences() {
   const customer = useCustomerPersona();
   const { updateMarketingPreference } = useExperience();
@@ -17,9 +15,9 @@ export function CustomerCommunicationPreferences() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>();
   const preference: CustomerMarketingPreference = customer?.marketingPreference ?? {
-    optedIn: true,
+    optedIn: false,
+    status: "unknown",
     source: "system_default",
-    wordingVersion: DEFAULT_WORDING_VERSION,
   };
   const history = customer?.marketingPreferenceHistory?.length ? customer.marketingPreferenceHistory : [preference];
 
@@ -49,7 +47,9 @@ export function CustomerCommunicationPreferences() {
         <Switch checked={preference.optedIn} onCheckedChange={(checked) => void toggle(checked)} disabled={saving} aria-label="Receive marketing updates" />
       </div>
       <p className="mt-3 text-[11.5px] text-ink-3">
-        {preference.source === "system_default" ? "Enabled by RIVET's launch default. You can opt out at any time." : `Last changed ${formatDate(preference.changedAt)}.`}
+        {preference.status === "unknown" || preference.source === "system_default"
+          ? "No marketing choice is recorded. Promotional email, SMS, and WhatsApp are suppressed until you choose."
+          : `Last changed ${formatDate(preference.changedAt)}.`}
       </p>
       {saveMessage ? <p className="mt-2 text-[11.5px] text-ink-2" role="status">{saveMessage}</p> : null}
       <button type="button" onClick={() => setHistoryOpen(true)} className="mt-3 text-[11.5px] font-medium text-ink-2 underline underline-offset-2 hover:no-underline">
@@ -65,8 +65,8 @@ export function CustomerCommunicationPreferences() {
               {[...history].reverse().map((entry, index) => (
                 <li key={`${entry.changedAt ?? "default"}-${index}`} className="flex items-start justify-between gap-4 px-3 py-3">
                   <span>
-                    <span className="block text-[13px] font-medium">{entry.optedIn ? "Marketing updates enabled" : "Marketing updates disabled"}</span>
-                    <span className="mt-0.5 block text-[11.5px] text-ink-3">{entry.source === "system_default" ? "RIVET default" : "Selected by you"} · {formatDate(entry.changedAt)}</span>
+                    <span className="block text-[13px] font-medium">{entry.status === "unknown" ? "No choice recorded" : entry.optedIn ? "Marketing updates enabled" : "Marketing updates disabled"}</span>
+                    <span className="mt-0.5 block text-[11.5px] text-ink-3">{entry.source === "system_default" ? "Historical state" : "Selected by you"}{entry.changedAt ? ` · ${formatDate(entry.changedAt)}` : ""}</span>
                   </span>
                   {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Current</span> : null}
                 </li>

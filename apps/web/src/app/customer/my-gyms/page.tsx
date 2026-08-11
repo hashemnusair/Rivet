@@ -18,7 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CustomerCommunicationPreferences } from "@/components/public/customer-communication-preferences";
 import type { CustomerMembership, MarketplaceGym } from "@/lib/public/experience-data";
+import { qk } from "@/lib/api/keys";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { daysFromToday, diffDays, formatDate, formatRelative, todayISODate } from "@/lib/utils/dates";
@@ -238,9 +240,10 @@ function MembershipCard({ membership, gym, onShowQr }: { membership: CustomerMem
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-px border-y border-line bg-line sm:grid-cols-3">
-        <MiniStat className="col-span-2 sm:col-span-1" label="Plan" value={membership.planName} />
+      <div className="grid grid-cols-2 gap-px border-y border-line bg-line sm:grid-cols-4">
+        <MiniStat label="Plan" value={membership.planName} />
         <MiniStat label="Visits · month" value={String(membership.visitsThisMonth)} />
+        <CustomerPtSummary membershipId={membership.id} />
         <MiniStat label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} tone={membership.balanceMinor > 0 ? "danger" : "default"} />
       </div>
 
@@ -266,6 +269,9 @@ function MembershipCard({ membership, gym, onShowQr }: { membership: CustomerMem
           <Button asChild size="sm" variant="secondary">
             <Link href={`/customer/my-gyms/${membership.id}`}>Membership details</Link>
           </Button>
+          <Button asChild size="sm" variant="secondary">
+            <Link href={`/customer/my-gyms/${membership.id}?section=pt`}>PT sessions</Link>
+          </Button>
           {gym ? (
             <Button asChild size="sm" variant="ghost">
               <Link href={`/customer/gyms/${gym.id}`}>Gym page</Link>
@@ -275,6 +281,15 @@ function MembershipCard({ membership, gym, onShowQr }: { membership: CustomerMem
       </div>
     </article>
   );
+}
+
+function CustomerPtSummary({ membershipId }: { membershipId: string }) {
+  const query = useRealtimeApiQuery({
+    queryKey: ["customer", ...qk.ptMember(membershipId)],
+    query: (api) => api.getCustomerPtExperience(membershipId),
+    subscribe: (api, onValue, onError) => api.subscribeCustomerPtExperience(membershipId, onValue, onError),
+  });
+  return <MiniStat label="PT sessions" value={query.isLoading ? "…" : query.isError ? "Unavailable" : String(query.data?.availableSessions ?? 0)} />;
 }
 
 function EntryCard({ membership, gym, onExpand }: { membership: CustomerMembership; gym?: MarketplaceGym; onExpand: () => void }) {

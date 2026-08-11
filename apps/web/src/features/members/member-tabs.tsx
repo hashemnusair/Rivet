@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, Dumbbell } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { MemberDetail, TimelineEventType, UUID } from "@/lib/domain/types";
-import { formatDate } from "@/lib/utils/dates";
+import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination } from "@/components/shared/chrome";
@@ -18,6 +19,8 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils/cn";
 import { receiptHref } from "@/lib/utils/receipt-links";
+import { Button } from "@/components/ui/button";
+import { useApp, usePermissions } from "@/lib/providers/app-providers";
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -218,6 +221,37 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
 }
 
 // ---------------------------------------------------------------------------
+// Personal training
+// ---------------------------------------------------------------------------
+export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
+  const { session } = useApp();
+  const { can } = usePermissions();
+  const invalidate = useInvalidate();
+  const [trainerId, setTrainerId] = useState("");
+  const [branchId, setBranchId] = useState("");
+  const [date, setDate] = useState(() => addDays(todayISODate(), 1));
+  const query = useRealtimeApiQuery({ queryKey: qk.ptMember(membershipId ?? "none"), query: (api) => api.getPtMemberExperience(membershipId!), subscribe: (api, onValue, onError) => api.subscribePtMemberExperience(membershipId!, onValue, onError), enabled: Boolean(membershipId) });
+  const selectedTrainer = query.data?.trainers.find((item) => item.id === trainerId);
+  const selectedBranch = branchId || selectedTrainer?.branchIds[0] || "";
+  const slots = useApiQuery(["pt", "slots", trainerId, selectedBranch, date], (api) => api.listPtAvailableSlots({ trainerProfileId: trainerId, branchId: selectedBranch, from: date, to: date }), { enabled: Boolean(trainerId && selectedBranch && date) });
+  const requestPackage = useApiMutation((api, packageId: string) => api.requestPtPackage({ membershipId: membershipId!, packageId, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT package charge created. Credits activate after full payment."); await invalidate(); } });
+  const book = useApiMutation((api, startsAt: string) => api.createPtBooking({ membershipId: membershipId!, trainerProfileId: trainerId, branchId: selectedBranch, startsAt, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT session reserved."); await invalidate(); } });
+
+  if (!membershipId) return <EmptyState title="No current membership" description="PT credits and bookings require an active gym membership." />;
+  if (query.isLoading) return <Skeleton className="h-56 w-full" />;
+  if (query.isError) return <ErrorState title="PT details could not be loaded" onRetry={() => query.refetch()} />;
+  const experience = query.data!;
+  return <div className="space-y-4">
+    <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label="Available PT sessions" value={experience.availableSessions} /><StatCell label="Reserved" value={experience.reservedSessions} /><StatCell label="Next booking" value={experience.upcomingBookings[0] ? <DateTimeText iso={experience.upcomingBookings[0].startsAt} /> : "—"} /></section>
+    <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
+      <section className="panel p-4"><div className="flex items-center gap-2"><CalendarClock className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Book a session</h3></div>{experience.availableSessions <= 0 ? <p className="mt-4 border border-warning/25 bg-warning-bg p-3 text-[12px] text-warning-deep">No usable PT credit remains. Create a package charge from the catalog, then collect the full payment before booking.</p> : <div className="mt-4 grid gap-3"><label className="grid gap-1 text-[11px] font-medium">Trainer<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={trainerId} onChange={(event) => { setTrainerId(event.target.value); setBranchId(""); }}><option value="">Choose a trainer</option>{experience.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.displayName}</option>)}</select></label>{selectedTrainer ? <label className="grid gap-1 text-[11px] font-medium">Branch<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={selectedBranch} onChange={(event) => setBranchId(event.target.value)}>{selectedTrainer.branchIds.map((id) => <option key={id} value={id}>{session?.branches.find((branch) => branch.id === id)?.name ?? id}</option>)}</select></label> : null}<label className="grid gap-1 text-[11px] font-medium">Date<input className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" type="date" min={addDays(todayISODate(), 1)} value={date} onChange={(event) => setDate(event.target.value)} /></label>{trainerId && selectedBranch ? <div><p className="mb-2 text-[11px] font-medium">Available times</p>{slots.isLoading ? <p className="text-[11px] text-ink-3">Loading slots…</p> : slots.data?.length ? <div className="flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="text-[11px] text-ink-3">No open 60-minute slots on this date.</p>}</div> : null}</div>}</section>
+      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Package catalog</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[10.5px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Create charge</Button> : null}</div></article>) : <p className="p-5 text-[11px] text-ink-3">No active PT packages.</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="eyebrow">Recent orders</p><div className="mt-2 space-y-1">{experience.orders.slice(0, 3).map((order) => <p key={order.id} className="flex justify-between text-[10.5px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
+    </div>
+    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[10.5px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
+  </div>;
+}
+
+// ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
 export function PaymentsTab({ memberId }: { memberId: UUID }) {
@@ -385,7 +419,7 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
     ["Emergency contact", member.emergencyContactName ? `${member.emergencyContactName} · ${member.emergencyContactPhone ?? ""}` : "—"],
     ["Source", member.source ? member.source.replace(/_/g, " ") : "—"],
     ["Salesperson", salespersonName ?? "Unassigned"],
-    ["Marketing", <span key="marketing">{member.marketingOptIn ? "Opted in" : "Opted out"}{member.marketingPreference ? <span className="ms-1 text-ink-3">· {member.marketingPreference.source.replace("_", " ")}</span> : null}</span>],
+    ["Marketing", <span key="marketing">{member.marketingPreference?.status === "unknown" || !member.marketingPreference ? "Unknown · suppressed" : member.marketingOptIn ? "Opted in" : "Opted out"}{member.marketingPreference ? <span className="ms-1 text-ink-3">· {member.marketingPreference.source.replaceAll("_", " ")}</span> : null}</span>],
     ["Member since", <DateText key="c" iso={member.createdAt} />],
   ];
   return (

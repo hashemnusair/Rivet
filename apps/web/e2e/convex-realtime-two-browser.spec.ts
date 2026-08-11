@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
+import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 /**
  * Credentialed realtime verification. These write journeys are deliberately
@@ -6,11 +7,13 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
  * target. The contexts have independent Convex watches and browser caches.
  */
 test.describe("staged Convex two-browser realtime", () => {
-  test("publishes a member created in browser A to browser B", async ({ browser }) => {
+  test("publishes a member created in browser A to browser B", async ({ browser, baseURL }, testInfo) => {
     skipUnlessStagingWriteJourney();
+    const guard = requireStagingJourney("realtime-smoke", baseURL);
+    const cleanup = new StagingCleanupLedger(guard.runId, "realtime-smoke");
 
-    const contextA = await browser.newContext({ storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE });
-    const contextB = await browser.newContext({ storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE });
+    const contextA = await newRoleContext(browser, "owner");
+    const contextB = await newRoleContext(browser, "owner");
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
     const memberUrls: string[] = [];
@@ -20,15 +23,17 @@ test.describe("staged Convex two-browser realtime", () => {
       memberUrls.push(await createDisposableMember(pageA, "Realtime propagation"));
       await expectNewMemberCount(pageB, initialCount + 1);
     } finally {
-      await cleanupAndClose(pageA, contextA, contextB, memberUrls);
+      await cleanupAndClose(pageA, contextA, contextB, memberUrls, cleanup, testInfo);
     }
   });
 
-  test("keeps browser B's last dashboard snapshot offline and resumes one live stream after reconnect", async ({ browser }) => {
+  test("keeps browser B's last dashboard snapshot offline and resumes one live stream after reconnect", async ({ browser, baseURL }, testInfo) => {
     skipUnlessStagingWriteJourney();
+    const guard = requireStagingJourney("realtime-smoke", baseURL);
+    const cleanup = new StagingCleanupLedger(guard.runId, "realtime-smoke");
 
-    const contextA = await browser.newContext({ storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE });
-    const contextB = await browser.newContext({ storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE });
+    const contextA = await newRoleContext(browser, "owner");
+    const contextB = await newRoleContext(browser, "owner");
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
     const memberUrls: string[] = [];
@@ -59,7 +64,7 @@ test.describe("staged Convex two-browser realtime", () => {
       await expectNewMemberCount(pageB, initialCount + 3);
       await expect.poll(() => pageB.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationCount);
     } finally {
-      await cleanupAndClose(pageA, contextA, contextB, memberUrls);
+      await cleanupAndClose(pageA, contextA, contextB, memberUrls, cleanup, testInfo);
     }
   });
 });
@@ -116,13 +121,16 @@ async function archiveDisposableMember(page: Page, memberUrl: string) {
   await expect(dialog).toBeHidden();
 }
 
-async function cleanupAndClose(pageA: Page, contextA: BrowserContext, contextB: BrowserContext, memberUrls: string[]) {
+async function cleanupAndClose(pageA: Page, contextA: BrowserContext, contextB: BrowserContext, memberUrls: string[], cleanup: StagingCleanupLedger, testInfo: TestInfo) {
   const cleanupFailures: Error[] = [];
   for (const memberUrl of memberUrls.reverse()) {
+    const cleanupEntry = cleanup.plan({ targetType: "member", targetId: memberUrl.split("/").at(-1), action: "archive", reason: "Disposable two-browser realtime journey" });
     try {
       await archiveDisposableMember(pageA, memberUrl);
+      cleanup.complete(cleanupEntry);
     } catch (error) {
       cleanupFailures.push(error instanceof Error ? error : new Error("Disposable member cleanup failed."));
+      cleanup.fail(cleanupEntry, error);
     }
   }
 
@@ -130,6 +138,8 @@ async function cleanupAndClose(pageA: Page, contextA: BrowserContext, contextB: 
   await contextB.close();
 
   if (cleanupFailures.length > 0) {
+    await cleanup.attach(testInfo);
     throw new AggregateError(cleanupFailures, "One or more disposable staging members could not be archived.");
   }
+  await cleanup.attach(testInfo);
 }

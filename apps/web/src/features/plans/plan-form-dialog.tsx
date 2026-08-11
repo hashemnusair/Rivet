@@ -28,6 +28,7 @@ const schema = z
     branchAccess: z.enum(["all", "selected"]),
     branchIds: z.array(z.string()),
     freezeAllowanceDays: z.coerce.number().int().min(0).max(180),
+    includedPtSessions: z.coerce.number().int().min(0).max(100),
   })
   .superRefine((v, ctx) => {
     if (v.kind === "time" && !v.durationDays) ctx.addIssue({ code: "custom", path: ["durationDays"], message: "Required" });
@@ -61,6 +62,7 @@ export function PlanFormDialog({
       branchAccess: "all",
       branchIds: [],
       freezeAllowanceDays: 0,
+      includedPtSessions: 2,
       priceMajor: "",
     },
   });
@@ -80,8 +82,9 @@ export function PlanFormDialog({
               branchAccess: plan.branchAccess,
               branchIds: plan.branchIds,
               freezeAllowanceDays: plan.freezeAllowanceDays,
+              includedPtSessions: plan.includedPtSessions,
             }
-          : { name: "", code: "", kind: "time", durationDays: 30, branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, priceMajor: "" },
+          : { name: "", code: "", kind: "time", durationDays: 30, branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 2, priceMajor: "" },
       );
       setServerError(null);
     }
@@ -104,6 +107,7 @@ export function PlanFormDialog({
         branchAccess: v.branchAccess,
         branchIds: v.branchAccess === "selected" ? v.branchIds : [],
         freezeAllowanceDays: v.freezeAllowanceDays,
+        includedPtSessions: v.includedPtSessions,
       };
       return plan ? api.updatePlan(plan.id, payload) : api.createPlan(payload);
     },
@@ -173,6 +177,9 @@ export function PlanFormDialog({
               </Field>
               <Field label="Freeze allowance (days)">
                 <Input type="number" min={0} {...form.register("freezeAllowanceDays")} />
+              </Field>
+              <Field label="Included PT sessions" error={form.formState.errors.includedPtSessions?.message}>
+                <Input type="number" min={0} max={100} {...form.register("includedPtSessions")} />
               </Field>
             </div>
 

@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      staging_journeys:
+        description: "Comma-separated registered staging journey IDs; use all for every journey enabled by the workflow switches"
+        required: false
+        type: string
+        default: "all"
 
 permissions:
   contents: read
@@ -122,6 +127,7 @@ jobs:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_STATE }}
+      PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -158,6 +164,10 @@ jobs:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW: "1"
           PLAYWRIGHT_TARGET_CLASSIFICATION: staging
+          PLAYWRIGHT_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          PLAYWRIGHT_EXPECTED_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
+          PLAYWRIGHT_STAGING_JOURNEYS: ${{ inputs.staging_journeys == 'all' && 'membership-lifecycle' || inputs.staging_journeys }}
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
       - name: Run staged two-browser realtime flow
@@ -166,5 +176,10 @@ jobs:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
           PLAYWRIGHT_CONVEX_REALTIME: "1"
           PLAYWRIGHT_TARGET_CLASSIFICATION: staging
+          PLAYWRIGHT_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          PLAYWRIGHT_EXPECTED_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
+          PLAYWRIGHT_STAGING_JOURNEYS: ${{ inputs.staging_journeys == 'all' && 'realtime-smoke' || inputs.staging_journeys }}
+          PLAYWRIGHT_CLERK_STORAGE_OWNER: ${{ runner.temp }}/clerk-storage-state.json
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/convex-realtime-two-browser.spec.ts

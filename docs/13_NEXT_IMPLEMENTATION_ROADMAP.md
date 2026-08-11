@@ -40,6 +40,17 @@ The full pilot-readiness pass has advanced the roadmap substantially:
 
 Historical status note: this paragraph previously described the pre-`009b1b8` state. Current status is that the Production Convex deploy completed without index deletion, and the credentialed isolated-staging two-context and offline browser checks passed before release. Still open in this roadmap: the ten independent staging journeys, live operational-email activation/worker/provider handling, migration/backfill policy for historical marketing preferences, dedicated read-only Production realtime observation, and supervised Production verification for later feature changes. No Production seed, import, or live automation/email was enabled.
 
+## Implementation progress — 11 August 2026 (local pilot completion and PT pass)
+
+- Added the gym-owned PT domain across Convex, `GymOSApi`, the mock adapter, gym workspace, public profile, member 360, and member portal. It covers trainer profiles/publication, recurring availability/time off, included membership credits, 12/20/30-session packages, pending-charge activation, immutable credits, booking/reschedule/cancellation/outcomes, proportional unused-credit refunds, reminders, notifications, and audit.
+- Added public gym profile draft/preview/publish/unpublish/versioning and publish-gated bilingual gym/trainer media. No independent trainer marketplace, classes, commissions, payroll, POS, or inventory was added.
+- Added photos-only Convex storage with authenticated authorization, 5 MB JPEG/PNG/WebP validation and sanitization, private member-photo scope, mandatory public alt text, and timed replacement/archive retention.
+- Completed explicit marketing status and the idempotent unknown-consent migration with preview/progress/audit. Unknown and opted-out recipients are suppressed across marketing email/SMS/WhatsApp while essential service messages stay separate.
+- Completed the leased Resend worker, verified webhook intake, retry schedule, terminal manager notice, application-email migration, and English/Arabic service templates. Live delivery remains globally disabled and type-gated.
+- Expanded finance and PT handler tests, including partial payment, idempotency, overpay/over-refund, card/CliQ external references, void, signed shift variance/review reasons, credit/slot conflicts, ownership, and deactivation protections.
+- Registered the exact eleven product staging journeys with staging URL/host classification, required roles, unique run IDs, unknown-selector rejection, and non-destructive cleanup ledgers. The membership-lifecycle body and separate realtime-smoke body remain the only fully authored trusted journeys; the other ten product journey bodies, including the full PT journey, remain release work.
+- Credential-free local evidence is recorded in `CURRENT_STATE.md`. No Production deployment, Production mutation, live email activation, invitation, or cleanup occurred.
+
 ## Read before editing
 
 Read these files completely:
@@ -77,7 +88,7 @@ Read these files completely:
 - Do not print, copy, or commit secrets. Environment documentation lists names only.
 - Never run `seed:seedDemoTenant` against Production.
 - Do not mutate Production without explicit approval for the exact records and actions.
-- Do not start class scheduling, POS/inventory, trainer marketplace, native mobile, biometric storage, or double-entry accounting during this roadmap.
+- Do not start class scheduling, POS/inventory, an independent trainer marketplace, trainer commissions/payroll, native mobile, biometric storage, or double-entry accounting during this roadmap. The approved gym-owned PT slice is now in scope and implemented as described above.
 
 ## Definition of done for every milestone
 

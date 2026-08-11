@@ -29,6 +29,13 @@ export const PERMISSIONS = [
   "settings.manage",
   "checkins.override",
   "automations.manage",
+  "profiles.manage",
+  "pt.manage",
+  "pt.book_for_member",
+  "pt.schedule.self",
+  "pt.outcome.self",
+  "pt.refund",
+  "pt.reports.read",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -47,6 +54,7 @@ const SALESPERSON: Permission[] = [
   "payments.discount",
   "crm.read",
   "crm.write",
+  "pt.book_for_member",
 ];
 
 const RECEPTIONIST: Permission[] = [
@@ -56,9 +64,10 @@ const RECEPTIONIST: Permission[] = [
   "reconciliation.open_shift",
   "reconciliation.close_shift",
   "crm.read",
+  "pt.book_for_member",
 ];
 
-const TRAINER: Permission[] = ["members.read"];
+const TRAINER: Permission[] = ["members.read", "pt.schedule.self", "pt.outcome.self"];
 
 const AUDITOR: Permission[] = [
   "members.read",

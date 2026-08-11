@@ -11,6 +11,27 @@ Updated 2026-08-11 after the TODO-006 money/staff real-handler evidence release.
 - Convex Production was explicitly selected as `descriptive-meerkat-589`, not Development `fleet-otter-621`. The exact-target dry run from `d200ba5` completed schema validation with no index deletions; the matching Production deploy then completed with no index deletions. Production `health:check` returned `status: ok`. No seed, import, restore, product-data mutation, or destructive Production workflow was run.
 - Read-only Production log checks found zero error-like events in the recent Convex history and no Vercel runtime errors for the release deployment. Realistic Production-volume/concurrency evidence remains intentionally deferred to TODO-007/staging; no Production-volume proof is claimed.
 
+## Pilot completion and personal-training implementation — current release
+
+The current release adds the approved gym-controlled PT domain without creating a trainer marketplace:
+
+- Membership plans carry explicit included-session counts. Sales, renewals, immediate plan changes, and next-renewal successor terms grant term-bound credits; future-term credits cannot be booked early, included credits do not roll over, and introductory grants use an audited preview/apply workflow.
+- Owners/managers can manage active trainer profiles, bilingual biographies, photos, 60-minute branch-specific availability, time-off exceptions, and fixed 12/20/30-session package tiers. Larger tiers cannot have a higher per-session price, and published trainers must remain active staff with the trainer role.
+- PT package requests create unpaid charges and pending orders. Partial payment grants no sessions; full payment atomically activates a dated entitlement. Refunds are limited to unused sessions and use proportional integer-minor-unit arithmetic.
+- The immutable PT credit ledger records grants, reservations, releases, consumption, expiry/revocation, refunds, and adjustments. Booking, cancellation, late cancellation, gym cancellation, no-show, completion, and rescheduling update entitlement counters transactionally and append member-timeline/audit facts. Trainer conflicts, member overlap, idempotency reuse, and concurrent credit overspending are rejected server-side.
+- Gym staff have a `/pt` workspace and role-aware trainer dashboard. Member 360, My Gyms, gym detail, and public gym pages expose real PT balances, bookings, calendars, published trainers, and package requests. Trainers cannot receive gym-wide package orders or revenue in their workspace projection.
+- Gym public profiles support bilingual draft/preview/publish/unpublish/version history, branches, amenities, plans, trainers, and publish-gated media. No ratings, popularity, revenue, or member counts can be owner-entered.
+- Photos-only Convex storage validates and sanitizes JPEG/PNG/WebP images up to 5 MB. Member photos are private; gym/trainer media requires alt text and only enters public projections through publication. Replacement/archive retention remains scheduled and auditable.
+- Marketing preferences use `explicit_opt_in`, `explicit_opt_out`, or `unknown`; historical missing/system defaults can be previewed and idempotently migrated to `unknown`, while unknown and opted-out marketing recipients are suppressed without blocking essential service messages.
+- Operational email uses one durable queue for applications and service messages with leases, provider IDs, verified webhooks, deduplication, bilingual templates, and 1/5/30-minute retry metadata. Global and message-type activation remain disabled by default.
+- A 15-minute PT reminder job deduplicates in-app/email reminders for sessions roughly 24 hours ahead. PT booking/package/low-balance events use realtime notifications and the durable message boundary.
+- Finance/reconciliation evidence covers cash/card/CliQ-style methods, external references, partial/full payment, idempotency, overpayment, refunds, voids, signed variances, mandatory review reasons, receipts, and immutable audit facts.
+- The release guard defines eleven production-shaped journeys plus separate realtime smoke, validates staging URL/host classification, assigns role storage states, rejects unknown dispatch names, creates unique run IDs, and attaches non-destructive cleanup ledgers. Only membership-lifecycle and realtime-smoke browser bodies are currently authored; ten product journeys remain release work.
+
+Credential-free verification for this release: 365 Vitest/Convex tests across 60 files, both TypeScript checks, zero-warning lint, Convex codegen consistency, `git diff --check`, all 23 credential-free browser journeys, and the 41-route Production build passed. Convex Production has been deployed and matched to the release; Vercel frontend deployment occurs after the `main` push. Live operational email, Production test-data seeding, and disposable Production verification remain disabled.
+
+Still release-gated: the ten remaining staging journey bodies, credentialed PT/finance/reception and offline/reconnect browser coverage, upload accessibility coverage, approved anonymization deletion, live-email activation, and supervised disposable Production PT verification.
+
 ## Pilot-readiness implementation pass — `135a5f1` + `76a28a8`
 
 The current head adds the largest post-pilot operational slice so far:
