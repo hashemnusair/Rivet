@@ -13,7 +13,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 export function navIsActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard" || pathname === "/";
   if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/receipts");
-  return pathname.startsWith(href);
+  // Match the route itself and descendants, but not similarly prefixed routes.
+  // Without the segment boundary, `/members` also activates `/memberships`.
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function Sidebar() {

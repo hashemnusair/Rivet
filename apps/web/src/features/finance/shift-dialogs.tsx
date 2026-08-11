@@ -20,8 +20,17 @@ import { cn } from "@/lib/utils/cn";
 // ---------------------------------------------------------------------------
 // Open shift
 // ---------------------------------------------------------------------------
-const openSchema = z.object({ float: z.string().min(1, "Opening float is required") });
-type OpenValues = z.infer<typeof openSchema>;
+export const openShiftSchema = z.object({
+  float: z
+    .string()
+    .trim()
+    .min(1, "Opening float is required")
+    .refine((value) => {
+      const parsed = parseMoneyInput(value);
+      return parsed !== null && parsed.amount >= 0;
+    }, "Enter a valid non-negative amount"),
+});
+type OpenValues = z.infer<typeof openShiftSchema>;
 
 export function OpenShiftDialog({
   open,
@@ -35,17 +44,21 @@ export function OpenShiftDialog({
   onOpened?: (shift: CashShift) => void;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
-  const form = useForm<OpenValues>({ resolver: zodResolver(openSchema), defaultValues: { float: "50.000" } });
+  const form = useForm<OpenValues>({ resolver: zodResolver(openShiftSchema), defaultValues: { float: "" } });
   useEffect(() => {
     if (open) {
-      form.reset({ float: "50.000" });
+      form.reset({ float: "" });
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const mutation = useApiMutation(
-    (api, v: OpenValues) => api.openCashShift({ branchId, openingFloat: parseMoneyInput(v.float) ?? money(50_000) }),
+    (api, v: OpenValues) => {
+      const openingFloat = parseMoneyInput(v.float);
+      if (!openingFloat) throw new Error("Opening float is required.");
+      return api.openCashShift({ branchId, openingFloat });
+    },
     {
       onSuccess: (shift) => {
         onOpenChange(false);
@@ -65,7 +78,7 @@ export function OpenShiftDialog({
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody>
             <Field label="Opening float (JOD)" required error={form.formState.errors.float?.message}>
-              <Input inputMode="decimal" autoFocus data-testid="opening-float" {...form.register("float")} />
+              <Input inputMode="decimal" autoFocus placeholder="e.g. 50.000" data-testid="opening-float" {...form.register("float")} />
             </Field>
             {serverError ? <p role="alert" className="mt-2 text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
