@@ -551,12 +551,31 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 - Risk: owners are trained to ignore genuine exceptions, and an internal identifier leaks into an executive-facing surface.
 - Fix/acceptance: move balanced/normal lifecycle facts to **Recent activity**. Keep **Needs attention** for actionable exceptions only: non-zero variance awaiting/requiring decision, failed automation, overdue follow-up, failed delivery, or equivalent unresolved operational failure. Render a human detail, never a raw UUID. Add persisted dashboard tests for normal versus exceptional events.
 
+### BUG-017 — Next-renewal plan changes create an immediately outstanding charge
+
+- Status: **Open; reproduced in Production on 2026-08-11**.
+- Evidence: scheduling `Pilot Card Member` from `Pilot Monthly` to `Pilot Quarterly` for 11 September created the expected scheduled successor term and PT-credit schedule, but also exposed the full JOD 120.000 successor charge as the member's current outstanding balance and included it in today's owner report. The report therefore showed JOD 170.000 outstanding instead of the JOD 50.000 currently due from the two active pilot terms.
+- Risk: reception may collect a future renewal early by mistake, entry warnings and owner receivables are overstated, and the member header presents the scheduled term as the primary account state.
+- Fix/acceptance: define the billing policy explicitly. If next-renewal changes are not invoices, delay charge creation until term activation. If they are future invoices, add issue/due dates and exclude not-yet-due charges from current outstanding, entry policy, collections, and dashboard receivables. The current active term must remain the primary member header until the successor starts. Add handler, projection, report, and browser regressions.
+
+### BUG-018 — Public free-trial form can render no selectable times for configured operating days
+
+- Status: **Open; reproduced in Production on 2026-08-11**.
+- Evidence: the published pilot gym displayed persisted Sunday–Thursday 06:00–23:00 and Saturday 07:00–22:00 hours, but the public trial form's time selector contained no options for a Thursday date.
+- Fix/acceptance: derive truthful trial slots from the selected branch's published operating hours and timezone, provide an explicit closed/unavailable state, and cover weekday/weekend/closed-day/timezone cases. Complete the submission in a separate signed-out or member browser because the owner session correctly routes back to its role dashboard.
+
+### BUG-019 — Inline membership collection cannot capture required card/CliQ reference
+
+- Status: **Fixed locally after Production reproduction on 2026-08-11; deployment verification pending**.
+- Evidence: `Sell membership` allows `Collect payment now` with card or CliQ, but exposes no external-reference input. The server correctly rejects the sale with “An external reference is required.” The separate `Collect` dialog does expose the field and succeeds.
+- Fix/acceptance: the inline form now shows and requires the external reference for card, bank-transfer, and CliQ collection, passes it through the typed sale/renewal contract, and keeps the mock adapter aligned with Convex validation. Focused component and adapter tests pass; verify one non-cash inline sale after deployment.
+
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 
-- Status: **The single cash-payment Production path is verified; broader payment-method, exception, realistic-volume, and concurrency coverage remains open for staging/TODO-007**.
+- Status: **Cash, card, CliQ-style, partial balance, partial refund, same-day void, PT charge, receipts, and balanced reconciliation are verified in Production; non-zero variance review, realistic volume, and concurrency remain open for staging/TODO-007**.
 - Scope: open shift, opening float, cash/card/CliQ-style configured payments, partial balance, receipt, refund/void review, close shift, expected-vs-counted cash, manager variance decision, daily reconciliation.
-- Evidence to date: JOD 50.000 opening float, JOD 30.000 cash membership payment, receipt `RV-001001`, JOD 80.000 expected and counted drawer, JOD 0.000 variance, daily reconciliation, `shift.close` audit, successful check-in, and unified member timeline were verified in Production across 9–10 August 2026.
-- Acceptance: the verified cash path is complete. Card/CliQ-style methods, partial balances, refund/void review, non-zero manager variance decisions, reports, reload/concurrent updates, and realistic-volume reconciliation remain open. TODO-006 adds no Production-volume claim; volume evidence must be generated against an isolated staging dataset with documented load/concurrency results.
+- Evidence to date: the 9–10 August cash pilot remains valid. On 11 August, a second explicitly labelled demo day verified three active members; cash/card/CliQ-style membership collection; a JOD 20.000 partial CliQ balance; receipt generation; allowed and outstanding-balance-warning check-ins; a JOD 100.000 opening float; JOD 145.000 expected/counted balanced close; a JOD 5.000 partial cash refund; same-day CliQ void; and a fully paid JOD 240.000 card PT package that atomically granted 12 purchased credits alongside 2 included credits. The final report correctly excluded the void and showed JOD 330.000 gross completed collections plus a JOD 5.000 refund (JOD 325.000 net). The separate JOD 120.000 future-plan charge overstates current outstanding and is tracked as BUG-017.
+- Acceptance: non-zero manager variance approval/rejection, realistic-volume reconciliation, payment concurrency, two-browser updates, and staging cleanup evidence remain open. Volume/concurrency proof must be generated against an isolated staging dataset with documented load results rather than inferred from this Production demo day.
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 

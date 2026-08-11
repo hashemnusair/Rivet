@@ -215,7 +215,11 @@ export function ExtendDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const days = form.watch("days") || 0;
+  // React Hook Form receives number inputs as strings unless valueAsNumber is
+  // enabled. Passing the raw string to addDays concatenates it with the day of
+  // month (for example, 10 + "14" => "1014"), producing a wildly incorrect
+  // preview even though Zod coerces the submitted value later.
+  const days = Number(form.watch("days")) || 0;
   const mutation = useApiMutation((api, v: ExtendValues) => api.extendMembership(membership.id, { days: v.days, reason: v.reason }), {
     onSuccess: async () => {
       await invalidate();
@@ -237,7 +241,7 @@ export function ExtendDialog({
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <Field label="Extra days" required error={form.formState.errors.days?.message}>
-              <Input type="number" min={1} max={365} {...form.register("days")} />
+              <Input type="number" min={1} max={365} {...form.register("days", { valueAsNumber: true })} />
             </Field>
             <BeforeAfter
               rows={[{ label: "Expiry date", before: membership.endDate, after: days > 0 ? addDays(membership.endDate, days) : membership.endDate }]}

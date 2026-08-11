@@ -435,7 +435,7 @@ describe("collecting a payment", () => {
     const owed = member.outstanding.amount;
     const part = Math.floor(owed / 2);
 
-    await api.createPayment({ memberId: member.id, amount: money(part), method: "card" }, "idem-part-1");
+    await api.createPayment({ memberId: member.id, amount: money(part), method: "card", externalReference: "TEST-POS-PARTIAL" }, "idem-part-1");
 
     const after = await api.getMember(member.id);
     expect(after.outstanding.amount).toBe(owed - part);
@@ -459,7 +459,7 @@ describe("collecting a payment", () => {
   it("shows the payment in the branch ledger", async () => {
     const member = await anyMemberWithBalance();
     const receipt = await api.createPayment(
-      { memberId: member.id, amount: money(10_000), method: "cliq" },
+      { memberId: member.id, amount: money(10_000), method: "cliq", externalReference: "TEST-CLIQ-LEDGER" },
       "idem-ledger-1",
     );
     const ledger = await api.listTransactions({ search: receipt.receipt.receiptNumber, pageSize: 5 });

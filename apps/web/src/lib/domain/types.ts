@@ -348,6 +348,7 @@ export interface CreateMembershipSaleInput {
   payment?: {
     amount: Money;
     method: PaymentMethodKey;
+    externalReference?: string;
   };
 }
 
@@ -361,7 +362,7 @@ export interface RenewMembershipInput {
   overrideReason?: string;
   discount?: Money;
   discountReason?: string;
-  payment?: { amount: Money; method: PaymentMethodKey };
+  payment?: { amount: Money; method: PaymentMethodKey; externalReference?: string };
 }
 
 export type MembershipPlanChangeEffectiveDate = "immediate" | "next_renewal";

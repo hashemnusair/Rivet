@@ -50,6 +50,7 @@ const schema = z.object({
   payNow: z.boolean(),
   payAmount: z.string().optional(),
   payMethod: z.enum(["cash", "card", "bank_transfer", "cliq", "other"]),
+  paymentReference: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -101,6 +102,7 @@ export function MembershipSaleDialog({
       payNow: true,
       payAmount: "",
       payMethod: "cash",
+      paymentReference: "",
     },
   });
 
@@ -120,6 +122,7 @@ export function MembershipSaleDialog({
         payNow: true,
         payAmount: "",
         payMethod: "cash",
+        paymentReference: "",
       });
       setServerError(null);
     }
@@ -131,6 +134,8 @@ export function MembershipSaleDialog({
   const watchDiscount = form.watch("discount");
   const watchPayNow = form.watch("payNow");
   const watchPayAmount = form.watch("payAmount");
+  const watchPayMethod = form.watch("payMethod");
+  const paymentReferenceRequired = watchPayMethod === "card" || watchPayMethod === "bank_transfer" || watchPayMethod === "cliq";
 
   const plan: MembershipPlan | undefined = plans.find((p) => p.id === watchPlanId);
   const basePrice = plan ? (parseMoneyInput(watchPrice ?? "") ?? plan.basePrice) : money(0);
@@ -175,9 +180,13 @@ export function MembershipSaleDialog({
       form.setError("overrideReason", { message: "A reason is required for price or date overrides" });
       return;
     }
+    if (values.payNow && payingNow.amount > 0 && paymentReferenceRequired && !values.paymentReference?.trim()) {
+      form.setError("paymentReference", { message: "Reference is required for this payment method" });
+      return;
+    }
     const payment =
       values.payNow && payingNow.amount > 0
-        ? { amount: payingNow, method: values.payMethod as PaymentMethodKey }
+        ? { amount: payingNow, method: values.payMethod as PaymentMethodKey, externalReference: values.paymentReference?.trim() || undefined }
         : undefined;
     if (isRenewal && renewalOf) {
       mutation.mutate({
@@ -327,6 +336,11 @@ export function MembershipSaleDialog({
                         )}
                       />
                     </Field>
+                    {paymentReferenceRequired ? (
+                      <Field className="col-span-2" label="External reference" required error={form.formState.errors.paymentReference?.message} hint="Enter the POS slip or provider reference.">
+                        <Input {...form.register("paymentReference")} placeholder="e.g. POS-88213" />
+                      </Field>
+                    ) : null}
                   </div>
                 ) : (
                   <p className="mt-2 text-[12px] text-ink-3">

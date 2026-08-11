@@ -105,4 +105,29 @@ describe("MembershipSaleDialog reason gates", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/reason is required for price or date overrides/i);
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
+
+  it("requires and submits an external reference for inline card collection", async () => {
+    const { api } = await renderWithApp(<div />);
+    const expiredMember = (await api.listMembers({ membershipStatus: "expired", pageSize: 100 })).items[0];
+    if (!expiredMember) throw new Error("missing expired seeded member");
+    resetApiForTests();
+
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    await renderWithApp(<MembershipSaleDialog open onOpenChange={() => undefined} member={expiredMember} onCompleted={onCompleted} />);
+    await chooseMonthlyPlan(user);
+
+    await user.click(screen.getByRole("combobox", { name: "Payment method" }));
+    await user.click(await screen.findByRole("option", { name: /Card/i }));
+    const reference = screen.getByPlaceholderText("e.g. POS-88213");
+
+    await user.click(screen.getByTestId("confirm-sale"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/reference is required/i);
+    expect(onCompleted).not.toHaveBeenCalled();
+
+    await user.type(reference, "TEST-POS-1001");
+    await user.click(screen.getByTestId("confirm-sale"));
+    await waitFor(() => expect(onCompleted).toHaveBeenCalledTimes(1));
+    expect(onCompleted.mock.calls[0]?.[0].payment?.externalReference).toBe("TEST-POS-1001");
+  });
 });

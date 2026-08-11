@@ -2248,7 +2248,7 @@ export class MockGymOSApi implements GymOSApi {
     overrideReason?: string;
     discount?: T.Money;
     discountReason?: string;
-    payment?: { amount: T.Money; method: T.PaymentMethodKey };
+    payment?: { amount: T.Money; method: T.PaymentMethodKey; externalReference?: string };
     previousMembershipId?: T.UUID;
     operation?: "sale" | "renewal" | "plan_change";
     previousPlanId?: T.UUID;
@@ -2423,6 +2423,7 @@ export class MockGymOSApi implements GymOSApi {
         chargeId: charge.id,
         amount: args.payment.amount,
         method: args.payment.method,
+        externalReference: args.payment.externalReference,
         idempotencyKey: `sale-${record.id}`,
       });
       payment = result.payment;
@@ -3550,6 +3551,9 @@ export class MockGymOSApi implements GymOSApi {
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
     if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
     if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
+    if (["card", "bank_transfer", "cliq"].includes(args.method) && !args.externalReference?.trim()) {
+      throw ApiError.of(ERR.VALIDATION, "An external reference is required for card, bank transfer, and CliQ payments.");
+    }
 
     // idempotency
     const existing = this.db.payments.find((p) => p.idempotencyKey === args.idempotencyKey);
