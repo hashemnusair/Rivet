@@ -401,6 +401,14 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | Hide/archive disposable production tenant | Approve exact target | Execute only with exact target and explicit approval |
 | Code tests and documentation | Review | Yes |
 
+### Secret-safe Convex command policy
+
+- Use only `pnpm convex:deploy` for deploys and dry runs. Its wrapper rejects verbose/debug output, push-request dumps, command-line admin keys, hidden `CONVEX_VERBOSE`, and secret assignments in arguments.
+- The pinned Convex CLI is patched because upstream versions 1.42.3 and 1.43.0 serialize the full `startPushResponse` under verbose deploy output; that response contains an `environmentVariables` value map. The patch replaces every value with `[REDACTED]` before serialization.
+- Inspect deployment configuration only with `pnpm convex:env:names -- --prod`. Raw `convex env list` prints values by default, and `convex env get` prints a selected value; neither is permitted in recorded agent or CI sessions.
+- Set secret values in provider dashboards or by piping them to `convex env set NAME` through stdin outside the agent transcript. Never put a secret in a command argument.
+- The lint gate runs a repository audit for common environment dumps and secret-bearing diagnostic patterns.
+
 ### Phase A — Operator dashboard verification
 
 Complete this phase before asking an agent to run staging or production checks. Do not paste values into chat; report only `yes`, `no`, `missing`, or `mismatch`.
@@ -419,6 +427,7 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
 - [ ] Do not run `seed:seedDemoTenant`.
+- [ ] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
 
 #### A2. Clerk Production
 

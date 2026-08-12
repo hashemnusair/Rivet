@@ -5,3 +5,5 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+patchedDependencies:
+  convex@1.42.3: patches/convex@1.42.3.patch

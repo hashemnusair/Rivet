@@ -1,0 +1,181 @@
+diff --git a/dist/cjs/cli/lib/components.js b/dist/cjs/cli/lib/components.js
+index 9040b606b8f4a13d2798f7fb0bc234a61270f058..c1af3048c0add23aaebaa464f3373aad5c8b6c7b 100644
+--- a/dist/cjs/cli/lib/components.js
++++ b/dist/cjs/cli/lib/components.js
+@@ -331,7 +331,16 @@ async function startComponentsPushAndCodegen(ctx, parentSpan, projectConfig, con
+     (span) => (0, import_deploy2.startPush)(ctx, span, startPushRequest, options)
+   );
+   if (options.verbose) {
+-    (0, import_log.logMessage)("startPush: " + JSON.stringify(startPushResponse, null, 2));
++    const redactedStartPushResponse = {
++      ...startPushResponse,
++      environmentVariables: Object.fromEntries(
++        Object.keys(startPushResponse.environmentVariables).map((name) => [
++          name,
++          "[REDACTED]"
++        ])
++      )
++    };
++    (0, import_log.logMessage)("startPush: " + JSON.stringify(redactedStartPushResponse, null, 2));
+   }
+   if (options.codegen) {
+     (0, import_log.changeSpinner)("Generating TypeScript bindings...");
+diff --git a/dist/cjs/cli/lib/env.js b/dist/cjs/cli/lib/env.js
+index 5baf54e016a7fd8bf7711a1575b40958aa52904f..b107446d10827f087d45a176b6d017fb1a09b564 100644
+--- a/dist/cjs/cli/lib/env.js
++++ b/dist/cjs/cli/lib/env.js
+@@ -43,7 +43,6 @@ var import_utils = require("./utils/utils.js");
+ var import_stdin = require("./utils/stdin.js");
+ var import_prompts = require("./utils/prompts.js");
+ var import_envvars = require("./envvars.js");
+-var import_formatEnvValueForDotfile = require("./formatEnvValueForDotfile.js");
+ var import_utils2 = require("./utils/utils.js");
+ function formatList(items) {
+   if (items.length === 0) return "";
+@@ -136,7 +135,7 @@ async function envGet(ctx, backend, name) {
+     (0, import_log.logFailure)(`Environment variable "${name}" not found${backend.notice}`);
+     return;
+   }
+-  (0, import_log.logOutput)(`${envVar.value}`);
++  (0, import_log.logOutput)("[REDACTED]");
+ }
+ async function envRemove(ctx, backend, name) {
+   await backend.update([{ name, value: null }]);
+@@ -150,16 +149,8 @@ async function envList(ctx, backend, options) {
+     (0, import_log.logMessage)(`No environment variables set${backend.notice}`);
+     return;
+   }
+-  for (const { name, value } of envs) {
+-    if (options?.namesOnly) {
+-      (0, import_log.logOutput)(name);
+-      continue;
+-    }
+-    const { formatted, warning } = (0, import_formatEnvValueForDotfile.formatEnvValueForDotfile)(value);
+-    if (warning) {
+-      (0, import_log.logMessage)(`Warning (${name}): ${warning}`);
+-    }
+-    (0, import_log.logOutput)(`${name}=${formatted}`);
++  for (const { name } of envs) {
++    (0, import_log.logOutput)(options?.namesOnly ? name : `${name}=[REDACTED]`);
+   }
+ }
+ async function getFileContents(ctx, filePath) {
+diff --git a/dist/esm/cli/lib/components.js b/dist/esm/cli/lib/components.js
+index 4fee3e0b6b7d8395df7963ba4e293f9dd1fef09d..684d517561e2203c655e4d941cc9fc85231526a2 100644
+--- a/dist/esm/cli/lib/components.js
++++ b/dist/esm/cli/lib/components.js
+@@ -320,7 +320,16 @@ async function startComponentsPushAndCodegen(ctx, parentSpan, projectConfig, con
+     (span) => startPush(ctx, span, startPushRequest, options)
+   );
+   if (options.verbose) {
+-    logMessage("startPush: " + JSON.stringify(startPushResponse, null, 2));
++    const redactedStartPushResponse = {
++      ...startPushResponse,
++      environmentVariables: Object.fromEntries(
++        Object.keys(startPushResponse.environmentVariables).map((name) => [
++          name,
++          "[REDACTED]"
++        ])
++      )
++    };
++    logMessage("startPush: " + JSON.stringify(redactedStartPushResponse, null, 2));
+   }
+   if (options.codegen) {
+     changeSpinner("Generating TypeScript bindings...");
+diff --git a/dist/esm/cli/lib/env.js b/dist/esm/cli/lib/env.js
+index 79b871bcae0128550e0a6f747770cbbefcd17e2b..7fc1560707fbdef8bb8726f6118f77fc890beb08 100644
+--- a/dist/esm/cli/lib/env.js
++++ b/dist/esm/cli/lib/env.js
+@@ -15,7 +15,6 @@ import {
+   EXPECTED_CONVEX_URL_NAMES,
+   EXPECTED_SITE_URL_NAMES
+ } from "./envvars.js";
+-import { formatEnvValueForDotfile } from "./formatEnvValueForDotfile.js";
+ import {
+   CONVEX_DEPLOY_KEY_ENV_VAR_NAME,
+   CONVEX_DEPLOYMENT_ENV_VAR_NAME,
+@@ -114,7 +113,7 @@ export async function envGet(ctx, backend, name) {
+     logFailure(`Environment variable "${name}" not found${backend.notice}`);
+     return;
+   }
+-  logOutput(`${envVar.value}`);
++  logOutput("[REDACTED]");
+ }
+ export async function envRemove(ctx, backend, name) {
+   await backend.update([{ name, value: null }]);
+@@ -128,16 +127,8 @@ export async function envList(ctx, backend, options) {
+     logMessage(`No environment variables set${backend.notice}`);
+     return;
+   }
+-  for (const { name, value } of envs) {
+-    if (options?.namesOnly) {
+-      logOutput(name);
+-      continue;
+-    }
+-    const { formatted, warning } = formatEnvValueForDotfile(value);
+-    if (warning) {
+-      logMessage(`Warning (${name}): ${warning}`);
+-    }
+-    logOutput(`${name}=${formatted}`);
++  for (const { name } of envs) {
++    logOutput(options?.namesOnly ? name : `${name}=[REDACTED]`);
+   }
+ }
+ async function getFileContents(ctx, filePath) {
+diff --git a/src/cli/lib/components.ts b/src/cli/lib/components.ts
+index 0d2b7ecf277d376f3d68f807be1d38149af06a24..4b43a0334e0d70a0879afb7c8d44e220b162b911 100644
+--- a/src/cli/lib/components.ts
++++ b/src/cli/lib/components.ts
+@@ -466,3 +466,14 @@ async function startComponentsPushAndCodegen(
+   if (options.verbose) {
+-    logMessage("startPush: " + JSON.stringify(startPushResponse, null, 2));
++    const redactedStartPushResponse = {
++      ...startPushResponse,
++      environmentVariables: Object.fromEntries(
++        Object.keys(startPushResponse.environmentVariables).map((name) => [
++          name,
++          "[REDACTED]",
++        ]),
++      ),
++    };
++    logMessage(
++      "startPush: " + JSON.stringify(redactedStartPushResponse, null, 2),
++    );
+   }
+diff --git a/src/cli/lib/env.ts b/src/cli/lib/env.ts
+index f3acd4f03b30097bfa639b6b07ecbf693aa30eab..5920bf991af2c0625361b2cd49b8697c1347a222 100644
+--- a/src/cli/lib/env.ts
++++ b/src/cli/lib/env.ts
+@@ -15,7 +15,6 @@ import {
+   EXPECTED_CONVEX_URL_NAMES,
+   EXPECTED_SITE_URL_NAMES,
+ } from "./envvars.js";
+-import { formatEnvValueForDotfile } from "./formatEnvValueForDotfile.js";
+ import {
+   CONVEX_DEPLOY_KEY_ENV_VAR_NAME,
+   CONVEX_DEPLOYMENT_ENV_VAR_NAME,
+@@ -157,5 +156,5 @@ export async function envGet(
+     logFailure(`Environment variable "${name}" not found${backend.notice}`);
+     return;
+   }
+-  logOutput(`${envVar.value}`);
++  logOutput("[REDACTED]");
+ }
+@@ -181,15 +180,7 @@ export async function envList(
+     logMessage(`No environment variables set${backend.notice}`);
+     return;
+   }
+-  for (const { name, value } of envs) {
+-    if (options?.namesOnly) {
+-      logOutput(name);
+-      continue;
+-    }
+-    const { formatted, warning } = formatEnvValueForDotfile(value);
+-    if (warning) {
+-      logMessage(`Warning (${name}): ${warning}`);
+-    }
+-    logOutput(`${name}=${formatted}`);
++  for (const { name } of envs) {
++    logOutput(options?.namesOnly ? name : `${name}=[REDACTED]`);
+   }
+ }

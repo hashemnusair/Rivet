@@ -2,6 +2,13 @@
 
 Updated 2026-08-12 after the functionality-first correctness and operational-email implementation pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## Secret-output hardening
+
+- A release dry run used Convex's verbose deploy flag. Convex 1.42.3 serializes the full `startPushResponse` in that mode, including the deployment environment-variable value map; upstream 1.43.0 retains the same behavior. This was a release-diagnostic mistake and dependency CLI issue, not a RIVET application logging path.
+- The pinned Convex package is patched to redact every deployment environment-variable value before verbose serialization. The supported `pnpm convex:deploy` wrapper additionally refuses verbose/debug flags, push-request dumps, command-line admin keys, hidden verbosity, and secret assignments.
+- `pnpm convex:env:names -- --prod` is the only supported recorded environment inspection. The lint gate audits application, workflow, and script sources for common environment dumps and unsafe Convex diagnostics.
+- Server telemetry continues to record correlation metadata and stable error codes only; it does not serialize request/provider payloads, identities, or exception messages.
+
 ## Functionality-first correctness pass — released at `0cea424`
 
 - Future membership charges now persist explicit issue/due dates and are collectible only when their membership term has begun. Upcoming invoices are displayed separately, excluded from current balances, entry warnings, outstanding-member and receivables projections, and rejected by the payment mutation before their term starts. Scheduled-term cancellation voids its unpaid charge, and the active term remains the primary membership until the successor begins.

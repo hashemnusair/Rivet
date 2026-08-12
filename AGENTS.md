@@ -68,6 +68,14 @@ Do not pin arbitrary dependency versions in documentation. Use current stable co
 - Tests must cover authorization boundaries and money-changing operations.
 - Avoid deeply coupled page components; domain logic belongs in services/hooks/modules.
 
+## Secret-safe diagnostics and releases
+
+- Use `pnpm convex:deploy` for Convex deploys and dry runs. Never bypass it with a raw Convex deploy command.
+- Never pass `--verbose`, `-v`, `--debug`, `--write-push-request`, or `--admin-key` to a Convex deploy, and never set `CONVEX_VERBOSE`. Convex deploy responses can contain deployment environment-variable values.
+- Inspect Convex environment configuration only with `pnpm convex:env:names -- --prod` (or the appropriate non-production selector). Never run `convex env list` without `--names-only`, and never run `convex env get` in an agent or CI session.
+- Never place a secret value in a shell command, tool argument, log statement, diagnostic artifact, or chat. Set secrets interactively through the provider dashboard or pipe them through stdin outside the agent transcript.
+- Treat terminal and tool output as persisted task context. If a command could print a credential, do not run it.
+
 ## Required agent output
 
 At the end of either pass, report:

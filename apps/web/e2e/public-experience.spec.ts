@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus) return;
-  console.log(`[preview-failure] ${testInfo.title} · ${page.url()}`);
-  console.log(`[preview-failure] body: ${(await page.locator("body").innerText()).slice(0, 2000)}`);
+  const currentUrl = new URL(page.url());
+  console.log(`[preview-failure] ${testInfo.title} · ${currentUrl.origin}${currentUrl.pathname}`);
 });
 
 test.describe("RIVET member experience", () => {

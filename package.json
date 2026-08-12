@@ -8,6 +8,7 @@
     "dev:full": "pnpm --filter web dev:full",
     "convex:dev": "pnpm --filter web convex:dev",
     "convex:deploy": "pnpm --filter web convex:deploy",
+    "convex:env:names": "pnpm --filter web convex:env:names",
     "convex:codegen": "pnpm --filter web convex:codegen",
     "convex:typecheck": "pnpm --filter web convex:typecheck",
     "build": "pnpm --filter web build",

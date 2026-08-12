@@ -109,23 +109,25 @@ Deploy the schema and functions to the selected Convex deployment:
 pnpm convex:deploy
 ```
 
-Set Convex-side environment values through the Convex CLI or dashboard. Keep the actual values outside Git:
+Set Convex-side environment values through the Convex dashboard. If CLI access is necessary, pipe each secret through stdin from a local clipboard or protected file; never put its value in the command or an agent prompt. Public configuration can still be set normally. Keep all actual secret values outside Git and captured terminal output:
 
 ```bash
-pnpm --filter web exec convex env set --prod CLERK_FRONTEND_API_URL "$CLERK_FRONTEND_API_URL"
-pnpm --filter web exec convex env set --prod ENTRY_PASS_SIGNING_SECRET "$ENTRY_PASS_SIGNING_SECRET"
-pnpm --filter web exec convex env set --prod CLERK_SECRET_KEY "$CLERK_SECRET_KEY"
+pbpaste | pnpm --filter web exec convex env set --prod ENTRY_PASS_SIGNING_SECRET
+pbpaste | pnpm --filter web exec convex env set --prod CLERK_SECRET_KEY
+pbpaste | pnpm --filter web exec convex env set --prod RESEND_API_KEY
+pnpm --filter web exec convex env set --prod CLERK_FRONTEND_API_URL "https://clerk.example.com"
 pnpm --filter web exec convex env set --prod RIVET_SITE_URL "https://www.rivetjo.com"
-pnpm --filter web exec convex env set --prod RESEND_API_KEY "$RESEND_API_KEY"
 pnpm --filter web exec convex env set --prod RESEND_FROM_EMAIL "noreply@rivetjo.com"
 pnpm --filter web exec convex env set --prod RIVET_APPLICATION_RECIPIENTS "you@example.com,partner@example.com"
 ```
 
-`convex env set` defaults to Development; the `--prod` flag is intentional here. Verify the production deployment without printing secret values:
+`convex env set` defaults to Development; the `--prod` flag is intentional here. Verify only the variable names through the repository's guarded command:
 
 ```bash
-pnpm --filter web exec convex env list --prod --names-only
+pnpm convex:env:names -- --prod
 ```
+
+Do not use raw verbose Convex deploy output or `convex env get/list` in an agent, CI, or recorded terminal. The repository patches the pinned Convex CLI to redact deployment environment-variable values and the standard deploy command rejects unsafe diagnostic flags.
 
 ### Gym applications and access
 
