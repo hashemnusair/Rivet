@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
-import { api } from "./_generated/api";
+import { Blob as NodeBlob } from "node:buffer";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -56,5 +57,41 @@ describe("gym-controlled public profile", () => {
     const reception = t.withIdentity({ subject: "clerk-profile-reception" });
     await expectCode(reception.query(api.domain.query, operation("profiles.gym.get")), "FORBIDDEN");
     await expectCode(reception.mutation(api.domain.mutate, operation("profiles.gym.publish")), "FORBIDDEN");
+  });
+
+  it("promotes only saved gym media and expires abandoned uploads server-side", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    const [savedStorageId, abandonedStorageId] = await t.run(async (ctx) => [
+      await ctx.storage.store(new NodeBlob(["saved"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["abandoned"]) as unknown as Blob),
+    ]);
+    const request = { organizationId: "org-profile", correlationId: "cor-profile-media", ownerType: "gym_logo" as const, ownerPublicId: "org-profile", altText: "Profile Gym logo", contentType: "image/png" as const, sizeBytes: 5 };
+    const saved = await owner.mutation(internal.media.commit, { ...request, storageId: savedStorageId });
+    const abandoned = await owner.mutation(internal.media.commit, { ...request, storageId: abandonedStorageId });
+    expect(saved.status).toBe("pending");
+    expect(abandoned.status).toBe("pending");
+
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.save", { shortName: "PROFILE", taglineEn: "Train with a plan", descriptionEn: "A real operating gym in Amman.", category: "Gym", audience: "All members", amenities: [], accentColor: "#123456", logoAssetId: saved.id, galleryAssetIds: [] }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      expect(organization).not.toBeNull();
+      const savedRow = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", saved.id)).unique();
+      const abandonedRow = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", abandoned.id)).unique();
+      expect(savedRow).toMatchObject({ status: "active" });
+      expect(savedRow).not.toHaveProperty("deleteAfter");
+      expect(abandonedRow?.status).toBe("pending");
+      await ctx.db.patch(abandonedRow!._id, { deleteAfter: Date.now() - 1 });
+    });
+
+    expect(await t.mutation(internal.media.cleanupExpired, {})).toBe(1);
+    const state = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      expect(organization).not.toBeNull();
+      return { abandoned: await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", abandoned.id)).unique(), stored: await ctx.storage.get(abandonedStorageId) };
+    });
+    expect(state.abandoned).toMatchObject({ status: "replaced" });
+    expect(state.abandoned).not.toHaveProperty("deleteAfter");
+    expect(state.stored).toBeNull();
   });
 });

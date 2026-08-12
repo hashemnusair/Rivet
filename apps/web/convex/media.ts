@@ -13,6 +13,8 @@ const requestArgs = {
   correlationId: v.optional(v.string()),
 };
 
+const PUBLIC_PROFILE_DRAFT_TTL_MS = 24 * 60 * 60 * 1_000;
+
 type FinalizedAsset = {
   id: string;
   organizationId: string;
@@ -76,15 +78,18 @@ export const commit = internalMutation({
     if (args.ownerType === "member_photo") requirePermission(actor, "members.write");
     else requirePermission(actor, "profiles.manage");
     const now = Date.now();
-    // Private member photos can be replaced immediately because no published
-    // version references them. Public media remains active while it is in a
-    // draft; the profile/trainer publish mutation schedules the prior asset
-    // only after the new reference is committed.
+    // Private member photos are immediately attached to their member. Gym
+    // profile media is only a temporary upload until profiles.gym.save
+    // references it, so closing the browser cannot leave public files around
+    // forever. Trainer photos are promoted by the trainer profile workflow.
     if (args.ownerType === "member_photo") {
       const existing = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", args.ownerType).eq("ownerPublicId", args.ownerPublicId)).collect()).filter((asset) => asset.status === "active");
       for (const asset of existing) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 90 * 86_400_000, updatedAt: now });
     }
     const publicId = `MEDIA-${crypto.randomUUID()}`;
+    const isGymProfileDraft = args.ownerType.startsWith("gym_");
+    const status = isGymProfileDraft ? "pending" as const : "active" as const;
+    const deleteAfter = isGymProfileDraft ? now + PUBLIC_PROFILE_DRAFT_TTL_MS : undefined;
     await ctx.db.insert("mediaAssets", {
       organizationId: actor.organization._id,
       publicId,
@@ -95,7 +100,8 @@ export const commit = internalMutation({
       sizeBytes: args.sizeBytes,
       altText: args.altText?.trim() || undefined,
       visibility: args.ownerType === "member_photo" ? "private" : "public",
-      status: "active",
+      status,
+      deleteAfter,
       createdAt: now,
       updatedAt: now,
     });
@@ -117,7 +123,7 @@ export const commit = internalMutation({
       occurredAt: now,
     });
     const url = await ctx.storage.getUrl(args.storageId);
-    return { id: publicId, organizationId: publicOrganizationId(actor.organization), ownerType: args.ownerType, ownerId: args.ownerPublicId, storageId: String(args.storageId), contentType: args.contentType, sizeBytes: args.sizeBytes, altText: args.altText?.trim() || undefined, visibility: args.ownerType === "member_photo" ? "private" : "public", status: "active", url: url ?? undefined, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() };
+    return { id: publicId, organizationId: publicOrganizationId(actor.organization), ownerType: args.ownerType, ownerId: args.ownerPublicId, storageId: String(args.storageId), contentType: args.contentType, sizeBytes: args.sizeBytes, altText: args.altText?.trim() || undefined, visibility: args.ownerType === "member_photo" ? "private" : "public", status, url: url ?? undefined, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() };
   },
 });
 
@@ -152,7 +158,7 @@ export const finalizeUpload = action({
   },
 });
 
-/** Schedules an uploaded-but-unreferenced gym asset for cleanup. */
+/** Immediately removes an uploaded-but-unreferenced gym profile asset. */
 export const discardDraft = mutation({
   args: { ...requestArgs, assetId: v.string() },
   returns: v.null(),
@@ -161,11 +167,13 @@ export const discardDraft = mutation({
     requirePermission(actor, "profiles.manage");
     const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", args.assetId)).unique();
     if (!asset || !asset.ownerType.startsWith("gym_")) domainError("NOT_FOUND", "Draft media asset not found.", { correlationId: actor.correlationId });
-    const profile = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfile").eq("publicId", "gym-profile")).unique();
+    if (!["pending", "active"].includes(asset.status)) domainError("NOT_FOUND", "Draft media asset not found.", { correlationId: actor.correlationId });
+    const profile = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
     const draft = profile?.data as { logoAssetId?: string; coverAssetId?: string; galleryAssetIds?: string[] } | undefined;
     if ([draft?.logoAssetId, draft?.coverAssetId, ...(draft?.galleryAssetIds ?? [])].includes(asset.publicId)) domainError("VALIDATION_ERROR", "Saved profile media cannot be discarded as a draft.", { correlationId: actor.correlationId });
     const now = Date.now();
-    await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now, updatedAt: now });
+    await ctx.storage.delete(asset.storageId);
+    await ctx.db.patch(asset._id, { status: "replaced", deleteAfter: undefined, updatedAt: now });
     await ctx.db.insert("auditEvents", { organizationId: actor.organization._id, publicId: crypto.randomUUID(), actorUserId: actor.user._id, actorPublicId: publicUserId(actor.user), actorName: actor.user.fullName, actorRole: actor.role, category: "settings", action: "media.draft_discard", entityType: "media_asset", entityPublicId: asset.publicId, entityLabel: asset.ownerType.replaceAll("_", " "), summary: "Discarded unreferenced profile draft media", correlationId: actor.correlationId, occurredAt: now });
     return null;
   },
@@ -175,10 +183,13 @@ export const cleanupExpired = internalMutation({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
-    const due = (await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "scheduled_for_deletion")).collect()).filter((asset) => (asset.deleteAfter ?? Number.POSITIVE_INFINITY) <= Date.now()).slice(0, 50);
+    const now = Date.now();
+    const pending = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "pending")).collect();
+    const scheduled = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "scheduled_for_deletion")).collect();
+    const due = [...pending, ...scheduled].filter((asset) => (asset.deleteAfter ?? Number.POSITIVE_INFINITY) <= now).slice(0, 50);
     for (const asset of due) {
       await ctx.storage.delete(asset.storageId);
-      await ctx.db.patch(asset._id, { status: "replaced", updatedAt: Date.now() });
+      await ctx.db.patch(asset._id, { status: "replaced", deleteAfter: undefined, updatedAt: now });
     }
     return due.length;
   },

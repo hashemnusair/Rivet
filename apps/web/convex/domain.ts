@@ -4439,9 +4439,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { correlationId: actor.correlationId }); } }
       }
       const assetIds = [optionalString(input.logoAssetId), optionalString(input.coverAssetId), ...arrayValue(input.galleryAssetIds).map((item) => optionalString(item))].filter((item): item is string => Boolean(item));
+      const referencedAssets: Doc<"mediaAssets">[] = [];
       for (const assetId of assetIds) {
         const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", assetId)).unique();
-        if (!asset || asset.visibility !== "public" || asset.status !== "active") domainError("NOT_FOUND", "Public profile media was not found.", { correlationId: actor.correlationId });
+        if (!asset || asset.visibility !== "public" || !asset.ownerType.startsWith("gym_") || !["pending", "active"].includes(asset.status)) domainError("NOT_FOUND", "Public profile media was not found.", { correlationId: actor.correlationId });
+        referencedAssets.push(asset);
       }
       const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
       const versions = await recordsOf(ctx, actor, "gymProfileVersion");
@@ -4450,6 +4452,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const value = { shortName, taglineEn, taglineAr: optionalString(input.taglineAr)?.trim(), descriptionEn, descriptionAr: optionalString(input.descriptionAr)?.trim(), category: stringValue(input.category, "Gym").trim(), audience: stringValue(input.audience, "All members").trim(), amenities: arrayValue(input.amenities).map(String).map((item) => item.trim()).filter(Boolean).slice(0, 40), contactEmail: optionalString(input.contactEmail)?.trim().toLowerCase(), contactPhone: optionalString(input.contactPhone)?.trim(), websiteUrl: optionalString(input.websiteUrl)?.trim(), instagramUrl: optionalString(input.instagramUrl)?.trim(), accentColor, logoAssetId: optionalString(input.logoAssetId), coverAssetId: optionalString(input.coverAssetId), galleryAssetIds: arrayValue(input.galleryAssetIds).map(String), version: publishedVersion + 1, status: "draft", updatedAt: utcIso(now) };
       if (existing) await ctx.db.patch(existing._id, { data: { ...data(existing.data), ...value }, updatedAt: now });
       else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileDraft", publicId: "current", createdAt: now, updatedAt: now, data: value });
+      for (const asset of referencedAssets) {
+        if (asset.status === "pending") await ctx.db.patch(asset._id, { status: "active", deleteAfter: undefined, updatedAt: now });
+      }
       await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.save_draft", entityType: "gym_public_profile", entityId: "current", entityLabel: actor.organization.name, summary: `Saved public profile draft v${publishedVersion + 1}`, before: existing ? { version: data(existing.data).version, status: data(existing.data).status } : undefined, after: { version: publishedVersion + 1, status: "draft" } });
       return await currentGymProfile(ctx, actor);
     }
@@ -5490,7 +5495,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const existing = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
       const changed = JSON.stringify([...enabledKinds].sort()) !== JSON.stringify([...(existing?.enabledKinds ?? [])].sort());
       const reason = stringValue(input.reason).trim();
-      if (changed && enabledKinds.length < (existing?.enabledKinds ?? []).length) requireReason(reason, actor.correlationId);
+      const nextKinds = new Set(enabledKinds);
+      const disabledKinds = (existing?.enabledKinds ?? []).filter((kind) => !nextKinds.has(kind));
+      if (changed && disabledKinds.length > 0) requireReason(reason, actor.correlationId);
       const now = Date.now();
       if (existing) await ctx.db.patch(existing._id, { enabledKinds, updatedByUserId: actor.user._id, reason, updatedAt: now });
       else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason, createdAt: now, updatedAt: now });
