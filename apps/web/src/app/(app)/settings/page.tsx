@@ -31,7 +31,7 @@ function SettingsPageInner() {
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
         <Tabs defaultValue={section} key={section}>
-          <TabsList className="flex-wrap">
+          <TabsList className="max-w-full overflow-x-auto [scrollbar-width:thin]">
             <TabsTrigger value="organization">Organization</TabsTrigger>
             <TabsTrigger value="profile">Public profile</TabsTrigger>
             <TabsTrigger value="branches">Branches</TabsTrigger>

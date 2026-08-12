@@ -152,6 +152,25 @@ export const finalizeUpload = action({
   },
 });
 
+/** Schedules an uploaded-but-unreferenced gym asset for cleanup. */
+export const discardDraft = mutation({
+  args: { ...requestArgs, assetId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args);
+    requirePermission(actor, "profiles.manage");
+    const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", args.assetId)).unique();
+    if (!asset || !asset.ownerType.startsWith("gym_")) domainError("NOT_FOUND", "Draft media asset not found.", { correlationId: actor.correlationId });
+    const profile = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfile").eq("publicId", "gym-profile")).unique();
+    const draft = profile?.data as { logoAssetId?: string; coverAssetId?: string; galleryAssetIds?: string[] } | undefined;
+    if ([draft?.logoAssetId, draft?.coverAssetId, ...(draft?.galleryAssetIds ?? [])].includes(asset.publicId)) domainError("VALIDATION_ERROR", "Saved profile media cannot be discarded as a draft.", { correlationId: actor.correlationId });
+    const now = Date.now();
+    await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now, updatedAt: now });
+    await ctx.db.insert("auditEvents", { organizationId: actor.organization._id, publicId: crypto.randomUUID(), actorUserId: actor.user._id, actorPublicId: publicUserId(actor.user), actorName: actor.user.fullName, actorRole: actor.role, category: "settings", action: "media.draft_discard", entityType: "media_asset", entityPublicId: asset.publicId, entityLabel: asset.ownerType.replaceAll("_", " "), summary: "Discarded unreferenced profile draft media", correlationId: actor.correlationId, occurredAt: now });
+    return null;
+  },
+});
+
 export const cleanupExpired = internalMutation({
   args: {},
   returns: v.number(),

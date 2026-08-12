@@ -1,4 +1,4 @@
-import { forwardRef, type HTMLAttributes, type LabelHTMLAttributes } from "react";
+import { cloneElement, forwardRef, isValidElement, useId, type HTMLAttributes, type LabelHTMLAttributes } from "react";
 import { cn } from "@/lib/utils/cn";
 
 const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelElement>>(
@@ -30,15 +30,24 @@ function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const generatedId = useId();
+  const controlId = htmlFor ?? `field-${generatedId.replace(/:/g, "")}`;
+  const canAssociate = isValidElement<{ id?: string; value?: unknown; onChange?: unknown; type?: unknown }>(children)
+    && (typeof children.type === "string"
+      ? ["input", "textarea", "select"].includes(children.type)
+      : children.props.value !== undefined || children.props.onChange !== undefined || children.props.type !== undefined);
+  const child = canAssociate && isValidElement<{ id?: string }>(children)
+    ? cloneElement(children, children.props.id ? {} : { id: controlId })
+    : children;
   return (
     <div className={cn("min-w-0", className)}>
       {label ? (
-        <Label htmlFor={htmlFor}>
+        <Label htmlFor={canAssociate || htmlFor ? controlId : undefined}>
           {label}
           {required ? <span className="text-signal ms-1" aria-hidden>*</span> : null}
         </Label>
       ) : null}
-      {children}
+      {child}
       {error ? (
         <p role="alert" className="mt-1.5 text-xs text-danger">
           {error}

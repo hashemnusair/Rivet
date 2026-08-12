@@ -1,5 +1,7 @@
 import type { PtEntitlement, PtPackage } from "./types";
 
+export type PtBookingOutcomeAction = "completed" | "no_show" | "cancelled";
+
 export const PT_SESSION_DURATION_MINUTES = 60;
 export const PT_DEFAULT_BOOKING_HORIZON_DAYS = 30;
 export const PT_DEFAULT_CANCELLATION_CUTOFF_HOURS = 12;
@@ -47,6 +49,30 @@ export function ptCancellationResult(input: {
   const cancelledAt = typeof input.cancelledAt === "number" ? input.cancelledAt : Date.parse(input.cancelledAt);
   const timely = startsAt - cancelledAt >= input.cutoffHours * 3_600_000;
   return timely ? { status: "cancelled", restoreCredit: true } : { status: "late_cancelled", restoreCredit: false };
+}
+
+/**
+ * Copy used before an irreversible PT outcome is committed.  It deliberately
+ * describes the ledger consequence, rather than implying a payment refund.
+ */
+export function ptBookingCreditConsequence(input: {
+  action: PtBookingOutcomeAction;
+  startsAt: string | number;
+  cancelledAt?: string | number;
+  cutoffHours?: number;
+  cancelledByGym?: boolean;
+}): { effect: "consume" | "return"; text: string } {
+  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be consumed." };
+  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be consumed for this no-show." };
+  const result = ptCancellationResult({
+    startsAt: input.startsAt,
+    cancelledAt: input.cancelledAt ?? Date.now(),
+    cutoffHours: input.cutoffHours ?? PT_DEFAULT_CANCELLATION_CUTOFF_HOURS,
+    cancelledByGym: Boolean(input.cancelledByGym),
+  });
+  return result.restoreCredit
+    ? { effect: "return", text: "The reserved PT credit will be returned to the member." }
+    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be consumed." };
 }
 
 export function ptIntervalsOverlap(left: { startsAt: number; endsAt: number }, right: { startsAt: number; endsAt: number }): boolean {

@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 
@@ -11,6 +10,7 @@ const LEASE_MS = 2 * 60 * 1000;
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
+const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"]);
 
 export interface QueueOperationalEmailInput {
   organizationId?: Id<"organizations">;
@@ -171,14 +171,17 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const content = fallbackContent(input.kind, language);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
-  if (!suppressionReason && process.env.RIVET_OPERATIONAL_EMAIL_LIVE !== "true") {
+  // This release intentionally keeps the worker sandboxed even if an
+  // environment value is misconfigured. Enabling provider delivery needs a
+  // separately reviewed production change.
+  if (!suppressionReason) {
     suppressionReason = "Sandbox default; external operational email delivery is disabled";
   }
   if (!suppressionReason) {
     const enabledKinds = input.organizationId
       ? (await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId!)).unique())?.enabledKinds ?? []
       : (process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-    if (!enabledKinds.includes(input.kind)) suppressionReason = "This operational email type is not enabled";
+    if (!MANDATORY_PLATFORM_KINDS.has(input.kind) && !enabledKinds.includes(input.kind)) suppressionReason = "This operational email type is not enabled";
   }
   const id = await ctx.db.insert("operationalEmailDeliveries", {
     publicId: `EMAIL-${crypto.randomUUID()}`,
@@ -261,6 +264,7 @@ export const enqueue = internalMutation({
 });
 
 async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
+  if (MANDATORY_PLATFORM_KINDS.has(delivery.kind)) return true;
   if (!delivery.organizationId) {
     const kinds = (process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES ?? "").split(",").map((item) => item.trim()).filter(Boolean);
     return kinds.includes(delivery.kind);
@@ -380,58 +384,8 @@ export const recordWebhook = internalMutation({
   },
 });
 
-function retryableStatus(status: number): boolean {
-  return status === 408 || status === 409 || status === 429 || status >= 500;
-}
-
 export const processDue = internalAction({
   args: {},
   returns: v.object({ processed: v.number(), disabled: v.boolean() }),
-  handler: async (ctx) => {
-    if (process.env.RIVET_OPERATIONAL_EMAIL_LIVE !== "true") return { processed: 0, disabled: true };
-    const apiKey = process.env.RESEND_API_KEY?.trim();
-    const from = process.env.RESEND_FROM_EMAIL?.trim();
-    if (!apiKey || !from) return { processed: 0, disabled: true };
-    const deliveries = await ctx.runMutation(internal.operationalEmail.leaseDue, { limit: 20 }) as Delivery[];
-    for (const delivery of deliveries) {
-      const leaseToken = delivery.leaseToken!;
-      try {
-        const response = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": delivery.dedupeKey.slice(0, 256),
-          },
-          body: JSON.stringify({
-            from,
-            to: [delivery.recipientEmail],
-            subject: delivery.subject,
-            html: delivery.html,
-            text: delivery.text,
-            tags: [{ name: "kind", value: delivery.kind.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 256) }],
-          }),
-        });
-        const payload = await response.json().catch(() => ({})) as { id?: string; name?: string };
-        await ctx.runMutation(internal.operationalEmail.recordAttempt, {
-          deliveryId: delivery._id,
-          leaseToken,
-          accepted: response.ok,
-          retryable: !response.ok && retryableStatus(response.status),
-          providerId: payload.id,
-          statusCode: response.status,
-          errorCode: response.ok ? undefined : payload.name ?? `resend_http_${response.status}`,
-        });
-      } catch {
-        await ctx.runMutation(internal.operationalEmail.recordAttempt, {
-          deliveryId: delivery._id,
-          leaseToken,
-          accepted: false,
-          retryable: true,
-          errorCode: "provider_unreachable",
-        });
-      }
-    }
-    return { processed: deliveries.length, disabled: false };
-  },
+  handler: async () => ({ processed: 0, disabled: true }),
 });

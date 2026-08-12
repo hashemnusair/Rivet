@@ -676,6 +676,7 @@ export interface GymOSApi {
   publishGymPublicProfile(): Promise<import("@/lib/domain/types").GymPublicProfile>;
   unpublishGymPublicProfile(reason: string): Promise<import("@/lib/domain/types").GymPublicProfile>;
   uploadMediaAsset(input: { ownerType: import("@/lib/domain/types").MediaAssetOwnerType; ownerId: UUID; altText?: string; file: Blob }): Promise<import("@/lib/domain/types").MediaAsset>;
+  discardDraftMediaAsset(assetId: UUID): Promise<void>;
 
   // Personal training
   getPtWorkspace(): Promise<import("@/lib/domain/types").PtWorkspace>;

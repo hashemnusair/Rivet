@@ -546,10 +546,17 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 ### BUG-016 — Owner “Needs attention” treats ordinary cash-shift lifecycle as an exception
 
-- Status: **Open; canonical backlog issue**.
+- Status: **Resolved locally in the PT/email/settings safety slice; deployment verification remains open**.
 - Evidence: the owner dashboard builds `alerts` from every reconciliation audit category, so ordinary `shift.open`/balanced `shift.close` events can appear in **Needs attention**. At least one rendered item exposes the raw audit UUID instead of a useful operational detail.
 - Risk: owners are trained to ignore genuine exceptions, and an internal identifier leaks into an executive-facing surface.
-- Fix/acceptance: move balanced/normal lifecycle facts to **Recent activity**. Keep **Needs attention** for actionable exceptions only: non-zero variance awaiting/requiring decision, failed automation, overdue follow-up, failed delivery, or equivalent unresolved operational failure. Render a human detail, never a raw UUID. Add persisted dashboard tests for normal versus exceptional events.
+- Resolution: the owner projection now includes only unresolved pending approvals in **Needs attention** and uses a human review detail rather than an entity identifier. Routine `shift.open` and balanced `shift.close` events remain available through the audit/timeline record, not the exception rail. Add persisted dashboard normal-versus-exceptional coverage before marking deployed verification complete.
+
+### Pilot-readiness safety resolutions — PT, email, profile, and settings (2026-08-12)
+
+- **PT outcomes:** Complete, no-show, and gym cancellation now open an accessible confirmation with member, trainer, session time, and a stated credit consequence. Completion remains ungated; no-shows and cancellations require a meaningful reason in both UI and handler/mock boundaries. The fabricated `Cancelled by gym team` reason has been removed. PT payment queue rows now show member/package/payment context with a member link instead of a raw charge ID.
+- **Email ownership:** tenant settings expose only gym-controlled member service categories. RIVET platform invoices, past-due/suspension/cancellation, and account-access notices are mandatory and bypass tenant preferences. An ordinary enablement has no reason gate; reducing a gym-controlled category requires one. The durable worker is hard-disabled regardless of environment value; Resend delivery remains an explicitly deferred Production change.
+- **Profile and settings UX:** shared fields now associate labels with controls; profile uploads have named file/alt-text controls without raw enum announcements; category/audience/amenities use constrained choices; the settings tablist scrolls rather than wrapping; dirty profile edits warn before unload and a discard action schedules unreferenced draft uploads for cleanup.
+- **Evidence still required:** run the exact branch against isolated staging for PT role/credit concurrency and a real media cleanup record, then perform read-only deployed visual verification. No Production email, deployment, or data mutation is authorized by this local slice.
 
 ### BUG-017 — Next-renewal plan changes create an immediately outstanding charge
 

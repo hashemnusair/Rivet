@@ -196,6 +196,22 @@ test.describe("role restrictions", () => {
   });
 });
 
+test.describe("settings navigation", () => {
+  test("keeps the full settings tab row reachable by keyboard at tablet width", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto("/settings");
+    const tabs = page.getByRole("tablist");
+    await expect(tabs).toBeVisible();
+    const dimensions = await tabs.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
+    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
+    await page.getByRole("tab", { name: "Organization" }).focus();
+    await page.keyboard.press("End");
+    await expect(page.getByRole("tab", { name: "Rules & hours" })).toBeFocused();
+    await expect(page.getByRole("tabpanel")).toContainText(/rules|hours|operating/i);
+  });
+});
+
 test.describe("CRM lead capture", () => {
   test("captures an optional email and exposes an explicit unassigned owner", async ({ page }) => {
     await signIn(page, "Owner");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ptAvailableCredits, ptCancellationResult, ptIntervalsOverlap, ptPackageLadderIsValid, ptRefundMinor, selectPtEntitlement } from "./personal-training";
+import { ptAvailableCredits, ptBookingCreditConsequence, ptCancellationResult, ptIntervalsOverlap, ptPackageLadderIsValid, ptRefundMinor, selectPtEntitlement } from "./personal-training";
 import type { PtEntitlement, PtPackage } from "./types";
 
 const money = (amount: number) => ({ amount, currency: "JOD" });
@@ -28,6 +28,14 @@ describe("personal training commercial rules", () => {
     expect(ptCancellationResult({ startsAt, cancelledAt: Date.parse("2026-08-11T20:00:00.000Z"), cutoffHours: 12, cancelledByGym: false })).toEqual({ status: "cancelled", restoreCredit: true });
     expect(ptCancellationResult({ startsAt, cancelledAt: Date.parse("2026-08-12T06:00:00.000Z"), cutoffHours: 12, cancelledByGym: false })).toEqual({ status: "late_cancelled", restoreCredit: false });
     expect(ptCancellationResult({ startsAt, cancelledAt: startsAt, cutoffHours: 12, cancelledByGym: true })).toEqual({ status: "gym_cancelled", restoreCredit: true });
+  });
+
+  it("states the credit consequence before each booking outcome", () => {
+    const startsAt = "2026-08-12T12:00:00.000Z";
+    expect(ptBookingCreditConsequence({ action: "completed", startsAt })).toMatchObject({ effect: "consume" });
+    expect(ptBookingCreditConsequence({ action: "no_show", startsAt })).toMatchObject({ effect: "consume" });
+    expect(ptBookingCreditConsequence({ action: "cancelled", startsAt, cancelledAt: "2026-08-11T20:00:00.000Z" })).toMatchObject({ effect: "return" });
+    expect(ptBookingCreditConsequence({ action: "cancelled", startsAt, cancelledAt: "2026-08-12T06:00:00.000Z" })).toMatchObject({ effect: "consume" });
   });
 
   it("detects overlap and selects the soonest-expiring eligible credit", () => {

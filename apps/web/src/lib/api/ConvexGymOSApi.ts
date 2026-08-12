@@ -60,6 +60,7 @@ export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.media.generateUploadUrl, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string }): Promise<unknown>;
+  mutation(reference: typeof api.media.discardDraft, args: { organizationId: string; activeBranchId?: string; correlationId: string; assetId: string }): Promise<unknown>;
   /** Optional injectable seam used by tests and alternate Convex transports. */
   subscribe?: (
     reference: typeof api.domain.query,
@@ -344,6 +345,14 @@ export class ConvexGymOSApi implements GymOSApi {
       const payload = await response.json() as { storageId?: string };
       if (!payload.storageId) throw ApiError.of(ERR.VALIDATION, "The image upload did not return a storage identifier.");
       return await this.transport.action(api.media.finalizeUpload, { ...request, altText: input.altText, storageId: payload.storageId }) as T.MediaAsset;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+  async discardDraftMediaAsset(assetId: T.UUID): Promise<void> {
+    if (!this.transport || !this.organizationId) throw ApiError.of(ERR.CONFIGURATION, "Select a gym workspace before discarding media.");
+    try {
+      await this.transport.mutation(api.media.discardDraft, { organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId(), assetId });
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }

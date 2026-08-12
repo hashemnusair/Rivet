@@ -96,7 +96,8 @@ const DEFAULT_PLATFORM_PLANS: Data[] = [
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
-const OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
+const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -1838,12 +1839,19 @@ async function ptBookingView(ctx: ReadContext, organization: Organization, value
 }
 
 async function ptPackageOrderView(ctx: ReadContext, organization: Organization, value: Doc<"ptPackageOrders">): Promise<Data> {
+  const [memberRecord, ptPackage] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", value.memberPublicId)).unique(),
+    ctx.db.get(value.packageId),
+  ]);
   return {
     id: value.publicId,
     organizationId: publicOrganizationId(organization),
     memberId: value.memberPublicId,
     packageId: (await ctx.db.get(value.packageId))?.publicId ?? "",
     chargeId: value.chargePublicId,
+    memberName: stringValue(data(memberRecord?.data).fullName, "Member"),
+    packageName: ptPackage?.name ?? "PT package",
+    paymentReference: `PT order ${value.publicId.slice(-6).toUpperCase()}`,
     status: value.status,
     entitlementId: value.entitlementId ? (await ctx.db.get(value.entitlementId))?.publicId : undefined,
     paidAt: value.paidAt ? utcIso(value.paidAt) : undefined,
@@ -2297,7 +2305,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "settings.manage");
       const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
       const updatedBy = settings ? await ctx.db.get(settings.updatedByUserId) : undefined;
-      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...OPERATIONAL_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true", providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
+      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: false, providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
     }
     case "branches.list":
       return (await accessibleBranches(ctx, actor)).map((branch) => branchView(branch, orgId));
@@ -4858,10 +4866,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an active PT booking can receive an outcome.", { correlationId: actor.correlationId });
       if (booking.startsAt > Date.now()) domainError("VALIDATION_ERROR", "PT outcomes can only be recorded after the session begins.", { correlationId: actor.correlationId });
       const trainer = await ctx.db.get(booking.trainerProfileId);
-      if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else { requirePermission(actor, "pt.manage"); requireReason(input.reason, actor.correlationId); }
+      if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else requirePermission(actor, "pt.manage");
       const entitlement = await ctx.db.get(booking.entitlementId);
       if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
       const status = operation === "pt.booking.complete" ? "completed" : "no_show";
+      if (status === "no_show") requireReason(input.reason, actor.correlationId);
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
       await ctx.db.patch(booking._id, { status, outcomeReason: optionalString(input.reason), updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "consume", quantity: -1, reason: status === "completed" ? "PT session completed" : "PT session no-show" });
@@ -5476,15 +5485,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "settings.operationalEmail.update": {
       requirePermission(actor, "settings.manage");
-      requireReason(input.reason, actor.correlationId);
       const enabledKinds = [...new Set(arrayValue(input.enabledKinds).map(String))];
-      if (enabledKinds.some((kind) => !OPERATIONAL_EMAIL_KINDS.includes(kind as typeof OPERATIONAL_EMAIL_KINDS[number]))) domainError("VALIDATION_ERROR", "An operational email type is not supported.", { correlationId: actor.correlationId });
+      if (enabledKinds.some((kind) => !GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS.includes(kind as typeof GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS[number]))) domainError("VALIDATION_ERROR", "Only gym-controlled member service email types can be configured here.", { correlationId: actor.correlationId });
       const existing = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+      const changed = JSON.stringify([...enabledKinds].sort()) !== JSON.stringify([...(existing?.enabledKinds ?? [])].sort());
+      const reason = stringValue(input.reason).trim();
+      if (changed && enabledKinds.length < (existing?.enabledKinds ?? []).length) requireReason(reason, actor.correlationId);
       const now = Date.now();
-      if (existing) await ctx.db.patch(existing._id, { enabledKinds, updatedByUserId: actor.user._id, reason: stringValue(input.reason).trim(), updatedAt: now });
-      else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason: stringValue(input.reason).trim(), createdAt: now, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} operational email type${enabledKinds.length === 1 ? "" : "s"}`, reason: stringValue(input.reason), before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
-      return { enabledKinds, availableKinds: [...OPERATIONAL_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true", providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: stringValue(input.reason).trim() };
+      if (existing) await ctx.db.patch(existing._id, { enabledKinds, updatedByUserId: actor.user._id, reason, updatedAt: now });
+      else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason, createdAt: now, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} gym-controlled service email type${enabledKinds.length === 1 ? "" : "s"}`, reason: reason || undefined, before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
+      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: false, providerConfigured: Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()), webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
     }
     case "settings.operationalPolicies": {
       requirePermission(actor, "settings.manage");
@@ -5651,7 +5662,10 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
   const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));
-  const alerts = audits.filter((event) => (event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId)) || event.category === "reconciliation").slice(0, 8).map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "cash_variance", title: event.summary, detail: event.reason ?? event.entityLabel, actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId) ? "warning" : "info", occurredAt: utcIso(event.occurredAt) }));
+  const alerts = audits
+    .filter((event) => event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId))
+    .slice(0, 8)
+    .map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "approval", title: event.summary, detail: event.reason ?? "Review required", actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: "warning", occurredAt: utcIso(event.occurredAt) }));
   const timeline = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
   return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
 }

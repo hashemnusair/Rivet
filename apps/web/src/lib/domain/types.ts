@@ -479,6 +479,10 @@ export interface PtPackageOrder {
   memberId: UUID;
   packageId: UUID;
   chargeId: UUID;
+  /** Presentation-only payment context; public IDs stay out of operator copy. */
+  memberName?: string;
+  packageName?: string;
+  paymentReference?: string;
   status: "pending_payment" | "active" | "partially_refunded" | "refunded" | "cancelled";
   entitlementId?: UUID;
   paidAt?: ISODateTime;
@@ -634,6 +638,10 @@ export interface PtIntroductoryCreditApplyResult extends PtIntroductoryCreditPre
 export interface OperationalEmailActivationSettings {
   enabledKinds: string[];
   availableKinds: string[];
+  /** Gym-controlled member service messages. */
+  configurableKinds: string[];
+  /** RIVET-controlled billing, subscription, and access notices. */
+  mandatoryPlatformKinds: string[];
   liveWorkerEnabled: boolean;
   providerConfigured: boolean;
   webhookConfigured: boolean;

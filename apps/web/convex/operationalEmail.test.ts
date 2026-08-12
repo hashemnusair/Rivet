@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -46,24 +45,27 @@ describe("durable operational email", () => {
     expect(row?.text).not.toContain("delivered");
   });
 
-  it("leases safely, applies the 1/5/30 retry cap, and alerts without recipient data", async () => {
+  it("keeps platform billing and subscription notices mandatory even when a gym has no enabled service categories", async () => {
+    const { t, organizationId } = await seed();
+    await t.run(async (ctx) => {
+      const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      if (settings) await ctx.db.patch(settings._id, { enabledKinds: [] });
+    });
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_past_due", templateVersion: "invoice-v1", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "mandatory-platform-invoice" });
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "mandatory-platform-invoice")).unique());
+    expect(row?.status).toBe("suppressed");
+    expect(row?.suppressionReason).toContain("Sandbox default");
+    expect(row?.suppressionReason).not.toContain("not enabled");
+  });
+
+  it("keeps the provider worker disabled even when a live environment value is present", async () => {
     process.env.RIVET_OPERATIONAL_EMAIL_LIVE = "true";
     const { t, organizationId, branchId } = await seed();
     await t.mutation(internal.operationalEmail.enqueue, { organizationId, branchId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "private-recipient@example.test", dedupeKey: "receipt-retry" });
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const leased = await t.mutation(internal.operationalEmail.leaseDue, { limit: 10 });
-      expect(leased).toHaveLength(1);
-      const delivery = leased[0] as { _id: Id<"operationalEmailDeliveries">; leaseToken: string };
-      await t.mutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted: false, retryable: true, statusCode: 503, errorCode: "provider_unavailable" });
-      await t.run(async (ctx) => {
-        const row = await ctx.db.get(delivery._id);
-        if (row?.status === "retrying") await ctx.db.patch(row._id, { nextAttemptAt: Date.now() - 1 });
-      });
-    }
-    const state = await t.run(async (ctx) => ({ deliveries: await ctx.db.query("operationalEmailDeliveries").collect(), notifications: await ctx.db.query("operationalNotifications").collect() }));
-    expect(state.deliveries[0]).toMatchObject({ status: "failed", attempts: [{ outcome: "retryable_failure" }, { outcome: "retryable_failure" }, { outcome: "retryable_failure" }] });
-    expect(state.notifications).toHaveLength(1);
-    expect(state.notifications[0]?.body).not.toContain("private-recipient@example.test");
+    const result = await t.action(internal.operationalEmail.processDue, {});
+    const rows = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect());
+    expect(result).toEqual({ processed: 0, disabled: true });
+    expect(rows[0]).toMatchObject({ status: "suppressed", attempts: [] });
   });
 
   it("deduplicates webhooks and ignores older out-of-order provider events", async () => {

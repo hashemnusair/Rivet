@@ -40,13 +40,13 @@ describe("gym application durable email migration", () => {
     expect(deliveries.every((row) => row.status === "suppressed" && row.relatedEntityPublicId === first.applicationId)).toBe(true);
   });
 
-  it("moves application state to sent only after every related provider delivery arrives", async () => {
+  it("keeps newly queued application email sandboxed, while provider callbacks still require every related delivery", async () => {
     process.env.RIVET_OPERATIONAL_EMAIL_LIVE = "true";
     process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "gym_application_received_applicant,gym_application_received_internal,gym_application_approved";
     process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";
     const t = await seedAdmin();
     const submitted = await t.action(api.gymApplications.submit, { gymName: "Delivered Gym", ownerName: "Delivered Owner", email: "delivered-owner@example.test", contactNumber: "+962790000002", plan: "Pro" });
-    expect(submitted.notificationStatus).toBe("pending");
+    expect(submitted.notificationStatus).toBe("not_configured");
 
     const submissionDeliveries = await t.run(async (ctx) => {
       const rows = await ctx.db.query("operationalEmailDeliveries").withIndex("by_related_entity", (q) => q.eq("relatedEntityType", "gym_application_submission").eq("relatedEntityPublicId", submitted.applicationId)).collect();
@@ -63,7 +63,7 @@ describe("gym application durable email migration", () => {
 
     const admin = t.withIdentity({ subject: "clerk-application-admin" });
     const reviewed = await admin.action(api.gymApplications.review, { applicationId: submitted.applicationId, decision: "approved", note: "Verified for durable queue test", correlationId: "cor-application-review" });
-    expect(reviewed.reviewNotificationStatus).toBe("pending");
+    expect(reviewed.reviewNotificationStatus).toBe("not_configured");
     const reviewDelivery = await t.run(async (ctx) => {
       const row = await ctx.db.query("operationalEmailDeliveries").withIndex("by_related_entity", (q) => q.eq("relatedEntityType", "gym_application_review").eq("relatedEntityPublicId", submitted.applicationId)).unique();
       if (!row) throw new Error("Review delivery is missing");

@@ -19,6 +19,8 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { fromMajor } from "@/lib/utils/money";
+import { BookingOutcomeConfirmation } from "@/features/personal-training/booking-outcome-confirmation";
+import Link from "next/link";
 
 const WEEKDAYS: Array<{ key: WeekdayKey; label: string }> = [
   { key: "sun", label: "Sun" }, { key: "mon", label: "Mon" }, { key: "tue", label: "Tue" },
@@ -34,10 +36,11 @@ export default function PersonalTrainingPage() {
   const [editingTrainer, setEditingTrainer] = useState<PtTrainerProfile>();
   const [introOpen, setIntroOpen] = useState(false);
   const [availabilityTrainer, setAvailabilityTrainer] = useState<PtTrainerProfile>();
+  const [bookingAction, setBookingAction] = useState<{ booking: PtBooking; action: "completed" | "no_show" | "cancelled" }>();
   const workspace = useRealtimeApiQuery({ queryKey: qk.ptWorkspace, query: (api) => api.getPtWorkspace(), subscribe: (api, onValue, onError) => api.subscribePtWorkspace(onValue, onError) });
   const trainerUsers = useApiQuery(qk.users({ role: "trainer" }), (api) => api.listUsers({ role: "trainer", pageSize: 100 }), { enabled: can("pt.manage") });
-  const finish = useApiMutation((api, input: { booking: PtBooking; outcome: "completed" | "no_show" }) => input.outcome === "completed" ? api.completePtBooking(input.booking.id) : api.markPtBookingNoShow(input.booking.id), { onSuccess: async () => { await invalidate(); } });
-  const cancel = useApiMutation((api, booking: PtBooking) => api.cancelPtBooking(booking.id, { reason: "Cancelled by gym team", cancelledByGym: true }), { onSuccess: async () => { await invalidate(); } });
+  const finish = useApiMutation((api, input: { booking: PtBooking; outcome: "completed" | "no_show"; reason?: string }) => input.outcome === "completed" ? api.completePtBooking(input.booking.id) : api.markPtBookingNoShow(input.booking.id, { reason: input.reason }), { onSuccess: async () => { await invalidate(); setBookingAction(undefined); } });
+  const cancel = useApiMutation((api, input: { booking: PtBooking; reason: string }) => api.cancelPtBooking(input.booking.id, { reason: input.reason, cancelledByGym: true }), { onSuccess: async () => { await invalidate(); setBookingAction(undefined); } });
 
   if (workspace.isError) return <ErrorState title="Personal training could not be loaded" onRetry={() => workspace.refetch()} />;
   const data = workspace.data;
@@ -56,12 +59,12 @@ export default function PersonalTrainingPage() {
     <section className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
       <div className="panel overflow-hidden">
         <header className="flex items-center justify-between border-b border-line px-5 py-4"><div><p className="eyebrow">Schedule</p><h2 className="mt-1 text-[17px] font-semibold">Upcoming sessions</h2></div><CalendarClock className="size-5 text-ink-3" /></header>
-        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading the live calendar…</p> : data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No upcoming PT sessions.</p> : <div className="divide-y divide-line">{data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).map((booking) => <article key={booking.id} className="flex flex-wrap items-center gap-4 p-4"><div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{booking.memberName} <span className="font-normal text-ink-3">with {booking.trainerName}</span></p><p className="mt-1 text-[11px] text-ink-3">{formatDateTime(booking.startsAt)} · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge><div className="flex gap-1">{can("pt.outcome.self") || can("pt.manage") ? <><Button size="sm" variant="secondary" disabled={finish.isPending} onClick={() => finish.mutate({ booking, outcome: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={finish.isPending} onClick={() => finish.mutate({ booking, outcome: "no_show" })}><XCircle /> No-show</Button></> : null}{can("pt.book_for_member") || can("pt.manage") ? <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate(booking)}>Cancel</Button> : null}</div></article>)}</div>}
+        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading the live calendar…</p> : data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No upcoming PT sessions.</p> : <div className="divide-y divide-line">{data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).map((booking) => <article key={booking.id} className="flex flex-wrap items-center gap-4 p-4"><div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{booking.memberName} <span className="font-normal text-ink-3">with {booking.trainerName}</span></p><p className="mt-1 text-[11px] text-ink-3">{formatDateTime(booking.startsAt)} · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge><div className="flex gap-1">{can("pt.outcome.self") || can("pt.manage") ? <><Button size="sm" variant="secondary" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></> : null}{can("pt.book_for_member") || can("pt.manage") ? <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => setBookingAction({ booking, action: "cancelled" })}>Cancel</Button> : null}</div></article>)}</div>}
       </div>
 
       <div className="panel overflow-hidden">
         <header className="border-b border-line px-5 py-4"><p className="eyebrow">Payment queue</p><h2 className="mt-1 text-[17px] font-semibold">Pending package orders</h2></header>
-        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading orders…</p> : data.pendingOrders.length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No package payments waiting.</p> : <div className="divide-y divide-line">{data.pendingOrders.map((order) => { const item = data.packages.find((pkg) => pkg.id === order.packageId); return <article key={order.id} className="p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[13px] font-medium">{item?.name ?? "PT package"}</p><p className="mt-1 font-mono text-[9px] text-ink-3">Charge {order.chargeId}</p></div><Badge variant="warning">payment due</Badge></div></article>; })}</div>}
+        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading orders…</p> : data.pendingOrders.length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No package payments waiting.</p> : <div className="divide-y divide-line">{data.pendingOrders.map((order) => <article key={order.id} className="p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[13px] font-medium">{order.packageName ?? data.packages.find((pkg) => pkg.id === order.packageId)?.name ?? "PT package"}</p><p className="mt-1 text-[11px] text-ink-3"><Link className="font-medium text-ink hover:underline" href={`/members/${order.memberId}`}>{order.memberName ?? "Open member"}</Link> · {order.paymentReference ?? "PT payment request"}</p></div><Badge variant="warning">payment due</Badge></div></article>)}</div>}
       </div>
     </section>
 
@@ -74,6 +77,7 @@ export default function PersonalTrainingPage() {
     <TrainerDialog open={trainerOpen} onOpenChange={setTrainerOpen} users={trainerUsers.data?.items ?? []} trainer={editingTrainer} />
     <AvailabilityDialog trainer={availabilityTrainer} onOpenChange={(open) => { if (!open) setAvailabilityTrainer(undefined); }} />
     <IntroductoryCreditsDialog open={introOpen} onOpenChange={setIntroOpen} />
+    <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={finish.isPending || cancel.isPending} cancelledByGym={bookingAction?.action === "cancelled"} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason }) => { if (action === "cancelled") cancel.mutate({ booking, reason: reason ?? "" }); else finish.mutate({ booking, outcome: action, reason }); }} />
   </div>;
 }
 

@@ -294,6 +294,8 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  discardDraftMediaAsset(_assetId: T.UUID): Promise<void> { return this.respond(() => undefined); }
+
   private customerWithPreference(persona: CustomerPersona): CustomerPersona {
     const history = this.customerPreferenceHistory.get(persona.id) ?? [];
     const fallback: CustomerMarketingPreference = { optedIn: true, source: "system_default", wordingVersion: MARKETING_WORDING_VERSION };
@@ -1915,7 +1917,7 @@ export class MockGymOSApi implements GymOSApi {
         trainers: this.ptTrainers.map((item) => ({ ...item, availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
         packages: this.ptPackages.map((item) => ({ ...item })),
         bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
-        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item })),
+        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
         metrics: {
           packageRevenue: money(packageRevenue),
           sessionsUsed: this.ptEntitlements.reduce((total, item) => total + item.consumed, 0),
@@ -2125,6 +2127,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
       const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
       if (trainer?.userId !== this.actor().id) this.require("pt.manage"); else this.require("pt.outcome.self");
+      if (status === "no_show") this.requireReason(reason);
       const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
       entitlement.reserved = Math.max(0, entitlement.reserved - 1); entitlement.consumed += 1; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
       booking.status = status; booking.outcomeReason = reason?.trim() || undefined; booking.updatedAt = nowISO();
@@ -4341,16 +4344,19 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {
-    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false }));
+    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false }));
   }
 
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> {
     return this.respond(() => {
       this.require("settings.manage");
-      this.requireReason(input.reason);
-      this.operationalEmailKinds = [...new Set(input.enabledKinds)];
-      this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} operational email types`, reason: input.reason });
-      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid", "platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason };
+      const allowed = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"];
+      const next = [...new Set(input.enabledKinds)];
+      if (next.some((kind) => !allowed.includes(kind))) throw ApiError.of(ERR.VALIDATION, "Only gym-controlled member service email types can be configured here.");
+      if (next.length < this.operationalEmailKinds.length) this.requireReason(input.reason);
+      this.operationalEmailKinds = next;
+      this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} gym-controlled service email types`, reason: input.reason || undefined });
+      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason || undefined };
     });
   }
 
