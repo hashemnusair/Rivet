@@ -147,6 +147,8 @@ export default function MembershipsPage() {
                   <TableCell className="text-end">
                     {m.outstanding.amount > 0 ? (
                       <MoneyText money={m.outstanding} className="text-warning-deep" />
+                    ) : (m.upcomingAmount?.amount ?? 0) > 0 ? (
+                      <span className="text-[11px] text-info"><MoneyText money={m.upcomingAmount!} /> upcoming · {m.startDate}</span>
                     ) : (
                       <span className="text-[12px] tabular text-ink-4">—</span>
                     )}

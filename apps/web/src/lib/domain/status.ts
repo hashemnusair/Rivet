@@ -21,7 +21,7 @@ export function deriveMembershipStatus(
   today: string,
 ): MembershipEffectiveStatus {
   if (m.cancelledAt) return "cancelled";
-  if (m.activeFreeze && m.activeFreeze.status === "active") return "frozen";
+  if (m.activeFreeze && m.activeFreeze.status === "active" && m.activeFreeze.startDate <= today && today <= m.activeFreeze.endDate) return "frozen";
   if (diffDays(m.startDate, today) < 0) return "scheduled";
   if (diffDays(today, m.endDate) < 0) return "expired";
   if (m.totalVisits != null && (m.remainingVisits ?? 0) <= 0) return "depleted";

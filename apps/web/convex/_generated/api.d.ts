@@ -21,6 +21,7 @@ import type * as invitations from "../invitations.js";
 import type * as marketing from "../marketing.js";
 import type * as media from "../media.js";
 import type * as mediaSanitizer from "../mediaSanitizer.js";
+import type * as membershipJobs from "../membershipJobs.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
 import type * as operationalEmail from "../operationalEmail.js";
 import type * as permissions from "../permissions.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   marketing: typeof marketing;
   media: typeof media;
   mediaSanitizer: typeof mediaSanitizer;
+  membershipJobs: typeof membershipJobs;
   notificationDelivery: typeof notificationDelivery;
   operationalEmail: typeof operationalEmail;
   permissions: typeof permissions;

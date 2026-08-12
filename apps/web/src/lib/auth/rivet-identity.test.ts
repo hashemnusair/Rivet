@@ -43,6 +43,17 @@ describe("destinationFor", () => {
     ).toEqual({ area: "gym", href: "/reception", role: "receptionist" });
   });
 
+  it.each([
+    ["owner", "/dashboard"],
+    ["manager", "/dashboard"],
+    ["salesperson", "/dashboard"],
+    ["receptionist", "/reception"],
+    ["trainer", "/dashboard"],
+    ["auditor", "/reports"],
+  ] as const)("routes %s accounts to %s", (role, href) => {
+    expect(destinationFor({ ...baseIdentity, memberships: [{ organizationId: "org-1", organizationName: "Forge", organizationSlug: "forge", role, branches: [] }] })).toEqual({ area: "gym", href, role });
+  });
+
   it("uses the member dashboard only when the account has no elevated role", () => {
     expect(destinationFor(baseIdentity)).toEqual({ area: "member", href: "/customer/my-gyms" });
   });

@@ -4,8 +4,9 @@ import { approvalPermissionForAction, checkInDecisionOrder, dashboardRevenueSumm
 describe("server domain invariants", () => {
   it("preserves membership-status precedence and end-date boundaries", () => {
     const base = { startDate: "2026-08-01", endDate: "2026-08-12", totalVisits: 10, remainingVisits: 0 };
-    expect(deriveServerMembershipStatus({ ...base, cancelledAt: "2026-08-01", freezeStatus: "active" }, "2026-08-05")).toBe("cancelled");
-    expect(deriveServerMembershipStatus({ ...base, freezeStatus: "active" }, "2026-08-05")).toBe("frozen");
+    expect(deriveServerMembershipStatus({ ...base, cancelledAt: "2026-08-01", freezeStatus: "active", freezeStartDate: "2026-08-03", freezeEndDate: "2026-08-08" }, "2026-08-05")).toBe("cancelled");
+    expect(deriveServerMembershipStatus({ ...base, freezeStatus: "active", freezeStartDate: "2026-08-03", freezeEndDate: "2026-08-08" }, "2026-08-05")).toBe("frozen");
+    expect(deriveServerMembershipStatus({ ...base, freezeStatus: "active", freezeStartDate: "2026-08-09", freezeEndDate: "2026-08-10", remainingVisits: 5 }, "2026-08-05")).toBe("expiring");
     expect(deriveServerMembershipStatus({ ...base }, "2026-07-31")).toBe("scheduled");
     expect(deriveServerMembershipStatus({ ...base, remainingVisits: 5 }, "2026-08-13")).toBe("expired");
     expect(deriveServerMembershipStatus({ ...base, remainingVisits: 0 }, "2026-08-12")).toBe("depleted");

@@ -241,7 +241,7 @@ export type MembershipEffectiveStatus =
   | "depleted" // visit-based with no visits left
   | "scheduled"; // starts in the future
 
-export type PaymentStatus = "paid" | "partial" | "unpaid" | "refunded";
+export type PaymentStatus = "paid" | "partial" | "unpaid" | "refunded" | "void";
 
 export interface Membership {
   id: UUID;
@@ -275,6 +275,8 @@ export interface MembershipSummary extends Membership {
   branchName: string;
   planFreezeAllowanceDays: number;
   outstanding: Money;
+  /** Non-collectible balance for a successor term that has not begun yet. */
+  upcomingAmount?: Money;
 }
 
 export interface MembershipDetail extends Membership {
@@ -645,6 +647,9 @@ export interface OperationalEmailActivationSettings {
   liveWorkerEnabled: boolean;
   providerConfigured: boolean;
   webhookConfigured: boolean;
+  ownerConfirmed: boolean;
+  ownerConfirmedAt?: ISODateTime;
+  ownerConfirmedBy?: string;
   updatedAt?: ISODateTime;
   updatedBy?: string;
   reason?: string;
@@ -1014,6 +1019,12 @@ export interface Charge {
   paidAmount: Money;
   outstandingAmount: Money;
   status: PaymentStatus;
+  /** Tenant-local calendar date on which the invoice was issued. */
+  issueDate?: ISODate;
+  /** Tenant-local calendar date on which collection becomes permitted. */
+  dueDate?: ISODate;
+  /** Server-derived. False for future, void, and refunded invoices. */
+  collectible?: boolean;
   createdAt: ISODateTime;
 }
 
@@ -1491,6 +1502,16 @@ export interface BranchOperatingHours {
   days: Record<WeekdayKey, OperatingHoursDay>;
 }
 
+export interface TrialScheduleDay {
+  /** Exact tenant-local start times offered for trial requests on this weekday. */
+  slots: string[];
+}
+
+export interface BranchTrialSchedule {
+  branchId: UUID;
+  days: Record<WeekdayKey, TrialScheduleDay>;
+}
+
 export interface OperationalPolicies {
   entry: {
     outstandingBalance: "allow" | "warn" | "block";
@@ -1505,6 +1526,7 @@ export interface OperationalPolicies {
     maximumExtensionDays: number;
   };
   operatingHours: BranchOperatingHours[];
+  trialSchedules: BranchTrialSchedule[];
   personalTraining: {
     sessionDurationMinutes: 60;
     bookingHorizonDays: number;

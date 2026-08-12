@@ -99,7 +99,7 @@ export function MembershipSaleDialog({
       overrideReason: "",
       discount: "",
       discountReason: "",
-      payNow: true,
+      payNow: !isRenewal,
       payAmount: "",
       payMethod: "cash",
       paymentReference: "",
@@ -119,7 +119,7 @@ export function MembershipSaleDialog({
         overrideReason: "",
         discount: "",
         discountReason: "",
-        payNow: true,
+        payNow: !isRenewal,
         payAmount: "",
         payMethod: "cash",
         paymentReference: "",
@@ -135,7 +135,12 @@ export function MembershipSaleDialog({
   const watchPayNow = form.watch("payNow");
   const watchPayAmount = form.watch("payAmount");
   const watchPayMethod = form.watch("payMethod");
+  const renewalStartsInFuture = isRenewal && form.watch("startDate") > todayISODate();
   const paymentReferenceRequired = watchPayMethod === "card" || watchPayMethod === "bank_transfer" || watchPayMethod === "cliq";
+
+  useEffect(() => {
+    if (renewalStartsInFuture && form.getValues("payNow")) form.setValue("payNow", false);
+  }, [form, renewalStartsInFuture]);
 
   const plan: MembershipPlan | undefined = plans.find((p) => p.id === watchPlanId);
   const basePrice = plan ? (parseMoneyInput(watchPrice ?? "") ?? plan.basePrice) : money(0);
@@ -308,7 +313,7 @@ export function MembershipSaleDialog({
                   <Controller
                     control={form.control}
                     name="payNow"
-                    render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Collect payment now" />}
+                    render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} disabled={renewalStartsInFuture} aria-label="Collect payment now" />}
                   />
                 </label>
                 {watchPayNow ? (
@@ -342,6 +347,10 @@ export function MembershipSaleDialog({
                       </Field>
                     ) : null}
                   </div>
+                ) : renewalStartsInFuture ? (
+                  <p className="mt-2 text-[12px] text-ink-3">
+                    This upcoming invoice becomes collectible when the successor term begins.
+                  </p>
                 ) : (
                   <p className="mt-2 text-[12px] text-ink-3">
                     The full amount becomes an outstanding balance on the member account.

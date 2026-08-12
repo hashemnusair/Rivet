@@ -531,10 +531,13 @@ describe("membership sale and renewal", () => {
     const item = expiring.items[0]!;
     const previousId = item.membership.id;
 
-    const result = await api.renewMembership(previousId, { payment: { amount: item.membership.salePrice, method: "cash" } });
+    const result = await api.renewMembership(previousId, {});
 
     expect(result.membership.id).not.toBe(previousId);
     expect(result.membership.previousMembershipId).toBe(previousId);
+    expect(result.charge.collectible).toBeUndefined();
+    const successor = (await api.listMemberships({ pageSize: 100 })).items.find((membership) => membership.id === result.membership.id);
+    expect(successor).toMatchObject({ outstanding: { amount: 0 }, upcomingAmount: { amount: result.charge.total.amount } });
 
     // The old term is still readable — membership history is immutable.
     const old = await api.getMembership(previousId);
@@ -619,10 +622,11 @@ describe("membership adjustments", () => {
   it("freezes a membership, writes an adjustment and an audit event", async () => {
     const active = await api.listMemberships({ status: "active", pageSize: 5 });
     const membership = active.items[0]!;
+    const today = todayISODate("Asia/Amman");
 
     const detail = await api.freezeMembership(membership.id, {
-      startDate: "2026-08-01",
-      endDate: "2026-08-15",
+      startDate: today,
+      endDate: addDays(today, 14),
       reason: "Travelling for work",
     });
 
@@ -672,6 +676,7 @@ describe("operational policies", () => {
       entry: { outstandingBalance: "block", expiryWarningDays: 10, duplicateScanWindowMinutes: 4, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
       operatingHours: [{ branchId: branch.id, days }],
+      trialSchedules: [{ branchId: branch.id, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { slots: day === "fri" ? [] : ["18:00"] }])) as unknown as OperationalPolicies["trialSchedules"][number]["days"] }],
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
     });
 
@@ -686,7 +691,8 @@ describe("operational policies", () => {
     await api.updateOperationalPolicies({ ...settings.operationalPolicies, membership: { ...settings.operationalPolicies.membership, minimumFreezeDays: 10, maximumExtensionDays: 20 } });
     const active = await api.listMemberships({ status: "active", pageSize: 10 });
     const membership = active.items[0]!;
-    await expect(api.freezeMembership(membership.id, { startDate: "2026-08-10", endDate: "2026-08-14", reason: "Short trip" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const today = todayISODate("Asia/Amman");
+    await expect(api.freezeMembership(membership.id, { startDate: today, endDate: addDays(today, 4), reason: "Short trip" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.extendMembership(membership.id, { days: 21, reason: "Too long" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 });
@@ -1222,6 +1228,21 @@ describe("free-trial lifecycle", () => {
       goal: "Build a consistent training routine",
     });
   }
+
+  it("does not attach an anonymous request to the adapter's last preview persona", async () => {
+    const booking = await api.createTrialBooking({
+      gymId: "forge-fitness",
+      branchId: "forge-abdoun",
+      fullName: "Anonymous Trial Test",
+      email: "anonymous-trial@example.com",
+      phone: "+962 79 000 8899",
+      preferredDate: "2026-08-20",
+      preferredTime: "19:00",
+      goal: "Evaluate the gym before creating an account",
+    });
+
+    expect(booking.customerId).toBeUndefined();
+  });
 
   it("links a public booking to CRM and records staff outcomes across every surface", async () => {
     const booking = await bookTrial();

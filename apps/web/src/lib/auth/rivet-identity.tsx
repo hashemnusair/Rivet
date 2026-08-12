@@ -166,7 +166,7 @@ export function destinationFor(identity: RivetIdentity): Destination {
   if (membership) {
     return {
       area: "gym",
-      href: membership.role === "receptionist" ? "/reception" : "/dashboard",
+      href: membership.role === "receptionist" ? "/reception" : membership.role === "auditor" ? "/reports" : "/dashboard",
       role: membership.role,
     };
   }

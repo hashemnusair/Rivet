@@ -132,7 +132,7 @@ describe("exported Convex platform invoice boundaries", () => {
     expect(persisted.audit.map((event) => event.action)).toEqual(["invoice.create", "invoice.issue", "invoice.mark_past_due", "invoice.manual_payment"]);
     expect(persisted.audit.at(-1)).toMatchObject({ reason: "Bank transfer verified.", before: { status: "past_due" }, after: { status: "paid" } });
     expect(persisted.emails).toEqual([
-      expect.objectContaining({ kind: "platform_invoice_issued", status: "suppressed", retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] } }),
+      expect.objectContaining({ kind: "platform_invoice_issued", status: "suppressed", retryPolicy: { maxAttempts: 4, backoffMinutes: [1, 5, 30] } }),
       expect.objectContaining({ kind: "platform_invoice_past_due", status: "suppressed" }),
       expect.objectContaining({ kind: "platform_invoice_paid", status: "suppressed" }),
     ]);

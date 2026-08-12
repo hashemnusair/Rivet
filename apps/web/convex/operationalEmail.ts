@@ -1,16 +1,25 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
-const MAX_ATTEMPTS = RETRY_MINUTES.length;
+const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
 const LEASE_MS = 2 * 60 * 1000;
 
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
 const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"]);
+
+function providerConfigured(): boolean {
+  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+}
+
+function liveDeliveryEnabled(): boolean {
+  return process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured();
+}
 
 export interface QueueOperationalEmailInput {
   organizationId?: Id<"organizations">;
@@ -44,9 +53,21 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
     en: { subject: "Your RIVET trial request", body: "Your trial request was received. Sign in to RIVET to see its current status and the gym's response." },
     ar: { subject: "طلب التجربة في RIVET", body: "تم استلام طلب التجربة. سجّل الدخول إلى RIVET للاطلاع على حالته الحالية ورد النادي." },
   },
+  trial_status: {
+    en: { subject: "Your RIVET trial request was updated", body: "Your gym updated the status of your trial request. Sign in to RIVET to view the current outcome and any follow-up." },
+    ar: { subject: "تم تحديث طلب التجربة في RIVET", body: "قام النادي بتحديث حالة طلب التجربة. سجّل الدخول إلى RIVET لعرض النتيجة الحالية وأي متابعة." },
+  },
   payment_receipt: {
     en: { subject: "Your RIVET payment receipt", body: "A payment was recorded on your gym account. Sign in to RIVET to view the authoritative receipt and remaining balance." },
     ar: { subject: "إيصال دفع من RIVET", body: "تم تسجيل دفعة في حساب النادي. سجّل الدخول إلى RIVET لعرض الإيصال المعتمد والرصيد المتبقي." },
+  },
+  renewal_reminder: {
+    en: { subject: "Your gym membership is approaching renewal", body: "Your current membership term is approaching its renewal date. Sign in to RIVET to review the current term, upcoming invoice, and gym contact details." },
+    ar: { subject: "موعد تجديد عضوية النادي يقترب", body: "تقترب عضويتك الحالية من تاريخ التجديد. سجّل الدخول إلى RIVET لمراجعة المدة الحالية والفاتورة القادمة وبيانات التواصل مع النادي." },
+  },
+  membership_expiry: {
+    en: { subject: "Your gym membership is approaching expiry", body: "Your current membership term is approaching expiry. Sign in to RIVET to review the authoritative membership status and contact the gym." },
+    ar: { subject: "عضوية النادي تقترب من الانتهاء", body: "تقترب عضويتك الحالية من الانتهاء. سجّل الدخول إلى RIVET لمراجعة حالة العضوية المعتمدة والتواصل مع النادي." },
   },
   support_acknowledgement: {
     en: { subject: "RIVET received your support request", body: "Your support case was received. You can follow its current status and conversation in RIVET." },
@@ -171,17 +192,16 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const content = fallbackContent(input.kind, language);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
-  // This release intentionally keeps the worker sandboxed even if an
-  // environment value is misconfigured. Enabling provider delivery needs a
-  // separately reviewed production change.
   if (!suppressionReason) {
-    suppressionReason = "Sandbox default; external operational email delivery is disabled";
-  }
-  if (!suppressionReason) {
-    const enabledKinds = input.organizationId
-      ? (await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId!)).unique())?.enabledKinds ?? []
-      : (process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-    if (!MANDATORY_PLATFORM_KINDS.has(input.kind) && !enabledKinds.includes(input.kind)) suppressionReason = "This operational email type is not enabled";
+    if (!liveDeliveryEnabled()) suppressionReason = "External operational email delivery is disabled or the provider is not configured";
+    else if (input.organizationId && !MANDATORY_PLATFORM_KINDS.has(input.kind)) {
+      const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId!)).unique();
+      if (!settings?.ownerConfirmedAt) suppressionReason = "The gym owner has not confirmed operational email preferences";
+      else if (!settings.enabledKinds.includes(input.kind)) suppressionReason = "This operational email type is not enabled";
+    } else if (!input.organizationId) {
+      const enabledKinds = (process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+      if (!enabledKinds.includes(input.kind)) suppressionReason = "This platform operational email type is not enabled";
+    }
   }
   const id = await ctx.db.insert("operationalEmailDeliveries", {
     publicId: `EMAIL-${crypto.randomUUID()}`,
@@ -270,7 +290,7 @@ async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolea
     return kinds.includes(delivery.kind);
   }
   const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", delivery.organizationId!)).unique();
-  return Boolean(settings?.enabledKinds.includes(delivery.kind));
+  return Boolean(settings?.ownerConfirmedAt && settings.enabledKinds.includes(delivery.kind));
 }
 
 export const leaseDue = internalMutation({
@@ -286,7 +306,13 @@ export const leaseDue = internalMutation({
       .sort((left, right) => (left.nextAttemptAt ?? left.createdAt) - (right.nextAttemptAt ?? right.createdAt));
     const leased: Delivery[] = [];
     for (const delivery of candidates.slice(0, Math.max(0, Math.min(args.limit, 50)))) {
-      if (!await kindEnabled(ctx, delivery)) continue;
+      if (!await kindEnabled(ctx, delivery)) {
+        await ctx.db.patch(delivery._id, { status: "suppressed", suppressionReason: "This operational email type was disabled before delivery", nextAttemptAt: undefined, leaseToken: undefined, leaseExpiresAt: undefined, updatedAt: now });
+        const suppressed = (await ctx.db.get(delivery._id))!;
+        await mirrorDelivery(ctx, suppressed);
+        await syncRelatedApplicationStatus(ctx, suppressed);
+        continue;
+      }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(delivery._id, { status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
       leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
@@ -387,5 +413,43 @@ export const recordWebhook = internalMutation({
 export const processDue = internalAction({
   args: {},
   returns: v.object({ processed: v.number(), disabled: v.boolean() }),
-  handler: async () => ({ processed: 0, disabled: true }),
+  handler: async (ctx) => {
+    if (!liveDeliveryEnabled()) return { processed: 0, disabled: true };
+    const apiKey = process.env.RESEND_API_KEY!.trim();
+    const from = process.env.RESEND_FROM_EMAIL!.trim();
+    const deliveries = await ctx.runMutation(internal.operationalEmail.leaseDue, { limit: 25 }) as Delivery[];
+    let processed = 0;
+    for (const delivery of deliveries) {
+      if (!delivery.leaseToken || !delivery.recipientEmail) continue;
+      let accepted = false;
+      let retryable = true;
+      let providerId: string | undefined;
+      let statusCode: number | undefined;
+      let errorCode: string | undefined;
+      try {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": delivery.dedupeKey },
+          body: JSON.stringify({ from, to: [delivery.recipientEmail], subject: delivery.subject, html: delivery.html, text: delivery.text }),
+        });
+        statusCode = response.status;
+        accepted = response.ok;
+        retryable = response.status === 408 || response.status === 409 || response.status === 425 || response.status === 429 || response.status >= 500;
+        if (response.ok) {
+          const payload = await response.json() as { id?: string };
+          providerId = payload.id;
+          if (!providerId) {
+            accepted = false;
+            retryable = true;
+            errorCode = "provider_response_missing_id";
+          }
+        } else errorCode = `provider_http_${response.status}`;
+      } catch {
+        errorCode = "provider_network_error";
+      }
+      await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted, retryable, providerId, statusCode, errorCode });
+      processed += 1;
+    }
+    return { processed, disabled: false };
+  },
 });

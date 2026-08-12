@@ -59,6 +59,6 @@ describe("exported Convex platform subscription lifecycle", () => {
     const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", reason: "Customer requested cancellation." })) as Record<string, unknown>;
     expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });
     const emails = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "operationalEmailDelivery")).collect()).map((record) => record.data));
-    expect(emails).toEqual([expect.objectContaining({ kind: "platform_subscription_cancelled", status: "suppressed", suppressionReason: expect.stringContaining("Sandbox default") })]);
+    expect(emails).toEqual([expect.objectContaining({ kind: "platform_subscription_cancelled", status: "suppressed", suppressionReason: expect.stringContaining("disabled or the provider is not configured") })]);
   });
 });

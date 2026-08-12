@@ -78,6 +78,11 @@ describe("deriveMembershipStatus", () => {
   it("ignores a freeze that is no longer active", () => {
     expect(deriveMembershipStatus(term({ activeFreeze: { ...activeFreeze, status: "completed" } }), TODAY)).toBe("active");
   });
+
+  it("does not freeze the membership before a scheduled freeze begins or after it ends", () => {
+    expect(deriveMembershipStatus(term({ activeFreeze: { ...activeFreeze, startDate: "2026-08-10", endDate: "2026-08-20" } }), TODAY)).toBe("active");
+    expect(deriveMembershipStatus(term({ activeFreeze: { ...activeFreeze, startDate: "2026-07-01", endDate: "2026-07-20" } }), TODAY)).toBe("active");
+  });
 });
 
 describe("isMembershipUsable", () => {

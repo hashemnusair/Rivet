@@ -45,6 +45,7 @@ import { ApiError, ERR } from "@/lib/api/errors";
 import { discountNeedsApproval, type Permission } from "@/lib/domain/permissions";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
+import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
 import { money, zeroMoney } from "@/lib/utils/money";
@@ -57,6 +58,7 @@ import {
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
 import type { CustomerMarketingPreference, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { trialSlotsForDate } from "@/lib/public/trial-schedule";
 import {
   currentRole,
   currentUser,
@@ -202,7 +204,7 @@ export class MockGymOSApi implements GymOSApi {
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
   private operationalEmailKinds: string[] = [];
-  private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "updatedAt" | "updatedBy" | "reason">;
+  private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -368,6 +370,13 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
+      if (!gym || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
+      if (!trialSlotsForDate(directoryBranch, input.preferredDate).includes(input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is closed or no longer available.");
+      // The browser experience owns whether a member is signed in. Falling
+      // back to the mock adapter's last persona would silently attach a guest
+      // request to an unrelated seeded member after navigation or test reuse.
+      const customerId = input.customerId;
+      if (customerId && this.trialBookings.some((booking) => booking.customerId === customerId && booking.gymId === input.gymId && (booking.status === "requested" || booking.status === "confirmed"))) throw ApiError.of(ERR.CONFLICT, "You already have an open trial request with this gym.");
       const internalBranchId = directoryBranch?.internalBranchId;
       let leadId: string | undefined;
       if (gym && internalBranchId) {
@@ -392,7 +401,7 @@ export class MockGymOSApi implements GymOSApi {
         this.db.leads.push(lead);
         this.activity({ leadId, type: "member_created", title: "Free trial requested", body: input.goal, actorName: "RIVET Member" });
       }
-      const booking: TrialBooking = { ...input, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
+      const booking: TrialBooking = { ...input, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
       this.trialBookings.unshift(booking);
       return { ...booking };
     });
@@ -1134,21 +1143,25 @@ export class MockGymOSApi implements GymOSApi {
   private currentMembership(memberId: T.UUID): MembershipRecord | undefined {
     const terms = this.db.memberships.filter((m) => m.memberId === memberId);
     if (terms.length === 0) return undefined;
-    const usable = terms.filter((t) => {
-      const s = this.membershipStatusOf(t);
-      return s === "active" || s === "expiring" || s === "frozen" || s === "scheduled" || s === "depleted";
-    });
-    if (usable.length > 0) {
-      return usable.sort((a, b) => (a.endDate < b.endDate ? 1 : -1))[0];
-    }
-    return terms.sort((a, b) => (a.endDate < b.endDate ? 1 : -1))[0];
+    const rank: Record<T.MembershipEffectiveStatus, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+    return terms.sort((a, b) => rank[this.membershipStatusOf(a)] - rank[this.membershipStatusOf(b)] || b.endDate.localeCompare(a.endDate))[0];
   }
 
   private outstandingForMember(memberId: T.UUID): T.Money {
     const total = this.db.charges
-      .filter((c) => c.memberId === memberId && c.status !== "refunded")
-      .reduce((s, c) => s + c.outstandingAmount.amount, 0);
+      .filter((c) => c.memberId === memberId)
+      .reduce((s, c) => s + collectibleOutstandingMinor(c, this.today()), 0);
     return money(total);
+  }
+
+  private chargeProjection(charge: T.Charge | undefined): T.Charge | undefined {
+    if (!charge) return undefined;
+    return {
+      ...charge,
+      issueDate: charge.issueDate ?? charge.createdAt.slice(0, 10),
+      dueDate: charge.dueDate ?? charge.issueDate ?? charge.createdAt.slice(0, 10),
+      collectible: chargeIsCollectible(charge, this.today()),
+    };
   }
 
   private toMemberSummary(m: MemberRecord): T.MemberSummary {
@@ -1253,7 +1266,8 @@ export class MockGymOSApi implements GymOSApi {
       planName: plan?.name ?? "Unknown plan",
       branchName: branch?.name ?? "—",
       planFreezeAllowanceDays: plan?.freezeAllowanceDays ?? 0,
-      outstanding: charge?.outstandingAmount ?? zeroMoney(),
+      outstanding: charge && chargeIsCollectible(charge, this.today()) ? charge.outstandingAmount : zeroMoney(),
+      upcomingAmount: charge && !chargeIsCollectible(charge, this.today()) && charge.status !== "void" && charge.status !== "refunded" ? charge.outstandingAmount : zeroMoney(),
     };
   }
 
@@ -2234,7 +2248,7 @@ export class MockGymOSApi implements GymOSApi {
         ...this.toMembership(record),
         member: this.toMemberSummary(member),
         plan: this.toPlan(plan),
-        charge: this.db.charges.find((c) => c.membershipId === record.id),
+        charge: this.chargeProjection(this.db.charges.find((c) => c.membershipId === record.id)),
         adjustments: record.adjustments,
         freezes: record.freezes,
       };
@@ -2354,6 +2368,8 @@ export class MockGymOSApi implements GymOSApi {
       paidAmount: money(0),
       outstandingAmount: money(totalMinor),
       status: totalMinor === 0 ? "paid" : "unpaid",
+      issueDate: this.today(),
+      dueDate: args.startDate > this.today() ? args.startDate : this.today(),
       createdAt: nowISO(),
     };
     this.db.charges.push(charge);
@@ -2553,6 +2569,16 @@ export class MockGymOSApi implements GymOSApi {
         throw ApiError.of(ERR.MEMBERSHIP_NOT_ACTIVE, `Cannot freeze a membership in “${status}” state.`);
       }
       const plan = this.db.plans.find((p) => p.id === record.planId)!;
+      const today = this.today();
+      if (record.activeFreeze?.status === "active") {
+        if (record.activeFreeze.endDate >= today) throw ApiError.of(ERR.CONFLICT, "This membership already has a scheduled or active freeze.");
+        record.frozenDaysUsed += diffDays(record.activeFreeze.startDate, record.activeFreeze.endDate) + 1;
+        record.activeFreeze.status = "completed";
+        record.activeFreeze = undefined;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.endDate)) throw ApiError.of(ERR.VALIDATION, "Freeze dates must be calendar dates.");
+      if (input.startDate < today) throw ApiError.of(ERR.VALIDATION, "A freeze cannot begin before today.");
+      if (input.startDate > record.endDate) throw ApiError.of(ERR.VALIDATION, "A freeze must begin during the current membership term.");
       const days = diffDays(input.startDate, input.endDate) + 1;
       if (days <= 0) throw ApiError.of(ERR.VALIDATION, "Freeze end must be on or after the start date.");
       if (days < this.db.operationalPolicies.membership.minimumFreezeDays) throw ApiError.of(ERR.VALIDATION, `A freeze must be at least ${this.db.operationalPolicies.membership.minimumFreezeDays} days.`);
@@ -2622,6 +2648,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!record?.activeFreeze) throw ApiError.of(ERR.NOT_FOUND, "No active freeze on this membership.");
       const freeze = record.activeFreeze;
       const today = this.today();
+      if (freeze.startDate > today || freeze.endDate < today) throw ApiError.of(ERR.VALIDATION, "Only a freeze currently in progress can be ended early.");
       const plannedDays = diffDays(freeze.startDate, freeze.endDate) + 1;
       const usedDays = Math.max(1, diffDays(freeze.startDate, today) + 1);
       const unusedDays = Math.max(0, plannedDays - usedDays);
@@ -2722,9 +2749,17 @@ export class MockGymOSApi implements GymOSApi {
       const record = this.db.memberships.find((m) => m.id === membershipId);
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       if (record.cancelledAt) throw ApiError.of(ERR.VALIDATION, "Membership is already cancelled.");
+      const wasScheduled = this.membershipStatusOf(record) === "scheduled";
       record.cancelledAt = nowISO();
       record.cancellationReason = input.reason;
       record.activeFreeze = undefined;
+      if (wasScheduled) {
+        const charge = this.db.charges.find((candidate) => candidate.membershipId === record.id);
+        if (charge && charge.paidAmount.amount === 0) {
+          charge.status = "void";
+          charge.outstandingAmount = money(0);
+        }
+      }
       record.adjustments.push({
         id: mockUuid(),
         membershipId: record.id,
@@ -2837,7 +2872,7 @@ export class MockGymOSApi implements GymOSApi {
       ...this.toMembership(record),
       member: this.toMemberSummary(member),
       plan: this.toPlan(plan),
-      charge: this.db.charges.find((c) => c.membershipId === record.id),
+      charge: this.chargeProjection(this.db.charges.find((c) => c.membershipId === record.id)),
       adjustments: record.adjustments,
       freezes: record.freezes,
     };
@@ -3578,10 +3613,11 @@ export class MockGymOSApi implements GymOSApi {
       charge = this.db.charges.find((c) => c.id === args.chargeId);
     } else {
       charge = this.db.charges
-        .filter((c) => c.memberId === member.id && c.outstandingAmount.amount > 0 && c.status !== "refunded")
+        .filter((c) => c.memberId === member.id && c.outstandingAmount.amount > 0 && chargeIsCollectible(c, this.today()))
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0];
     }
     if (!charge) throw ApiError.of(ERR.NO_OUTSTANDING_BALANCE, "This member has no outstanding balance to collect.");
+    if (!chargeIsCollectible(charge, this.today())) throw ApiError.of(ERR.VALIDATION, `This invoice becomes collectible on ${charge.dueDate ?? charge.createdAt.slice(0, 10)}.`);
     if (charge.outstandingAmount.amount <= 0) {
       throw ApiError.of(ERR.NO_OUTSTANDING_BALANCE, "This charge is already fully paid.");
     }
@@ -4349,7 +4385,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {
-    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate }));
+    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ownerConfirmed: false, ...this.operationalEmailUpdate }));
   }
 
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> {
@@ -4361,9 +4397,10 @@ export class MockGymOSApi implements GymOSApi {
       const nextKinds = new Set(next);
       if (this.operationalEmailKinds.some((kind) => !nextKinds.has(kind))) this.requireReason(input.reason);
       this.operationalEmailKinds = next;
-      this.operationalEmailUpdate = { updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason || undefined };
+      const confirmedAt = nowISO();
+      this.operationalEmailUpdate = { ownerConfirmed: true, ownerConfirmedAt: confirmedAt, ownerConfirmedBy: this.actor().name, updatedAt: confirmedAt, updatedBy: this.actor().name, reason: input.reason || undefined };
       this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} gym-controlled service email types`, reason: input.reason || undefined });
-      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate };
+      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate! };
     });
   }
 

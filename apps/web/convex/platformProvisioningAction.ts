@@ -11,6 +11,22 @@ const provisionArgs = {
 type Data = Record<string, unknown>;
 type ClerkOrganization = { id?: unknown; name?: unknown; slug?: unknown; public_metadata?: unknown; publicMetadata?: unknown };
 type ClerkInvitation = { id?: unknown; email_address?: unknown; status?: unknown };
+export type ProvisioningFaultPoint = "before_organization" | "before_invitation";
+
+/**
+ * Deterministic provider faults are available only with Clerk development
+ * credentials. A production `sk_live_` key can never activate this path even
+ * if an environment variable is misconfigured.
+ */
+export function provisioningFaultMessage(secret: string, configured: string | undefined, point: ProvisioningFaultPoint): string | undefined {
+  if (!secret.startsWith("sk_test_") || configured !== point) return undefined;
+  return `Injected Clerk ${point === "before_organization" ? "organization" : "invitation"} failure for provisioning verification.`;
+}
+
+function injectProvisioningFault(secret: string, point: ProvisioningFaultPoint): void {
+  const message = provisioningFaultMessage(secret, process.env.RIVET_PROVISIONING_FAULT_MODE, point);
+  if (message) throw new Error(message);
+}
 
 async function clerkRequest(secret: string, url: string, method: "GET" | "POST", body?: Data): Promise<{ ok: boolean; status: number; payload: unknown }> {
   const response = await fetch(url, {
@@ -144,9 +160,11 @@ export const provision = action({
 
     try {
       const identifiers = provisioningIdentifiers(prepared.applicationId, prepared.gymName);
+      injectProvisioningFault(secret, "before_organization");
       const clerkOrganizationId = prepared.clerkOrganizationId ?? await createOrFindClerkOrganization(secret, { name: prepared.gymName, slug: identifiers.organizationSlug, applicationId: prepared.applicationId, organizationPublicId: identifiers.organizationPublicId });
       if (!prepared.clerkOrganizationId) await ctx.runMutation(internal.platformProvisioning.rememberClerkOrganization, { applicationId: prepared.applicationId, clerkOrganizationId, correlationId: prepared.correlationId });
       await ctx.runMutation(internal.platformProvisioning.createWorkspace, { applicationId: prepared.applicationId, clerkOrganizationId, correlationId: prepared.correlationId });
+      injectProvisioningFault(secret, "before_invitation");
       const clerkInvitationId = prepared.clerkInvitationId ?? await createOrFindClerkInvitation(secret, { organizationId: clerkOrganizationId, email: prepared.email, applicationId: prepared.applicationId, organizationPublicId: identifiers.organizationPublicId });
       if (!prepared.clerkInvitationId) await ctx.runMutation(internal.platformProvisioning.rememberClerkInvitation, { applicationId: prepared.applicationId, clerkInvitationId, correlationId: prepared.correlationId });
       return await ctx.runMutation(internal.platformProvisioning.complete, { applicationId: prepared.applicationId, correlationId: prepared.correlationId });

@@ -1,4 +1,4 @@
-import type { TrialBookingStatus, UUID } from "@/lib/domain/types";
+import type { TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/seed";
 
 export interface MarketplaceBranch {
@@ -7,6 +7,8 @@ export interface MarketplaceBranch {
   area: string;
   address: string;
   trialSlots: string[];
+  /** Persisted branch/weekday choices. Missing means the gym has not configured trials. */
+  trialSchedule?: Record<WeekdayKey, TrialScheduleDay>;
   internalBranchId?: UUID;
 }
 
@@ -123,6 +125,12 @@ export interface TrialBooking {
   leadId?: UUID;
 }
 
+function previewTrialSchedule(slots: string[]): Record<WeekdayKey, TrialScheduleDay> {
+  return Object.fromEntries(
+    (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] satisfies WeekdayKey[]).map((weekday) => [weekday, { slots: [...slots] }]),
+  ) as Record<WeekdayKey, TrialScheduleDay>;
+}
+
 export const MARKETPLACE_GYMS: MarketplaceGym[] = [
   {
     id: "forge-fitness",
@@ -155,6 +163,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Abdoun",
         address: "Salah Al-Suheimat St 12, Abdoun",
         trialSlots: ["08:00", "17:00", "19:00"],
+        trialSchedule: previewTrialSchedule(["08:00", "17:00", "19:00"]),
         internalBranchId: BRANCH_ABD,
       },
       {
@@ -163,6 +172,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Sweifieh",
         address: "Ali Nasuh Al-Tahir St 7, Sweifieh",
         trialSlots: ["09:00", "18:00", "20:00"],
+        trialSchedule: previewTrialSchedule(["09:00", "18:00", "20:00"]),
         internalBranchId: BRANCH_SWF,
       },
     ],
@@ -198,6 +208,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Dabouq",
         address: "King Abdullah II St, Dabouq",
         trialSlots: ["07:30", "18:30", "20:00"],
+        trialSchedule: previewTrialSchedule(["07:30", "18:30", "20:00"]),
       },
     ],
   },
@@ -232,6 +243,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Khalda",
         address: "Wasfi Al Tal St, Khalda",
         trialSlots: ["10:00", "16:00", "18:00"],
+        trialSchedule: previewTrialSchedule(["10:00", "16:00", "18:00"]),
       },
       {
         id: "her-shmeisani",
@@ -239,6 +251,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Shmeisani",
         address: "Queen Noor St, Shmeisani",
         trialSlots: ["09:30", "17:30", "19:30"],
+        trialSchedule: previewTrialSchedule(["09:30", "17:30", "19:30"]),
       },
     ],
   },
@@ -273,6 +286,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
         area: "Jabal Amman",
         address: "Rainbow St, Jabal Amman",
         trialSlots: ["08:30", "17:30", "19:30"],
+        trialSchedule: previewTrialSchedule(["08:30", "17:30", "19:30"]),
       },
     ],
   },

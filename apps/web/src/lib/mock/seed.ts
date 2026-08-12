@@ -1885,6 +1885,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
       },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [],
+      trialSchedules: [],
     },
     members,
     memberships,

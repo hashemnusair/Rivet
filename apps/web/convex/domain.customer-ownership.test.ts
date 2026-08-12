@@ -11,6 +11,7 @@ declare global {
 
 const modules = import.meta.glob("./**/*.ts");
 const originalEntryPassSecret = process.env.ENTRY_PASS_SIGNING_SECRET;
+const trialDate = (() => { const date = new Date(Date.now() + 3 * 86_400_000); return date.toISOString().slice(0, 10); })();
 
 function operation(operationName: string, input: Record<string, unknown> = {}) {
   return { operation: operationName, input, correlationId: `cor-test-${operationName}` };
@@ -196,6 +197,12 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
         { id: "directory-branch-a", internalBranchId: "branch-a", name: "Gym A Main" },
         { id: "directory-branch-a-inactive", internalBranchId: "branch-a-inactive", name: "Gym A Closed" },
       ],
+    });
+    await insertRecord(organizationA, "settings", "settings", {
+      operationalPolicies: {
+        operatingHours: [{ branchId: "branch-a", days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { enabled: true, opensAt: "06:00", closesAt: "23:00" }])) }],
+        trialSchedules: [{ branchId: "branch-a", days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { slots: ["18:00"] }])) }],
+      },
     });
     await insertRecord(organizationB, "marketplaceGym", "gym-b", {
       name: "Gym B",
@@ -407,7 +414,7 @@ describe("exported Convex customer ownership boundaries", () => {
       branchId: "directory-branch-a",
       fullName: "Customer A",
       phone: "+962799999991",
-      preferredDate: "2026-08-15",
+      preferredDate: trialDate,
       preferredTime: "18:00",
       goal: "Strength",
     })) as TrialBookingResult;
@@ -432,6 +439,10 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(persisted.lead).toMatchObject({ organizationId: persisted.booking?.organizationId, branchId: persisted.booking?.branchId });
     expect(persisted).toMatchObject({ organizationPublicId: "org-a", branchPublicId: "branch-a" });
 
+    await expectCode(customerA.mutation(api.domain.mutate, operation("customer.trial.create", {
+      gymId: "gym-a", branchId: "directory-branch-a", fullName: "Customer A", phone: "+962799999991", preferredDate: trialDate, preferredTime: "18:00", goal: "Strength",
+    })), "CONFLICT");
+
     for (const [gymId, branchId] of [
       ["gym-a", "directory-branch-b"],
       ["gym-a", "directory-branch-a-inactive"],
@@ -444,7 +455,7 @@ describe("exported Convex customer ownership boundaries", () => {
         fullName: "Customer A",
         email: "a@example.com",
         phone: "+962799999991",
-        preferredDate: "2026-08-15",
+        preferredDate: trialDate,
         preferredTime: "18:00",
         goal: "Strength",
       })), "NOT_FOUND");

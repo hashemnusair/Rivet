@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { INVITATION_REDIRECT_PATH, OWNER_INVITATION_REDIRECT_PATH, provisioningIdentifiers } from "./platformProvisioning";
+import { provisioningFaultMessage } from "./platformProvisioningAction";
 
 describe("gym provisioning identifiers", () => {
   it("uses the dedicated branded invitation route", () => {
@@ -28,5 +29,12 @@ describe("gym provisioning identifiers", () => {
     const result = provisioningIdentifiers("10000000-0000-4a00-8a00-000000000001", "نادي رياضي");
 
     expect(result.organizationSlug).toBe("gym-100000000000");
+  });
+
+  it("allows deterministic Clerk faults only with development credentials", () => {
+    expect(provisioningFaultMessage("sk_test_staging", "before_organization", "before_organization")).toContain("Injected Clerk organization failure");
+    expect(provisioningFaultMessage("sk_test_staging", "before_invitation", "before_invitation")).toContain("Injected Clerk invitation failure");
+    expect(provisioningFaultMessage("sk_live_production", "before_invitation", "before_invitation")).toBeUndefined();
+    expect(provisioningFaultMessage("sk_test_staging", "before_invitation", "before_organization")).toBeUndefined();
   });
 });

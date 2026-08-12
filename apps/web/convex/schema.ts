@@ -204,6 +204,8 @@ export default defineSchema({
     enabledKinds: v.array(v.string()),
     updatedByUserId: v.id("users"),
     reason: v.string(),
+    ownerConfirmedAt: v.optional(v.number()),
+    ownerConfirmedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_organization", ["organizationId"]),

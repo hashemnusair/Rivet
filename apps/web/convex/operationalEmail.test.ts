@@ -1,12 +1,28 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
-const previousLive = process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
-afterEach(() => { if (previousLive === undefined) delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE; else process.env.RIVET_OPERATIONAL_EMAIL_LIVE = previousLive; });
+const previousEnvironment = {
+  live: process.env.RIVET_OPERATIONAL_EMAIL_LIVE,
+  apiKey: process.env.RESEND_API_KEY,
+  from: process.env.RESEND_FROM_EMAIL,
+  globalTypes: process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES,
+};
+afterEach(() => {
+  for (const [key, value] of Object.entries({ RIVET_OPERATIONAL_EMAIL_LIVE: previousEnvironment.live, RESEND_API_KEY: previousEnvironment.apiKey, RESEND_FROM_EMAIL: previousEnvironment.from, RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES: previousEnvironment.globalTypes })) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+  vi.unstubAllGlobals();
+});
+
+function enableLiveWorker() {
+  process.env.RIVET_OPERATIONAL_EMAIL_LIVE = "true";
+  process.env.RESEND_API_KEY = "re_test_key";
+  process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+}
 
 async function seed() {
   const t = convexTest(schema, modules);
@@ -16,8 +32,8 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", { organizationId, publicId: "email-branch", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const ownerId = await ctx.db.insert("users", { publicId: "email-owner", authSubject: "clerk-email-owner", email: "owner@example.test", fullName: "Email Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId, userId: ownerId, role: "owner", branchIds: [branchId], branchScope: "all", active: true, createdAt: now, updatedAt: now });
-    await ctx.db.insert("operationalEmailSettings", { organizationId, enabledKinds: ["payment_receipt"], updatedByUserId: ownerId, reason: "Test activation", createdAt: now, updatedAt: now });
-    return { organizationId, branchId };
+    await ctx.db.insert("operationalEmailSettings", { organizationId, enabledKinds: ["payment_receipt"], updatedByUserId: ownerId, reason: "Test activation", ownerConfirmedAt: now, ownerConfirmedByUserId: ownerId, createdAt: now, updatedAt: now });
+    return { organizationId, branchId, ownerId };
   });
   return { t, ...ids };
 }
@@ -32,7 +48,7 @@ describe("durable operational email", () => {
     expect(replay.publicId).toBe(first.publicId);
     const rows = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect());
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.suppressionReason).toContain("Sandbox default");
+    expect(rows[0]?.suppressionReason).toContain("disabled or the provider is not configured");
     expect(rows[0]?.subject).toBe("Your RIVET payment receipt");
   });
 
@@ -46,6 +62,7 @@ describe("durable operational email", () => {
   });
 
   it("keeps platform billing and subscription notices mandatory even when a gym has no enabled service categories", async () => {
+    enableLiveWorker();
     const { t, organizationId } = await seed();
     await t.run(async (ctx) => {
       const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
@@ -53,19 +70,63 @@ describe("durable operational email", () => {
     });
     await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_past_due", templateVersion: "invoice-v1", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "mandatory-platform-invoice" });
     const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "mandatory-platform-invoice")).unique());
-    expect(row?.status).toBe("suppressed");
-    expect(row?.suppressionReason).toContain("Sandbox default");
-    expect(row?.suppressionReason).not.toContain("not enabled");
+    expect(row?.status).toBe("queued");
+    expect(row?.suppressionReason).toBeUndefined();
   });
 
-  it("keeps the provider worker disabled even when a live environment value is present", async () => {
-    process.env.RIVET_OPERATIONAL_EMAIL_LIVE = "true";
+  it("sends a confirmed enabled category through Resend and persists only provider-safe outcome data", async () => {
+    enableLiveWorker();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-email-accepted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
     const { t, organizationId, branchId } = await seed();
     await t.mutation(internal.operationalEmail.enqueue, { organizationId, branchId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "private-recipient@example.test", dedupeKey: "receipt-retry" });
     const result = await t.action(internal.operationalEmail.processDue, {});
     const rows = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect());
-    expect(result).toEqual({ processed: 0, disabled: true });
-    expect(rows[0]).toMatchObject({ status: "suppressed", attempts: [] });
+    expect(result).toEqual({ processed: 1, disabled: false });
+    expect(rows[0]).toMatchObject({ status: "provider_accepted", providerId: "provider-email-accepted", attempts: [{ outcome: "accepted", statusCode: 200 }] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(request.headers).toMatchObject({ "Idempotency-Key": "receipt-retry" });
+  });
+
+  it("does not queue gym-controlled delivery until the owner has confirmed categories", async () => {
+    enableLiveWorker();
+    const { t, organizationId } = await seed();
+    await t.run(async (ctx) => {
+      const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      if (settings) await ctx.db.patch(settings._id, { ownerConfirmedAt: undefined, ownerConfirmedByUserId: undefined });
+    });
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "owner-unconfirmed" });
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "owner-unconfirmed")).unique());
+    expect(row).toMatchObject({ status: "suppressed", suppressionReason: "The gym owner has not confirmed operational email preferences" });
+  });
+
+  it("retries transient provider failures after the configured first backoff", async () => {
+    enableLiveWorker();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "receipt-transient" });
+    const before = Date.now();
+    await t.action(internal.operationalEmail.processDue, {});
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "receipt-transient")).unique());
+    expect(row).toMatchObject({ status: "retrying", attempts: [{ outcome: "retryable_failure", statusCode: 503, errorCode: "provider_http_503" }] });
+    expect(row?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60_000);
+  });
+
+  it("suppresses a queued category if the gym disables it before the worker leases it", async () => {
+    enableLiveWorker();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "disabled-before-lease" });
+    await t.run(async (ctx) => {
+      const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      if (settings) await ctx.db.patch(settings._id, { enabledKinds: [] });
+    });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 0, disabled: false });
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "disabled-before-lease")).unique());
+    expect(row).toMatchObject({ status: "suppressed", suppressionReason: "This operational email type was disabled before delivery" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("deduplicates webhooks and ignores older out-of-order provider events", async () => {

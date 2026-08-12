@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
+import { trialSlotsForDate } from "@/lib/public/trial-schedule";
 
 const trialSchema = z.object({
   fullName: z.string().min(2, "Enter your full name"),
@@ -44,7 +45,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const formContextKey = gym ? `${gym.id}:${customer?.id ?? "guest"}` : "unavailable";
   const initializedFormContextRef = useRef(formContextKey);
 
-  const { register, handleSubmit, watch, reset, formState: { errors, dirtyFields } } = useForm<TrialValues>({
+  const { register, handleSubmit, watch, reset, setValue, formState: { errors, dirtyFields } } = useForm<TrialValues>({
     resolver: zodResolver(trialSchema),
     defaultValues: {
       fullName: customer?.name ?? "",
@@ -52,7 +53,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       phone: customer?.phone ?? "",
       branchId: gym?.branches[0]?.id ?? "",
       preferredDate: defaultDate,
-      preferredTime: gym?.branches[0]?.trialSlots[0] ?? "18:00",
+      preferredTime: trialSlotsForDate(gym?.branches[0], defaultDate)[0] ?? "",
       goal: "Try the gym and discuss the right membership",
     },
   });
@@ -67,7 +68,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       phone: customer?.phone ?? "",
       branchId: gym.branches[0]?.id ?? "",
       preferredDate: defaultDate,
-      preferredTime: gym.branches[0]?.trialSlots[0] ?? "18:00",
+      preferredTime: trialSlotsForDate(gym.branches[0], defaultDate)[0] ?? "",
       goal: "Try the gym and discuss the right membership",
     }, {
       // If identity or asynchronously loaded gym defaults change after the
@@ -78,13 +79,24 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     });
   }, [customer, defaultDate, dirtyFields, formContextKey, gym, reset]);
 
+  const selectedBranchId = watch("branchId");
+  const selectedDate = watch("preferredDate");
+  const selectedTime = watch("preferredTime");
+  const selectedBranch = gym?.branches.find((branch) => branch.id === selectedBranchId) ?? gym?.branches[0];
+  const availableTrialSlots = useMemo(() => trialSlotsForDate(selectedBranch, selectedDate), [selectedBranch, selectedDate]);
+
+  useEffect(() => {
+    if (availableTrialSlots.includes(selectedTime)) return;
+    setValue("preferredTime", availableTrialSlots[0] ?? "", { shouldDirty: Boolean(selectedTime), shouldValidate: Boolean(selectedTime) });
+  }, [availableTrialSlots, selectedTime, setValue]);
+
   // The preview session is restored in a client effect. Do not expose the
   // server-rendered form before hydration, because a fast visitor (or assistive
   // automation) could type into DOM that React is about to reconcile with the
   // restored customer defaults.
   if (!previewSessionReady) return <main className="px-5 py-20 text-center"><p role="status" className="text-[13px] text-ink-3">Loading booking form…</p></main>;
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
-  const selectedBranch = gym.branches.find((branch) => branch.id === watch("branchId")) ?? gym.branches[0]!;
+  const confirmedBranch = selectedBranch ?? gym.branches[0]!;
 
   const submit = handleSubmit(async (values) => {
     if (isConvexMode() && !customerSignedIn) {
@@ -118,7 +130,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
           <div>
             <p className="eyebrow">About the club</p><h2 className="mt-3 text-[30px] font-semibold tracking-tight">Train somewhere built for consistency.</h2><p className="mt-5 max-w-3xl text-[15px] leading-[1.75] text-ink-2">{gym.description}</p>
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
-              {gym.branches.map((branch) => <div key={branch.id} className="border border-line bg-surface p-5"><MapPin className="size-5 text-signal" /><h3 className="mt-5 text-[17px] font-semibold">{branch.name}</h3><p className="mt-2 text-[12px] leading-relaxed text-ink-3">{branch.address}</p><p className="mt-4 font-mono text-[9px] uppercase tracking-[0.13em] text-ink-3">Trial slots · {branch.trialSlots.join(" · ")}</p></div>)}
+              {gym.branches.map((branch) => <div key={branch.id} className="border border-line bg-surface p-5"><MapPin className="size-5 text-signal" /><h3 className="mt-5 text-[17px] font-semibold">{branch.name}</h3><p className="mt-2 text-[12px] leading-relaxed text-ink-3">{branch.address}</p><p className="mt-4 font-mono text-[9px] uppercase tracking-[0.13em] text-ink-3">{branch.trialSchedule ? "Trial times available by date" : "Trial scheduling not configured"}</p></div>)}
             </div>
             <div className="mt-10"><p className="eyebrow">What is inside</p><div className="mt-4 flex flex-wrap gap-2">{gym.amenities.map((amenity) => <span key={amenity} className="border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">{amenity}</span>)}</div></div>
             {gym.trainers?.length ? <div className="mt-10"><p className="eyebrow">Personal trainers</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{gym.trainers.map((trainer) => <article key={trainer.id} className="border border-line bg-surface p-5">{trainer.photoUrl ? <div role="img" aria-label={trainer.photoAlt ?? `${trainer.displayName} profile photo`} className="size-16 rounded-full bg-cover bg-center" style={{ backgroundImage: `url(${trainer.photoUrl})` }} /> : <div className="flex size-10 items-center justify-center rounded-full bg-ink font-mono text-[11px] text-paper">{trainer.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2)}</div>}<h3 className="mt-4 text-[16px] font-semibold">{trainer.displayName}</h3>{trainer.bioEn ? <p className="mt-2 text-[12px] leading-relaxed text-ink-2">{trainer.bioEn}</p> : null}<p className="mt-3 text-[10.5px] text-ink-3">{trainer.specialties.join(" · ") || "Personal training"}</p></article>)}</div></div> : null}
@@ -129,7 +141,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
           <aside id="book-trial" className="h-fit border border-ink bg-surface p-6 shadow-pop lg:sticky lg:top-24">
             {booked ? (
-              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s RIVET sales queue. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{selectedBranch.name}</p><p className="mt-1 text-[11px] text-ink-3">{customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
+              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{confirmedBranch.name}</p><p className="mt-1 text-[11px] text-ink-3">{customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
             ) : (
               <>
                 <p className="eyebrow">Free first visit</p><h2 className="mt-2 text-[24px] font-semibold tracking-tight">Book a trial at {gym.shortName}</h2><p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">No payment required. Choose a branch and preferred time; the gym will confirm.</p>
@@ -138,9 +150,10 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                   <TrialField label="Full name" error={errors.fullName?.message}><Input {...register("fullName")} /></TrialField>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><TrialField label="Phone" error={errors.phone?.message}><Input {...register("phone")} /></TrialField><TrialField label="Email" error={errors.email?.message}><Input type="email" {...register("email")} /></TrialField></div>
                   <TrialField label="Branch" error={errors.branchId?.message}><select {...register("branchId")} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px]">{gym.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></TrialField>
-                  <div className="grid grid-cols-2 gap-3"><TrialField label="Preferred date" error={errors.preferredDate?.message}><Input type="date" {...register("preferredDate")} /></TrialField><TrialField label="Time" error={errors.preferredTime?.message}><select {...register("preferredTime")} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px]">{selectedBranch.trialSlots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}</select></TrialField></div>
+                  <div className="grid grid-cols-2 gap-3"><TrialField label="Preferred date" error={errors.preferredDate?.message}><Input type="date" min={new Date().toISOString().slice(0, 10)} {...register("preferredDate")} /></TrialField><TrialField label="Time" error={errors.preferredTime?.message}><select {...register("preferredTime")} disabled={availableTrialSlots.length === 0} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px] disabled:cursor-not-allowed disabled:bg-sunken"><option value="">{selectedBranch?.trialSchedule ? "No times on this date" : "Not configured"}</option>{availableTrialSlots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}</select></TrialField></div>
+                  {availableTrialSlots.length === 0 ? <p role="status" className="border border-line bg-sunken p-3 text-[11.5px] text-ink-3">{selectedBranch?.trialSchedule ? "This branch is closed for trial requests on the selected date. Choose another date." : "This branch has not configured online trial times yet. Contact the gym directly."}</p> : null}
                   <TrialField label="What are you looking for?" error={errors.goal?.message}><Textarea {...register("goal")} /></TrialField>
-                  <Button type="submit" variant="signal" size="lg" className="w-full" loading={submitting}><CalendarCheck /> Book free trial</Button>
+                  <Button type="submit" variant="signal" size="lg" className="w-full" loading={submitting} disabled={availableTrialSlots.length === 0}><CalendarCheck /> Send trial request</Button>
                 </form>
                 <p className="mt-4 flex items-center justify-center gap-2 text-[10.5px] text-ink-3"><Clock className="size-3.5" /> The gym controls confirmation and follow-up.</p>
               </>

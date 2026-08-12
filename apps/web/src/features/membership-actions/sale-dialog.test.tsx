@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MemberSummary } from "@/lib/domain/types";
+import type { MemberSummary, MembershipSummary } from "@/lib/domain/types";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
@@ -62,6 +62,25 @@ async function chooseMonthlyPlan(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("MembershipSaleDialog reason gates", () => {
+  it("keeps a future renewal invoice non-collectible until its successor term begins", async () => {
+    const { api } = await renderWithApp(<div />);
+    const expiringMember = (await api.listMembers({ membershipStatus: "expiring", pageSize: 100 })).items[0];
+    if (!expiringMember) throw new Error("missing expiring seeded member");
+    const renewalOf = (await api.listMemberships({ memberId: expiringMember.id, pageSize: 100 })).items[0] as MembershipSummary | undefined;
+    if (!renewalOf) throw new Error("missing expiring seeded membership");
+    resetApiForTests();
+
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    await renderWithApp(<MembershipSaleDialog open onOpenChange={() => undefined} member={expiringMember} renewalOf={renewalOf} onCompleted={onCompleted} />);
+
+    expect(screen.getByRole("switch", { name: "Collect payment now" })).toBeDisabled();
+    expect(screen.getByText(/upcoming invoice becomes collectible when the successor term begins/i)).toBeInTheDocument();
+    await user.click(screen.getByTestId("confirm-sale"));
+    await waitFor(() => expect(onCompleted).toHaveBeenCalledTimes(1));
+    expect(onCompleted.mock.calls[0]?.[0].payment).toBeUndefined();
+  });
+
   it("keeps a listed-price, today, zero-discount sale routine and ungated", async () => {
     const { api } = await renderWithApp(<div />);
     const expiredMember = (await api.listMembers({ membershipStatus: "expired", pageSize: 100 })).items[0];

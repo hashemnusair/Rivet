@@ -34,9 +34,9 @@ test.describe("RIVET member experience", () => {
 
     await page.getByRole("link", { name: /View & book/i }).first().click();
     await expect(page).toHaveURL(/\/customer\/gyms\/forge-fitness/);
-    await page.getByRole("button", { name: /Book free trial/i }).click();
+    await page.getByRole("button", { name: /Send trial request/i }).click();
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/now in the gym.s RIVET sales queue/i)).toBeVisible();
+    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
 
     await page.getByRole("link", { name: /Open My Gyms/i }).click();
     await expect(page.getByText("Trial requested")).toBeVisible();
@@ -53,21 +53,22 @@ test.describe("RIVET member experience", () => {
     // The label uses a typographic apostrophe, so match either form.
     await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
-    await page.getByRole("link", { name: "Pipeline", exact: true }).first().click();
+    await page.getByRole("link", { name: /^(Follow-ups|Pipeline)$/ }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
   });
 
   test("does not promise My Gyms persistence for an unauthenticated trial request", async ({ page }) => {
+    await page.addInitScript(() => window.sessionStorage.removeItem("rivet.demo.customer"));
     await page.goto("/customer/gyms/forge-fitness");
 
     await page.getByLabel("Full name").fill("Unauthenticated QA");
     await page.getByLabel("Phone").fill("+962 79 321 4456");
     await page.getByLabel("Email").fill("unauthenticated.qa@example.com");
     await page.getByLabel("What are you looking for?").fill("Test the public request confirmation");
-    await page.getByRole("button", { name: /Book free trial/i }).click();
+    await page.getByRole("button", { name: /Send trial request/i }).click();
 
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/now in the gym.s RIVET sales queue/i)).toBeVisible();
+    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
     await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
     await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
   });

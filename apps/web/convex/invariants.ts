@@ -9,9 +9,9 @@ function diffDays(from: string, to: string): number {
   return dayNumber(to) - dayNumber(from);
 }
 
-export function deriveServerMembershipStatus(input: { cancelledAt?: unknown; freezeStatus?: unknown; startDate: string; endDate: string; totalVisits?: unknown; remainingVisits?: unknown }, today: string): ServerMembershipStatus {
+export function deriveServerMembershipStatus(input: { cancelledAt?: unknown; freezeStatus?: unknown; freezeStartDate?: unknown; freezeEndDate?: unknown; startDate: string; endDate: string; totalVisits?: unknown; remainingVisits?: unknown }, today: string): ServerMembershipStatus {
   if (typeof input.cancelledAt === "string" && input.cancelledAt) return "cancelled";
-  if (input.freezeStatus === "active") return "frozen";
+  if (input.freezeStatus === "active" && typeof input.freezeStartDate === "string" && typeof input.freezeEndDate === "string" && input.freezeStartDate <= today && today <= input.freezeEndDate) return "frozen";
   if (diffDays(input.startDate, today) < 0) return "scheduled";
   if (diffDays(today, input.endDate) < 0) return "expired";
   if (input.totalVisits != null && typeof input.remainingVisits === "number" && input.remainingVisits <= 0) return "depleted";

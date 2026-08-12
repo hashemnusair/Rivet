@@ -208,6 +208,11 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
                     <MoneyText money={m.outstanding} /> due
                   </span>
                 ) : null}
+                {(m.upcomingAmount?.amount ?? 0) > 0 ? (
+                  <span className="block text-[11px] text-info tabular">
+                    Upcoming invoice <MoneyText money={m.upcomingAmount!} /> · collectible {m.startDate}
+                  </span>
+                ) : null}
               </TableCell>
               <TableCell className="text-[12px] text-ink-3">
                 {m.previousMembershipId ? "Renewal" : "First term"}

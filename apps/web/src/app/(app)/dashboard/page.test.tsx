@@ -27,4 +27,14 @@ describe("role-specific dashboard routing", () => {
     expect(screen.getByTestId("reception-dashboard")).toBeInTheDocument();
     expect(screen.queryByTestId("trainer-dashboard")).not.toBeInTheDocument();
   });
+
+  it.each([
+    ["owner", "owner-dashboard"],
+    ["manager", "manager-dashboard"],
+    ["salesperson", "sales-dashboard"],
+  ])("renders the %s operational projection", (role, testId) => {
+    state.role = role;
+    render(<DashboardPage />);
+    expect(screen.getByTestId(testId)).toBeInTheDocument();
+  });
 });

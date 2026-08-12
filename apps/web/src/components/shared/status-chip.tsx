@@ -58,6 +58,7 @@ const PAYMENT_CHIP: Record<PaymentStatus, { tone: Tone; label: string }> = {
   partial: { tone: "amber", label: "Partial" },
   unpaid: { tone: "red", label: "Unpaid" },
   refunded: { tone: "neutral", label: "Refunded" },
+  void: { tone: "outline", label: "Void" },
 };
 
 export function PaymentStatusChip({ status, className }: { status: PaymentStatus; className?: string }) {
