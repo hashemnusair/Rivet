@@ -485,19 +485,20 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - Implementation: `changeMembershipPlan` now exists in the typed API, mock adapter, Convex adapter, and server mutation. It requires a reason, creates an immutable successor term, records a `plan_change` adjustment, timeline event, and audit event, and supports next-renewal or permission-gated immediate changes. Both paths charge the replacement plan at its full integer-minor-unit price; RIVET does not invent proration or an automatic credit/refund. Immediate changes supersede the old term with an auditable cancellation reason.
 - Remaining acceptance: exercise both effective-date paths against a disposable Production member, confirm the old/new terms and charges after reload, and verify the permission boundary for immediate changes.
 
-### TODO-002 — Operational messaging is sandbox-only outside gym applications
+### TODO-002 — Activate and verify operational messaging safely
 
-- Status: **Durable sandbox boundary implemented in `135a5f1`; live delivery remains deferred**.
-- Evidence: automation rules and templates show a sandbox provider; `CURRENT_STATE.md` defers live WhatsApp/SMS/email delivery. Resend is currently used for gym-application notifications, not the complete member lifecycle.
+- Status: **Live worker implemented locally; activation and credentialed delivery evidence remain release-gated**.
+- Evidence: operational email now shares one durable Resend boundary with leases, provider IDs, idempotency keys, verified webhook outcomes, redacted failures, and bilingual lifecycle templates. WhatsApp/SMS remain disabled, and email stays suppressed unless every activation boundary permits it.
 - Risk: renewal reminders, trial confirmations, payment receipts, expiry alerts, and retry behavior are not yet a real-gym communication system.
-- Fix/acceptance: implement a provider boundary with durable delivery attempts, deduplication, retries, quiet hours, provider IDs, final status, and Arabic/English templates. Keep sandbox as the default until the product owner approves sender, recipient, and template policy.
+- Fix/acceptance: configure the exact staging sender/webhook, obtain owner category confirmation, activate selected essential categories, and prove accepted/delivered/transient-retry/terminal-failure paths without replaying historical suppressed attempts. Production activation still requires explicit approval.
 
 #### Implementation status
 
 - [x] Persist message kind/template version, language, recipient reference, dedupe key, provider ID, attempts, redacted failure, next retry, suppression, and queued/provider-accepted/delivered/failed state.
-- [x] Encode the 1/5/30-minute, maximum-three-attempt retry policy and per-message-type activation settings while keeping sandbox suppression as the default.
+- [x] Encode the initial attempt plus retries after 1, 5, and 30 minutes, with per-message-type activation settings and sandbox suppression as the default.
 - [x] Route trial, payment-receipt, renewal/expiry, support, invoice, and subscription lifecycle message intents through this boundary.
-- [ ] Implement and approve the live provider worker/delivery policy before enabling any message type outside sandbox.
+- [x] Implement the leased Resend worker, provider acceptance persistence, verified webhook outcomes, terminal-failure notification, and safe activation policy.
+- [ ] Configure and approve one isolated staging delivery policy, then collect provider/webhook/retry evidence before enabling any Production message type.
 
 ### TODO-003 — Member documents/profile photos are not represented in the operational contract
 
@@ -562,23 +563,29 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 ### Pilot-readiness safety resolutions — PT, email, profile, and settings (2026-08-12)
 
 - **PT outcomes:** Complete, no-show, and gym cancellation now open an accessible confirmation with member, trainer, session time, and a stated credit consequence. Completion remains ungated; no-shows and cancellations require a meaningful reason in both UI and handler/mock boundaries. The fabricated `Cancelled by gym team` reason has been removed. PT payment queue rows now show member/package/payment context with a member link instead of a raw charge ID.
-- **Email ownership:** tenant settings expose only gym-controlled member service categories. RIVET platform invoices, past-due/suspension/cancellation, and account-access notices are mandatory and bypass tenant preferences. Prior-minus-next set comparison requires a reason whenever any category is removed, including a same-count swap; enable-only and no-op changes remain ungated. Convex independently enforces the same rule. The durable worker is hard-disabled regardless of environment value; Resend delivery remains an explicitly deferred Production change.
+- **Email ownership:** tenant settings expose only gym-controlled member service categories. RIVET platform invoices, past-due/suspension/cancellation, and account-access notices are mandatory and bypass tenant preferences. Prior-minus-next set comparison requires a reason whenever any category is removed, including a same-count swap; enable-only and no-op changes remain ungated. Convex independently enforces the same rule. The durable worker is implemented with leases, provider acceptance, verified webhooks, and three transient retries after the initial attempt. It remains off unless the global live switch, provider configuration, owner confirmation, and relevant tenant/global category allowlist all permit the message.
 - **Profile and settings UX:** shared fields prefer existing child ids, generate ids only for known id-forwarding controls, and avoid false custom-control associations. Profile uploads have named file/alt-text controls without raw enum announcements; category/audience/amenities use constrained choices; the settings tablist scrolls rather than wrapping. Dirty profile edits disable Publish and guard internal links, Settings-tab changes, and browser unload with explicit Save/Discard/Stay choices.
 - **Persisted media lifecycle:** backend commit `a58166b` stores gym-profile uploads as pending with a 24-hour expiry, promotes only assets referenced by a saved draft, deletes explicit discarded uploads immediately, and lets scheduled cleanup delete abandoned storage after the browser is gone. Persisted Convex tests cover the database and storage lifecycle.
 - **Evidence still required:** run the exact branch against isolated staging for PT role/credit concurrency, then perform read-only deployed visual verification of the reviewed Settings surfaces. No Production email or tenant/product-data mutation is authorized by this slice.
 
 ### BUG-017 — Next-renewal plan changes create an immediately outstanding charge
 
-- Status: **Open; reproduced in Production on 2026-08-11**.
+- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
 - Evidence: scheduling `Pilot Card Member` from `Pilot Monthly` to `Pilot Quarterly` for 11 September created the expected scheduled successor term and PT-credit schedule, but also exposed the full JOD 120.000 successor charge as the member's current outstanding balance and included it in today's owner report. The report therefore showed JOD 170.000 outstanding instead of the JOD 50.000 currently due from the two active pilot terms.
 - Risk: reception may collect a future renewal early by mistake, entry warnings and owner receivables are overstated, and the member header presents the scheduled term as the primary account state.
-- Fix/acceptance: define the billing policy explicitly. If next-renewal changes are not invoices, delay charge creation until term activation. If they are future invoices, add issue/due dates and exclude not-yet-due charges from current outstanding, entry policy, collections, and dashboard receivables. The current active term must remain the primary member header until the successor starts. Add handler, projection, report, and browser regressions.
+- Resolution: future renewal invoices are created immediately with issue/due dates but are non-collectible before the successor term begins. They render separately as upcoming, are excluded from current balance/entry/outstanding/receivables projections, direct early payment is rejected in Convex, scheduled-term cancellation voids the unpaid charge, and the active term remains primary. Handler, projection, mock-adapter, and charge-policy regressions cover the behavior; deployed browser verification remains required.
 
 ### BUG-018 — Public free-trial form can render no selectable times for configured operating days
 
-- Status: **Open; reproduced in Production on 2026-08-11**.
+- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
 - Evidence: the published pilot gym displayed persisted Sunday–Thursday 06:00–23:00 and Saturday 07:00–22:00 hours, but the public trial form's time selector contained no options for a Thursday date.
-- Fix/acceptance: derive truthful trial slots from the selected branch's published operating hours and timezone, provide an explicit closed/unavailable state, and cover weekday/weekend/closed-day/timezone cases. Complete the submission in a separate signed-out or member browser because the owner session correctly routes back to its role dashboard.
+- Resolution: owners/managers configure exact weekday trial times per branch. Public choices are derived from that persisted schedule for the selected date and gym timezone, filtered by operating hours, and represented with explicit unconfigured/closed/unavailable states. Convex revalidates the exact submitted branch/date/time and enforces one open request per customer and gym. Weekday/closed/timezone and persisted-settings coverage is in place; deployed signed-out/member verification remains required.
+
+### BUG-025 — Future freezes are treated as active immediately
+
+- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
+- Evidence: membership status previously treated any active freeze row as current even when its start date was in the future.
+- Resolution: effective status now evaluates the freeze start/end dates; past freeze starts and overlapping scheduled/current freezes are rejected, and early unfreeze is limited to a freeze currently in progress. Convex, mock, and pure status regressions cover scheduled and active boundaries.
 
 ### BUG-019 — Inline membership collection cannot capture required card/CliQ reference
 
@@ -605,7 +612,7 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 ### BUG-023 — Operational-email disable reasons were inferred from array length
 
 - Status: **Resolved across UI, mock parity, and Convex in backend commit `a58166b` plus the matching frontend release**.
-- Evidence: prior-minus-next set comparison requires a reason for disable-only and same-count swap changes while enable-only and no-op changes stay ungated. Exported-handler tests prove direct backend mutations cannot bypass the rule. External delivery remains hard-disabled.
+- Evidence: prior-minus-next set comparison requires a reason for disable-only and same-count swap changes while enable-only and no-op changes stay ungated. Exported-handler tests prove direct backend mutations cannot bypass the rule. External delivery remains off by default and independently guarded by the live switch, provider configuration, owner confirmation, and category allowlist.
 
 ### BUG-024 — Shared Field labels can target the wrong or nonexistent control
 
@@ -649,8 +656,8 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 
 ### TODO-012 — Complete all registered production-shaped staging journeys
 
-- Status: **Safety/dispatch/role/cleanup harness complete; the membership-lifecycle body and separate realtime smoke exist; ten product journey bodies remain**.
-- Registered journeys: provisioning, owner settings, staff authorization, trial/CRM, membership lifecycle, reception entry, finance/reconciliation, automation, member portal, isolation/audit, and personal training. A separate `realtime-smoke` is also registered.
+- Status: **Safety/dispatch/role/cleanup harness complete; membership-lifecycle and owner-settings bodies plus separate realtime smoke exist; nine product journey bodies remain**.
+- Registered journeys: provisioning, owner settings, staff authorization, trial/CRM, membership lifecycle, reception entry, finance/reconciliation, automation, member portal, isolation/audit, and personal training. A separate `realtime-smoke` is also registered. The owner-settings body persists a valid branch trial time, reloads it, and restores the prior schedule through its cleanup ledger.
 - Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The complete suite must pass against the exact isolated staging deployment before additional Production mutation.
 
 ### TODO-010 — Verify application review-note editing in Production

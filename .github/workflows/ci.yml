@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_owner_settings_flow:
+        description: "Run the isolated owner settings and public trial-schedule persistence journey"
+        required: false
+        type: boolean
+        default: false
       staging_journeys:
         description: "Comma-separated registered staging journey IDs; use all for every journey enabled by the workflow switches"
         required: false
@@ -183,3 +188,14 @@ jobs:
           PLAYWRIGHT_CLERK_STORAGE_OWNER: ${{ runner.temp }}/clerk-storage-state.json
           PLAYWRIGHT_CLERK_STORAGE_STATE: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/convex-realtime-two-browser.spec.ts
+      - name: Run staged owner settings and trial schedule flow
+        if: ${{ inputs.run_owner_settings_flow == true }}
+        env:
+          PLAYWRIGHT_STAGING_FULL_SUITE: "1"
+          PLAYWRIGHT_TARGET_CLASSIFICATION: staging
+          PLAYWRIGHT_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          PLAYWRIGHT_EXPECTED_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
+          PLAYWRIGHT_STAGING_JOURNEYS: ${{ inputs.staging_journeys == 'all' && 'owner-settings' || inputs.staging_journeys }}
+          PLAYWRIGHT_CLERK_STORAGE_OWNER: ${{ runner.temp }}/clerk-storage-state.json
+        run: pnpm --filter web exec playwright test e2e/staging-owner-settings.spec.ts
