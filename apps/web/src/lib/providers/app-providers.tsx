@@ -21,6 +21,7 @@ import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { qk } from "@/lib/api/keys";
 import type { RoleKey, Session, UUID } from "@/lib/domain/types";
 import { useRivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
+import { UnsavedChangesProvider } from "@/lib/providers/unsaved-changes-provider";
 
 /** Error codes where retrying cannot change the outcome. */
 const TERMINAL_ERROR_CODES: string[] = [ERR.FORBIDDEN, ERR.NOT_FOUND, ERR.VALIDATION, ERR.UNAUTHENTICATED];
@@ -88,8 +89,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>{children}</SessionProvider>
-      <QueryRefreshNotice />
+      <UnsavedChangesProvider>
+        <SessionProvider>{children}</SessionProvider>
+        <QueryRefreshNotice />
+      </UnsavedChangesProvider>
     </QueryClientProvider>
   );
 }

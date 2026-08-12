@@ -1,4 +1,5 @@
 import { cloneElement, forwardRef, isValidElement, useId, type HTMLAttributes, type LabelHTMLAttributes } from "react";
+import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 
 const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelElement>>(
@@ -31,18 +32,20 @@ function Field({
   children: React.ReactNode;
 }) {
   const generatedId = useId();
-  const controlId = htmlFor ?? `field-${generatedId.replace(/:/g, "")}`;
-  const canAssociate = isValidElement<{ id?: string; value?: unknown; onChange?: unknown; type?: unknown }>(children)
-    && (typeof children.type === "string"
-      ? ["input", "textarea", "select"].includes(children.type)
-      : children.props.value !== undefined || children.props.onChange !== undefined || children.props.type !== undefined);
-  const child = canAssociate && isValidElement<{ id?: string }>(children)
-    ? cloneElement(children, children.props.id ? {} : { id: controlId })
+  const element = isValidElement<{ id?: string }>(children) ? children : null;
+  const childId = typeof element?.props.id === "string" && element.props.id ? element.props.id : undefined;
+  const canReceiveGeneratedId = Boolean(element)
+    && (typeof element!.type === "string"
+      ? ["input", "textarea", "select"].includes(element!.type)
+      : element!.type === Input || element!.type === Textarea);
+  const controlId = childId ?? htmlFor ?? (canReceiveGeneratedId ? `field-${generatedId.replace(/:/g, "")}` : undefined);
+  const child = canReceiveGeneratedId && element && !childId && controlId
+    ? cloneElement(element, { id: controlId })
     : children;
   return (
     <div className={cn("min-w-0", className)}>
       {label ? (
-        <Label htmlFor={canAssociate || htmlFor ? controlId : undefined}>
+        <Label htmlFor={controlId}>
           {label}
           {required ? <span className="text-signal ms-1" aria-hidden>*</span> : null}
         </Label>

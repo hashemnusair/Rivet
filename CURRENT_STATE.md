@@ -1,6 +1,15 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-11 after the credentialed owner verification and navigation/cash-shift safety fixes. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-12 after the reviewed public-profile, media-lifecycle, operational-email, and field-accessibility hardening pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Reviewed Settings and media hardening — backend `a58166b`, matching frontend release
+
+- Public-profile media uploaded for a gym now enters a persisted `pending` state with a server-enforced 24-hour expiry. Saving a profile promotes only referenced assets; scheduled cleanup removes abandoned storage objects after browser close/navigation, while explicit discard removes pending, unreferenced uploads immediately. Persisted Convex coverage proves upload, promotion, expiry, and storage deletion.
+- Public-profile publishing is unavailable whenever local edits differ from the saved draft, so the persisted draft cannot be published behind newer unsaved content. Internal links and Settings-tab changes now present explicit **Save and leave**, **Discard and leave**, and **Stay** choices; browser-unload protection remains as a final boundary.
+- Gym-controlled operational-email settings compare the previously enabled and proposed categories as sets. Any removed category requires a meaningful reason, including a same-count swap; enable-only and no-op changes remain routine. Convex enforces the same rule for direct mutations. External delivery remains hard-disabled.
+- The shared `Field` wrapper honors a child's existing `id` before an explicit fallback and generates/injects an id only for controls known to receive it. Custom controls without a reliable id target no longer receive a misleading `htmlFor` association. Focused keyboard/focus accessibility coverage protects the behavior.
+- The new-member marketing default remains opted in. No Production tenant/product data was seeded or mutated by this pass. Backend commit `a58166b` passed an exact-target additive Convex Production dry run, deployed to `descriptive-meerkat-589`, and returned healthy; frontend Production/CI evidence is recorded with the matching release after deployment.
+- Matching local release gates passed: both TypeScript checks, Convex codegen, zero-warning lint, 71 Vitest files / 400 tests, the 41-route Production build, 24 preview Playwright journeys with 4 credential-gated staging journeys skipped, and `git diff --check`.
 
 ## Latest credentialed owner verification and safety fixes — `991d7e2`
 

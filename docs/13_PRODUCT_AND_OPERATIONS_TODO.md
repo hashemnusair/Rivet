@@ -554,9 +554,10 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 ### Pilot-readiness safety resolutions — PT, email, profile, and settings (2026-08-12)
 
 - **PT outcomes:** Complete, no-show, and gym cancellation now open an accessible confirmation with member, trainer, session time, and a stated credit consequence. Completion remains ungated; no-shows and cancellations require a meaningful reason in both UI and handler/mock boundaries. The fabricated `Cancelled by gym team` reason has been removed. PT payment queue rows now show member/package/payment context with a member link instead of a raw charge ID.
-- **Email ownership:** tenant settings expose only gym-controlled member service categories. RIVET platform invoices, past-due/suspension/cancellation, and account-access notices are mandatory and bypass tenant preferences. An ordinary enablement has no reason gate; reducing a gym-controlled category requires one. The durable worker is hard-disabled regardless of environment value; Resend delivery remains an explicitly deferred Production change.
-- **Profile and settings UX:** shared fields now associate labels with controls; profile uploads have named file/alt-text controls without raw enum announcements; category/audience/amenities use constrained choices; the settings tablist scrolls rather than wrapping; dirty profile edits warn before unload and a discard action schedules unreferenced draft uploads for cleanup.
-- **Evidence still required:** run the exact branch against isolated staging for PT role/credit concurrency and a real media cleanup record, then perform read-only deployed visual verification. No Production email, deployment, or data mutation is authorized by this local slice.
+- **Email ownership:** tenant settings expose only gym-controlled member service categories. RIVET platform invoices, past-due/suspension/cancellation, and account-access notices are mandatory and bypass tenant preferences. Prior-minus-next set comparison requires a reason whenever any category is removed, including a same-count swap; enable-only and no-op changes remain ungated. Convex independently enforces the same rule. The durable worker is hard-disabled regardless of environment value; Resend delivery remains an explicitly deferred Production change.
+- **Profile and settings UX:** shared fields prefer existing child ids, generate ids only for known id-forwarding controls, and avoid false custom-control associations. Profile uploads have named file/alt-text controls without raw enum announcements; category/audience/amenities use constrained choices; the settings tablist scrolls rather than wrapping. Dirty profile edits disable Publish and guard internal links, Settings-tab changes, and browser unload with explicit Save/Discard/Stay choices.
+- **Persisted media lifecycle:** backend commit `a58166b` stores gym-profile uploads as pending with a 24-hour expiry, promotes only assets referenced by a saved draft, deletes explicit discarded uploads immediately, and lets scheduled cleanup delete abandoned storage after the browser is gone. Persisted Convex tests cover the database and storage lifecycle.
+- **Evidence still required:** run the exact branch against isolated staging for PT role/credit concurrency, then perform read-only deployed visual verification of the reviewed Settings surfaces. No Production email or tenant/product-data mutation is authorized by this slice.
 
 ### BUG-017 — Next-renewal plan changes create an immediately outstanding charge
 
@@ -576,6 +577,32 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 - Status: **Fixed locally after Production reproduction on 2026-08-11; deployment verification pending**.
 - Evidence: `Sell membership` allows `Collect payment now` with card or CliQ, but exposes no external-reference input. The server correctly rejects the sale with “An external reference is required.” The separate `Collect` dialog does expose the field and succeeds.
 - Fix/acceptance: the inline form now shows and requires the external reference for card, bank-transfer, and CliQ collection, passes it through the typed sale/renewal contract, and keeps the mock adapter aligned with Convex validation. Focused component and adapter tests pass; verify one non-cash inline sale after deployment.
+
+### BUG-020 — Public-profile publish can ignore newer unsaved edits
+
+- Status: **Resolved in the 12 August reviewed Settings hardening pass; deployed read-only verification pending**.
+- Evidence: Publish is unavailable while the local form differs from the persisted draft or while save/discard is in flight. A focused regression saves one draft, creates newer local edits, and proves the stale persisted draft cannot be published.
+- Remaining operator check: after the matching Vercel release is ready, open the real Settings profile read-only, make a local-only edit, verify Publish remains disabled, then use **Stay** or **Discard and leave** without saving.
+
+### BUG-021 — Abandoned public-profile uploads can outlive the browser draft
+
+- Status: **Resolved and deployed in backend commit `a58166b`**.
+- Evidence: gym-profile uploads persist as pending with a 24-hour server expiry, save promotes referenced assets, explicit discard deletes pending unreferenced storage immediately, and scheduled cleanup deletes expired storage even after the browser is gone. Persisted Convex tests exercise the database and storage lifecycle.
+
+### BUG-022 — Internal navigation can drop unsaved public-profile edits
+
+- Status: **Resolved in the 12 August reviewed Settings hardening pass; deployed read-only verification pending**.
+- Evidence: Settings-tab changes and same-origin internal links are guarded with explicit **Save and leave**, **Discard and leave**, and **Stay** outcomes. Focused tests cover all three outcomes; browser unload remains protected separately.
+
+### BUG-023 — Operational-email disable reasons were inferred from array length
+
+- Status: **Resolved across UI, mock parity, and Convex in backend commit `a58166b` plus the matching frontend release**.
+- Evidence: prior-minus-next set comparison requires a reason for disable-only and same-count swap changes while enable-only and no-op changes stay ungated. Exported-handler tests prove direct backend mutations cannot bypass the rule. External delivery remains hard-disabled.
+
+### BUG-024 — Shared Field labels can target the wrong or nonexistent control
+
+- Status: **Resolved in the 12 August reviewed Settings hardening pass**.
+- Evidence: an existing child id takes precedence; generated ids are limited to native controls and known id-forwarding Input/Textarea components; untrusted custom controls receive no invented label target. Focused accessibility tests prove label-click focus and absence of false associations.
 
 ### TODO-007 — Complete supervised finance/reconciliation evidence
 
@@ -680,3 +707,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | TODO-006 code-shaped money/staff matrix | 2026-08-11 | `1f29af3` (handoff/main `d200ba5`) | Persisted branch-transfer and discount-approval matrices, sale-dialog reason-gate tests, and mock/Convex idempotency parity passed. Local gates passed: 51 files/340 tests, both typechecks, Convex codegen, lint, build, 23 preview E2E passes, and diff check. Final credentialed staging run `31488471463` at `d200ba5`, with both operational/realtime switches enabled, passed authenticated smoke, ungated routine membership/payment flow, cleanup, two-browser realtime, and offline/reconnect. Main run `31488715756` passed ordinary checks. Vercel Production `dpl_Ai7fZ2X64q4eTNWrvW4DJspK89NC` is `READY`; Convex Production `descriptive-meerkat-589` passed exact-target dry-run/deploy from `d200ba5`, with no index deletions, and `health:check` returned `status: ok`. Realistic Production-volume/concurrency proof remains under TODO-007/staging; no Production mutation or seed was run. |
 | Pilot completion and gym-owned PT implementation | 2026-08-11 | current release commit | 365 tests across 60 files, both typechecks, zero-warning lint, Convex codegen consistency, `git diff --check`, all 23 credential-free browser journeys, and the 41-route Production build passed. Added PT commercial/scheduling/credit surfaces, public gym/trainer profiles and photos-only media, explicit consent migration, durable Resend queue/webhooks/templates/application queue, PT reminders, finance lifecycle evidence, trainer dashboard, and staging journey safety/dispatch. Convex Production was deployed separately; Vercel frontend deployment follows the matching main push. Live email activation and Production test-data mutation remain disabled. |
 | Navigation active-route and cash-shift input safety | 2026-08-11 | `991d7e2` | Credentialed owner browser verification covered all gym workspace routes read-only; the pre-fix `/memberships` page visibly marked both **Members** and **Memberships** active, fixed by a segment-boundary matcher shared by desktop/mobile navigation. The opening-shift form no longer creates a JOD 50.000 record from a default/fallback and now rejects blank, invalid, and negative amounts. 64 Vitest files / 379 tests, both typechecks, zero-warning lint, production build, 23 preview Playwright passes with 4 staging skips, and diff check passed. Post-deploy visual verification of the active nav state and empty opening-float form remains required. No Production mutation was run. |
+| BUG-020 through BUG-024 reviewed Settings/media hardening | 2026-08-12 | backend `a58166b` + matching Phase 2 release | Backend exact-target Convex Production dry run was additive with no index deletion; deploy and health check passed. Local gates passed: both typechecks, Convex codegen, zero-warning lint, 71 files / 400 tests, 41-route Production build, 24 Playwright passes with 4 credential-gated staging skips, and diff check. Persisted media expiry/promotion/deletion and direct email-set mutation coverage pass; deployed frontend read-only verification remains required. No Production tenant/product data or external email was mutated. |

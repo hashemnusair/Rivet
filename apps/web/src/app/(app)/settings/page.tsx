@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Gate, PageHeader } from "@/components/shared/chrome";
 import { ForbiddenState } from "@/components/ui/states";
@@ -17,10 +17,13 @@ import {
 } from "@/features/settings/settings-sections";
 import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-section";
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
+import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 
-function SettingsPageInner() {
+export function SettingsPageInner() {
   const searchParams = useSearchParams();
   const section = searchParams.get("section") ?? "organization";
+  const [activeSection, setActiveSection] = useState(section);
+  const { requestNavigation } = useUnsavedChanges();
 
   return (
     <div className="space-y-4">
@@ -30,7 +33,7 @@ function SettingsPageInner() {
         description="Organization, branches, people, permissions and receipts. Everything sensitive here is audited."
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
-        <Tabs defaultValue={section} key={section}>
+        <Tabs value={activeSection} onValueChange={(nextSection) => requestNavigation(() => setActiveSection(nextSection))}>
           <TabsList className="max-w-full overflow-x-auto [scrollbar-width:thin]">
             <TabsTrigger value="organization">Organization</TabsTrigger>
             <TabsTrigger value="profile">Public profile</TabsTrigger>

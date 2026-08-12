@@ -202,6 +202,7 @@ export class MockGymOSApi implements GymOSApi {
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
   private operationalEmailKinds: string[] = [];
+  private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "updatedAt" | "updatedBy" | "reason">;
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -290,7 +291,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
       const now = nowISO();
-      return { id: mockUuid(), organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: "active", url: URL.createObjectURL(input.file), createdAt: now, updatedAt: now };
+      return { id: mockUuid(), organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: input.ownerType.startsWith("gym_") ? "pending" : "active", url: URL.createObjectURL(input.file), createdAt: now, updatedAt: now };
     });
   }
 
@@ -994,6 +995,7 @@ export class MockGymOSApi implements GymOSApi {
     this.ptBookings = [];
     this.ptOrders = [];
     this.operationalEmailKinds = [];
+    this.operationalEmailUpdate = undefined;
     const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
     if (trainer) {
       const createdAt = nowISO();
@@ -4344,7 +4346,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {
-    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false }));
+    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate }));
   }
 
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> {
@@ -4353,10 +4355,12 @@ export class MockGymOSApi implements GymOSApi {
       const allowed = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"];
       const next = [...new Set(input.enabledKinds)];
       if (next.some((kind) => !allowed.includes(kind))) throw ApiError.of(ERR.VALIDATION, "Only gym-controlled member service email types can be configured here.");
-      if (next.length < this.operationalEmailKinds.length) this.requireReason(input.reason);
+      const nextKinds = new Set(next);
+      if (this.operationalEmailKinds.some((kind) => !nextKinds.has(kind))) this.requireReason(input.reason);
       this.operationalEmailKinds = next;
+      this.operationalEmailUpdate = { updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason || undefined };
       this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} gym-controlled service email types`, reason: input.reason || undefined });
-      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, updatedAt: nowISO(), updatedBy: this.actor().name, reason: input.reason || undefined };
+      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate };
     });
   }
 

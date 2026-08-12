@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, Globe2, History, ImagePlus, Save, Send, Undo2 } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { qk } from "@/lib/api/keys";
 import type { MediaAsset, MediaAssetOwnerType, UpdateGymPublicProfileInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
+import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { formatDateTime } from "@/lib/utils/dates";
 
 const PROFILE_CATEGORIES = ["Gym", "Strength & conditioning", "Women-only fitness", "Combat sports", "Wellness studio"] as const;
@@ -43,6 +44,7 @@ function profileSnapshot(form: UpdateGymPublicProfileInput, amenities: string): 
 
 export function GymPublicProfileSection() {
   const invalidate = useInvalidate();
+  const { setGuard } = useUnsavedChanges();
   const profile = useRealtimeApiQuery({ queryKey: qk.gymProfile, query: (api) => api.getGymPublicProfile(), subscribe: (api, onValue, onError) => api.subscribeGymPublicProfile(onValue, onError) });
   const versions = useApiQuery(qk.gymProfileVersions, (api) => api.listGymProfileVersions());
   const [form, setForm] = useState<UpdateGymPublicProfileInput>(emptyForm);
@@ -96,6 +98,26 @@ export function GymPublicProfileSection() {
     },
   });
   const discardDraft = useApiMutation(async (api) => { await Promise.all(draftAssetIds.map((assetId) => api.discardDraftMediaAsset(assetId))); }, { onSuccess: () => { if (!profile.data) return; const nextAmenities = profile.data.amenities.join(", "); const nextForm = { shortName: profile.data.shortName, taglineEn: profile.data.taglineEn, taglineAr: profile.data.taglineAr ?? "", descriptionEn: profile.data.descriptionEn, descriptionAr: profile.data.descriptionAr ?? "", category: profile.data.category, audience: profile.data.audience, amenities: [...profile.data.amenities], contactEmail: profile.data.contactEmail ?? "", contactPhone: profile.data.contactPhone ?? "", websiteUrl: profile.data.websiteUrl ?? "", instagramUrl: profile.data.instagramUrl ?? "", accentColor: profile.data.accentColor, logoAssetId: profile.data.logo?.id, coverAssetId: profile.data.cover?.id, galleryAssetIds: profile.data.gallery.map((asset) => asset.id) }; setForm(nextForm); setAmenities(nextAmenities); setDraftAssetIds([]); setUploadedAssets({}); setBaseline(profileSnapshot(nextForm, nextAmenities)); toast.success("Unsaved profile changes and unreferenced uploads were discarded."); } });
+  const guardActions = useRef({ save: async () => {}, discard: async () => {} });
+
+  useEffect(() => {
+    guardActions.current = {
+      save: async () => { await save.mutateAsync(); },
+      discard: async () => { await discardDraft.mutateAsync(); },
+    };
+  });
+
+  useEffect(() => {
+    if (!dirty) {
+      setGuard(null);
+      return;
+    }
+    setGuard({
+      save: () => guardActions.current.save(),
+      discard: () => guardActions.current.discard(),
+    });
+    return () => setGuard(null);
+  }, [dirty, setGuard]);
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (!dirty) return; event.preventDefault(); event.returnValue = ""; };
@@ -135,7 +157,7 @@ export function GymPublicProfileSection() {
           {value.status === "published" ? <Button variant="secondary" onClick={() => setUnpublishOpen(true)}><Undo2 /> Unpublish</Button> : null}
           {dirty ? <Button variant="ghost" loading={discardDraft.isPending} onClick={() => discardDraft.mutate()}>Discard changes</Button> : null}
           <Button variant="secondary" loading={save.isPending} disabled={!dirty || !form.shortName.trim() || !form.taglineEn.trim() || !form.descriptionEn.trim()} onClick={() => save.mutate()}><Save /> Save draft</Button>
-          <Button loading={publish.isPending} disabled={value.status !== "draft"} onClick={() => publish.mutate()}><Send /> Publish draft</Button>
+          <Button loading={publish.isPending} disabled={value.status !== "draft" || dirty || save.isPending || discardDraft.isPending} title={dirty ? "Save or discard the unsaved edits before publishing." : undefined} onClick={() => publish.mutate()}><Send /> Publish draft</Button>
         </div>
       </section>
 
