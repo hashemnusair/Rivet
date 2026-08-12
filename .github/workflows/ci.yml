@@ -32,7 +32,7 @@ permissions:
   contents: read
 
 env:
-  PNPM_VERSION: 10.32.1
+  PNPM_VERSION: 11.20.0
   NODE_VERSION: 22
 
 jobs:
