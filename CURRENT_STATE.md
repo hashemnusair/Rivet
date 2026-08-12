@@ -2,7 +2,7 @@
 
 Updated 2026-08-12 after the functionality-first correctness and operational-email implementation pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
-## Functionality-first correctness pass — pending release
+## Functionality-first correctness pass — released at `0cea424`
 
 - Future membership charges now persist explicit issue/due dates and are collectible only when their membership term has begun. Upcoming invoices are displayed separately, excluded from current balances, entry warnings, outstanding-member and receivables projections, and rejected by the payment mutation before their term starts. Scheduled-term cancellation voids its unpaid charge, and the active term remains the primary membership until the successor begins.
 - Branch settings now persist explicit weekday trial times. Public availability is generated for the selected branch/date in the gym timezone, with truthful unconfigured, closed, and unavailable states; Convex revalidates the submitted slot and permits only one open request per customer and gym.
@@ -11,7 +11,9 @@ Updated 2026-08-12 after the functionality-first correctness and operational-ema
 - The operational-email worker can lease due records, send through Resend, persist provider acceptance, and retry transient failures after 1, 5, and 30 minutes. Delivery remains off unless the exact Convex environment switch, provider configuration, tenant owner confirmation, and category allowlist all permit it. Mandatory platform categories use a separate global allowlist. Existing sandbox-suppressed records are never replayed.
 - Verified webhook processing continues to persist provider delivery, bounce, and failure outcomes. Trial-status, renewal, and expiry templates are bilingual. An hourly membership job deduplicates seven-day renewal and one-day expiry messages and in-app notifications.
 - The staging release harness now includes an isolated owner-settings body that changes and restores one branch trial time with cleanup evidence. Membership lifecycle, owner settings, and the separate realtime smoke have executable bodies; nine registered product journey bodies remain credential-gated release work.
-- Local verification: both TypeScript checks, Convex codegen, zero-warning lint, 77 Vitest/Convex files / 427 tests, the 41-route Production build, 24 preview Playwright journeys with 5 credential-gated journeys skipped, and `git diff --check` pass. No Production deployment, tenant mutation, provider activation, or message delivery was performed.
+- Local verification: both TypeScript checks, Convex codegen, zero-warning lint, 77 Vitest/Convex files / 427 tests, the 41-route Production build, 24 preview Playwright journeys with 5 credential-gated journeys skipped, and `git diff --check` pass.
+- Convex Production `descriptive-meerkat-589` passed the exact-target dry run with no index additions or deletions, then deployed the matching `eb82f8d` backend and returned `status: ok`. Operational email stayed disabled because the global live switch was absent; no tenant/product mutation or provider delivery was performed.
+- `main` was pushed at handoff commit `0cea424`. GitHub Actions run `31606568922` passed typecheck/lint/427 tests/build, preview Playwright, and credentialed Convex codegen consistency. Vercel deployment `8aJ46ziCtHTgvbFg7gdhXPZoC6aM` completed successfully; `www.rivetjo.com` returned HTTP 200 and the apex returned the expected permanent redirect to `www`.
 
 ## Reviewed Settings and media hardening — backend `a58166b`, matching frontend release
 

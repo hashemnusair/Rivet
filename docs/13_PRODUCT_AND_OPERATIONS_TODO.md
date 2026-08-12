@@ -487,7 +487,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-002 — Activate and verify operational messaging safely
 
-- Status: **Live worker implemented locally; activation and credentialed delivery evidence remain release-gated**.
+- Status: **Live worker deployed disabled-by-default; activation and credentialed delivery evidence remain release-gated**.
 - Evidence: operational email now shares one durable Resend boundary with leases, provider IDs, idempotency keys, verified webhook outcomes, redacted failures, and bilingual lifecycle templates. WhatsApp/SMS remain disabled, and email stays suppressed unless every activation boundary permits it.
 - Risk: renewal reminders, trial confirmations, payment receipts, expiry alerts, and retry behavior are not yet a real-gym communication system.
 - Fix/acceptance: configure the exact staging sender/webhook, obtain owner category confirmation, activate selected essential categories, and prove accepted/delivered/transient-retry/terminal-failure paths without replaying historical suppressed attempts. Production activation still requires explicit approval.
@@ -570,20 +570,20 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 ### BUG-017 — Next-renewal plan changes create an immediately outstanding charge
 
-- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
+- Status: **Fix deployed in `0cea424`; supervised Production workflow verification pending**.
 - Evidence: scheduling `Pilot Card Member` from `Pilot Monthly` to `Pilot Quarterly` for 11 September created the expected scheduled successor term and PT-credit schedule, but also exposed the full JOD 120.000 successor charge as the member's current outstanding balance and included it in today's owner report. The report therefore showed JOD 170.000 outstanding instead of the JOD 50.000 currently due from the two active pilot terms.
 - Risk: reception may collect a future renewal early by mistake, entry warnings and owner receivables are overstated, and the member header presents the scheduled term as the primary account state.
 - Resolution: future renewal invoices are created immediately with issue/due dates but are non-collectible before the successor term begins. They render separately as upcoming, are excluded from current balance/entry/outstanding/receivables projections, direct early payment is rejected in Convex, scheduled-term cancellation voids the unpaid charge, and the active term remains primary. Handler, projection, mock-adapter, and charge-policy regressions cover the behavior; deployed browser verification remains required.
 
 ### BUG-018 — Public free-trial form can render no selectable times for configured operating days
 
-- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
+- Status: **Fix deployed in `0cea424`; signed-out/member Production verification pending**.
 - Evidence: the published pilot gym displayed persisted Sunday–Thursday 06:00–23:00 and Saturday 07:00–22:00 hours, but the public trial form's time selector contained no options for a Thursday date.
 - Resolution: owners/managers configure exact weekday trial times per branch. Public choices are derived from that persisted schedule for the selected date and gym timezone, filtered by operating hours, and represented with explicit unconfigured/closed/unavailable states. Convex revalidates the exact submitted branch/date/time and enforces one open request per customer and gym. Weekday/closed/timezone and persisted-settings coverage is in place; deployed signed-out/member verification remains required.
 
 ### BUG-025 — Future freezes are treated as active immediately
 
-- Status: **Resolved locally in the functionality-first pass; deployment verification pending**.
+- Status: **Fix deployed in `0cea424`; supervised Production lifecycle verification pending**.
 - Evidence: membership status previously treated any active freeze row as current even when its start date was in the future.
 - Resolution: effective status now evaluates the freeze start/end dates; past freeze starts and overlapping scheduled/current freezes are rejected, and early unfreeze is limited to a freeze currently in progress. Convex, mock, and pure status regressions cover scheduled and active boundaries.
 
