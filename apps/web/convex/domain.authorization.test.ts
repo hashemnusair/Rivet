@@ -32,6 +32,39 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("Convex authorization matrix", () => {
+  it("returns only accepted check-ins from the requested tenant-local business date", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-auth-a")).unique();
+      const branch = organization
+        ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "auth-branch-a")).unique()
+        : null;
+      if (!organization || !branch) throw new Error("authorization fixtures missing");
+      const insert = async (publicId: string, decision: "allowed" | "blocked", occurredAt: string) => {
+        const now = Date.now();
+        await ctx.db.insert("domainRecords", {
+          organizationId: organization._id,
+          entityType: "checkIn",
+          publicId,
+          branchId: branch._id,
+          memberPublicId: "auth-member",
+          data: { id: publicId, memberId: "auth-member", memberName: "Auth Member", memberNumber: "A-100", branchId: "auth-branch-a", branchName: "A Main", decision, reasonCodes: decision === "allowed" ? ["OK"] : ["MEMBERSHIP_EXPIRED"], occurredAt },
+          createdAt: now,
+          updatedAt: now,
+        });
+      };
+      await insert("checkin-today-allowed", "allowed", "2026-08-12T08:00:00.000Z");
+      await insert("checkin-today-blocked", "blocked", "2026-08-12T09:00:00.000Z");
+      await insert("checkin-yesterday-allowed", "allowed", "2026-08-11T08:00:00.000Z");
+    });
+
+    const owner = t.withIdentity({ subject: "clerk-auth-owner" });
+    const result = await owner.query(api.domain.query, operation("checkins.list", { branchId: "auth-branch-a", date: "2026-08-12", acceptedOnly: true, pageSize: 100 })) as { items: Array<{ id: string; decision: string }> };
+
+    expect(result.items).toEqual([expect.objectContaining({ id: "checkin-today-allowed", decision: "allowed" })]);
+  });
+
   it("keeps selected branches, tenants, members and leads isolated", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

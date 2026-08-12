@@ -469,6 +469,14 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ## P1 — Missing or incomplete MVP behavior
 
+### Reception and member attendance history
+
+- Status: **Implemented locally; Production verification pending**.
+- The reception rail now shows the tenant-local check-in count and the complete accepted-attendance log for today, rather than estimating who remains inside from a 90-minute window.
+- Blocked entry attempts remain available to authorized operational records but are not counted as visits.
+- The authenticated customer projection derives visit history from the same persisted check-in records by member ID. My Gyms shows recent visits immediately after login, and membership detail shows weekday, date, time, branch, and the member name used at check-in.
+- Focused component and exported Convex tests cover the new reception wording, date/accepted-entry filtering, authenticated customer ownership, blocked-attempt exclusion, and member history rendering. Verify one disposable check-in across simultaneous reception and member sessions after deployment.
+
 ### TODO-001 — Membership upgrade and downgrade are not explicit API operations
 
 - Status: **Implemented for the supervised pilot; production verification pending**.

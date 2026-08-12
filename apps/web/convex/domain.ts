@@ -1346,7 +1346,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
   const memberships = await Promise.all(ownedMembershipRows.map(async ({ record: projectionRecord, projection }) => {
     const internalMembershipId = optionalString(projection.membershipId) ?? stringValue(projection.id);
     const tenant = await ctx.db.get(projectionRecord.organizationId);
-    if (!tenant) return { ...projection, qrValue: "" };
+    if (!tenant) return { ...projection, visitHistory: arrayValue(projection.visitHistory), qrValue: "" };
     const [membershipRecord, memberRecord, marketplace] = await Promise.all([
       ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", tenant._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique(),
       optionalString(projection.memberId)
@@ -1354,7 +1354,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         : Promise.resolve(null),
       ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "marketplaceGym")).first(),
     ]);
-    if (!membershipRecord) return { ...projection, qrValue: "" };
+    if (!membershipRecord) return { ...projection, visitHistory: arrayValue(projection.visitHistory), qrValue: "" };
     const membership = data(membershipRecord.data);
     const member = memberRecord ? data(memberRecord.data) : {};
     const timezone = tenant.timezone || TZ_FALLBACK;
@@ -1385,6 +1385,15 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
       remainingVisits: membership.remainingVisits,
       balanceMinor,
       lastCheckInAt: optionalString(validCheckIns[0]?.occurredAt) ?? optionalString(projection.lastCheckInAt),
+      visitHistory: validCheckIns.slice(0, 100).map((item) => ({
+        id: stringValue(item.id),
+        memberName: stringValue(item.memberName, stringValue(member.fullName, stringValue(profile?.name))),
+        branchId: stringValue(item.branchId),
+        branchName: stringValue(item.branchName),
+        occurredAt: stringValue(item.occurredAt),
+        decision: stringValue(item.decision),
+        checkedInByName: optionalString(item.actorName),
+      })),
       qrValue: "",
     };
   }));
@@ -2553,6 +2562,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       }
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.since) items = items.filter((item) => stringValue(item.occurredAt) >= stringValue(input.since));
+      if (input.date) items = items.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK) === stringValue(input.date));
+      if (input.acceptedOnly) items = items.filter((item) => item.decision !== "blocked");
+      items.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
       return page(items, input);
     }
     case "checkins.occupancy": {

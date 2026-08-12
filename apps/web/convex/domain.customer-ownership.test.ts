@@ -270,6 +270,41 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       status: "active",
     }, branchB);
 
+    await insertRecord(organizationA, "member", "member-a", {
+      memberNumber: "A-100",
+      fullName: "Customer A",
+      homeBranchId: "branch-a",
+      status: "active",
+    }, branchA);
+    await insertRecord(organizationA, "membership", "membership-a-active", {
+      memberId: "member-a",
+      planName: "Active plan",
+      homeBranchId: "branch-a",
+      startDate: "2026-08-01",
+      endDate: "2026-09-01",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }, branchA);
+    await insertRecord(organizationA, "checkIn", "checkin-a-allowed", {
+      memberId: "member-a",
+      memberName: "Customer A",
+      memberNumber: "A-100",
+      branchId: "branch-a",
+      branchName: "Gym A Main",
+      decision: "allowed",
+      actorName: "Reception A",
+      occurredAt: "2026-08-08T10:00:00.000Z",
+    }, branchA);
+    await insertRecord(organizationA, "checkIn", "checkin-a-blocked", {
+      memberId: "member-a",
+      memberName: "Customer A",
+      memberNumber: "A-100",
+      branchId: "branch-a",
+      branchName: "Gym A Main",
+      decision: "blocked",
+      actorName: "Reception A",
+      occurredAt: "2026-08-09T10:00:00.000Z",
+    }, branchA);
+
     await insertRecord(organizationA, "trialBooking", "trial-anonymous", {
       gymId: "gym-a",
       branchId: "directory-branch-a",
@@ -345,6 +380,11 @@ describe("exported Convex customer ownership boundaries", () => {
 
     expect(experience.customer).toMatchObject({ id: "profile-a", email: "a@example.com", marketingPreference: { optedIn: false } });
     expect(experience.memberships.map((membership: { id: string }) => membership.id)).toEqual(["membership-a-active", "membership-a-inactive"]);
+    expect(experience.memberships[0]).toMatchObject({
+      visitsThisMonth: 1,
+      lastCheckInAt: "2026-08-08T10:00:00.000Z",
+      visitHistory: [{ id: "checkin-a-allowed", memberName: "Customer A", branchName: "Gym A Main", checkedInByName: "Reception A" }],
+    });
     expect(experience.bookings).toEqual([]);
 
     const customerBProfile = await t.run(async (ctx) => await ctx.db.query("customerProfiles").withIndex("by_public_id", (q) => q.eq("publicId", "profile-b")).unique());

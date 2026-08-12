@@ -134,6 +134,10 @@ export interface RecentCheckInQuery extends ListQuery {
   branchId?: UUID;
   memberId?: UUID;
   since?: string;
+  /** Tenant-local business date (YYYY-MM-DD). */
+  date?: ISODate;
+  /** Excludes blocked entry attempts so attendance views show actual visits. */
+  acceptedOnly?: boolean;
 }
 
 export interface TransactionListQuery extends ListQuery {

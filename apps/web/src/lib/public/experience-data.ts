@@ -94,6 +94,17 @@ export interface CustomerMembership {
   balanceMinor: number;
   qrValue: string;
   lastCheckInAt: string;
+  visitHistory: CustomerVisit[];
+}
+
+export interface CustomerVisit {
+  id: string;
+  memberName: string;
+  branchId: string;
+  branchName: string;
+  occurredAt: string;
+  decision: "allowed" | "warning" | "overridden";
+  checkedInByName?: string;
 }
 
 export interface TrialBooking {
@@ -303,6 +314,11 @@ export const INITIAL_CUSTOMER_MEMBERSHIPS: CustomerMembership[] = [
     balanceMinor: 0,
     qrValue: "rivet://entry/forge-fitness/ABD-2214/customer-lina",
     lastCheckInAt: "2026-07-30T19:12:00+03:00",
+    visitHistory: [
+      { id: "visit-lina-3", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-30T19:12:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
+      { id: "visit-lina-2", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-28T18:46:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
+      { id: "visit-lina-1", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-26T10:05:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
+    ],
   },
 ];
 

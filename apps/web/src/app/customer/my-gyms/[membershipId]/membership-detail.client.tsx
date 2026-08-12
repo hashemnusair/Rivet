@@ -17,8 +17,9 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import type { CustomerVisit } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
-import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, todayISODate } from "@/lib/utils/dates";
+import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
 
 export default function MembershipDetailClient({ membershipId }: { membershipId: string }) {
   const searchParams = useSearchParams();
@@ -140,11 +141,13 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           <div className="rounded-lg border border-line bg-surface">
             <p className="eyebrow border-b border-line px-4 py-2.5">Activity</p>
             <ul className="divide-y divide-line">
-              <Row title="Last check-in" detail={`${branch.name} · ${formatDateTime(membership.lastCheckInAt)}`} />
+              <Row title="Last check-in" detail={membership.lastCheckInAt ? `${branch.name} · ${formatDateTime(membership.lastCheckInAt)}` : "No visits recorded yet"} />
               <Row title="Membership started" detail={formatDate(membership.startDate)} />
               <Row title="Renewal due" detail={`${formatDate(membership.endDate)} · ${daysLeft} days`} />
             </ul>
           </div>
+
+          <VisitHistory visits={membership.visitHistory ?? []} />
 
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
             <Phone className="size-4 text-ink-3" aria-hidden />
@@ -156,6 +159,36 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         </div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
     </main>
+  );
+}
+
+function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="visit-history-title">
+      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+        <h2 id="visit-history-title" className="eyebrow">Visit history</h2>
+        <span className="text-[11px] tabular text-ink-3">{visits.length} recorded</span>
+      </header>
+      {visits.length === 0 ? (
+        <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">Your check-ins will appear here after you visit this gym.</p>
+      ) : (
+        <ol className="divide-y divide-line">
+          {visits.map((visit) => (
+            <li key={visit.id} className="flex items-start gap-3 px-4 py-3">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-ink-2">
+                <ScanLine className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium">{formatWeekday(visit.occurredAt)} · {formatDate(visit.occurredAt)}</p>
+                <p className="mt-0.5 text-[11.5px] text-ink-3">{formatTime(visit.occurredAt)} · {visit.branchName}</p>
+                <p className="mt-1 text-[11px] text-ink-3">Checked in as {visit.memberName}</p>
+              </div>
+              <Badge variant="outline">{visit.decision === "overridden" ? "Override accepted" : "Checked in"}</Badge>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 

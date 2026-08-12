@@ -20,8 +20,9 @@ import { qk } from "@/lib/api/keys";
 import type { CheckInPreview, CheckInResult, MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatTime } from "@/lib/utils/dates";
+import { formatTime, todayISODate } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
@@ -66,9 +67,14 @@ export default function ReceptionPage() {
     refetchInterval: 30_000,
   });
 
-  const recentQuery = useApiQuery(qk.checkIns({ branchId, recent: true }), (api) =>
-    api.listRecentCheckIns({ branchId, pageSize: 12 }),
-  );
+  const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
+  const recentInput = { branchId, date: today, acceptedOnly: true, pageSize: 100 } as const;
+  const recentQuery = useRealtimeApiQuery({
+    queryKey: qk.checkIns(recentInput),
+    query: (api) => api.listRecentCheckIns(recentInput),
+    subscribe: (api, onValue, onError) => api.subscribeRecentCheckIns(recentInput, onValue, onError),
+    enabled: Boolean(branchId),
+  });
 
   const shiftQuery = useApiQuery(qk.shiftTotals(branchId ?? ""), (api) => api.getCurrentShiftTotals(branchId!), {
     enabled: Boolean(branchId),
@@ -261,35 +267,21 @@ export default function ReceptionPage() {
         </div>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Right rail: occupancy + live feed */}
+        {/* Right rail: today's attendance log */}
         {/* ---------------------------------------------------------------- */}
         <aside className="flex min-w-0 flex-col bg-night-2" aria-label="Branch activity">
           <section className="border-b border-night-line px-5 py-5">
-            <p className="eyebrow-night">In the gym now</p>
-            {/* A ratio must not be re-ordered by bidi — 2/110 is not 110/2. */}
-            <div className="mt-2 flex items-baseline gap-2" dir="ltr">
+            <p className="eyebrow-night">Check-ins today</p>
+            <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
-                {occupancyQuery.data?.current ?? "—"}
+                {recentQuery.data?.totalItems ?? "—"}
               </span>
-              <span className="text-[13px] tabular text-night-ink-3">/ {occupancyQuery.data?.capacity ?? "—"}</span>
-            </div>
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-night-3">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-500",
-                  (occupancyQuery.data?.current ?? 0) / Math.max(1, occupancyQuery.data?.capacity ?? 1) > 0.85
-                    ? "bg-signal"
-                    : "bg-night-ink",
-                )}
-                style={{
-                  width: `${Math.min(100, Math.round(((occupancyQuery.data?.current ?? 0) / Math.max(1, occupancyQuery.data?.capacity ?? 1)) * 100))}%`,
-                }}
-              />
+              <span className="text-[13px] text-night-ink-3">recorded visits</span>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <dt className="eyebrow-night">Today</dt>
-                <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.checkInsToday ?? "—"}</dd>
+                <dt className="eyebrow-night">Branch</dt>
+                <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
               </div>
               <div>
                 <dt className="eyebrow-night">Peak hour</dt>
@@ -299,7 +291,7 @@ export default function ReceptionPage() {
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <p className="eyebrow-night border-b border-night-line px-5 py-3">Recent check-ins</p>
+            <p className="eyebrow-night border-b border-night-line px-5 py-3">Today&apos;s check-in log</p>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
                 <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">No check-ins yet today.</li>
@@ -309,6 +301,7 @@ export default function ReceptionPage() {
                     <span className="mt-0.5 text-[11px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
+                      <p className="truncate font-mono text-[10px] text-night-ink-3">{c.memberNumber}</p>
                       {c.overrideReason ? (
                         <p className="truncate text-[11px] text-night-ink-3" title={c.overrideReason}>
                           override · {c.overrideReason}

@@ -23,7 +23,7 @@ import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-import { daysFromToday, diffDays, formatDate, formatRelative, todayISODate } from "@/lib/utils/dates";
+import { daysFromToday, diffDays, formatDate, formatRelative, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
 
 export default function MemberDashboardPage() {
   const customer = useCustomerPersona();
@@ -45,6 +45,15 @@ export default function MemberDashboardPage() {
     .sort()
     .at(-1);
   const gymFor = (id: string) => gyms.find((gym) => gym.id === id);
+  const recentVisits = Array.from(
+    new Map(
+      customerMemberships
+        .flatMap((membership) => (membership.visitHistory ?? []).map((visit) => ({ ...visit, gymName: gymFor(membership.gymId)?.name ?? "Gym" })))
+        .map((visit) => [visit.id, visit] as const),
+    ).values(),
+  )
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+    .slice(0, 5);
 
   return (
     <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -162,11 +171,22 @@ export default function MemberDashboardPage() {
           {primary ? <EntryCard membership={primary} gym={gymFor(primary.gymId)} onExpand={() => setQrFor(primary)} /> : null}
 
           <div className="rounded-lg border border-line bg-surface">
-            <p className="eyebrow border-b border-line px-4 py-2.5">Recent</p>
+            <p className="eyebrow border-b border-line px-4 py-2.5">Recent visits</p>
             <ul className="divide-y divide-line">
-              {lastCheckIn ? (
-                <ActivityRow title="Checked in" detail={formatRelative(lastCheckIn)} />
-              ) : null}
+              {recentVisits.map((visit) => (
+                <ActivityRow
+                  key={visit.id}
+                  title={`${formatWeekday(visit.occurredAt)} · ${formatTime(visit.occurredAt)}`}
+                  detail={`${visit.gymName} · Checked in as ${visit.memberName}`}
+                />
+              ))}
+              {recentVisits.length === 0 ? <li className="px-4 py-4 text-[12.5px] text-ink-3">No visits recorded yet.</li> : null}
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-line bg-surface">
+            <p className="eyebrow border-b border-line px-4 py-2.5">Coming up</p>
+            <ul className="divide-y divide-line">
               {soonest ? (
                 <ActivityRow
                   title="Renewal due"
@@ -179,7 +199,7 @@ export default function MemberDashboardPage() {
                   detail={`${gymFor(customerBookings[0].gymId)?.name ?? "Gym"} · ${formatRelative(customerBookings[0].createdAt)}`}
                 />
               ) : null}
-              {!lastCheckIn && !soonest && !customerBookings[0] ? (
+              {!soonest && !customerBookings[0] ? (
                 <li className="px-4 py-4 text-[12.5px] text-ink-3">Nothing yet.</li>
               ) : null}
             </ul>

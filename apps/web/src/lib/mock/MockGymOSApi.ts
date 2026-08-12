@@ -3492,6 +3492,9 @@ export class MockGymOSApi implements GymOSApi {
       if (query.memberId) items = items.filter((c) => c.memberId === query.memberId);
       const since = query.since;
       if (since) items = items.filter((c) => c.occurredAt >= since);
+      if (query.date) items = items.filter((c) => todayISODate(TZ, new Date(c.occurredAt)) === query.date);
+      if (query.acceptedOnly) items = items.filter((c) => c.decision !== "blocked");
+      items.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
       return paginate(this.maybeEmpty(items), query);
     });
   }

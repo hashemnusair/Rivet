@@ -119,7 +119,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 });
 
 test.describe("reception check-in", () => {
-  test("looks a member up, checks them in, and updates occupancy", async ({ page }) => {
+  test("looks a member up, checks them in, and updates today's attendance log", async ({ page }) => {
     await signIn(page, "Reception");
     // Reception signs straight into the console, not the dashboard.
     await expect(page.getByTestId("reception-search")).toBeVisible();
@@ -128,7 +128,9 @@ test.describe("reception check-in", () => {
 
     // Grab a real member number from the members table first.
     await page.goto("/members");
-    const number = await page.getByTestId("member-row").first().locator("p.font-mono").first().innerText();
+    const memberRow = page.getByTestId("member-row").first();
+    const memberName = await memberRow.locator("p.font-medium").innerText();
+    const number = await memberRow.locator("p.font-mono").first().innerText();
 
     await page.goto("/reception");
     await page.getByTestId("reception-search").fill(number.trim());
@@ -150,6 +152,9 @@ test.describe("reception check-in", () => {
       await page.getByTestId("confirm-checkin").click();
       await expect(page.getByText(/checked in ·/i)).toBeVisible();
       await expect(page.getByTestId("next-member")).toBeVisible();
+      const activity = page.getByRole("complementary", { name: "Branch activity" });
+      await expect(activity.getByText("Today's check-in log")).toBeVisible();
+      await expect(activity).toContainText(memberName.trim());
     } else {
       // A blocked member offers a remedy instead of entry.
       await expect(page.getByTestId("confirm-checkin")).toBeHidden();

@@ -67,10 +67,11 @@ describe("reception console — idle", () => {
     expect(screen.getByText(/ready for the next member/i)).toBeInTheDocument();
   });
 
-  it("shows live occupancy for the branch", async () => {
+  it("shows today's check-in count and attendance log instead of inferred occupancy", async () => {
     await renderWithApp(<ReceptionPage />, { role: "receptionist" });
-    expect(await screen.findByText(/in the gym now/i)).toBeInTheDocument();
-    expect(screen.getByText(/recent check-ins/i)).toBeInTheDocument();
+    expect(await screen.findByText(/check-ins today/i)).toBeInTheDocument();
+    expect(screen.getByText(/today's check-in log/i)).toBeInTheDocument();
+    expect(screen.queryByText(/in the gym now/i)).not.toBeInTheDocument();
   });
 
   it("waits for enough characters before searching", async () => {
