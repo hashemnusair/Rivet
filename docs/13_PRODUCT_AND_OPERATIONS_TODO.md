@@ -653,6 +653,7 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 
 ## P2 — Deliberately deferred until after the first pilot
 
+- Modular owner-selected workspace pages, first-owner survey, later dashboard-block preferences, and premium placeholders are specified in `docs/14_MODULAR_WORKSPACE_PLAN.md`. Implementation is deliberately paused for owner steering; no tier entitlement matrix has been approved.
 - Full class schedules, capacity, waitlists, and no-shows.
 - Corporate accounts and commissions.
 - POS/inventory and equipment maintenance.
