@@ -999,6 +999,82 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
   };
 }
 
+/**
+ * Member lists are rendered on the dashboard, reception, and CRM hand-offs.
+ * Keep the row projection equivalent to toMemberSummary, but load the shared
+ * membership, plan, charge, and check-in collections once per request. The
+ * previous per-row currentMembership/outstanding/check-in reads made a
+ * 100-member page fan out into hundreds of Convex queries and made navigation
+ * feel frozen on larger gyms.
+ */
+async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
+  const [memberships, plans, charges, checkIns] = await Promise.all([
+    membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "plan"),
+    chargeRecords(ctx, actor),
+    recordsOf(ctx, actor, "checkIn"),
+  ]);
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+  const membershipsByMember = new Map<string, Data[]>();
+  for (const record of memberships) {
+    const membership = data(record.data);
+    const memberId = optionalString(membership.memberId);
+    if (!memberId) continue;
+    const list = membershipsByMember.get(memberId) ?? [];
+    list.push(membership);
+    membershipsByMember.set(memberId, list);
+  }
+  const plansById = new Map(plans.map((record) => [record.publicId, data(record.data)]));
+  const chargesByMember = new Map<string, Data[]>();
+  for (const record of charges) {
+    const charge = data(record.data);
+    const memberId = optionalString(charge.memberId);
+    if (!memberId) continue;
+    const list = chargesByMember.get(memberId) ?? [];
+    list.push(charge);
+    chargesByMember.set(memberId, list);
+  }
+  const checkInsByMember = new Map<string, Data[]>();
+  for (const record of checkIns) {
+    const checkIn = data(record.data);
+    if (checkIn.decision === "blocked") continue;
+    const memberId = optionalString(checkIn.memberId);
+    if (!memberId) continue;
+    const list = checkInsByMember.get(memberId) ?? [];
+    list.push(checkIn);
+    checkInsByMember.set(memberId, list);
+  }
+  for (const list of checkInsByMember.values()) list.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  return values.map((value) => {
+    const memberId = stringValue(value.id);
+    const terms = membershipsByMember.get(memberId) ?? [];
+    const membership = terms
+      .map((candidate) => ({ candidate, status: statusOfMembership(candidate, today) }))
+      .sort((left, right) => (rank[left.status] ?? 5) - (rank[right.status] ?? 5) || stringValue(right.candidate.endDate).localeCompare(stringValue(left.candidate.endDate)))[0]?.candidate;
+    const plan = membership ? plansById.get(stringValue(membership.planId)) : undefined;
+    const outstanding = (chargesByMember.get(memberId) ?? []).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+    const checkInsForMember = checkInsByMember.get(memberId) ?? [];
+    return {
+      id: memberId,
+      memberNumber: stringValue(value.memberNumber),
+      fullName: stringValue(value.fullName),
+      fullNameAr: optionalString(value.fullNameAr),
+      phone: stringValue(value.phone),
+      email: optionalString(value.email),
+      homeBranchId: stringValue(value.homeBranchId),
+      status: stringValue(value.status, "active"),
+      tags: arrayValue(value.tags),
+      membershipStatus: membership ? statusOfMembership(membership, today) : undefined,
+      currentPlanName: plan ? stringValue(plan.name) : undefined,
+      membershipEndDate: membership ? optionalString(membership.endDate) : undefined,
+      outstanding: money(outstanding, actor.organization.currency),
+      lastCheckInAt: checkInsForMember[0] ? optionalString(checkInsForMember[0].occurredAt) : undefined,
+      createdAt: stringValue(value.createdAt, isoNow()),
+    };
+  });
+}
+
 async function recordOfOptional(ctx: ReadContext, actor: ActorContext, entityType: string, id: string): Promise<DomainRecord | null> {
   if (!id) return null;
   const record = await ctx.db
@@ -1136,6 +1212,48 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
     lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
     overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
   };
+}
+
+/**
+ * Lead lists are a hot path for the pipeline and follow-up queues. The
+ * original mapper loaded branches, users and the full timeline once per lead,
+ * turning a 100-row page into hundreds of database reads. Build those lookup
+ * maps once per page instead; detail/mutation paths still use the focused
+ * mapper above.
+ */
+async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
+  const [branches, users, memberships, timelineRecords] = await Promise.all([
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("users").collect(),
+    ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    recordsOf(ctx, actor, "timeline"),
+  ]);
+  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  const activeUserIds = new Set(memberships.filter((membership) => membership.active).map((membership) => membership.userId));
+  const ownerNames = new Map(users.filter((user) => activeUserIds.has(user._id)).map((user) => [publicUserId(user), user.fullName]));
+  const attemptsByLead = new Map<string, Data[]>();
+  for (const record of timelineRecords) {
+    const event = data(record.data);
+    const leadId = optionalString(event.leadId);
+    if (!leadId || event.type !== "call_attempt") continue;
+    const attempts = attemptsByLead.get(leadId) ?? [];
+    attempts.push(event);
+    attemptsByLead.set(leadId, attempts);
+  }
+  for (const attempts of attemptsByLead.values()) attempts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  return values.map((value) => {
+    const attempts = attemptsByLead.get(stringValue(value.id)) ?? [];
+    const nextFollowUpAt = optionalString(value.nextFollowUpAt);
+    const open = value.stage !== "won" && value.stage !== "lost";
+    return {
+      ...value,
+      branchName: branchNames.get(stringValue(value.branchId)) ?? "—",
+      ownerName: optionalString(value.ownerId) ? ownerNames.get(stringValue(value.ownerId)) : undefined,
+      lastContactOutcome: attempts[0] ? optionalString(data(attempts[0].meta).outcome) : undefined,
+      lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
+      overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
+    };
+  });
 }
 
 async function userByPublicId(ctx: ReadContext, organizationId: Id<"organizations">, id: string): Promise<User | null> {
@@ -2566,7 +2684,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         assertBranchAccess(actor, branch);
       }
       const records = await memberRecords(ctx, actor);
-      let items = await Promise.all(records.map((record) => toMemberSummary(ctx, actor, data(record.data))));
+      let items = await toMemberSummaries(ctx, actor, records.map((record) => data(record.data)));
       if (branchId) items = items.filter((member) => member.homeBranchId === branchId);
       if (input.status) items = items.filter((member) => member.status === input.status);
       if (input.planId) {
@@ -2635,19 +2753,43 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "leads.list": {
       requirePermission(actor, "crm.read");
-      let items = await Promise.all((await recordsOf(ctx, actor, "lead")).map((record) => toLeadSummary(ctx, actor, data(record.data))));
+      const [leadRecords, memberRecordsForLeads] = await Promise.all([
+        recordsOf(ctx, actor, "lead"),
+        recordsOf(ctx, actor, "member"),
+      ]);
+      // A converted lead is no longer actionable. In particular, do not let
+      // archiving a member put their old conversion back into the follow-up
+      // queues. Missing member records are treated the same way so a
+      // permanently deleted archived member cannot leave a dangling lead.
+      const memberById = new Map(memberRecordsForLeads.map((record) => [record.publicId, data(record.data)]));
+      let visibleLeadRecords = leadRecords.filter((record) => {
+        const convertedMemberId = optionalString(data(record.data).convertedMemberId);
+        if (!convertedMemberId) return true;
+        const member = memberById.get(convertedMemberId);
+        return Boolean(member && stringValue(member.status, "active") !== "archived");
+      });
+      // Apply cheap persisted filters before the projection fan-out. Follow-up
+      // queues normally request only a few open stages, so this avoids mapping
+      // converted/irrelevant records just to discard them afterwards.
       if (input.branchId) {
-        assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, stringValue(input.branchId)));
-        items = items.filter((lead) => lead.branchId === input.branchId);
+        const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(input.branchId));
+        assertBranchAccess(actor, branch);
+        visibleLeadRecords = visibleLeadRecords.filter((record) => stringValue(data(record.data).branchId) === stringValue(input.branchId));
       }
       if (input.stage) {
         const stages = Array.isArray(input.stage) ? input.stage : [input.stage];
-        items = items.filter((lead) => stages.includes(lead.stage));
+        visibleLeadRecords = visibleLeadRecords.filter((record) => stages.includes(stringValue(data(record.data).stage)));
       }
-      if (input.ownerId === "unassigned") items = items.filter((lead) => !lead.ownerId);
-      else if (input.ownerId) items = items.filter((lead) => lead.ownerId === input.ownerId);
+      if (input.ownerId === "unassigned") visibleLeadRecords = visibleLeadRecords.filter((record) => !optionalString(data(record.data).ownerId));
+      else if (input.ownerId) visibleLeadRecords = visibleLeadRecords.filter((record) => stringValue(data(record.data).ownerId) === stringValue(input.ownerId));
+      if (input.search) {
+        visibleLeadRecords = visibleLeadRecords.filter((record) => {
+          const value = data(record.data);
+          return matchesSearch([value.fullName, value.phone, value.email], optionalString(input.search));
+        });
+      }
+      let items = await toLeadSummaries(ctx, actor, visibleLeadRecords.map((record) => data(record.data)));
       if (input.overdueOnly) items = items.filter((lead) => lead.overdue);
-      items = items.filter((lead) => matchesSearch([lead.fullName, lead.phone, lead.email], optionalString(input.search)));
       items = sortRecords(items, input.sort ?? "-createdAt", (lead, key) => stringValue(lead[key]));
       return page(items, input);
     }
@@ -4562,6 +4704,60 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const deleteAfter = Date.now() + 90 * 86_400_000;
       await Promise.all(photos.map((asset) => ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter, updatedAt: Date.now() })));
       await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member archived", reason: stringValue(input.reason), before: { status: data(record.data).status }, after: { status: "archived", privatePhotosScheduledForDeletion: photos.length, photoDeleteAfter: photos.length ? utcIso(deleteAfter) : undefined }, branchId: optionalString(updated.homeBranchId) });
+      return undefined;
+    }
+    case "members.delete": {
+      requirePermission(actor, "members.archive");
+      requireReason(input.reason, actor.correlationId);
+      if (actor.role !== "owner" && actor.role !== "manager") {
+        domainError("FORBIDDEN", "Only an owner or manager can permanently delete a member.", { correlationId: actor.correlationId });
+      }
+      const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const member = data(record.data);
+      if (stringValue(member.status, "active") !== "archived") {
+        domainError("VALIDATION_ERROR", "Only archived members can be permanently deleted.", { correlationId: actor.correlationId });
+      }
+      if (stringValue(input.confirmation).trim() !== stringValue(member.fullName)) {
+        domainError("VALIDATION_ERROR", "Type the member's full name to confirm deletion.", { correlationId: actor.correlationId });
+      }
+      const memberships = (await membershipRecords(ctx, actor)).map((membership) => data(membership.data)).filter((membership) => membership.memberId === record.publicId);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      if (memberships.some((membership) => ["active", "expiring", "frozen", "scheduled"].includes(statusOfMembership(membership, today)))) {
+        domainError("CONFLICT", "This archived member still has an active or scheduled membership.", { correlationId: actor.correlationId });
+      }
+      if (amountOf(await outstandingForMember(ctx, actor, record.publicId)) > 0) {
+        domainError("CONFLICT", "Settle the member's outstanding balance before deletion.", { correlationId: actor.correlationId });
+      }
+      const [reservedBookings, confirmedBookings] = await Promise.all([
+        ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "reserved")).collect(),
+        ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "confirmed")).collect(),
+      ]);
+      if ([...reservedBookings, ...confirmedBookings].some((booking) => booking.memberPublicId === record.publicId && booking.startsAt > Date.now())) {
+        domainError("CONFLICT", "Cancel or reassign future PT bookings before deletion.", { correlationId: actor.correlationId });
+      }
+      const [customerMemberships, memberPhotos] = await Promise.all([
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership")).collect(),
+        ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", record.publicId)).collect(),
+      ]);
+      const customerMembershipProjections = customerMemberships.filter((projection) => stringValue(data(projection.data).memberId) === record.publicId);
+      await insertAudit(ctx, actor, {
+        category: "members",
+        action: "member.delete",
+        entityType: "member",
+        entityId: record.publicId,
+        entityLabel: stringValue(member.fullName) + " · " + stringValue(member.memberNumber),
+        summary: "Archived member permanently deleted",
+        reason: stringValue(input.reason),
+        before: { status: member.status, fullName: member.fullName, phone: member.phone, email: member.email },
+        after: { deleted: true, customerMembershipProjectionsRemoved: customerMembershipProjections.length, privatePhotosRemoved: memberPhotos.length },
+        branchId: optionalString(member.homeBranchId),
+      });
+      await Promise.all(customerMembershipProjections.map((projection) => ctx.db.delete(projection._id)));
+      await Promise.all(memberPhotos.map(async (asset) => {
+        await ctx.storage.delete(asset.storageId);
+        await ctx.db.delete(asset._id);
+      }));
+      await ctx.db.delete(record._id);
       return undefined;
     }
     case "members.note": {

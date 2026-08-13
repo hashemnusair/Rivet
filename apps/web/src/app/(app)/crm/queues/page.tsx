@@ -18,13 +18,12 @@ import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
 
-type QueueKey = "overdue" | "today" | "unassigned" | "trials" | "expiring" | "expired";
+type QueueKey = "overdue" | "today" | "unassigned" | "expiring" | "expired";
 
 const QUEUE_DEFS: Array<{ key: QueueKey; label: string; hint: string }> = [
   { key: "overdue", label: "Overdue follow-ups", hint: "Past their due time — work these first." },
   { key: "today", label: "Due today", hint: "Scheduled for today." },
   { key: "unassigned", label: "New & unassigned", hint: "Fresh leads with no owner yet." },
-  { key: "trials", label: "Trials to finish", hint: "Confirm the trial, record its outcome, then record the membership sale." },
   { key: "expiring", label: "Expiring ≤ 14 days", hint: "Members about to lapse — call before expiry." },
   { key: "expired", label: "Expired ≤ 45 days", hint: "Win-back territory." },
 ];
@@ -56,7 +55,7 @@ export default function QueuesPage() {
 
   const tasksQuery = useApiQuery(qk.tasks({ queue: true }), (api) => api.listTasks({ status: "open", pageSize: 100 }));
   const leadsQuery = useApiQuery(qk.leads({ open: true }), (api) =>
-    api.listLeads({ stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 100 }),
+    api.listLeads({ stage: ["new", "attempted", "contacted"], pageSize: 100 }),
   );
   const expiringQuery = useApiQuery(qk.renewalQueue({ bucket: "expiring" }), (api) =>
     api.listRenewalQueue({ bucket: "expiring", branchId: session?.activeBranchId, pageSize: 50 }),
@@ -86,16 +85,11 @@ export default function QueuesPage() {
 
   const openLeads = useMemo(() => leadsQuery.data?.items ?? [], [leadsQuery.data]);
   const unassignedLeads = openLeads.filter((l) => !l.ownerId);
-  const trialLeads = openLeads.filter((l) => {
-    if (l.stage !== "trial_booked" && l.stage !== "trial_completed") return false;
-    return !mineOnly || l.ownerId === session?.user.id || !l.ownerId;
-  });
 
   const counts: Record<QueueKey, number> = {
     overdue: overdueTasks.length,
     today: todayTasks.length,
     unassigned: unassignedLeads.length,
-    trials: trialLeads.length,
     expiring: expiringQuery.data?.totalItems ?? 0,
     expired: expiredQuery.data?.totalItems ?? 0,
   };
@@ -158,8 +152,8 @@ export default function QueuesPage() {
                 queue={queue}
                 overdueTasks={overdueTasks}
                 todayTasks={todayTasks}
+                leads={openLeads}
                 unassignedLeads={unassignedLeads}
-                trialLeads={trialLeads}
                 expiring={expiringQuery.data?.items ?? []}
                 expired={expiredQuery.data?.items ?? []}
                 tasks={myTasks}
@@ -254,8 +248,8 @@ function QueueItems({
   queue,
   overdueTasks,
   todayTasks,
+  leads,
   unassignedLeads,
-  trialLeads,
   expiring,
   expired,
   tasks,
@@ -265,8 +259,8 @@ function QueueItems({
   queue: QueueKey;
   overdueTasks: Task[];
   todayTasks: Task[];
+  leads: LeadSummary[];
   unassignedLeads: LeadSummary[];
-  trialLeads: LeadSummary[];
   expiring: RenewalQueueItem[];
   expired: RenewalQueueItem[];
   tasks: Task[];
@@ -279,11 +273,10 @@ function QueueItems({
   if (queue === "overdue" || queue === "today") {
     const items = queue === "overdue" ? overdueTasks : todayTasks;
     if (items.length === 0) return <EmptyQueue text={queue === "overdue" ? "Nothing overdue. Good." : "Nothing else due today."} />;
-    const allLeads = [...unassignedLeads, ...trialLeads];
     return (
       <ul className="divide-y divide-line">
         {items.map((task) => {
-          const lead = task.leadId ? allLeads.find((l) => l.id === task.leadId) : undefined;
+          const lead = task.leadId ? leads.find((l) => l.id === task.leadId) : undefined;
           return (
             <QueueRow
               key={task.id}
@@ -301,9 +294,9 @@ function QueueItems({
     );
   }
 
-  if (queue === "unassigned" || queue === "trials") {
-    const items = queue === "unassigned" ? unassignedLeads : trialLeads;
-    if (items.length === 0) return <EmptyQueue text={queue === "unassigned" ? "No unassigned leads." : "No trials waiting."} />;
+  if (queue === "unassigned") {
+    const items = unassignedLeads;
+    if (items.length === 0) return <EmptyQueue text="No unassigned leads." />;
     return (
       <ul className="divide-y divide-line">
         {items.map((lead) => (

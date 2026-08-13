@@ -2,6 +2,15 @@
 
 Updated 2026-08-13 after the simple trial-to-membership CRM pass. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## CRM cleanup and responsiveness pass — local changes pending release
+
+- Converted leads linked to archived members are now excluded from Convex and mock lead lists. A deleted archived member also cannot leave an actionable dangling lead behind.
+- The self-service member trial workflow already creates a tenant/branch-scoped trial_booked lead atomically; standalone member-account signup still creates only the member profile because no gym has been selected yet.
+- Follow-ups is now the single work queue for overdue/today/unassigned leads and renewals. The duplicate **Trials to finish** queue was removed; trial status and completion remain in Leads.
+- Members now has an **Archived members** view. Owners/managers can permanently delete an archived member only after typing the exact name and providing a reason. Convex blocks deletion when there is an active/scheduled membership, collectible balance, or future PT booking, removes customer projections/private photos, and preserves financial, timeline, and immutable audit facts. No Production member was deleted by this pass.
+- Lead-list projections now batch branch, owner, and timeline lookups instead of doing a database read for each lead. Member-list projections batch memberships, plans, charges, and check-ins as well. TanStack Query and realtime queries use a short 10-second freshness window, five-minute cache retention, and no focus-triggered refetch to reduce navigation/remount freezes while mutation invalidation still refreshes affected data.
+- Verification: the focused and full suites prove archived-lead filtering, exact-name/reason deletion, guard rails, audit preservation, post-delete cleanup, and projection parity. The current full gates pass locally: both typechecks, Convex codegen, zero-warning lint, 80 Vitest files/439 tests, production build, 24 Playwright tests (9 credential-gated staging specs skipped without staging credentials), and `git diff --check`.
+
 ## Simple trial-to-membership CRM — current worktree
 
 - The operator flow is now explicitly **Trial → Membership sale → Member**. A trial is marked completed or not completed; only a completed trial exposes the successful/not-successful membership decision.

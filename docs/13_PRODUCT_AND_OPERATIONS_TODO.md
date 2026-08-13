@@ -2,6 +2,23 @@
 
 Updated 13 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
+## P1 — Simplify CRM queues and clean up archived members — implementation in progress
+
+### Confirmed behavior
+
+- [x] A self-service trial selected for a real gym/branch creates a tenant-scoped trial_booked lead automatically. A standalone RIVET member account has no gym context, so it does not create a meaningless unassigned lead.
+- [x] Leads linked to archived members are excluded from Convex and mock lead lists. Missing converted-member links are also hidden after permanent deletion.
+- [x] Follow-ups no longer duplicates trial work. Trial booking, completion, and sale decisions remain in Leads.
+- [x] Archived members can be filtered in the Members directory.
+- [x] Permanent member deletion is owner/manager-only, requires an exact-name confirmation and reason, and is blocked by active/scheduled memberships, collectible balances, or future PT bookings. Financial, timeline, and audit facts remain immutable.
+- [x] Lead list projection reads are batched to remove the per-lead branch/owner/timeline query multiplier; query caching avoids repeated refetches on every focus/remount.
+
+### Remaining release work
+
+- [ ] Review the archived-member list in the target gym and explicitly delete only the records the gym has approved for permanent removal. This pass intentionally performed no Production mutation.
+- [x] Run the complete typecheck, Convex codegen/typecheck, lint, Vitest/Convex, build, and preview browser gates for this local change set. Credentialed staging specs remain gated on staging identities.
+- [ ] Measure the slowest Production routes with browser performance traces and Convex logs before adding further caching or pagination changes.
+
 ## P0 — Simplify CRM and prevent member-only lead conversion — implemented, deployment pending
 
 - [x] Replace the multi-stage offer/conversion journey with Trial → completed/not completed → membership sale successful/not successful.

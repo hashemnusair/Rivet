@@ -24,6 +24,7 @@ export default function MembersPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
+  const [recordStatus, setRecordStatus] = useState<"active" | "archived">("active");
   const [membershipStatus, setMembershipStatus] = useState<string>("all");
   const [planId, setPlanId] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -36,11 +37,11 @@ export default function MembersPage() {
       membershipStatus: membershipStatus === "all" ? undefined : (membershipStatus as MemberListQuery["membershipStatus"]),
       planId: planId === "all" ? undefined : planId,
       branchId: session?.activeBranchId,
-      status: "active",
+      status: recordStatus,
       page,
       pageSize: 20,
     }),
-    [debounced, membershipStatus, planId, session?.activeBranchId, page],
+    [debounced, membershipStatus, planId, recordStatus, session?.activeBranchId, page],
   );
 
   const { data, isLoading, isError, refetch } = useApiQuery(qk.members(query), (api) => api.listMembers(query));
@@ -89,6 +90,21 @@ export default function MembersPage() {
           />
         </div>
         <Select
+          value={recordStatus}
+          onValueChange={(value: "active" | "archived") => {
+            setRecordStatus(value);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger sizeVariant="sm" className="w-32" aria-label="Record status filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active members</SelectItem>
+            <SelectItem value="archived">Archived members</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
           value={membershipStatus}
           onValueChange={(v) => {
             setMembershipStatus(v);
@@ -99,7 +115,7 @@ export default function MembersPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="all">All membership statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="expiring">Expiring ≤ 14d</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>
@@ -179,7 +195,11 @@ export default function MembersPage() {
                   <TableCell className="text-ink-2">{branchName(m.homeBranchId)}</TableCell>
                   <TableCell className="text-ink-2">{m.currentPlanName ?? "—"}</TableCell>
                   <TableCell>
-                    <MembershipStatusChip status={m.membershipStatus} />
+                    {m.status === "archived" ? (
+                      <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">Archived</span>
+                    ) : (
+                      <MembershipStatusChip status={m.membershipStatus} />
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {m.membershipEndDate ? (

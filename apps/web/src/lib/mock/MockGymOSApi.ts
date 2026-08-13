@@ -1800,6 +1800,38 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  deleteMember(memberId: T.UUID, input: { reason: string; confirmation: string }): Promise<void> {
+    return this.respond(() => {
+      this.require("members.archive");
+      this.requireReason(input.reason);
+      if (!["owner", "manager"].includes(this.actor().role)) throw ApiError.of(ERR.FORBIDDEN, "Only an owner or manager can permanently delete a member.");
+      const member = this.db.members.find((candidate) => candidate.id === memberId);
+      if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      if (member.status !== "archived") throw ApiError.of(ERR.VALIDATION, "Only archived members can be permanently deleted.");
+      if (input.confirmation.trim() !== member.fullName) throw ApiError.of(ERR.VALIDATION, "Type the member's full name to confirm deletion.");
+      const blockingMembership = this.db.memberships
+        .filter((membership) => membership.memberId === memberId)
+        .find((membership) => ["active", "expiring", "frozen", "scheduled"].includes(this.membershipStatusOf(membership)));
+      if (blockingMembership) throw ApiError.of(ERR.CONFLICT, "This archived member still has an active or scheduled membership.");
+      if (this.outstandingForMember(memberId).amount > 0) throw ApiError.of(ERR.CONFLICT, "Settle the member's outstanding balance before deletion.");
+      const hasFutureBooking = this.ptBookings.some((booking) => booking.memberId === memberId && ["reserved", "confirmed"].includes(booking.status) && Date.parse(booking.startsAt) > Date.now());
+      if (hasFutureBooking) throw ApiError.of(ERR.CONFLICT, "Cancel or reassign future PT bookings before deletion.");
+      this.audit({
+        category: "members",
+        action: "member.delete",
+        entityType: "member",
+        entityId: member.id,
+        entityLabel: member.fullName + " · " + member.memberNumber,
+        summary: "Archived member permanently deleted",
+        reason: input.reason,
+        before: { status: member.status, fullName: member.fullName, phone: member.phone, email: member.email ?? null },
+        after: { deleted: "true" },
+        branchId: member.homeBranchId,
+      });
+      this.db.members = this.db.members.filter((candidate) => candidate.id !== memberId);
+    });
+  }
+
   listMemberTimeline(memberId: T.UUID, query?: TimelineQuery): Promise<T.Page<T.TimelineEvent>> {
     return this.respond(() => {
       this.require("members.read");
@@ -2886,7 +2918,17 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("crm.read");
       const branchId = this.branchScopedBranchId(query.branchId);
-      let items = this.db.leads.map((l) => this.toLeadSummary(l));
+      const memberById = new Map(this.db.members.map((member) => [member.id, member]));
+      // Converted leads are no longer actionable. Hide their old CRM record
+      // when the linked member is archived (or permanently removed), so the
+      // follow-up queues cannot resurrect stale work.
+      let items = this.db.leads
+        .filter((lead) => {
+          if (!lead.convertedMemberId) return true;
+          const member = memberById.get(lead.convertedMemberId);
+          return Boolean(member && member.status !== "archived");
+        })
+        .map((l) => this.toLeadSummary(l));
       if (branchId) items = items.filter((l) => l.branchId === branchId);
       if (query.stage) {
         const stages = Array.isArray(query.stage) ? query.stage : [query.stage];

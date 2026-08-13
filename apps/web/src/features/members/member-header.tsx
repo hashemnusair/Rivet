@@ -1,6 +1,7 @@
 "use client";
 
-import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, WalletCards } from "lucide-react";
+import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, Trash2, WalletCards } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
@@ -27,7 +28,7 @@ import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog"
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
 
-type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | null;
+type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "delete" | null;
 
 /**
  * Member 360 header: identity, current commercial state, and every action a
@@ -44,9 +45,12 @@ export function MemberHeader({
 }) {
   const { can } = usePermissions();
   const { session } = useApp();
+  const router = useRouter();
   const invalidate = useInvalidate();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [archiveReason, setArchiveReason] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [editForm, setEditForm] = useState({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "", marketingOptIn: member.marketingOptIn, marketingPreferenceSource: undefined as "staff_selected" | undefined });
 
   useEffect(() => {
@@ -58,6 +62,13 @@ export function MemberHeader({
       toast.success("Member archived.");
       await invalidate();
       setDialog(null);
+    },
+  });
+  const deleteMember = useApiMutation((api) => api.deleteMember(member.id, { reason: deleteReason, confirmation: deleteConfirmation }), {
+    onSuccess: async () => {
+      toast.success("Archived member deleted. Financial and audit history was preserved.");
+      await invalidate();
+      router.push("/members");
     },
   });
   const updateProfile = useApiMutation((api) => api.updateMember(member.id, {
@@ -210,6 +221,14 @@ export function MemberHeader({
                     </DropdownMenuItem>
                   </>
                 ) : null}
+                {can("members.archive") && member.status === "archived" ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem destructive onClick={() => setDialog("delete")}>
+                      <Trash2 /> Delete member…
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
@@ -318,6 +337,36 @@ export function MemberHeader({
             </Button>
             <Button variant="signal" disabled={archiveReason.trim().length < 3} loading={archive.isPending} onClick={() => archive.mutate()}>
               Archive member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "delete"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete member</DialogTitle>
+            <DialogDescription>
+              This permanently removes the archived member&apos;s personal record. Payments, invoices, timeline history and audit facts stay preserved. Active memberships, balances and future PT bookings must be cleared first.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <Field label={"Type " + member.fullName + " to confirm"} required>
+              <Input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" />
+            </Field>
+            <Field label="Reason" required>
+              <Textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="e.g. Duplicate record permanently removed" />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>
+            <Button
+              variant="signal"
+              disabled={deleteConfirmation.trim() !== member.fullName || deleteReason.trim().length < 3}
+              loading={deleteMember.isPending}
+              onClick={() => deleteMember.mutate()}
+            >
+              <Trash2 /> Delete member
             </Button>
           </DialogFooter>
         </DialogContent>

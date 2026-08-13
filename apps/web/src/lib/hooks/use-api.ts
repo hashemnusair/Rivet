@@ -22,6 +22,13 @@ export function useApiQuery<TData>(
   const query = useQuery<TData, Error>({
     queryKey: key,
     queryFn: () => fn(getApi()),
+    // Most operational mutations invalidate their affected prefixes. A short
+    // freshness window avoids refetching the same expensive projection on
+    // every navigation, focus event, and component remount while preserving
+    // immediate updates after a mutation.
+    staleTime: 10_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     ...options,
   });
 

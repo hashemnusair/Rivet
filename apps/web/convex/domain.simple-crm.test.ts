@@ -14,6 +14,8 @@ async function seed(t: TestConvex<typeof schema>) {
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "simple-crm-branch", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const salesperson = await ctx.db.insert("users", { publicId: "simple-crm-sales", authSubject: "clerk-simple-crm-sales", email: "sales@simple-crm.example", fullName: "Simple CRM Sales", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: salesperson, role: "sales", branchIds: [branch], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+    const manager = await ctx.db.insert("users", { publicId: "simple-crm-manager", authSubject: "clerk-simple-crm-manager", email: "manager@simple-crm.example", fullName: "Simple CRM Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: manager, role: "manager", branchIds: [branch], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     const insertRecord = async (entityType: string, publicId: string, value: Record<string, unknown>) => ctx.db.insert("domainRecords", { organizationId: organization, entityType, publicId, branchId: branch, createdAt: now, updatedAt: now, data: { id: publicId, ...value } });
     await insertRecord("plan", "simple-crm-plan", { organizationId: "simple-crm-org", name: "Monthly", code: "MONTHLY", kind: "time", durationDays: 30, basePrice: { amount: 30_000, currency: "JOD" }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 2, status: "active" });
     await insertRecord("settings", "settings", { operationalPolicies: { trialSchedules: [{ branchId: "simple-crm-branch", days: { fri: { enabled: true, opensAt: "08:00", closesAt: "20:00" } } }] } });
@@ -24,6 +26,8 @@ async function seed(t: TestConvex<typeof schema>) {
       await insertRecord("trialBooking", `simple-crm-trial-${suffix}`, { organizationId: "simple-crm-org", branchId: "simple-crm-branch", leadId: `simple-crm-lead-${suffix}`, fullName: `Lead ${suffix}`, phone, preferredDate: "2026-08-13", preferredTime: "18:00", goal: "Try the gym", status: trialStatus, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
     }
     await insertRecord("member", "simple-crm-member-reused", { organizationId: "simple-crm-org", memberNumber: "MAIN-1000", fullName: "Lead reused", phone: "+962790001005", email: "reused@simple-crm.example", homeBranchId: "simple-crm-branch", status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: new Date(now).toISOString() });
+    await insertRecord("member", "simple-crm-member-archived", { organizationId: "simple-crm-org", memberNumber: "MAIN-1001", fullName: "Archived member", phone: "+962790001006", email: "archived@simple-crm.example", homeBranchId: "simple-crm-branch", status: "archived", archivedAt: new Date(now).toISOString(), tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: new Date(now).toISOString() });
+    await insertRecord("lead", "simple-crm-lead-archived", { organizationId: "simple-crm-org", branchId: "simple-crm-branch", fullName: "Archived member", phone: "+962790001006", email: "archived@simple-crm.example", stage: "won", source: "walk_in", ownerId: "simple-crm-sales", convertedMemberId: "simple-crm-member-archived", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
   });
 }
 
@@ -95,6 +99,28 @@ describe("simple CRM membership sale", () => {
     expect(result.membership.memberId).toBe("simple-crm-member-reused");
     const after = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect());
     expect(after).toHaveLength(before.length);
+  });
+
+  it("keeps archived conversions out of CRM and permanently deletes only a confirmed archived member", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sales = t.withIdentity({ subject: "clerk-simple-crm-sales" });
+    const before = await sales.query(api.domain.query, operation("leads.list", { pageSize: 100 })) as { items: Array<{ id: string }> };
+    expect(before.items.some((lead) => lead.id === "simple-crm-lead-archived")).toBe(false);
+    const archivedMembers = await sales.query(api.domain.query, operation("members.list", { status: "archived", pageSize: 100 })) as { items: Array<{ id: string; status: string }> };
+    expect(archivedMembers.items).toContainEqual(expect.objectContaining({ id: "simple-crm-member-archived", status: "archived" }));
+
+    const manager = t.withIdentity({ subject: "clerk-simple-crm-manager" });
+    await expect(manager.mutation(api.domain.mutate, operation("members.delete", { memberId: "simple-crm-member-archived", reason: "Duplicate record confirmed", confirmation: "Wrong name" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    await manager.mutation(api.domain.mutate, operation("members.delete", { memberId: "simple-crm-member-archived", reason: "Duplicate record confirmed", confirmation: "Archived member" }));
+
+    await expect(manager.query(api.domain.query, operation("members.get", { memberId: "simple-crm-member-archived" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    const audit = await manager.query(api.domain.query, operation("audit.list", { category: "members", pageSize: 100 })) as { items: Array<{ action: string; entityId: string }> };
+    expect(audit.items).toContainEqual(expect.objectContaining({ action: "member.delete", entityId: "simple-crm-member-archived" }));
+    const after = await manager.query(api.domain.query, operation("leads.list", { pageSize: 100 })) as { items: Array<{ id: string }> };
+    expect(after.items.some((lead) => lead.id === "simple-crm-lead-archived")).toBe(false);
+    const archivedAfterDelete = await manager.query(api.domain.query, operation("members.list", { status: "archived", pageSize: 100 })) as { items: Array<{ id: string }> };
+    expect(archivedAfterDelete.items.some((member) => member.id === "simple-crm-member-archived")).toBe(false);
   });
 
   it("refuses a sale before the trial is completed and creates no member", async () => {

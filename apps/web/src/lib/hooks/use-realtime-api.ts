@@ -38,6 +38,9 @@ export function useRealtimeApiQuery<T>(options: {
     queryFn: () => queryRef.current(getApi()),
     enabled,
     placeholderData: keepPreviousData,
+    staleTime: 10_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     refetchInterval: streamState === "fallback" ? fallbackIntervalMs : false,
     refetchIntervalInBackground: false,
   });

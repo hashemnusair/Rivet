@@ -670,6 +670,7 @@ export interface GymOSApi {
   createMember(input: CreateMemberInput): Promise<CreateMemberResult>;
   updateMember(memberId: UUID, input: UpdateMemberInput): Promise<MemberDetail>;
   archiveMember(memberId: UUID, input: { reason: string }): Promise<void>;
+  deleteMember(memberId: UUID, input: { reason: string; confirmation: string }): Promise<void>;
   checkMemberDuplicates(input: { phone?: string; email?: string }): Promise<DuplicateMatch[]>;
   listMemberTimeline(memberId: UUID, query?: TimelineQuery): Promise<Page<TimelineEvent>>;
   addMemberNote(memberId: UUID, input: { body: string }): Promise<TimelineEvent>;
