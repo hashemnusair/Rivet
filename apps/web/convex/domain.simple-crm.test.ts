@@ -18,10 +18,12 @@ async function seed(t: TestConvex<typeof schema>) {
     await insertRecord("plan", "simple-crm-plan", { organizationId: "simple-crm-org", name: "Monthly", code: "MONTHLY", kind: "time", durationDays: 30, basePrice: { amount: 30_000, currency: "JOD" }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 2, status: "active" });
     await insertRecord("settings", "settings", { operationalPolicies: { trialSchedules: [{ branchId: "simple-crm-branch", days: { fri: { enabled: true, opensAt: "08:00", closesAt: "20:00" } } }] } });
     await insertRecord("lead", "simple-crm-lead-scheduled", { organizationId: "simple-crm-org", branchId: "simple-crm-branch", fullName: "Lead scheduled", phone: "+962790001004", email: "scheduled@simple-crm.example", stage: "new", source: "walk_in", ownerId: "simple-crm-sales", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
-    for (const [suffix, trialStatus] of [["existing", "completed"], ["custom", "completed"], ["unfinished", "confirmed"]] as const) {
-      await insertRecord("lead", `simple-crm-lead-${suffix}`, { organizationId: "simple-crm-org", branchId: "simple-crm-branch", fullName: `Lead ${suffix}`, phone: `+96279000${suffix === "existing" ? "1001" : suffix === "custom" ? "1002" : "1003"}`, email: `${suffix}@simple-crm.example`, stage: trialStatus === "completed" ? "trial_completed" : "trial_booked", source: "walk_in", ownerId: "simple-crm-sales", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
-      await insertRecord("trialBooking", `simple-crm-trial-${suffix}`, { organizationId: "simple-crm-org", branchId: "simple-crm-branch", leadId: `simple-crm-lead-${suffix}`, fullName: `Lead ${suffix}`, phone: `+96279000${suffix === "existing" ? "1001" : suffix === "custom" ? "1002" : "1003"}`, preferredDate: "2026-08-13", preferredTime: "18:00", goal: "Try the gym", status: trialStatus, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
+    for (const [suffix, trialStatus] of [["existing", "completed"], ["custom", "completed"], ["unfinished", "confirmed"], ["reused", "completed"]] as const) {
+      const phone = `+96279000${suffix === "existing" ? "1001" : suffix === "custom" ? "1002" : suffix === "unfinished" ? "1003" : "1005"}`;
+      await insertRecord("lead", `simple-crm-lead-${suffix}`, { organizationId: "simple-crm-org", branchId: "simple-crm-branch", fullName: `Lead ${suffix}`, phone, email: `${suffix}@simple-crm.example`, stage: trialStatus === "completed" ? "trial_completed" : "trial_booked", source: "walk_in", ownerId: "simple-crm-sales", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
+      await insertRecord("trialBooking", `simple-crm-trial-${suffix}`, { organizationId: "simple-crm-org", branchId: "simple-crm-branch", leadId: `simple-crm-lead-${suffix}`, fullName: `Lead ${suffix}`, phone, preferredDate: "2026-08-13", preferredTime: "18:00", goal: "Try the gym", status: trialStatus, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
     }
+    await insertRecord("member", "simple-crm-member-reused", { organizationId: "simple-crm-org", memberNumber: "MAIN-1000", fullName: "Lead reused", phone: "+962790001005", email: "reused@simple-crm.example", homeBranchId: "simple-crm-branch", status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: new Date(now).toISOString() });
   });
 }
 
@@ -75,10 +77,31 @@ describe("simple CRM membership sale", () => {
     expect(plans.items.some((plan) => plan.id === result.plan.id)).toBe(true);
   });
 
+  it("attaches the sold membership to one matching existing member instead of blocking or duplicating them", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sales = t.withIdentity({ subject: "clerk-simple-crm-sales" });
+    const before = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect());
+    const result = await sales.mutation(api.domain.mutate, operation("leads.complete_sale", {
+      leadId: "simple-crm-lead-reused",
+      homeBranchId: "simple-crm-branch",
+      preferredLanguage: "en",
+      startDate: "2026-08-13",
+      idempotencyKey: "simple-crm-reused-sale",
+      membership: { mode: "existing", planId: "simple-crm-plan" },
+    })) as { member: { id: string }; membership: { memberId: string } };
+
+    expect(result.member.id).toBe("simple-crm-member-reused");
+    expect(result.membership.memberId).toBe("simple-crm-member-reused");
+    const after = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect());
+    expect(after).toHaveLength(before.length);
+  });
+
   it("refuses a sale before the trial is completed and creates no member", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const sales = t.withIdentity({ subject: "clerk-simple-crm-sales" });
+    const membersBefore = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect());
     await expect(sales.mutation(api.domain.mutate, operation("leads.complete_sale", {
       leadId: "simple-crm-lead-unfinished",
       homeBranchId: "simple-crm-branch",
@@ -88,6 +111,6 @@ describe("simple CRM membership sale", () => {
       membership: { mode: "existing", planId: "simple-crm-plan" },
     }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
     const persistedMembers = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect());
-    expect(persistedMembers).toHaveLength(0);
+    expect(persistedMembers).toHaveLength(membersBefore.length);
   });
 });

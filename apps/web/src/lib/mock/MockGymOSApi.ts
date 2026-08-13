@@ -3311,9 +3311,12 @@ export class MockGymOSApi implements GymOSApi {
       const trial = this.trialBookings.find((booking) => booking.leadId === lead.id);
       if (!trial || trial.status !== "completed") throw ApiError.of(ERR.VALIDATION, "Complete the trial before recording a successful membership sale.");
       const duplicates = this.findDuplicates({ phone: lead.phone, email: lead.email });
-      if (duplicates.length > 0) {
-        throw ApiError.of(ERR.DUPLICATE_MEMBER, "This lead matches an existing member. Open that member instead of creating a duplicate.", { details: { matches: duplicates } });
+      const duplicateMemberIds = [...new Set(duplicates.map((match) => match.memberId))];
+      if (duplicateMemberIds.length > 1) {
+        throw ApiError.of(ERR.DUPLICATE_MEMBER, "More than one member matches this lead. Open the correct member and resolve the duplicate records before selling a membership.", { details: { matches: duplicates } });
       }
+      const existingMember = duplicateMemberIds[0] ? this.db.members.find((member) => member.id === duplicateMemberIds[0]) : undefined;
+      if (existingMember && existingMember.status !== "active") throw ApiError.of(ERR.VALIDATION, "The matching member is inactive. Reactivate the member before selling a membership.");
 
       const selection = input.membership;
       let plan: T.MembershipPlan;
@@ -3346,7 +3349,7 @@ export class MockGymOSApi implements GymOSApi {
         this.audit({ category: "settings", action: "plan.create_from_crm", entityType: "plan", entityId: plan.id, entityLabel: `${plan.name} · ${plan.code}`, summary: "Custom membership created during CRM sale", branchId: input.homeBranchId });
       }
 
-      const member = this.createMemberSync({
+      const member = existingMember ?? this.createMemberSync({
         fullName: lead.fullName,
         phone: lead.phone,
         email: lead.email,
@@ -3369,7 +3372,7 @@ export class MockGymOSApi implements GymOSApi {
         task.completedAt = nowISO();
       }
       this.activity({ leadId: lead.id, memberId: member.id, type: "lead_converted", title: `Membership sold — ${plan.name}`, actorId: this.actor().id, actorName: this.actor().name, meta: { membershipId: sale.membership.id, planId: plan.id } });
-      this.audit({ category: "crm", action: "lead.membership_sale_completed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: `Lead converted with ${plan.name} membership`, before: { stage: "trial_completed" }, after: { stage: "won", memberId: member.id, membershipId: sale.membership.id, planId: plan.id }, branchId: lead.branchId });
+      this.audit({ category: "crm", action: "lead.membership_sale_completed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: `${existingMember ? "Existing member sold" : "Lead converted with"} ${plan.name} membership`, before: { stage: "trial_completed" }, after: { stage: "won", memberId: member.id, membershipId: sale.membership.id, planId: plan.id, reusedExistingMember: existingMember ? "yes" : "no" }, branchId: lead.branchId });
       return { member: this.toMemberDetail(member), plan: this.toPlan(plan), membership: sale.membership, charge: sale.charge };
     });
   }

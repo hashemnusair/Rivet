@@ -6,6 +6,7 @@ Updated 13 August 2026. This is the single canonical backlog for confirmed bugs,
 
 - [x] Replace the multi-stage offer/conversion journey with Trial → completed/not completed → membership sale successful/not successful.
 - [x] Create a successful sale's member, membership, charge, included PT credits, timeline, and audit facts atomically.
+- [x] Reuse one matching active legacy member and create only the missing membership; stop safely when multiple member records match.
 - [x] Reject the old member-only conversion mutation so a won lead cannot be created without the membership sold.
 - [x] Allow an existing branch-eligible plan or a custom name, price, duration, and included PT-session count during the sale.
 - [x] Persist custom choices as real branch-scoped plans instead of unstructured member notes.

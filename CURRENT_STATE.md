@@ -6,10 +6,11 @@ Updated 2026-08-13 after the simple trial-to-membership CRM pass. This is the li
 
 - The operator flow is now explicitly **Trial → Membership sale → Member**. A trial is marked completed or not completed; only a completed trial exposes the successful/not-successful membership decision.
 - A successful decision creates the member, membership, balance/charge, included PT credits, timeline, and audit facts in one atomic Convex mutation. The retired member-only conversion operation now rejects direct callers, preventing another won lead with no membership.
+- Legacy CRM records are recoverable: when the lead matches exactly one accessible active member, the successful sale reuses that member and creates the missing membership instead of blocking or duplicating the person. Multiple conflicting matches still stop for manual duplicate resolution.
 - Staff can choose any active plan available at the selected home branch or enter a real custom membership name, JOD price, duration in days, and included PT sessions. A custom choice persists as an active branch-scoped plan for later reuse.
 - The offer composer, delivery confirmation, offer response controls, draggable stage manipulation, and seven-stage progress strip are absent from the primary CRM. Historical offer records remain intact and queryable; no existing data was deleted.
 - Growth navigation now says **Leads** and **Follow-ups**. The lead board groups records into Trial, Membership sale, Successful, and Not successful without allowing arbitrary drag-and-drop around the enforced workflow.
-- Focused persisted Convex coverage proves existing-plan sales, custom-plan sales, rejection before trial completion, atomic member/membership creation, reusable custom plans, and the retired conversion boundary. The staging trial journey now exercises the simplified sale instead of offers plus a second conversion step.
+- Focused persisted Convex coverage proves existing-plan sales, custom-plan sales, legacy-member reuse without duplication, rejection before trial completion, atomic member/membership creation, reusable custom plans, and the retired conversion boundary. The staging trial journey now exercises the simplified sale instead of offers plus a second conversion step.
 
 ## Secret-output hardening
 

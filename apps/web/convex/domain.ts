@@ -5544,17 +5544,37 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 
       const planData = data(planRecord.data);
       if (stringValue(planData.status, "active") !== "active") domainError("NOT_FOUND", "Plan not found or inactive.", { correlationId: actor.correlationId });
-      const created = await createMemberMutation(ctx, actor, {
-        ...input,
-        fullName: leadData.fullName,
-        phone: leadData.phone,
-        email: leadData.email,
-        homeBranchId: input.homeBranchId,
-        preferredLanguage: input.preferredLanguage,
-        source: leadData.source,
-        assignedSalespersonId: leadData.ownerId,
-      }, { rejectDuplicates: true });
-      const member = data(created.member);
+      const matchingMembers = duplicateMemberMatches(
+        (await memberRecords(ctx, actor)).map((record) => data(record.data)),
+        { phone: leadData.phone, email: leadData.email },
+      );
+      const matchingMemberIds = [...new Set(matchingMembers.map((match) => match.memberId))];
+      if (matchingMemberIds.length > 1) {
+        domainError("DUPLICATE_MEMBER", "More than one member matches this lead. Open the correct member and resolve the duplicate records before selling a membership.", {
+          correlationId: actor.correlationId,
+          details: { matches: matchingMembers },
+        });
+      }
+      const existingMemberRecord = matchingMemberIds[0]
+        ? await recordOf(ctx, actor, "member", matchingMemberIds[0])
+        : undefined;
+      if (existingMemberRecord && stringValue(data(existingMemberRecord.data).status) !== "active") {
+        domainError("VALIDATION_ERROR", "The matching member is inactive. Reactivate the member before selling a membership.", { correlationId: actor.correlationId });
+      }
+      const created = existingMemberRecord
+        ? undefined
+        : await createMemberMutation(ctx, actor, {
+          ...input,
+          fullName: leadData.fullName,
+          phone: leadData.phone,
+          email: leadData.email,
+          homeBranchId: input.homeBranchId,
+          preferredLanguage: input.preferredLanguage,
+          source: leadData.source,
+          assignedSalespersonId: leadData.ownerId,
+        }, { rejectDuplicates: true });
+      const memberDetail = created?.member ?? await toMemberDetail(ctx, actor, data(existingMemberRecord!.data));
+      const member = data(memberDetail);
       const sale = await createMembershipMutation(ctx, actor, {
         memberId: member.id,
         planId: planData.id,
@@ -5577,7 +5597,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: optionalString(leadData.branchId),
         type: "lead_converted",
         title: `Membership sold — ${stringValue(planData.name)}`,
-        body: `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
+        body: existingMemberRecord
+          ? `${stringValue(member.memberNumber)} received a new active membership record.`
+          : `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
         actorId: publicUserId(actor.user),
         actorName: actor.user.fullName,
         meta: { membershipId: data(sale.membership).id, planId: planData.id },
@@ -5588,9 +5610,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         entityType: "lead",
         entityId: lead.publicId,
         entityLabel: stringValue(leadData.fullName),
-        summary: `Lead converted with ${stringValue(planData.name)} membership`,
+        summary: `${existingMemberRecord ? "Existing member sold" : "Lead converted with"} ${stringValue(planData.name)} membership`,
         before: { stage: leadData.stage },
-        after: { stage: "won", memberId: member.id, membershipId: data(sale.membership).id, planId: planData.id },
+        after: { stage: "won", memberId: member.id, membershipId: data(sale.membership).id, planId: planData.id, reusedExistingMember: Boolean(existingMemberRecord) },
         branchId: optionalString(leadData.branchId),
       });
       await ctx.db.insert("idempotencyRecords", {
@@ -5602,7 +5624,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         createdAt: Date.now(),
         expiresAt: Date.now() + 86_400_000 * 365,
       });
-      return { member: created.member, plan: await toPlan(ctx, actor, planData), membership: sale.membership, charge: sale.charge };
+      return { member: memberDetail, plan: await toPlan(ctx, actor, planData), membership: sale.membership, charge: sale.charge };
     }
     case "leads.convert": {
       requirePermission(actor, "crm.write");

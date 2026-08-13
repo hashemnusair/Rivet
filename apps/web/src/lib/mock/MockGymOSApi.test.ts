@@ -1252,6 +1252,32 @@ describe("free-trial lifecycle", () => {
     expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("converted");
   });
 
+  it("reuses one matching member created by the legacy CRM flow and only adds the membership", async () => {
+    const booking = await bookTrial();
+    const session = await api.getSession();
+    const existing = await api.createMember({
+      fullName: booking.fullName,
+      phone: booking.phone,
+      email: booking.email,
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+    });
+    const memberCount = (await api.listMembers({ pageSize: 500 })).totalItems;
+    await api.updateTrialBooking(booking.id, { status: "completed" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const result = await api.completeLeadSale(booking.leadId!, {
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      startDate: todayISODate(),
+      idempotencyKey: "mock-simple-crm-existing-member-sale",
+      membership: { mode: "existing", planId: plan.id },
+    });
+
+    expect(result.member.id).toBe(existing.member.id);
+    expect(result.membership.memberId).toBe(existing.member.id);
+    expect((await api.listMembers({ pageSize: 500 })).totalItems).toBe(memberCount);
+  });
+
   it("creates a reusable custom membership during a successful CRM sale", async () => {
     const booking = await bookTrial();
     const session = await api.getSession();
