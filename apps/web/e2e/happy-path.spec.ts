@@ -236,8 +236,8 @@ test.describe("CRM lead capture", () => {
     await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Trial" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Membership sale" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Successful \d+/, exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Not successful \d+/, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Successful \d+$/, exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^Not successful \d+$/, exact: true })).toHaveCount(0);
     await page.locator("article").first().click();
     await expect(page).toHaveURL(/\/crm\/leads\//);
     await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Trial");

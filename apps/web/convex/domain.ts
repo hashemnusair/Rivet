@@ -2804,7 +2804,36 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "tasks.list": {
       requirePermission(actor, "crm.read");
-      let items = await Promise.all((await recordsOf(ctx, actor, "task")).map((record) => toTask(ctx, actor, data(record.data))));
+      const [taskRecords, leadRecords, memberRecordsForTasks] = await Promise.all([
+        recordsOf(ctx, actor, "task"),
+        recordsOf(ctx, actor, "lead"),
+        recordsOf(ctx, actor, "member"),
+      ]);
+      const leadById = new Map(leadRecords.map((record) => [record.publicId, data(record.data)]));
+      const memberById = new Map(memberRecordsForTasks.map((record) => [record.publicId, data(record.data)]));
+      // Tasks are separate records from leads and members. Do not let a
+      // closed lead, archived/deleted member, or dangling relation continue
+      // to appear as actionable work after its underlying record is gone.
+      // Completed/cancelled tasks remain available as history.
+      const visibleTaskRecords = taskRecords.filter((record) => {
+        const task = data(record.data);
+        if (stringValue(task.status, "open") !== "open") return true;
+        if (task.leadId) {
+          const lead = leadById.get(stringValue(task.leadId));
+          if (!lead || ["won", "lost"].includes(stringValue(lead.stage))) return false;
+          const convertedMemberId = optionalString(lead.convertedMemberId);
+          if (convertedMemberId) {
+            const member = memberById.get(convertedMemberId);
+            if (!member || stringValue(member.status, "active") === "archived") return false;
+          }
+        }
+        if (task.memberId) {
+          const member = memberById.get(stringValue(task.memberId));
+          if (!member || stringValue(member.status, "active") === "archived") return false;
+        }
+        return true;
+      });
+      let items = await Promise.all(visibleTaskRecords.map((record) => toTask(ctx, actor, data(record.data))));
       if (input.status) items = items.filter((task) => task.status === input.status);
       if (input.ownerId) items = items.filter((task) => task.ownerId === input.ownerId);
       if (input.overdueOnly) items = items.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow());

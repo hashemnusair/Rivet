@@ -18,12 +18,11 @@ import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
 
-type QueueKey = "overdue" | "today" | "unassigned" | "expiring" | "expired";
+type QueueKey = "overdue" | "today" | "expiring" | "expired";
 
 const QUEUE_DEFS: Array<{ key: QueueKey; label: string; hint: string }> = [
   { key: "overdue", label: "Overdue follow-ups", hint: "Past their due time — work these first." },
   { key: "today", label: "Due today", hint: "Scheduled for today." },
-  { key: "unassigned", label: "New & unassigned", hint: "Fresh leads with no owner yet." },
   { key: "expiring", label: "Expiring ≤ 14 days", hint: "Members about to lapse — call before expiry." },
   { key: "expired", label: "Expired ≤ 45 days", hint: "Win-back territory." },
 ];
@@ -55,7 +54,7 @@ export default function QueuesPage() {
 
   const tasksQuery = useApiQuery(qk.tasks({ queue: true }), (api) => api.listTasks({ status: "open", pageSize: 100 }));
   const leadsQuery = useApiQuery(qk.leads({ open: true }), (api) =>
-    api.listLeads({ stage: ["new", "attempted", "contacted"], pageSize: 100 }),
+    api.listLeads({ stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 100 }),
   );
   const expiringQuery = useApiQuery(qk.renewalQueue({ bucket: "expiring" }), (api) =>
     api.listRenewalQueue({ bucket: "expiring", branchId: session?.activeBranchId, pageSize: 50 }),
@@ -84,12 +83,9 @@ export default function QueuesPage() {
   const todayTasks = myTasks.filter((t) => t.dueAt >= now && t.dueAt <= todayEnd);
 
   const openLeads = useMemo(() => leadsQuery.data?.items ?? [], [leadsQuery.data]);
-  const unassignedLeads = openLeads.filter((l) => !l.ownerId);
-
   const counts: Record<QueueKey, number> = {
     overdue: overdueTasks.length,
     today: todayTasks.length,
-    unassigned: unassignedLeads.length,
     expiring: expiringQuery.data?.totalItems ?? 0,
     expired: expiredQuery.data?.totalItems ?? 0,
   };
@@ -153,7 +149,6 @@ export default function QueuesPage() {
                 overdueTasks={overdueTasks}
                 todayTasks={todayTasks}
                 leads={openLeads}
-                unassignedLeads={unassignedLeads}
                 expiring={expiringQuery.data?.items ?? []}
                 expired={expiredQuery.data?.items ?? []}
                 tasks={myTasks}
@@ -249,7 +244,6 @@ function QueueItems({
   overdueTasks,
   todayTasks,
   leads,
-  unassignedLeads,
   expiring,
   expired,
   tasks,
@@ -260,7 +254,6 @@ function QueueItems({
   overdueTasks: Task[];
   todayTasks: Task[];
   leads: LeadSummary[];
-  unassignedLeads: LeadSummary[];
   expiring: RenewalQueueItem[];
   expired: RenewalQueueItem[];
   tasks: Task[];
@@ -290,31 +283,6 @@ function QueueItems({
             />
           );
         })}
-      </ul>
-    );
-  }
-
-  if (queue === "unassigned") {
-    const items = unassignedLeads;
-    if (items.length === 0) return <EmptyQueue text="No unassigned leads." />;
-    return (
-      <ul className="divide-y divide-line">
-        {items.map((lead) => (
-          <QueueRow
-            key={lead.id}
-            name={lead.fullName}
-            sub={
-              <span className="flex items-center gap-2">
-                <LeadStageChip stage={lead.stage} />
-                <span className="font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
-              </span>
-            }
-            rightTop={lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} className={lead.overdue ? "font-medium text-danger" : ""} /> : <span className="text-ink-4">—</span>}
-            rightBottom={lead.expectedValue ? <MoneyText money={lead.expectedValue} className="text-[11px] text-ink-2" /> : undefined}
-            selected={selected?.kind === "lead" && selected.lead.id === lead.id}
-            onClick={() => onSelect({ kind: "lead", lead, task: taskFor(lead.id) })}
-          />
-        ))}
       </ul>
     );
   }

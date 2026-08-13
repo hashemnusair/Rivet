@@ -1,14 +1,17 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 13 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 14 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
-## P1 — Simplify CRM queues and clean up archived members — implementation in progress
+## P1 — Simplify CRM queues and clean up archived members — implemented locally, deployment pending
 
 ### Confirmed behavior
 
 - [x] A self-service trial selected for a real gym/branch creates a tenant-scoped trial_booked lead automatically. A standalone RIVET member account has no gym context, so it does not create a meaningless unassigned lead.
 - [x] Leads linked to archived members are excluded from Convex and mock lead lists. Missing converted-member links are also hidden after permanent deletion.
 - [x] Follow-ups no longer duplicates trial work. Trial booking, completion, and sale decisions remain in Leads.
+- [x] Leads now shows only active Trial and Membership sale work; closed Successful/Not successful outcomes remain available through lead/member history instead of the working board.
+- [x] Follow-ups no longer renders a duplicate New & unassigned lead lane; it is limited to actionable tasks and renewal queues.
+- [x] Convex and mock task projections hide closed-lead, archived/deleted-member, and dangling tasks, with persisted regression coverage before and after permanent member deletion.
 - [x] Archived members can be filtered in the Members directory.
 - [x] Permanent member deletion is owner/manager-only, requires an exact-name confirmation and reason, and is blocked by active/scheduled memberships, collectible balances, or future PT bookings. Financial, timeline, and audit facts remain immutable.
 - [x] Lead list projection reads are batched to remove the per-lead branch/owner/timeline query multiplier; query caching avoids repeated refetches on every focus/remount.
@@ -28,7 +31,7 @@ Updated 13 August 2026. This is the single canonical backlog for confirmed bugs,
 - [x] Allow an existing branch-eligible plan or a custom name, price, duration, and included PT-session count during the sale.
 - [x] Persist custom choices as real branch-scoped plans instead of unstructured member notes.
 - [x] Remove offer controls and arbitrary stage dragging from the primary CRM; preserve historical offer facts without deleting data.
-- [x] Rename the operator surfaces to Leads and Follow-ups and reduce the board to four truthful outcome groups.
+- [x] Rename the operator surfaces to Leads and Follow-ups and reduce the working board to two truthful active-work groups; keep closed outcomes in history.
 - [x] Add persisted Convex, mock-adapter, and staging-journey coverage.
 - [ ] Deploy the matching Convex backend and Vercel frontend, then verify one disposable completed-trial sale using an existing plan and one using a custom plan.
 

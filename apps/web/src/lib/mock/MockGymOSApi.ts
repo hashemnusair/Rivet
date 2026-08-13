@@ -3269,7 +3269,27 @@ export class MockGymOSApi implements GymOSApi {
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> {
     return this.respond(() => {
       this.require("crm.read");
-      let items = [...this.db.tasks];
+      const leadById = new Map(this.db.leads.map((lead) => [lead.id, lead]));
+      const memberById = new Map(this.db.members.map((member) => [member.id, member]));
+      // Keep the mock contract aligned with Convex: closed or deleted
+      // records cannot leave actionable follow-up tasks behind. Completed and
+      // cancelled tasks remain available as history.
+      let items = this.db.tasks.filter((task) => {
+        if (task.status !== "open") return true;
+        if (task.leadId) {
+          const lead = leadById.get(task.leadId);
+          if (!lead || lead.stage === "won" || lead.stage === "lost") return false;
+          if (lead.convertedMemberId) {
+            const member = memberById.get(lead.convertedMemberId);
+            if (!member || member.status === "archived") return false;
+          }
+        }
+        if (task.memberId) {
+          const member = memberById.get(task.memberId);
+          if (!member || member.status === "archived") return false;
+        }
+        return true;
+      });
       if (query.status) items = items.filter((t) => t.status === query.status);
       if (query.ownerId) items = items.filter((t) => t.ownerId === query.ownerId);
       if (query.overdueOnly) items = items.filter((t) => t.status === "open" && t.dueAt < nowISO());

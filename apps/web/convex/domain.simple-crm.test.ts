@@ -28,6 +28,7 @@ async function seed(t: TestConvex<typeof schema>) {
     await insertRecord("member", "simple-crm-member-reused", { organizationId: "simple-crm-org", memberNumber: "MAIN-1000", fullName: "Lead reused", phone: "+962790001005", email: "reused@simple-crm.example", homeBranchId: "simple-crm-branch", status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: new Date(now).toISOString() });
     await insertRecord("member", "simple-crm-member-archived", { organizationId: "simple-crm-org", memberNumber: "MAIN-1001", fullName: "Archived member", phone: "+962790001006", email: "archived@simple-crm.example", homeBranchId: "simple-crm-branch", status: "archived", archivedAt: new Date(now).toISOString(), tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: new Date(now).toISOString() });
     await insertRecord("lead", "simple-crm-lead-archived", { organizationId: "simple-crm-org", branchId: "simple-crm-branch", fullName: "Archived member", phone: "+962790001006", email: "archived@simple-crm.example", stage: "won", source: "walk_in", ownerId: "simple-crm-sales", convertedMemberId: "simple-crm-member-archived", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() });
+    await insertRecord("task", "simple-crm-task-archived", { organizationId: "simple-crm-org", branchId: "simple-crm-branch", type: "follow_up", title: "Stale archived-member follow-up", ownerId: "simple-crm-sales", dueAt: new Date(now + 86_400_000).toISOString(), priority: "high", status: "open", leadId: "simple-crm-lead-archived", subjectName: "Archived member", createdById: "simple-crm-sales", createdAt: new Date(now).toISOString() });
   });
 }
 
@@ -121,6 +122,19 @@ describe("simple CRM membership sale", () => {
     expect(after.items.some((lead) => lead.id === "simple-crm-lead-archived")).toBe(false);
     const archivedAfterDelete = await manager.query(api.domain.query, operation("members.list", { status: "archived", pageSize: 100 })) as { items: Array<{ id: string }> };
     expect(archivedAfterDelete.items.some((member) => member.id === "simple-crm-member-archived")).toBe(false);
+  });
+
+  it("does not surface follow-up tasks linked to closed or deleted member records", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sales = t.withIdentity({ subject: "clerk-simple-crm-sales" });
+    const before = await sales.query(api.domain.query, operation("tasks.list", { status: "open", pageSize: 100 })) as { items: Array<{ id: string }> };
+    expect(before.items.some((task) => task.id === "simple-crm-task-archived")).toBe(false);
+
+    const manager = t.withIdentity({ subject: "clerk-simple-crm-manager" });
+    await manager.mutation(api.domain.mutate, operation("members.delete", { memberId: "simple-crm-member-archived", reason: "Duplicate record confirmed", confirmation: "Archived member" }));
+    const after = await sales.query(api.domain.query, operation("tasks.list", { status: "open", pageSize: 100 })) as { items: Array<{ id: string }> };
+    expect(after.items.some((task) => task.id === "simple-crm-task-archived")).toBe(false);
   });
 
   it("refuses a sale before the trial is completed and creates no member", async () => {

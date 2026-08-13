@@ -22,20 +22,20 @@ import { ErrorState } from "@/components/ui/states";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
 
-type SimpleSalesStage = "trial" | "membership" | "successful" | "not_successful";
+type SimpleSalesStage = "trial" | "membership";
 const SIMPLE_STAGES: Array<{ stage: SimpleSalesStage; label: string; hint: string }> = [
   { stage: "trial", label: "Trial", hint: "Book, confirm, or complete the trial" },
-  { stage: "membership", label: "Membership sale", hint: "Record successful or not successful" },
-  { stage: "successful", label: "Successful", hint: "Member and membership created" },
-  { stage: "not_successful", label: "Not successful", hint: "Closed without creating a member" },
+  { stage: "membership", label: "Membership sale", hint: "Complete the trial, then record the sale" },
 ];
 
 function simpleStage(stage: LeadStage): SimpleSalesStage {
-  if (stage === "won") return "successful";
-  if (stage === "lost") return "not_successful";
   if (stage === "trial_completed" || stage === "offer_sent") return "membership";
   return "trial";
 }
+
+// Closed outcomes remain available from the lead/member timeline, but the
+// working board should contain only records that still need staff action.
+const ACTIVE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"];
 
 function PipelinePageInner() {
   const { session } = useApp();
@@ -59,8 +59,8 @@ function PipelinePageInner() {
     () => ({ branchId: session?.activeBranchId, search: debounced || undefined, pageSize: 100, sort: "nextFollowUpAt" as const }),
     [session?.activeBranchId, debounced],
   );
-  const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"] }), [query]);
-  const leadQueryKey = useMemo(() => qk.leads(query), [query]);
+  const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: ACTIVE_LEAD_STAGES }), [query]);
+  const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
   const { data, isLoading, isError, refetch } = useApiQuery(leadQueryKey, (api) => api.listLeads(leadQuery), { refetchInterval: false });
 
   // The pipeline is the first CRM surface on the native subscription path.
@@ -98,7 +98,10 @@ function PipelinePageInner() {
     };
   }, [leadQuery, leadQueryKey, queryClient, refetch]);
 
-  const leads = useMemo(() => data?.items ?? [], [data]);
+  // Keep the active-work boundary on the client as well as the API query. It
+  // prevents an older deployed backend (or a stale realtime snapshot) from
+  // putting closed outcomes back on the working board during rollout.
+  const leads = useMemo(() => (data?.items ?? []).filter((lead) => ACTIVE_LEAD_STAGES.includes(lead.stage)), [data]);
   const byStage = useMemo(() => {
     const map = new Map<SimpleSalesStage, LeadSummary[]>();
     for (const stage of SIMPLE_STAGES) map.set(stage.stage, []);
@@ -113,7 +116,7 @@ function PipelinePageInner() {
       <PageHeader
         eyebrow="Growth"
         title="Leads"
-        description="A simple view of every trial and membership outcome. Open a lead to move it forward."
+        description="Work active trials and membership sales here. Closed outcomes stay in the lead and member history."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-line-2 p-0.5" role="tablist" aria-label="View">
@@ -146,9 +149,9 @@ function PipelinePageInner() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-64 w-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {SIMPLE_STAGES.map(({ stage }) => (
+            <Skeleton key={stage} className="h-64 w-full" />
           ))}
         </div>
       ) : isError ? (
