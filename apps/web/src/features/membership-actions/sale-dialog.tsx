@@ -164,10 +164,10 @@ export function MembershipSaleDialog({
     (api, input: { sale?: CreateMembershipSaleInput; renew?: { id: UUID; input: RenewMembershipInput } }) =>
       input.sale ? api.createMembershipSale(input.sale) : api.renewMembership(input.renew!.id, input.renew!.input),
     {
-      onSuccess: async (result) => {
-        await invalidate();
+      onSuccess: (result) => {
         onOpenChange(false);
         onCompleted?.(result);
+        void invalidate();
       },
       onError: (e) => {
         setServerError(isApiError(e) ? e.message : "Sale failed.");

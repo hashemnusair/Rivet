@@ -1,7 +1,9 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useQuery } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MemberSummary, MembershipSummary } from "@/lib/domain/types";
+import { qk } from "@/lib/api/keys";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
@@ -61,6 +63,11 @@ async function chooseMonthlyPlan(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => expect(screen.getByText("Monthly Standard")).toBeInTheDocument());
 }
 
+function HangingMembersQuery() {
+  useQuery({ queryKey: qk.members(), queryFn: () => new Promise<never>(() => {}) });
+  return null;
+}
+
 describe("MembershipSaleDialog reason gates", () => {
   it("keeps a future renewal invoice non-collectible until its successor term begins", async () => {
     const { api } = await renderWithApp(<div />);
@@ -99,6 +106,28 @@ describe("MembershipSaleDialog reason gates", () => {
 
     await waitFor(() => expect(onCompleted).toHaveBeenCalledTimes(1));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("closes immediately even when broad post-sale invalidation is still pending", async () => {
+    const { api } = await renderWithApp(<div />);
+    const expiredMember = (await api.listMembers({ membershipStatus: "expired", pageSize: 100 })).items[0];
+    if (!expiredMember) throw new Error("missing expired seeded member");
+    resetApiForTests();
+
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    const onOpenChange = vi.fn();
+    await renderWithApp(
+      <>
+        <HangingMembersQuery />
+        <MembershipSaleDialog open onOpenChange={onOpenChange} member={expiredMember} onCompleted={onCompleted} />
+      </>,
+    );
+    await chooseMonthlyPlan(user);
+    await user.click(screen.getByTestId("confirm-sale"));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onCompleted).toHaveBeenCalledTimes(1);
   });
 
   it("reveals overrideReason only for a real price/date variance and blocks the submit without it", async () => {
