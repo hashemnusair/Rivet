@@ -54,7 +54,7 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: /^(Follow-ups|Leads)$/ }).first().click();
-    await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
   });
 
   test("does not promise My Gyms persistence for an unauthenticated trial request", async ({ page }) => {

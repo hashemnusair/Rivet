@@ -3,6 +3,7 @@
 import { CalendarClock, Check, CheckCircle2, CreditCard, Phone, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ERR, isApiError } from "@/lib/api/errors";
@@ -27,7 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
 
-type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show">;
+type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
 export default function LeadDetailPageClient() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -72,11 +73,11 @@ export default function LeadDetailPageClient() {
   );
 
   const updateTrial = useApiMutation(
-    (api, input: { bookingId: string; status: Extract<TrialBookingStatus, "confirmed" | "completed" | "no_show">; note?: string }) =>
+    (api, input: { bookingId: string; status: Extract<TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }) =>
       api.updateTrialBooking(input.bookingId, { status: input.status, note: input.note }),
     {
       onSuccess: async (updated) => {
-        toast.success(updated.trialBooking?.status === "completed" ? "Trial completed. Record the membership sale next." : updated.trialBooking?.status === "no_show" ? "Trial marked as not completed." : "Trial confirmed.");
+        toast.success(updated.trialBooking?.status === "completed" ? "Trial completed. Record the membership sale next." : updated.trialBooking?.status === "no_show" ? "Trial marked as no-show." : updated.trialBooking?.status === "cancelled" ? "Trial marked as cancelled." : "Trial confirmed.");
         setTrialOutcome(undefined);
         setTrialNote("");
         await invalidate();
@@ -112,7 +113,7 @@ export default function LeadDetailPageClient() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumbs items={[{ label: "Follow-ups", href: "/crm/pipeline" }, { label: lead.fullName }]} />
+      <Breadcrumbs items={[{ label: "Leads", href: "/crm/pipeline" }, { label: lead.fullName }]} />
 
       <header className="panel px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -134,7 +135,7 @@ export default function LeadDetailPageClient() {
 
         <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress">
           <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStatus === "no_show" || trialStatus === "cancelled" ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : "Not booked"} />
-          <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Successful" : saleFailed ? "Not successful" : trialDone ? "Ready" : "After trial"} />
+          <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Membership sold" : saleFailed ? "Not sold" : trialDone ? "Ready" : "After trial"} />
           <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
         </ol>
       </header>
@@ -157,9 +158,10 @@ export default function LeadDetailPageClient() {
                 {trialStatus === "requested" ? (
                   <Button className="mt-4 w-full" loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock /> Confirm trial</Button>
                 ) : trialStatus === "confirmed" ? (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
                     <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 /> Completed</Button>
-                    <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> Not completed</Button>
+                    <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> No-show</Button>
+                    <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>Cancelled</Button>
                   </div>
                 ) : trialDone ? (
                   <div className="mt-4 rounded-md border border-success/30 bg-success-bg/50 p-3 text-[13px] text-success-deep">Trial complete. Record whether a membership was sold.</div>
@@ -186,8 +188,8 @@ export default function LeadDetailPageClient() {
               <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
               <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> Successful</Button>
-                <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>Not successful</Button>
+                <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> Membership sold</Button>
+                <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>Not sold</Button>
               </div>
             </section>
           ) : null}
@@ -229,13 +231,13 @@ export default function LeadDetailPageClient() {
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(next) => { if (!next) { setTrialOutcome(undefined); setTrialNote(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{trialOutcome === "completed" ? "Trial completed" : "Trial not completed"}</DialogTitle>
+            <DialogTitle>{trialOutcome === "completed" ? "Trial completed" : trialOutcome === "no_show" ? "Trial marked no-show" : "Trial cancelled"}</DialogTitle>
             <DialogDescription>{trialOutcome === "completed" ? "Next, record whether the membership sale was successful." : "Record a short reason so the next follow-up has context."}</DialogDescription>
           </DialogHeader>
-          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : "Reason"} required={trialOutcome === "no_show"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : "Why was the trial not completed?"} /></Field></DialogBody>
+          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : "Reason"} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did the member miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setTrialOutcome(undefined)}>Back</Button>
-            <Button disabled={!lead.trialBooking || !trialOutcome || (trialOutcome === "no_show" && trialNote.trim().length < 3)} loading={updateTrial.isPending} onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}>Save</Button>
+            <Button disabled={!lead.trialBooking || !trialOutcome || (trialOutcome !== "completed" && trialNote.trim().length < 3)} loading={updateTrial.isPending} onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -279,9 +281,10 @@ function SimpleStep({ number, title, detail, state }: { number: number; title: s
 function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenChange }: { leadId: string; fullName: string; phone: string; branchId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { session } = useApp();
   const router = useRouter();
-  const invalidate = useInvalidate();
+  const queryClient = useQueryClient();
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
   const [homeBranchId, setHomeBranchId] = useState(branchId);
+  const [preferredLanguage, setPreferredLanguage] = useState<"en" | "ar">("en");
   const [mode, setMode] = useState<"existing" | "custom">("existing");
   const [planId, setPlanId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -292,6 +295,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
   const [duplicateMemberId, setDuplicateMemberId] = useState<string | null>(null);
+  const [navigationPending, setNavigationPending] = useState(false);
 
   const availablePlans = useMemo(() => (plansQuery.data?.items ?? []).filter((plan) => plan.branchAccess === "all" || plan.branchIds.includes(homeBranchId)), [homeBranchId, plansQuery.data?.items]);
   const selectedPlan = availablePlans.find((plan) => plan.id === planId);
@@ -299,10 +303,12 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   useEffect(() => {
     if (!open) return;
     setHomeBranchId(branchId);
+    setPreferredLanguage("en");
     setStartDate(todayISODate());
     setIdempotencyKey(crypto.randomUUID());
     setServerError(null);
     setDuplicateMemberId(null);
+    setNavigationPending(false);
   }, [branchId, open]);
 
   useEffect(() => {
@@ -312,7 +318,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const mutation = useApiMutation(
     (api) => api.completeLeadSale(leadId, {
       homeBranchId,
-      preferredLanguage: "en",
+      preferredLanguage,
       marketingOptIn: true,
       startDate,
       idempotencyKey,
@@ -321,11 +327,15 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
         : { mode: "custom", name: customName.trim(), price: fromMajor(Number(customPrice)), durationDays: Number(customDurationDays), includedPtSessions: Number(customPtSessions) },
     }),
     {
-      onSuccess: async (result) => {
+      onSuccess: (result) => {
+        const memberHref = `/members/${result.member.id}`;
+        setNavigationPending(true);
+        queryClient.setQueryData(qk.member(result.member.id), result.member);
+        void queryClient.invalidateQueries({ queryKey: qk.members() });
+        void queryClient.invalidateQueries({ queryKey: qk.leads() });
         toast.success(`${result.member.fullName} is now a member with ${result.plan.name}.`);
         onOpenChange(false);
-        await invalidate();
-        router.push(`/members/${result.member.id}`);
+        router.replace(memberHref);
       },
       onError: (error) => {
         setServerError(isApiError(error) ? error.message : "Could not complete this membership sale.");
@@ -341,9 +351,9 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const canSubmit = Boolean(homeBranchId && startDate && idempotencyKey && (mode === "existing" ? planId : customValid));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!navigationPending) onOpenChange(nextOpen); }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Complete membership sale</DialogTitle><DialogDescription>This creates the member, membership, balance, and PT credits together.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{navigationPending ? "Opening member record" : "Complete membership sale"}</DialogTitle><DialogDescription>{navigationPending ? "The sale is complete. Opening the new member now…" : "This creates the member, membership, balance, and PT credits together."}</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-line bg-sunken p-3 text-[13px]"><p className="font-medium">{fullName}</p><p className="font-mono text-[12px] text-ink-3" dir="ltr">{phone}</p></div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -352,6 +362,19 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
             </Field>
             <Field label="Membership starts" required><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
           </div>
+          <Field label="Preferred language" required>
+            <select
+              aria-label="Preferred language"
+              className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]"
+              value={preferredLanguage}
+              onChange={(event) => setPreferredLanguage(event.target.value as "en" | "ar")}
+              disabled={navigationPending}
+            >
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </Field>
+          <p className="text-[11.5px] text-ink-3">Marketing updates remain opted in by default; this language choice controls member-facing communication.</p>
           <Field label="Membership" required>
             <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label="Membership source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">Choose an existing plan</SelectItem><SelectItem value="custom">Enter a custom membership</SelectItem></SelectContent></Select>
           </Field>
@@ -375,9 +398,10 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
             </div>
           )}
 
+          {navigationPending ? <p role="status" className="rounded-md border border-success/30 bg-success-bg/40 px-3 py-2.5 text-[13px] text-success-deep">Membership sold. Opening the member record…</p> : null}
           {serverError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger"><p>{serverError}</p>{duplicateMemberId ? <Link href={`/members/${duplicateMemberId}`} className="mt-1 inline-flex font-medium underline underline-offset-2">Open existing member</Link> : null}</div> : null}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit} loading={mutation.isPending} onClick={() => mutation.mutate()}>Create member & membership</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" disabled={navigationPending} onClick={() => onOpenChange(false)}>Cancel</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit || navigationPending} loading={mutation.isPending || navigationPending} onClick={() => mutation.mutate()}>Create member & membership</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

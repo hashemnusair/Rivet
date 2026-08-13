@@ -2,7 +2,7 @@
 
 import { LayoutList, Plus } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/api/keys";
@@ -39,7 +39,6 @@ const ACTIVE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial
 
 function PipelinePageInner() {
   const { session } = useApp();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -119,7 +118,7 @@ function PipelinePageInner() {
         description="Work active trials and membership sales here. Closed outcomes stay in the lead and member history."
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-md border border-line-2 p-0.5" role="tablist" aria-label="View">
+            <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
               <button
                 type="button"
                 onClick={() => setView("board")}
@@ -180,7 +179,7 @@ function PipelinePageInner() {
                 </header>
                 <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                   {stageLeads.map((lead) => (
-                    <LeadCard key={lead.id} lead={lead} onOpen={() => router.push(`/crm/leads/${lead.id}`)} />
+                    <LeadCard key={lead.id} lead={lead} />
                   ))}
                   {stageLeads.length === 0 ? (
                     <p className="rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[11.5px] text-ink-4">
@@ -199,14 +198,12 @@ function PipelinePageInner() {
   );
 }
 
-function LeadCard({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
+function LeadCard({ lead }: { lead: LeadSummary }) {
   return (
-    <article
-      onClick={onOpen}
-      onKeyDown={(e) => e.key === "Enter" && onOpen()}
-      tabIndex={0}
+    <Link
+      href={`/crm/leads/${lead.id}`}
       aria-label={`${lead.fullName}, ${lead.stage}`}
-      className="group cursor-pointer rounded-md border border-line bg-surface p-2.5 transition-colors hover:border-line-3"
+      className="group block cursor-pointer rounded-md border border-line bg-surface p-2.5 transition-colors hover:border-line-3"
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -225,7 +222,7 @@ function LeadCard({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
           <RelativeText iso={lead.nextFollowUpAt} />
         </p>
       ) : null}
-    </article>
+    </Link>
   );
 }
 
