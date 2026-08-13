@@ -2924,7 +2924,7 @@ export class MockGymOSApi implements GymOSApi {
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       const activities = this.db.activities.filter((a) => a.leadId === leadId);
-      const offers = this.db.offers.filter((o) => o.leadId === leadId);
+      const offers = this.db.offers.filter((o) => o.leadId === leadId).map((offer) => this.projectOffer(offer));
       const trialBooking = this.trialBookings.find((booking) => booking.leadId === leadId);
       return { ...this.toLeadSummary(lead), notes: lead.notes, activities, offers, ...(trialBooking ? { trialBooking: { ...trialBooking } } : {}) };
     });
@@ -2980,7 +2980,7 @@ export class MockGymOSApi implements GymOSApi {
       ...this.toLeadSummary(lead),
       notes: lead.notes,
       activities: this.db.activities.filter((a) => a.leadId === leadId),
-      offers: this.db.offers.filter((o) => o.leadId === leadId),
+      offers: this.db.offers.filter((o) => o.leadId === leadId).map((offer) => this.projectOffer(offer)),
       trialBooking: this.trialBookings.find((booking) => booking.leadId === leadId),
     };
   }
@@ -3139,6 +3139,57 @@ export class MockGymOSApi implements GymOSApi {
       });
       return offer;
     });
+  }
+
+  recordOfferOutcome(offerId: T.UUID, input: { outcome: T.OfferOutcome; reason?: string }): Promise<T.Offer> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const offer = this.db.offers.find((item) => item.id === offerId);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Offer not found.");
+      if (offer.status !== "sent") throw ApiError.of(ERR.CONFLICT, "Only a delivered offer can receive an outcome.");
+      if (offer.expiresAt && new Date(offer.expiresAt).getTime() <= Date.now()) {
+        throw ApiError.of(ERR.CONFLICT, "This offer has expired.");
+      }
+      const reason = input.reason?.trim();
+      if (input.outcome === "declined" && (!reason || reason.length < 3)) throw ApiError.of(ERR.VALIDATION, "Record why the offer was declined.");
+      if (input.outcome !== "accepted" && input.outcome !== "declined") throw ApiError.of(ERR.VALIDATION, "Choose a valid offer outcome.");
+      const respondedAt = nowISO();
+      Object.assign(offer, { status: input.outcome, respondedAt, respondedById: this.actor().id, responseReason: reason || undefined });
+      if (input.outcome === "declined") {
+        lead.stage = "contacted";
+        lead.nextFollowUpAt = new Date(Date.now() + 86_400_000).toISOString();
+      }
+      lead.updatedAt = respondedAt;
+      this.activity({
+        leadId: lead.id,
+        type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined",
+        title: `Offer ${input.outcome} — ${offer.planName}`,
+        body: reason,
+        actorId: this.actor().id,
+        actorName: this.actor().name,
+        meta: { offerId: offer.id, outcome: input.outcome },
+      });
+      this.audit({
+        category: "crm",
+        action: `offer.${input.outcome}`,
+        entityType: "offer",
+        entityId: offer.id,
+        entityLabel: `${offer.planName} · ${lead.fullName}`,
+        summary: `Offer ${input.outcome}`,
+        reason,
+        before: { status: "sent" },
+        after: { status: input.outcome },
+        branchId: lead.branchId,
+      });
+      return offer;
+    });
+  }
+
+  private projectOffer(offer: T.Offer): T.Offer {
+    return offer.status === "sent" && offer.expiresAt && Date.parse(offer.expiresAt) <= Date.now()
+      ? { ...offer, status: "expired" }
+      : offer;
   }
 
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> {

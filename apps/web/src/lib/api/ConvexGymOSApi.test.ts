@@ -173,7 +173,7 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(mutationArgs).toMatchObject({ operation: "payments.create", input: { idempotencyKey: "payment-key-1" } });
   });
 
-  it("keeps offer drafting and delivery confirmation as separate mutations", async () => {
+  it("keeps offer drafting, delivery confirmation, and the lead response as separate mutations", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const offer = { id: "offer-1", leadId: "lead-1", planId: "plan-1", planName: "Growth", price: { amount: 149_000, currency: "JOD" as const }, status: "draft" as const, createdById: session.user.id, createdAt: "2026-08-09T18:00:00.000Z" };
     const delivered = { ...offer, status: "sent" as const, deliveryChannel: "email" as const, deliveredAt: "2026-08-09T18:01:00.000Z" };
@@ -181,8 +181,10 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.createOffer({ leadId: "lead-1", planId: "plan-1", price: offer.price, expiresInDays: 7 })).resolves.toBe(delivered);
     await expect(api.markOfferDelivered("offer-1", { channel: "email", reference: "manual-email-1" })).resolves.toBe(delivered);
+    await expect(api.recordOfferOutcome("offer-1", { outcome: "accepted", reason: "Confirmed by the lead" })).resolves.toBe(delivered);
     expect(calls[0]).toMatchObject({ operation: "offers.create", input: { leadId: "lead-1", planId: "plan-1" } });
     expect(calls[1]).toMatchObject({ operation: "offers.deliver", input: { offerId: "offer-1", channel: "email", reference: "manual-email-1" } });
+    expect(calls[2]).toMatchObject({ operation: "offers.respond", input: { offerId: "offer-1", outcome: "accepted", reason: "Confirmed by the lead" } });
   });
 
   it("unwraps the current-shift envelope for the cash-shift view", async () => {

@@ -1005,7 +1005,25 @@ describe("CRM", () => {
     expect((await api.getLead(lead.id)).stage).toBe("offer_sent");
     expect((await api.getLead(lead.id)).activities.some((event) => event.type === "offer_sent")).toBe(true);
     expect((await api.listAuditEvents({ category: "crm", pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "offer.delivered", entityId: draft.id }));
+    const accepted = await api.recordOfferOutcome(draft.id, { outcome: "accepted", reason: "Lead confirmed the plan" });
+    expect(accepted).toMatchObject({ status: "accepted", responseReason: "Lead confirmed the plan" });
+    expect((await api.getLead(lead.id)).activities.some((event) => event.type === "offer_accepted")).toBe(true);
+    expect((await api.listAuditEvents({ category: "crm", pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "offer.accepted", entityId: draft.id }));
     await expect(api.markOfferDelivered(draft.id, { channel: "email" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await expect(api.recordOfferOutcome(draft.id, { outcome: "accepted" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("requires a reason for a declined delivered offer and returns it to follow-up", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Offer Decline Test", phone: "+962 79 900 0446", branchId: session.branches[0]!.id, source: "walk_in" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const draft = await api.createOffer({ leadId: lead.id, planId: plan.id, price: plan.basePrice });
+    await api.markOfferDelivered(draft.id, { channel: "whatsapp", reference: "manual-decline-test" });
+
+    await expect(api.recordOfferOutcome(draft.id, { outcome: "declined" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const declined = await api.recordOfferOutcome(draft.id, { outcome: "declined", reason: "Timing is not right" });
+    expect(declined).toMatchObject({ status: "declined", responseReason: "Timing is not right" });
+    expect(await api.getLead(lead.id)).toMatchObject({ stage: "contacted", nextFollowUpAt: expect.any(String) });
   });
 
   it("does not mark an email offer delivered when the lead has no email", async () => {

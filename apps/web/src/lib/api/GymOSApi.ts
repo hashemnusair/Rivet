@@ -49,6 +49,7 @@ import type {
   OccupancySnapshot,
   Offer,
   OfferDeliveryChannel,
+  OfferOutcome,
   OpenCashShiftInput,
   OrganizationSettings,
   OperationalPolicies,
@@ -547,6 +548,11 @@ export interface MarkOfferDeliveredInput {
   reference?: string;
 }
 
+export interface RecordOfferOutcomeInput {
+  outcome: OfferOutcome;
+  reason?: string;
+}
+
 /** Platform-only controls for a subscribed tenant. The public directory row
  * and the backing Convex organization are updated together when a match is
  * available; this keeps the console from being a read-only mock surface. */
@@ -735,6 +741,7 @@ export interface GymOSApi {
   ): Promise<LeadDetail>;
   createOffer(input: CreateOfferInput): Promise<Offer>;
   markOfferDelivered(offerId: UUID, input: MarkOfferDeliveredInput): Promise<Offer>;
+  recordOfferOutcome(offerId: UUID, input: RecordOfferOutcomeInput): Promise<Offer>;
   listTasks(query: TaskListQuery): Promise<Page<Task>>;
   subscribeTasks(query: TaskListQuery, onValue: (page: Page<Task>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createFollowUp(input: CreateTaskInput): Promise<Task>;

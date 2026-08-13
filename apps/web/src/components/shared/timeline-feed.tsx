@@ -32,6 +32,8 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   task_completed: { icon: CheckCircle2, tone: "text-success-deep" },
   offer_drafted: { icon: FileText, tone: "text-ink-2" },
   offer_sent: { icon: FileText, tone: "text-warning-deep" },
+  offer_accepted: { icon: CheckCircle2, tone: "text-success-deep" },
+  offer_declined: { icon: CircleDot, tone: "text-danger" },
   membership_sold: { icon: CreditCard, tone: "text-success-deep" },
   membership_renewed: { icon: RotateCcw, tone: "text-success-deep" },
   membership_plan_changed: { icon: ArrowRightLeft, tone: "text-warning-deep" },

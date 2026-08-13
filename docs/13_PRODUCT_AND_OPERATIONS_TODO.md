@@ -136,7 +136,8 @@ The original flow said **Create offer**, immediately persisted `status: "sent"`,
 - [x] Staff can explicitly confirm manual delivery through email, WhatsApp, SMS, or another channel; the actor, timestamp, channel, optional safe reference, lead stage, timeline, and audit event are recorded only after that confirmation.
 - [x] Missing contact data and repeat delivery attempts are rejected; failed/unattempted delivery cannot display as sent.
 - [x] Mock, Convex adapter, Convex domain, component-facing UI, unit, and browser coverage are aligned.
-- [ ] Provider-backed delivery, stable branded offer views/documents, retries, delivery webhooks, expiry, acceptance, and conversion remain open work.
+- [x] Delivered offers can be explicitly accepted or declined. Declines require a reason and return the lead to follow-up; acceptance, decline, expiry projection, and conversion preserve truthful timeline/audit state, and conversion never emits duplicate acceptance facts.
+- [ ] Provider-backed delivery, stable branded offer views/documents, delivery retries/webhooks, and a customer-facing acceptance surface remain open work. Internal expiry enforcement and staff-recorded response outcomes are complete.
 
 ### Completion criteria
 
@@ -624,7 +625,7 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 - Status: **Cash, card, CliQ-style, partial balance, partial refund, same-day void, PT charge, receipts, and balanced reconciliation are verified in Production; non-zero variance review, realistic volume, and concurrency remain open for staging/TODO-007**.
 - Scope: open shift, opening float, cash/card/CliQ-style configured payments, partial balance, receipt, refund/void review, close shift, expected-vs-counted cash, manager variance decision, daily reconciliation.
 - Evidence to date: the 9–10 August cash pilot remains valid. On 11 August, a second explicitly labelled demo day verified three active members; cash/card/CliQ-style membership collection; a JOD 20.000 partial CliQ balance; receipt generation; allowed and outstanding-balance-warning check-ins; a JOD 100.000 opening float; JOD 145.000 expected/counted balanced close; a JOD 5.000 partial cash refund; same-day CliQ void; and a fully paid JOD 240.000 card PT package that atomically granted 12 purchased credits alongside 2 included credits. The final report correctly excluded the void and showed JOD 330.000 gross completed collections plus a JOD 5.000 refund (JOD 325.000 net). The separate JOD 120.000 future-plan charge overstates current outstanding and is tracked as BUG-017.
-- Acceptance: non-zero manager variance approval/rejection, realistic-volume reconciliation, payment concurrency, two-browser updates, and staging cleanup evidence remain open. Volume/concurrency proof must be generated against an isolated staging dataset with documented load results rather than inferred from this Production demo day.
+- Acceptance: the credential-gated `finance-reconciliation` browser body now creates a disposable unpaid membership, records card-reference and cash partial payments, closes an intentional non-zero variance, requires manager approval, archives the member, and preserves immutable financial/audit facts through its cleanup ledger. It still must be executed against isolated staging; realistic-volume reconciliation, rejection, payment concurrency, and cross-browser finance propagation remain open. Volume/concurrency proof must be generated against an isolated staging dataset with documented load results rather than inferred from this Production demo day.
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
@@ -652,13 +653,13 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 
 - Status: **Core domain, adapters, UI surfaces, notifications, and handler tests implemented; credentialed acceptance remains open**.
 - Scope: trainer profile/publication, availability/time off, included and purchased credits, partial/full payment, member/staff booking, cancellation/no-show/completion/reschedule, proportional unused-credit refund, realtime balances, and deactivation safety.
-- Acceptance: implement and run the `personal-training` staging journey with owner, manager, trainer, member, and foreign-tenant storage states; prove two-browser slot/credit updates and concurrency; then obtain explicit approval for one named disposable Production PT path and cleanup.
+- Acceptance: the credential-gated `personal-training` browser body now reserves a real member credit, verifies the assigned trainer view in a second browser, cancels, and verifies credit restoration with cleanup evidence. It still must be run against isolated staging and expanded to owner/manager package setup, foreign-tenant denial, package-payment activation, outcome/no-show, and concurrency before any separately approved disposable Production PT path.
 
 ### TODO-012 — Complete all registered production-shaped staging journeys
 
-- Status: **Safety/dispatch/role/cleanup harness complete; membership-lifecycle and owner-settings bodies plus separate realtime smoke exist; nine product journey bodies remain**.
+- Status: **Safety/dispatch/role/cleanup harness complete; membership-lifecycle, owner-settings, staff-authorization, trial-CRM, finance-reconciliation, personal-training, and separate realtime-smoke bodies exist; five product journey bodies remain. The four newest bodies are authored and preview-compiled but still require a credentialed isolated-staging run before release credit.**
 - Registered journeys: provisioning, owner settings, staff authorization, trial/CRM, membership lifecycle, reception entry, finance/reconciliation, automation, member portal, isolation/audit, and personal training. A separate `realtime-smoke` is also registered. The owner-settings body persists a valid branch trial time, reloads it, and restores the prior schedule through its cleanup ledger.
-- Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The complete suite must pass against the exact isolated staging deployment before additional Production mutation.
+- Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The new combined dispatch requires owner, manager, salesperson, receptionist, trainer, and member Clerk states plus an isolated invitation inbox template. Provisioning, reception-entry, automation, member-portal, and isolation/audit bodies remain; every authored body must still pass against the exact isolated staging deployment before additional Production mutation.
 
 ### TODO-010 — Verify application review-note editing in Production
 

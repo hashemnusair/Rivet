@@ -759,11 +759,15 @@ export interface Offer {
   deliveredAt?: ISODateTime;
   deliveredById?: UUID;
   deliveryReference?: string;
+  respondedAt?: ISODateTime;
+  respondedById?: UUID;
+  responseReason?: string;
   createdById: UUID;
   createdAt: ISODateTime;
 }
 
 export type OfferDeliveryChannel = "email" | "whatsapp" | "sms" | "manual";
+export type OfferOutcome = "accepted" | "declined";
 
 export type ContactOutcome =
   | "no_answer"
@@ -871,6 +875,8 @@ export type TimelineEventType =
   | "task_completed"
   | "offer_drafted"
   | "offer_sent"
+  | "offer_accepted"
+  | "offer_declined"
   | "membership_sold"
   | "membership_renewed"
   | "membership_plan_changed"

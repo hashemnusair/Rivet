@@ -258,6 +258,14 @@ test.describe("CRM lead capture", () => {
     await expect(page.getByText("Offer sent").first()).toBeVisible();
     await expect(page.getByRole("listitem", { name: "Trial booked: skipped" })).toBeVisible();
     await expect(page.getByRole("listitem", { name: "Trial done: skipped" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Record accepted" }).click();
+    const response = page.getByRole("dialog", { name: "Record accepted offer" });
+    await response.getByRole("textbox", { name: "Response note (optional)" }).fill("Lead confirmed during the preview journey");
+    await response.getByRole("button", { name: "Save response" }).click();
+    await expect(page.getByText(/offer accepted/i).first()).toBeVisible();
+    await expect(page.getByText("Lead confirmed during the preview journey")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Record accepted" })).toHaveCount(0);
   });
 });
 

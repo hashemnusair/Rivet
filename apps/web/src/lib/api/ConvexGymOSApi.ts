@@ -39,6 +39,7 @@ import type {
   OperationalNotification,
   CreateOfferInput,
   MarkOfferDeliveredInput,
+  RecordOfferOutcomeInput,
   CustomerExperience,
   MarketingPreferenceMigrationPreview,
   MarketingPreferenceMigrationProgress,
@@ -407,6 +408,7 @@ export class ConvexGymOSApi implements GymOSApi {
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }
   createOffer(input: CreateOfferInput): Promise<T.Offer> { return this.mutate("offers.create", input); }
   markOfferDelivered(offerId: T.UUID, input: MarkOfferDeliveredInput): Promise<T.Offer> { return this.mutate("offers.deliver", { offerId, ...input }); }
+  recordOfferOutcome(offerId: T.UUID, input: RecordOfferOutcomeInput): Promise<T.Offer> { return this.mutate("offers.respond", { offerId, ...input }); }
   listTasks(query: TaskListQuery): Promise<T.Page<T.Task>> { return this.query("tasks.list", query); }
   subscribeTasks(query: TaskListQuery, onValue: (page: T.Page<T.Task>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("tasks.list", query, onValue, onError); }
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> { return this.mutate("tasks.create", input); }

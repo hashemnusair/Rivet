@@ -371,7 +371,10 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
-| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Staging session JSON secret |
+| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Baseline staging session JSON secret |
+| `PLAYWRIGHT_CLERK_STORAGE_OWNER`, `PLAYWRIGHT_CLERK_STORAGE_MANAGER`, `PLAYWRIGHT_CLERK_STORAGE_SALESPERSON`, `PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST`, `PLAYWRIGHT_CLERK_STORAGE_TRAINER`, `PLAYWRIGHT_CLERK_STORAGE_MEMBER` | External file paths | — | Never | — | Role-specific staging session JSON secrets |
+| `PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE` | Safe staging inbox template containing `{runId}` | — | Never | — | Required only for staff-invitation journey |
+| `PLAYWRIGHT_STAGING_PT_TRAINER_NAME` | Published staging trainer display name | — | Never | — | Required only for PT journey |
 | `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Required for write journeys |
 
 ### Environment rules
@@ -460,7 +463,10 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A5. GitHub
 
-- [ ] Keep the five current Actions secrets tied to the isolated staging environment.
+- [ ] Keep every Actions credential tied to the isolated staging environment: Convex URL/key, Clerk keys, baseline and role-specific Clerk storage states, Production URL comparison guard, safe invitation template, and PT trainer name.
+- [ ] Confirm the owner, manager, salesperson, receptionist, trainer, and member storage states belong to the same disposable staging gym and have the roles their names claim.
+- [ ] Confirm the staging member has one active membership with usable PT credit, and the named published trainer has branch availability in the next 30 days.
+- [ ] Confirm the published staging gym has at least one trial time in the next 21 days and the finance branch has card and cash recording enabled with no receptionist shift already open.
 - [ ] Never replace the staging `CONVEX_DEPLOY_KEY` with a production key.
 - [ ] Confirm the latest ordinary `main` workflow is green.
 - [ ] After release verification, protect `main` with pull requests and required static/browser checks.
@@ -517,10 +523,13 @@ After Phase A is reported complete, the release agent should:
 
 ### Phase C — Current-head staging verification
 
-Run the manual `GymOS CI` workflow on current `main` in two passes:
+Run the manual `GymOS CI` workflow on current `main` in three passes:
 
 1. `run_operational_flow=false`: authenticated Clerk → Convex read smoke.
 2. `run_operational_flow=true`: disposable member → membership → card payment → check-in → timeline/audit → cleanup.
+3. `run_functional_staging=true`: branch-scoped staff authorization, public trial → CRM → accepted offer → conversion, PT credit reservation/realtime trainer visibility/cancellation, and card/cash partial payments → non-zero shift variance → manager approval.
+
+The third pass requires separate role storage states for owner, manager, salesperson, receptionist, trainer, and member. It also requires a safe invitation email template containing `{runId}` and the exact display name of the published staging trainer represented by the trainer session. Each journey attaches a cleanup ledger. Disposable members and invitations are archived/deactivated; immutable payment, shift, PT-booking, timeline, and audit facts are preserved.
 
 Stop if the authenticated smoke uses Production credentials or if the operational flow targets anything other than the isolated staging deployment.
 

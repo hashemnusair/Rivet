@@ -14,11 +14,11 @@ export function requiredStagingRoles(journey: StagingJourney): readonly StagingR
   return stagingJourneyRoles(journey);
 }
 
-export async function newRoleContext(browser: Browser, role: StagingRole): Promise<BrowserContext> {
+export async function newRoleContext(browser: Browser, role: StagingRole, baseURL = "http://localhost:3100"): Promise<BrowserContext> {
   const key = storageStateEnvironmentKey(role);
   const path = process.env[key] ?? (role === "owner" ? process.env.PLAYWRIGHT_CLERK_STORAGE_STATE : undefined);
   if (!path || !existsSync(path)) throw new Error(`${key} must point to a readable Clerk storage-state file.`);
-  return await browser.newContext({ storageState: path });
+  return await browser.newContext({ storageState: path, baseURL, viewport: { width: 1440, height: 900 }, locale: "en-US" });
 }
 
 export class StagingCleanupLedger {

@@ -1,5 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
+const convexBrowserMode =
+  process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" ||
+  process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ||
+  process.env.PLAYWRIGHT_STAGING_FULL_SUITE === "1";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
@@ -26,10 +31,8 @@ export default defineConfig({
     // deployed sessions always go through Clerk before this chooser appears.
     env: {
       NEXT_DIST_DIR: ".next-playwright",
-      NEXT_PUBLIC_RIVET_DEMO_AUTH:
-        process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" || process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ? "0" : "1",
-      NEXT_PUBLIC_DATA_MODE:
-        process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" || process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ? "convex" : "mock",
+      NEXT_PUBLIC_RIVET_DEMO_AUTH: convexBrowserMode ? "0" : "1",
+      NEXT_PUBLIC_DATA_MODE: convexBrowserMode ? "convex" : "mock",
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

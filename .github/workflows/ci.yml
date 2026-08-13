@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_functional_staging:
+        description: "Run staff authorization, trial/CRM, PT, and finance/reconciliation staging journeys"
+        required: false
+        type: boolean
+        default: false
       staging_journeys:
         description: "Comma-separated registered staging journey IDs; use all for every journey enabled by the workflow switches"
         required: false
@@ -132,6 +137,14 @@ jobs:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_STATE }}
+      PLAYWRIGHT_CLERK_STORAGE_OWNER_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_OWNER }}
+      PLAYWRIGHT_CLERK_STORAGE_MANAGER_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_MANAGER }}
+      PLAYWRIGHT_CLERK_STORAGE_SALESPERSON_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_SALESPERSON }}
+      PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST }}
+      PLAYWRIGHT_CLERK_STORAGE_TRAINER_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_TRAINER }}
+      PLAYWRIGHT_CLERK_STORAGE_MEMBER_SECRET: ${{ secrets.PLAYWRIGHT_CLERK_STORAGE_MEMBER }}
+      PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE_SECRET: ${{ secrets.PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE }}
+      PLAYWRIGHT_STAGING_PT_TRAINER_NAME_SECRET: ${{ secrets.PLAYWRIGHT_STAGING_PT_TRAINER_NAME }}
       PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
     steps:
       - name: Check out repository
@@ -199,3 +212,41 @@ jobs:
           PLAYWRIGHT_STAGING_JOURNEYS: ${{ inputs.staging_journeys == 'all' && 'owner-settings' || inputs.staging_journeys }}
           PLAYWRIGHT_CLERK_STORAGE_OWNER: ${{ runner.temp }}/clerk-storage-state.json
         run: pnpm --filter web exec playwright test e2e/staging-owner-settings.spec.ts
+      - name: Verify functional staging credentials
+        if: ${{ inputs.run_functional_staging == true }}
+        run: |
+          test -n "${PLAYWRIGHT_CLERK_STORAGE_OWNER_SECRET:-$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET}" || { echo "::error::Missing owner Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_MANAGER_SECRET" || { echo "::error::Missing manager Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_SALESPERSON_SECRET" || { echo "::error::Missing salesperson Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST_SECRET" || { echo "::error::Missing receptionist Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_TRAINER_SECRET" || { echo "::error::Missing trainer Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_CLERK_STORAGE_MEMBER_SECRET" || { echo "::error::Missing member Clerk storage state"; exit 1; }
+          test -n "$PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE_SECRET" || { echo "::error::Missing safe staff invitation email template"; exit 1; }
+          test -n "$PLAYWRIGHT_STAGING_PT_TRAINER_NAME_SECRET" || { echo "::error::Missing staging PT trainer name"; exit 1; }
+      - name: Write role-specific functional staging states outside the repository
+        if: ${{ inputs.run_functional_staging == true }}
+        run: |
+          printf '%s' "${PLAYWRIGHT_CLERK_STORAGE_OWNER_SECRET:-$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET}" > "$RUNNER_TEMP/clerk-owner.json"
+          printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_MANAGER_SECRET" > "$RUNNER_TEMP/clerk-manager.json"
+          printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_SALESPERSON_SECRET" > "$RUNNER_TEMP/clerk-salesperson.json"
+          printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST_SECRET" > "$RUNNER_TEMP/clerk-receptionist.json"
+          printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_TRAINER_SECRET" > "$RUNNER_TEMP/clerk-trainer.json"
+          printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_MEMBER_SECRET" > "$RUNNER_TEMP/clerk-member.json"
+      - name: Run functional staging journeys
+        if: ${{ inputs.run_functional_staging == true }}
+        env:
+          PLAYWRIGHT_STAGING_FULL_SUITE: "1"
+          PLAYWRIGHT_TARGET_CLASSIFICATION: staging
+          PLAYWRIGHT_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          PLAYWRIGHT_EXPECTED_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          PLAYWRIGHT_PRODUCTION_CONVEX_URL: ${{ secrets.PRODUCTION_CONVEX_URL }}
+          PLAYWRIGHT_STAGING_JOURNEYS: staff-authorization,trial-crm,personal-training,finance-reconciliation
+          PLAYWRIGHT_CLERK_STORAGE_OWNER: ${{ runner.temp }}/clerk-owner.json
+          PLAYWRIGHT_CLERK_STORAGE_MANAGER: ${{ runner.temp }}/clerk-manager.json
+          PLAYWRIGHT_CLERK_STORAGE_SALESPERSON: ${{ runner.temp }}/clerk-salesperson.json
+          PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST: ${{ runner.temp }}/clerk-receptionist.json
+          PLAYWRIGHT_CLERK_STORAGE_TRAINER: ${{ runner.temp }}/clerk-trainer.json
+          PLAYWRIGHT_CLERK_STORAGE_MEMBER: ${{ runner.temp }}/clerk-member.json
+          PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE: ${{ secrets.PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE }}
+          PLAYWRIGHT_STAGING_PT_TRAINER_NAME: ${{ secrets.PLAYWRIGHT_STAGING_PT_TRAINER_NAME }}
+        run: pnpm --filter web exec playwright test e2e/staging-staff-authorization.spec.ts e2e/staging-trial-crm.spec.ts e2e/staging-personal-training.spec.ts e2e/staging-finance-reconciliation.spec.ts

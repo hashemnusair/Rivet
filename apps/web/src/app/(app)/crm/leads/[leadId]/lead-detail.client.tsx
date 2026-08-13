@@ -12,7 +12,7 @@ import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { LeadStage, OfferDeliveryChannel, TrialBookingStatus } from "@/lib/domain/types";
+import type { LeadStage, Offer, OfferDeliveryChannel, OfferOutcome, TrialBookingStatus } from "@/lib/domain/types";
 import { LEAD_STAGE_PROGRESS, leadStageProgress } from "@/lib/crm/lead-stage-progress";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
@@ -54,6 +54,8 @@ export default function LeadDetailPageClient() {
   const [lostReason, setLostReason] = useState("");
   const [trialOutcome, setTrialOutcome] = useState<Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">>();
   const [trialNote, setTrialNote] = useState("");
+  const [offerResponse, setOfferResponse] = useState<{ offer: Offer; outcome: OfferOutcome }>();
+  const [offerResponseReason, setOfferResponseReason] = useState("");
 
   const leadQuery = useRealtimeApiQuery({ queryKey: qk.lead(leadId), query: (api) => api.getLead(leadId), subscribe: (api, onValue, onError) => api.subscribeLead(leadId, onValue, onError) });
 
@@ -73,6 +75,18 @@ export default function LeadDetailPageClient() {
         toast.success(`Trial ${updated.trialBooking?.status.replaceAll("_", " ") ?? "updated"}.`);
         setTrialOutcome(undefined);
         setTrialNote("");
+        await invalidate();
+      },
+    },
+  );
+
+  const recordOfferOutcome = useApiMutation(
+    (api, input: { offerId: string; outcome: OfferOutcome; reason?: string }) => api.recordOfferOutcome(input.offerId, { outcome: input.outcome, reason: input.reason }),
+    {
+      onSuccess: async (offer) => {
+        toast.success(`Offer ${offer.status}.`);
+        setOfferResponse(undefined);
+        setOfferResponseReason("");
         await invalidate();
       },
     },
@@ -254,6 +268,12 @@ export default function LeadDetailPageClient() {
                         {offer.status === "sent" && offer.deliveredAt ? <span className="ms-2">· {formatDate(offer.deliveredAt)}</span> : null}
                       </span>
                     </div>
+                    {offer.status === "sent" ? (
+                      <div className="mt-2 flex flex-wrap gap-2 border-t border-line pt-2">
+                        <Button size="sm" variant="secondary" onClick={() => setOfferResponse({ offer, outcome: "accepted" })}>Record accepted</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setOfferResponse({ offer, outcome: "declined" })}>Record declined</Button>
+                      </div>
+                    ) : offer.responseReason ? <p className="mt-2 border-t border-line pt-2 text-[11px] text-ink-2">{offer.responseReason}</p> : null}
                   </li>
                 ))}
               </ul>
@@ -270,6 +290,35 @@ export default function LeadDetailPageClient() {
 
       <CreateOfferDialog leadId={lead.id} email={lead.email} phone={lead.phone} open={offerOpen} onOpenChange={setOfferOpen} />
       <ConvertLeadDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} branchId={lead.branchId} open={convertOpen} onOpenChange={setConvertOpen} />
+
+      <Dialog open={Boolean(offerResponse)} onOpenChange={(open) => { if (!open) { setOfferResponse(undefined); setOfferResponseReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{offerResponse?.outcome === "accepted" ? "Record accepted offer" : "Record declined offer"}</DialogTitle>
+            <DialogDescription>
+              {offerResponse?.outcome === "accepted"
+                ? "This records the lead's response. Convert the lead separately when the member profile is ready."
+                : "A declined offer returns the lead to follow-up and requires the reason for the decision."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {offerResponse ? <div className="rounded-md border border-line bg-sunken p-3 text-[12.5px]"><span className="font-medium">{offerResponse.offer.planName}</span> · <MoneyText money={offerResponse.offer.price} /></div> : null}
+            <Field className="mt-4" label={offerResponse?.outcome === "declined" ? "Decline reason" : "Response note (optional)"} required={offerResponse?.outcome === "declined"}>
+              <Input value={offerResponseReason} onChange={(event) => setOfferResponseReason(event.target.value)} placeholder={offerResponse?.outcome === "declined" ? "Price, timing, or another specific reason" : "How the lead accepted"} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setOfferResponse(undefined)}>Back</Button>
+            <Button
+              loading={recordOfferOutcome.isPending}
+              disabled={!offerResponse || (offerResponse.outcome === "declined" && offerResponseReason.trim().length < 3)}
+              onClick={() => offerResponse && recordOfferOutcome.mutate({ offerId: offerResponse.offer.id, outcome: offerResponse.outcome, reason: offerResponseReason.trim() || undefined })}
+            >
+              Save response
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(open) => { if (!open) { setTrialOutcome(undefined); setTrialNote(""); } }}>
         <DialogContent>

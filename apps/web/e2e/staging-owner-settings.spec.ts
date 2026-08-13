@@ -17,7 +17,7 @@ test.describe("staged owner settings and trial scheduling", () => {
     test.skip(process.env.PLAYWRIGHT_STAGING_FULL_SUITE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging", "Enable the isolated full staging suite explicitly.");
     const guard = requireStagingJourney("owner-settings", baseURL);
     const cleanup = new StagingCleanupLedger(guard.runId, "owner-settings");
-    const context = await newRoleContext(browser, "owner");
+    const context = await newRoleContext(browser, "owner", baseURL);
     const page = await context.newPage();
     let cleanupEntry: number | undefined;
     let trialInputName: string | undefined;
