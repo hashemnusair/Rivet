@@ -406,6 +406,7 @@ export class ConvexGymOSApi implements GymOSApi {
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }
+  scheduleLeadTrial(leadId: T.UUID, input: T.ScheduleLeadTrialInput): Promise<T.LeadDetail> { return this.mutate("trials.schedule_for_lead", { leadId, ...input }); }
   createOffer(input: CreateOfferInput): Promise<T.Offer> { return this.mutate("offers.create", input); }
   markOfferDelivered(offerId: T.UUID, input: MarkOfferDeliveredInput): Promise<T.Offer> { return this.mutate("offers.deliver", { offerId, ...input }); }
   recordOfferOutcome(offerId: T.UUID, input: RecordOfferOutcomeInput): Promise<T.Offer> { return this.mutate("offers.respond", { offerId, ...input }); }
@@ -413,7 +414,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeTasks(query: TaskListQuery, onValue: (page: T.Page<T.Task>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("tasks.list", query, onValue, onError); }
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> { return this.mutate("tasks.create", input); }
   completeTask(taskId: T.UUID, input: T.CompleteTaskInput): Promise<T.Task> { return this.mutate("tasks.complete", { taskId, ...input }); }
-  convertLead(leadId: T.UUID, input: T.ConvertLeadInput): Promise<T.MemberDetail> { return this.mutate("leads.convert", { leadId, ...input }); }
+  completeLeadSale(leadId: T.UUID, input: T.CompleteLeadSaleInput): Promise<T.CompleteLeadSaleResult> { return this.mutate("leads.complete_sale", { leadId, ...input }); }
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> { return this.query("renewal.queue", query); }
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: T.Page<T.RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("renewal.queue", query, onValue, onError); }
 

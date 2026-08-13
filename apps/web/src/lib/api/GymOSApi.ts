@@ -13,8 +13,9 @@ import type {
   CheckInSummary,
   CloseCashShiftInput,
   CompleteTaskInput,
+  CompleteLeadSaleInput,
+  CompleteLeadSaleResult,
   ContactAttemptInput,
-  ConvertLeadInput,
   CreateAutomationRuleInput,
   CreateCheckInInput,
   CreateLeadInput,
@@ -66,6 +67,7 @@ import type {
   TransferMembershipInput,
   RoleDefinition,
   RoleKey,
+  ScheduleLeadTrialInput,
   Session,
   StaffUser,
   Task,
@@ -739,6 +741,7 @@ export interface GymOSApi {
     bookingId: UUID,
     input: { status: Extract<import("@/lib/domain/types").TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string },
   ): Promise<LeadDetail>;
+  scheduleLeadTrial(leadId: UUID, input: ScheduleLeadTrialInput): Promise<LeadDetail>;
   createOffer(input: CreateOfferInput): Promise<Offer>;
   markOfferDelivered(offerId: UUID, input: MarkOfferDeliveredInput): Promise<Offer>;
   recordOfferOutcome(offerId: UUID, input: RecordOfferOutcomeInput): Promise<Offer>;
@@ -746,7 +749,7 @@ export interface GymOSApi {
   subscribeTasks(query: TaskListQuery, onValue: (page: Page<Task>) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createFollowUp(input: CreateTaskInput): Promise<Task>;
   completeTask(taskId: UUID, input: CompleteTaskInput): Promise<Task>;
-  convertLead(leadId: UUID, input: ConvertLeadInput): Promise<MemberDetail>;
+  completeLeadSale(leadId: UUID, input: CompleteLeadSaleInput): Promise<CompleteLeadSaleResult>;
   listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>;
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: Page<RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
 

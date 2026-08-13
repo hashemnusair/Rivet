@@ -1,6 +1,18 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 11 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 13 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## P0 — Simplify CRM and prevent member-only lead conversion — implemented, deployment pending
+
+- [x] Replace the multi-stage offer/conversion journey with Trial → completed/not completed → membership sale successful/not successful.
+- [x] Create a successful sale's member, membership, charge, included PT credits, timeline, and audit facts atomically.
+- [x] Reject the old member-only conversion mutation so a won lead cannot be created without the membership sold.
+- [x] Allow an existing branch-eligible plan or a custom name, price, duration, and included PT-session count during the sale.
+- [x] Persist custom choices as real branch-scoped plans instead of unstructured member notes.
+- [x] Remove offer controls and arbitrary stage dragging from the primary CRM; preserve historical offer facts without deleting data.
+- [x] Rename the operator surfaces to Leads and Follow-ups and reduce the board to four truthful outcome groups.
+- [x] Add persisted Convex, mock-adapter, and staging-journey coverage.
+- [ ] Deploy the matching Convex backend and Vercel frontend, then verify one disposable completed-trial sale using an existing plan and one using a custom plan.
 
 ## How to use this file
 

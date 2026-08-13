@@ -31,7 +31,7 @@ import { NotificationCenter } from "./notification-center";
 const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
   { role: "owner", blurb: "Full visibility — every branch, finance, audit, settings." },
   { role: "manager", blurb: "Operations control — approvals, reconciliation, teams." },
-  { role: "salesperson", blurb: "Pipeline, queues, follow-ups and conversions." },
+  { role: "salesperson", blurb: "Trials, follow-ups and membership sales." },
   { role: "receptionist", blurb: "Front desk console — lookup, check-in, collect." },
 ];
 

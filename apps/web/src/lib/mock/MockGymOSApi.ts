@@ -3028,6 +3028,38 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  scheduleLeadTrial(leadId: T.UUID, input: T.ScheduleLeadTrialInput): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const lead = this.db.leads.find((item) => item.id === leadId);
+      if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      if (lead.stage === "won" || lead.stage === "lost") throw ApiError.of(ERR.VALIDATION, "Closed leads cannot be scheduled for a trial.");
+      if (this.trialBookings.some((booking) => booking.leadId === leadId)) throw ApiError.of(ERR.CONFLICT, "This lead already has a trial.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.preferredDate) || !/^\d{2}:\d{2}$/.test(input.preferredTime) || new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).getTime() <= Date.now()) throw ApiError.of(ERR.VALIDATION, "Choose a future trial date and time.");
+      const booking: T.LeadTrialBooking = {
+        id: mockUuid(),
+        gymId: this.db.organization.id,
+        branchId: lead.branchId,
+        leadId: lead.id,
+        fullName: lead.fullName,
+        email: lead.email ?? "",
+        phone: lead.phone,
+        preferredDate: input.preferredDate,
+        preferredTime: input.preferredTime,
+        goal: input.goal?.trim() || "Gym trial",
+        status: "confirmed",
+        createdAt: nowISO(),
+      };
+      this.trialBookings.unshift(booking);
+      lead.stage = "trial_booked";
+      lead.nextFollowUpAt = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
+      lead.updatedAt = nowISO();
+      this.activity({ leadId, type: "trial_confirmed", title: "Trial scheduled", body: `${input.preferredDate} · ${input.preferredTime}`, actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId: booking.id } });
+      this.audit({ category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${lead.fullName} · ${input.preferredDate} ${input.preferredTime}`, summary: "Trial scheduled by staff", branchId: lead.branchId });
+      return this.getLeadSync(lead.id);
+    });
+  }
+
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.write");
@@ -3268,57 +3300,77 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  convertLead(leadId: T.UUID, input: T.ConvertLeadInput): Promise<T.MemberDetail> {
+  completeLeadSale(leadId: T.UUID, input: T.CompleteLeadSaleInput): Promise<T.CompleteLeadSaleResult> {
     return this.respond(() => {
       this.require("crm.write");
       this.require("members.write");
-      const lead = this.db.leads.find((l) => l.id === leadId);
+      this.require("memberships.sell");
+      const lead = this.db.leads.find((item) => item.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
-      if (lead.stage === "won" && lead.convertedMemberId) {
-        throw ApiError.of(ERR.VALIDATION, "Lead was already converted.");
-      }
+      if (lead.stage === "won" && lead.convertedMemberId) throw ApiError.of(ERR.VALIDATION, "Lead was already converted.");
+      const trial = this.trialBookings.find((booking) => booking.leadId === lead.id);
+      if (!trial || trial.status !== "completed") throw ApiError.of(ERR.VALIDATION, "Complete the trial before recording a successful membership sale.");
       const duplicates = this.findDuplicates({ phone: lead.phone, email: lead.email });
       if (duplicates.length > 0) {
-        throw ApiError.of(ERR.DUPLICATE_MEMBER, "This lead matches an existing member. Open that member instead of creating a duplicate.", {
-          details: { matches: duplicates },
-        });
+        throw ApiError.of(ERR.DUPLICATE_MEMBER, "This lead matches an existing member. Open that member instead of creating a duplicate.", { details: { matches: duplicates } });
       }
-      const result = this.createMemberSync({
+
+      const selection = input.membership;
+      let plan: T.MembershipPlan;
+      if (selection.mode === "existing") {
+        const existing = this.db.plans.find((item) => item.id === selection.planId && item.status === "active");
+        if (!existing) throw ApiError.of(ERR.NOT_FOUND, "Plan not found or inactive.");
+        plan = this.toPlan(existing);
+      } else {
+        const name = selection.name.trim();
+        if (name.length < 2 || name.length > 80) throw ApiError.of(ERR.VALIDATION, "Custom membership name must be between 2 and 80 characters.");
+        if (!Number.isInteger(selection.durationDays) || selection.durationDays < 1 || selection.durationDays > 730) throw ApiError.of(ERR.VALIDATION, "Membership duration must be between 1 and 730 days.");
+        if (!Number.isInteger(selection.includedPtSessions) || selection.includedPtSessions < 0 || selection.includedPtSessions > 100) throw ApiError.of(ERR.VALIDATION, "Included PT sessions must be between 0 and 100.");
+        if (!Number.isInteger(selection.price.amount) || selection.price.amount < 0) throw ApiError.of(ERR.VALIDATION, "Membership price must be zero or greater.");
+        plan = {
+          id: mockUuid(),
+          organizationId: this.db.organization.id,
+          name,
+          code: `CRM-${mockUuid().slice(0, 8).toUpperCase()}`,
+          kind: "time",
+          durationDays: selection.durationDays,
+          basePrice: { amount: selection.price.amount, currency: this.db.organization.currency },
+          branchAccess: "selected",
+          branchIds: [input.homeBranchId],
+          freezeAllowanceDays: 0,
+          includedPtSessions: selection.includedPtSessions,
+          status: "active",
+          activeSubscribers: 0,
+        };
+        this.db.plans.push(plan);
+        this.audit({ category: "settings", action: "plan.create_from_crm", entityType: "plan", entityId: plan.id, entityLabel: `${plan.name} · ${plan.code}`, summary: "Custom membership created during CRM sale", branchId: input.homeBranchId });
+      }
+
+      const member = this.createMemberSync({
         fullName: lead.fullName,
         phone: lead.phone,
         email: lead.email,
         homeBranchId: input.homeBranchId,
         preferredLanguage: input.preferredLanguage,
-        gender: input.gender,
-        dateOfBirth: input.dateOfBirth,
-        emergencyContactName: input.emergencyContactName,
-        emergencyContactPhone: input.emergencyContactPhone,
         marketingOptIn: input.marketingOptIn,
         marketingPreferenceSource: input.marketingPreferenceSource,
         source: lead.source,
         assignedSalespersonId: lead.ownerId,
       });
+      const sale = this.buildSale({ memberId: member.id, planId: plan.id, startDate: input.startDate, idempotencyKey: `lead-sale:${input.idempotencyKey}`, standardStartDate: this.today(), soldBy: this.actor().id });
       lead.stage = "won";
-      lead.convertedMemberId = result.id;
+      lead.convertedMemberId = member.id;
       lead.nextFollowUpAt = undefined;
       lead.updatedAt = nowISO();
-      const trialBooking = this.trialBookings.find((booking) => booking.leadId === lead.id);
-      if (trialBooking) trialBooking.status = "converted";
-      // Close open follow-up tasks for this lead
-      for (const t of this.db.tasks.filter((t) => t.leadId === lead.id && t.status === "open")) {
-        t.status = "completed";
-        t.outcome = "Converted to member";
-        t.completedAt = nowISO();
+      trial.status = "converted";
+      for (const task of this.db.tasks.filter((item) => item.leadId === lead.id && item.status === "open")) {
+        task.status = "completed";
+        task.outcome = "Membership sold";
+        task.completedAt = nowISO();
       }
-      this.activity({
-        leadId: lead.id,
-        memberId: result.id,
-        type: "lead_converted",
-        title: `Lead converted — ${lead.fullName} became ${result.memberNumber}`,
-        actorId: this.actor().id,
-        actorName: this.actor().name,
-      });
-      return this.toMemberDetail(result);
+      this.activity({ leadId: lead.id, memberId: member.id, type: "lead_converted", title: `Membership sold — ${plan.name}`, actorId: this.actor().id, actorName: this.actor().name, meta: { membershipId: sale.membership.id, planId: plan.id } });
+      this.audit({ category: "crm", action: "lead.membership_sale_completed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: `Lead converted with ${plan.name} membership`, before: { stage: "trial_completed" }, after: { stage: "won", memberId: member.id, membershipId: sale.membership.id, planId: plan.id }, branchId: lead.branchId });
+      return { member: this.toMemberDetail(member), plan: this.toPlan(plan), membership: sale.membership, charge: sale.charge };
     });
   }
 

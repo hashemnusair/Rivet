@@ -136,7 +136,6 @@ export function LogContactForm({
                   <SelectItem value="contacted">Contacted</SelectItem>
                   <SelectItem value="trial_booked">Trial booked</SelectItem>
                   <SelectItem value="trial_completed">Trial completed</SelectItem>
-                  <SelectItem value="offer_sent">Offer sent</SelectItem>
                 </SelectContent>
               </Select>
             )}

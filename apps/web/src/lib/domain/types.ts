@@ -739,6 +739,12 @@ export interface LeadTrialBooking {
   leadId?: UUID;
 }
 
+export interface ScheduleLeadTrialInput {
+  preferredDate: ISODate;
+  preferredTime: string;
+  goal?: string;
+}
+
 export interface LeadDetail extends LeadSummary {
   notes?: string;
   activities: TimelineEvent[];
@@ -811,6 +817,33 @@ export interface ConvertLeadInput {
   emergencyContactPhone?: string;
   marketingOptIn?: boolean;
   marketingPreferenceSource?: MarketingPreferenceSource;
+}
+
+export type LeadMembershipSelection =
+  | { mode: "existing"; planId: UUID }
+  | {
+      mode: "custom";
+      name: string;
+      price: Money;
+      durationDays: number;
+      includedPtSessions: number;
+    };
+
+/**
+ * Completes the simple CRM journey in one atomic operation. A won lead must
+ * never exist as a member without the membership that was sold.
+ */
+export interface CompleteLeadSaleInput extends ConvertLeadInput {
+  membership: LeadMembershipSelection;
+  startDate: ISODate;
+  idempotencyKey: string;
+}
+
+export interface CompleteLeadSaleResult {
+  member: MemberDetail;
+  plan: MembershipPlan;
+  membership: Membership;
+  charge: Charge;
 }
 
 // Tasks

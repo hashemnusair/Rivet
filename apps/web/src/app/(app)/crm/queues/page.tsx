@@ -24,7 +24,7 @@ const QUEUE_DEFS: Array<{ key: QueueKey; label: string; hint: string }> = [
   { key: "overdue", label: "Overdue follow-ups", hint: "Past their due time — work these first." },
   { key: "today", label: "Due today", hint: "Scheduled for today." },
   { key: "unassigned", label: "New & unassigned", hint: "Fresh leads with no owner yet." },
-  { key: "trials", label: "Trials to close", hint: "Trial booked or done — push the offer." },
+  { key: "trials", label: "Trials to finish", hint: "Confirm the trial, record its outcome, then record the membership sale." },
   { key: "expiring", label: "Expiring ≤ 14 days", hint: "Members about to lapse — call before expiry." },
   { key: "expired", label: "Expired ≤ 45 days", hint: "Win-back territory." },
 ];
@@ -106,7 +106,7 @@ export default function QueuesPage() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Growth"
-        title="Work queues"
+        title="Follow-ups"
         description={mineOnly ? "Your follow-ups, your leads, your renewals." : "The whole team's follow-up load."}
       />
 

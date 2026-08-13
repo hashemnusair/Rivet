@@ -173,6 +173,25 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(mutationArgs).toMatchObject({ operation: "payments.create", input: { idempotencyKey: "payment-key-1" } });
   });
 
+  it("maps the atomic trial-to-membership sale through one mutation", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const result = { member: { id: "member-1" }, plan: { id: "plan-1" }, membership: { id: "membership-1" }, charge: { id: "charge-1" } };
+    const api = new ConvexGymOSApi(transportFor({ mutation: result }, (_kind, args) => calls.push(args)));
+
+    await expect(api.completeLeadSale("lead-1", {
+      homeBranchId: session.activeBranchId!,
+      preferredLanguage: "en",
+      startDate: "2026-08-13",
+      idempotencyKey: "lead-sale-1",
+      membership: { mode: "existing", planId: "plan-1" },
+    })).resolves.toBe(result);
+
+    expect(calls[0]).toMatchObject({
+      operation: "leads.complete_sale",
+      input: { leadId: "lead-1", idempotencyKey: "lead-sale-1", membership: { mode: "existing", planId: "plan-1" } },
+    });
+  });
+
   it("keeps offer drafting, delivery confirmation, and the lead response as separate mutations", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const offer = { id: "offer-1", leadId: "lead-1", planId: "plan-1", planName: "Growth", price: { amount: 149_000, currency: "JOD" as const }, status: "draft" as const, createdById: session.user.id, createdAt: "2026-08-09T18:00:00.000Z" };

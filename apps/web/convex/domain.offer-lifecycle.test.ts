@@ -60,19 +60,18 @@ describe("CRM offer lifecycle", () => {
     expect(lead.offers).toContainEqual(expect.objectContaining({ status: "declined" }));
   });
 
-  it("records exactly one accepted outcome when a delivered offer is accepted during conversion", async () => {
+  it("blocks the retired member-only conversion path", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const sales = t.withIdentity({ subject: "clerk-offer-sales" });
     const draft = await sales.mutation(api.domain.mutate, operation("offers.create", { leadId: "offer-lead-accepted", planId: "offer-plan", price: { amount: 28_000, currency: "JOD" }, expiresInDays: 7 })) as { id: string };
     await sales.mutation(api.domain.mutate, operation("offers.deliver", { offerId: draft.id, channel: "manual", reference: "accepted-at-conversion" }));
 
-    const member = await sales.mutation(api.domain.mutate, operation("leads.convert", {
+    await expectCode(sales.mutation(api.domain.mutate, operation("leads.convert", {
       leadId: "offer-lead-accepted",
       homeBranchId: "offer-branch",
       preferredLanguage: "en",
-    })) as { id: string };
-    expect(member.id).toEqual(expect.any(String));
+    })), "VALIDATION_ERROR");
 
     const persisted = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "offer-org")).unique();
@@ -83,8 +82,8 @@ describe("CRM offer lifecycle", () => {
         audits: await ctx.db.query("auditEvents").collect(),
       };
     });
-    expect((persisted.offer?.data as { status?: string }).status).toBe("accepted");
-    expect(persisted.timeline.filter((row) => (row.data as { type?: string }).type === "offer_accepted")).toHaveLength(1);
-    expect(persisted.audits.filter((event) => event.action === "offer.accepted")).toHaveLength(1);
+    expect((persisted.offer?.data as { status?: string }).status).toBe("sent");
+    expect(persisted.timeline.filter((row) => (row.data as { type?: string }).type === "offer_accepted")).toHaveLength(0);
+    expect(persisted.audits.filter((event) => event.action === "offer.accepted")).toHaveLength(0);
   });
 });

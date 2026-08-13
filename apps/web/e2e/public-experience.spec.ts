@@ -53,7 +53,7 @@ test.describe("RIVET member experience", () => {
     // The label uses a typographic apostrophe, so match either form.
     await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
-    await page.getByRole("link", { name: /^(Follow-ups|Pipeline)$/ }).first().click();
+    await page.getByRole("link", { name: /^(Follow-ups|Leads)$/ }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
   });
 

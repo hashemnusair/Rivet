@@ -1,14 +1,13 @@
 "use client";
 
-import { GripVertical, LayoutList, Plus } from "lucide-react";
+import { LayoutList, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { getApi } from "@/lib/api/client";
-import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiQuery } from "@/lib/hooks/use-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import type { LeadStage, LeadSummary } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
@@ -23,26 +22,30 @@ import { ErrorState } from "@/components/ui/states";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
 
-const PIPELINE_STAGES: Array<{ stage: LeadStage; label: string }> = [
-  { stage: "new", label: "New" },
-  { stage: "attempted", label: "Attempted" },
-  { stage: "contacted", label: "Contacted" },
-  { stage: "trial_booked", label: "Trial booked" },
-  { stage: "trial_completed", label: "Trial done" },
-  { stage: "offer_sent", label: "Offer sent" },
+type SimpleSalesStage = "trial" | "membership" | "successful" | "not_successful";
+const SIMPLE_STAGES: Array<{ stage: SimpleSalesStage; label: string; hint: string }> = [
+  { stage: "trial", label: "Trial", hint: "Book, confirm, or complete the trial" },
+  { stage: "membership", label: "Membership sale", hint: "Record successful or not successful" },
+  { stage: "successful", label: "Successful", hint: "Member and membership created" },
+  { stage: "not_successful", label: "Not successful", hint: "Closed without creating a member" },
 ];
+
+function simpleStage(stage: LeadStage): SimpleSalesStage {
+  if (stage === "won") return "successful";
+  if (stage === "lost") return "not_successful";
+  if (stage === "trial_completed" || stage === "offer_sent") return "membership";
+  return "trial";
+}
 
 function PipelinePageInner() {
   const { session } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const invalidate = useInvalidate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
   const [view, setView] = useState<"board" | "list">("board");
-  const [dragOverStage, setDragOverStage] = useState<LeadStage | null>(null);
 
   // HTML5 drag-and-drop doesn't work on touchscreens — default small touch
   // devices to the list view (the board remains one tap away).
@@ -95,20 +98,12 @@ function PipelinePageInner() {
     };
   }, [leadQuery, leadQueryKey, queryClient, refetch]);
 
-  const updateStage = useApiMutation((api, v: { leadId: string; stage: LeadStage }) => api.updateLead(v.leadId, { stage: v.stage }), {
-    onSuccess: async () => {
-      await invalidate();
-    },
-    onError: () => toast.error("Could not move the lead."),
-  });
-
   const leads = useMemo(() => data?.items ?? [], [data]);
   const byStage = useMemo(() => {
-    const map = new Map<LeadStage, LeadSummary[]>();
-    for (const s of PIPELINE_STAGES) map.set(s.stage, []);
+    const map = new Map<SimpleSalesStage, LeadSummary[]>();
+    for (const stage of SIMPLE_STAGES) map.set(stage.stage, []);
     for (const lead of leads) {
-      const list = map.get(lead.stage);
-      if (list) list.push(lead);
+      map.get(simpleStage(lead.stage))?.push(lead);
     }
     return map;
   }, [leads]);
@@ -117,8 +112,8 @@ function PipelinePageInner() {
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
         eyebrow="Growth"
-        title="Pipeline"
-        description="Drag leads between stages, or open one to work it properly."
+        title="Leads"
+        description="A simple view of every trial and membership outcome. Open a lead to move it forward."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-line-2 p-0.5" role="tablist" aria-label="View">
@@ -152,7 +147,7 @@ function PipelinePageInner() {
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-64 w-full" />
           ))}
         </div>
@@ -162,36 +157,23 @@ function PipelinePageInner() {
         <LeadListView leads={leads} />
       ) : (
         <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-4" data-testid="pipeline-board">
-          {PIPELINE_STAGES.map(({ stage, label }) => {
+          {SIMPLE_STAGES.map(({ stage, label, hint }) => {
             const stageLeads = byStage.get(stage) ?? [];
             const stageValue = stageLeads.reduce((s, l) => s + (l.expectedValue?.amount ?? 0), 0);
             return (
               <section
                 key={stage}
                 aria-label={label}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOverStage(stage);
-                }}
-                onDragLeave={() => setDragOverStage((s) => (s === stage ? null : s))}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const leadId = e.dataTransfer.getData("text/lead-id");
-                  setDragOverStage(null);
-                  if (leadId) updateStage.mutate({ leadId, stage });
-                }}
-                className={cn(
-                  "flex w-56 shrink-0 flex-col rounded-lg border bg-sunken/40 transition-colors",
-                  dragOverStage === stage ? "border-ink" : "border-line",
-                )}
+                className="flex w-64 shrink-0 flex-col rounded-lg border border-line bg-sunken/40"
               >
-                <header className="flex items-baseline justify-between px-3 pb-2 pt-3">
-                  <h2 className="text-[12.5px] font-semibold">
-                    {label} <span className="ms-1 text-[11px] font-normal text-ink-3 tabular">{stageLeads.length}</span>
-                  </h2>
+                <header className="px-3 pb-2 pt-3">
+                  <div className="flex items-baseline justify-between">
+                    <h2 className="text-[12.5px] font-semibold">{label} <span className="ms-1 text-[11px] font-normal text-ink-3 tabular">{stageLeads.length}</span></h2>
                   {stageValue > 0 ? (
                     <MoneyText money={{ amount: stageValue, currency: "JOD" }} compact className="text-[11px] text-ink-3" />
                   ) : null}
+                  </div>
+                  <p className="mt-0.5 text-[10.5px] text-ink-3">{hint}</p>
                 </header>
                 <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                   {stageLeads.map((lead) => (
@@ -199,7 +181,7 @@ function PipelinePageInner() {
                   ))}
                   {stageLeads.length === 0 ? (
                     <p className="rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[11.5px] text-ink-4">
-                      Drop leads here
+                      No leads
                     </p>
                   ) : null}
                 </div>
@@ -217,11 +199,6 @@ function PipelinePageInner() {
 function LeadCard({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
   return (
     <article
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/lead-id", lead.id);
-        e.dataTransfer.effectAllowed = "move";
-      }}
       onClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
       tabIndex={0}
@@ -229,7 +206,6 @@ function LeadCard({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
       className="group cursor-pointer rounded-md border border-line bg-surface p-2.5 transition-colors hover:border-line-3"
     >
       <div className="flex items-start gap-2">
-        <GripVertical className="mt-0.5 size-3.5 shrink-0 text-ink-4 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium">{lead.fullName}</p>
           <p className="font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</p>
@@ -252,7 +228,7 @@ function LeadCard({ lead, onOpen }: { lead: LeadSummary; onOpen: () => void }) {
 
 function LeadListView({ leads }: { leads: LeadSummary[] }) {
   if (leads.length === 0) {
-    return <p className="py-10 text-center text-[13px] text-ink-3">No leads in the pipeline right now.</p>;
+    return <p className="py-10 text-center text-[13px] text-ink-3">No leads right now.</p>;
   }
   return (
     <div className="panel overflow-hidden">
@@ -276,7 +252,7 @@ function LeadListView({ leads }: { leads: LeadSummary[] }) {
                   </Link>
                   <span className="block whitespace-nowrap font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] capitalize">{lead.stage.replace(/_/g, " ")}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] capitalize">{simpleStage(lead.stage).replace(/_/g, " ")}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{LEAD_SOURCE_LABELS[lead.source]}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>

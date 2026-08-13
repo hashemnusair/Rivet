@@ -5291,6 +5291,55 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers: [] };
     }
+    case "trials.schedule_for_lead": {
+      requirePermission(actor, "crm.write");
+      const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      const leadValue = data(lead.data);
+      if (["won", "lost"].includes(stringValue(leadValue.stage))) domainError("VALIDATION_ERROR", "Closed leads cannot be scheduled for a trial.", { correlationId: actor.correlationId });
+      if (await linkedTrialBooking(ctx, actor, lead.publicId)) domainError("CONFLICT", "This lead already has a trial.", { correlationId: actor.correlationId });
+      const branchId = stringValue(leadValue.branchId);
+      const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      assertBranchAccess(actor, branch);
+      if (!branch || !branch.active || branch.status === "inactive") domainError("NOT_FOUND", "The lead's branch is not active.", { correlationId: actor.correlationId });
+
+      const preferredDate = stringValue(input.preferredDate);
+      const preferredTime = stringValue(input.preferredTime);
+      const weekday = validatedWeekdayForDate(preferredDate);
+      if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.", { correlationId: actor.correlationId });
+      const settings = await settingsData(ctx, actor);
+      const schedule = arrayValue(data(data(settings).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === branchId);
+      if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.", { correlationId: actor.correlationId });
+      const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
+      if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
+        domainError("CONFLICT", "That trial time is outside this branch's trial hours.", { correlationId: actor.correlationId });
+      }
+      const [hour = 0, minute = 0] = preferredTime.split(":").map(Number);
+      const requestedAt = ptWallTime(preferredDate, hour * 60 + minute, actor.organization.timezone || TZ_FALLBACK);
+      if (requestedAt <= Date.now()) domainError("VALIDATION_ERROR", "Choose a future trial time.", { correlationId: actor.correlationId });
+
+      const booking = await insertRecord(ctx, actor, "trialBooking", {
+        id: newPublicId(),
+        organizationId: publicOrganizationId(actor.organization),
+        gymId: publicOrganizationId(actor.organization),
+        branchId,
+        leadId: lead.publicId,
+        fullName: stringValue(leadValue.fullName),
+        email: optionalString(leadValue.email) ?? "",
+        phone: stringValue(leadValue.phone),
+        preferredDate,
+        preferredTime,
+        goal: optionalString(input.goal) ?? "Gym trial",
+        status: "confirmed",
+        createdAt: isoNow(),
+        updatedAt: isoNow(),
+      }, { branchId, leadPublicId: lead.publicId });
+      const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
+      await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
+      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
+      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
+      return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: booking };
+    }
     case "trials.update": {
       requirePermission(actor, "crm.write");
       const booking = await recordOf(ctx, actor, "trialBooking", recordId(input.bookingId));
@@ -5421,31 +5470,143 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await toTask(ctx, actor, updated);
     }
-    case "leads.convert": {
+    case "leads.complete_sale": {
       requirePermission(actor, "crm.write");
-      const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      requirePermission(actor, "members.write");
+      requirePermission(actor, "memberships.sell");
+
+      const leadId = recordId(input.leadId);
+      const idempotencyKey = recordId(input.idempotencyKey);
+      const requestHash = JSON.stringify({ ...input, idempotencyKey });
+      const existingIdempotency = await ctx.db
+        .query("idempotencyRecords")
+        .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "lead.complete_sale").eq("key", idempotencyKey))
+        .unique();
+      if (existingIdempotency) {
+        if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This sale key was already used for a different lead sale.", { correlationId: actor.correlationId });
+        const stored = data(existingIdempotency.result);
+        const memberRecord = await recordOf(ctx, actor, "member", stringValue(stored.memberId));
+        const planRecord = await recordOf(ctx, actor, "plan", stringValue(stored.planId));
+        const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
+        const chargeRecord = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
+        return {
+          member: await toMemberDetail(ctx, actor, data(memberRecord.data)),
+          plan: await toPlan(ctx, actor, data(planRecord.data)),
+          membership: await toMembership(ctx, actor, data(membershipRecord.data)),
+          charge: data(chargeRecord.data),
+        };
+      }
+
+      const lead = await recordOf(ctx, actor, "lead", leadId);
       const leadData = data(lead.data);
       if (leadData.stage === "won" && leadData.convertedMemberId) domainError("VALIDATION_ERROR", "Lead was already converted.", { correlationId: actor.correlationId });
-      const created = await createMemberMutation(ctx, actor, { ...input, fullName: leadData.fullName, phone: leadData.phone, email: leadData.email, homeBranchId: input.homeBranchId, preferredLanguage: input.preferredLanguage, source: leadData.source, assignedSalespersonId: leadData.ownerId }, { rejectDuplicates: true });
-      const member = data(created.member);
-      await patchRecord(ctx, actor, lead, { stage: "won", convertedMemberId: member.id, nextFollowUpAt: undefined, updatedAt: isoNow() });
-      const leadOffers = (await recordsOf(ctx, actor, "offer")).filter((record) => optionalString(data(record.data).leadId) === lead.publicId);
-      const acceptedOffer = leadOffers
-        .filter((record) => ["accepted", "sent"].includes(stringValue(offerProjection(data(record.data)).status)))
-        .sort((a, b) => stringValue(data(b.data).createdAt).localeCompare(stringValue(data(a.data).createdAt)))[0];
-      if (acceptedOffer && stringValue(data(acceptedOffer.data).status) === "sent") {
-        const currentOffer = data(acceptedOffer.data);
-        const responseReason = "Accepted during member conversion";
-        await patchRecord(ctx, actor, acceptedOffer, { status: "accepted", respondedAt: isoNow(), respondedById: publicUserId(actor.user), responseReason });
-        await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: "offer_accepted", title: `Offer accepted — ${stringValue(currentOffer.planName)}`, body: responseReason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: acceptedOffer.publicId, outcome: "accepted" } });
-        await insertAudit(ctx, actor, { category: "crm", action: "offer.accepted", entityType: "offer", entityId: acceptedOffer.publicId, entityLabel: `${stringValue(currentOffer.planName)} · ${stringValue(leadData.fullName)}`, summary: "Offer accepted during member conversion", reason: responseReason, before: { status: "sent" }, after: { status: "accepted" }, branchId: optionalString(leadData.branchId) });
-      }
       const trialBooking = await linkedTrialBooking(ctx, actor, lead.publicId);
-      if (trialBooking) await patchRecord(ctx, actor, trialBooking, { status: "converted", updatedAt: isoNow() });
-      const tasks = await recordsOf(ctx, actor, "task");
-      for (const task of tasks) if (data(task.data).leadId === lead.publicId && data(task.data).status === "open") await patchRecord(ctx, actor, task, { status: "completed", outcome: "Converted to member", completedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, memberId: member.id, branchId: member.homeBranchId, type: "lead_converted", title: `Lead converted — ${member.fullName} became ${member.memberNumber}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
-      return member;
+      if (!trialBooking || stringValue(data(trialBooking.data).status) !== "completed") {
+        domainError("VALIDATION_ERROR", "Complete the trial before recording a successful membership sale.", { correlationId: actor.correlationId });
+      }
+
+      const selection = data(input.membership);
+      const mode = stringValue(selection.mode);
+      let planRecord: DomainRecord;
+      if (mode === "existing") {
+        planRecord = await recordOf(ctx, actor, "plan", recordId(selection.planId));
+      } else if (mode === "custom") {
+        const name = stringValue(selection.name).trim();
+        const durationDays = numberValue(selection.durationDays);
+        const includedPtSessions = numberValue(selection.includedPtSessions);
+        const price = amountOf(selection.price);
+        if (name.length < 2 || name.length > 80) domainError("VALIDATION_ERROR", "Custom membership name must be between 2 and 80 characters.", { correlationId: actor.correlationId, fieldErrors: { name: ["Enter a membership name"] } });
+        if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 730) domainError("VALIDATION_ERROR", "Membership duration must be between 1 and 730 days.", { correlationId: actor.correlationId, fieldErrors: { durationDays: ["Enter 1 to 730 days"] } });
+        if (!Number.isInteger(includedPtSessions) || includedPtSessions < 0 || includedPtSessions > 100) domainError("VALIDATION_ERROR", "Included PT sessions must be between 0 and 100.", { correlationId: actor.correlationId, fieldErrors: { includedPtSessions: ["Enter 0 to 100 sessions"] } });
+        if (!Number.isInteger(price) || price < 0) domainError("VALIDATION_ERROR", "Membership price must be zero or greater.", { correlationId: actor.correlationId, fieldErrors: { price: ["Enter a valid price"] } });
+        const homeBranchId = recordId(input.homeBranchId);
+        assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, homeBranchId));
+        const publicId = newPublicId();
+        const plan = await insertRecord(ctx, actor, "plan", {
+          id: publicId,
+          organizationId: publicOrganizationId(actor.organization),
+          name,
+          code: `CRM-${publicId.slice(0, 8).toUpperCase()}`,
+          kind: "time",
+          durationDays,
+          basePrice: money(price, actor.organization.currency),
+          branchAccess: "selected",
+          branchIds: [homeBranchId],
+          freezeAllowanceDays: 0,
+          includedPtSessions,
+          status: "active",
+        }, { branchId: homeBranchId });
+        await insertAudit(ctx, actor, { category: "settings", action: "plan.create_from_crm", entityType: "plan", entityId: plan.id, entityLabel: `${name} · ${plan.code}`, summary: "Custom membership created during CRM sale", branchId: homeBranchId });
+        planRecord = await recordOf(ctx, actor, "plan", plan.id);
+      } else {
+        domainError("VALIDATION_ERROR", "Choose an existing plan or enter a custom membership.", { correlationId: actor.correlationId });
+      }
+
+      const planData = data(planRecord.data);
+      if (stringValue(planData.status, "active") !== "active") domainError("NOT_FOUND", "Plan not found or inactive.", { correlationId: actor.correlationId });
+      const created = await createMemberMutation(ctx, actor, {
+        ...input,
+        fullName: leadData.fullName,
+        phone: leadData.phone,
+        email: leadData.email,
+        homeBranchId: input.homeBranchId,
+        preferredLanguage: input.preferredLanguage,
+        source: leadData.source,
+        assignedSalespersonId: leadData.ownerId,
+      }, { rejectDuplicates: true });
+      const member = data(created.member);
+      const sale = await createMembershipMutation(ctx, actor, {
+        memberId: member.id,
+        planId: planData.id,
+        startDate: input.startDate,
+        idempotencyKey: `lead-sale:${idempotencyKey}`,
+      });
+
+      const completedAt = isoNow();
+      await patchRecord(ctx, actor, lead, { stage: "won", convertedMemberId: member.id, nextFollowUpAt: undefined, updatedAt: completedAt });
+      await patchRecord(ctx, actor, trialBooking, { status: "converted", updatedAt: completedAt });
+      for (const task of (await recordsOf(ctx, actor, "task")).filter((record) => {
+        const taskData = data(record.data);
+        return taskData.leadId === lead.publicId && taskData.status === "open";
+      })) {
+        await patchRecord(ctx, actor, task, { status: "completed", outcome: "Membership sold", completedAt });
+      }
+      await insertTimeline(ctx, actor, {
+        leadId: lead.publicId,
+        memberId: member.id,
+        branchId: optionalString(leadData.branchId),
+        type: "lead_converted",
+        title: `Membership sold — ${stringValue(planData.name)}`,
+        body: `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
+        actorId: publicUserId(actor.user),
+        actorName: actor.user.fullName,
+        meta: { membershipId: data(sale.membership).id, planId: planData.id },
+      });
+      await insertAudit(ctx, actor, {
+        category: "crm",
+        action: "lead.membership_sale_completed",
+        entityType: "lead",
+        entityId: lead.publicId,
+        entityLabel: stringValue(leadData.fullName),
+        summary: `Lead converted with ${stringValue(planData.name)} membership`,
+        before: { stage: leadData.stage },
+        after: { stage: "won", memberId: member.id, membershipId: data(sale.membership).id, planId: planData.id },
+        branchId: optionalString(leadData.branchId),
+      });
+      await ctx.db.insert("idempotencyRecords", {
+        organizationId: actor.organization._id,
+        operation: "lead.complete_sale",
+        key: idempotencyKey,
+        requestHash,
+        result: { memberId: member.id, planId: planData.id, membershipId: data(sale.membership).id, chargeId: data(sale.charge).id },
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 86_400_000 * 365,
+      });
+      return { member: created.member, plan: await toPlan(ctx, actor, planData), membership: sale.membership, charge: sale.charge };
+    }
+    case "leads.convert": {
+      requirePermission(actor, "crm.write");
+      domainError("VALIDATION_ERROR", "Member-only conversion is no longer supported. Complete the trial and record a membership sale.", { correlationId: actor.correlationId });
     }
     case "checkins.create": {
       requirePermission(actor, "members.read");

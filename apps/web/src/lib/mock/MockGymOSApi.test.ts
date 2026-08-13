@@ -1037,66 +1037,6 @@ describe("CRM", () => {
     expect((await api.getLead(lead.id)).offers[0]).toMatchObject({ id: draft.id, status: "draft" });
   });
 
-  it("converts a lead into a member without duplicating contact details", async () => {
-    const leads = await api.listLeads({ pageSize: 30 });
-    const lead = leads.items.find((l) => !l.convertedMemberId && l.stage !== "lost")!;
-
-    const member = await api.convertLead(lead.id, { homeBranchId: lead.branchId, preferredLanguage: "en" });
-
-    expect(member.fullName).toBe(lead.fullName);
-    expect(member.phone).toBe(lead.phone);
-    expect(member.marketingOptIn).toBe(true);
-
-    const after = await api.getLead(lead.id);
-    expect(after.stage).toBe("won");
-    expect(after.convertedMemberId).toBe(member.id);
-  });
-
-  it("blocks lead conversion when the contact already belongs to a member", async () => {
-    const membersBefore = await api.listMembers({ pageSize: 300 });
-    const existing = membersBefore.items[0]!;
-    const lead = await api.createLead({
-      fullName: "Duplicate conversion candidate",
-      phone: existing.phone,
-      email: existing.email,
-      branchId: existing.homeBranchId,
-      source: "walk_in",
-    });
-
-    await expect(api.convertLead(lead.id, { homeBranchId: existing.homeBranchId, preferredLanguage: "en" })).rejects.toMatchObject({
-      code: ERR.DUPLICATE_MEMBER,
-    });
-    expect((await api.listMembers({ pageSize: 300 })).totalItems).toBe(membersBefore.totalItems);
-    expect((await api.getLead(lead.id)).stage).toBe("new");
-  });
-
-  it("refuses to convert the same lead twice", async () => {
-    const leads = await api.listLeads({ pageSize: 30 });
-    const lead = leads.items.find((l) => !l.convertedMemberId && l.stage !== "lost")!;
-    await api.convertLead(lead.id, { homeBranchId: lead.branchId, preferredLanguage: "en" });
-    await expect(api.convertLead(lead.id, { homeBranchId: lead.branchId, preferredLanguage: "en" })).rejects.toMatchObject(
-      { code: ERR.VALIDATION },
-    );
-  });
-
-  it("closes open follow-up tasks when a lead converts", async () => {
-    const leads = await api.listLeads({ pageSize: 30 });
-    const lead = leads.items.find((l) => !l.convertedMemberId && l.stage !== "lost")!;
-    const session = await api.getSession();
-    await api.createFollowUp({
-      type: "follow_up",
-      title: "Call back",
-      ownerId: session.user.id,
-      dueAt: "2026-08-05T09:00:00Z",
-      leadId: lead.id,
-    });
-
-    await api.convertLead(lead.id, { homeBranchId: lead.branchId, preferredLanguage: "en" });
-
-    const open = await api.listTasks({ status: "open", pageSize: 100 });
-    expect(open.items.some((t) => t.leadId === lead.id)).toBe(false);
-  });
-
   it("creates and completes a follow-up task", async () => {
     const session = await api.getSession();
     const members = await api.listMembers({ pageSize: 1 });
@@ -1294,12 +1234,37 @@ describe("free-trial lifecycle", () => {
     await expect(api.updateTrialBooking(booking.id, { status: "confirmed" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
-  it("marks the linked customer booking converted when the lead becomes a member", async () => {
+  it("creates the member and membership together after a completed trial", async () => {
     const booking = await bookTrial();
     const session = await api.getSession();
-    await api.convertLead(booking.leadId!, { homeBranchId: session.branches[0]!.id, preferredLanguage: "en" });
+    await api.updateTrialBooking(booking.id, { status: "completed", note: "Trial completed" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const result = await api.completeLeadSale(booking.leadId!, {
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      marketingOptIn: true,
+      startDate: todayISODate(),
+      idempotencyKey: "mock-simple-crm-sale",
+      membership: { mode: "existing", planId: plan.id },
+    });
+    expect(result.membership).toMatchObject({ memberId: result.member.id, planId: plan.id });
     const experience = await api.getCustomerExperience();
     expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("converted");
+  });
+
+  it("creates a reusable custom membership during a successful CRM sale", async () => {
+    const booking = await bookTrial();
+    const session = await api.getSession();
+    await api.updateTrialBooking(booking.id, { status: "completed" });
+    const result = await api.completeLeadSale(booking.leadId!, {
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      startDate: todayISODate(),
+      idempotencyKey: "mock-simple-crm-custom-sale",
+      membership: { mode: "custom", name: "Eight week transformation", price: money(150_000), durationDays: 56, includedPtSessions: 4 },
+    });
+    expect(result.plan).toMatchObject({ name: "Eight week transformation", durationDays: 56, includedPtSessions: 4, basePrice: money(150_000) });
+    expect((await api.listPlans({ search: "Eight week", status: "active", pageSize: 20 })).items).toContainEqual(expect.objectContaining({ id: result.plan.id }));
   });
 });
 

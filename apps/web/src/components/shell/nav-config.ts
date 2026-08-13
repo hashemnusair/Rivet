@@ -50,8 +50,8 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Growth",
     items: [
-      { href: "/crm/pipeline", label: "Pipeline", icon: KanbanSquare, anyPermission: ["crm.read"] },
-      { href: "/crm/queues", label: "Queues", icon: ListFilter, anyPermission: ["crm.read"] },
+      { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
+      { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, anyPermission: ["crm.read"] },
     ],
   },
   {

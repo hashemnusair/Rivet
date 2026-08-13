@@ -230,42 +230,20 @@ test.describe("CRM lead capture", () => {
     await expect(dialog.getByLabel("Owner")).toContainText("Unassigned");
   });
 
-  test("keeps a CRM offer drafted until staff confirms manual delivery", async ({ page }) => {
+  test("shows the simplified trial-to-membership workflow without offer or member-only conversion controls", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/crm/pipeline");
+    await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Trial" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Membership sale" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Successful \d+/, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Not successful \d+/, exact: true })).toBeVisible();
     await page.locator("article").first().click();
     await expect(page).toHaveURL(/\/crm\/leads\//);
-
-    const dialog = async () => page.getByRole("dialog");
-    await page.getByRole("button", { name: "Create offer" }).click();
-    await expect(await dialog()).toBeVisible();
-    await (await dialog()).getByLabel("Plan").click();
-    await page.getByRole("option").first().click();
-    await (await dialog()).getByRole("button", { name: "Record draft" }).click();
-    await expect(page.getByText(/offer saved as a draft/i)).toBeVisible();
-    await expect(page.getByText("Draft · not delivered")).toBeVisible();
-
-    await page.getByRole("button", { name: "Create offer" }).click();
-    await (await dialog()).getByLabel("Plan").click();
-    await page.getByRole("option").first().click();
-    await (await dialog()).getByLabel("Delivery state").click();
-    await page.getByRole("option", { name: /Confirm manual delivery/i }).click();
-    await expect((await dialog()).getByRole("button", { name: "Confirm manual delivery" })).toBeVisible();
-    await (await dialog()).getByRole("button", { name: "Confirm manual delivery" }).click();
-
-    await expect(page.getByText(/offer delivery confirmed and lead stage updated/i)).toBeVisible();
-    await expect(page.getByText(/Delivered · (whatsapp|sms|manual|email)/i)).toBeVisible();
-    await expect(page.getByText("Offer sent").first()).toBeVisible();
-    await expect(page.getByRole("listitem", { name: "Trial booked: skipped" })).toBeVisible();
-    await expect(page.getByRole("listitem", { name: "Trial done: skipped" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Record accepted" }).click();
-    const response = page.getByRole("dialog", { name: "Record accepted offer" });
-    await response.getByRole("textbox", { name: "Response note (optional)" }).fill("Lead confirmed during the preview journey");
-    await response.getByRole("button", { name: "Save response" }).click();
-    await expect(page.getByText(/offer accepted/i).first()).toBeVisible();
-    await expect(page.getByText("Lead confirmed during the preview journey")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Record accepted" })).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Trial");
+    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Membership sale");
+    await expect(page.getByRole("button", { name: "Create offer" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Convert to member/i })).toHaveCount(0);
   });
 });
 
