@@ -171,6 +171,17 @@ jobs:
           test -n "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" || { echo "::error::Missing PLAYWRIGHT_CLERK_STORAGE_STATE"; exit 1; }
       - name: Write trusted storage state outside the repository
         run: printf '%s' "$PLAYWRIGHT_CLERK_STORAGE_STATE_SECRET" > "$RUNNER_TEMP/clerk-storage-state.json"
+      - name: Align isolated staging Convex functions
+        if: ${{ inputs.run_operational_flow == true || inputs.run_realtime_flow == true || inputs.run_owner_settings_flow == true || inputs.run_functional_staging == true }}
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+        run: |
+          staging_dry_run="$RUNNER_TEMP/convex-staging-dry-run.txt"
+          pnpm convex:deploy -- --dry-run --typecheck enable --codegen enable > "$staging_dry_run"
+          expected_staging_url="${NEXT_PUBLIC_CONVEX_URL%/}"
+          grep -Fq "$expected_staging_url" "$staging_dry_run" || { echo "::error::Convex dry run target did not match the configured isolated staging URL."; exit 1; }
+          pnpm convex:deploy -- --typecheck enable --codegen enable --message "Isolated staging ${GITHUB_SHA}"
       - name: Run authenticated smoke
         env:
           PLAYWRIGHT_CONVEX_SMOKE: "1"
