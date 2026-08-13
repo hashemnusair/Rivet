@@ -13,15 +13,17 @@ function timeValue(minutes: number): string {
 }
 
 test.describe("staged owner settings and trial scheduling", () => {
-  test("persists an exact branch trial time and restores the original policy", async ({ browser, baseURL }, testInfo) => {
+  test("persists a branch trial-request window and restores the original policy", async ({ browser, baseURL }, testInfo) => {
     test.skip(process.env.PLAYWRIGHT_STAGING_FULL_SUITE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging", "Enable the isolated full staging suite explicitly.");
     const guard = requireStagingJourney("owner-settings", baseURL);
     const cleanup = new StagingCleanupLedger(guard.runId, "owner-settings");
     const context = await newRoleContext(browser, "owner", baseURL);
     const page = await context.newPage();
     let cleanupEntry: number | undefined;
-    let trialInputName: string | undefined;
-    let originalTimes: string | undefined;
+    let dayLabel: string | undefined;
+    let originalTrialEnabled = false;
+    let originalTrialOpensAt = "";
+    let originalTrialClosesAt = "";
     try {
       await page.goto("/settings?section=operations", { waitUntil: "domcontentloaded" });
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -33,39 +35,43 @@ test.describe("staged owner settings and trial scheduling", () => {
         if (await open.getAttribute("aria-checked") !== "true") continue;
         const opening = await page.getByLabel(`${day} opening time`).inputValue();
         const closing = await page.getByLabel(`${day} closing time`).inputValue();
-        const trial = page.getByLabel(`${day} trial times, comma separated`);
-        const current = (await trial.inputValue()).split(",").map((item) => item.trim()).filter(Boolean);
-        const candidate = Array.from({ length: 48 }, (_, index) => index * 30)
-          .find((minutes) => minutes >= minuteValue(opening) && minutes + 60 <= minuteValue(closing) && !current.includes(timeValue(minutes)));
-        if (candidate === undefined) continue;
-        trialInputName = `${day} trial times, comma separated`;
-        originalTimes = current.join(", ");
-        await trial.fill([...current, timeValue(candidate)].join(", "));
+        if (minuteValue(closing) - minuteValue(opening) < 60) continue;
+        dayLabel = day;
+        const trialEnabled = page.getByRole("checkbox", { name: `${day} trial requests enabled` });
+        originalTrialEnabled = await trialEnabled.getAttribute("aria-checked") === "true";
+        if (!originalTrialEnabled) await trialEnabled.click();
+        const trialOpening = page.getByLabel(`${day} trial window opening time`);
+        const trialClosing = page.getByLabel(`${day} trial window closing time`);
+        originalTrialOpensAt = await trialOpening.inputValue();
+        originalTrialClosesAt = await trialClosing.inputValue();
+        const firstCandidate = minuteValue(opening) + 15;
+        const candidateOpening = timeValue(firstCandidate) === originalTrialOpensAt ? minuteValue(opening) + 30 : firstCandidate;
+        const candidateClosing = Math.min(minuteValue(closing), candidateOpening + 60);
+        await trialOpening.fill(timeValue(candidateOpening));
+        await trialClosing.fill(timeValue(candidateClosing));
         break;
       }
-      if (!trialInputName || originalTimes === undefined) throw new Error("The staging gym needs one open branch day with an unused 60-minute trial start.");
-      cleanupEntry = cleanup.plan({ targetType: "operational_policy", targetId: trialInputName, action: "preserve", reason: "Restore the original trial schedule after staging verification" });
+      if (!dayLabel) throw new Error("The staging gym needs one open branch day with at least a 60-minute window.");
+      cleanupEntry = cleanup.plan({ targetType: "operational_policy", targetId: dayLabel, action: "preserve", reason: "Restore the original trial schedule after staging verification" });
       await page.getByRole("button", { name: "Save operational rules" }).click();
       await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
-      const changedTimes = await page.getByLabel(trialInputName).inputValue();
-      expect(changedTimes).not.toBe(originalTimes);
+      const changedOpening = await page.getByLabel(`${dayLabel} trial window opening time`).inputValue();
+      expect(changedOpening).not.toBe(originalTrialOpensAt);
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByRole("tab", { name: "Rules & hours" }).click();
-      await expect(page.getByLabel(trialInputName)).toHaveValue(changedTimes);
+      await expect(page.getByLabel(`${dayLabel} trial window opening time`)).toHaveValue(changedOpening);
 
-      await page.getByLabel(trialInputName).fill(originalTimes);
+      await restoreTrialWindow(page, dayLabel, originalTrialEnabled, originalTrialOpensAt, originalTrialClosesAt);
       await page.getByRole("button", { name: "Save operational rules" }).click();
       await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
       if (cleanupEntry !== undefined) cleanup.complete(cleanupEntry);
     } finally {
-      if (cleanupEntry !== undefined && originalTimes !== undefined && trialInputName) {
+      if (cleanupEntry !== undefined && dayLabel) {
         try {
-          if (await page.getByLabel(trialInputName).inputValue() !== originalTimes) {
-            await page.getByLabel(trialInputName).fill(originalTimes);
-            await page.getByRole("button", { name: "Save operational rules" }).click();
-            await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
-          }
+          await restoreTrialWindow(page, dayLabel, originalTrialEnabled, originalTrialOpensAt, originalTrialClosesAt);
+          await page.getByRole("button", { name: "Save operational rules" }).click();
+          await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
           cleanup.complete(cleanupEntry);
         } catch (error) {
           cleanup.fail(cleanupEntry, error);
@@ -76,3 +82,12 @@ test.describe("staged owner settings and trial scheduling", () => {
     }
   });
 });
+
+async function restoreTrialWindow(page: import("@playwright/test").Page, day: string, enabled: boolean, opensAt: string, closesAt: string) {
+  const toggle = page.getByRole("checkbox", { name: `${day} trial requests enabled` });
+  const isEnabled = await toggle.getAttribute("aria-checked") === "true";
+  if (!isEnabled) await toggle.click();
+  await page.getByLabel(`${day} trial window opening time`).fill(opensAt);
+  await page.getByLabel(`${day} trial window closing time`).fill(closesAt);
+  if (!enabled) await toggle.click();
+}

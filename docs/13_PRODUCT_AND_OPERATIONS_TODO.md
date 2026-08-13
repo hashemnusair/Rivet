@@ -580,7 +580,7 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 - Status: **Fix deployed in `0cea424`; signed-out/member Production verification pending**.
 - Evidence: the published pilot gym displayed persisted Sunday–Thursday 06:00–23:00 and Saturday 07:00–22:00 hours, but the public trial form's time selector contained no options for a Thursday date.
-- Resolution: owners/managers configure exact weekday trial times per branch. Public choices are derived from that persisted schedule for the selected date and gym timezone, filtered by operating hours, and represented with explicit unconfigured/closed/unavailable states. Convex revalidates the exact submitted branch/date/time and enforces one open request per customer and gym. Weekday/closed/timezone and persisted-settings coverage is in place; deployed signed-out/member verification remains required.
+- Resolution: owners/managers now configure a weekday trial-request opening and closing time per branch, using the same interaction pattern as operating hours. Members may choose any preferred time inside that window. Convex canonicalizes legacy exact-slot data, validates that each enabled window sits inside operating hours, revalidates the submitted branch/date/time, and enforces one open request per customer and gym. Public directory branches and active membership plans are now projected from live tenant records rather than the original provisioning snapshot, so later branches/plans remain visible. Focused settings, arbitrary-time, customer-ownership, plan-branch, and public-projection regressions are in place; deployed signed-out/member verification remains required.
 
 ### BUG-025 — Future freezes are treated as active immediately
 

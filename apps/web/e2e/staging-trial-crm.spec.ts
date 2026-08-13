@@ -35,7 +35,13 @@ test.describe("staged trial and CRM conversion", () => {
       let configured = false;
       for (let offset = 1; offset <= 21; offset += 1) {
         await date.fill(isoDateFromToday(offset));
-        if (await time.locator("option:not([value=''])").count()) {
+        if (await time.isEnabled()) {
+          const opensAt = await time.getAttribute("min");
+          const closesAt = await time.getAttribute("max");
+          if (opensAt && closesAt) {
+            const midpoint = Math.floor((minuteValue(opensAt) + minuteValue(closesAt)) / 2);
+            await time.fill(timeValue(midpoint));
+          }
           configured = true;
           break;
         }
@@ -98,6 +104,15 @@ test.describe("staged trial and CRM conversion", () => {
     }
   });
 });
+
+function minuteValue(time: string): number {
+  const [hour = 0, minute = 0] = time.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function timeValue(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
 
 async function archiveMember(page: Page, memberUrl: string): Promise<boolean> {
   try {

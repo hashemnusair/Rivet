@@ -40,6 +40,7 @@ interface AppContextValue {
   switchRole: (role: RoleKey) => Promise<void>;
   setBranch: (branchId: UUID | undefined) => Promise<void>;
   selectOrganization: (organizationId: UUID) => Promise<void>;
+  refreshSession: () => Promise<void>;
   behavior: MockBehavior;
   setBehavior: (b: Partial<MockBehavior>) => void;
   resetDemo: () => Promise<void>;
@@ -72,7 +73,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
             // second operator's changes appear without a hard reload. The
             // Convex websocket remains responsible for auth and mutations.
             staleTime: convexMode ? 0 : 5_000,
-            refetchInterval: convexMode ? 4_000 : false,
+            // Realtime-backed screens own their Convex subscriptions. Keep a
+            // slower safety refresh for remaining one-shot pages so navigation
+            // and mutations are not competing with a four-second request storm.
+            refetchInterval: convexMode ? 15_000 : false,
             refetchIntervalInBackground: false,
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
@@ -304,6 +308,13 @@ function SessionProvider({ children }: { children: ReactNode }) {
     queryClient.clear();
   }, [convexMode, queryClient]);
 
+  const refreshSession = useCallback(async () => {
+    if (!signedIn) return;
+    const nextSession = await getApi().getSession();
+    setSession(nextSession);
+    queryClient.setQueryData(qk.session, nextSession);
+  }, [queryClient, signedIn]);
+
   const resetDemo = useCallback(async () => {
     if (convexMode) throw new Error("Demo reset is available only in explicit mock mode.");
     await getApi().resetDemo();
@@ -342,6 +353,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       switchRole,
       setBranch,
       selectOrganization,
+      refreshSession,
       behavior,
       setBehavior,
       resetDemo,
@@ -350,7 +362,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       sidebarCollapsed,
       toggleSidebar,
     }),
-    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
+    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

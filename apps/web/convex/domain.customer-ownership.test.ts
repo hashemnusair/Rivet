@@ -201,7 +201,7 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
     await insertRecord(organizationA, "settings", "settings", {
       operationalPolicies: {
         operatingHours: [{ branchId: "branch-a", days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { enabled: true, opensAt: "06:00", closesAt: "23:00" }])) }],
-        trialSchedules: [{ branchId: "branch-a", days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { slots: ["18:00"] }])) }],
+        trialSchedules: [{ branchId: "branch-a", days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { enabled: true, opensAt: "09:00", closesAt: "20:00" }])) }],
       },
     });
     await insertRecord(organizationB, "marketplaceGym", "gym-b", {
@@ -415,11 +415,11 @@ describe("exported Convex customer ownership boundaries", () => {
       fullName: "Customer A",
       phone: "+962799999991",
       preferredDate: trialDate,
-      preferredTime: "18:00",
+      preferredTime: "13:45",
       goal: "Strength",
     })) as TrialBookingResult;
 
-    expect(booking).toMatchObject({ customerUserId: "user-a", customerId: "profile-a", email: "a@example.com", gymId: "gym-a", branchId: "directory-branch-a", status: "requested" });
+    expect(booking).toMatchObject({ customerUserId: "user-a", customerId: "profile-a", email: "a@example.com", gymId: "gym-a", branchId: "directory-branch-a", preferredTime: "13:45", status: "requested" });
     expect(booking.id).not.toBe("trial-b");
 
     const persisted = await t.run(async (ctx) => {

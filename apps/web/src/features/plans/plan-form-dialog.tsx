@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
-import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { qk } from "@/lib/api/keys";
 import type { MembershipPlan } from "@/lib/domain/types";
-import { useApp } from "@/lib/providers/app-providers";
 import { fromMajor, toMajor } from "@/lib/utils/money";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/switch";
@@ -48,8 +48,8 @@ export function PlanFormDialog({
   onOpenChange: (v: boolean) => void;
   plan?: MembershipPlan;
 }) {
-  const { session } = useApp();
   const invalidate = useInvalidate();
+  const branchesQuery = useApiQuery(qk.branches, (api) => api.listBranches(), { enabled: open });
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
@@ -200,7 +200,7 @@ export function PlanFormDialog({
               />
               {branchAccess === "selected" ? (
                 <div className="mt-2 flex flex-wrap gap-3">
-                  {session?.branches.map((b) => (
+                  {branchesQuery.data?.filter((branch) => branch.status === "active").map((b) => (
                     <Controller
                       key={b.id}
                       control={form.control}
@@ -219,6 +219,7 @@ export function PlanFormDialog({
                       )}
                     />
                   ))}
+                  {branchesQuery.isLoading ? <span className="text-[12px] text-ink-3">Loading branches…</span> : null}
                 </div>
               ) : null}
             </Field>

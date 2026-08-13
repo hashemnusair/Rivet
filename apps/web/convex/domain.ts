@@ -64,6 +64,35 @@ const DEFAULT_NOTIFICATIONS = {
   quietHoursEnd: "08:00",
 };
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function normalizedTrialWindow(value: Data): Data {
+  if (typeof value.enabled === "boolean" || value.opensAt || value.closesAt) {
+    const enabled = booleanValue(value.enabled);
+    const opensAt = stringValue(value.opensAt, "09:00");
+    const closesAt = stringValue(value.closesAt, "20:00");
+    return {
+      enabled,
+      opensAt,
+      closesAt,
+      // Temporary read compatibility for the previously deployed exact-slot
+      // frontend. Remove only after every environment runs the window UI.
+      slots: enabled ? [opensAt, closesAt] : [],
+    };
+  }
+  // Backward-compatible read for exact-slot schedules saved before windows
+  // were introduced. The next settings save persists the canonical shape.
+  const slots = [...new Set(arrayValue(value.slots).map((slot) => stringValue(slot).trim()).filter(Boolean))].sort();
+  const onlySlot = slots.length === 1 ? slots[0] : undefined;
+  const [onlyHour = 0, onlyMinute = 0] = onlySlot?.split(":").map(Number) ?? [];
+  const legacyClosingMinutes = Math.min(23 * 60 + 59, onlyHour * 60 + onlyMinute + 60);
+  return {
+    enabled: slots.length > 0,
+    opensAt: slots[0] ?? "09:00",
+    closesAt: onlySlot ? `${String(Math.floor(legacyClosingMinutes / 60)).padStart(2, "0")}:${String(legacyClosingMinutes % 60).padStart(2, "0")}` : (slots.at(-1) ?? "20:00"),
+    slots,
+  };
+}
 const DEFAULT_OPERATIONAL_POLICIES = {
   entry: {
     outstandingBalance: "warn",
@@ -762,7 +791,6 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
   if (!integerInRange(bookingHorizonDays, 1, 90)) domainError("VALIDATION_ERROR", "PT booking horizon must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(cancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "PT cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
-  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
   const operatingHours: Data[] = [];
   const seenOperatingBranches = new Set<string>();
   for (const rawSchedule of arrayValue(value.operatingHours)) {
@@ -778,10 +806,10 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
       const enabled = booleanValue(day.enabled);
       const opensAt = stringValue(day.opensAt, "06:00");
       const closesAt = stringValue(day.closesAt, "23:00");
-      if (!timePattern.test(opensAt) || !timePattern.test(closesAt) || (enabled && opensAt >= closesAt)) {
+      if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
         domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { correlationId: actor.correlationId });
       }
-      validatedDays[weekday] = { enabled, opensAt, closesAt };
+      validatedDays[weekday] = { enabled, opensAt, closesAt, slots: enabled ? [opensAt, closesAt] : [] };
     }
     operatingHours.push({ branchId, days: validatedDays });
   }
@@ -797,13 +825,18 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
     const days = data(schedule.days);
     const validatedDays: Data = {};
     for (const weekday of WEEKDAYS) {
-      const slots = [...new Set(arrayValue(data(days[weekday]).slots).map((slot) => stringValue(slot).trim()).filter(Boolean))].sort();
-      if (slots.length > 24 || slots.some((slot) => !timePattern.test(slot))) domainError("VALIDATION_ERROR", `Trial times for ${weekday} are invalid.`, { correlationId: actor.correlationId });
-      const hours = data(operatingByBranch.get(branchId)?.[weekday]);
-      if (slots.length > 0 && (!booleanValue(hours.enabled) || slots.some((slot) => slot < stringValue(hours.opensAt) || slot >= stringValue(hours.closesAt)))) {
-        domainError("VALIDATION_ERROR", `Trial times for ${weekday} must fall inside the branch's operating hours.`, { correlationId: actor.correlationId });
+      const window = normalizedTrialWindow(data(days[weekday]));
+      const enabled = booleanValue(window.enabled);
+      const opensAt = stringValue(window.opensAt);
+      const closesAt = stringValue(window.closesAt);
+      if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} is invalid.`, { correlationId: actor.correlationId });
       }
-      validatedDays[weekday] = { slots };
+      const hours = data(operatingByBranch.get(branchId)?.[weekday]);
+      if (enabled && (!booleanValue(hours.enabled) || opensAt < stringValue(hours.opensAt) || closesAt > stringValue(hours.closesAt))) {
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} must fall inside the branch's operating hours.`, { correlationId: actor.correlationId });
+      }
+      validatedDays[weekday] = { enabled, opensAt, closesAt };
     }
     trialSchedules.push({ branchId, days: validatedDays });
   }
@@ -1630,24 +1663,23 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
   }
   const storageOrganization = targetOrganization;
-  const directoryBranch = arrayValue(gym.branches).map(data).find((branch) => branch.id === input.branchId);
-  const actualBranchId = optionalString(directoryBranch?.internalBranchId);
-  const branch = actualBranchId
-    ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique()
-    : null;
+  const directoryBranch = arrayValue(gym.branches).map(data).find((candidate) => candidate.id === input.branchId);
+  const actualBranchId = optionalString(directoryBranch?.internalBranchId) ?? stringValue(input.branchId);
+  const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique();
   if (!branch || !branch.active || branch.status === "inactive") {
     domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
   }
   const preferredDate = stringValue(input.preferredDate);
   const preferredTime = stringValue(input.preferredTime);
   const weekday = validatedWeekdayForDate(preferredDate);
-  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if (!weekday || !timePattern.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
+  if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
   const schedule = arrayValue(data(data(settings?.data).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === publicBranchId(branch));
   if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.");
-  const allowedSlots = arrayValue(data(data(schedule.days)[weekday]).slots).map(String);
-  if (!allowedSlots.includes(preferredTime)) domainError("CONFLICT", "That trial time is closed or no longer available.");
+  const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
+  if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
+    domainError("CONFLICT", "That trial time is outside this branch's trial-request hours.");
+  }
   const [hour = 0, minute = 0] = preferredTime.split(":").map(Number);
   const requestedAt = ptWallTime(preferredDate, hour * 60 + minute, storageOrganization.timezone || TZ_FALLBACK);
   if (requestedAt <= Date.now()) domainError("VALIDATION_ERROR", "Choose a future trial time.");
@@ -2166,23 +2198,46 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId)),
         Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id)))),
       ]);
-      const activePrices = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active").map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
+      const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active");
+      const activePrices = activePlans.map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
       const baseView = marketplaceView(data(row.data));
       const rawBranches = arrayValue(listingValue.branches).map(data);
       const trialSchedules = arrayValue(data(data(tenantSettings?.data).operationalPolicies).trialSchedules).map(data);
-      const publicBranches = arrayValue(baseView.branches).map((item) => {
-        const projected = data(item);
-        const rawBranch = rawBranches.find((candidate) => candidate.id === projected.id);
-        const schedule = trialSchedules.find((candidate) => candidate.branchId === rawBranch?.internalBranchId);
-        const trialSchedule = schedule ? data(schedule.days) : undefined;
-        const trialSlots = trialSchedule ? [...new Set(WEEKDAYS.flatMap((weekday) => arrayValue(data(trialSchedule[weekday]).slots).map(String)))].sort() : [];
-        return { ...projected, trialSlots, ...(trialSchedule ? { trialSchedule } : {}) };
+      const liveBranches = branches.filter((branch) => branch.active && branch.status !== "inactive");
+      const publicBranches = liveBranches.map((branch) => {
+        const internalBranchId = publicBranchId(branch);
+        const persisted = rawBranches.find((candidate) => candidate.internalBranchId === internalBranchId);
+        const schedule = trialSchedules.find((candidate) => candidate.branchId === internalBranchId);
+        const trialSchedule = schedule
+          ? Object.fromEntries(WEEKDAYS.map((weekday) => [weekday, normalizedTrialWindow(data(data(schedule.days)[weekday]))]))
+          : undefined;
+        return {
+          id: optionalString(persisted?.id) ?? internalBranchId,
+          internalBranchId,
+          name: branch.name,
+          address: branch.address ?? "",
+          area: optionalString(persisted?.area) ?? branch.address ?? stringValue(listingValue.city),
+          trialSlots: [],
+          ...(trialSchedule ? { trialSchedule } : {}),
+        };
       });
       return {
         ...baseView,
         branches: publicBranches,
+        plans: activePlans.map((plan) => ({
+          id: stringValue(plan.id),
+          name: stringValue(plan.name),
+          kind: stringValue(plan.kind),
+          durationDays: plan.durationDays === undefined ? undefined : numberValue(plan.durationDays),
+          visitAllowance: plan.visitAllowance === undefined ? undefined : numberValue(plan.visitAllowance),
+          visitValidityDays: plan.visitValidityDays === undefined ? undefined : numberValue(plan.visitValidityDays),
+          basePrice: money(amountOf(plan.basePrice), currencyOf(plan.basePrice, organization.currency)),
+          branchAccess: stringValue(plan.branchAccess, "all"),
+          branchIds: arrayValue(plan.branchIds).map(String),
+          includedPtSessions: numberValue(plan.includedPtSessions),
+        })),
         memberCount: members.filter((item) => stringValue(data(item.data).status, "active") === "active").length,
-        branchCount: branches.filter((branch) => branch.active && branch.status !== "inactive").length,
+        branchCount: liveBranches.length,
         fromPriceMinor: activePrices.length ? Math.min(...activePrices) : 0,
         trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
         ptPackages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),

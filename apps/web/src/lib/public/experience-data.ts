@@ -1,4 +1,4 @@
-import type { TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
+import type { Money, PlanKind, TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/seed";
 
 export interface MarketplaceBranch {
@@ -37,6 +37,7 @@ export interface MarketplaceGym {
   profileVersion?: number;
   trainers?: import("@/lib/domain/types").PtTrainerProfile[];
   ptPackages?: import("@/lib/domain/types").PtPackage[];
+  plans?: PublicMembershipPlan[];
   logo?: import("@/lib/domain/types").MediaAsset;
   cover?: import("@/lib/domain/types").MediaAsset;
   gallery?: import("@/lib/domain/types").MediaAsset[];
@@ -56,6 +57,19 @@ export interface MarketplaceGym {
   cancelledAt?: string;
   subscriptionStatusReason?: string;
   branches: MarketplaceBranch[];
+}
+
+export interface PublicMembershipPlan {
+  id: UUID;
+  name: string;
+  kind: PlanKind;
+  durationDays?: number;
+  visitAllowance?: number;
+  visitValidityDays?: number;
+  basePrice: Money;
+  branchAccess: "all" | "selected";
+  branchIds: UUID[];
+  includedPtSessions: number;
 }
 
 export interface CustomerPersona {
@@ -126,8 +140,13 @@ export interface TrialBooking {
 }
 
 function previewTrialSchedule(slots: string[]): Record<WeekdayKey, TrialScheduleDay> {
+  const sorted = [...slots].sort();
   return Object.fromEntries(
-    (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] satisfies WeekdayKey[]).map((weekday) => [weekday, { slots: [...slots] }]),
+    (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] satisfies WeekdayKey[]).map((weekday) => [weekday, {
+      enabled: sorted.length > 0,
+      opensAt: sorted[0] ?? "09:00",
+      closesAt: sorted.at(-1) ?? "20:00",
+    }]),
   ) as Record<WeekdayKey, TrialScheduleDay>;
 }
 

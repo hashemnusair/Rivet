@@ -1509,8 +1509,10 @@ export interface BranchOperatingHours {
 }
 
 export interface TrialScheduleDay {
-  /** Exact tenant-local start times offered for trial requests on this weekday. */
-  slots: string[];
+  /** Tenant-local window in which a member may request any preferred time. */
+  enabled: boolean;
+  opensAt: string;
+  closesAt: string;
 }
 
 export interface BranchTrialSchedule {

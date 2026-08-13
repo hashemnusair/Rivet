@@ -58,7 +58,7 @@ import {
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
 import type { CustomerMarketingPreference, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
-import { trialSlotsForDate } from "@/lib/public/trial-schedule";
+import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
   currentRole,
   currentUser,
@@ -371,7 +371,7 @@ export class MockGymOSApi implements GymOSApi {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
       if (!gym || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
-      if (!trialSlotsForDate(directoryBranch, input.preferredDate).includes(input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is closed or no longer available.");
+      if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
       // The browser experience owns whether a member is signed in. Falling
       // back to the mock adapter's last persona would silently attach a guest
       // request to an unrelated seeded member after navigation or test reuse.

@@ -101,6 +101,7 @@ export function OrganizationSection() {
 // ---------------------------------------------------------------------------
 export function BranchesSection() {
   const invalidate = useInvalidate();
+  const { refreshSession } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const [dialog, setDialog] = useState<{ open: boolean; branch?: Branch }>({ open: false });
   const [form, setForm] = useState({ name: "", code: "", address: "", phone: "", capacity: 100, status: "active" as "active" | "inactive" });
@@ -122,6 +123,7 @@ export function BranchesSection() {
         toast.success(dialog.branch ? "Branch updated." : "Branch created.");
         setDialog({ open: false });
         await invalidate([qk.settings, qk.session, qk.branches]);
+        await refreshSession();
       },
       onError: (e) => toast.error(isApiError(e) ? e.message : "Could not save the branch."),
     },
@@ -795,7 +797,23 @@ function defaultOperatingDays(): OperationalPolicies["operatingHours"][number]["
 }
 
 function defaultTrialDays(): OperationalPolicies["trialSchedules"][number]["days"] {
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { slots: [] }])) as unknown as OperationalPolicies["trialSchedules"][number]["days"];
+  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { enabled: false, opensAt: "09:00", closesAt: "20:00" }])) as OperationalPolicies["trialSchedules"][number]["days"];
+}
+
+function normalizedTrialDays(days: OperationalPolicies["trialSchedules"][number]["days"]): OperationalPolicies["trialSchedules"][number]["days"] {
+  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => {
+    const day = days[key] as OperationalPolicies["trialSchedules"][number]["days"][WeekdayKey] & { slots?: string[] };
+    if (typeof day?.enabled === "boolean") return [key, day];
+    const slots = [...(day?.slots ?? [])].sort();
+    const onlySlot = slots.length === 1 ? slots[0] : undefined;
+    const [onlyHour = 0, onlyMinute = 0] = onlySlot?.split(":").map(Number) ?? [];
+    const legacyClosingMinutes = Math.min(23 * 60 + 59, onlyHour * 60 + onlyMinute + 60);
+    return [key, {
+      enabled: slots.length > 0,
+      opensAt: slots[0] ?? "09:00",
+      closesAt: onlySlot ? `${String(Math.floor(legacyClosingMinutes / 60)).padStart(2, "0")}:${String(legacyClosingMinutes % 60).padStart(2, "0")}` : (slots.at(-1) ?? "20:00"),
+    }];
+  })) as OperationalPolicies["trialSchedules"][number]["days"];
 }
 
 export function OperationalRulesSection() {
@@ -811,7 +829,10 @@ export function OperationalRulesSection() {
     setPolicies({
       ...settings.operationalPolicies,
       operatingHours: branchIds.map((branchId) => settings.operationalPolicies.operatingHours.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultOperatingDays() }),
-      trialSchedules: branchIds.map((branchId) => settings.operationalPolicies.trialSchedules.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultTrialDays() }),
+      trialSchedules: branchIds.map((branchId) => {
+        const schedule = settings.operationalPolicies.trialSchedules.find((candidate) => candidate.branchId === branchId);
+        return schedule ? { ...schedule, days: normalizedTrialDays(schedule.days) } : { branchId, days: defaultTrialDays() };
+      }),
     });
     setSelectedBranchId((current) => branchIds.includes(current) ? current : (branchIds[0] ?? ""));
   }, [settingsQuery.data]);
@@ -841,12 +862,12 @@ export function OperationalRulesSection() {
         days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } },
       } : schedule),
     } : current);
-  const updateTrialSlots = (weekday: WeekdayKey, value: string) =>
+  const updateTrialWindow = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["trialSchedules"][number]["days"][WeekdayKey]>) =>
     setPolicies((current) => current ? {
       ...current,
       trialSchedules: current.trialSchedules.map((schedule) => schedule.branchId === selectedBranchId ? {
         ...schedule,
-        days: { ...schedule.days, [weekday]: { slots: value.split(",").map((slot) => slot.trim()).filter(Boolean) } },
+        days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } },
       } : schedule),
     } : current);
 
@@ -895,7 +916,7 @@ export function OperationalRulesSection() {
       <section className="panel self-start overflow-hidden">
         <header className="border-b border-line p-5">
           <h2 className="font-display text-[15px] font-semibold">Branch hours and free trials</h2>
-          <p className="mb-3 text-[12.5px] text-ink-3">Hours and exact trial-request times use the organization timezone. Public visitors only see the times saved here.</p>
+          <p className="mb-3 text-[12.5px] text-ink-3">Opening hours and trial-request windows use the organization timezone. Members may request any time inside the saved trial window.</p>
           <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
             <SelectTrigger aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
             <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
@@ -904,16 +925,22 @@ export function OperationalRulesSection() {
         <div className="divide-y divide-line">
           {selectedSchedule && selectedTrialSchedule ? WEEKDAY_ROWS.map(({ key, label }) => {
             const day = selectedSchedule.days[key];
-            const trialSlots = selectedTrialSchedule.days[key].slots;
+            const trialWindow = selectedTrialSchedule.days[key];
             return (
               <div key={key} className="space-y-2 px-5 py-3">
                 <div className="grid grid-cols-[110px_1fr] items-center gap-3 sm:grid-cols-[110px_1fr_1fr]">
-                  <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><Checkbox checked={day.enabled} onCheckedChange={(value) => { const enabled = value === true; updateHours(key, { enabled }); if (!enabled) updateTrialSlots(key, ""); }} aria-label={`${label} open`} />{label}</label>
+                  <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><Checkbox checked={day.enabled} onCheckedChange={(value) => { const enabled = value === true; updateHours(key, { enabled }); if (!enabled) updateTrialWindow(key, { enabled: false }); }} aria-label={`${label} open`} />{label}</label>
                   {day.enabled ? <><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></> : <span className="text-[12px] text-ink-3 sm:col-span-2">Closed</span>}
                 </div>
-                <div className="grid grid-cols-[110px_1fr] items-center gap-3">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Trial times</span>
-                  <Input value={trialSlots.join(", ")} onChange={(event) => updateTrialSlots(key, event.target.value)} disabled={!day.enabled} placeholder={day.enabled ? "08:00, 17:00, 19:00" : "Closed"} aria-label={`${label} trial times, comma separated`} />
+                <div className="grid grid-cols-[110px_1fr] items-center gap-3 sm:grid-cols-[110px_1fr_1fr]">
+                  <label className="flex cursor-pointer items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">
+                    <Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={`${label} trial requests enabled`} />
+                    Trials
+                  </label>
+                  {day.enabled && trialWindow.enabled ? <>
+                    <Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={`${label} trial window opening time`} />
+                    <Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={`${label} trial window closing time`} />
+                  </> : <span className="text-[12px] text-ink-3 sm:col-span-2">{day.enabled ? "Not offered" : "Branch closed"}</span>}
                 </div>
               </div>
             );

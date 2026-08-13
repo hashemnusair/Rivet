@@ -41,10 +41,15 @@ export function useInvalidate() {
   const queryClient = useQueryClient();
   return useCallback(
     async (extraKeys: QueryKey[] = []) => {
-      await Promise.all([
-        ...INVALIDATE_ALL.map((prefix) => queryClient.invalidateQueries({ queryKey: [prefix] })),
-        ...extraKeys.map((key) => queryClient.invalidateQueries({ queryKey: key })),
+      const prefixes = new Set<string>([
+        ...INVALIDATE_ALL,
+        ...extraKeys.map((key) => String(key[0])),
       ]);
+      // One predicate pass prevents overlapping prefixes from scheduling the
+      // same active query for refetch many times after a mutation.
+      await queryClient.invalidateQueries({
+        predicate: (query) => prefixes.has(String(query.queryKey[0])),
+      });
     },
     [queryClient],
   );

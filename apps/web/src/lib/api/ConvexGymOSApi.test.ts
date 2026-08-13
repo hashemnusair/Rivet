@@ -270,7 +270,7 @@ describe("ConvexGymOSApi contract boundary", () => {
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [{ branchId: session.activeBranchId!, days }],
-      trialSchedules: [{ branchId: session.activeBranchId!, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { slots: ["18:00"] }])) as import("@/lib/domain/types").OperationalPolicies["trialSchedules"][number]["days"] }],
+      trialSchedules: [{ branchId: session.activeBranchId!, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: true, opensAt: "09:00", closesAt: "20:00" }])) as import("@/lib/domain/types").OperationalPolicies["trialSchedules"][number]["days"] }],
     });
     await api.transferMembership("membership-1", { branchId: "branch-2", reason: "Member relocated" });
 

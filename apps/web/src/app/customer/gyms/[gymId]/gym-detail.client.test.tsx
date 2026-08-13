@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GymDetailClient from "./gym-detail.client";
@@ -42,6 +42,7 @@ const state = vi.hoisted(() => ({
       area: "Abdoun",
       address: "Amman",
       trialSlots: ["08:00"],
+      trialSchedule: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { enabled: true, opensAt: "08:00", closesAt: "20:00" }])),
     }],
   },
   previewSessionReady: true,
@@ -113,5 +114,24 @@ describe("GymDetailClient trial form", () => {
     expect(screen.getByLabelText("Phone")).toHaveValue("+962 79 321 4456");
     expect(screen.getByLabelText("Email")).toHaveValue("unauthenticated.qa@example.com");
     expect(screen.getByLabelText("What are you looking for?")).toHaveValue("Test hydration safety");
+  });
+
+  it("allows any preferred time inside the configured branch window", async () => {
+    const user = userEvent.setup();
+    state.customer = {
+      id: "customer-member",
+      name: "Member Test",
+      nameAr: "Member Test",
+      email: "member@example.com",
+      phone: "+962790000001",
+      initials: "MT",
+      context: "RIVET member",
+    };
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "13:30" } });
+    await user.click(screen.getByRole("button", { name: "Send trial request" }));
+
+    expect(state.bookTrial).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: "13:30" }));
   });
 });
