@@ -47,6 +47,7 @@ test.describe("staged Convex operational flow", () => {
       await page.getByRole("option", { name: /Monthly All Access/i }).click();
       await sale.getByRole("combobox", { name: "Payment method" }).click();
       await page.getByRole("option", { name: "Card" }).click();
+      await sale.getByPlaceholder("e.g. POS-88213").fill(`STAGING-${guard.runId}`);
       await sale.getByTestId("confirm-sale").click();
       await expect(sale).toBeHidden();
 
