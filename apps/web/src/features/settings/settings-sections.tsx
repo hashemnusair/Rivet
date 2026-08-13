@@ -788,21 +788,30 @@ const WEEKDAY_ROWS: Array<{ key: WeekdayKey; label: string }> = [
   { key: "sat", label: "Saturday" },
 ];
 
-function defaultOperatingDays(): OperationalPolicies["operatingHours"][number]["days"] {
+type OperatingDays = OperationalPolicies["operatingHours"][number]["days"];
+type TrialDays = OperationalPolicies["trialSchedules"][number]["days"];
+
+function defaultOperatingDays(): OperatingDays {
   return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, {
     enabled: key !== "fri",
     opensAt: key === "sat" ? "07:00" : "06:00",
     closesAt: key === "sat" ? "22:00" : "23:00",
-  }])) as OperationalPolicies["operatingHours"][number]["days"];
+  }])) as OperatingDays;
 }
 
-function defaultTrialDays(): OperationalPolicies["trialSchedules"][number]["days"] {
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { enabled: false, opensAt: "09:00", closesAt: "20:00" }])) as OperationalPolicies["trialSchedules"][number]["days"];
+function defaultTrialDays(): TrialDays {
+  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { enabled: false, opensAt: "09:00", closesAt: "20:00" }])) as TrialDays;
 }
 
-function normalizedTrialDays(days: OperationalPolicies["trialSchedules"][number]["days"]): OperationalPolicies["trialSchedules"][number]["days"] {
+function normalizedOperatingDays(days?: OperatingDays): OperatingDays {
+  const defaults = defaultOperatingDays();
+  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { ...defaults[key], ...(days?.[key] ?? {}) }])) as OperatingDays;
+}
+
+function normalizedTrialDays(days?: TrialDays): TrialDays {
+  const source: Partial<TrialDays> = days ?? {};
   return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => {
-    const day = days[key] as OperationalPolicies["trialSchedules"][number]["days"][WeekdayKey] & { slots?: string[] };
+    const day = source[key] as TrialDays[WeekdayKey] & { slots?: string[] } | undefined;
     if (typeof day?.enabled === "boolean") return [key, day];
     const slots = [...(day?.slots ?? [])].sort();
     const onlySlot = slots.length === 1 ? slots[0] : undefined;
@@ -813,7 +822,51 @@ function normalizedTrialDays(days: OperationalPolicies["trialSchedules"][number]
       opensAt: slots[0] ?? "09:00",
       closesAt: onlySlot ? `${String(Math.floor(legacyClosingMinutes / 60)).padStart(2, "0")}:${String(legacyClosingMinutes % 60).padStart(2, "0")}` : (slots.at(-1) ?? "20:00"),
     }];
-  })) as OperationalPolicies["trialSchedules"][number]["days"];
+  })) as TrialDays;
+}
+
+/**
+ * New workspaces and older staging tenants may not have the nested policy
+ * record yet. Keep the settings screen readable until the owner saves the
+ * canonical shape, while preserving any schedules already present.
+ */
+type OperationalPoliciesInput = {
+  entry?: Partial<OperationalPolicies["entry"]>;
+  membership?: Partial<OperationalPolicies["membership"]>;
+  personalTraining?: Partial<OperationalPolicies["personalTraining"]>;
+  operatingHours?: OperationalPolicies["operatingHours"];
+  trialSchedules?: OperationalPolicies["trialSchedules"];
+};
+
+export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): OperationalPolicies {
+  return {
+    entry: {
+      outstandingBalance: "warn",
+      expiryWarningDays: 7,
+      duplicateScanWindowMinutes: 2,
+      enforceOperatingHours: false,
+      ...value?.entry,
+    },
+    membership: {
+      allowOverlappingMemberships: false,
+      renewalWindowDays: 14,
+      minimumFreezeDays: 1,
+      maximumExtensionDays: 365,
+      ...value?.membership,
+    },
+    personalTraining: {
+      sessionDurationMinutes: 60,
+      bookingHorizonDays: 30,
+      cancellationCutoffHours: 12,
+      ...value?.personalTraining,
+    },
+    operatingHours: Array.isArray(value?.operatingHours)
+      ? value.operatingHours.map((schedule) => ({ ...schedule, days: normalizedOperatingDays(schedule.days) }))
+      : [],
+    trialSchedules: Array.isArray(value?.trialSchedules)
+      ? value.trialSchedules.map((schedule) => ({ ...schedule, days: normalizedTrialDays(schedule.days) }))
+      : [],
+  };
 }
 
 export function OperationalRulesSection() {
@@ -825,12 +878,14 @@ export function OperationalRulesSection() {
   useEffect(() => {
     const settings = settingsQuery.data;
     if (!settings) return;
-    const branchIds = settings.branches.filter((branch) => branch.status === "active").map((branch) => branch.id);
+    const branches = settings.branches ?? [];
+    const operationalPolicies = normalizeOperationalPolicies(settings.operationalPolicies);
+    const branchIds = branches.filter((branch) => branch.status === "active").map((branch) => branch.id);
     setPolicies({
-      ...settings.operationalPolicies,
-      operatingHours: branchIds.map((branchId) => settings.operationalPolicies.operatingHours.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultOperatingDays() }),
+      ...operationalPolicies,
+      operatingHours: branchIds.map((branchId) => operationalPolicies.operatingHours.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultOperatingDays() }),
       trialSchedules: branchIds.map((branchId) => {
-        const schedule = settings.operationalPolicies.trialSchedules.find((candidate) => candidate.branchId === branchId);
+        const schedule = operationalPolicies.trialSchedules.find((candidate) => candidate.branchId === branchId);
         return schedule ? { ...schedule, days: normalizedTrialDays(schedule.days) } : { branchId, days: defaultTrialDays() };
       }),
     });
@@ -849,7 +904,7 @@ export function OperationalRulesSection() {
   if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
   const selectedSchedule = policies.operatingHours.find((schedule) => schedule.branchId === selectedBranchId);
   const selectedTrialSchedule = policies.trialSchedules.find((schedule) => schedule.branchId === selectedBranchId);
-  const branches = settingsQuery.data?.branches.filter((branch) => branch.status === "active") ?? [];
+  const branches = settingsQuery.data?.branches?.filter((branch) => branch.status === "active") ?? [];
   const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
     setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
   const updateMembership = <K extends keyof OperationalPolicies["membership"]>(key: K, value: OperationalPolicies["membership"][K]) =>
