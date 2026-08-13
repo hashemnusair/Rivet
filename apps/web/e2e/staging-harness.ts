@@ -27,5 +27,11 @@ export class StagingCleanupLedger {
   plan(entry: Omit<CleanupEntry, "status">): number { return this.entries.push({ ...entry, status: "planned" }) - 1; }
   complete(index: number) { if (this.entries[index]) this.entries[index]!.status = "completed"; }
   fail(index: number, error: unknown) { if (this.entries[index]) { this.entries[index]!.status = "failed"; this.entries[index]!.error = error instanceof Error ? error.message : "Cleanup failed"; } }
-  async attach(testInfo: TestInfo) { await testInfo.attach(`staging-cleanup-${this.journey}-${this.runId}.json`, { body: Buffer.from(JSON.stringify({ runId: this.runId, journey: this.journey, generatedAt: new Date().toISOString(), entries: this.entries }, null, 2)), contentType: "application/json" }); }
+  async attach(testInfo: TestInfo) {
+    console.log("[staging-cleanup]", JSON.stringify({
+      journey: this.journey,
+      entries: this.entries.map(({ targetType, action, status }) => ({ targetType, action, status })),
+    }));
+    await testInfo.attach(`staging-cleanup-${this.journey}-${this.runId}.json`, { body: Buffer.from(JSON.stringify({ runId: this.runId, journey: this.journey, generatedAt: new Date().toISOString(), entries: this.entries }, null, 2)), contentType: "application/json" });
+  }
 }
