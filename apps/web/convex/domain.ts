@@ -104,6 +104,13 @@ function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
 }
 
+function offerProjection(value: Data): Data {
+  const expiresAt = optionalString(value.expiresAt);
+  return value.status === "sent" && expiresAt && Date.parse(expiresAt) <= Date.now()
+    ? { ...value, status: "expired" }
+    : value;
+}
+
 function stringValue(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
@@ -2594,7 +2601,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const leadId = stringValue(data(lead.data).id);
       const activities = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((record) => data(record.data)).filter((offer) => offer.leadId === leadId);
+      const offers = (await recordsOf(ctx, actor, "offer")).map((record) => offerProjection(data(record.data))).filter((offer) => offer.leadId === leadId);
       const trialBooking = await linkedTrialBooking(ctx, actor, leadId);
       return { ...(await toLeadSummary(ctx, actor, data(lead.data))), notes: optionalString(data(lead.data).notes), activities, offers, ...(trialBooking ? { trialBooking: data(trialBooking.data) } : {}) };
     }
@@ -5289,7 +5296,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         });
       }
       const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => data(item.data)).filter((offer) => offer.leadId === leadId);
+      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: updatedBooking };
     }
     case "offers.create": {
@@ -5324,6 +5331,31 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "crm", action: "offer.delivered", entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer delivery confirmed via ${channel}`, reason: reference || `Manual ${channel} delivery confirmation`, before: { status: "draft" }, after: { status: "sent", deliveryChannel: channel }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
+    case "offers.respond": {
+      requirePermission(actor, "crm.write");
+      const offerRecord = await recordOf(ctx, actor, "offer", recordId(input.offerId));
+      const current = data(offerRecord.data);
+      if (stringValue(current.status) !== "sent") domainError("CONFLICT", "Only a delivered offer can receive an outcome.", { correlationId: actor.correlationId });
+      const expiresAt = optionalString(current.expiresAt);
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        domainError("CONFLICT", "This offer has expired.", { correlationId: actor.correlationId });
+      }
+      const outcome = stringValue(input.outcome);
+      if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose a valid offer outcome.", { correlationId: actor.correlationId });
+      const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+      if (outcome === "declined" && reason.length < 3) domainError("VALIDATION_ERROR", "Record why the offer was declined.", { correlationId: actor.correlationId, fieldErrors: { reason: ["Record why the offer was declined"] } });
+      const leadId = optionalString(current.leadId);
+      if (!leadId) domainError("NOT_FOUND", "Offer not found.", { correlationId: actor.correlationId });
+      const lead = await recordOf(ctx, actor, "lead", leadId);
+      const leadData = data(lead.data);
+      const respondedAt = isoNow();
+      const updated = await patchRecord(ctx, actor, offerRecord, { status: outcome, respondedAt, respondedById: publicUserId(actor.user), responseReason: reason || undefined });
+      if (outcome === "declined") await patchRecord(ctx, actor, lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
+      else await patchRecord(ctx, actor, lead, { updatedAt: respondedAt });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, outcome } });
+      await insertAudit(ctx, actor, { category: "crm", action: `offer.${outcome}`, entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer ${outcome}`, reason: reason || undefined, before: { status: "sent" }, after: { status: outcome }, branchId: optionalString(leadData.branchId) });
+      return updated;
+    }
     case "tasks.create":
       return await createTaskMutation(ctx, actor, input);
     case "tasks.complete": {
@@ -5342,6 +5374,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const created = await createMemberMutation(ctx, actor, { ...input, fullName: leadData.fullName, phone: leadData.phone, email: leadData.email, homeBranchId: input.homeBranchId, preferredLanguage: input.preferredLanguage, source: leadData.source, assignedSalespersonId: leadData.ownerId }, { rejectDuplicates: true });
       const member = data(created.member);
       await patchRecord(ctx, actor, lead, { stage: "won", convertedMemberId: member.id, nextFollowUpAt: undefined, updatedAt: isoNow() });
+      const leadOffers = (await recordsOf(ctx, actor, "offer")).filter((record) => optionalString(data(record.data).leadId) === lead.publicId);
+      const acceptedOffer = leadOffers
+        .filter((record) => ["accepted", "sent"].includes(stringValue(offerProjection(data(record.data)).status)))
+        .sort((a, b) => stringValue(data(b.data).createdAt).localeCompare(stringValue(data(a.data).createdAt)))[0];
+      if (acceptedOffer && stringValue(data(acceptedOffer.data).status) === "sent") {
+        const currentOffer = data(acceptedOffer.data);
+        const responseReason = "Accepted during member conversion";
+        await patchRecord(ctx, actor, acceptedOffer, { status: "accepted", respondedAt: isoNow(), respondedById: publicUserId(actor.user), responseReason });
+        await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: "offer_accepted", title: `Offer accepted — ${stringValue(currentOffer.planName)}`, body: responseReason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: acceptedOffer.publicId, outcome: "accepted" } });
+        await insertAudit(ctx, actor, { category: "crm", action: "offer.accepted", entityType: "offer", entityId: acceptedOffer.publicId, entityLabel: `${stringValue(currentOffer.planName)} · ${stringValue(leadData.fullName)}`, summary: "Offer accepted during member conversion", reason: responseReason, before: { status: "sent" }, after: { status: "accepted" }, branchId: optionalString(leadData.branchId) });
+      }
       const trialBooking = await linkedTrialBooking(ctx, actor, lead.publicId);
       if (trialBooking) await patchRecord(ctx, actor, trialBooking, { status: "converted", updatedAt: isoNow() });
       const tasks = await recordsOf(ctx, actor, "task");
