@@ -2,6 +2,15 @@
 
 Updated 2026-08-14 after CRM release alignment. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## PT package volume-pricing correction — 2026-08-14
+
+- Direct-main release commit `11504b9583e5f7f40bc8edc5a4d1a7301d679781` is pushed to `main` and `origin/main`. The worktree was clean before the change, the pre-push fetch found no partner advancement, and no branch or PR was created.
+- PT package setup now uses one numeric sessions field instead of the fixed 12/20/30 buttons. New-package pricing starts from the volume guide: 12 sessions = JOD 240 (JOD 20/session), 20 sessions = JOD 300 (JOD 15/session), and 30 sessions = JOD 400 (JOD 13.333/session). Intermediate and larger counts receive a deterministic suggested total, while the total remains editable and the existing non-increasing per-session pricing-ladder validation remains enforced.
+- The editor and package cards show an explicit price-per-session tracker. Existing package definitions and historical PT order terms were not automatically changed; no Production product data was seeded, imported, restored, deleted, or mutated by this release.
+- GitHub Actions [run 31803917097](https://github.com/hashemnusair/Rivet/actions/runs/31803917097) passed the generated-code check, typecheck/lint/unit/build, and Playwright preview jobs. The credential-gated authenticated Clerk→Convex smoke was skipped by the push workflow.
+- Vercel Production reports the exact frontend deployment for this commit completed successfully at [deployment status](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/AjxuxEW8m2qGgf3hVj3K7vYU9ovU). This is a frontend/shared pricing change only; no Convex Production deploy was needed.
+- Local verification passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (83 files / 454 tests), `pnpm build`, `pnpm test:e2e` (24 passed / 14 staging-gated skips), and `git diff --check`.
+
 ## Release-aligned state — 2026-08-14
 
 - The direct-main implementation release is `a374f0e9ba31384e2b8a132995c9c18be973e26d`. The final pre-commit fetch found `origin/main` already at `a61d0de`; no partner work was overwritten or rewritten. The worktree was clean before synchronization, `FRONTEND_HANDOFF.md` was not modified, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.
