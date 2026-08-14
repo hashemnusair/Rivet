@@ -7,6 +7,45 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test.describe("RIVET member experience", () => {
+  test("keeps standalone mobile navigation in one app and clear of the home indicator", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await page.goto("/customer/my-gyms");
+
+    const dock = page.locator("nav.member-bottom-nav");
+    await expect(dock).toBeVisible();
+
+    const standaloneState = await dock.evaluate((element) => {
+      const items = element.firstElementChild?.getBoundingClientRect();
+      const shell = document.querySelector(".member-app-shell");
+      return {
+        dockPaddingBottom: Number.parseFloat(getComputedStyle(element).paddingBottom),
+        shellPaddingBottom: shell ? Number.parseFloat(getComputedStyle(shell).paddingBottom) : 0,
+        homeIndicatorClearance: items ? window.innerHeight - items.bottom : 0,
+        viewport: document.querySelector('meta[name="viewport"]')?.getAttribute("content") ?? "",
+        manifest: document.querySelector('link[rel="manifest"]')?.getAttribute("href") ?? "",
+      };
+    });
+
+    expect(standaloneState).toMatchObject({
+      manifest: "/manifest.webmanifest",
+    });
+    expect(standaloneState.viewport).toContain("viewport-fit=cover");
+    expect(standaloneState.dockPaddingBottom).toBeGreaterThanOrEqual(16);
+    expect(standaloneState.shellPaddingBottom).toBeGreaterThanOrEqual(80);
+    expect(standaloneState.homeIndicatorClearance).toBeGreaterThanOrEqual(16);
+
+    const pageCount = page.context().pages().length;
+    const explore = dock.getByRole("link", { name: "Explore" });
+    await expect(explore).not.toHaveAttribute("target", "_blank");
+    await explore.click();
+    await expect(page).toHaveURL(/\/customer\/discover$/);
+    expect(page.context().pages()).toHaveLength(pageCount);
+  });
+
   test("creates a member account and restores it after reload", async ({ page }) => {
     await page.goto("/customer/signup");
 
@@ -39,15 +78,16 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
 
     await page.getByRole("link", { name: /Open My Gyms/i }).click();
-    await expect(page.getByRole("region", { name: "Free trials" }).getByText(/requested/i)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Trial bookings" }).getByText(/requested/i)).toBeVisible();
     await expect(page.getByText("Forge Fitness Club").first()).toBeVisible();
 
-    // Use client-side navigation so the frontend mock and its newly created
-    // lead remain alive while switching from member to staff mode.
-    await page.getByRole("link", { name: "RIVET for gyms" }).click();
-    // /login only chooses a portal; the gym team signs in one level down.
-    await page.getByRole("link", { name: "Sign in", exact: true }).first().click();
+    // Use the consolidated account control to leave the member session. The
+    // frontend mock and its newly created lead remain alive while switching
+    // to staff mode.
+    await page.getByRole("button", { name: "Open account menu" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
+    // /login only chooses a portal; the gym team signs in one level down.
     await page.getByRole("link", { name: /Gym team/i }).click();
     await expect(page).toHaveURL(/\/login\/gym$/);
     // The label uses a typographic apostrophe, so match either form.

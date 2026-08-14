@@ -1,8 +1,16 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-14 after the member-home UX redesign. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-14 after the member-home UX redesign and iOS standalone-PWA hardening. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
-## Member-home UX redesign — local changes pending release
+## Member iOS standalone-PWA hardening — direct-main release
+
+- Added an explicit Next.js web app manifest with a stable member-home launch URL, standalone presentation, root scope, and existing-window launch preference. The root scope keeps Home, Explore, Account, gym detail, authentication, and other same-origin RIVET routes inside one installed app instead of letting a deep-page installation implicitly narrow the navigation boundary.
+- Enabled `viewport-fit=cover` and Apple standalone metadata while keeping the status bar non-translucent. The signed-in mobile dock and its matching page reserve now account for left, right, and bottom safe-area insets, with a reliable minimum breathing zone so labels and controls clear the iPhone home indicator and rounded corners.
+- Internal member navigation remains Next.js `Link`/App Router navigation; no `target`, popup, or document-level redirect was introduced. No service worker or offline data cache was added in this pass.
+- Focused manifest regression coverage protects the standalone start URL and root scope. Existing iOS installations should be removed and added to the Home Screen again after deployment because WebKit can retain the manifest and scope captured at installation time.
+- Release gates passed: TypeScript, zero-warning lint, the focused manifest tests (2/2), the full public/member Playwright journeys (10/10), the 43-route Production build, and `git diff --check`. The Impeccable detector's only advisory was the unchanged marketing-site measurement grid, outside this member-PWA change.
+
+## Member-home UX redesign — released to Production
 
 - Reworked `/customer/my-gyms` around the member's highest-frequency task: opening a server-signed, short-lived entry pass. Each membership now renders as a restrained RIVET pass with one dominant QR action, gym media, scannable status/renewal/visit/PT/balance facts, and progressive links into membership and PT detail.
 - Removed the repeated dashboard/discovery controls from the page, account menu, and signed-in footer. Desktop has one Home / Explore header navigation; signed-in mobile uses one persistent Home / Explore / Account dock, with the real member profile, communication settings, and sign-out consolidated under Account.

@@ -140,6 +140,7 @@
   }
 
   body {
+    min-height: 100dvh;
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
@@ -222,6 +223,21 @@
   *::-webkit-scrollbar-thumb:hover {
     background: var(--color-line-3);
   }
+}
+
+/*
+  Member PWA dock
+  The dock and its page reserve share one source of truth. `viewport-fit=cover`
+  exposes iOS safe-area values; the minimum remains useful on rounded Android
+  devices and in standalone windows that report a zero inset.
+*/
+.member-app-shell {
+  padding-bottom: calc(4rem + max(1rem, env(safe-area-inset-bottom)));
+}
+
+.member-bottom-nav {
+  padding-inline: max(0.5rem, env(safe-area-inset-left));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 @utility tabular {

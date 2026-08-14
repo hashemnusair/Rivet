@@ -285,7 +285,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
 
   return (
-    <div className={cn("flex min-h-screen flex-col bg-paper", customerSignedIn && "pb-[calc(64px+env(safe-area-inset-bottom))] sm:pb-0")}>
+    <div className={cn("flex min-h-dvh flex-col bg-paper", customerSignedIn && "member-app-shell sm:pb-0")}>
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
@@ -385,7 +385,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
       {customerSignedIn && customer ? (
         <nav
-          className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
+          className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-md sm:hidden"
           aria-label="Member navigation"
         >
           <div className="mx-auto grid h-16 max-w-md grid-cols-3 px-3">

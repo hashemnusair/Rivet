@@ -58,6 +58,11 @@ export const metadata: Metadata = {
   description:
     "RIVET is the revenue and operations system for gyms: members, memberships, sales pipeline, reception, payments and reconciliation — with full staff accountability.",
   applicationName: "RIVET",
+  appleWebApp: {
+    capable: true,
+    title: "RIVET",
+    statusBarStyle: "default",
+  },
   openGraph: {
     title: "RIVET — Every member. Every dinar. Every shift.",
     description: "The revenue and operations system for gyms—and one simple membership home for their customers.",
@@ -75,7 +80,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#15140f",
+  viewportFit: "cover",
+  themeColor: "#f5f4ef",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
