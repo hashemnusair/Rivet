@@ -78,11 +78,32 @@ export interface CustomerPersona {
   nameAr: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female";
+  preferredLanguage?: "en" | "ar";
+  addressLine1?: string;
+  city?: string;
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
   initials: string;
   context: string;
   /** Member-owned promotional communication preference, separate from service messages. */
   marketingPreference?: CustomerMarketingPreference;
   marketingPreferenceHistory?: CustomerMarketingPreference[];
+}
+
+export interface CustomerProfileInput {
+  fullName?: string;
+  phone?: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female";
+  preferredLanguage?: "en" | "ar";
+  addressLine1?: string;
+  city?: string;
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
 }
 
 export type CustomerMarketingPreferenceSource = "system_default" | "member_selected";
@@ -99,18 +120,24 @@ export interface CustomerMembership {
   id: string;
   customerId: string;
   gymId: string;
+  gymName?: string;
+  gymLogoUrl?: string;
+  gymCoverUrl?: string;
   branchId: string;
+  branchName?: string;
   memberNumber: string;
   planName: string;
   status: "active" | "expiring" | "frozen";
   startDate: string;
   endDate: string;
   visitsThisMonth: number;
+  totalCheckIns?: number;
   remainingVisits?: number;
   balanceMinor: number;
   qrValue: string;
   lastCheckInAt: string;
   visitHistory: CustomerVisit[];
+  activity?: CustomerActivity[];
 }
 
 export interface CustomerVisit {
@@ -121,6 +148,14 @@ export interface CustomerVisit {
   occurredAt: string;
   decision: "allowed" | "warning" | "overridden";
   checkedInByName?: string;
+}
+
+export interface CustomerActivity {
+  id: string;
+  type: "check_in" | "membership" | "payment" | "pt";
+  title: string;
+  detail?: string;
+  occurredAt: string;
 }
 
 export interface TrialBooking {

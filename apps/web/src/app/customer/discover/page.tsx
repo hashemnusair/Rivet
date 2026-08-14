@@ -66,10 +66,10 @@ export default function DiscoverGymsPage() {
             {filtered.map((gym, index) => (
               <Reveal key={gym.id} delay={index * 70}>
                 <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-all duration-300 hover:-translate-y-1 hover:border-ink hover:shadow-pop">
-                  <div className="relative h-28 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
+                  <div className="relative h-28 overflow-hidden bg-cover bg-center px-5 py-4 text-white" style={{ backgroundColor: gym.accent, backgroundImage: gym.cover?.url ? `linear-gradient(rgb(0 0 0 / .45), rgb(0 0 0 / .45)), url(${gym.cover.url})` : undefined }}>
                     <div className="absolute inset-0 opacity-20 marketing-grid" />
                     <div className="relative flex items-start justify-between">
-                      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em]">{gym.shortName}</span>
+                      <span className="flex items-center gap-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em]"><span className="size-8 rounded-full border border-white/50 bg-cover bg-center" role="img" aria-label={`${gym.name} logo`} style={{ backgroundColor: gym.accent, backgroundImage: gym.logo?.url ? `url(${gym.logo.url})` : undefined }} />{gym.shortName}</span>
                       {gym.featured ? (
                         <span className="rounded-sm border border-white/40 px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em]">Featured</span>
                       ) : null}

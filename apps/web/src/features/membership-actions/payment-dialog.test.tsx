@@ -148,6 +148,30 @@ describe("CollectPaymentDialog", () => {
     expect(await screen.findByTestId("payment-method")).toHaveTextContent(/cash/i);
   });
 
+  it("requires a specific invoice when a member has multiple collectible charges", async () => {
+    const charge = (id: string, description: string, amount: number) => ({
+      id,
+      organizationId: "org-1",
+      memberId: "member-1",
+      description,
+      subtotal: money(amount),
+      discount: money(0),
+      tax: money(0),
+      total: money(amount),
+      paidAmount: money(0),
+      outstandingAmount: money(amount),
+      status: "unpaid" as const,
+      collectible: true,
+      createdAt: "2026-01-10T08:00:00Z",
+    });
+    await renderWithApp(<CollectPaymentDialog open onOpenChange={() => {}} initialChargeId="charge-2" member={member({ outstanding: money(75_000), outstandingCharges: [charge("charge-1", "Membership", 45_000), charge("charge-2", "PT package", 30_000)] })} />);
+
+    expect(screen.getByText("Invoice")).toBeInTheDocument();
+    expect(await screen.findByTestId("payment-amount")).toHaveValue("30.000");
+    expect(screen.getByTestId("payment-amount")).toHaveValue("30.000");
+    expect(screen.getByTestId("payment-amount")).toHaveAttribute("max", "30.000");
+  });
+
   it("surfaces an API failure without closing the dialog", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();

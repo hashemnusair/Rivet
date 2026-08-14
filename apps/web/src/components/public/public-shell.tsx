@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
-import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
+import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, UserRound, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -231,6 +231,7 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
 const MEMBER_NAV = [
   { href: "/customer/my-gyms", label: "Dashboard", icon: LayoutDashboard, requiresAuth: true },
   { href: "/customer/discover", label: "Find a gym", icon: Search, requiresAuth: false },
+  { href: "/customer/profile", label: "Profile", icon: UserRound, requiresAuth: true },
 ];
 
 export function CustomerShell({ children }: { children: ReactNode }) {
@@ -244,7 +245,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
 
-  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/");
+  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/") || pathname === "/customer/profile";
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
@@ -341,6 +342,11 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <DropdownMenuItem asChild>
                     <Link href="/customer/discover">
                       <Search /> Find a gym
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/customer/profile">
+                      <UserRound /> Profile
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

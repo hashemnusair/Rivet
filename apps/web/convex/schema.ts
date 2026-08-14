@@ -134,6 +134,14 @@ export default defineSchema({
     nameAr: v.string(),
     email: v.string(),
     phone: v.string(),
+    dateOfBirth: v.optional(v.string()),
+    gender: v.optional(v.union(v.literal("male"), v.literal("female"))),
+    preferredLanguage: v.optional(v.union(v.literal("en"), v.literal("ar"))),
+    addressLine1: v.optional(v.string()),
+    city: v.optional(v.string()),
+    emergencyContactName: v.optional(v.string()),
+    emergencyContactRelationship: v.optional(v.string()),
+    emergencyContactPhone: v.optional(v.string()),
     initials: v.string(),
     context: v.string(),
     marketingOptIn: v.optional(v.boolean()),
@@ -156,6 +164,17 @@ export default defineSchema({
     status: v.optional(customerMarketingPreferenceStatus),
     source: customerMarketingPreferenceSource,
     wordingVersion: v.string(),
+    changedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_profile", ["customerProfileId"]),
+
+  // Global member-owned profile changes. Gym records receive a synchronized
+  // operational copy, while this history remains outside any tenant.
+  customerProfileEvents: defineTable({
+    userId: v.string(),
+    customerProfileId: v.string(),
+    changedFields: v.array(v.string()),
     changedAt: v.number(),
   })
     .index("by_user_id", ["userId"])
@@ -375,7 +394,7 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     publicId: v.string(),
     name: v.string(),
-    sessionCount: v.union(v.literal(12), v.literal(20), v.literal(30)),
+    sessionCount: v.number(),
     totalPriceMinor: v.number(),
     currency: v.string(),
     validityDays: v.number(),
@@ -396,11 +415,20 @@ export default defineSchema({
     membershipPublicId: v.string(),
     packageId: v.id("ptPackages"),
     chargePublicId: v.string(),
+    packageNameSnapshot: v.optional(v.string()),
+    sessionCountSnapshot: v.optional(v.number()),
+    totalPriceMinorSnapshot: v.optional(v.number()),
+    currencySnapshot: v.optional(v.string()),
+    validityDaysSnapshot: v.optional(v.number()),
+    branchAccessSnapshot: v.optional(v.union(v.literal("all"), v.literal("selected"))),
+    branchIdsSnapshot: v.optional(v.array(v.id("branches"))),
     status: v.union(v.literal("pending_payment"), v.literal("active"), v.literal("partially_refunded"), v.literal("refunded"), v.literal("cancelled")),
     entitlementId: v.optional(v.id("ptEntitlements")),
     paidAt: v.optional(v.number()),
     refundedSessions: v.optional(v.number()),
     refundedMinor: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    cancellationReason: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

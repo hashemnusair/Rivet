@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
+import { Blob as NodeBlob } from "node:buffer";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
@@ -235,6 +236,7 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       customerId: "profile-a",
       gymId: "gym-a",
       branchId: "directory-branch-a",
+      memberId: "member-a",
       memberNumber: "A-100",
       planName: "Active plan",
       status: "active",
@@ -397,6 +399,63 @@ describe("exported Convex customer ownership boundaries", () => {
     const customerBProfile = await t.run(async (ctx) => await ctx.db.query("customerProfiles").withIndex("by_public_id", (q) => q.eq("publicId", "profile-b")).unique());
     expect(customerBProfile).toMatchObject({ email: "b@example.com" });
     expect(customerBProfile?.marketingOptIn).toBeUndefined();
+  });
+
+  it("synchronizes member-owned profile fields to linked gym records without changing marketing consent", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customerA = t.withIdentity({ subject: "clerk-customer-a" });
+
+    const updated = await customerA.mutation(api.domain.mutate, operation("customer.profile.update", {
+      fullName: "Customer A Updated",
+      phone: "+962799999999",
+      dateOfBirth: "1992-04-12",
+      gender: "female",
+      preferredLanguage: "ar",
+      addressLine1: "Rainbow Street",
+      city: "Amman",
+      emergencyContactName: "Nour A",
+      emergencyContactRelationship: "Sibling",
+      emergencyContactPhone: "+962790001111",
+    })) as Record<string, unknown>;
+
+    expect(updated).toMatchObject({ id: "profile-a", name: "Customer A Updated", phone: "+962799999999", preferredLanguage: "ar" });
+    const persisted = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-a")).unique();
+      const member = organization ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", "member-a")).unique() : null;
+      const profile = await ctx.db.query("customerProfiles").withIndex("by_public_id", (q) => q.eq("publicId", "profile-a")).unique();
+      const events = await ctx.db.query("customerProfileEvents").withIndex("by_profile", (q) => q.eq("customerProfileId", "profile-a")).collect();
+      const audits = organization ? await ctx.db.query("auditEvents").withIndex("by_organization_entity", (q) => q.eq("organizationId", organization._id).eq("entityPublicId", "member-a")).collect() : [];
+      return { member, profile, events, audits };
+    });
+    expect(persisted.member?.data).toMatchObject({ fullName: "Customer A Updated", phone: "+962799999999", dateOfBirth: "1992-04-12", preferredLanguage: "ar", emergencyContactRelationship: "Sibling", customerProfileId: "profile-a" });
+    expect(persisted.profile?.marketingOptIn).toBeUndefined();
+    expect(persisted.events[0]?.changedFields).toEqual(expect.arrayContaining(["fullName", "phone", "preferredLanguage", "emergencyContactRelationship"]));
+    expect(persisted.audits).toEqual(expect.arrayContaining([expect.objectContaining({ action: "member.profile_sync", actorRole: "member", after: expect.objectContaining({ changedFields: expect.arrayContaining(["fullName", "phone"]) }) })]));
+  });
+
+  it("resolves published gym branding in the authenticated member experience", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const [logoStorageId, coverStorageId] = await t.run(async (ctx) => [
+      await ctx.storage.store(new NodeBlob(["logo"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["cover"]) as unknown as Blob),
+    ]);
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-a")).unique();
+      const listing = organization ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym").eq("publicId", "gym-a")).unique() : null;
+      expect(organization).not.toBeNull();
+      expect(listing).not.toBeNull();
+      const now = Date.now();
+      const logo = await ctx.db.insert("mediaAssets", { organizationId: organization!._id, publicId: "logo-a", ownerType: "gym_logo", ownerPublicId: "org-a", storageId: logoStorageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: now, updatedAt: now });
+      const cover = await ctx.db.insert("mediaAssets", { organizationId: organization!._id, publicId: "cover-a", ownerType: "gym_cover", ownerPublicId: "org-a", storageId: coverStorageId, contentType: "image/png", sizeBytes: 5, visibility: "public", status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.patch(listing!._id, { data: { ...listing!.data as Record<string, unknown>, logoAssetId: "logo-a", coverAssetId: "cover-a" }, updatedAt: now });
+      expect(logo).toBeDefined();
+      expect(cover).toBeDefined();
+    });
+
+    const experience = await t.withIdentity({ subject: "clerk-customer-a" }).query(api.domain.query, operation("customer.experience")) as { memberships: Array<{ gymLogoUrl?: string; gymCoverUrl?: string }> };
+    expect(experience.memberships[0]).toMatchObject({ gymLogoUrl: expect.any(String), gymCoverUrl: expect.any(String) });
   });
 
   it("creates a trial for the authenticated customer and only in the selected gym and active branch", async () => {

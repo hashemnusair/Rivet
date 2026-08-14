@@ -51,6 +51,7 @@ export function MemberHeader({
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const memberOwnsProfile = Boolean(member.customerProfileId);
   const [editForm, setEditForm] = useState({ fullName: member.fullName, fullNameAr: member.fullNameAr ?? "", phone: member.phone, email: member.email ?? "", homeBranchId: member.homeBranchId, preferredLanguage: member.preferredLanguage, tags: member.tags.join(", "), emergencyContactName: member.emergencyContactName ?? "", emergencyContactPhone: member.emergencyContactPhone ?? "", notes: member.notes ?? "", marketingOptIn: member.marketingOptIn, marketingPreferenceSource: undefined as "staff_selected" | undefined });
 
   useEffect(() => {
@@ -278,14 +279,14 @@ export function MemberHeader({
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit member profile</DialogTitle>
-            <DialogDescription>Identity, contact, branch and service notes. Changes are authorized and audited server-side.</DialogDescription>
+            <DialogDescription>{memberOwnsProfile ? "Personal details are synchronized from the member account. This gym can still manage branch, tags, service notes, and membership operations." : "Identity, contact, branch and service notes. Changes are authorized and audited server-side."}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Full name" required><Input value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
-              <Field label="Arabic name"><Input dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
-              <Field label="Phone" required><Input dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
-              <Field label="Email"><Input type="email" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+              <Field label="Full name" required><Input disabled={memberOwnsProfile} value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
+              <Field label="Arabic name"><Input disabled={memberOwnsProfile} dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
+              <Field label="Phone" required><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
+              <Field label="Email"><Input disabled={memberOwnsProfile} type="email" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
               <Field label="Home branch">
                 <Select value={editForm.homeBranchId} onValueChange={(value) => setEditForm((form) => ({ ...form, homeBranchId: value }))}>
                   <SelectTrigger aria-label="Home branch"><SelectValue /></SelectTrigger>
@@ -293,13 +294,13 @@ export function MemberHeader({
                 </Select>
               </Field>
               <Field label="Preferred language">
-                <Select value={editForm.preferredLanguage} onValueChange={(value) => setEditForm((form) => ({ ...form, preferredLanguage: value as "en" | "ar" }))}>
+                <Select disabled={memberOwnsProfile} value={editForm.preferredLanguage} onValueChange={(value) => setEditForm((form) => ({ ...form, preferredLanguage: value as "en" | "ar" }))}>
                   <SelectTrigger aria-label="Preferred language"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent>
                 </Select>
               </Field>
-              <Field label="Emergency contact"><Input value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
-              <Field label="Emergency phone"><Input dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
+              <Field label="Emergency contact"><Input disabled={memberOwnsProfile} value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
+              <Field label="Emergency phone"><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
             </div>
             <Field label="Tags" hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder="VIP, morning, personal training" /></Field>
             <Field label="Service notes"><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Non-sensitive operational context for staff" /></Field>

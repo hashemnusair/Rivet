@@ -12,6 +12,14 @@ export interface CustomerProfileDraft {
   nameAr: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female";
+  preferredLanguage?: "en" | "ar";
+  addressLine1?: string;
+  city?: string;
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
   initials: string;
   context: string;
 }
@@ -23,7 +31,7 @@ export interface CustomerProfileDraft {
  */
 export function buildCustomerProfileDraft(
   identity: CustomerIdentityInput,
-  input: { fullName?: unknown; email?: unknown; phone?: unknown },
+  input: { fullName?: unknown; email?: unknown; phone?: unknown; dateOfBirth?: unknown; gender?: unknown; preferredLanguage?: unknown; addressLine1?: unknown; city?: unknown; emergencyContactName?: unknown; emergencyContactRelationship?: unknown; emergencyContactPhone?: unknown },
   id: string,
 ): CustomerProfileDraft {
   const fullName = (typeof input.fullName === "string" ? input.fullName.trim() : "") || identity.fullName.trim() || identity.email.trim();
@@ -44,6 +52,14 @@ export function buildCustomerProfileDraft(
     nameAr: fullName,
     email,
     phone,
+    dateOfBirth: typeof input.dateOfBirth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth) ? input.dateOfBirth : undefined,
+    gender: input.gender === "male" || input.gender === "female" ? input.gender : undefined,
+    preferredLanguage: input.preferredLanguage === "ar" ? "ar" : "en",
+    addressLine1: typeof input.addressLine1 === "string" ? input.addressLine1.trim() || undefined : undefined,
+    city: typeof input.city === "string" ? input.city.trim() || undefined : undefined,
+    emergencyContactName: typeof input.emergencyContactName === "string" ? input.emergencyContactName.trim() || undefined : undefined,
+    emergencyContactRelationship: typeof input.emergencyContactRelationship === "string" ? input.emergencyContactRelationship.trim() || undefined : undefined,
+    emergencyContactPhone: typeof input.emergencyContactPhone === "string" ? input.emergencyContactPhone.trim() || undefined : undefined,
     initials,
     context: "RIVET member",
   };

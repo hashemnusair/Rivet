@@ -32,6 +32,7 @@ describe("Convex finance and reconciliation lifecycle", () => {
     const manager = t.withIdentity({ subject: "clerk-finance-manager" });
     const shiftOne = await reception.mutation(api.domain.mutate, operation("shifts.open", { branchId: "finance-branch", openingFloat: { amount: 5_000, currency: "JOD" } })) as Shift;
 
+    await expectCode(reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", amount: { amount: 1_000, currency: "JOD" }, method: "cash", idempotencyKey: "finance-missing-charge" })), "VALIDATION_ERROR");
     const cash = await reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", chargeId: "charge-cash", amount: { amount: 10_000, currency: "JOD" }, method: "cash", idempotencyKey: "finance-cash-1" })) as ReceiptDetail;
     await expectCode(reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", chargeId: "charge-card", amount: { amount: 5_000, currency: "JOD" }, method: "card", idempotencyKey: "finance-card-missing-ref" })), "VALIDATION_ERROR");
     const cardPartial = await reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "finance-member", chargeId: "charge-card", amount: { amount: 5_000, currency: "JOD" }, method: "card", externalReference: "POS-100", idempotencyKey: "finance-card-1" })) as ReceiptDetail;

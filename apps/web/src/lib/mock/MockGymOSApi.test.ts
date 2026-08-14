@@ -184,6 +184,55 @@ describe("platform subscription controls", () => {
   });
 });
 
+describe("gym public profile media", () => {
+  it("persists selected logo, cover, and gallery media through draft save and publication", async () => {
+    const initial = await api.getGymPublicProfile();
+    const upload = (ownerType: "gym_logo" | "gym_cover" | "gym_gallery") => api.uploadMediaAsset({
+      ownerType,
+      ownerId: initial.organizationId,
+      altText: `${ownerType} alternative text`,
+      file: new Blob(["image-bytes"], { type: "image/png" }),
+    });
+    const logo = await upload("gym_logo");
+    const cover = await upload("gym_cover");
+    const gallery = await upload("gym_gallery");
+
+    expect(logo.status).toBe("pending");
+    const draft = await api.saveGymPublicProfile({
+      shortName: initial.shortName,
+      taglineEn: initial.taglineEn,
+      descriptionEn: initial.descriptionEn,
+      category: initial.category,
+      audience: initial.audience,
+      amenities: initial.amenities,
+      accentColor: initial.accentColor,
+      logoAssetId: logo.id,
+      coverAssetId: cover.id,
+      galleryAssetIds: [gallery.id],
+    });
+    expect(draft).toMatchObject({ status: "draft", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
+
+    const published = await api.publishGymPublicProfile();
+    expect(published).toMatchObject({ status: "published", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
+    expect((await api.listMarketplaceGyms())[0]).toMatchObject({ logo: { id: logo.id }, cover: { id: cover.id } });
+
+    const replacement = await upload("gym_logo");
+    const replacementDraft = await api.saveGymPublicProfile({
+      shortName: published.shortName,
+      taglineEn: published.taglineEn,
+      descriptionEn: published.descriptionEn,
+      category: published.category,
+      audience: published.audience,
+      amenities: published.amenities,
+      accentColor: published.accentColor,
+      logoAssetId: replacement.id,
+      galleryAssetIds: [],
+    });
+    expect(replacementDraft).toMatchObject({ status: "draft", logo: { id: replacement.id }, gallery: [] });
+    expect(await api.publishGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
+  });
+});
+
 describe("tenant/branch scoping and authorization", () => {
   it("refuses the branch financial ledger to a receptionist", async () => {
     await api.switchDemoRole("receptionist");

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { action, internalMutation, mutation } from "./_generated/server";
+import { action, internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import { sanitizeImageBytes } from "./mediaSanitizer";
 import { domainError, publicOrganizationId, publicUserId, requireActor, requirePermission } from "./security";
 
@@ -14,6 +14,21 @@ const requestArgs = {
 };
 
 const PUBLIC_PROFILE_DRAFT_TTL_MS = 24 * 60 * 60 * 1_000;
+
+function profileMediaIds(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const profile = value as { logoAssetId?: unknown; coverAssetId?: unknown; galleryAssetIds?: unknown };
+  const gallery = Array.isArray(profile.galleryAssetIds) ? profile.galleryAssetIds : [];
+  return [profile.logoAssetId, profile.coverAssetId, ...gallery].filter((item): item is string => typeof item === "string" && item.length > 0);
+}
+
+async function isReferencedByPublishedProfile(ctx: MutationCtx, asset: { organizationId: Id<"organizations">; publicId: string }): Promise<boolean> {
+  const versions = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", asset.organizationId).eq("entityType", "gymProfileVersion")).collect();
+  return versions.some((version) => {
+    const value = version.data && typeof version.data === "object" && !Array.isArray(version.data) ? version.data as { status?: unknown } : {};
+    return value.status === "published" && profileMediaIds(version.data).includes(asset.publicId);
+  });
+}
 
 type FinalizedAsset = {
   id: string;
@@ -188,6 +203,10 @@ export const cleanupExpired = internalMutation({
     const scheduled = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "scheduled_for_deletion")).collect();
     const due = [...pending, ...scheduled].filter((asset) => (asset.deleteAfter ?? Number.POSITIVE_INFINITY) <= now).slice(0, 50);
     for (const asset of due) {
+      if (asset.visibility === "public" && asset.ownerType.startsWith("gym_") && await isReferencedByPublishedProfile(ctx, asset)) {
+        await ctx.db.patch(asset._id, { status: "active", deleteAfter: undefined, updatedAt: now });
+        continue;
+      }
       await ctx.storage.delete(asset.storageId);
       await ctx.db.patch(asset._id, { status: "replaced", deleteAfter: undefined, updatedAt: now });
     }

@@ -47,7 +47,7 @@ import type {
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
-import type { CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 
 export type ConvexOperationArgs = {
   operation: string;
@@ -250,7 +250,8 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeQuery("customer.experience", {}, onValue, onError);
   }
-  registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
+  registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
+  updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> { return this.mutate("customer.profile.update", input); }
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
@@ -381,6 +382,7 @@ export class ConvexGymOSApi implements GymOSApi {
   markPtBookingNoShow(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.mutate("pt.booking.no_show", { bookingId, ...input }); }
   requestPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("pt.package.request", input); }
   requestCustomerPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("customer.pt.package.request", input); }
+  cancelPtPackageOrder(orderId: T.UUID, input: T.CancelPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("pt.package.cancel", { orderId, ...input }); }
   refundPtPackage(orderId: T.UUID, input: T.RefundPtPackageInput): Promise<T.PtPackageOrder> { return this.mutate("pt.package.refund", { orderId, ...input }); }
   previewPtIntroductoryCredits(sessionCount = 2): Promise<T.PtIntroductoryCreditPreview> { return this.query("pt.introductory.preview", { sessionCount }); }
   applyPtIntroductoryCredits(input: { sessionCount: number; reason: string; idempotencyKey: string }): Promise<T.PtIntroductoryCreditApplyResult> { return this.mutate("pt.introductory.apply", input); }

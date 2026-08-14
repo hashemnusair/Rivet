@@ -57,7 +57,7 @@ import {
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMarketingPreference, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
   currentRole,
@@ -72,6 +72,14 @@ import {
 const TZ = "Asia/Amman";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
+
+function createMockMediaUrl(file: Blob, fallbackId: string): string {
+  return typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : `mock-media://${fallbackId}`;
+}
+
+function revokeMockMediaUrl(url?: string): void {
+  if (url && typeof URL.revokeObjectURL === "function" && url.startsWith("blob:")) URL.revokeObjectURL(url);
+}
 
 const MOCK_INVOICES: PlatformBillingInvoice[] = [
   { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
@@ -193,6 +201,7 @@ export class MockGymOSApi implements GymOSApi {
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
   private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
   private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
+  private ptCancellationIdempotency = new Map<string, { signature: string; result: T.PtPackageOrder }>();
   private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
   private ptTrainers: T.PtTrainerProfile[] = [];
   private ptPackages: T.PtPackage[] = [];
@@ -203,6 +212,7 @@ export class MockGymOSApi implements GymOSApi {
   private ptOrders: T.PtPackageOrder[] = [];
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
+  private mediaAssets = new Map<string, T.MediaAsset>();
   private operationalEmailKinds: string[] = [];
   private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
 
@@ -262,7 +272,12 @@ export class MockGymOSApi implements GymOSApi {
       if (!input.shortName.trim() || !input.taglineEn.trim() || !input.descriptionEn.trim()) throw ApiError.of(ERR.VALIDATION, "Short name, tagline, and description are required.");
       if (!/^#[0-9a-f]{6}$/i.test(input.accentColor)) throw ApiError.of(ERR.VALIDATION, "Accent color must be a six-digit hex color.");
       const nextVersion = this.gymPublicProfile.status === "published" ? this.gymPublicProfile.version + 1 : this.gymPublicProfile.version;
-      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: nowISO() };
+      const referenced = (id: string | undefined) => id ? this.mediaAssets.get(id) : undefined;
+      const logo = referenced(input.logoAssetId);
+      const cover = referenced(input.coverAssetId);
+      const gallery = input.galleryAssetIds.map((id) => referenced(id)).filter((asset): asset is T.MediaAsset => Boolean(asset));
+      for (const asset of [logo, cover, ...gallery].filter((asset): asset is T.MediaAsset => Boolean(asset))) this.mediaAssets.set(asset.id, { ...asset, status: "active", updatedAt: nowISO() });
+      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: nowISO() };
       return { ...this.gymPublicProfile };
     });
   }
@@ -275,7 +290,7 @@ export class MockGymOSApi implements GymOSApi {
       this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
       this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
       const listing = this.platformGyms[0];
-      if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version });
+      if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
       return { ...this.gymPublicProfile };
     });
   }
@@ -293,11 +308,14 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
       const now = nowISO();
-      return { id: mockUuid(), organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: input.ownerType.startsWith("gym_") ? "pending" : "active", url: URL.createObjectURL(input.file), createdAt: now, updatedAt: now };
+      const assetId = mockUuid();
+      const asset = { id: assetId, organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: input.ownerType.startsWith("gym_") ? "pending" : "active", url: createMockMediaUrl(input.file, assetId), createdAt: now, updatedAt: now } satisfies T.MediaAsset;
+      this.mediaAssets.set(asset.id, asset);
+      return asset;
     });
   }
 
-  discardDraftMediaAsset(_assetId: T.UUID): Promise<void> { return this.respond(() => undefined); }
+  discardDraftMediaAsset(assetId: T.UUID): Promise<void> { return this.respond(() => { const asset = this.mediaAssets.get(assetId); if (asset?.status === "pending") { revokeMockMediaUrl(asset.url); this.mediaAssets.delete(assetId); } }); }
 
   private customerWithPreference(persona: CustomerPersona): CustomerPersona {
     const history = this.customerPreferenceHistory.get(persona.id) ?? [];
@@ -324,20 +342,51 @@ export class MockGymOSApi implements GymOSApi {
     return () => undefined;
   }
 
-  registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona> {
+  registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> {
     return this.respond(() => {
       const persona = {
         id: `customer-${Date.now()}`,
         name: input.fullName,
         nameAr: input.fullName,
         email: input.email.trim().toLowerCase(),
-        phone: input.phone,
+        phone: input.phone ?? "",
+        dateOfBirth: input.dateOfBirth,
+        gender: input.gender,
+        preferredLanguage: input.preferredLanguage ?? "en",
+        addressLine1: input.addressLine1,
+        city: input.city,
+        emergencyContactName: input.emergencyContactName,
+        emergencyContactRelationship: input.emergencyContactRelationship,
+        emergencyContactPhone: input.emergencyContactPhone,
         initials: input.fullName.split(/\s+/).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase(),
         context: "New member account",
       };
       this.registeredCustomers.set(persona.id, persona);
       this.activeCustomerId = persona.id;
       return this.customerWithPreference(persona);
+    });
+  }
+
+  updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> {
+    return this.respond(() => {
+      const current = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
+      const next: CustomerPersona = {
+        ...current,
+        name: input.fullName?.trim() || current.name,
+        nameAr: input.fullName?.trim() || current.nameAr,
+        phone: input.phone ?? current.phone,
+        dateOfBirth: input.dateOfBirth || undefined,
+        gender: input.gender,
+        preferredLanguage: input.preferredLanguage ?? current.preferredLanguage ?? "en",
+        addressLine1: input.addressLine1 || undefined,
+        city: input.city || undefined,
+        emergencyContactName: input.emergencyContactName || undefined,
+        emergencyContactRelationship: input.emergencyContactRelationship || undefined,
+        emergencyContactPhone: input.emergencyContactPhone || undefined,
+        initials: (input.fullName?.trim() || current.name).split(/\s+/).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase(),
+      };
+      this.registeredCustomers.set(next.id, next);
+      return this.customerWithPreference(next);
     });
   }
 
@@ -1182,6 +1231,9 @@ export class MockGymOSApi implements GymOSApi {
       currentPlanName: plan?.name,
       membershipEndDate: current?.endDate,
       outstanding: this.outstandingForMember(m.id),
+      outstandingCharges: this.db.charges
+        .filter((charge) => charge.memberId === m.id && collectibleOutstandingMinor(charge, this.today()) > 0)
+        .map((charge) => this.chargeProjection(charge)!),
       lastCheckInAt: lastCheckIn?.occurredAt,
       createdAt: m.createdAt,
     };
@@ -1204,7 +1256,12 @@ export class MockGymOSApi implements GymOSApi {
       dateOfBirth: m.dateOfBirth,
       preferredLanguage: m.preferredLanguage,
       emergencyContactName: m.emergencyContactName,
+      emergencyContactRelationship: m.emergencyContactRelationship,
       emergencyContactPhone: m.emergencyContactPhone,
+      addressLine1: m.addressLine1,
+      city: m.city,
+      customerProfileId: m.customerProfileId,
+      customerProfileSyncedAt: m.customerProfileSyncedAt,
       source: m.source,
       assignedSalespersonId: m.assignedSalespersonId,
       marketingOptIn: m.marketingOptIn,
@@ -1709,7 +1766,10 @@ export class MockGymOSApi implements GymOSApi {
         tags: input.tags ?? [],
         preferredLanguage: input.preferredLanguage,
         emergencyContactName: input.emergencyContactName,
+        emergencyContactRelationship: input.emergencyContactRelationship,
         emergencyContactPhone: input.emergencyContactPhone,
+        addressLine1: input.addressLine1,
+        city: input.city,
         source: input.source,
         assignedSalespersonId: input.assignedSalespersonId,
         marketingOptIn: input.marketingOptIn !== false,
@@ -1959,13 +2019,13 @@ export class MockGymOSApi implements GymOSApi {
       const paidOrderIds = new Set(this.ptOrders.filter((order) => order.status !== "pending_payment" && order.status !== "cancelled").map((order) => order.id));
       const packageRevenue = this.ptOrders.reduce((total, order) => {
         if (!paidOrderIds.has(order.id)) return total;
-        return total + (this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
+        return total + (order.totalPriceSnapshot?.amount ?? this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
       }, 0);
       return {
         trainers: this.ptTrainers.map((item) => ({ ...item, availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
         packages: this.ptPackages.map((item) => ({ ...item })),
         bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
-        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
+        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
         metrics: {
           packageRevenue: money(packageRevenue),
           sessionsUsed: this.ptEntitlements.reduce((total, item) => total + item.consumed, 0),
@@ -2034,13 +2094,21 @@ export class MockGymOSApi implements GymOSApi {
   upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> {
     return this.respond(() => {
       this.require("pt.manage");
-      if (!Number.isSafeInteger(input.totalPrice.amount) || input.totalPrice.amount <= 0 || input.validityDays < 1) throw ApiError.of(ERR.VALIDATION, "Package price and validity must be positive.");
+      if (!Number.isSafeInteger(input.sessionCount) || input.sessionCount < 1 || input.sessionCount > 1_000 || !Number.isSafeInteger(input.totalPrice.amount) || input.totalPrice.amount <= 0 || input.validityDays < 1) throw ApiError.of(ERR.VALIDATION, "Package sessions, price, and validity must be positive.");
       const existing = input.id ? this.ptPackages.find((item) => item.id === input.id) : undefined;
       const now = nowISO();
       const value: T.PtPackage = { id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, name: input.name.trim(), sessionCount: input.sessionCount, totalPrice: { ...input.totalPrice }, validityDays: input.validityDays, branchAccess: input.branchAccess, branchIds: input.branchAccess === "all" ? [] : [...input.branchIds], status: input.status, createdAt: existing?.createdAt ?? now, updatedAt: now };
       const candidate = [...this.ptPackages.filter((item) => item.id !== value.id && item.status === "active"), value].filter((item) => item.status === "active");
       if (!ptPackageLadderIsValid(candidate)) throw ApiError.of(ERR.VALIDATION, "Larger PT packages cannot cost more per session than smaller packages.");
-      if (existing) this.ptPackages.splice(this.ptPackages.indexOf(existing), 1, value); else this.ptPackages.push(value);
+      if (existing) {
+        for (const order of this.ptOrders.filter((item) => item.packageId === existing.id)) {
+          order.packageNameSnapshot ??= existing.name;
+          order.sessionCountSnapshot ??= existing.sessionCount;
+          order.totalPriceSnapshot ??= { ...existing.totalPrice };
+          order.validityDaysSnapshot ??= existing.validityDays;
+        }
+        this.ptPackages.splice(this.ptPackages.indexOf(existing), 1, value);
+      } else this.ptPackages.push(value);
       this.audit({ category: "settings", action: existing ? "pt.package.update" : "pt.package.create", entityType: "pt_package", entityId: value.id, entityLabel: value.name, summary: existing ? "Updated PT package" : "Created PT package" });
       return { ...value };
     });
@@ -2194,7 +2262,7 @@ export class MockGymOSApi implements GymOSApi {
       const charge: T.Charge = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, membershipId: membership.id, description: ptPackage.name, subtotal: { ...ptPackage.totalPrice }, discount: money(0), tax: money(0), total: { ...ptPackage.totalPrice }, paidAmount: money(0), outstandingAmount: { ...ptPackage.totalPrice }, status: "unpaid", createdAt: nowISO() };
       this.db.charges.push(charge);
       const now = nowISO();
-      const order: T.PtPackageOrder = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: membership.memberId, packageId: ptPackage.id, chargeId: charge.id, status: "pending_payment", createdAt: now, updatedAt: now };
+      const order: T.PtPackageOrder = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: membership.memberId, packageId: ptPackage.id, chargeId: charge.id, packageNameSnapshot: ptPackage.name, sessionCountSnapshot: ptPackage.sessionCount, totalPriceSnapshot: { ...ptPackage.totalPrice }, validityDaysSnapshot: ptPackage.validityDays, status: "pending_payment", createdAt: now, updatedAt: now };
       this.ptOrders.push(order);
       this.activity({ memberId: membership.memberId, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.id, chargeId: charge.id } });
       return { ...order };
@@ -2203,6 +2271,37 @@ export class MockGymOSApi implements GymOSApi {
 
   requestCustomerPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> { return this.requestPtPackage(input); }
 
+  cancelPtPackageOrder(orderId: T.UUID, input: T.CancelPtPackageInput): Promise<T.PtPackageOrder> {
+    return this.respond(() => {
+      this.require("pt.refund");
+      this.requireReason(input.reason);
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (!idempotencyKey) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
+      const signature = JSON.stringify({ orderId, reason: input.reason.trim() });
+      const prior = this.ptCancellationIdempotency.get(idempotencyKey);
+      if (prior) {
+        if (prior.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This cancellation key was already used for a different request.");
+        return { ...prior.result };
+      }
+      const order = this.ptOrders.find((item) => item.id === orderId);
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+      if (order.status !== "pending_payment") throw ApiError.of(ERR.VALIDATION, "Only a pending PT package order can be cancelled. Use the PT refund flow after activation.");
+      const charge = this.db.charges.find((item) => item.id === order.chargeId);
+      if (!charge) throw ApiError.of(ERR.NOT_FOUND, "PT package charge not found.");
+      if (charge.paidAmount.amount > 0) throw ApiError.of(ERR.VALIDATION, "Refund or void the collected payment before cancelling this PT order.");
+      charge.status = "void";
+      charge.outstandingAmount = money(0);
+      order.status = "cancelled";
+      order.cancelledAt = nowISO();
+      order.cancellationReason = input.reason.trim();
+      order.updatedAt = nowISO();
+      this.activity({ memberId: order.memberId, type: "pt_package_cancelled", title: "PT package order cancelled", body: input.reason, meta: { orderId: order.id, chargeId: order.chargeId } });
+      this.audit({ category: "payments", action: "pt.package.cancel", entityType: "pt_package_order", entityId: order.id, entityLabel: order.memberId, summary: "Cancelled pending PT package order and voided unpaid charge", reason: input.reason });
+      this.ptCancellationIdempotency.set(idempotencyKey, { signature, result: { ...order } });
+      return { ...order };
+    });
+  }
+
   refundPtPackage(orderId: T.UUID, input: T.RefundPtPackageInput): Promise<T.PtPackageOrder> {
     return this.respond(() => {
       this.require("pt.refund"); this.requireReason(input.reason);
@@ -2210,10 +2309,13 @@ export class MockGymOSApi implements GymOSApi {
       const entitlement = order?.entitlementId ? this.ptEntitlements.find((item) => item.id === order.entitlementId) : undefined;
       if (!order || !entitlement || input.sessions < 1 || input.sessions > ptAvailableCredits(entitlement)) throw ApiError.of(ERR.VALIDATION, "Only unused PT credits can be refunded.");
       entitlement.revoked += input.sessions; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
-      const ptPackage = this.ptPackages.find((item) => item.id === order.packageId)!;
+      const ptPackage = this.ptPackages.find((item) => item.id === order.packageId);
+      const totalPriceMinor = order.totalPriceSnapshot?.amount ?? ptPackage?.totalPrice.amount ?? 0;
+      const totalSessions = order.sessionCountSnapshot ?? ptPackage?.sessionCount ?? 0;
+      if (totalPriceMinor <= 0 || totalSessions <= 0) throw ApiError.of(ERR.NOT_FOUND, "PT package terms not found.");
       const refundedSessions = (order.refundedSessions ?? 0) + input.sessions;
       order.refundedSessions = refundedSessions;
-      order.refundedAmount = money(Math.floor((ptPackage.totalPrice.amount * refundedSessions) / ptPackage.sessionCount));
+      order.refundedAmount = money(Math.floor((totalPriceMinor * refundedSessions) / totalSessions));
       order.status = entitlement.available === 0 ? "refunded" : "partially_refunded"; order.updatedAt = nowISO();
       this.activity({ memberId: order.memberId, type: "pt_credit_refunded", title: `${input.sessions} PT credit${input.sessions === 1 ? "" : "s"} refunded`, body: input.reason, meta: { orderId } });
       return { ...order };
@@ -3456,7 +3558,10 @@ export class MockGymOSApi implements GymOSApi {
       tags: input.tags ?? [],
       preferredLanguage: input.preferredLanguage,
       emergencyContactName: input.emergencyContactName,
+      emergencyContactRelationship: input.emergencyContactRelationship,
       emergencyContactPhone: input.emergencyContactPhone,
+      addressLine1: input.addressLine1,
+      city: input.city,
       source: input.source,
       assignedSalespersonId: input.assignedSalespersonId,
       marketingOptIn: input.marketingOptIn !== false,

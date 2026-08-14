@@ -39,7 +39,7 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
 
     await page.getByRole("link", { name: /Open My Gyms/i }).click();
-    await expect(page.getByText("Trial requested")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Free trials" }).getByText(/requested/i)).toBeVisible();
     await expect(page.getByText("Forge Fitness Club").first()).toBeVisible();
 
     // Use client-side navigation so the frontend mock and its newly created
@@ -73,14 +73,21 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
   });
 
-  test("does not manufacture a signed entry QR in preview mode", async ({ page }) => {
+  test("keeps entry QR hidden until requested and closes the short-lived pass", async ({ page }) => {
     await page.goto("/login/member");
     await page.getByRole("radio", { name: /Lina Haddad/i }).click();
     await page.getByRole("button", { name: /Continue as Lina/i }).click();
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
-    await expect(page.getByText(/Signed entry pass unavailable/i)).toBeVisible();
-    await expect(page.getByText(/configured production signing service/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show entry QR" })).toBeVisible();
+    await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
+    await page.getByRole("button", { name: "Show entry QR" }).click();
+    const dialog = page.getByRole("dialog", { name: /entry QR/i });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator("svg[aria-label*='QR']")).toBeVisible();
+    await expect(dialog.getByText(/Expires /)).toBeVisible();
+    await dialog.getByRole("button", { name: /Close dialog|Close/ }).click();
+    await expect(dialog).toBeHidden();
     await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
   });
 });

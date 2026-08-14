@@ -41,17 +41,21 @@ export function CollectPaymentDialog({
   open,
   onOpenChange,
   member,
+  initialChargeId,
   onCollected,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   member: MemberSummary;
+  initialChargeId?: string;
   onCollected?: (receipt: ReceiptDetail) => void;
 }) {
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const methods = (settingsQuery.data?.paymentMethods ?? []).filter((m) => m.enabled);
+  const charges = member.outstandingCharges ?? [];
+  const [selectedChargeId, setSelectedChargeId] = useState<string | undefined>(initialChargeId);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -60,13 +64,19 @@ export function CollectPaymentDialog({
 
   useEffect(() => {
     if (open) {
-      form.reset({ amount: toMajor(member.outstanding).toFixed(3), method: "cash", reference: "" });
+      const nextCharge = initialChargeId ? charges.find((charge) => charge.id === initialChargeId) : charges[0];
+      setSelectedChargeId(nextCharge?.id);
+      form.reset({ amount: toMajor(nextCharge?.outstandingAmount ?? member.outstanding).toFixed(3), method: "cash", reference: "" });
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, member.id]);
+  }, [open, member.id, initialChargeId]);
 
-  const outstanding = member.outstanding;
+  const selectedCharge = charges.find((charge) => charge.id === selectedChargeId);
+  // A member detail collection must never silently apply an aggregate balance
+  // to the wrong invoice. The aggregate fallback only supports legacy/mock
+  // snapshots that have no itemized charges at all.
+  const outstanding = selectedCharge?.outstandingAmount ?? (charges.length === 0 ? member.outstanding : money(0));
   const amountValue = parseMoneyInput(form.watch("amount") ?? "") ?? money(0);
   const selectedMethod = form.watch("method");
   const referenceRequired = selectedMethod === "card" || selectedMethod === "bank_transfer" || selectedMethod === "cliq";
@@ -77,6 +87,7 @@ export function CollectPaymentDialog({
       api.createPayment(
         {
           memberId: member.id,
+          chargeId: selectedCharge?.id,
           amount: amountValue,
           method: values.method as PaymentMethodKey,
           externalReference: values.reference || undefined,
@@ -109,6 +120,10 @@ export function CollectPaymentDialog({
               form.setError("amount", { message: "Amount must be greater than zero" });
               return;
             }
+            if (amountValue.amount > outstanding.amount) {
+              form.setError("amount", { message: "Cannot exceed the selected invoice balance" });
+              return;
+            }
             if (referenceRequired && !values.reference?.trim()) {
               form.setError("reference", { message: "Reference is required for this payment method" });
               return;
@@ -127,9 +142,33 @@ export function CollectPaymentDialog({
                   <span className="text-[13px] font-medium text-warning-deep">Outstanding balance</span>
                   <MoneyText money={outstanding} className="text-[15px] font-semibold text-warning-deep" />
                 </div>
+                {charges.length > 1 ? (
+                  <Field label="Invoice" required>
+                    <Select
+                      value={selectedChargeId}
+                      onValueChange={(value) => {
+                        const charge = charges.find((item) => item.id === value);
+                        setSelectedChargeId(value);
+                        form.setValue("amount", toMajor(charge?.outstandingAmount ?? member.outstanding).toFixed(3));
+                        setServerError(null);
+                      }}
+                    >
+                      <SelectTrigger aria-label="Invoice to collect">
+                        <SelectValue placeholder="Select an invoice" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {charges.map((charge) => (
+                          <SelectItem key={charge.id} value={charge.id}>
+                            {charge.description} · {toMajor(charge.outstandingAmount).toFixed(3)} JOD due
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Amount (JOD)" required error={form.formState.errors.amount?.message}>
-                    <Input inputMode="decimal" autoFocus data-testid="payment-amount" {...form.register("amount")} />
+                    <Input inputMode="decimal" autoFocus max={toMajor(outstanding).toFixed(3)} step="0.001" data-testid="payment-amount" {...form.register("amount")} />
                   </Field>
                   <Field label="Method" required>
                     <Controller

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, CreditCard, Dumbbell, MapPin, Phone, ScanLine, Ticket } from "lucide-react";
+import { ArrowLeft, CalendarDays, CreditCard, Dumbbell, MapPin, Phone, QrCode, ScanLine, Ticket } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -9,15 +9,16 @@ import { toast } from "sonner";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
-import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
+import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
-import type { CustomerVisit } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
 import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
 
@@ -28,6 +29,11 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
   const { ready, identitySignedIn } = useMemberGate();
   const membership = memberships.find((item) => item.id === membershipId);
   const [tab, setTab] = useState<"membership" | "pt">(() => searchParams.get("section") === "pt" ? "pt" : "membership");
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrToken, setQrToken] = useState("");
+  const [qrExpiresAt, setQrExpiresAt] = useState<string>();
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string>();
 
   // A membership card, its QR and its balance are never shown to a visitor.
   if (!ready || !identitySignedIn) {
@@ -51,15 +57,30 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
     );
   }
 
-  const gym = gyms.find((item) => item.id === membership.gymId);
-  const branch = gym?.branches.find((item) => item.id === membership.branchId);
-  if (!gym || !branch) {
-    return <main className="mx-auto max-w-md px-4 py-24 text-center"><h1 className="font-display text-[22px] font-semibold tracking-tight">Gym information unavailable</h1><Button asChild className="mt-5"><Link href="/customer/my-gyms">Back to dashboard</Link></Button></main>;
-  }
+  // A subscription may remain active even when the gym is not eligible for
+  // public Find Gyms discovery. Use the authenticated membership projection
+  // as the fallback so members never lose access to their own dashboard.
+  const gym = gyms.find((item) => item.id === membership.gymId) ?? fallbackGym(membership);
+  const branch = gym.branches.find((item) => item.id === membership.branchId) ?? gym.branches[0]!;
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
   const daysLeft = Math.max(daysFromToday(membership.endDate), 0);
-  const signedEntryPass = isConvexMode();
+  const openQr = async () => {
+    setQrOpen(true);
+    setQrToken("");
+    setQrExpiresAt(undefined);
+    setQrError(undefined);
+    setQrLoading(true);
+    try {
+      const pass = await getApi().getEntryPass(membership.id);
+      setQrToken(pass.token);
+      setQrExpiresAt(pass.expiresAt);
+    } catch (error) {
+      setQrError(error instanceof Error ? error.message : "The entry QR could not be prepared.");
+    } finally {
+      setQrLoading(false);
+    }
+  };
 
   return (
     <main className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -67,14 +88,16 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         <ArrowLeft className="size-3.5" /> Dashboard
       </Link>
 
+      <div className="mt-4 h-28 overflow-hidden rounded-lg border border-line bg-cover bg-center" role="img" aria-label={`${gym.name} cover image`} style={{ backgroundColor: gym.accent, backgroundImage: membership.gymCoverUrl ?? gym.cover?.url ? `linear-gradient(rgb(0 0 0 / .28), rgb(0 0 0 / .28)), url(${membership.gymCoverUrl ?? gym.cover?.url})` : undefined }} />
+
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span
             className="flex size-11 shrink-0 items-center justify-center rounded-md font-mono text-[9px] font-semibold uppercase text-white"
-            style={{ backgroundColor: gym.accent }}
+            style={{ backgroundColor: gym.accent, backgroundImage: membership.gymLogoUrl ?? gym.logo?.url ? `url(${membership.gymLogoUrl ?? gym.logo?.url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
             aria-hidden
           >
-            {gym.shortName.slice(0, 5)}
+            {membership.gymLogoUrl ?? gym.logo?.url ? null : gym.shortName.slice(0, 5)}
           </span>
           <div>
             <h1 className="font-display text-[22px] font-semibold tracking-tight">{gym.name}</h1>
@@ -98,22 +121,8 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
 
       {tab === "membership" ? <div className="mt-5 grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="night-surface overflow-hidden rounded-lg bg-night text-night-ink">
-          <div className="flex items-center justify-between border-b border-night-line px-4 py-2.5">
-            <p className="eyebrow-night">Entry pass</p>
-            <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-success">
-              <span className="size-1.5 rounded-full bg-success" /> Valid
-            </span>
-          </div>
-          <div className="p-4">
-            <div className="rounded-md bg-white p-4">
-              {signedEntryPass && membership.qrValue ? <QRCodeSVG value={membership.qrValue} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" className="h-auto w-full" aria-label="Membership entry QR code" /> : <p className="px-3 py-16 text-center text-[12px] text-ink-3">Signed entry pass unavailable.</p>}
-            </div>
-            <p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p>
-            <p className="mt-0.5 text-[11.5px] text-night-ink-3">{branch.name}</p>
-            <p className="mt-4 border-t border-night-line pt-3 text-[11px] leading-relaxed text-night-ink-3">
-              {signedEntryPass ? "Short-lived signed entry pass. Refresh before entry if it expires." : "Entry passes require the configured production signing service."}
-            </p>
-          </div>
+          <div className="border-b border-night-line px-4 py-2.5"><p className="eyebrow-night">Entry pass</p></div>
+          <div className="p-4"><div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-night-line bg-night-2 px-4 text-center"><QrCode className="size-9 text-night-ink-3" /><p className="mt-3 text-[13px] font-medium">Show your entry QR when you arrive</p><p className="mt-1 text-[11.5px] text-night-ink-3">It is generated only when you open it and expires shortly after.</p><Button className="mt-4" onClick={() => void openQr()}><QrCode /> Show entry QR</Button></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-0.5 text-[11.5px] text-night-ink-3">{branch.name}</p></div>
         </div>
 
         <div className="min-w-0 space-y-5">
@@ -134,7 +143,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
             <Stat icon={<Ticket />} label="Plan" value={membership.planName} />
             <Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} />
-            <Stat icon={<ScanLine />} label="Visits · month" value={String(membership.visitsThisMonth)} />
+            <Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} />
             <Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} />
           </div>
 
@@ -147,7 +156,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
             </ul>
           </div>
 
-          <VisitHistory visits={membership.visitHistory ?? []} />
+          <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
 
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
             <Phone className="size-4 text-ink-3" aria-hidden />
@@ -158,8 +167,36 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           </div>
         </div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
+      <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
     </main>
   );
+}
+
+function fallbackGym(membership: CustomerMembership): MarketplaceGym {
+  const name = membership.gymName ?? "Gym";
+  return {
+    id: membership.gymId,
+    name,
+    shortName: name.slice(0, 12).toUpperCase(),
+    tagline: "",
+    description: "",
+    city: "",
+    areas: [],
+    category: "Gym",
+    audience: "All members",
+    memberCount: 0,
+    branchCount: 1,
+    fromPriceMinor: 0,
+    amenities: [],
+    accent: "#15140f",
+    featured: false,
+    subscriptionStatus: "active",
+    rivetPlan: "Starter",
+    joinedAt: membership.startDate,
+    lastActiveAt: membership.lastCheckInAt,
+    monthlyRevenueMinor: 0,
+    branches: [{ id: membership.branchId, name: membership.branchName ?? "Branch", area: "", address: membership.branchName ?? "Branch", trialSlots: [] }],
+  };
 }
 
 function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
@@ -190,6 +227,11 @@ function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
       )}
     </section>
   );
+}
+
+function ActivityHistory({ membership, visits }: { membership: CustomerMembership; visits: CustomerVisit[] }) {
+  if (!membership.activity?.length) return <VisitHistory visits={visits} />;
+  return <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="activity-history-title"><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5"><h2 id="activity-history-title" className="eyebrow">Activity history</h2><span className="text-[11px] tabular text-ink-3">{membership.activity.length} recorded</span></header><ol className="divide-y divide-line">{membership.activity.map((item) => <li key={item.id} className="px-4 py-3"><p className="text-[13px] font-medium">{item.title}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{item.detail ? `${item.detail} · ` : ""}{formatDateTime(item.occurredAt)}</p></li>)}</ol></section>;
 }
 
 function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId: string; gymName: string; branchNames: Map<string, string> }) {

@@ -94,4 +94,41 @@ describe("gym-controlled public profile", () => {
     expect(state.abandoned).not.toHaveProperty("deleteAfter");
     expect(state.stored).toBeNull();
   });
+
+  it("protects media referenced by published and historical profile snapshots", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    const [firstStorageId, secondStorageId] = await t.run(async (ctx) => [
+      await ctx.storage.store(new NodeBlob(["first-logo"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["second-logo"]) as unknown as Blob),
+    ]);
+    const request = { organizationId: "org-profile", correlationId: "cor-profile-versioned-media", ownerType: "gym_logo" as const, ownerPublicId: "org-profile", altText: "Profile Gym logo", contentType: "image/png" as const, sizeBytes: 10 };
+    const first = await owner.mutation(internal.media.commit, { ...request, storageId: firstStorageId });
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.save", { shortName: "PROFILE", taglineEn: "Train with a plan", descriptionEn: "A real operating gym in Amman.", category: "Gym", audience: "All members", amenities: [], accentColor: "#123456", logoAssetId: first.id, galleryAssetIds: [] }));
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.publish"));
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", first.id)).unique();
+      await ctx.db.patch(asset!._id, { status: "scheduled_for_deletion", deleteAfter: Date.now() - 1 });
+    });
+    expect(await t.mutation(internal.media.cleanupExpired, {})).toBe(1);
+    const restored = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", first.id)).unique();
+      return { status: asset?.status, stored: Boolean(await ctx.storage.get(firstStorageId)) };
+    });
+    expect(restored).toMatchObject({ status: "active" });
+    expect(restored.stored).toBe(true);
+
+    const second = await owner.mutation(internal.media.commit, { ...request, storageId: secondStorageId });
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.save", { shortName: "PROFILE", taglineEn: "Train with a plan", descriptionEn: "A real operating gym in Amman.", category: "Gym", audience: "All members", amenities: [], accentColor: "#123456", logoAssetId: second.id, galleryAssetIds: [] }));
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.publish"));
+    const states = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      const rows = await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization!._id).eq("ownerType", "gym_logo").eq("ownerPublicId", "org-profile")).collect();
+      return rows.map((row) => ({ id: row.publicId, status: row.status }));
+    });
+    expect(states).toEqual(expect.arrayContaining([{ id: first.id, status: "active" }, { id: second.id, status: "active" }]));
+  });
 });

@@ -55,6 +55,7 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   automation: { icon: Zap, tone: "text-ink-3" },
   pt_credit_granted: { icon: PlusCircle, tone: "text-success-deep" },
   pt_package_requested: { icon: CreditCard, tone: "text-warning-deep" },
+  pt_package_cancelled: { icon: CircleDot, tone: "text-danger" },
   pt_package_activated: { icon: CheckCircle2, tone: "text-success-deep" },
   pt_booking_reserved: { icon: CalendarClock, tone: "text-success-deep" },
   pt_booking_rescheduled: { icon: ArrowRightLeft, tone: "text-warning-deep" },

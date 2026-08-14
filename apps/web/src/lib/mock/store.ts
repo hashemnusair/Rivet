@@ -48,7 +48,12 @@ export interface MemberRecord {
   tags: string[];
   preferredLanguage: "en" | "ar";
   emergencyContactName?: string;
+  emergencyContactRelationship?: string;
   emergencyContactPhone?: string;
+  addressLine1?: string;
+  city?: string;
+  customerProfileId?: string;
+  customerProfileSyncedAt?: string;
   source?: Lead["source"];
   assignedSalespersonId?: UUID;
   marketingOptIn: boolean;

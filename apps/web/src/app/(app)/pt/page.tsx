@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Convex file URLs are runtime-scoped and cannot be declared as static Next image hosts. */
 
-import { CalendarClock, CheckCircle2, Clock3, Dumbbell, Gift, Pencil, Plus, Trash2, UserRound, XCircle } from "lucide-react";
+import { CalendarClock, CheckCircle2, Clock3, Dumbbell, Gift, Pencil, Plus, Trash2, UserRound, WalletCards, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/chrome";
@@ -14,13 +14,14 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
-import type { PtAvailabilityException, PtPackageSize, PtBooking, PtTrainerProfile, StaffUser, WeekdayKey } from "@/lib/domain/types";
+import type { PtAvailabilityException, PtPackage, PtBooking, PtTrainerProfile, PtPackageOrder, StaffUser, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { fromMajor } from "@/lib/utils/money";
 import { BookingOutcomeConfirmation } from "@/features/personal-training/booking-outcome-confirmation";
 import Link from "next/link";
+import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 
 const WEEKDAYS: Array<{ key: WeekdayKey; label: string }> = [
   { key: "sun", label: "Sun" }, { key: "mon", label: "Mon" }, { key: "tue", label: "Tue" },
@@ -32,11 +33,15 @@ export default function PersonalTrainingPage() {
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const [packageOpen, setPackageOpen] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<PtPackage>();
+  const [paymentOrder, setPaymentOrder] = useState<PtPackageOrder>();
+  const [cancelOrder, setCancelOrder] = useState<PtPackageOrder>();
   const [trainerOpen, setTrainerOpen] = useState(false);
   const [editingTrainer, setEditingTrainer] = useState<PtTrainerProfile>();
   const [introOpen, setIntroOpen] = useState(false);
   const [availabilityTrainer, setAvailabilityTrainer] = useState<PtTrainerProfile>();
   const [bookingAction, setBookingAction] = useState<{ booking: PtBooking; action: "completed" | "no_show" | "cancelled" }>();
+  const paymentMember = useApiQuery(qk.member(paymentOrder?.memberId ?? ""), (api) => api.getMember(paymentOrder!.memberId), { enabled: Boolean(paymentOrder) });
   const workspace = useRealtimeApiQuery({ queryKey: qk.ptWorkspace, query: (api) => api.getPtWorkspace(), subscribe: (api, onValue, onError) => api.subscribePtWorkspace(onValue, onError) });
   const trainerUsers = useApiQuery(qk.users({ role: "trainer" }), (api) => api.listUsers({ role: "trainer", pageSize: 100 }), { enabled: can("pt.manage") });
   const finish = useApiMutation((api, input: { booking: PtBooking; outcome: "completed" | "no_show"; reason?: string }) => input.outcome === "completed" ? api.completePtBooking(input.booking.id) : api.markPtBookingNoShow(input.booking.id, { reason: input.reason }), { onSuccess: async () => { await invalidate(); setBookingAction(undefined); } });
@@ -46,7 +51,7 @@ export default function PersonalTrainingPage() {
   const data = workspace.data;
 
   return <div className="space-y-5">
-    <PageHeader eyebrow="Operations" title="Personal training" description="Trainer availability, member credits, package payments, and session outcomes share one audited ledger." actions={can("pt.manage") ? <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setIntroOpen(true)}><Gift /> Intro credits</Button><Button variant="secondary" onClick={() => { setEditingTrainer(undefined); setTrainerOpen(true); }}><UserRound /> Trainer</Button><Button onClick={() => setPackageOpen(true)}><Plus /> Package</Button></div> : undefined} />
+    <PageHeader eyebrow="Operations" title="Personal training" description="Trainer availability, member credits, package payments, and session outcomes share one audited ledger." actions={can("pt.manage") ? <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setIntroOpen(true)}><Gift /> Intro credits</Button><Button variant="secondary" onClick={() => { setEditingTrainer(undefined); setTrainerOpen(true); }}><UserRound /> Trainer</Button><Button onClick={() => { setEditingPackage(undefined); setPackageOpen(true); }}><Plus /> Package</Button></div> : undefined} />
 
     <section className="grid border border-line bg-surface sm:grid-cols-2 xl:grid-cols-5">
       <Metric label="PT package revenue" value={data ? <MoneyText money={data.metrics.packageRevenue} /> : "…"} />
@@ -64,31 +69,45 @@ export default function PersonalTrainingPage() {
 
       <div className="panel overflow-hidden">
         <header className="border-b border-line px-5 py-4"><p className="eyebrow">Payment queue</p><h2 className="mt-1 text-[17px] font-semibold">Pending package orders</h2></header>
-        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading orders…</p> : data.pendingOrders.length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No package payments waiting.</p> : <div className="divide-y divide-line">{data.pendingOrders.map((order) => <article key={order.id} className="p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[13px] font-medium">{order.packageName ?? data.packages.find((pkg) => pkg.id === order.packageId)?.name ?? "PT package"}</p><p className="mt-1 text-[11px] text-ink-3"><Link className="font-medium text-ink hover:underline" href={`/members/${order.memberId}`}>{order.memberName ?? "Open member"}</Link> · {order.paymentReference ?? "PT payment request"}</p></div><Badge variant="warning">payment due</Badge></div></article>)}</div>}
+        {!data ? <p className="p-5 text-[12px] text-ink-3">Loading orders…</p> : data.pendingOrders.length === 0 ? <p className="p-8 text-center text-[12px] text-ink-3">No package payments waiting.</p> : <div className="divide-y divide-line">{data.pendingOrders.map((order) => <article key={order.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{order.packageName ?? data.packages.find((pkg) => pkg.id === order.packageId)?.name ?? "PT package"}</p><p className="mt-1 text-[11px] text-ink-3"><Link className="font-medium text-ink hover:underline" href={`/members/${order.memberId}`}>{order.memberName ?? "Open member"}</Link> · {order.paymentReference ?? "PT payment request"}</p></div><Badge variant="warning">payment due</Badge></div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => setPaymentOrder(order)}><WalletCards /> Collect payment</Button>{can("pt.refund") ? <Button size="sm" variant="ghost" onClick={() => setCancelOrder(order)}>Cancel order</Button> : null}</div></article>)}</div>}
       </div>
     </section>
 
     <section className="grid gap-5 lg:grid-cols-2">
       <div className="panel overflow-hidden"><header className="border-b border-line px-5 py-4"><p className="eyebrow">Team</p><h2 className="mt-1 text-[17px] font-semibold">Trainer profiles</h2></header><div className="divide-y divide-line">{data?.trainers.length ? data.trainers.map((trainer) => <article key={trainer.id} className="p-4"><div className="flex items-start justify-between gap-4"><div className="flex min-w-0 gap-3">{trainer.photoUrl ? <img src={trainer.photoUrl} alt={trainer.photoAlt ?? trainer.displayName} className="size-12 rounded-md object-cover" /> : <span className="flex size-12 items-center justify-center rounded-md bg-sunken"><UserRound className="size-5" /></span>}<div><p className="text-[13px] font-semibold">{trainer.displayName}</p><p className="mt-1 text-[11px] text-ink-3">{trainer.specialties.length ? trainer.specialties.join(" · ") : "No specialties added"}</p><p className="mt-2 text-[11px] text-ink-2">{trainer.bioEn || "Biography not added yet."}</p></div></div><Badge variant={trainer.status === "published" ? "success" : "outline"}>{trainer.status}</Badge></div>{can("pt.manage") || trainer.userId === session?.user.id ? <div className="mt-3 flex gap-2"><Button size="sm" variant="secondary" onClick={() => setAvailabilityTrainer(trainer)}><Clock3 /> Availability</Button>{can("pt.manage") ? <Button size="sm" variant="ghost" onClick={() => { setEditingTrainer(trainer); setTrainerOpen(true); }}><Pencil /> Edit profile</Button> : null}</div> : null}</article>) : <p className="p-8 text-center text-[12px] text-ink-3">Add an active trainer account, then publish its profile here.</p>}</div></div>
-      <div className="panel overflow-hidden"><header className="border-b border-line px-5 py-4"><p className="eyebrow">Catalog</p><h2 className="mt-1 text-[17px] font-semibold">PT packages</h2></header><div className="divide-y divide-line">{data?.packages.length ? data.packages.map((pkg) => <article key={pkg.id} className="flex items-center gap-4 p-4"><div className="flex size-10 items-center justify-center rounded-md bg-sunken"><Dumbbell className="size-4" /></div><div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{pkg.name}</p><p className="mt-1 text-[11px] text-ink-3">{pkg.sessionCount} sessions · {pkg.validityDays} days · <MoneyText money={pkg.totalPrice} /></p></div><Badge variant={pkg.status === "active" ? "success" : "outline"}>{pkg.status}</Badge></article>) : <p className="p-8 text-center text-[12px] text-ink-3">Create the 12, 20, and 30-session catalog when the gym is ready to sell PT.</p>}</div></div>
+      <div className="panel overflow-hidden"><header className="border-b border-line px-5 py-4"><p className="eyebrow">Catalog</p><h2 className="mt-1 text-[17px] font-semibold">PT packages</h2></header><div className="divide-y divide-line">{data?.packages.length ? data.packages.map((pkg) => <article key={pkg.id} className="flex items-center gap-4 p-4"><div className="flex size-10 items-center justify-center rounded-md bg-sunken"><Dumbbell className="size-4" /></div><div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{pkg.name}</p><p className="mt-1 text-[11px] text-ink-3">{pkg.sessionCount} sessions · {pkg.validityDays} days · <MoneyText money={pkg.totalPrice} /></p></div><Badge variant={pkg.status === "active" ? "success" : "outline"}>{pkg.status}</Badge>{can("pt.manage") ? <Button size="sm" variant="ghost" aria-label={`Edit ${pkg.name}`} onClick={() => { setEditingPackage(pkg); setPackageOpen(true); }}><Pencil /> Edit</Button> : null}</article>) : <p className="p-8 text-center text-[12px] text-ink-3">Create a PT package when the gym is ready to sell PT.</p>}</div></div>
     </section>
 
-    <PackageDialog open={packageOpen} onOpenChange={setPackageOpen} />
+    <PackageDialog open={packageOpen} onOpenChange={setPackageOpen} package={editingPackage} />
     <TrainerDialog open={trainerOpen} onOpenChange={setTrainerOpen} users={trainerUsers.data?.items ?? []} trainer={editingTrainer} />
     <AvailabilityDialog trainer={availabilityTrainer} onOpenChange={(open) => { if (!open) setAvailabilityTrainer(undefined); }} />
     <IntroductoryCreditsDialog open={introOpen} onOpenChange={setIntroOpen} />
     <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={finish.isPending || cancel.isPending} cancelledByGym={bookingAction?.action === "cancelled"} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason }) => { if (action === "cancelled") cancel.mutate({ booking, reason: reason ?? "" }); else finish.mutate({ booking, outcome: action, reason }); }} />
+    {paymentOrder && paymentMember.data ? <CollectPaymentDialog open member={paymentMember.data} initialChargeId={paymentOrder.chargeId} onOpenChange={(open) => { if (!open) setPaymentOrder(undefined); }} onCollected={() => setPaymentOrder(undefined)} /> : null}
+    <CancelPtOrderDialog order={cancelOrder} onOpenChange={(open) => { if (!open) setCancelOrder(undefined); }} />
   </div>;
 }
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) { return <div className="border-b border-line p-4 last:border-b-0 sm:border-e xl:border-b-0"><p className="eyebrow">{label}</p><div className="mt-2 text-[22px] font-semibold tabular-nums">{value}</div></div>; }
 
-function PackageDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function PackageDialog({ open, onOpenChange, package: editing }: { open: boolean; onOpenChange: (open: boolean) => void; package?: PtPackage }) {
+  const { session } = useApp();
   const invalidate = useInvalidate();
-  const [size, setSize] = useState<PtPackageSize>(12); const [name, setName] = useState("12 PT sessions"); const [price, setPrice] = useState(""); const [validity, setValidity] = useState("90");
-  const save = useApiMutation((api) => api.upsertPtPackage({ name: name.trim(), sessionCount: size, totalPrice: fromMajor(Number(price)), validityDays: Number(validity), branchAccess: "all", branchIds: [], status: "active" }), { onSuccess: async () => { await invalidate(); onOpenChange(false); toast.success("PT package saved."); } });
-  const chooseSize = (next: PtPackageSize) => { setSize(next); setName(`${next} PT sessions`); };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Create a PT package</DialogTitle><DialogDescription>Larger packages must keep the same or a lower price per session. Credits activate only after the charge is fully paid.</DialogDescription></DialogHeader><DialogBody className="grid gap-4"><Field label="Package size"><div className="grid grid-cols-3 gap-2">{([12, 20, 30] as const).map((item) => <Button key={item} type="button" variant={size === item ? "primary" : "secondary"} onClick={() => chooseSize(item)}>{item}</Button>)}</div></Field><Field label="Package name"><Input value={name} onChange={(event) => setName(event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Total price (JOD)"><Input inputMode="decimal" placeholder="240.000" value={price} onChange={(event) => setPrice(event.target.value)} /></Field><Field label="Validity (days)"><Input type="number" min={1} max={730} value={validity} onChange={(event) => setValidity(event.target.value)} /></Field></div></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={save.isPending} disabled={!name.trim() || Number(price) <= 0 || Number(validity) < 1} onClick={() => save.mutate()}>Save package</Button></DialogFooter></DialogContent></Dialog>;
+  const [sessions, setSessions] = useState("12"); const [name, setName] = useState("12 PT sessions"); const [price, setPrice] = useState(""); const [validity, setValidity] = useState("90"); const [branchAccess, setBranchAccess] = useState<"all" | "selected">("all"); const [branchIds, setBranchIds] = useState<string[]>([]); const [status, setStatus] = useState<"active" | "archived">("active");
+  useEffect(() => {
+    if (!open) return;
+    setSessions(String(editing?.sessionCount ?? 12)); setName(editing?.name ?? "12 PT sessions"); setPrice(editing ? (editing.totalPrice.amount / 1000).toFixed(3) : ""); setValidity(String(editing?.validityDays ?? 90)); setBranchAccess(editing?.branchAccess ?? "all"); setBranchIds(editing?.branchIds ?? []); setStatus(editing?.status ?? "active");
+  }, [open, editing]);
+  const save = useApiMutation((api) => api.upsertPtPackage({ id: editing?.id, name: name.trim(), sessionCount: Number(sessions), totalPrice: fromMajor(Number(price)), validityDays: Number(validity), branchAccess, branchIds: branchAccess === "all" ? [] : branchIds, status }), { onSuccess: async () => { await invalidate(); onOpenChange(false); toast.success(editing ? "PT package updated." : "PT package created."); } });
+  const chooseSize = (next: number) => { setSessions(String(next)); if (!editing) setName(`${next} PT sessions`); };
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{editing ? "Edit PT package" : "Create a PT package"}</DialogTitle><DialogDescription>Package edits apply to future sales. Existing orders keep their original terms. Larger packages must keep the same or a lower price per session.</DialogDescription></DialogHeader><DialogBody className="grid gap-4"><Field label="Sessions"><div className="grid grid-cols-3 gap-2">{[12, 20, 30].map((item) => <Button key={item} type="button" variant={Number(sessions) === item ? "primary" : "secondary"} onClick={() => chooseSize(item)}>{item}</Button>)}</div><Input className="mt-2" type="number" min={1} max={1000} value={sessions} onChange={(event) => setSessions(event.target.value)} aria-label="Custom session count" /></Field><Field label="Package name"><Input value={name} onChange={(event) => setName(event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Total price (JOD)"><Input inputMode="decimal" placeholder="240.000" value={price} onChange={(event) => setPrice(event.target.value)} /></Field><Field label="Validity (days)"><Input type="number" min={1} max={730} value={validity} onChange={(event) => setValidity(event.target.value)} /></Field></div><Field label="Branch access"><select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchAccess} onChange={(event) => setBranchAccess(event.target.value as "all" | "selected")}><option value="all">All branches</option><option value="selected">Selected branches</option></select></Field>{branchAccess === "selected" ? <div className="grid gap-2 rounded-md border border-line p-3">{session?.branches.map((branch) => <label key={branch.id} className="flex items-center gap-2 text-[12px]"><input type="checkbox" checked={branchIds.includes(branch.id)} onChange={(event) => setBranchIds((current) => event.target.checked ? [...new Set([...current, branch.id])] : current.filter((id) => id !== branch.id))} />{branch.name}</label>)}</div> : null}{editing ? <Field label="Status"><select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={status} onChange={(event) => setStatus(event.target.value as "active" | "archived")}><option value="active">Active</option><option value="archived">Archived</option></select></Field> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={save.isPending} disabled={!name.trim() || !Number.isInteger(Number(sessions)) || Number(sessions) < 1 || Number(sessions) > 1000 || Number(price) <= 0 || Number(validity) < 1 || (branchAccess === "selected" && branchIds.length === 0)} onClick={() => save.mutate()}>Save package</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function CancelPtOrderDialog({ order, onOpenChange }: { order?: PtPackageOrder; onOpenChange: (open: boolean) => void }) {
+  const invalidate = useInvalidate(); const [reason, setReason] = useState("");
+  useEffect(() => { if (order) setReason(""); }, [order]);
+  const cancel = useApiMutation((api) => api.cancelPtPackageOrder(order!.id, { reason: reason.trim(), idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { await invalidate(); onOpenChange(false); toast.success("PT package order cancelled and unpaid charge voided."); } });
+  return <Dialog open={Boolean(order)} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Cancel PT package order</DialogTitle><DialogDescription>{order?.packageName ?? "This package"} will be cancelled only if no money has been collected. Partial payments must be refunded or voided first.</DialogDescription></DialogHeader><DialogBody><Field label="Reason" required><Textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Member changed package choice" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Keep order</Button><Button variant="danger" loading={cancel.isPending} disabled={reason.trim().length < 3} onClick={() => cancel.mutate()}>Cancel order</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function TrainerDialog({ open, onOpenChange, users, trainer }: { open: boolean; onOpenChange: (open: boolean) => void; users: StaffUser[]; trainer?: PtTrainerProfile }) {

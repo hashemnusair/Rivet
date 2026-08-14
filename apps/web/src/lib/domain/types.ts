@@ -132,6 +132,8 @@ export interface MemberSummary {
   currentPlanName?: string;
   membershipEndDate?: ISODate;
   outstanding: Money;
+  /** Collectible charge line items used by the payment flow. */
+  outstandingCharges?: Charge[];
   lastCheckInAt?: ISODateTime;
   createdAt: ISODateTime;
   photoUrl?: string;
@@ -142,7 +144,12 @@ export interface MemberDetail extends MemberSummary {
   dateOfBirth?: ISODate;
   preferredLanguage: PreferredLanguage;
   emergencyContactName?: string;
+  emergencyContactRelationship?: string;
   emergencyContactPhone?: string;
+  addressLine1?: string;
+  city?: string;
+  customerProfileId?: string;
+  customerProfileSyncedAt?: ISODateTime;
   source?: LeadSource;
   assignedSalespersonId?: UUID;
   marketingOptIn: boolean;
@@ -184,7 +191,10 @@ export interface CreateMemberInput {
   homeBranchId: UUID;
   preferredLanguage: PreferredLanguage;
   emergencyContactName?: string;
+  emergencyContactRelationship?: string;
   emergencyContactPhone?: string;
+  addressLine1?: string;
+  city?: string;
   source?: LeadSource;
   assignedSalespersonId?: UUID;
   tags?: string[];
@@ -409,7 +419,8 @@ export interface TransferMembershipInput {
 // Personal training
 // ---------------------------------------------------------------------------
 
-export type PtPackageSize = 12 | 20 | 30;
+/** PT packages may use any positive whole-number session count. */
+export type PtPackageSize = number;
 export type PtBookingStatus =
   | "reserved"
   | "confirmed"
@@ -481,6 +492,11 @@ export interface PtPackageOrder {
   memberId: UUID;
   packageId: UUID;
   chargeId: UUID;
+  /** Immutable commercial terms captured when this order was created. */
+  packageNameSnapshot?: string;
+  sessionCountSnapshot?: number;
+  totalPriceSnapshot?: Money;
+  validityDaysSnapshot?: number;
   /** Presentation-only payment context; public IDs stay out of operator copy. */
   memberName?: string;
   packageName?: string;
@@ -490,6 +506,8 @@ export interface PtPackageOrder {
   paidAt?: ISODateTime;
   refundedSessions?: number;
   refundedAmount?: Money;
+  cancelledAt?: ISODateTime;
+  cancellationReason?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -664,6 +682,11 @@ export interface RequestPtPackageInput {
 export interface RefundPtPackageInput {
   sessions: number;
   reason: string;
+}
+
+export interface CancelPtPackageInput {
+  reason: string;
+  idempotencyKey: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +953,7 @@ export type TimelineEventType =
   | "lead_converted"
   | "pt_credit_granted"
   | "pt_package_requested"
+  | "pt_package_cancelled"
   | "pt_package_activated"
   | "pt_booking_reserved"
   | "pt_booking_rescheduled"

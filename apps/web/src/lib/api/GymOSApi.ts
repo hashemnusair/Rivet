@@ -86,7 +86,7 @@ import type {
   ISODate,
   UUID,
 } from "@/lib/domain/types";
-import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 
 // ---------------------------------------------------------------------------
 // Query inputs
@@ -622,7 +622,8 @@ export interface GymOSApi {
    * caller considers the subscription established.
    */
   subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
-  registerCustomer(input: { fullName: string; email: string; phone: string }): Promise<CustomerPersona>;
+  registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona>;
+  updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona>;
   /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
@@ -713,6 +714,7 @@ export interface GymOSApi {
   markPtBookingNoShow(bookingId: UUID, input?: { reason?: string }): Promise<import("@/lib/domain/types").PtBooking>;
   requestPtPackage(input: import("@/lib/domain/types").RequestPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
   requestCustomerPtPackage(input: import("@/lib/domain/types").RequestPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
+  cancelPtPackageOrder(orderId: UUID, input: import("@/lib/domain/types").CancelPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
   refundPtPackage(orderId: UUID, input: import("@/lib/domain/types").RefundPtPackageInput): Promise<import("@/lib/domain/types").PtPackageOrder>;
   previewPtIntroductoryCredits(sessionCount?: number): Promise<import("@/lib/domain/types").PtIntroductoryCreditPreview>;
   applyPtIntroductoryCredits(input: { sessionCount: number; reason: string; idempotencyKey: string }): Promise<import("@/lib/domain/types").PtIntroductoryCreditApplyResult>;

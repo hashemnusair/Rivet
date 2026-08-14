@@ -52,6 +52,26 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("Convex personal-training lifecycle", () => {
+  it("allows arbitrary package terms while preserving existing order terms and supports unpaid cancellation", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const customer = t.withIdentity({ subject: "clerk-pt-customer" });
+
+    const requested = await customer.mutation(api.domain.mutate, operation("customer.pt.package.request", { membershipId: "pt-membership", packageId: "package-12", idempotencyKey: "snapshot-request" })) as { id: string; status: string };
+    const edited = await owner.mutation(api.domain.mutate, operation("pt.package.upsert", { id: "package-12", name: "Foundations 15", sessionCount: 15, totalPrice: { amount: 135_000, currency: "JOD" }, validityDays: 120, branchAccess: "all", branchIds: [], status: "active" })) as { name: string; sessionCount: number };
+    expect(edited).toMatchObject({ name: "Foundations 15", sessionCount: 15 });
+    const historical = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { orders: Array<{ id: string; packageName: string; sessionCountSnapshot: number; totalPriceSnapshot: { amount: number } }> };
+    expect(historical.orders[0]).toMatchObject({ id: requested.id, packageName: "12 PT sessions", sessionCountSnapshot: 12, totalPriceSnapshot: { amount: 120_000 } });
+
+    const cancelled = await owner.mutation(api.domain.mutate, operation("pt.package.cancel", { orderId: requested.id, reason: "Member selected a different package", idempotencyKey: "cancel-snapshot-request" })) as { status: string; cancellationReason: string };
+    expect(cancelled).toMatchObject({ status: "cancelled", cancellationReason: "Member selected a different package" });
+    const replay = await owner.mutation(api.domain.mutate, operation("pt.package.cancel", { orderId: requested.id, reason: "Member selected a different package", idempotencyKey: "cancel-snapshot-request" })) as { status: string };
+    expect(replay.status).toBe("cancelled");
+    const charge = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "charge")).collect())[0]);
+    expect(charge?.data).toMatchObject({ status: "void", outstandingAmount: { amount: 0 } });
+  });
+
   it("keeps package payment, credits, booking, cancellation and refund atomic", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

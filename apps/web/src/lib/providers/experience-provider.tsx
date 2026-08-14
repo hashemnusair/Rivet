@@ -6,7 +6,7 @@ import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
-import type { CustomerMembership, CustomerPersona, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { refreshFailureState } from "@/lib/public/experience-refresh";
 import {
@@ -54,6 +54,7 @@ interface ExperienceContextValue {
   bookings: TrialBooking[];
   signInCustomer: (customerId: string) => void;
   registerCustomer: (input: RegisterCustomerInput) => Promise<CustomerPersona>;
+  updateCustomerProfile: (input: CustomerProfileInput) => Promise<CustomerPersona>;
   updateMarketingPreference: (optedIn: boolean) => Promise<CustomerPersona>;
   /** Signs in the authenticated person as themselves, creating their member profile once. */
   signInAsIdentity: (input: { email: string; fullName: string }) => Promise<CustomerPersona>;
@@ -244,9 +245,9 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider
-  // only applies the identity-scoped snapshot and keeps the existing QR
-  // hydration/error semantics. Other operational surfaces intentionally keep
-  // their bounded TanStack Query refresh until their own subscriptions land.
+  // only applies the identity-scoped snapshot. Entry passes stay blank until
+  // the member explicitly opens the QR action so a stale code is never painted
+  // as if it were valid.
   useEffect(() => {
     const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
     if (!convexMode || !memberIdentity) return;
@@ -255,17 +256,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     let unsubscribe: (() => void) | undefined;
 
     const applySnapshot = async (experience: { customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }) => {
-      const hydratedMemberships = await Promise.all(experience.memberships.map(async (membership) => {
-        if (membership.qrValue) return membership;
-        try {
-          const pass = await getApi().getEntryPass(membership.id);
-          return { ...membership, qrValue: pass.token };
-        } catch {
-          return membership;
-        }
-      }));
       if (cancelled) return;
-      setMemberships(hydratedMemberships);
+      setMemberships(experience.memberships.map((membership) => ({ ...membership, qrValue: "" })));
       setBookings(experience.bookings);
       setCustomer(experience.customer);
       setCustomerId(experience.customer?.id);
@@ -409,6 +401,21 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     return next;
   }, [convexMode, customer, customerId, customers]);
 
+  const updateCustomerProfile = useCallback(async (input: CustomerProfileInput) => {
+    const next = await getApi().updateCustomerProfile(input);
+    setCustomer(next);
+    setCustomerId(next.id);
+    if (!convexMode) {
+      setRegistered((existing) => {
+        const updated = [next, ...existing.filter((persona) => persona.id !== next.id)];
+        window.sessionStorage.setItem(STORAGE_KEYS.registered, JSON.stringify(updated));
+        window.sessionStorage.setItem(STORAGE_KEYS.customer, next.id);
+        return updated;
+      });
+    }
+    return next;
+  }, [convexMode]);
+
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
       const booking = await getApi().createTrialBooking({ ...input, customerId });
@@ -472,6 +479,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       bookings,
       signInCustomer,
       registerCustomer,
+      updateCustomerProfile,
       updateMarketingPreference,
       signInAsIdentity,
       emailTaken: (email) => customers.some((persona) => persona.email.toLowerCase() === email.trim().toLowerCase()),
@@ -501,6 +509,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       previewSessionReady,
       retryExperience,
       registerCustomer,
+      updateCustomerProfile,
       updateMarketingPreference,
       signInAsIdentity,
       signInCustomer,
