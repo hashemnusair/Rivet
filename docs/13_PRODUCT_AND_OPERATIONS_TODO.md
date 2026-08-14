@@ -2,6 +2,16 @@
 
 Updated 14 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
+## Latest direct-main release — support chat, CRM, PT packages, and member UX — 14 August 2026
+
+- [x] Released `3c6ce09aac5c4dee71fe88c93116d78af0729a83` directly to `main` after preserving partner commits and the frozen frontend handoff. Two-way gym ↔ platform support chat, four-column lead drag/drop, expiring/expired follow-up filters, safe PT package deletion, and the simplified member home/per-gym journey are implemented.
+- [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy. No indexes were deleted; schema validation passed; the release commit added no schema delta. Read-only `health:check` returned `status: ok`, and recent read-only logs contained only expected unauthenticated guard events.
+- [x] GitHub Actions [31834979651](https://github.com/hashemnusair/Rivet/actions/runs/31834979651) passed static checks, generated-code verification, and preview Playwright. Vercel’s exact commit check reports deployment [6cJ6gaK8LRFN9K1zLbTEUiyoM8S5](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/6cJ6gaK8LRFN9K1zLbTEUiyoM8S5) complete; the canonical site returned HTTP 200.
+- [x] Ran isolated staging [workflow 31835407484](https://github.com/hashemnusair/Rivet/actions/runs/31835407484) with authenticated smoke, operational, realtime, owner-settings, and functional switches enabled plus `staging_journeys=all`. Smoke, membership lifecycle, realtime, and owner settings passed with disposable cleanup/policy restoration evidence. The Production-target guard was not bypassed.
+- [ ] Complete the credential-gated functional staging run. The manager Clerk storage state is missing, so no functional body ran. The five bodies still awaiting execution are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`; retain cleanup evidence for every disposable target.
+- [ ] Add and execute isolated-staging concurrency proof for payment collection, PT cancellation, profile synchronization, and media publishing before claiming complete staging acceptance.
+- [ ] No Production seed/import/restore/delete/product-data mutation or live operational-email activation was performed by this release.
+
 ## Gym profile media preview and finalization fix — 14 August 2026
 
 - Direct-main release commit `0aa1599b14e81dcc06a81e47e09387beeff9f63a` is pushed to `main` and `origin/main`; the final fetch found no partner advancement. The frozen `FRONTEND_HANDOFF.md` and product-plan-only `docs/14_MODULAR_WORKSPACE_PLAN.md` were not changed.
