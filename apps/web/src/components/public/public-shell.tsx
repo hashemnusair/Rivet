@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
-import { ArrowRight, ChevronDown, LayoutDashboard, LogOut, Menu, Search, UserRound, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Home, LogOut, Menu, MessageSquare, Search, UserRound, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -229,9 +229,8 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
 // Member shell — the signed-in member area and the gym marketplace
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
-  { href: "/customer/my-gyms", label: "Dashboard", icon: LayoutDashboard, requiresAuth: true },
-  { href: "/customer/discover", label: "Find a gym", icon: Search, requiresAuth: false },
-  { href: "/customer/profile", label: "Profile", icon: UserRound, requiresAuth: true },
+  { href: "/customer/my-gyms", label: "Home", icon: Home, requiresAuth: true },
+  { href: "/customer/discover", label: "Explore gyms", icon: Search, requiresAuth: false },
 ];
 
 export function CustomerShell({ children }: { children: ReactNode }) {
@@ -286,9 +285,9 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper">
+    <div className={cn("flex min-h-screen flex-col bg-paper", customerSignedIn && "pb-[calc(64px+env(safe-area-inset-bottom))] sm:pb-0")}>
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
-        <div className="mx-auto flex h-[60px] max-w-[1280px] items-center gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
             <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} style={{ height: "auto" }} priority />
             {customerSignedIn ? (
@@ -298,7 +297,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
             ) : null}
           </Link>
 
-          <nav className="flex items-center gap-1" aria-label="Member navigation">
+          <nav className="hidden items-center gap-1 sm:flex" aria-label="Member navigation">
             {nav.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
@@ -309,9 +308,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     "flex h-8 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
                     active ? "bg-sunken text-ink" : "text-ink-3 hover:bg-sunken/60 hover:text-ink",
                   )}
+                  aria-current={active ? "page" : undefined}
                 >
                   <item.icon className="size-3.5" aria-hidden />
-                  <span className="hidden sm:inline">{item.label}</span>
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
@@ -319,42 +319,42 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
           <div className="ms-auto flex items-center gap-2">
             {customerSignedIn && customer ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
-                    aria-label="Account menu"
-                  >
-                    <Monogram name={customer.name} size="sm" />
-                    <span className="hidden text-[13px] font-medium text-ink sm:block">{customer.name}</span>
-                    <ChevronDown className="hidden size-3.5 text-ink-3 sm:block" aria-hidden />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel>{customer.email}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/customer/my-gyms">
-                      <LayoutDashboard /> My dashboard
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/customer/discover">
-                      <Search /> Find a gym
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/customer/profile">
-                      <UserRound /> Profile
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => void handleSignOut()}>
-                    <LogOut /> Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="hidden sm:block">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
+                      aria-label="Open account menu"
+                    >
+                      <Monogram name={customer.name} size="sm" />
+                      <span className="hidden text-[13px] font-medium text-ink md:block">{customer.name}</span>
+                      <ChevronDown className="hidden size-3.5 text-ink-3 md:block" aria-hidden />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel>
+                      <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
+                      <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/customer/profile">
+                        <UserRound /> Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/customer/my-gyms#communication">
+                        <MessageSquare /> Communication settings
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => void handleSignOut()}>
+                      <LogOut /> Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm">
@@ -371,24 +371,78 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
       <div className="flex-1">{children}</div>
 
-      <footer className="border-t border-line bg-surface">
-        <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
-          <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">© 2026 RIVET · Amman</span>
-          <nav className="flex flex-wrap items-center gap-5">
-            <Link href="/" className="transition-colors hover:text-ink">
-              RIVET for gyms
-            </Link>
-            <Link href="/customer/discover" className="transition-colors hover:text-ink">
-              Find a gym
-            </Link>
-            {customerSignedIn ? (
-              <button type="button" onClick={() => void handleSignOut()} className="cursor-pointer transition-colors hover:text-ink">
-                Sign out
-              </button>
-            ) : null}
-          </nav>
-        </div>
-      </footer>
+      {!customerSignedIn ? (
+        <footer className="border-t border-line bg-surface">
+          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">© 2026 RIVET · Amman</span>
+            <nav className="flex flex-wrap items-center gap-5">
+              <Link href="/" className="transition-colors hover:text-ink">RIVET for gyms</Link>
+              <Link href="/customer/discover" className="transition-colors hover:text-ink">Find a gym</Link>
+            </nav>
+          </div>
+        </footer>
+      ) : null}
+
+      {customerSignedIn && customer ? (
+        <nav
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden"
+          aria-label="Member navigation"
+        >
+          <div className="mx-auto grid h-16 max-w-md grid-cols-3 px-3">
+            {nav.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium transition-colors",
+                    active ? "text-ink" : "text-ink-3",
+                  )}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <span className={cn("flex size-8 items-center justify-center rounded-md", active && "bg-sunken")}>
+                    <item.icon className="size-[17px]" aria-hidden />
+                  </span>
+                  <span>{item.label === "Explore gyms" ? "Explore" : item.label}</span>
+                </Link>
+              );
+            })}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium text-ink-3" aria-label="Open account menu">
+                  <span className="flex size-8 items-center justify-center rounded-md">
+                    <UserRound className="size-[17px]" aria-hidden />
+                  </span>
+                  <span>Account</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-64">
+                <DropdownMenuLabel>
+                  <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
+                  <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/customer/profile">
+                    <UserRound /> Profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/customer/my-gyms#communication">
+                    <MessageSquare /> Communication settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => void handleSignOut()}>
+                  <LogOut /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </nav>
+      ) : null}
     </div>
   );
 }

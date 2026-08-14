@@ -1,6 +1,5 @@
 "use client";
 
-import { MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -36,13 +35,11 @@ export function CustomerCommunicationPreferences() {
   };
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <div className="flex items-start gap-2">
-        <MessageSquare className="mt-0.5 size-4 text-ink-2" aria-hidden />
+    <section id="communication" aria-labelledby="communication-heading" className="scroll-mt-24 border-y border-line py-4">
+      <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <p className="eyebrow">Communication</p>
-          <p className="mt-1 text-[13.5px] font-medium">Marketing updates</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-3">Offers, gym news, and renewal nudges. Service messages about bookings, payments, and entry remain separate.</p>
+          <h2 id="communication-heading" className="text-[13px] font-semibold">Communication updates</h2>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Offers and gym news. Service messages about bookings, payments, and entry remain separate.</p>
         </div>
         <Switch checked={preference.optedIn} onCheckedChange={(checked) => void toggle(checked)} disabled={saving} aria-label="Receive marketing updates" />
       </div>
@@ -52,7 +49,7 @@ export function CustomerCommunicationPreferences() {
           : `Last changed ${formatDate(preference.changedAt)}.`}
       </p>
       {saveMessage ? <p className="mt-2 text-[11.5px] text-ink-2" role="status">{saveMessage}</p> : null}
-      <button type="button" onClick={() => setHistoryOpen(true)} className="mt-3 text-[11.5px] font-medium text-ink-2 underline underline-offset-2 hover:no-underline">
+      <button type="button" onClick={() => setHistoryOpen(true)} className="mt-3 text-[11px] font-medium text-ink-2 underline decoration-line-3 underline-offset-2 hover:decoration-ink">
         View preference history ({history.length})
       </button>
 
@@ -75,6 +72,6 @@ export function CustomerCommunicationPreferences() {
           </DialogBody>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   );
 }

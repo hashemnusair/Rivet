@@ -1,6 +1,15 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-14 after CRM release alignment. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-14 after the member-home UX redesign. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Member-home UX redesign — local changes pending release
+
+- Reworked `/customer/my-gyms` around the member's highest-frequency task: opening a server-signed, short-lived entry pass. Each membership now renders as a restrained RIVET pass with one dominant QR action, gym media, scannable status/renewal/visit/PT/balance facts, and progressive links into membership and PT detail.
+- Removed the repeated dashboard/discovery controls from the page, account menu, and signed-in footer. Desktop has one Home / Explore header navigation; signed-in mobile uses one persistent Home / Explore / Account dock, with the real member profile, communication settings, and sign-out consolidated under Account.
+- Replaced the equal dashboard tiles, permanently exposed QR rail, duplicate gym actions, and stacked activity cards with a calmer member-first hierarchy: greeting, membership pass, actual trial bookings, gym-scoped recent activity, shortcuts, and compact communication controls.
+- Preserved the latest `origin/main` data boundary, member access gate, server-signed entry-pass loading/error/expiry states, profile route, gym media/activity projections, PT realtime summary, trial links, marketing-preference history, responsive/RTL-ready utilities, and the frozen `FRONTEND_HANDOFF.md` contract. No API, persistence, authorization, or production data changed.
+- Updated the credentialed PT staging journey to identify the signed-in member from the new welcome heading before opening PT sessions.
+- Pre-rebase verification: web TypeScript passed; zero-warning ESLint passed; focused public-shell and communication-preference tests passed (4/4); the Impeccable detector reported no findings; `git diff --check` passed. Playwright exercised the preview login and member flow at 390×844 and 1440×1000, opened the account menu and entry-pass dialog, found the expected QR, and reported no browser console errors or framework overlays. The same affected gates are rerun after integrating the latest `origin/main` behavior.
 
 ## Gym profile media preview and finalization fix — 2026-08-14
 
