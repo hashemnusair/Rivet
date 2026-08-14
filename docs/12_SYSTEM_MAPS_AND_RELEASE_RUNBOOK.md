@@ -1,6 +1,6 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-11 after the local pilot-completion and personal-training implementation pass.
+Last reviewed: 2026-08-14 after the PT, CMS, member-experience, and staging-harness release.
 
 ## Purpose
 
@@ -16,10 +16,10 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 ## Current release posture
 
 - The application is a release candidate, not a blank scaffold.
-- `main` is deployed to Vercel Production and production Convex health is reachable.
-- Current local credential-free checks pass: frontend and Convex typecheck, zero-warning lint, 365 unit/handler/component tests across 60 files, all 23 preview browser journeys, and the 41-route production build. Three trusted Clerk/Convex journeys were correctly skipped without their isolated-staging credentials and remain release gates.
-- The authenticated Development Clerk → Convex smoke and staged operational write flow passed on the current merged head in manual workflow `31325711295`.
-- Production environment alignment, Resend application mail, authenticated tenant resolution, and the supervised single-cash-path onboarding/operational sequence have been verified. The fabricated platform-gym detail facts were removed and the authorized target-scoped replacement passed a credentialed Production check on deployed head `6a3678b`. Release remains held for the invited-owner onboarding defect, the platform directory's omission of hidden/suspended tenants, remaining adversarial authorization coverage, and the incomplete workflow/provider items in the canonical backlog.
+- Main implementation commit `a374f0e` is deployed to Vercel Production; Convex Production target `descriptive-meerkat-589` was dry-run and deployed from the same code with no deleted indexes, and the read-only health query returned `status: ok`.
+- Current local gates pass: frontend and Convex typecheck, zero-warning lint, 453 unit/handler/component tests across 83 files, the production build, 24 preview browser journeys, and diff checks. Credential-complete functional staging remains gated on the manager Clerk storage state.
+- Manual staging run `31761753434` passed authenticated smoke, membership lifecycle, two-browser realtime, and owner-settings/trial-schedule with disposable cleanup; its functional suite stopped before writes at the missing manager credential. The five formerly missing product bodies are authored but still require credential-complete execution.
+- Production environment alignment, authenticated tenant resolution, and the supervised cash-path onboarding/operational sequence remain verified. Live operational email is disabled, and no Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
 ## Map 1 — Provider and deployment topology
