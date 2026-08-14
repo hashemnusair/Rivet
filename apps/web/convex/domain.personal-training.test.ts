@@ -47,7 +47,7 @@ async function seed(t: TestConvex<typeof schema>) {
     const bookingDate = dateInDays(2);
     const weekday = weekdays[new Date(`${bookingDate}T12:00:00Z`).getUTCDay()]!;
     await ctx.db.insert("ptAvailabilityRules", { organizationId: organization, publicId: "availability-1", trainerProfileId: trainerProfile, branchId: branch, weekday, startMinute: 8 * 60, endMinute: 11 * 60, active: true, createdAt: now, updatedAt: now });
-    await ctx.db.insert("ptPackages", { organizationId: organization, publicId: "package-12", name: "12 PT sessions", sessionCount: 12, totalPriceMinor: 120_000, currency: "JOD", validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("ptPackages", { organizationId: organization, publicId: "package-12", name: "12 PT sessions", sessionCount: 12, totalPriceMinor: 240_000, currency: "JOD", validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: now, updatedAt: now });
   });
 }
 
@@ -62,7 +62,7 @@ describe("Convex personal-training lifecycle", () => {
     const edited = await owner.mutation(api.domain.mutate, operation("pt.package.upsert", { id: "package-12", name: "Foundations 15", sessionCount: 15, totalPrice: { amount: 135_000, currency: "JOD" }, validityDays: 120, branchAccess: "all", branchIds: [], status: "active" })) as { name: string; sessionCount: number };
     expect(edited).toMatchObject({ name: "Foundations 15", sessionCount: 15 });
     const historical = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { orders: Array<{ id: string; packageName: string; sessionCountSnapshot: number; totalPriceSnapshot: { amount: number } }> };
-    expect(historical.orders[0]).toMatchObject({ id: requested.id, packageName: "12 PT sessions", sessionCountSnapshot: 12, totalPriceSnapshot: { amount: 120_000 } });
+    expect(historical.orders[0]).toMatchObject({ id: requested.id, packageName: "12 PT sessions", sessionCountSnapshot: 12, totalPriceSnapshot: { amount: 240_000 } });
 
     const cancelled = await owner.mutation(api.domain.mutate, operation("pt.package.cancel", { orderId: requested.id, reason: "Member selected a different package", idempotencyKey: "cancel-snapshot-request" })) as { status: string; cancellationReason: string };
     expect(cancelled).toMatchObject({ status: "cancelled", cancellationReason: "Member selected a different package" });
@@ -83,13 +83,13 @@ describe("Convex personal-training lifecycle", () => {
     expect(replay.id).toBe(requested.id);
     expect(requested.status).toBe("pending_payment");
 
-    await expectCode(owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 60_000, currency: "JOD" }, method: "card", idempotencyKey: "pt-pay-missing-ref" })), "VALIDATION_ERROR");
-    await owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 60_000, currency: "JOD" }, method: "card", externalReference: "POS-PT-1", idempotencyKey: "pt-pay-1" }));
+    await expectCode(owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 120_000, currency: "JOD" }, method: "card", idempotencyKey: "pt-pay-missing-ref" })), "VALIDATION_ERROR");
+    await owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 120_000, currency: "JOD" }, method: "card", externalReference: "POS-PT-1", idempotencyKey: "pt-pay-1" }));
     let experience = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { availableSessions: number; orders: Array<{ status: string }> };
     expect(experience.availableSessions).toBe(0);
     expect(experience.orders[0]?.status).toBe("pending_payment");
 
-    await owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 60_000, currency: "JOD" }, method: "cliq", externalReference: "CLIQ-PT-2", idempotencyKey: "pt-pay-2" }));
+    await owner.mutation(api.domain.mutate, operation("payments.create", { memberId: "pt-member", chargeId: requested.chargeId, amount: { amount: 120_000, currency: "JOD" }, method: "cliq", externalReference: "CLIQ-PT-2", idempotencyKey: "pt-pay-2" }));
     experience = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as typeof experience;
     expect(experience.availableSessions).toBe(12);
     expect(experience.orders[0]?.status).toBe("active");
@@ -116,7 +116,7 @@ describe("Convex personal-training lifecycle", () => {
     expect(experience).toMatchObject({ availableSessions: 12, reservedSessions: 0 });
 
     const order = await owner.mutation(api.domain.mutate, operation("pt.package.refund", { orderId: requested.id, sessions: 2, reason: "Unused sessions refunded at member request" })) as { status: string; refundedSessions: number; refundedAmount: { amount: number } };
-    expect(order).toMatchObject({ status: "partially_refunded", refundedSessions: 2, refundedAmount: { amount: 20_000 } });
+    expect(order).toMatchObject({ status: "partially_refunded", refundedSessions: 2, refundedAmount: { amount: 40_000 } });
     experience = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as typeof experience;
     expect(experience.availableSessions).toBe(10);
 

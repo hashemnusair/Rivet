@@ -5,7 +5,51 @@ export type PtBookingOutcomeAction = "completed" | "no_show" | "cancelled";
 export const PT_SESSION_DURATION_MINUTES = 60;
 export const PT_DEFAULT_BOOKING_HORIZON_DAYS = 30;
 export const PT_DEFAULT_CANCELLATION_CUTOFF_HOURS = 12;
-export const PT_PACKAGE_SIZES = [12, 20, 30] as const;
+
+/**
+ * The gym's reference PT pricing ladder.  The total price remains editable,
+ * but these anchors make the intended volume discount visible and give new
+ * packages a sensible starting price.
+ */
+export const PT_PACKAGE_PRICE_GUIDE = [
+  { sessionCount: 12, totalPriceMinor: 240_000 },
+  { sessionCount: 20, totalPriceMinor: 300_000 },
+  { sessionCount: 30, totalPriceMinor: 400_000 },
+] as const;
+
+/**
+ * Suggest a total package price using the reference anchors.  Between
+ * anchors, the total is linearly interpolated; beyond the final anchor, the
+ * final package's marginal price is extended.  This keeps the average rate
+ * from increasing as session count grows while supporting arbitrary counts.
+ */
+export function ptPackageSuggestedPriceMinor(sessionCount: number): number | undefined {
+  if (!Number.isSafeInteger(sessionCount) || sessionCount < 1) return undefined;
+
+  const first = PT_PACKAGE_PRICE_GUIDE[0]!;
+  if (sessionCount <= first.sessionCount) return sessionCount * (first.totalPriceMinor / first.sessionCount);
+
+  for (let index = 1; index < PT_PACKAGE_PRICE_GUIDE.length; index += 1) {
+    const lower = PT_PACKAGE_PRICE_GUIDE[index - 1]!;
+    const upper = PT_PACKAGE_PRICE_GUIDE[index]!;
+    if (sessionCount <= upper.sessionCount) {
+      const span = upper.sessionCount - lower.sessionCount;
+      const progress = sessionCount - lower.sessionCount;
+      return Math.round(lower.totalPriceMinor + (progress * (upper.totalPriceMinor - lower.totalPriceMinor)) / span);
+    }
+  }
+
+  const lower = PT_PACKAGE_PRICE_GUIDE[PT_PACKAGE_PRICE_GUIDE.length - 2]!;
+  const upper = PT_PACKAGE_PRICE_GUIDE[PT_PACKAGE_PRICE_GUIDE.length - 1]!;
+  const marginalPrice = (upper.totalPriceMinor - lower.totalPriceMinor) / (upper.sessionCount - lower.sessionCount);
+  return Math.round(upper.totalPriceMinor + (sessionCount - upper.sessionCount) * marginalPrice);
+}
+
+/** Return the effective per-session rate in the currency's minor units. */
+export function ptPackageUnitPriceMinor(totalPriceMinor: number, sessionCount: number): number | undefined {
+  if (!Number.isSafeInteger(totalPriceMinor) || totalPriceMinor <= 0 || !Number.isSafeInteger(sessionCount) || sessionCount < 1) return undefined;
+  return Math.round(totalPriceMinor / sessionCount);
+}
 
 export function ptAvailableCredits(value: Pick<PtEntitlement, "granted" | "reserved" | "consumed" | "revoked">): number {
   return Math.max(0, value.granted - value.reserved - value.consumed - value.revoked);

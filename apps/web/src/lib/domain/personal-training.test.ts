@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ptAvailableCredits, ptBookingCreditConsequence, ptCancellationResult, ptIntervalsOverlap, ptPackageLadderIsValid, ptRefundMinor, selectPtEntitlement } from "./personal-training";
+import { ptAvailableCredits, ptBookingCreditConsequence, ptCancellationResult, ptIntervalsOverlap, ptPackageLadderIsValid, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor, ptRefundMinor, selectPtEntitlement } from "./personal-training";
 import type { PtEntitlement, PtPackage } from "./types";
 
 const money = (amount: number) => ({ amount, currency: "JOD" });
-const pkg = (sessionCount: 12 | 20 | 30, amount: number): PtPackage => ({ id: String(sessionCount), organizationId: "org", name: `${sessionCount} sessions`, sessionCount, totalPrice: money(amount), validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: "2026-08-11T00:00:00.000Z", updatedAt: "2026-08-11T00:00:00.000Z" });
+const pkg = (sessionCount: number, amount: number): PtPackage => ({ id: String(sessionCount), organizationId: "org", name: `${sessionCount} sessions`, sessionCount, totalPrice: money(amount), validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: "2026-08-11T00:00:00.000Z", updatedAt: "2026-08-11T00:00:00.000Z" });
 const entitlement = (overrides: Partial<PtEntitlement>): PtEntitlement => ({ id: crypto.randomUUID(), organizationId: "org", memberId: "member", source: "package", granted: 12, reserved: 0, consumed: 0, revoked: 0, available: 12, expiresAt: "2026-12-31T23:59:59.999Z", status: "active", createdAt: "2026-08-11T00:00:00.000Z", updatedAt: "2026-08-11T00:00:00.000Z", ...overrides });
 
 describe("personal training commercial rules", () => {
@@ -13,8 +13,19 @@ describe("personal training commercial rules", () => {
   });
 
   it("requires larger packages to have an equal or lower unit price", () => {
-    expect(ptPackageLadderIsValid([pkg(12, 240_000), pkg(20, 360_000), pkg(30, 480_000)])).toBe(true);
+    expect(ptPackageLadderIsValid([pkg(12, 240_000), pkg(20, 300_000), pkg(30, 400_000)])).toBe(true);
     expect(ptPackageLadderIsValid([pkg(12, 120_000), pkg(20, 220_000)])).toBe(false);
+  });
+
+  it("suggests the requested volume-discount package totals and tracks unit rates", () => {
+    expect(ptPackageSuggestedPriceMinor(12)).toBe(240_000);
+    expect(ptPackageSuggestedPriceMinor(20)).toBe(300_000);
+    expect(ptPackageSuggestedPriceMinor(30)).toBe(400_000);
+    expect(ptPackageSuggestedPriceMinor(16)).toBe(270_000);
+    expect(ptPackageSuggestedPriceMinor(1)).toBe(20_000);
+    expect(ptPackageUnitPriceMinor(300_000, 20)).toBe(15_000);
+    expect(ptPackageUnitPriceMinor(400_000, 30)).toBe(13_333);
+    expect(ptPackageSuggestedPriceMinor(0)).toBeUndefined();
   });
 
   it("allocates proportional integer refunds without losing the final remainder", () => {
