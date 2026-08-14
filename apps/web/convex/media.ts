@@ -146,7 +146,15 @@ export const finalizeUpload = action({
   args: { ...requestArgs, ownerType, ownerPublicId: v.string(), altText: v.optional(v.string()), storageId: v.id("_storage") },
   returns: v.any(),
   handler: async (ctx, args): Promise<FinalizedAsset> => {
-    await ctx.runMutation(internal.media.authorizeFinalize, args);
+    await ctx.runMutation(internal.media.authorizeFinalize, {
+      organizationId: args.organizationId,
+      branchId: args.branchId,
+      activeBranchId: args.activeBranchId,
+      correlationId: args.correlationId,
+      ownerType: args.ownerType,
+      ownerPublicId: args.ownerPublicId,
+      altText: args.altText,
+    });
     const source = await ctx.storage.get(args.storageId);
     if (!source) domainError("NOT_FOUND", "Uploaded image not found.", { correlationId: args.correlationId });
     if (source.size > 5 * 1024 * 1024) {

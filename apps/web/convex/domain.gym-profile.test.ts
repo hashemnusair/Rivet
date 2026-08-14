@@ -59,6 +59,14 @@ describe("gym-controlled public profile", () => {
     await expectCode(reception.mutation(api.domain.mutate, operation("profiles.gym.publish")), "FORBIDDEN");
   });
 
+  it("passes only authorization fields before validating uploaded bytes", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["not an image"]) as unknown as Blob));
+
+    await expect(owner.action(api.media.finalizeUpload, { organizationId: "org-profile", correlationId: "cor-profile-finalize", ownerType: "gym_logo", ownerPublicId: "org-profile", altText: "Profile Gym logo", storageId })).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: "Use a JPEG, PNG, or WebP image." }) });
+  });
+
   it("promotes only saved gym media and expires abandoned uploads server-side", async () => {
     const t = await seeded();
     const owner = t.withIdentity({ subject: "clerk-profile-owner" });
