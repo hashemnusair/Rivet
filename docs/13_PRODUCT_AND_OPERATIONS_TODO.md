@@ -2,6 +2,15 @@
 
 Updated 14 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
+## Gym profile media preview and finalization fix — 14 August 2026
+
+- Direct-main release commit `0aa1599b14e81dcc06a81e47e09387beeff9f63a` is pushed to `main` and `origin/main`; the final fetch found no partner advancement. The frozen `FRONTEND_HANDOFF.md` and product-plan-only `docs/14_MODULAR_WORKSPACE_PLAN.md` were not changed.
+- Logo, cover, and gallery selections now preview locally and are uploaded only when the operator saves the profile draft. Client validation covers JPEG/PNG/WebP, 5 MB maximum, and accessible descriptions; failed saves clean up newly uploaded pending assets, while discard clears local previews without mutating Production.
+- Fixed the `media:finalizeUpload` Production error by sending `authorizeFinalize` only its declared authorization fields instead of the full upload argument object. Focused Convex and Settings regressions cover the server boundary and deferred-upload behavior.
+- Convex Production `descriptive-meerkat-589` passed the exact-target non-verbose dry run/deploy with schema validation complete and no deleted indexes; the release has no `schema.ts` delta or destructive migration. The read-only health query returned `status: ok`, and recent logs showed only expected unauthenticated guard events.
+- GitHub Actions [31807295256](https://github.com/hashemnusair/Rivet/actions/runs/31807295256) passed generated-code consistency, typecheck/lint/unit/build, and Playwright preview. The authenticated smoke was credential-gated/skipped. Vercel’s Production deployment for the same SHA completed successfully at [the deployed build](https://rivet-mqce4n2q8-nusairhashem04-gmailcoms-projects.vercel.app).
+- Local gates passed: 83 test files / 456 tests, both TypeScript checks, Convex codegen, lint, production build, 24 Playwright passes with 14 staging-gated skips, and `git diff --check`. No Production product-data mutation or live operational-email activation occurred.
+
 ## PT package volume-pricing correction — 14 August 2026
 
 - Direct-main release commit `11504b9583e5f7f40bc8edc5a4d1a7301d679781` is pushed to `main` and `origin/main`.
@@ -24,6 +33,7 @@ Updated 14 August 2026. This is the single canonical backlog for confirmed bugs,
 - [x] Pending PT orders support reasoned, audited, idempotent unpaid cancellation with atomic charge voiding; partial/full-payment paths remain on explicit refund/void flows.
 - [x] Member-detail payment collection is charge-specific and bounded by that charge's outstanding balance.
 - [x] Gym CMS media lifecycle supports validated logo/cover/gallery upload, draft/save/publish, preview, replacement/removal/order, alt text, eligibility messaging, and published-version cleanup protection.
+- [x] Gym profile media selection previews locally and defers `finalizeUpload` until the draft save, preventing the prior server-error path during file selection.
 - [x] Member-owned profile fields synchronize to linked gym records by verified identity without changing marketing consent or exposing cross-gym records.
 - [x] Member experience is multi-gym and mobile-first with per-gym dashboard cards, branding, check-in totals, end-date/days-remaining facts, scoped activity, and an on-demand expiring QR dialog.
 - [x] Focused Convex, mock, component, browser, and release-harness regressions are included.

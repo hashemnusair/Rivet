@@ -2,6 +2,16 @@
 
 Updated 2026-08-14 after CRM release alignment. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## Gym profile media preview and finalization fix — 2026-08-14
+
+- Direct-main release commit `0aa1599b14e81dcc06a81e47e09387beeff9f63a` is pushed to `main` and `origin/main`. The final pre-commit fetch found no partner advancement; no branch or PR was created, and `FRONTEND_HANDOFF.md` was not modified.
+- Gym logo, cover, and gallery selections now remain local until **Save draft**. The editor previews the selected file first, validates type/size and accessible description locally, uploads only during the draft save, and removes newly uploaded pending assets if the save fails. Discarding changes clears local previews without a server upload.
+- Convex `media.finalizeUpload` now passes only the authorization fields accepted by `authorizeFinalize`; the previous extra `storageId` field caused the Production `media:finalizeUpload` server error. A focused Convex boundary regression and Settings component regression cover the fix.
+- Convex Production target `descriptive-meerkat-589` passed the exact-target non-verbose dry run and deploy through `pnpm convex:deploy`. Schema validation completed, no indexes were deleted, and the release has no `schema.ts` delta or destructive migration. The read-only `health:check` returned `{ "status": "ok" }`; recent read-only logs contained only expected unauthenticated guard events.
+- GitHub Actions [run 31807295256](https://github.com/hashemnusair/Rivet/actions/runs/31807295256) passed typecheck/lint/unit tests/build, generated-code consistency, and Playwright preview jobs; the authenticated Clerk → Convex smoke was credential-gated/skipped. Vercel’s Production deployment record for the same SHA completed successfully at [the deployed build](https://rivet-mqce4n2q8-nusairhashem04-gmailcoms-projects.vercel.app).
+- Local verification passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (83 files / 456 tests), `pnpm build`, `pnpm test:e2e` (24 passed / 14 staging-gated skips), and `git diff --check`.
+- No Production seed, import, restore, delete, product-data mutation, or live operational-email activation was performed.
+
 ## PT package volume-pricing correction — 2026-08-14
 
 - Direct-main release commit `11504b9583e5f7f40bc8edc5a4d1a7301d679781` is pushed to `main` and `origin/main`. The worktree was clean before the change, the pre-push fetch found no partner advancement, and no branch or PR was created.
