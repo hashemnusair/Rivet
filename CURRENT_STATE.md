@@ -1,8 +1,21 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-14 after the CRM active-work cleanup. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-14 after CRM release alignment. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
-## CRM cleanup and responsiveness pass — local changes pending release
+## Release-aligned state — 2026-08-14
+
+- The direct-main release is application-bearing through `adfef2d8d897b33a8e81b4271e4af167780d98fe`; the current main tip is `cee6a200cec3757afb2ef6e8982b29d8032a50e9`, which adds only the staging dry-run capture fix. The worktree is clean, partner commits were preserved, and `FRONTEND_HANDOFF.md` was not modified.
+- Vercel Production reports `success` for current main commit `cee6a200cec3757afb2ef6e8982b29d8032a50e9` through the Vercel status at [DzHoY6P1coLM3Grg6uD3AdsTzJfr](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/DzHoY6P1coLM3Grg6uD3AdsTzJfr). The corresponding push verification is [GitHub Actions run 31755282195](https://github.com/hashemnusair/Rivet/actions/runs/31755282195), which passed the static, typecheck, lint, unit, build, Convex codegen, and preview-browser jobs.
+- Convex Production target `descriptive-meerkat-589` was selected explicitly. The exact-target non-verbose dry run and deploy completed with `Release f1a00ca`; the dry run reported no deleted indexes, schema validation passed, and `health:check` returned `status: ok`. Read-only recent logs showed only expected unauthenticated-guard, authenticated query, cron, and health activity. There is no Convex code delta from `f1a00ca2192eea9145f67a149b90721dd4343285` to current main, and no `schema.ts` delta from `eb82f8d`; no destructive migration was proposed or run.
+- The focused CRM hardening is released: active lead queries use `qk.leads(leadQuery)`, lead cards are semantic Next links, Board/List controls expose a labelled `aria-pressed` group, successful sales update the cache and replace-route to the resulting member without an invalidate-before-navigation flicker, the breadcrumb says Leads, trial outcomes are explicit, CTAs say Membership sold / Not sold, sale language is selected explicitly while marketing opt-in remains unchanged, and the Settings act warning has regression coverage.
+- Final local gates passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (83 files / 447 tests), `pnpm build` (41 routes), `pnpm test:e2e` (24 passed / 9 credential-gated staging specs skipped), and `git diff --check`.
+- Manual isolated staging run [31755373130](https://github.com/hashemnusair/Rivet/actions/runs/31755373130) used authenticated smoke, `run_operational_flow=true`, `run_realtime_flow=true`, `run_owner_settings_flow=true`, `run_functional_staging=true`, and `staging_journeys=all`. The staging Convex dry-run target guard and exact current-head deploy passed. Authenticated smoke, membership lifecycle, two-browser realtime, and owner-settings/trial-schedule all passed. Cleanup completed for disposable members and preserved/restored the operational policy. Functional staging stopped at its credential gate because `PLAYWRIGHT_CLERK_STORAGE_MANAGER` is not configured; no functional journey writes started.
+- The five missing staging bodies remain: `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`. The role-specific bodies for staff authorization, trial/CRM, personal training, and finance/reconciliation are authored but still need a credential-complete isolated-staging run. `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan only and was not implemented.
+- No Production seed, import, restore, delete, product-data mutation, or live operational-email activation was performed.
+
+## CRM cleanup and responsiveness pass — superseded pre-release snapshot
+
+The pending-release wording in this historical snapshot is superseded by the release-aligned evidence above.
 
 - Converted leads linked to archived members are now excluded from Convex and mock lead lists. A deleted archived member also cannot leave an actionable dangling lead behind.
 - The self-service member trial workflow already creates a tenant/branch-scoped trial_booked lead atomically; standalone member-account signup still creates only the member profile because no gym has been selected yet.

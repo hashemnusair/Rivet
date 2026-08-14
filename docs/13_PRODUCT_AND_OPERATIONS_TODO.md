@@ -2,7 +2,16 @@
 
 Updated 14 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
-## P1 — Simplify CRM queues and clean up archived members — implemented locally, deployment pending
+## Release alignment — 14 August 2026
+
+- Current direct-main release evidence is `adfef2d8d897b33a8e81b4271e4af167780d98fe` for the application-bearing changes, followed by current main `cee6a200cec3757afb2ef6e8982b29d8032a50e9` for the staging dry-run capture fix. The worktree was clean before release work, partner commits were preserved, and the frozen `FRONTEND_HANDOFF.md` was not changed.
+- Vercel Production reports `success` for current main `cee6a200cec3757afb2ef6e8982b29d8032a50e9` at [deployment status DzHoY6P1coLM3Grg6uD3AdsTzJfr](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/DzHoY6P1coLM3Grg6uD3AdsTzJfr). Push run [31755282195](https://github.com/hashemnusair/Rivet/actions/runs/31755282195) passed the ordinary release jobs.
+- Convex Production `descriptive-meerkat-589` was dry-run and deployed exactly from `f1a00ca` using the safe non-verbose wrapper. The dry run explicitly reported no index deletions; schema validation and deploy completed, `health:check` returned `status: ok`, and read-only logs had no schema, missing-function, uncaught-runtime, or live-email activity. Current main has no Convex code delta from `f1a00ca`, and no `schema.ts` delta from `eb82f8d`.
+- The CRM release is complete for code and ordinary CI: focused CRM regressions cover query-key scoping, semantic links and view controls, stable sale navigation/cache behavior, truthful labels/outcomes, preferred language, and the Settings act warning. Local gates passed with 83 test files / 447 tests, the 41-route build, 24 preview E2E passes, and 9 credential-gated skips.
+- Manual staging run [31755373130](https://github.com/hashemnusair/Rivet/actions/runs/31755373130) was dispatched with authenticated smoke, all four requested switches enabled, and `staging_journeys=all`. Staging Convex alignment passed; authenticated smoke, operational membership lifecycle, two-browser realtime, and owner-settings/trial-schedule passed. Cleanup archived disposable members and preserved/restored the operational policy. The functional-staging credential gate stopped before writes because the manager Clerk storage state secret is missing; staff-authorization, trial/CRM, personal-training, and finance/reconciliation did not run in that attempt.
+- Five registered staging bodies still remain unimplemented: `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`. `docs/14_MODULAR_WORKSPACE_PLAN.md` remains product plan only. No Production seed/import/restore/delete, product-data mutation, or live operational email was performed.
+
+## P1 — Simplify CRM queues and clean up archived members — implemented and release-aligned
 
 ### Confirmed behavior
 
@@ -22,7 +31,7 @@ Updated 14 August 2026. This is the single canonical backlog for confirmed bugs,
 - [x] Run the complete typecheck, Convex codegen/typecheck, lint, Vitest/Convex, build, and preview browser gates for this local change set. Credentialed staging specs remain gated on staging identities.
 - [ ] Measure the slowest Production routes with browser performance traces and Convex logs before adding further caching or pagination changes.
 
-## P0 — Simplify CRM and prevent member-only lead conversion — implemented, deployment pending
+## P0 — Simplify CRM and prevent member-only lead conversion — implemented and release-aligned
 
 - [x] Replace the multi-stage offer/conversion journey with Trial → completed/not completed → membership sale successful/not successful.
 - [x] Create a successful sale's member, membership, charge, included PT credits, timeline, and audit facts atomically.
@@ -33,7 +42,8 @@ Updated 14 August 2026. This is the single canonical backlog for confirmed bugs,
 - [x] Remove offer controls and arbitrary stage dragging from the primary CRM; preserve historical offer facts without deleting data.
 - [x] Rename the operator surfaces to Leads and Follow-ups and reduce the working board to two truthful active-work groups; keep closed outcomes in history.
 - [x] Add persisted Convex, mock-adapter, and staging-journey coverage.
-- [ ] Deploy the matching Convex backend and Vercel frontend, then verify one disposable completed-trial sale using an existing plan and one using a custom plan.
+- [x] Deploy the matching Convex backend and Vercel frontend; exact Production and isolated-staging evidence is recorded in the release-alignment section above.
+- [ ] Verify two disposable completed-trial sales against isolated staging: one using an existing plan and one using a custom plan. The final run was blocked before this body by the missing manager Clerk storage state.
 
 ## How to use this file
 
@@ -690,9 +700,9 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 
 ### TODO-012 — Complete all registered production-shaped staging journeys
 
-- Status: **Safety/dispatch/role/cleanup harness complete; membership-lifecycle, owner-settings, staff-authorization, trial-CRM, finance-reconciliation, personal-training, and separate realtime-smoke bodies exist; five product journey bodies remain. The four newest bodies are authored and preview-compiled but still require a credentialed isolated-staging run before release credit.**
+- Status: **Safety/dispatch/role/cleanup harness complete; membership-lifecycle, owner-settings, staff-authorization, trial-CRM, finance-reconciliation, personal-training, and separate realtime-smoke bodies exist; five product journey bodies remain. The current isolated-staging dispatch passed membership-lifecycle, realtime-smoke, and owner-settings, while the four role-specific bodies remain credential-gated because the manager Clerk storage state is not configured.**
 - Registered journeys: provisioning, owner settings, staff authorization, trial/CRM, membership lifecycle, reception entry, finance/reconciliation, automation, member portal, isolation/audit, and personal training. A separate `realtime-smoke` is also registered. The owner-settings body persists a valid branch trial time, reloads it, and restores the prior schedule through its cleanup ledger.
-- Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The new combined dispatch requires owner, manager, salesperson, receptionist, trainer, and member Clerk states plus an isolated invitation inbox template. Provisioning, reception-entry, automation, member-portal, and isolation/audit bodies remain; every authored body must still pass against the exact isolated staging deployment before additional Production mutation.
+- Acceptance: each journey uses unique markers, correct role files, audited archive/deactivate/unpublish/suspend cleanup, and refuses Production. The combined dispatch requires owner, manager, salesperson, receptionist, trainer, and member Clerk states plus an isolated invitation inbox template. Provisioning, reception-entry, automation, member-portal, and isolation/audit bodies remain; every authored body must still pass against the exact isolated staging deployment before additional Production mutation. The latest run archived disposable members and preserved/restored the operational policy; it stopped before functional writes at the missing manager-state credential gate.
 
 ### TODO-010 — Verify application review-note editing in Production
 
