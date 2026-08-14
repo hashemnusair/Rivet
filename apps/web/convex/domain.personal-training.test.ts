@@ -64,6 +64,12 @@ describe("Convex personal-training lifecycle", () => {
     const historical = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { orders: Array<{ id: string; packageName: string; sessionCountSnapshot: number; totalPriceSnapshot: { amount: number } }> };
     expect(historical.orders[0]).toMatchObject({ id: requested.id, packageName: "12 PT sessions", sessionCountSnapshot: 12, totalPriceSnapshot: { amount: 240_000 } });
 
+    await expectCode(owner.mutation(api.domain.mutate, operation("pt.package.delete", { packageId: "package-12", reason: "Attempted catalog cleanup" })), "CONFLICT");
+    await owner.mutation(api.domain.mutate, operation("pt.package.upsert", { name: "Unused 40", sessionCount: 40, totalPrice: { amount: 320_000, currency: "JOD" }, validityDays: 120, branchAccess: "all", branchIds: [], status: "active" }));
+    const unused = await owner.query(api.domain.query, operation("pt.workspace")) as { packages: Array<{ id: string; name: string }> };
+    const unusedPackage = unused.packages.find((item) => item.name === "Unused 40")!;
+    await expect(owner.mutation(api.domain.mutate, operation("pt.package.delete", { packageId: unusedPackage.id, reason: "Created in error" }))).resolves.toMatchObject({ id: unusedPackage.id });
+
     const cancelled = await owner.mutation(api.domain.mutate, operation("pt.package.cancel", { orderId: requested.id, reason: "Member selected a different package", idempotencyKey: "cancel-snapshot-request" })) as { status: string; cancellationReason: string };
     expect(cancelled).toMatchObject({ status: "cancelled", cancellationReason: "Member selected a different package" });
     const replay = await owner.mutation(api.domain.mutate, operation("pt.package.cancel", { orderId: requested.id, reason: "Member selected a different package", idempotencyKey: "cancel-snapshot-request" })) as { status: string };

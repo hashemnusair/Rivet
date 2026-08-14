@@ -78,8 +78,10 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
 
     await page.getByRole("link", { name: /Open My Gyms/i }).click();
-    await expect(page.getByRole("region", { name: "Trial bookings" }).getByText(/requested/i)).toBeVisible();
-    await expect(page.getByText("Forge Fitness Club").first()).toBeVisible();
+    await expect(page.getByRole("region", { name: "Subscribed gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await expect(page.getByText("0 gyms")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Free trials" })).toHaveCount(0);
 
     // Use the consolidated account control to leave the member session. The
     // frontend mock and its newly created lead remain alive while switching
@@ -94,7 +96,7 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: /^(Follow-ups|Leads)$/ }).first().click();
-    await expect(page.getByRole("link", { name: /Yousef Nasser, trial_booked/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Yousef Nasser, Trial/i })).toBeVisible();
   });
 
   test("does not promise My Gyms persistence for an unauthenticated trial request", async ({ page }) => {

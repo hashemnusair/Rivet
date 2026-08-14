@@ -3162,6 +3162,18 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const policies = (await settingsData(ctx, actor)).operationalPolicies;
       const renewalWindowDays = numberValue(data(data(policies).membership).renewalWindowDays, 14);
+      const bucket = stringValue(input.bucket, "expiring");
+      if (bucket !== "expiring" && bucket !== "expired") domainError("VALIDATION_ERROR", "Renewal bucket is invalid.", { correlationId: actor.correlationId });
+      const requestedDays = numberValue(input.days, bucket === "expired" ? 45 : renewalWindowDays);
+      if (!Number.isInteger(requestedDays) || requestedDays < 1 || requestedDays > 365) domainError("VALIDATION_ERROR", "Follow-up days must be between 1 and 365.", { correlationId: actor.correlationId });
+      const fromDate = optionalString(input.fromDate);
+      const toDate = optionalString(input.toDate);
+      const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+      if ((fromDate && !datePattern.test(fromDate)) || (toDate && !datePattern.test(toDate))) domainError("VALIDATION_ERROR", "Follow-up dates must use YYYY-MM-DD.", { correlationId: actor.correlationId });
+      if (fromDate && diffDays(addDays(today, -365), fromDate) < 0) domainError("VALIDATION_ERROR", "Follow-up dates cannot be earlier than one year ago.", { correlationId: actor.correlationId });
+      if (toDate && diffDays(addDays(today, -365), toDate) < 0) domainError("VALIDATION_ERROR", "Follow-up dates cannot be earlier than one year ago.", { correlationId: actor.correlationId });
+      if (toDate && diffDays(today, toDate) > 365) domainError("VALIDATION_ERROR", "Follow-up dates cannot be more than one year ahead.", { correlationId: actor.correlationId });
+      if (fromDate && toDate && diffDays(fromDate, toDate) < 0) domainError("VALIDATION_ERROR", "The follow-up start date must be before the end date.", { correlationId: actor.correlationId });
       const items: Data[] = [];
       const memberships = await membershipRecords(ctx, actor);
       const memberRows = await memberRecords(ctx, actor);
@@ -3171,10 +3183,11 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         if (!member || member.status !== "active") continue;
         if (terms.some((other) => other.previousMembershipId === term.id)) continue;
         const daysUntil = diffDays(today, stringValue(term.endDate));
-        const status = statusOfMembership(term, today);
-        if (input.bucket === "expired") {
-          if (status !== "expired" || daysUntil < -45) continue;
-        } else if (!(status === "expiring" || (status === "active" && daysUntil <= renewalWindowDays))) continue;
+        if (fromDate || toDate) {
+          const lower = fromDate ?? (bucket === "expired" ? addDays(today, -requestedDays) : today);
+          const upper = toDate ?? (bucket === "expired" ? today : addDays(today, requestedDays));
+          if (bucket === "expired" ? !(daysUntil < 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper) : !(daysUntil >= 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper)) continue;
+        } else if (bucket === "expired" ? !(daysUntil < 0 && daysUntil >= -requestedDays) : !(daysUntil >= 0 && daysUntil <= requestedDays)) continue;
         const memberSummary = await toMemberSummary(ctx, actor, member);
         const membershipSummary = await toMembershipSummary(ctx, actor, term);
         const calls = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === member.id && event.type === "call_attempt").sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
@@ -4953,6 +4966,51 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   const actor = await requireActor(ctx, request);
 
   switch (operation) {
+    case "support.reply": {
+      const body = stringValue(input.body).trim();
+      if (!body) domainError("VALIDATION_ERROR", "A support reply is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });
+      const record = await recordOf(ctx, actor, "supportCase", recordId(input.caseId));
+      const current = data(record.data);
+      if (actor.role !== "owner" && actor.role !== "manager" && stringValue(current.creatorId) !== publicUserId(actor.user)) {
+        domainError("NOT_FOUND", "Support case not found.", { correlationId: actor.correlationId });
+      }
+      if (stringValue(current.status) === "resolved") domainError("VALIDATION_ERROR", "Resolved support cases cannot receive new replies.", { correlationId: actor.correlationId });
+      const now = isoNow();
+      const messageId = `SUP-MSG-${newPublicId()}`;
+      await insertRecord(ctx, actor, "supportMessage", {
+        id: messageId,
+        caseId: record.publicId,
+        authorType: "gym",
+        authorId: publicUserId(actor.user),
+        authorName: actor.user.fullName,
+        body,
+        createdAt: now,
+      }, { branchId: optionalString(current.branchId) });
+      const updated = { ...current, status: "open", updatedAt: now };
+      await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+      await insertAudit(ctx, actor, {
+        category: "settings",
+        action: "support.case.reply",
+        entityType: "support_case",
+        entityId: record.publicId,
+        entityLabel: stringValue(current.subject, record.publicId),
+        summary: "Replied to RIVET support case",
+        branchId: optionalString(current.branchId),
+        after: { status: "open", messageId },
+      });
+      const platformOperators = (await ctx.db.query("users").collect()).filter((user) => user.platformAdmin && user.status !== "deactivated");
+      await Promise.all(platformOperators.map((operator) => insertOperationalNotification(ctx, {
+        recipientUserId: operator._id,
+        organizationId: actor.organization._id,
+        branchId: record.branchId,
+        kind: "support_gym_reply",
+        title: "New gym reply on support case",
+        body: `${actor.organization.name} · ${stringValue(current.subject, record.publicId)}`,
+        href: `/platform/support?case=${record.publicId}`,
+        dedupeKey: `support-gym-reply:${messageId}`,
+      })));
+      return await supportCaseView(ctx, (await ctx.db.get(record._id))!);
+    }
     case "support.create": {
       const email = stringValue(input.email).trim().toLowerCase();
       const subject = stringValue(input.subject).trim();
@@ -5348,6 +5406,28 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       else { const id = await ctx.db.insert("ptPackages", { organizationId: actor.organization._id, publicId: newPublicId(), ...value, createdAt: now }); ptPackage = (await ctx.db.get(id))!; }
       await insertAudit(ctx, actor, { category: "settings", action: existing ? "pt.package.update" : "pt.package.create", entityType: "pt_package", entityId: ptPackage.publicId, entityLabel: name, summary: existing ? "Updated PT package" : "Created PT package", before: existing ? { sessions: existing.sessionCount, price: existing.totalPriceMinor, status: existing.status } : undefined, after: { sessions: sessionCount, price: totalPriceMinor, status } });
       return await ptPackageView(ctx, actor.organization, ptPackage);
+    }
+    case "pt.package.delete": {
+      requirePermission(actor, "pt.manage");
+      const reason = stringValue(input.reason).trim();
+      requireReason(reason, actor.correlationId);
+      const packageId = recordId(input.packageId);
+      const ptPackage = await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", packageId)).unique();
+      if (!ptPackage) domainError("NOT_FOUND", "PT package not found.", { correlationId: actor.correlationId });
+      const historicalOrder = (await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).find((order) => order.packageId === ptPackage._id);
+      if (historicalOrder) domainError("CONFLICT", "Packages with historical orders cannot be deleted; archive them instead.", { correlationId: actor.correlationId });
+      await ctx.db.delete(ptPackage._id);
+      await insertAudit(ctx, actor, {
+        category: "settings",
+        action: "pt.package.delete",
+        entityType: "pt_package",
+        entityId: packageId,
+        entityLabel: ptPackage.name,
+        summary: "Deleted unused PT package",
+        reason,
+        before: { sessions: ptPackage.sessionCount, price: ptPackage.totalPriceMinor, status: ptPackage.status },
+      });
+      return { id: packageId };
     }
     case "pt.availability.replace": {
       const trainer = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.trainerProfileId))).unique();

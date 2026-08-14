@@ -929,6 +929,22 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  replyToSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> {
+    return this.respond(() => {
+      if (!body.trim()) throw ApiError.of(ERR.VALIDATION, "A reply is required.");
+      const actor = this.actor();
+      const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
+      const canViewAll = currentRole(this.db) === "owner" || currentRole(this.db) === "manager";
+      if (!supportCase || (!canViewAll && supportCase.creatorId !== actor.id)) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
+      if (supportCase.status === "resolved") throw ApiError.of(ERR.VALIDATION, "Resolved support cases cannot receive new replies.");
+      const createdAt = nowISO();
+      supportCase.messages = [...(supportCase.messages ?? []), { id: `SUP-MSG-${crypto.randomUUID()}`, caseId, authorType: "gym", authorId: actor.id, authorName: actor.name, body: body.trim(), createdAt }];
+      supportCase.status = "open";
+      supportCase.updatedAt = createdAt;
+      return { ...supportCase, messages: supportCase.messages.map((message) => ({ ...message })) };
+    });
+  }
+
   resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase> {
     return this.respond(() => {
       this.requireReason(resolutionSummary, "resolutionSummary");
@@ -2111,6 +2127,18 @@ export class MockGymOSApi implements GymOSApi {
       } else this.ptPackages.push(value);
       this.audit({ category: "settings", action: existing ? "pt.package.update" : "pt.package.create", entityType: "pt_package", entityId: value.id, entityLabel: value.name, summary: existing ? "Updated PT package" : "Created PT package" });
       return { ...value };
+    });
+  }
+
+  deletePtPackage(packageId: T.UUID, reason: string): Promise<void> {
+    return this.respond(() => {
+      this.require("pt.manage");
+      this.requireReason(reason);
+      const packageValue = this.ptPackages.find((item) => item.id === packageId);
+      if (!packageValue) throw ApiError.of(ERR.NOT_FOUND, "PT package not found.");
+      if (this.ptOrders.some((order) => order.packageId === packageId)) throw ApiError.of(ERR.CONFLICT, "Packages with historical orders cannot be deleted; archive them instead.");
+      this.ptPackages.splice(this.ptPackages.indexOf(packageValue), 1);
+      this.audit({ category: "settings", action: "pt.package.delete", entityType: "pt_package", entityId: packageId, entityLabel: packageValue.name, summary: "Deleted unused PT package", reason });
     });
   }
 
@@ -3585,21 +3613,30 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.read");
       const branchId = this.branchScopedBranchId(query.branchId);
       const today = this.today();
+      const bucket = query.bucket ?? "expiring";
+      const requestedDays = query.days ?? (bucket === "expired" ? 45 : this.db.operationalPolicies.membership.renewalWindowDays);
+      if (!Number.isInteger(requestedDays) || requestedDays < 1 || requestedDays > 365) throw ApiError.of(ERR.VALIDATION, "Follow-up days must be between 1 and 365.");
+      const fromDate = query.fromDate;
+      const toDate = query.toDate;
+      if ((fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) || (toDate && !/^\d{4}-\d{2}-\d{2}$/.test(toDate))) throw ApiError.of(ERR.VALIDATION, "Follow-up dates must use YYYY-MM-DD.");
+      if (fromDate && diffDays(addDays(today, -365), fromDate) < 0) throw ApiError.of(ERR.VALIDATION, "Follow-up dates cannot be earlier than one year ago.");
+      if (toDate && diffDays(addDays(today, -365), toDate) < 0) throw ApiError.of(ERR.VALIDATION, "Follow-up dates cannot be earlier than one year ago.");
+      if (toDate && diffDays(today, toDate) > 365) throw ApiError.of(ERR.VALIDATION, "Follow-up dates cannot be more than one year ahead.");
+      if (fromDate && toDate && diffDays(fromDate, toDate) < 0) throw ApiError.of(ERR.VALIDATION, "The follow-up start date must be before the end date.");
       const items: T.RenewalQueueItem[] = [];
       for (const record of this.db.memberships) {
         if (branchId && record.homeBranchId !== branchId) continue;
-        const status = this.membershipStatusOf(record);
         const daysUntil = diffDays(today, record.endDate);
         const member = this.db.members.find((m) => m.id === record.memberId);
         if (!member || member.status !== "active") continue;
         // Exclude memberships that already have a newer term (renewed)
         const hasNewerTerm = this.db.memberships.some((m) => m.previousMembershipId === record.id);
         if (hasNewerTerm) continue;
-        if (query.bucket === "expired") {
-          if (status !== "expired" || daysUntil < -45) continue;
-        } else {
-          if (!(status === "expiring" || (status === "active" && daysUntil <= this.db.operationalPolicies.membership.renewalWindowDays))) continue;
-        }
+        if (fromDate || toDate) {
+          const lower = fromDate ?? (bucket === "expired" ? addDays(today, -requestedDays) : today);
+          const upper = toDate ?? (bucket === "expired" ? today : addDays(today, requestedDays));
+          if (bucket === "expired" ? !(daysUntil < 0 && record.endDate >= lower && record.endDate <= upper) : !(daysUntil >= 0 && record.endDate >= lower && record.endDate <= upper)) continue;
+        } else if (bucket === "expired" ? !(daysUntil < 0 && daysUntil >= -requestedDays) : !(daysUntil >= 0 && daysUntil <= requestedDays)) continue;
         const calls = this.db.activities.filter((a) => a.memberId === record.memberId && a.type === "call_attempt");
         const openTask = this.db.tasks.find((t) => t.memberId === record.memberId && t.status === "open" && t.type === "renewal_call");
         items.push({

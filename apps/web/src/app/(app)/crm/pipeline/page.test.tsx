@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeadSummary } from "@/lib/domain/types";
@@ -7,6 +7,7 @@ import PipelinePage from "./page";
 
 const state = vi.hoisted(() => ({
   queryKey: undefined as unknown,
+  mutation: undefined as ReturnType<typeof vi.fn> | undefined,
 }));
 
 const lead = {
@@ -26,6 +27,7 @@ const lead = {
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("@/lib/providers/app-providers", () => ({
@@ -41,6 +43,11 @@ vi.mock("@/lib/hooks/use-api", () => ({
     state.queryKey = queryKey;
     return { data: { items: [lead] }, isLoading: false, isError: false, refetch: vi.fn() };
   },
+  useApiMutation: () => {
+    state.mutation = vi.fn();
+    return { mutate: state.mutation, isPending: false };
+  },
+  useInvalidate: () => vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/api/client", () => ({
@@ -63,6 +70,7 @@ vi.mock("@/features/crm/new-lead-dialog", () => ({
 describe("CRM pipeline semantics", () => {
   beforeEach(() => {
     state.queryKey = undefined;
+    state.mutation = undefined;
     vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   });
 
@@ -74,12 +82,15 @@ describe("CRM pipeline semantics", () => {
       search: undefined,
       pageSize: 100,
       sort: "nextFollowUpAt",
-      stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"],
+      stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"],
     }));
     expect(screen.getByRole("group", { name: "Lead view" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("link", { name: "Pipeline Lead, new" })).toHaveAttribute("href", "/crm/leads/lead-1");
+    expect(screen.getByRole("link", { name: "Pipeline Lead, Trial" })).toHaveAttribute("href", "/crm/leads/lead-1");
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Membership sold" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Membership not sold" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Did not answer" })).toBeInTheDocument();
   });
 
   it("keeps the pressed state truthful when switching to list view", async () => {
@@ -89,5 +100,22 @@ describe("CRM pipeline semantics", () => {
     await user.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("moves a lead through the outcome columns with native drag and drop", () => {
+    render(<PipelinePage />);
+
+    const card = screen.getByRole("link", { name: "Pipeline Lead, Trial" });
+    const target = screen.getByRole("region", { name: "Membership not sold" });
+    const dataTransfer = {
+      effectAllowed: "",
+      setData: vi.fn(),
+      getData: vi.fn(() => "lead-1"),
+    };
+
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+
+    expect(state.mutation).toHaveBeenCalledWith({ lead, target: "not_sold" });
   });
 });

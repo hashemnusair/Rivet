@@ -23,10 +23,10 @@ test.describe("staged personal training", () => {
 
     try {
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
-      const welcome = await member.getByRole("heading", { name: /Welcome back,/ }).innerText();
-      const customerName = welcome.match(/^Welcome back, (.+)\.$/)?.[1]?.trim();
+      const customerName = (await member.getByRole("heading", { name: /^Hi,/ }).innerText()).replace(/^Hi,\s*/, "").trim();
       expect(customerName, "The PT staging member must resolve to a named member profile.").toBeTruthy();
-      await member.getByRole("link", { name: "PT sessions" }).first().click();
+      await member.getByRole("link", { name: /Forge Fitness Club/ }).first().click();
+      await member.getByRole("tab", { name: "PT", exact: true }).click();
       await expect(member.getByRole("tabpanel", { name: "Personal training" })).toBeVisible();
 
       const availableStat = member.getByText("Available sessions", { exact: true }).locator("..");

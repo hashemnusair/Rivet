@@ -107,6 +107,8 @@ describe("platform subscription controls", () => {
     const replied = await api.replyToPlatformSupportCase(supportCase.id, "We are reviewing the device logs.");
     expect(replied).toMatchObject({ status: "waiting", messages: [{ authorType: "gym" }, { authorType: "platform", body: "We are reviewing the device logs." }] });
     await api.switchDemoRole("receptionist");
+    const gymReply = await api.replyToSupportCase(supportCase.id, "The device is still unavailable.");
+    expect(gymReply).toMatchObject({ status: "open", messages: [{ authorType: "gym" }, { authorType: "platform" }, { authorType: "gym", body: "The device is still unavailable." }] });
     const notifications = await api.listNotifications();
     expect(notifications).toEqual([expect.objectContaining({ kind: "support_reply", href: `/support?case=${supportCase.id}` })]);
     await expect(api.setNotificationRead(notifications[0]!.id, true)).resolves.toMatchObject({ readAt: expect.any(String) });
@@ -1103,6 +1105,16 @@ describe("CRM", () => {
     expect(done.outcome).toBe("Renewed for 3 months");
   });
 
+  it("filters renewal follow-ups by bounded days and exact dates", async () => {
+    const expiring = await api.listRenewalQueue({ bucket: "expiring", days: 7, pageSize: 100 });
+    expect(expiring.items.every((item) => item.daysUntilExpiry >= 0 && item.daysUntilExpiry <= 7)).toBe(true);
+    const expired = await api.listRenewalQueue({ bucket: "expired", days: 30, pageSize: 100 });
+    expect(expired.items.every((item) => item.daysUntilExpiry < 0 && item.daysUntilExpiry >= -30)).toBe(true);
+    const dateRange = await api.listRenewalQueue({ bucket: "expired", fromDate: addDays(todayISODate(), -365), toDate: todayISODate(), pageSize: 100 });
+    expect(dateRange.items.every((item) => item.membership.endDate < todayISODate())).toBe(true);
+    await expect(api.listRenewalQueue({ bucket: "expiring", days: 0 })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
   it("requires crm.write to work a lead", async () => {
     const leads = await api.listLeads({ pageSize: 5 });
     await api.switchDemoRole("receptionist");
@@ -1218,6 +1230,14 @@ describe("cash shifts and reconciliation", () => {
     const report = await api.getDailyReconciliation({ branchId, date: today });
     const summed = report.totalsByMethod.reduce((s, r) => s + r.payments.amount, 0);
     expect(report.totalCollected.amount).toBe(summed);
+  });
+});
+
+describe("PT catalog deletion", () => {
+  it("deletes an unused package but preserves packages referenced by orders", async () => {
+    const created = await api.upsertPtPackage({ name: "Unused 40", sessionCount: 40, totalPrice: money(500_000, "JOD"), validityDays: 90, branchAccess: "all", branchIds: [], status: "active" });
+    await expect(api.deletePtPackage(created.id, "Created in error")).resolves.toBeUndefined();
+    expect((await api.getPtWorkspace()).packages.some((item) => item.id === created.id)).toBe(false);
   });
 });
 

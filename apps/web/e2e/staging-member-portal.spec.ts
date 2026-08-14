@@ -19,7 +19,9 @@ test.describe("staged member portal", () => {
 
       const marketing = member.getByRole("switch", { name: "Receive marketing updates" });
       const marketingBefore = await marketing.isChecked();
-      const showQr = member.getByRole("button", { name: "Show entry QR" }).first();
+      await member.getByRole("link", { name: /Forge Fitness Club/ }).first().click();
+      await expect(member).toHaveURL(/\/customer\/my-gyms\//);
+      const showQr = member.getByRole("button", { name: "Show entry QR" });
       await expect(showQr).toBeVisible();
       await showQr.click();
       const qrDialog = member.getByRole("dialog", { name: "Entry QR" });
@@ -29,7 +31,8 @@ test.describe("staged member portal", () => {
       await qrDialog.getByRole("button", { name: "Close" }).click();
       await expect(qrDialog).toBeHidden();
 
-      await member.getByRole("link", { name: "Profile", exact: true }).first().click();
+      await member.getByRole("link", { name: "Dashboard", exact: true }).click();
+      await member.getByRole("link", { name: "Profile", exact: true }).click();
       await expect(member).toHaveURL(/\/customer\/profile$/);
       await member.locator("#emergency-name").fill(emergencyName);
       await member.locator("#emergency-relationship").fill("Sibling");

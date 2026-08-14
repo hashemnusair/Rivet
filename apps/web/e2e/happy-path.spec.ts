@@ -44,12 +44,12 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 
     // Selecting a row opens the work panel for that member.
     await firstRow.click();
-    const panel = page.getByTestId("queue-work-panel");
+    const panel = page.getByTestId("follow-up-panel");
     await expect(panel).toBeVisible();
     await expect(panel).toContainText(memberName);
 
     // ---- Open the member record (client-side nav keeps the mock tenant) ----
-    await panel.getByRole("link", { name: /^Open$/ }).click();
+    await panel.getByRole("link", { name: "Open member record" }).click();
     await expect(page).toHaveURL(/\/members\//);
 
     // ---- Renew -------------------------------------------------------------
@@ -71,7 +71,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await page.getByRole("button", { name: /Expiring/ }).click();
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await firstRow.click();
-    await page.getByTestId("queue-work-panel").getByRole("link", { name: /^Open$/ }).click();
+    await page.getByTestId("follow-up-panel").getByRole("link", { name: "Open member record" }).click();
     await expect(page).toHaveURL(/\/members\//);
 
     await page.getByRole("button", { name: "More actions" }).click();
@@ -235,7 +235,9 @@ test.describe("CRM lead capture", () => {
     await page.goto("/crm/pipeline");
     await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Trial" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Membership sale" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Membership sold" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Membership not sold" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Did not answer" })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Successful \d+$/, exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /^Not successful \d+$/, exact: true })).toHaveCount(0);
     const view = page.getByRole("group", { name: "Lead view" });

@@ -305,6 +305,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listSupportCases(): Promise<PlatformSupportCase[]> { return this.query("support.list"); }
   subscribeSupportCases(onValue: (cases: PlatformSupportCase[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("support.list", {}, onValue, onError); }
   createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase> { return this.mutate("support.create", input); }
+  replyToSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> { return this.mutate("support.reply", { caseId, body }); }
   resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.resolve", { caseId, resolutionSummary }); }
   reopenPlatformSupportCase(caseId: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.reopen", { caseId }); }
   assignPlatformSupportCase(caseId: string, assigneeId?: string): Promise<PlatformSupportCase> { return this.mutate("platform.support.assign", { caseId, assigneeId }); }
@@ -369,6 +370,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("customer.pt", { membershipId }, onValue, onError); }
   upsertPtTrainerProfile(input: T.UpsertPtTrainerProfileInput): Promise<T.PtTrainerProfile> { return this.mutate("pt.trainer.upsert", input); }
   upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> { return this.mutate("pt.package.upsert", input); }
+  deletePtPackage(packageId: T.UUID, reason: string): Promise<void> { return this.mutate("pt.package.delete", { packageId, reason }); }
   replacePtAvailability(input: T.ReplacePtAvailabilityInput): Promise<T.PtTrainerProfile> { return this.mutate("pt.availability.replace", input); }
   listPtAvailableSlots(input: { trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> { return this.query("pt.slots", input); }
   listCustomerPtAvailableSlots(input: { membershipId: T.UUID; trainerProfileId: T.UUID; branchId: T.UUID; from: T.ISODate; to: T.ISODate }): Promise<T.PtAvailableSlot[]> { return this.query("customer.pt.slots", input); }

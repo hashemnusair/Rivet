@@ -1,13 +1,13 @@
 "use client";
 
-import { LayoutList, Plus } from "lucide-react";
+import { GripVertical, LayoutList, Plus } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/api/keys";
 import { getApi } from "@/lib/api/client";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import type { LeadStage, LeadSummary } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
@@ -21,30 +21,40 @@ import { Monogram, Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
+import { toast } from "sonner";
 
-type SimpleSalesStage = "trial" | "membership";
-const SIMPLE_STAGES: Array<{ stage: SimpleSalesStage; label: string; hint: string }> = [
-  { stage: "trial", label: "Trial", hint: "Book, confirm, or complete the trial" },
-  { stage: "membership", label: "Membership sale", hint: "Complete the trial, then record the sale" },
+type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
+const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; label: string; hint: string }> = [
+  { column: "trial", label: "Trial", hint: "New leads and active trial work" },
+  { column: "sold", label: "Membership sold", hint: "Completed membership sales" },
+  { column: "not_sold", label: "Membership not sold", hint: "Closed without a membership" },
+  { column: "no_answer", label: "Did not answer", hint: "Contact attempts still unanswered" },
 ];
 
-function simpleStage(stage: LeadStage): SimpleSalesStage {
-  if (stage === "trial_completed" || stage === "offer_sent") return "membership";
+function pipelineColumn(lead: LeadSummary): PipelineColumn {
+  if (lead.stage === "won") return "sold";
+  if (lead.stage === "lost") return "not_sold";
+  if (lead.stage === "attempted") return "no_answer";
   return "trial";
 }
 
-// Closed outcomes remain available from the lead/member timeline, but the
-// working board should contain only records that still need staff action.
-const ACTIVE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"];
+const PIPELINE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
+
+function columnLabel(column: PipelineColumn): string {
+  return PIPELINE_COLUMNS.find((item) => item.column === column)?.label ?? column;
+}
 
 function PipelinePageInner() {
   const { session } = useApp();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const invalidate = useInvalidate();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
   const [view, setView] = useState<"board" | "list">("board");
+  const [dragOverColumn, setDragOverColumn] = useState<PipelineColumn>();
 
   // HTML5 drag-and-drop doesn't work on touchscreens — default small touch
   // devices to the list view (the board remains one tap away).
@@ -58,7 +68,7 @@ function PipelinePageInner() {
     () => ({ branchId: session?.activeBranchId, search: debounced || undefined, pageSize: 100, sort: "nextFollowUpAt" as const }),
     [session?.activeBranchId, debounced],
   );
-  const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: ACTIVE_LEAD_STAGES }), [query]);
+  const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
   const { data, isLoading, isError, refetch } = useApiQuery(leadQueryKey, (api) => api.listLeads(leadQuery), { refetchInterval: false });
 
@@ -97,25 +107,54 @@ function PipelinePageInner() {
     };
   }, [leadQuery, leadQueryKey, queryClient, refetch]);
 
-  // Keep the active-work boundary on the client as well as the API query. It
-  // prevents an older deployed backend (or a stale realtime snapshot) from
-  // putting closed outcomes back on the working board during rollout.
-  const leads = useMemo(() => (data?.items ?? []).filter((lead) => ACTIVE_LEAD_STAGES.includes(lead.stage)), [data]);
+  const leads = useMemo(() => data?.items ?? [], [data]);
   const byStage = useMemo(() => {
-    const map = new Map<SimpleSalesStage, LeadSummary[]>();
-    for (const stage of SIMPLE_STAGES) map.set(stage.stage, []);
+    const map = new Map<PipelineColumn, LeadSummary[]>();
+    for (const stage of PIPELINE_COLUMNS) map.set(stage.column, []);
     for (const lead of leads) {
-      map.get(simpleStage(lead.stage))?.push(lead);
+      map.get(pipelineColumn(lead))?.push(lead);
     }
     return map;
   }, [leads]);
+
+  const moveLead = useApiMutation((api, input: { lead: LeadSummary; target: PipelineColumn }) => {
+    const { lead, target } = input;
+    if (target === "sold") return Promise.reject(new Error("Open the lead to complete the membership sale."));
+    if (target === "not_sold") return api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost", notes: "Moved to Membership not sold from the pipeline." });
+    if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", stage: "attempted", notes: "Moved to Did not answer from the pipeline." });
+    return api.updateLead(lead.id, { stage: "contacted", lostReason: undefined });
+  }, {
+    onSuccess: async (_updated, input) => {
+      await invalidate();
+      setDragOverColumn(undefined);
+      toast.success(`${input.lead.fullName} moved to ${columnLabel(input.target)}.`);
+    },
+    onError: (error, input) => {
+      setDragOverColumn(undefined);
+      if (input.target === "sold") {
+        toast.error("Open the lead to complete and record the membership sale.");
+        router.push(`/crm/leads/${input.lead.id}`);
+      } else {
+        toast.error(error instanceof Error ? error.message : "The lead could not be moved.");
+      }
+    },
+  });
+
+  const dropLead = (leadId: string, target: PipelineColumn) => {
+    const lead = leads.find((item) => item.id === leadId);
+    if (!lead || pipelineColumn(lead) === target) {
+      setDragOverColumn(undefined);
+      return;
+    }
+    moveLead.mutate({ lead, target });
+  };
 
   return (
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
         eyebrow="Growth"
         title="Leads"
-        description="Work active trials and membership sales here. Closed outcomes stay in the lead and member history."
+        description="Drag leads between trial, sale outcomes, and unanswered contact work."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
@@ -149,8 +188,8 @@ function PipelinePageInner() {
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {SIMPLE_STAGES.map(({ stage }) => (
-            <Skeleton key={stage} className="h-64 w-full" />
+          {PIPELINE_COLUMNS.map(({ column }) => (
+            <Skeleton key={column} className="h-64 w-full" />
           ))}
         </div>
       ) : isError ? (
@@ -159,14 +198,17 @@ function PipelinePageInner() {
         <LeadListView leads={leads} />
       ) : (
         <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-4" data-testid="pipeline-board">
-          {SIMPLE_STAGES.map(({ stage, label, hint }) => {
-            const stageLeads = byStage.get(stage) ?? [];
+          {PIPELINE_COLUMNS.map(({ column, label, hint }) => {
+            const stageLeads = byStage.get(column) ?? [];
             const stageValue = stageLeads.reduce((s, l) => s + (l.expectedValue?.amount ?? 0), 0);
             return (
               <section
-                key={stage}
+                key={column}
                 aria-label={label}
-                className="flex w-64 shrink-0 flex-col rounded-lg border border-line bg-sunken/40"
+                onDragOver={(event) => { event.preventDefault(); setDragOverColumn(column); }}
+                onDragLeave={() => setDragOverColumn((current) => current === column ? undefined : current)}
+                onDrop={(event) => { event.preventDefault(); const leadId = event.dataTransfer.getData("text/lead-id"); if (leadId) dropLead(leadId, column); }}
+                className={cn("flex w-64 shrink-0 flex-col rounded-lg border bg-sunken/40 transition-colors", dragOverColumn === column ? "border-signal bg-signal-bg/20" : "border-line")}
               >
                 <header className="px-3 pb-2 pt-3">
                   <div className="flex items-baseline justify-between">
@@ -179,7 +221,7 @@ function PipelinePageInner() {
                 </header>
                 <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                   {stageLeads.map((lead) => (
-                    <LeadCard key={lead.id} lead={lead} />
+                    <LeadCard key={lead.id} lead={lead} column={column} />
                   ))}
                   {stageLeads.length === 0 ? (
                     <p className="rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[11.5px] text-ink-4">
@@ -198,14 +240,17 @@ function PipelinePageInner() {
   );
 }
 
-function LeadCard({ lead }: { lead: LeadSummary }) {
+function LeadCard({ lead, column }: { lead: LeadSummary; column: PipelineColumn }) {
   return (
     <Link
       href={`/crm/leads/${lead.id}`}
-      aria-label={`${lead.fullName}, ${lead.stage}`}
-      className="group block cursor-pointer rounded-md border border-line bg-surface p-2.5 transition-colors hover:border-line-3"
+      aria-label={`${lead.fullName}, ${columnLabel(column)}`}
+      draggable
+      onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/lead-id", lead.id); }}
+      className="group block cursor-grab rounded-md border border-line bg-surface p-2.5 transition-colors hover:border-line-3 active:cursor-grabbing"
     >
       <div className="flex items-start gap-2">
+        <GripVertical className="mt-0.5 size-4 shrink-0 text-ink-4" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium">{lead.fullName}</p>
           <p className="font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</p>
@@ -252,7 +297,7 @@ function LeadListView({ leads }: { leads: LeadSummary[] }) {
                   </Link>
                   <span className="block whitespace-nowrap font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] capitalize">{simpleStage(lead.stage).replace(/_/g, " ")}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{columnLabel(pipelineColumn(lead))}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{LEAD_SOURCE_LABELS[lead.source]}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>

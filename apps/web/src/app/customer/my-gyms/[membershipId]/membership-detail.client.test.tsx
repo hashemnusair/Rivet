@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS } from "@/lib/public/experience-data";
 import MembershipDetailClient from "./membership-detail.client";
@@ -21,10 +22,16 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 }));
 
 describe("member visit history", () => {
-  it("shows the signed-in member's check-in dates, times, branch and member name", () => {
+  it("keeps recent activity collapsed until the member opens it", async () => {
     const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const user = userEvent.setup();
     render(<MembershipDetailClient membershipId={membership.id} />);
 
+    expect(screen.getByText("Recent activity")).toBeInTheDocument();
+    const activity = screen.getByText("Recent activity").closest("details");
+    expect(activity).not.toHaveAttribute("open");
+    await user.click(screen.getByText("Recent activity"));
+    expect(activity).toHaveAttribute("open");
     expect(screen.getByRole("heading", { name: /visit history/i })).toBeInTheDocument();
     expect(screen.getByText("Thu · 30 Jul 2026")).toBeInTheDocument();
     expect(screen.getByText(/19:12 · Forge — Abdoun/)).toBeInTheDocument();

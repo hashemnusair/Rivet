@@ -52,6 +52,23 @@ describe("exported Convex support workflow", () => {
     expect(await ownerB.query(api.domain.query, operation("support.list"))).toEqual([]);
   });
 
+  it("supports two-way gym replies until the platform resolves the case", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-a" });
+    const otherReceptionist = t.withIdentity({ subject: "clerk-reception-a-2" });
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const created = await owner.mutation(api.domain.mutate, operation("support.create", { email: "owner@gym-a.example", subject: "Two-way chat", body: "The front desk needs help.", priority: "normal" })) as SupportCaseResult;
+
+    const replied = await owner.mutation(api.domain.mutate, operation("support.reply", { caseId: created.id, body: "We have attached the latest error details." })) as SupportCaseResult;
+    expect(replied).toMatchObject({ status: "open", messages: [{ authorType: "gym" }, { authorType: "gym", body: "We have attached the latest error details." }] });
+    expect((await platform.query(api.domain.query, operation("notifications.list")) as NotificationResult[])).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "support_case_created" }), expect.objectContaining({ kind: "support_gym_reply", href: `/platform/support?case=${created.id}` })]));
+    await expectCode(otherReceptionist.mutation(api.domain.mutate, operation("support.reply", { caseId: created.id, body: "This user did not create the case." })), "NOT_FOUND");
+
+    await platform.mutation(api.domain.mutate, operation("platform.support.resolve", { caseId: created.id, resolutionSummary: "Issue resolved." }));
+    await expectCode(owner.mutation(api.domain.mutate, operation("support.reply", { caseId: created.id, body: "One more question." })), "VALIDATION_ERROR");
+  });
+
   it("persists append-only platform replies, assignment, resolution, and reopen history", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

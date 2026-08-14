@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, CreditCard, Dumbbell, MapPin, Phone, QrCode, ScanLine, Ticket } from "lucide-react";
+import { ArrowLeft, CalendarDays, CreditCard, Dumbbell, MapPin, QrCode, ScanLine, Ticket } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -106,67 +106,23 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="signal" disabled>Online renewal not available</Button>
-          <Button asChild variant="secondary">
-            <Link href={`/customer/gyms/${gym.id}`}>Gym page</Link>
-          </Button>
-        </div>
+        <Button onClick={() => void openQr()}><QrCode /> Show entry QR</Button>
       </div>
 
       <div className="mt-5 flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label={`${gym.name} account sections`}>
-        <button type="button" role="tab" aria-selected={tab === "membership"} onClick={() => setTab("membership")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "membership" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>Membership</button>
-        <button type="button" role="tab" aria-selected={tab === "pt"} onClick={() => setTab("pt")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "pt" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><Dumbbell className="size-3.5" /> Personal training</button>
+        <button type="button" role="tab" aria-selected={tab === "membership"} onClick={() => setTab("membership")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "membership" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>Membership details</button>
+        <button type="button" role="tab" aria-selected={tab === "pt"} onClick={() => setTab("pt")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "pt" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><Dumbbell className="size-3.5" /> PT</button>
       </div>
 
-      {tab === "membership" ? <div className="mt-5 grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="night-surface overflow-hidden rounded-lg bg-night text-night-ink">
-          <div className="border-b border-night-line px-4 py-2.5"><p className="eyebrow-night">Entry pass</p></div>
-          <div className="p-4"><div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-night-line bg-night-2 px-4 text-center"><QrCode className="size-9 text-night-ink-3" /><p className="mt-3 text-[13px] font-medium">Show your entry QR when you arrive</p><p className="mt-1 text-[11.5px] text-night-ink-3">It is generated only when you open it and expires shortly after.</p><Button className="mt-4" onClick={() => void openQr()}><QrCode /> Show entry QR</Button></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-0.5 text-[11.5px] text-night-ink-3">{branch.name}</p></div>
+      {tab === "membership" ? <div className="mt-5 space-y-5">
+        <div className="rounded-lg border border-line bg-surface p-4">
+          <div className="flex items-baseline justify-between text-[12.5px]"><span className="text-ink-3">{formatDate(membership.startDate)}</span><span className={cn("font-medium", daysLeft <= 14 ? "text-warning-deep" : "text-ink-2")}>{daysLeft} days left</span><span className="text-ink-3">{formatDate(membership.endDate)}</span></div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className={cn("h-full rounded-full", daysLeft <= 14 ? "bg-warning" : "bg-ink")} style={{ width: `${Math.round((elapsed / total) * 100)}%` }} /></div>
         </div>
-
-        <div className="min-w-0 space-y-5">
-          <div className="rounded-lg border border-line bg-surface p-4">
-            <div className="flex items-baseline justify-between text-[12.5px]">
-              <span className="text-ink-3">{formatDate(membership.startDate)}</span>
-              <span className={cn("font-medium", daysLeft <= 14 ? "text-warning-deep" : "text-ink-2")}>{daysLeft} days left</span>
-              <span className="text-ink-3">{formatDate(membership.endDate)}</span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken-2">
-              <div
-                className={cn("h-full rounded-full", daysLeft <= 14 ? "bg-warning" : "bg-ink")}
-                style={{ width: `${Math.round((elapsed / total) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
-            <Stat icon={<Ticket />} label="Plan" value={membership.planName} />
-            <Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} />
-            <Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} />
-            <Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} />
-          </div>
-
-          <div className="rounded-lg border border-line bg-surface">
-            <p className="eyebrow border-b border-line px-4 py-2.5">Activity</p>
-            <ul className="divide-y divide-line">
-              <Row title="Last check-in" detail={membership.lastCheckInAt ? `${branch.name} · ${formatDateTime(membership.lastCheckInAt)}` : "No visits recorded yet"} />
-              <Row title="Membership started" detail={formatDate(membership.startDate)} />
-              <Row title="Renewal due" detail={`${formatDate(membership.endDate)} · ${daysLeft} days`} />
-            </ul>
-          </div>
-
-          <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
-
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3">
-            <Phone className="size-4 text-ink-3" aria-hidden />
-            <p className="flex-1 text-[12.5px] text-ink-2">Questions about this membership? The gym front desk can freeze, transfer, or renew it.</p>
-            <Button asChild size="sm" variant="secondary">
-              <Link href={`/customer/gyms/${gym.id}`}>Contact {gym.shortName}</Link>
-            </Button>
-          </div>
-        </div>
+        <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
+        <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch.name}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
+      <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
     </main>
   );
@@ -230,8 +186,9 @@ function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
 }
 
 function ActivityHistory({ membership, visits }: { membership: CustomerMembership; visits: CustomerVisit[] }) {
-  if (!membership.activity?.length) return <VisitHistory visits={visits} />;
-  return <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="activity-history-title"><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5"><h2 id="activity-history-title" className="eyebrow">Activity history</h2><span className="text-[11px] tabular text-ink-3">{membership.activity.length} recorded</span></header><ol className="divide-y divide-line">{membership.activity.map((item) => <li key={item.id} className="px-4 py-3"><p className="text-[13px] font-medium">{item.title}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{item.detail ? `${item.detail} · ` : ""}{formatDateTime(item.occurredAt)}</p></li>)}</ol></section>;
+  const activity = membership.activity ?? [];
+  const count = activity.length || visits.length;
+  return <details className="overflow-hidden rounded-lg border border-line bg-surface"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[13px] font-semibold"><span>Recent activity</span><span className="font-mono text-[10.5px] font-normal text-ink-3">{count} recorded</span></summary><div className="border-t border-line">{activity.length ? <ol className="divide-y divide-line">{activity.map((item) => <li key={item.id} className="px-4 py-3"><p className="text-[13px] font-medium">{item.title}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{item.detail ? `${item.detail} · ` : ""}{formatDateTime(item.occurredAt)}</p></li>)}</ol> : <VisitHistory visits={visits} />}</div></details>;
 }
 
 function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId: string; gymName: string; branchNames: Map<string, string> }) {
@@ -314,14 +271,5 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
       </p>
       <p className="mt-2 truncate text-[15px] font-semibold">{value}</p>
     </div>
-  );
-}
-
-function Row({ title, detail }: { title: string; detail: string }) {
-  return (
-    <li className="px-4 py-3">
-      <p className="text-[13px] font-medium">{title}</p>
-      <p className="mt-0.5 text-[12px] text-ink-3">{detail}</p>
-    </li>
   );
 }

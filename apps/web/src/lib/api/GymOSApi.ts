@@ -131,6 +131,11 @@ export interface TaskListQuery extends ListQuery {
 export interface RenewalQueueQuery extends ListQuery {
   branchId?: UUID;
   bucket?: "expiring" | "expired";
+  /** Maximum number of days to look forward/back from the tenant-local today. */
+  days?: number;
+  /** Optional inclusive end-date range. The server caps this to the previous year. */
+  fromDate?: ISODate;
+  toDate?: ISODate;
 }
 
 export interface RecentCheckInQuery extends ListQuery {
@@ -649,6 +654,7 @@ export interface GymOSApi {
   listSupportCases(): Promise<PlatformSupportCase[]>;
   subscribeSupportCases(onValue: (cases: PlatformSupportCase[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase>;
+  replyToSupportCase(caseId: string, body: string): Promise<PlatformSupportCase>;
   resolvePlatformSupportCase(caseId: string, resolutionSummary: string): Promise<PlatformSupportCase>;
   reopenPlatformSupportCase(caseId: string): Promise<PlatformSupportCase>;
   assignPlatformSupportCase(caseId: string, assigneeId?: string): Promise<PlatformSupportCase>;
@@ -701,6 +707,7 @@ export interface GymOSApi {
   subscribeCustomerPtExperience(membershipId: UUID, onValue: (experience: import("@/lib/domain/types").PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
   upsertPtTrainerProfile(input: import("@/lib/domain/types").UpsertPtTrainerProfileInput): Promise<import("@/lib/domain/types").PtTrainerProfile>;
   upsertPtPackage(input: import("@/lib/domain/types").UpsertPtPackageInput): Promise<import("@/lib/domain/types").PtPackage>;
+  deletePtPackage(packageId: UUID, reason: string): Promise<void>;
   replacePtAvailability(input: import("@/lib/domain/types").ReplacePtAvailabilityInput): Promise<import("@/lib/domain/types").PtTrainerProfile>;
   listPtAvailableSlots(input: { trainerProfileId: UUID; branchId: UUID; from: ISODate; to: ISODate }): Promise<import("@/lib/domain/types").PtAvailableSlot[]>;
   listCustomerPtAvailableSlots(input: { membershipId: UUID; trainerProfileId: UUID; branchId: UUID; from: ISODate; to: ISODate }): Promise<import("@/lib/domain/types").PtAvailableSlot[]>;
