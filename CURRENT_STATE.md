@@ -2,6 +2,16 @@
 
 Updated 2026-08-15 after the production read-usage hardening release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## CRM read-path and realtime responsiveness — direct-main release
+
+- Direct-main release commit `c4d8ee06ead649b45b15b977af0d62b956a1225c` is pushed to `main` and `origin/main`. The final partner fetch found no advancement; no branch or PR was created, `FRONTEND_HANDOFF.md` remains frozen, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.
+- Branch-scoped member, membership, lead, check-in, occupancy, and renewal reads now use the existing indexed `domainRecords` paths. Member, membership, task, transaction, and renewal projections batch shared lookups instead of repeating full collection reads per row. Customer activity uses the existing member index, and the test fixture now reflects the production `insertRecord` contract.
+- Native Convex watches now own their initial snapshot instead of issuing a duplicate ordinary query. Reception occupancy and shift totals, plus the CRM pipeline, use the shared live-query bridge; ordinary query fallback remains available only after a stream failure, with the last good snapshot preserved.
+- Local verification passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (85 files / 464 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 staging-gated skips), and `git diff --check`.
+- Convex Production target `descriptive-meerkat-589` passed the exact-target, non-verbose dry run and deploy through `pnpm convex:deploy`. Both reported no deleted indexes and schema validation completed; this release has no `schema.ts` delta and no destructive migration. Read-only `health:check` returned `status: ok`; the read-only recent-log history returned no post-deploy events.
+- GitHub Actions [run 31896227309](https://github.com/hashemnusair/Rivet/actions/runs/31896227309) passed typecheck/lint/unit tests/build, generated-code consistency, and Playwright preview. The authenticated Clerk → Convex smoke remained credential-gated/skipped. GitHub’s Vercel status reports the exact Production deployment [5LQi669RfXf14jyLKGqQ6jZCz5Lv](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/5LQi669RfXf14jyLKGqQ6jZCz5Lv) completed successfully; `https://www.rivetjo.com` returned HTTP 200.
+- No Production seed, import, restore, delete, product-data mutation, or live operational-email activation was performed. Continue observing Production Convex I/O and function-call usage for 24–48 hours before claiming a measured usage reduction. The five credential-gated staging bodies still remaining are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
+
 ## Production read-usage hardening — direct-main release
 
 - Direct-main frontend release commit `cb2b73abef0eccaaf7c2b9ae79067265d501910e` is pushed to `main` and `origin/main`. The final fetch found no partner advancement; no branch or PR was created, `FRONTEND_HANDOFF.md` remains frozen, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.

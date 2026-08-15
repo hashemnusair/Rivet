@@ -2,6 +2,17 @@
 
 Updated 15 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
+## CRM read-path and realtime responsiveness — 15 August 2026
+
+- [x] Released `c4d8ee06ead649b45b15b977af0d62b956a1225c` directly to `main` after the final partner fetch found no advancement. The frozen frontend handoff and modular product plan were preserved.
+- [x] Reused existing `domainRecords` indexes for branch-scoped CRM/reception reads and member activity, and batched member, membership, task, transaction, and renewal projection lookups to remove repeated full-collection/N+1 work.
+- [x] Removed the duplicate Convex startup query from native watches and moved reception occupancy/shift totals plus the CRM pipeline onto the shared realtime bridge with failure-only fallback polling.
+- [x] Passed local gates: both typechecks, Convex codegen, zero-warning lint, 85 test files / 464 tests, 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
+- [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy. Schema validation passed, no indexes were deleted, the release has no `schema.ts` delta or destructive migration, and read-only `health:check` returned `status: ok`. The recent read-only log history had no post-deploy events.
+- [x] GitHub Actions [31896227309](https://github.com/hashemnusair/Rivet/actions/runs/31896227309) passed static checks, generated-code verification, unit tests/build, and preview Playwright. The authenticated smoke was credential-gated/skipped. Vercel’s exact Production deployment [5LQi669RfXf14jyLKGqQ6jZCz5Lv](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/5LQi669RfXf14jyLKGqQ6jZCz5Lv) completed, and the canonical site returned HTTP 200.
+- [ ] Observe Production Convex Database I/O and function-call usage for 24–48 hours and record the before/after trend; do not claim a measured reduction from code inspection alone.
+- [ ] Complete credentialed isolated-staging execution and cleanup evidence for the five remaining bodies: `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`. No Production seed/import/restore/delete, product-data mutation, or live-operational email activation was performed.
+
 ## Production read-usage hardening — 15 August 2026
 
 - [x] Released `cb2b73abef0eccaaf7c2b9ae79067265d501910e` directly to `main`, replacing broad 15-second background query polling with focus/reconnect refreshes for one-shot screens and preserving CRM/reception realtime subscriptions.
