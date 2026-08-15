@@ -646,6 +646,22 @@ async function recordsOf(ctx: ReadContext, actor: ActorContext, entityType: stri
   return records.filter((record) => !record.branchId || actor.branchIds.includes(record.branchId));
 }
 
+async function recordsOfBranch(ctx: ReadContext, actor: ActorContext, entityType: string, branchPublicId: string): Promise<DomainRecord[]> {
+  const branch = await branchByPublicId(ctx, actor.organization._id, branchPublicId);
+  assertBranchAccess(actor, branch);
+  return await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_branch_type", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("entityType", entityType))
+    .collect();
+}
+
+async function recordsOfMember(ctx: ReadContext, organizationId: Id<"organizations">, memberPublicId: string, entityType: string): Promise<DomainRecord[]> {
+  return await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_member_type", (q) => q.eq("organizationId", organizationId).eq("memberPublicId", memberPublicId).eq("entityType", entityType))
+    .collect();
+}
+
 async function recordOf(ctx: ReadContext, actor: ActorContext, entityType: string, id: string): Promise<DomainRecord> {
   const record = await ctx.db
     .query("domainRecords")
@@ -1050,17 +1066,15 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
     list.push(charge);
     chargesByMember.set(memberId, list);
   }
-  const checkInsByMember = new Map<string, Data[]>();
+  const lastCheckInByMember = new Map<string, string>();
   for (const record of checkIns) {
     const checkIn = data(record.data);
     if (checkIn.decision === "blocked") continue;
     const memberId = optionalString(checkIn.memberId);
     if (!memberId) continue;
-    const list = checkInsByMember.get(memberId) ?? [];
-    list.push(checkIn);
-    checkInsByMember.set(memberId, list);
+    const occurredAt = optionalString(checkIn.occurredAt);
+    if (occurredAt && (!lastCheckInByMember.has(memberId) || occurredAt > lastCheckInByMember.get(memberId)!)) lastCheckInByMember.set(memberId, occurredAt);
   }
-  for (const list of checkInsByMember.values()) list.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
   return values.map((value) => {
     const memberId = stringValue(value.id);
     const terms = membershipsByMember.get(memberId) ?? [];
@@ -1069,7 +1083,6 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
       .sort((left, right) => (rank[left.status] ?? 5) - (rank[right.status] ?? 5) || stringValue(right.candidate.endDate).localeCompare(stringValue(left.candidate.endDate)))[0]?.candidate;
     const plan = membership ? plansById.get(stringValue(membership.planId)) : undefined;
     const outstanding = (chargesByMember.get(memberId) ?? []).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
-    const checkInsForMember = checkInsByMember.get(memberId) ?? [];
     return {
       id: memberId,
       memberNumber: stringValue(value.memberNumber),
@@ -1087,7 +1100,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
       outstandingCharges: (chargesByMember.get(memberId) ?? [])
         .filter((charge) => collectibleOutstandingValue(charge, today) > 0)
         .map((charge) => chargeProjection(charge, today)),
-      lastCheckInAt: checkInsForMember[0] ? optionalString(checkInsForMember[0].occurredAt) : undefined,
+      lastCheckInAt: lastCheckInByMember.get(memberId),
       createdAt: stringValue(value.createdAt, isoNow()),
     };
   });
@@ -1202,6 +1215,58 @@ async function toMembershipSummary(ctx: ReadContext, actor: ActorContext, value:
   };
 }
 
+/**
+ * Membership lists are a hot path for finance and renewal work. Keep the
+ * public response identical to toMembershipSummary, but load shared member,
+ * plan, charge, and branch records once instead of re-reading the full charge
+ * collection for every membership row.
+ */
+async function toMembershipSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
+  const [members, plans, charges, branches] = await Promise.all([
+    memberRecords(ctx, actor),
+    recordsOf(ctx, actor, "plan"),
+    chargeRecords(ctx, actor),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+  ]);
+  const membersById = new Map(members.map((record) => [record.publicId, data(record.data)]));
+  const plansById = new Map(plans.map((record) => [record.publicId, data(record.data)]));
+  const chargesByMembership = new Map<string, Data>();
+  for (const record of charges) {
+    const charge = data(record.data);
+    const membershipId = optionalString(charge.membershipId);
+    if (membershipId && !chargesByMembership.has(membershipId)) chargesByMembership.set(membershipId, charge);
+  }
+  const branchesById = new Map(branches.map((branch) => [publicBranchId(branch), branch]));
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  return values.map((value) => {
+    const member = membersById.get(stringValue(value.memberId));
+    const plan = plansById.get(stringValue(value.planId));
+    const branch = branchesById.get(stringValue(value.homeBranchId));
+    const charge = chargesByMembership.get(stringValue(value.id));
+    const status = statusOfMembership(value, today);
+    const paid = amountOf(charge?.paidAmount);
+    const total = amountOf(charge?.total);
+    const membership = {
+      ...value,
+      status,
+      paymentStatus: charge?.status ?? (total === paid && total > 0 ? "paid" : "unpaid"),
+      salePrice: { ...data(value.salePrice), currency: currencyOf(value.salePrice, actor.organization.currency) },
+      discount: { ...data(value.discount), currency: currencyOf(value.discount, actor.organization.currency) },
+    };
+    const projectedCharge = charge ? chargeProjection(charge, today) : undefined;
+    return {
+      ...membership,
+      memberName: member ? stringValue(member.fullName) : "Unknown member",
+      memberNumber: member ? stringValue(member.memberNumber) : "—",
+      planName: plan ? stringValue(plan.name) : "Unknown plan",
+      branchName: branch?.name ?? "—",
+      planFreezeAllowanceDays: plan ? numberValue(plan.freezeAllowanceDays) : 0,
+      outstanding: money(projectedCharge ? collectibleOutstandingValue(projectedCharge, today) : 0, actor.organization.currency),
+      upcomingAmount: money(projectedCharge && !projectedCharge.collectible && !["void", "refunded"].includes(stringValue(projectedCharge.status)) ? amountOf(projectedCharge.outstandingAmount) : 0, actor.organization.currency),
+    };
+  });
+}
+
 async function toMembershipDetail(ctx: MutationCtx | QueryCtx, actor: ActorContext, value: Data): Promise<Data> {
   const memberRecord = await recordOf(ctx, actor, "member", stringValue(value.memberId));
   const planRecord = await recordOf(ctx, actor, "plan", stringValue(value.planId));
@@ -1304,15 +1369,40 @@ async function toTask(ctx: ReadContext, actor: ActorContext, value: Data): Promi
   };
 }
 
-async function toTransaction(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
-  const member = await recordOfOptional(ctx, actor, "member", stringValue(value.memberId));
-  const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(value.branchId));
-  return {
+async function toTaskSummaries(ctx: ReadContext, actor: ActorContext, values: Data[], leads: Data[], members: Data[]): Promise<Data[]> {
+  const [users, memberships] = await Promise.all([
+    ctx.db.query("users").collect(),
+    ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+  ]);
+  const activeUserIds = new Set(memberships.filter((membership) => membership.active).map((membership) => String(membership.userId)));
+  const ownersById = new Map(users.filter((user) => activeUserIds.has(String(user._id))).map((user) => [publicUserId(user), user.fullName]));
+  const subjectsById = new Map([
+    ...leads.map((record) => [record.id, stringValue(record.fullName)] as const),
+    ...members.map((record) => [record.id, stringValue(record.fullName)] as const),
+  ]);
+  return values.map((value) => ({
     ...value,
-    memberName: member ? stringValue(data(member.data).fullName) : "—",
-    memberNumber: member ? stringValue(data(member.data).memberNumber) : "—",
-    branchName: branch?.name ?? "—",
-  };
+    ownerName: optionalString(value.ownerId) ? ownersById.get(stringValue(value.ownerId)) ?? "Unassigned" : "Unassigned",
+    subjectName: subjectsById.get(stringValue(optionalString(value.leadId) ?? optionalString(value.memberId))) ?? stringValue(value.subjectName, "—"),
+  }));
+}
+
+async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
+  const [members, branches] = await Promise.all([
+    memberRecords(ctx, actor),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+  ]);
+  const membersById = new Map(members.map((record) => [record.publicId, data(record.data)]));
+  const branchesById = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  return values.map((value) => {
+    const member = membersById.get(stringValue(value.memberId));
+    return {
+      ...value,
+      memberName: member ? stringValue(member.fullName) : "—",
+      memberNumber: member ? stringValue(member.memberNumber) : "—",
+      branchName: branchesById.get(stringValue(value.branchId)) ?? "—",
+    };
+  });
 }
 
 async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: string): Promise<Data> {
@@ -1809,16 +1899,16 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     const membership = data(membershipRecord.data);
     const member = memberRecord ? data(memberRecord.data) : {};
     const timezone = tenant.timezone || TZ_FALLBACK;
+    const memberId = optionalString(member.id) ?? optionalString(membership.memberId) ?? stringValue(projection.memberId);
     const [planRecord, checkIns, charges, timelineRows, paymentRows] = await Promise.all([
       optionalString(membership.planId)
         ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", tenant._id).eq("entityType", "plan").eq("publicId", stringValue(membership.planId))).unique()
         : Promise.resolve(null),
-      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "checkIn")).collect(),
-      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "charge")).collect(),
-      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "timeline")).collect(),
-      ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", tenant._id).eq("entityType", "payment")).collect(),
+      recordsOfMember(ctx, tenant._id, memberId, "checkIn"),
+      recordsOfMember(ctx, tenant._id, memberId, "charge"),
+      recordsOfMember(ctx, tenant._id, memberId, "timeline"),
+      recordsOfMember(ctx, tenant._id, memberId, "payment"),
     ]);
-    const memberId = optionalString(member.id) ?? optionalString(membership.memberId) ?? stringValue(projection.memberId);
     const validCheckIns = checkIns.map((row) => data(row.data)).filter((item) => item.memberId === memberId && item.decision !== "blocked").sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
     const month = todayIn(timezone).slice(0, 7);
     const balanceMinor = charges.map((row) => data(row.data)).filter((item) => item.memberId === memberId).reduce((sum, item) => sum + collectibleOutstandingValue(item, todayIn(timezone)), 0);
@@ -2995,14 +3085,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "members.list": {
       requirePermission(actor, "members.read");
       const branchId = optionalString(input.branchId);
-      if (branchId) {
-        const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
-        assertBranchAccess(actor, branch);
-      }
-      const records = await memberRecords(ctx, actor);
-      let items = await toMemberSummaries(ctx, actor, records.map((record) => data(record.data)));
-      if (branchId) items = items.filter((member) => member.homeBranchId === branchId);
-      if (input.status) items = items.filter((member) => member.status === input.status);
+      const records = branchId ? await recordsOfBranch(ctx, actor, "member", branchId) : await memberRecords(ctx, actor);
+      let candidateValues = records.map((record) => data(record.data));
+      if (branchId) candidateValues = candidateValues.filter((member) => member.homeBranchId === branchId);
+      if (input.status) candidateValues = candidateValues.filter((member) => stringValue(member.status, "active") === input.status);
+      candidateValues = candidateValues.filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.phone, member.memberNumber, member.email], optionalString(input.search)));
+      let items = await toMemberSummaries(ctx, actor, candidateValues);
       if (input.planId) {
         const memberships = await membershipRecords(ctx, actor);
         const memberIds = memberships.map((record) => data(record.data)).filter((membership) => membership.planId === input.planId).map((membership) => membership.memberId);
@@ -3012,7 +3100,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         if (input.membershipStatus === "outstanding") items = items.filter((member) => amountOf(member.outstanding) > 0);
         else items = items.filter((member) => member.membershipStatus === input.membershipStatus);
       }
-      items = items.filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.phone, member.memberNumber, member.email], optionalString(input.search)));
       items = sortRecords(items, input.sort ?? "fullName", (member, key) => key === "outstanding" ? amountOf(member.outstanding) : stringValue(member[key]));
       return page(items, input);
     }
@@ -3052,8 +3139,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "memberships.list": {
       requirePermission(actor, "members.read");
       const branchId = optionalString(input.branchId);
-      if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      let items = await Promise.all((await membershipRecords(ctx, actor)).map((record) => toMembershipSummary(ctx, actor, data(record.data))));
+      const membershipRows = branchId ? await recordsOfBranch(ctx, actor, "membership", branchId) : await membershipRecords(ctx, actor);
+      let items = await toMembershipSummaries(ctx, actor, membershipRows.map((record) => data(record.data)));
       if (branchId) items = items.filter((membership) => membership.homeBranchId === branchId);
       if (input.memberId) items = items.filter((membership) => membership.memberId === input.memberId);
       if (input.status) items = items.filter((membership) => membership.status === input.status);
@@ -3070,7 +3157,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "leads.list": {
       requirePermission(actor, "crm.read");
       const [leadRecords, memberRecordsForLeads] = await Promise.all([
-        recordsOf(ctx, actor, "lead"),
+        input.branchId ? recordsOfBranch(ctx, actor, "lead", stringValue(input.branchId)) : recordsOf(ctx, actor, "lead"),
         recordsOf(ctx, actor, "member"),
       ]);
       // A converted lead is no longer actionable. In particular, do not let
@@ -3088,8 +3175,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       // queues normally request only a few open stages, so this avoids mapping
       // converted/irrelevant records just to discard them afterwards.
       if (input.branchId) {
-        const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(input.branchId));
-        assertBranchAccess(actor, branch);
         visibleLeadRecords = visibleLeadRecords.filter((record) => stringValue(data(record.data).branchId) === stringValue(input.branchId));
       }
       if (input.stage) {
@@ -3149,7 +3234,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         }
         return true;
       });
-      let items = await Promise.all(visibleTaskRecords.map((record) => toTask(ctx, actor, data(record.data))));
+      let items = await toTaskSummaries(
+        ctx,
+        actor,
+        visibleTaskRecords.map((record) => data(record.data)),
+        leadRecords.map((record) => data(record.data)),
+        memberRecordsForTasks.map((record) => data(record.data)),
+      );
       if (input.status) items = items.filter((task) => task.status === input.status);
       if (input.ownerId) items = items.filter((task) => task.ownerId === input.ownerId);
       if (input.overdueOnly) items = items.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow());
@@ -3174,26 +3265,61 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (toDate && diffDays(addDays(today, -365), toDate) < 0) domainError("VALIDATION_ERROR", "Follow-up dates cannot be earlier than one year ago.", { correlationId: actor.correlationId });
       if (toDate && diffDays(today, toDate) > 365) domainError("VALIDATION_ERROR", "Follow-up dates cannot be more than one year ahead.", { correlationId: actor.correlationId });
       if (fromDate && toDate && diffDays(fromDate, toDate) < 0) domainError("VALIDATION_ERROR", "The follow-up start date must be before the end date.", { correlationId: actor.correlationId });
-      const items: Data[] = [];
-      const memberships = await membershipRecords(ctx, actor);
-      const memberRows = await memberRecords(ctx, actor);
-      const terms = memberships.map((record) => data(record.data));
-      for (const term of terms) {
-        const member = memberRows.map((record) => data(record.data)).find((item) => item.id === term.memberId);
-        if (!member || member.status !== "active") continue;
-        if (terms.some((other) => other.previousMembershipId === term.id)) continue;
+      const branchId = optionalString(input.branchId);
+      if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+      const [membershipRows, memberRows, timelineRows, taskRows] = await Promise.all([
+        branchId ? recordsOfBranch(ctx, actor, "membership", branchId) : membershipRecords(ctx, actor),
+        memberRecords(ctx, actor),
+        recordsOf(ctx, actor, "timeline"),
+        recordsOf(ctx, actor, "task"),
+      ]);
+      const terms = membershipRows.map((record) => data(record.data));
+      const members = memberRows.map((record) => data(record.data));
+      const membersById = new Map(members.map((member) => [member.id, member]));
+      const renewedMembershipIds = new Set(terms.map((term) => optionalString(term.previousMembershipId)).filter(Boolean));
+      const candidateTerms = terms.filter((term) => {
+        const member = membersById.get(term.memberId);
+        if (!member || member.status !== "active") return false;
+        if (branchId && term.homeBranchId !== branchId) return false;
+        if (renewedMembershipIds.has(term.id)) return false;
         const daysUntil = diffDays(today, stringValue(term.endDate));
         if (fromDate || toDate) {
           const lower = fromDate ?? (bucket === "expired" ? addDays(today, -requestedDays) : today);
           const upper = toDate ?? (bucket === "expired" ? today : addDays(today, requestedDays));
-          if (bucket === "expired" ? !(daysUntil < 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper) : !(daysUntil >= 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper)) continue;
-        } else if (bucket === "expired" ? !(daysUntil < 0 && daysUntil >= -requestedDays) : !(daysUntil >= 0 && daysUntil <= requestedDays)) continue;
-        const memberSummary = await toMemberSummary(ctx, actor, member);
-        const membershipSummary = await toMembershipSummary(ctx, actor, term);
-        const calls = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === member.id && event.type === "call_attempt").sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
-        const openTask = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data)).find((task) => task.memberId === member.id && task.status === "open" && task.type === "renewal_call");
-        items.push({ member: memberSummary, membership: membershipSummary, daysUntilExpiry: daysUntil, lastContactAt: calls[0]?.occurredAt, lastContactOutcome: optionalString(data(calls[0]?.meta).outcome), openTaskId: optionalString(openTask?.id) });
+          return bucket === "expired" ? daysUntil < 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper : daysUntil >= 0 && stringValue(term.endDate) >= lower && stringValue(term.endDate) <= upper;
+        }
+        return bucket === "expired" ? daysUntil < 0 && daysUntil >= -requestedDays : daysUntil >= 0 && daysUntil <= requestedDays;
+      });
+      const [memberSummaries, membershipSummaries] = await Promise.all([
+        toMemberSummaries(ctx, actor, members),
+        toMembershipSummaries(ctx, actor, candidateTerms),
+      ]);
+      const memberSummaryById = new Map(memberSummaries.map((member) => [member.id, member]));
+      const membershipSummaryById = new Map(membershipSummaries.map((membership) => [membership.id, membership]));
+      const callsByMember = new Map<string, Data[]>();
+      for (const record of timelineRows) {
+        const event = data(record.data);
+        if (event.type !== "call_attempt" || !event.memberId) continue;
+        const calls = callsByMember.get(event.memberId) ?? [];
+        calls.push(event);
+        callsByMember.set(event.memberId, calls);
       }
+      for (const calls of callsByMember.values()) calls.sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
+      const openTaskByMember = new Map<string, Data>();
+      for (const record of taskRows) {
+        const task = data(record.data);
+        if (task.status === "open" && task.type === "renewal_call" && task.memberId && !openTaskByMember.has(task.memberId)) openTaskByMember.set(task.memberId, task);
+      }
+      const items: Data[] = candidateTerms.flatMap((term) => {
+        const member = membersById.get(term.memberId);
+        const memberSummary = member ? memberSummaryById.get(member.id) : undefined;
+        const membershipSummary = membershipSummaryById.get(term.id);
+        if (!member || !memberSummary || !membershipSummary) return [];
+        const daysUntil = diffDays(today, stringValue(term.endDate));
+        const calls = callsByMember.get(member.id) ?? [];
+        const openTask = openTaskByMember.get(member.id);
+        return [{ member: memberSummary, membership: membershipSummary, daysUntilExpiry: daysUntil, lastContactAt: calls[0]?.occurredAt, lastContactOutcome: optionalString(data(calls[0]?.meta).outcome), openTaskId: optionalString(openTask?.id) }];
+      });
       items.sort((a, b) => numberValue(a.daysUntilExpiry) - numberValue(b.daysUntilExpiry));
       return page(items, input);
     }
@@ -3216,11 +3342,11 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "checkins.list": {
       requirePermission(actor, "members.read");
-      let items = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data));
-      if (input.branchId) {
-        assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, stringValue(input.branchId)));
-        items = items.filter((item) => item.branchId === input.branchId);
-      }
+      const checkInRecords = input.branchId
+        ? await recordsOfBranch(ctx, actor, "checkIn", stringValue(input.branchId))
+        : await recordsOf(ctx, actor, "checkIn");
+      let items = checkInRecords.map((record) => data(record.data));
+      if (input.branchId) items = items.filter((item) => item.branchId === input.branchId);
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.since) items = items.filter((item) => stringValue(item.occurredAt) >= stringValue(input.since));
       if (input.date) items = items.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK) === stringValue(input.date));
@@ -3234,14 +3360,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
       assertBranchAccess(actor, branch);
       const cutoff = Date.now() - 90 * 60_000;
-      const rows = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data)).filter((item) => item.branchId === branchId && item.decision !== "blocked");
+      const rows = (await recordsOfBranch(ctx, actor, "checkIn", branchId)).map((record) => data(record.data)).filter((item) => item.branchId === branchId && item.decision !== "blocked");
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const todayRows = rows.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today);
       return { branchId, current: rows.filter((item) => new Date(stringValue(item.occurredAt)).getTime() >= cutoff).length, capacity: branch.capacity ?? 120, checkInsToday: todayRows.length, peakHour: peakHour(todayRows, actor.organization.timezone || TZ_FALLBACK) };
     }
     case "transactions.list": {
       requirePermission(actor, "reports.financial.read");
-      let items = await Promise.all((await paymentRecords(ctx, actor)).map((record) => toTransaction(ctx, actor, data(record.data))));
+      let items = await toTransactionSummaries(ctx, actor, (await paymentRecords(ctx, actor)).map((record) => data(record.data)));
       if (input.branchId) items = items.filter((item) => item.branchId === input.branchId);
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.method) items = items.filter((item) => item.method === input.method);

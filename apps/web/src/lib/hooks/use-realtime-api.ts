@@ -3,6 +3,7 @@
 import { keepPreviousData, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getApi } from "@/lib/api/client";
+import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 
 type StreamState = "connecting" | "live" | "fallback";
 
@@ -22,6 +23,7 @@ export function useRealtimeApiQuery<T>(options: {
 }) {
   const enabled = options.enabled ?? true;
   const fallbackIntervalMs = options.fallbackIntervalMs ?? 15_000;
+  const convexMode = isConvexMode();
   const queryClient = useQueryClient();
   const [streamState, setStreamState] = useState<StreamState>("connecting");
   const subscribeRef = useRef(options.subscribe);
@@ -36,7 +38,12 @@ export function useRealtimeApiQuery<T>(options: {
   const query = useQuery<T, Error>({
     queryKey: options.queryKey,
     queryFn: () => queryRef.current(getApi()),
-    enabled,
+    // In Convex mode the watch owns the initial snapshot. Waiting for a
+    // failed stream before enabling the ordinary query removes a duplicate
+    // startup read while retaining a complete polling fallback. Mock mode
+    // keeps the ordinary query enabled because its test adapter may not emit
+    // an initial stream value.
+    enabled: enabled && (!convexMode || streamState === "fallback"),
     placeholderData: keepPreviousData,
     staleTime: 10_000,
     gcTime: 5 * 60_000,

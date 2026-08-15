@@ -182,6 +182,7 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       entityType,
       publicId,
       branchId,
+      memberPublicId: typeof value.memberId === "string" ? value.memberId : undefined,
       createdAt: now,
       updatedAt: now,
       data: { id: publicId, ...value },

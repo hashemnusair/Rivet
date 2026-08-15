@@ -205,11 +205,10 @@ export class ConvexGymOSApi implements GymOSApi {
       }
     });
 
-    try {
-      onValue(await this.query<T>(operation, input));
-    } catch (error) {
-      onError?.(error instanceof ApiError ? error : errorFromConvex(error));
-    }
+    // The watch delivers its initial snapshot through onUpdate. Calling the
+    // same domain query again here created a duplicate read for every live
+    // screen on the native Convex client. useRealtimeApiQuery enables its
+    // ordinary query only after the watch enters fallback.
     return stop;
   }
 

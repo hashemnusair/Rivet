@@ -39,10 +39,6 @@ vi.mock("@/lib/hooks/use-debounced", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
-  useApiQuery: (queryKey: unknown) => {
-    state.queryKey = queryKey;
-    return { data: { items: [lead] }, isLoading: false, isError: false, refetch: vi.fn() };
-  },
   useApiMutation: () => {
     state.mutation = vi.fn();
     return { mutate: state.mutation, isPending: false };
@@ -50,17 +46,11 @@ vi.mock("@/lib/hooks/use-api", () => ({
   useInvalidate: () => vi.fn(async () => undefined),
 }));
 
-vi.mock("@/lib/api/client", () => ({
-  getApi: () => ({
-    subscribeLeads: async (_query: unknown, onValue: (value: { items: LeadSummary[] }) => void) => {
-      onValue({ items: [lead] });
-      return () => undefined;
-    },
-  }),
-}));
-
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ setQueryData: vi.fn() }),
+vi.mock("@/lib/hooks/use-realtime-api", () => ({
+  useRealtimeApiQuery: (options: { queryKey: unknown }) => {
+    state.queryKey = options.queryKey;
+    return { data: { items: [lead] }, isLoading: false, isError: false, refetch: vi.fn() };
+  },
 }));
 
 vi.mock("@/features/crm/new-lead-dialog", () => ({

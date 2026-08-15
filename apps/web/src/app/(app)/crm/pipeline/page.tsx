@@ -4,10 +4,9 @@ import { GripVertical, LayoutList, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/api/keys";
-import { getApi } from "@/lib/api/client";
-import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import type { LeadStage, LeadSummary } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
@@ -48,7 +47,6 @@ function PipelinePageInner() {
   const { session } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
   const invalidate = useInvalidate();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
@@ -70,42 +68,12 @@ function PipelinePageInner() {
   );
   const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
-  const { data, isLoading, isError, refetch } = useApiQuery(leadQueryKey, (api) => api.listLeads(leadQuery), { refetchInterval: false });
-
-  // The pipeline is the first CRM surface on the native subscription path.
-  // Keep TanStack Query as the rendered cache so mutations and navigation use
-  // the same data contract while Convex pushes cross-tab lead/trial changes.
-  useEffect(() => {
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-    let fallbackTimer: number | undefined;
-    const stopFallback = () => {
-      if (fallbackTimer === undefined) return;
-      window.clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
-    };
-    const startFallback = () => {
-      if (fallbackTimer !== undefined) return;
-      fallbackTimer = window.setInterval(() => {
-        void refetch();
-      }, 4_000);
-    };
-    void getApi().subscribeLeads(leadQuery, (page) => {
-      if (cancelled) return;
-      stopFallback();
-      queryClient.setQueryData(leadQueryKey, page);
-    }, () => {
-      if (!cancelled) startFallback();
-    }).then((disposer) => {
-      if (cancelled) disposer();
-      else unsubscribe = disposer;
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
-      stopFallback();
-      unsubscribe?.();
-    };
-  }, [leadQuery, leadQueryKey, queryClient, refetch]);
+  const { data, isLoading, isError, refetch } = useRealtimeApiQuery({
+    queryKey: leadQueryKey,
+    query: (api) => api.listLeads(leadQuery),
+    subscribe: (api, onValue, onError) => api.subscribeLeads(leadQuery, onValue, onError),
+    fallbackIntervalMs: 4_000,
+  });
 
   const leads = useMemo(() => data?.items ?? [], [data]);
   const byStage = useMemo(() => {

@@ -117,6 +117,17 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [marketplaceGyms, setMarketplaceGyms] = useState<MarketplaceGym[]>(convexMode ? [] : MARKETPLACE_GYMS);
   const [platformSnapshot, setPlatformSnapshot] = useState<PlatformSnapshot>();
   const [saasPlans, setSaasPlans] = useState<PlatformSaasPlan[]>([]);
+  const marketplaceReadyRef = useRef(!convexMode);
+  const catalogReadyRef = useRef(!convexMode);
+
+  const markPublicExperienceReady = useCallback(() => {
+    if (!marketplaceReadyRef.current || !catalogReadyRef.current) return;
+    setExperienceError(undefined);
+    setExperienceRefreshing(false);
+    setExperienceStatus("ready");
+    setExperienceReady(true);
+    experienceHydratedRef.current = true;
+  }, []);
 
   const customers = useMemo(() => {
     if (convexMode) return customer ? [customer] : [];
@@ -155,46 +166,19 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         setExperienceRefreshing(true);
       }
       const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
-      void Promise.all([
-        getApi().listMarketplaceGyms(),
-        getApi().listPublicSaasPlans(),
-        memberIdentity ? getApi().getCustomerExperience() : Promise.resolve({ customer: undefined, memberships: [] as CustomerMembership[], bookings: [] as TrialBooking[] }),
-        identity.status === "ready" && identity.platformAdmin ? getApi().getPlatformSnapshot() : Promise.resolve(undefined),
-      ]).then(async ([gyms, plans, experience, platform]) => {
+      const platformIdentity = identity.status === "ready" && identity.platformAdmin;
+      if (memberIdentity || platformIdentity) return;
+      void getApi().listPublicSaasPlans().then((plans) => {
         if (cancelled) return;
-        const hydratedMemberships = memberIdentity
-          ? await Promise.all(experience.memberships.map(async (membership) => {
-              if (membership.qrValue) return membership;
-              try {
-                const pass = await getApi().getEntryPass(membership.id);
-                return { ...membership, qrValue: pass.token };
-              } catch {
-                return membership;
-              }
-            }))
-          : experience.memberships;
-        if (cancelled) return;
-        setMarketplaceGyms(platform?.gyms ?? gyms);
-        setSaasPlans(platform?.plans ?? plans);
-        setMemberships(hydratedMemberships);
-        setBookings(platform?.bookings ?? experience.bookings);
-        setPlatformSnapshot(platform);
-        setCustomer(experience.customer);
-        setCustomerId(experience.customer?.id);
-        setPlatformAdminSignedIn(identity.status === "ready" && identity.platformAdmin);
-        setExperienceError(undefined);
-        setExperienceRefreshing(false);
-        setExperienceStatus("ready");
-        setExperienceReady(true);
-        experienceHydratedRef.current = true;
+        setSaasPlans(plans);
+        catalogReadyRef.current = true;
+        markPublicExperienceReady();
       }).catch((error: unknown) => {
         if (cancelled) return;
-        const message = error instanceof Error && error.message ? error.message : "RIVET could not load its live data.";
+        const message = error instanceof Error && error.message ? error.message : "RIVET could not load its live catalog.";
         const failure = refreshFailureState(hadRenderedData, message);
         setExperienceRefreshing(false);
         setExperienceError(failure.message);
-        // Initial hydration still fails closed. Once a snapshot has rendered,
-        // preserve it and expose a retryable stale-data notice instead.
         setExperienceStatus(failure.status);
       });
       return () => {
@@ -220,7 +204,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceStatus("ready");
     setExperienceReady(true);
     setPreviewSessionReady(true);
-  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status]);
+  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // Public discovery is a live projection too: profile publication, trainer
   // visibility, package pricing, subscription eligibility, and branch counts
@@ -229,8 +213,13 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (!convexMode) return;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
     void getApi().subscribeMarketplaceGyms((gyms) => {
-      if (!cancelled) setMarketplaceGyms(gyms);
+      if (cancelled) return;
+      setMarketplaceGyms(gyms);
+      marketplaceReadyRef.current = true;
+      if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
     }, (error) => {
       if (cancelled) return;
       setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
@@ -241,7 +230,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       if (!cancelled) setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
     });
     return () => { cancelled = true; unsubscribe?.(); };
-  }, [convexMode]);
+  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider
@@ -318,6 +307,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       setMarketplaceGyms(snapshot.gyms);
       setSaasPlans(snapshot.plans);
       setBookings(snapshot.bookings);
+      setPlatformAdminSignedIn(true);
       setExperienceError(undefined);
       setExperienceRefreshing(false);
       setExperienceStatus("ready");

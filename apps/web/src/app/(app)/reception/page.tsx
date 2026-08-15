@@ -62,9 +62,11 @@ export default function ReceptionPage() {
     { enabled: Boolean(branchId) && lookupActive && !result, staleTime: 0 },
   );
 
-  const occupancyQuery = useApiQuery(qk.occupancy(branchId ?? ""), (api) => api.getOccupancy(branchId!), {
+  const occupancyQuery = useRealtimeApiQuery({
+    queryKey: qk.occupancy(branchId ?? ""),
+    query: (api) => api.getOccupancy(branchId!),
+    subscribe: (api, onValue, onError) => api.subscribeOccupancy(branchId!, onValue, onError),
     enabled: Boolean(branchId),
-    refetchInterval: 30_000,
   });
 
   const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
@@ -76,7 +78,10 @@ export default function ReceptionPage() {
     enabled: Boolean(branchId),
   });
 
-  const shiftQuery = useApiQuery(qk.shiftTotals(branchId ?? ""), (api) => api.getCurrentShiftTotals(branchId!), {
+  const shiftQuery = useRealtimeApiQuery({
+    queryKey: qk.shiftTotals(branchId ?? ""),
+    query: (api) => api.getCurrentShiftTotals(branchId!),
+    subscribe: (api, onValue, onError) => api.subscribeCurrentShiftTotals(branchId!, onValue, onError),
     enabled: Boolean(branchId),
   });
 
