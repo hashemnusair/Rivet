@@ -1,6 +1,15 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-15 after the production read-usage hardening release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-15 after the dashboard priorities and Follow-ups workspace release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Dashboard priorities and Follow-ups workspace — direct-main release
+
+- Direct-main application commit `a7710c8085827b16037c49aa9e9dd3c0c948a3ba` replaces the low-value owner-dashboard Pipeline funnel with an actionable Operating priorities card linking to renewals, outstanding balances, and open lead follow-up. It uses the existing persisted KPI contract; no backend/API or schema change was required.
+- Follow-ups now uses a ServiceTitan-inspired attention workspace: a sticky vertical filter rail on the left, a clear Found matches results area on the right, and a selected-member context pane when a row is opened. Expiring/Expired, day-window, exact date-range, reset, retry, empty, and pressed-state behavior remain explicit and accessible.
+- The final pre-commit fetch found `origin/main` at `70e39b2b5e301a74376bc0d943bb611d94f4f725`; no partner work advanced, no branch or PR was created, `FRONTEND_HANDOFF.md` remains frozen, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.
+- Local verification passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (87 files / 468 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 staging-gated skips), and `git diff --check`. Rendered checks covered the desktop three-column workspace and mobile filter/results layout.
+- This is a frontend-only release: no Convex Production deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation was performed. GitHub Actions and Vercel evidence will be recorded after the direct-main push is monitored.
+- The five credential-gated isolated-staging bodies still remaining are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
 
 ## CRM read-path and realtime responsiveness — direct-main release
 

@@ -1,6 +1,15 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 15 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 15 August 2026 after the dashboard priorities and Follow-ups workspace release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Latest direct-main release — dashboard priorities and Follow-ups workspace — 15 August 2026
+
+- [x] Released application commit `a7710c8085827b16037c49aa9e9dd3c0c948a3ba` directly on `main`; the final pre-commit fetch found no partner advancement, and the frozen frontend handoff/product plan were preserved.
+- [x] Replaced the owner dashboard Pipeline funnel with actionable Operating priorities for renewal risk, outstanding balances, and open lead follow-up, using existing dashboard data without a backend or schema change.
+- [x] Rebuilt Follow-ups as a responsive attention workspace with a vertical left filter rail, right-side Found matches results, selected-member context, exact Expiring/Expired filters, day/date controls, reset, retry, and empty states.
+- [x] Passed local typechecks, Convex codegen/typecheck, zero-warning lint, 87 test files / 468 tests, the 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
+- [x] Confirmed this frontend-only change made no Convex Production deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation.
+- [ ] Record the exact post-push GitHub Actions and Vercel evidence, then complete credentialed isolated-staging execution and disposable cleanup evidence for `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
 
 ## CRM read-path and realtime responsiveness — 15 August 2026
 
