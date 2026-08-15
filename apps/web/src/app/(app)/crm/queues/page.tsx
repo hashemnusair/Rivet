@@ -4,7 +4,7 @@ import { PhoneCall, RotateCcw, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { RenewalQueueItem } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
@@ -45,7 +45,11 @@ export default function QueuesPage() {
     toDate: toDate || undefined,
     pageSize: 100,
   }), [bucket, days, fromDate, session?.activeBranchId, toDate]);
-  const renewals = useApiQuery(qk.renewalQueue(query), (api) => api.listRenewalQueue(query));
+  const renewals = useRealtimeApiQuery({
+    queryKey: qk.renewalQueue(query),
+    query: (api) => api.listRenewalQueue(query),
+    subscribe: (api, onValue, onError) => api.subscribeRenewalQueue(query, onValue, onError),
+  });
   const items = renewals.data?.items ?? [];
   const selectedItem = items.find((item) => item.membership.id === selectedId);
 

@@ -28,7 +28,10 @@ export function useApiQuery<TData>(
     // immediate updates after a mutation.
     staleTime: 10_000,
     gcTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
+    // Refresh one-shot screens when an operator returns to them. Realtime
+    // screens use useRealtimeApiQuery and intentionally keep their websocket
+    // as the primary source of updates.
+    refetchOnWindowFocus: true,
     ...options,
   });
 

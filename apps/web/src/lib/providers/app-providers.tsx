@@ -22,6 +22,7 @@ import { qk } from "@/lib/api/keys";
 import type { RoleKey, Session, UUID } from "@/lib/domain/types";
 import { useRivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { UnsavedChangesProvider } from "@/lib/providers/unsaved-changes-provider";
+import { getAppQueryDefaults } from "@/lib/providers/query-policy";
 
 /** Error codes where retrying cannot change the outcome. */
 const TERMINAL_ERROR_CODES: string[] = [ERR.FORBIDDEN, ERR.NOT_FOUND, ERR.VALIDATION, ERR.UNAUTHENTICATED];
@@ -68,18 +69,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Convex queries in the API seam are currently one-shot reads.
-            // Keep the existing seam while refreshing active screens so a
-            // second operator's changes appear without a hard reload. The
-            // Convex websocket remains responsible for auth and mutations.
-            staleTime: convexMode ? 0 : 5_000,
-            // Realtime-backed screens own their Convex subscriptions. Keep a
-            // slower safety refresh for remaining one-shot pages so navigation
-            // and mutations are not competing with a four-second request storm.
-            refetchInterval: convexMode ? 15_000 : false,
-            refetchIntervalInBackground: false,
-            refetchOnWindowFocus: true,
-            refetchOnReconnect: true,
+            ...getAppQueryDefaults(convexMode),
             // Deterministic rejections (permissions, missing records, bad input)
             // will never succeed on a retry — surface them immediately.
             retry: (failureCount, error) => {
