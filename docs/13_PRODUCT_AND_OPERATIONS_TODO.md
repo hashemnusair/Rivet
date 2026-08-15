@@ -1,6 +1,17 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 15 August 2026 after the dashboard priorities and Follow-ups workspace release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 15 August 2026 after the automation rule-integrity release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Latest direct-main release — automation rule integrity and suppression parity — 15 August 2026
+
+- [x] Released `c75182764aac7d43a3a33de8ea5434acd1447064` directly to `main` after a final partner fetch; the frozen frontend handoff and modular product plan were preserved.
+- [x] Standardized automation trigger forms and server validation: expiry checkpoints are deduplicated, expired-membership thresholds use `daysAfter` with `0` supported, malformed actions are rejected, and Queue message requires a tenant-owned message template.
+- [x] Made manual automation runs use the same linked-member marketing suppression logic as the scheduler, preserving truthful sandbox delivery and operational manager notifications.
+- [x] Passed both typechecks, Convex codegen, zero-warning lint, 88 test files / 473 tests, the 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
+- [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy: schema validation passed, no indexes were deleted, and no `schema.ts` or destructive migration was introduced. Read-only health returned `status: ok` and post-deploy logs had no new error events.
+- [x] Recorded GitHub Actions [31900380886](https://github.com/hashemnusair/Rivet/actions/runs/31900380886) and the exact Vercel Production deployment [51UULH2C54uM1Dk4gnDwp7xcfTSX](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/51UULH2C54uM1Dk4gnDwp7xcfTSX); the canonical site returned HTTP 200.
+- [x] Confirmed no Production seed/import/restore/delete, product-data mutation, or live operational-email activation.
+- [ ] Complete the credentialed isolated-staging automation journey for quiet-hours suppression and transient retry recovery, with disposable cleanup evidence. The five remaining bodies are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
 
 ## Latest direct-main release — dashboard priorities and Follow-ups workspace — 15 August 2026
 
@@ -741,11 +752,11 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
-- Status: **Scheduler/command coverage implemented locally; credentialed staging journey remains open**.
+- Status: **Rule integrity and scheduler/command coverage are released; the credentialed staging journey remains open**.
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
 - Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
 
-The UI/API now expose persisted execution/action/attempt history, dedupe keys, suppression and retry metadata, reason-gated previews/forced runs/manual retries, immutable audit facts, and manager attention notifications. Scheduler tests now run the internal evaluator twice to prove one execution per dedupe window, verify manager notification fan-out, and suppress opted-out marketing messages. Existing command tests verify retry limits/reason gates and the pure scheduler tests cover quiet-hour boundaries. The remaining acceptance work is a credentialed scheduler-driven staging journey covering quiet hours and transient retry recovery.
+The UI/API now expose persisted execution/action/attempt history, dedupe keys, suppression and retry metadata, reason-gated previews/forced runs/manual retries, immutable audit facts, and manager attention notifications. Scheduler tests now run the internal evaluator twice to prove one execution per dedupe window, verify manager notification fan-out, and suppress opted-out marketing messages. Existing command tests verify retry limits/reason gates, the form/command regressions cover canonical parameters and template validation, and the pure scheduler tests cover quiet-hour boundaries. The remaining acceptance work is a credentialed scheduler-driven staging journey covering quiet hours and transient retry recovery.
 
 ### TODO-009 — Record marketing-preference provenance and revocation history
 

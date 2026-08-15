@@ -1,6 +1,16 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-15 after the dashboard priorities and Follow-ups workspace release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-15 after the automation rule-integrity release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Automation rule integrity and suppression parity — direct-main release
+
+- Direct-main application/backend commit `c75182764aac7d43a3a33de8ea5434acd1447064` was pushed after the final pre-commit fetch found `origin/main` at `6a1a0d8`; no partner work was overwritten, no branch or PR was created, `FRONTEND_HANDOFF.md` remains frozen, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.
+- Automation rule creation and editing now use one canonical parameter model. Expiring rules accept deduplicated day checkpoints, expired rules correctly persist **days after expiry** (including `0` for today), and every trigger/action/name/role/title/deduplication value is validated at the Convex boundary. Queue-message actions require a tenant-owned message template instead of creating an unusable rule.
+- Manual automation runs now apply the same linked-member marketing-preference suppression boundary as the scheduler. Unknown or opted-out recipients are persisted as suppressed marketing deliveries, while quiet-hours and outbound-delivery gates remain explicit; operational manager notifications are unaffected.
+- Focused automation form and command regressions plus the full local gates passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (88 files / 473 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 staging-gated skips), and `git diff --check`.
+- Convex Production target `descriptive-meerkat-589` passed the exact-target non-verbose dry run and deploy through `pnpm convex:deploy`. Both reported no deleted indexes and schema validation completed; this slice has no `schema.ts` delta and no destructive migration. Read-only `health:check` returned `status: ok`, and the post-deploy read-only log history contained no new error events.
+- GitHub Actions [run 31900380886](https://github.com/hashemnusair/Rivet/actions/runs/31900380886) passed typecheck/lint/unit tests/build, generated-code verification, and Playwright preview. The authenticated Clerk → Convex smoke was correctly skipped because it is credential-gated on push. Vercel Production completed the exact commit at [deployment 51UULH2C54uM1Dk4gnDwp7xcfTSX](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/51UULH2C54uM1Dk4gnDwp7xcfTSX), and `https://www.rivetjo.com` returned HTTP 200.
+- No Production seed, import, restore, delete, product-data mutation, or live operational-email activation was performed. The five credential-gated isolated-staging bodies still remaining are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`; the automation body still needs quiet-hours and transient-retry recovery evidence with disposable cleanup.
 
 ## Dashboard priorities and Follow-ups workspace — direct-main release
 
