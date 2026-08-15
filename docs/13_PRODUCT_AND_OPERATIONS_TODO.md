@@ -1,6 +1,15 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 14 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 15 August 2026. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Production read-usage hardening — 15 August 2026
+
+- [x] Released `cb2b73abef0eccaaf7c2b9ae79067265d501910e` directly to `main`, replacing broad 15-second background query polling with focus/reconnect refreshes for one-shot screens and preserving CRM/reception realtime subscriptions.
+- [x] Switched the existing Follow-ups renewal queue to its realtime subscription; its 15-second fallback is used only after the live stream fails.
+- [x] Added focused query-policy regression tests and passed the full local quality gates, including 85 test files / 464 tests and 25 preview browser passes.
+- [x] GitHub Actions [31894165494](https://github.com/hashemnusair/Rivet/actions/runs/31894165494) and the exact Vercel deployment [Gger2SFEDmGhqoJ2mfEt1Rfji1A4](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/Gger2SFEDmGhqoJ2mfEt1Rfji1A4) completed successfully; the canonical site returned HTTP 200.
+- [x] Confirmed this was frontend-only: no Convex schema/index/data change, Production deploy, seed/import/restore/delete, or live operational-email activation.
+- [ ] Observe Production Convex Database I/O and function-call usage for 24–48 hours and record the before/after trend. If usage remains high, inspect the highest-reading functions before changing CRM realtime behavior.
 
 ## Latest direct-main release — support chat, CRM, PT packages, and member UX — 14 August 2026
 

@@ -1,6 +1,15 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-14 after the member-home UX redesign and iOS standalone-PWA hardening. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-15 after the production read-usage hardening release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Production read-usage hardening — direct-main release
+
+- Direct-main frontend release commit `cb2b73abef0eccaaf7c2b9ae79067265d501910e` is pushed to `main` and `origin/main`. The final fetch found no partner advancement; no branch or PR was created, `FRONTEND_HANDOFF.md` remains frozen, and `docs/14_MODULAR_WORKSPACE_PLAN.md` remains a product plan.
+- Removed the global 15-second Convex/TanStack background refetch that caused every open one-shot screen to read while idle. One-shot screens now refresh when they become active again or reconnect, while existing CRM/reception/support/member realtime subscriptions remain the primary live-update path. Follow-ups now uses its existing renewal-queue subscription and only falls back to targeted polling when that stream fails.
+- Added focused query-policy regression coverage. This release is frontend-only: no `schema.ts` change, Convex Production deployment, index change, or Production data mutation was required. Live operational email remains disabled.
+- Local verification passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (85 files / 464 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 staging-gated skips), and `git diff --check`.
+- GitHub Actions [run 31894165494](https://github.com/hashemnusair/Rivet/actions/runs/31894165494) passed typecheck/lint/unit tests/build, generated-code verification, and Playwright preview. The push-triggered authenticated Clerk → Convex smoke remained workflow-dispatch/credential gated. Vercel reports the exact frontend deployment [Gger2SFEDmGhqoJ2mfEt1Rfji1A4](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/Gger2SFEDmGhqoJ2mfEt1Rfji1A4) completed successfully; `https://www.rivetjo.com` returned HTTP 200.
+- Monitor Convex Production Database I/O and function-call usage for the next 24–48 hours. The change preserves CRM responsiveness through live subscriptions and focus/reconnect refreshes; it does not claim a measured usage reduction until the Production dashboard confirms it.
 
 ## Support chat, CRM outcomes, renewal filters, PT deletion, and member journeys — direct-main release
 
