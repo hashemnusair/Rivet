@@ -38,12 +38,13 @@ export function useRealtimeApiQuery<T>(options: {
   const query = useQuery<T, Error>({
     queryKey: options.queryKey,
     queryFn: () => queryRef.current(getApi()),
-    // In Convex mode the watch owns the initial snapshot. Waiting for a
-    // failed stream before enabling the ordinary query removes a duplicate
-    // startup read while retaining a complete polling fallback. Mock mode
-    // keeps the ordinary query enabled because its test adapter may not emit
-    // an initial stream value.
-    enabled: enabled && (!convexMode || streamState === "fallback"),
+    // Keep the ordinary query enabled until the watch has delivered its first
+    // value. A native Convex watch can remain in its connecting state without
+    // immediately exposing a local snapshot; disabling the query during that
+    // window makes detail pages render with undefined data. Once the stream is
+    // live it owns updates, and the ordinary query is only re-enabled for the
+    // failure-only polling fallback.
+    enabled: enabled && (!convexMode || streamState !== "live"),
     placeholderData: keepPreviousData,
     staleTime: 10_000,
     gcTime: 5 * 60_000,

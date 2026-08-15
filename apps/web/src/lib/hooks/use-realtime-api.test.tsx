@@ -11,6 +11,7 @@ type Snapshot = { id: string; value: string };
 
 afterEach(() => {
   setApiForTests(null);
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
@@ -49,6 +50,32 @@ function renderRealtimeHarness() {
 }
 
 describe("useRealtimeApiQuery", () => {
+  it("keeps the initial query available while a Convex watch is still connecting", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "convex");
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    let queryCalls = 0;
+
+    function Harness() {
+      const query = useRealtimeApiQuery({
+        queryKey: ["record", "convex-initial"],
+        query: async () => {
+          queryCalls += 1;
+          return { id: "convex-initial", value: "initial-from-query" };
+        },
+        // Simulate a native watch that has connected but has not exposed its
+        // first local snapshot yet.
+        subscribe: async () => () => undefined,
+      });
+      return <span data-testid="convex-initial-snapshot">{query.data?.value ?? "empty"}</span>;
+    }
+
+    setApiForTests(new MockGymOSApi());
+    render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
+
+    await waitFor(() => expect(screen.getByTestId("convex-initial-snapshot")).toHaveTextContent("initial-from-query"));
+    expect(queryCalls).toBe(1);
+  });
+
   it("writes live values into the normal query cache and preserves them on stream failure", async () => {
     const { listeners } = renderRealtimeHarness();
     await waitFor(() => expect(screen.getByTestId("snapshot")).toHaveTextContent("initial-first"));

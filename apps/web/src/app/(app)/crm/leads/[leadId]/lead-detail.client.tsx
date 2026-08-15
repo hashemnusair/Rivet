@@ -104,8 +104,11 @@ export default function LeadDetailPageClient() {
       ? <NotFoundState title="Lead not found" />
       : <ErrorState onRetry={() => leadQuery.refetch()} />;
   }
+  if (!leadQuery.data) {
+    return <div className="space-y-4"><Skeleton className="h-6 w-56" /><Skeleton className="h-28 w-full" /><Skeleton className="h-80 w-full" /></div>;
+  }
 
-  const lead = leadQuery.data!;
+  const lead = leadQuery.data;
   const trialStatus = lead.trialBooking?.status;
   const trialDone = trialStatus === "completed" || trialStatus === "converted";
   const saleDone = lead.stage === "won" && Boolean(lead.convertedMemberId);

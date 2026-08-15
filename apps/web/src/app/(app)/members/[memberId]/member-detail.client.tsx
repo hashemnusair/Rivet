@@ -63,8 +63,17 @@ export default function MemberDetailPageClient() {
       <ErrorState onRetry={() => memberQuery.refetch()} />
     );
   }
+  if (!memberQuery.data) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+    );
+  }
 
-  const member = memberQuery.data!;
+  const member = memberQuery.data;
   const memberships = membershipsQuery.data?.items ?? [];
   const currentMembership = memberships.find(
     (m) => m.status === "active" || m.status === "expiring" || m.status === "frozen" || m.status === "depleted" || m.status === "scheduled",
