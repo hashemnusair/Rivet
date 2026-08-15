@@ -1,6 +1,12 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-15 after the automation rule-integrity release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-15 after the Automations UI postponement. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Automations UI postponed — direct-main frontend release
+
+- The `/automations` workspace and direct `/automations/[ruleId]` links now show a clear **Coming soon** state with no rule creation, editing, execution, or delivery controls. The existing backend implementation and tests remain preserved for a later restart after the Convex foundation is settled.
+- Added a focused Coming Soon regression. Local verification passed: `pnpm typecheck`, `pnpm lint`, `pnpm test` (89 files / 474 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 staging-gated skips), and `git diff --check`.
+- This is frontend-only. No Convex deploy, schema/index change, Production seed/import/restore/delete, Product-data mutation, or live operational-email activation was performed. Automation quiet-hours/retry staging acceptance is intentionally postponed with the feature.
 
 ## Automation rule integrity and suppression parity — direct-main release
 

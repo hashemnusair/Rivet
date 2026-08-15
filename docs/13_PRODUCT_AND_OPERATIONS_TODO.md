@@ -1,6 +1,13 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 15 August 2026 after the automation rule-integrity release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 15 August 2026 after the Automations UI postponement. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Latest direct-main change — Automations UI postponed — 15 August 2026
+
+- [x] Replaced the Automations workspace and direct rule-editor route with a clear Coming soon state while preserving the backend implementation and tests for later.
+- [x] Passed the frontend typecheck, zero-warning lint, 89 test files / 474 tests, 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
+- [x] Confirmed this change made no Convex deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation.
+- [ ] Revisit the preserved automation backend and run its isolated-staging quiet-hours/retry acceptance only after the Convex foundation and deployment path are settled.
 
 ## Latest direct-main release — automation rule integrity and suppression parity — 15 August 2026
 
@@ -752,7 +759,7 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
 
-- Status: **Rule integrity and scheduler/command coverage are released; the credentialed staging journey remains open**.
+- Status: **Paused by product decision; the backend and local coverage are preserved, while staging acceptance is deferred until the Convex foundation is settled**.
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
 - Acceptance: one trigger produces one action per dedupe window; retryable failures do not report false success; audit/execution records remain queryable.
 
