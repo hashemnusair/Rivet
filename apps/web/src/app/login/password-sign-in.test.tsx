@@ -28,7 +28,7 @@ describe("PasswordSignIn", () => {
 
     expect(screen.getByLabelText(/Email address/)).toBeVisible();
     expect(screen.getByLabelText(/Password/)).toBeVisible();
-    expect(screen.getByLabelText(/Email address/)).toHaveAttribute("placeholder", "name@yourgym.com");
+    expect(screen.getByLabelText(/Email address/)).toHaveAttribute("placeholder", "Enter email");
     expect(screen.getByLabelText(/Password/)).toHaveAttribute("placeholder", "Enter password");
     expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
   });
