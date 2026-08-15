@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACTION_LABELS, TRIGGER_LABELS } from "@/features/automations/labels";
+import { automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams } from "@/features/automations/form";
 
 export default function AutomationsPage() {
   return (
@@ -56,20 +57,32 @@ function NewRuleDialog() {
   const [threshold, setThreshold] = useState("7");
   const [dedupe, setDedupe] = useState("24");
   const [actions, setActions] = useState<AutomationActionKey[]>(["create_task"]);
+  const [messageTemplateId, setMessageTemplateId] = useState("");
+  const templatesQuery = useApiQuery(qk.templates, (api) => api.listMessageTemplates());
+  const selectedTemplate = templatesQuery.data?.find((template) => template.id === messageTemplateId);
+  const queueMessageActive = actions.includes("queue_message");
   const create = useApiMutation((api) => {
-    const numeric = threshold.split(",").map((value) => Number(value.trim())).filter((value) => Number.isFinite(value) && value > 0);
-    const triggerParams: Record<string, number | number[] | string> = trigger === "membership_expiring" ? { daysBefore: numeric } : trigger === "membership_expired" ? { daysAfter: numeric[0] ?? 1 } : trigger === "member_inactive" || trigger === "payment_outstanding" ? { days: numeric[0] ?? 7 } : { hours: numeric[0] ?? 24 };
-    const builtActions: AutomationAction[] = actions.map((key) => key === "create_task" ? { key, taskOwnerRole: "salesperson", taskTitle: name.trim() || "Follow up with member" } : key === "queue_message" ? { key, channel: "whatsapp" } : { key });
+    const triggerParams = automationTriggerParams(trigger, threshold);
+    const builtActions: AutomationAction[] = actions.map((key) => key === "create_task" ? { key, taskOwnerRole: "salesperson", taskTitle: name.trim() || "Follow up with member" } : key === "queue_message" ? { key, templateId: messageTemplateId || undefined, channel: selectedTemplate?.channel ?? "whatsapp" } : { key });
     return api.createAutomationRule({ name: name.trim(), trigger, triggerParams, actions: builtActions, enabled: true, dedupeWindowHours: Math.max(1, Number(dedupe) || 24) });
   }, {
     onSuccess: async () => {
       toast.success("Automation rule created.");
       setOpen(false);
       setName("");
+      setTrigger("membership_expiring");
+      setThreshold("7");
+      setDedupe("24");
+      setActions(["create_task"]);
+      setMessageTemplateId("");
       await invalidate([qk.automationRules]);
     },
   });
-  const toggleAction = (key: AutomationActionKey, checked: boolean) => setActions((current) => checked ? [...new Set([...current, key])] : current.filter((item) => item !== key));
+  const toggleAction = (key: AutomationActionKey, checked: boolean) => {
+    setActions((current) => checked ? [...new Set([...current, key])] : current.filter((item) => item !== key));
+    if (key === "queue_message" && checked && !messageTemplateId) setMessageTemplateId(templatesQuery.data?.[0]?.id ?? "");
+  };
+  const canCreate = Boolean(name.trim()) && actions.length > 0 && hasValidAutomationTriggerParams(trigger, threshold) && (!queueMessageActive || Boolean(messageTemplateId));
 
   return <>
     <Button onClick={() => setOpen(true)}><Plus /> New rule</Button>
@@ -79,10 +92,11 @@ function NewRuleDialog() {
         <DialogBody className="space-y-4">
           <Field label="Rule name" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Renewals — 7 days" /></Field>
           <Field label="When this happens"><Select value={trigger} onValueChange={(value) => setTrigger(value as AutomationTriggerKey)}><SelectTrigger aria-label="Automation trigger"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(TRIGGER_LABELS).map(([key, label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}</SelectContent></Select></Field>
-          <div className="grid gap-3 sm:grid-cols-2"><Field label={trigger === "membership_expiring" ? "Days before expiry" : trigger.includes("lead") || trigger === "follow_up_overdue" ? "Hours" : "Days"} hint={trigger === "membership_expiring" ? "Use commas for multiple checkpoints." : undefined}><Input value={threshold} onChange={(event) => setThreshold(event.target.value)} inputMode="numeric" /></Field><Field label="Deduplication window (hours)"><Input value={dedupe} onChange={(event) => setDedupe(event.target.value)} inputMode="numeric" /></Field></div>
+          <div className="grid gap-3 sm:grid-cols-2"><Field label={automationTriggerParameterLabel(trigger)} hint={trigger === "membership_expiring" ? "Use commas for multiple checkpoints." : trigger === "membership_expired" ? "Use 0 for memberships that expired today." : undefined}><Input value={threshold} onChange={(event) => setThreshold(event.target.value)} inputMode="numeric" min={trigger === "membership_expired" ? 0 : 1} /></Field><Field label="Deduplication window (hours)"><Input value={dedupe} onChange={(event) => setDedupe(event.target.value)} inputMode="numeric" min={1} /></Field></div>
           <Field label="Actions"><div className="space-y-2">{(["create_task", "queue_message", "notify_manager"] as AutomationActionKey[]).map((key) => <label key={key} className="flex items-center justify-between rounded-md border border-line px-3 py-2.5 text-[13px]"><span>{ACTION_LABELS[key]}</span><Switch checked={actions.includes(key)} onCheckedChange={(checked) => toggleAction(key, checked)} aria-label={ACTION_LABELS[key]} /></label>)}</div></Field>
+          {queueMessageActive ? <div className="rounded-md border border-line bg-sunken/40 p-3"><Field label="Message template" required hint="Marketing messages remain suppressed unless the member has an explicit opt-in.">{templatesQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading templates…</p> : templatesQuery.isError ? <p className="text-[12px] text-danger">Message templates could not be loaded.</p> : templatesQuery.data?.length ? <Select value={messageTemplateId} onValueChange={setMessageTemplateId}><SelectTrigger aria-label="Message template"><SelectValue placeholder="Choose a template" /></SelectTrigger><SelectContent>{templatesQuery.data.map((template) => <SelectItem key={template.id} value={template.id}>{template.name} · {template.channel}</SelectItem>)}</SelectContent></Select> : <p className="text-[12px] text-ink-3">Create a message template before enabling this action.</p>}</Field></div> : null}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={() => create.mutate()} loading={create.isPending} disabled={!name.trim() || actions.length === 0}>Create rule</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={() => create.mutate()} loading={create.isPending} disabled={!canCreate}>Create rule</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </>;

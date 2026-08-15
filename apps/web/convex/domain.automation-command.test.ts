@@ -20,7 +20,7 @@ async function seed(t: TestConvex<typeof schema>) {
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: otherOrganization, userId: otherOwner, role: "owner", branchIds: [otherBranch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-a", branchId: branch, memberPublicId: "member-a", createdAt: now, updatedAt: now, data: { id: "member-a", fullName: "Inactive Member", homeBranchId: "branch-a", createdAt: "2026-01-01T00:00:00.000Z", lastCheckInAt: "2026-01-01T00:00:00.000Z" } });
-    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "automationRule", publicId: "rule-a", createdAt: now, updatedAt: now, data: { id: "rule-a", name: "Inactive follow-up", trigger: "member_inactive", triggerParams: { days: 1 }, actions: [{ key: "create_task", taskOwnerRole: "salesperson", taskTitle: "Call inactive member" }, { key: "notify_manager" }], enabled: true, dedupeWindowHours: 24, executionsLast30Days: 0, updatedAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "automationRule", publicId: "rule-a", createdAt: now, updatedAt: now, data: { id: "rule-a", name: "Inactive follow-up", trigger: "member_inactive", triggerParams: { days: 1 }, actions: [{ key: "create_task", taskOwnerRole: "salesperson", taskTitle: "Call inactive member" }, { key: "queue_message", templateId: "template-a", channel: "whatsapp" }, { key: "notify_manager" }], enabled: true, dedupeWindowHours: 24, executionsLast30Days: 0, updatedAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: otherOrganization, entityType: "automationRule", publicId: "rule-b", createdAt: now, updatedAt: now, data: { id: "rule-b", name: "Other tenant rule", trigger: "member_inactive", triggerParams: { days: 1 }, actions: [{ key: "notify_manager" }], enabled: true, dedupeWindowHours: 24, executionsLast30Days: 0, updatedAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "automationExecution", publicId: "failed-execution", branchId: branch, memberPublicId: "member-a", createdAt: now, updatedAt: now, data: { id: "failed-execution", ruleId: "rule-a", ruleName: "Inactive follow-up", subjectType: "member", subjectId: "member-a", subjectName: "Inactive Member", status: "failed", executedAt: new Date(now).toISOString(), actionResults: [{ key: "queue_message", status: "failed" }], attemptHistory: [{ action: "queue_message", attempt: 1, status: "failed", occurredAt: new Date(now).toISOString(), reason: "Redacted transient provider failure" }], retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] } } });
   });
@@ -42,11 +42,14 @@ describe("exported Convex automation command center", () => {
       executions: (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "automationExecution")).collect()).filter((record) => record.publicId !== "failed-execution"),
       tasks: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect(),
       notifications: await ctx.db.query("operationalNotifications").collect(),
+      messages: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).collect(),
       audit: (await ctx.db.query("auditEvents").collect()).filter((event) => event.action === "automation.rule_run_now"),
     }));
     expect(persisted.executions).toHaveLength(1);
     expect(persisted.tasks).toHaveLength(1);
     expect(persisted.notifications).toHaveLength(1);
+    expect(persisted.messages).toEqual([expect.objectContaining({ data: expect.objectContaining({ messageClass: "marketing", status: "suppressed", suppressionReason: "Recipient marketing preference is unknown" }) })]);
+    expect(persisted.executions[0]?.data).toMatchObject({ actionResults: expect.arrayContaining([expect.objectContaining({ key: "queue_message", status: "suppressed" })]) });
     expect(persisted.audit).toHaveLength(2);
     expect(persisted.audit[0]).toMatchObject({ reason: "Pilot operator verification", after: { created: 1, skippedDuplicates: 0 } });
   });
@@ -61,5 +64,36 @@ describe("exported Convex automation command center", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("automations.execution.retry", { executionId: "failed-execution", reason: "Duplicate retry" })), "VALIDATION_ERROR");
     const audits = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).filter((event) => event.action === "automation.execution_retry"));
     expect(audits).toEqual([expect.objectContaining({ reason: "Transient failure verified", before: { status: "failed", attempt: 1 }, after: { status: "retrying", attempt: 2 } })]);
+  });
+
+  it("rejects malformed rule configuration at the server boundary", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-a" });
+    await expectCode(owner.mutation(api.domain.mutate, operation("automations.rule.create", {
+      name: "Missing template",
+      trigger: "membership_expired",
+      triggerParams: { daysAfter: 1 },
+      actions: [{ key: "queue_message", channel: "whatsapp" }],
+      enabled: true,
+      dedupeWindowHours: 24,
+    })), "VALIDATION_ERROR");
+  });
+
+  it("preserves the correct parameter shape when an expired-membership rule is edited", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-a" });
+    const created = await owner.mutation(api.domain.mutate, operation("automations.rule.create", {
+      name: "Expired membership follow-up",
+      trigger: "membership_expired",
+      triggerParams: { daysAfter: 2 },
+      actions: [{ key: "notify_manager" }],
+      enabled: true,
+      dedupeWindowHours: 24,
+    })) as { id: string; triggerParams: Record<string, unknown> };
+    expect(created.triggerParams).toEqual({ daysAfter: 2 });
+    const updated = await owner.mutation(api.domain.mutate, operation("automations.rule.update", { id: created.id, triggerParams: { daysAfter: 0 } })) as { triggerParams: Record<string, unknown> };
+    expect(updated.triggerParams).toEqual({ daysAfter: 0 });
   });
 });

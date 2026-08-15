@@ -2235,6 +2235,94 @@ function automationEntityType(trigger: string): AutomationCandidate["subjectType
   return "membership";
 }
 
+const AUTOMATION_TRIGGER_KEYS = [
+  "membership_expiring",
+  "membership_expired",
+  "member_inactive",
+  "lead_untouched",
+  "follow_up_overdue",
+  "payment_outstanding",
+] as const;
+const AUTOMATION_ACTION_KEYS = ["create_task", "queue_message", "notify_manager"] as const;
+const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"] as const;
+
+function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
+    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { correlationId });
+  }
+  return value;
+}
+
+function normalizedAutomationTriggerParams(trigger: string, raw: Data, correlationId: string): Data {
+  if (trigger === "membership_expiring") {
+    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "Expiry checkpoints", correlationId, 1)))].sort((left, right) => left - right);
+    if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one expiry checkpoint.", { correlationId });
+    return { daysBefore };
+  }
+  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after expiry", correlationId, 0) };
+  if (trigger === "member_inactive") return { days: automationInteger(raw.days, "Inactive days", correlationId, 1) };
+  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Outstanding days", correlationId, 1) };
+  if (trigger === "lead_untouched") return { hours: automationInteger(raw.hours, "Untouched hours", correlationId, 1) };
+  if (trigger === "follow_up_overdue") return { hours: automationInteger(raw.hours, "Overdue hours", correlationId, 1) };
+  domainError("VALIDATION_ERROR", "Automation trigger is invalid.", { correlationId });
+}
+
+function normalizedAutomationActions(raw: unknown[], correlationId: string, requireMessageTemplate: boolean): Data[] {
+  if (raw.length === 0) domainError("VALIDATION_ERROR", "Choose at least one automation action.", { correlationId });
+  const seen = new Set<string>();
+  return raw.map((rawAction) => {
+    const action = data(rawAction);
+    const key = stringValue(action.key);
+    if (!AUTOMATION_ACTION_KEYS.includes(key as (typeof AUTOMATION_ACTION_KEYS)[number])) domainError("VALIDATION_ERROR", "Automation action is invalid.", { correlationId });
+    if (seen.has(key)) domainError("VALIDATION_ERROR", "An automation action cannot be selected twice.", { correlationId });
+    seen.add(key);
+    if (key === "create_task") {
+      const taskOwnerRole = stringValue(action.taskOwnerRole, "salesperson");
+      if (!AUTOMATION_TASK_OWNER_ROLES.includes(taskOwnerRole as (typeof AUTOMATION_TASK_OWNER_ROLES)[number])) domainError("VALIDATION_ERROR", "Task owner role is invalid.", { correlationId });
+      const taskTitle = stringValue(action.taskTitle, "Follow up with member").trim();
+      if (!taskTitle || taskTitle.length > 160) domainError("VALIDATION_ERROR", "Task title must be between 1 and 160 characters.", { correlationId });
+      return { key, taskOwnerRole, taskTitle };
+    }
+    if (key === "queue_message") {
+      const channel = stringValue(action.channel, "whatsapp");
+      if (!["email", "sms", "whatsapp"].includes(channel)) domainError("VALIDATION_ERROR", "Message channel is invalid.", { correlationId });
+      const templateId = optionalString(action.templateId);
+      if (requireMessageTemplate && !templateId) domainError("VALIDATION_ERROR", "Choose a message template before enabling Queue message.", { correlationId });
+      return { key, channel, ...(templateId ? { templateId } : {}) };
+    }
+    return { key };
+  });
+}
+
+function normalizedAutomationRulePatch(input: Data, existing: Data | undefined, correlationId: string, creating: boolean): Data {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(input, key);
+  const trigger = stringValue(input.trigger, stringValue(existing?.trigger));
+  if (!AUTOMATION_TRIGGER_KEYS.includes(trigger as (typeof AUTOMATION_TRIGGER_KEYS)[number])) domainError("VALIDATION_ERROR", "Automation trigger is invalid.", { correlationId });
+  const patch: Data = {};
+  if (creating || has("name")) {
+    const name = stringValue(input.name, stringValue(existing?.name)).trim();
+    if (!name || name.length > 120) domainError("VALIDATION_ERROR", "Rule name must be between 1 and 120 characters.", { correlationId });
+    patch.name = name;
+  }
+  if (creating || has("trigger") || has("triggerParams")) patch.trigger = trigger;
+  if (creating || has("trigger") || has("triggerParams")) patch.triggerParams = normalizedAutomationTriggerParams(trigger, data(input.triggerParams ?? existing?.triggerParams), correlationId);
+  if (creating || has("actions")) patch.actions = normalizedAutomationActions(arrayValue(input.actions ?? existing?.actions), correlationId, true);
+  if (creating || has("enabled")) {
+    if (typeof input.enabled !== "boolean" && creating) domainError("VALIDATION_ERROR", "Enabled state is invalid.", { correlationId });
+    if (typeof input.enabled === "boolean") patch.enabled = input.enabled;
+  }
+  if (creating || has("dedupeWindowHours")) patch.dedupeWindowHours = automationInteger(input.dedupeWindowHours ?? existing?.dedupeWindowHours ?? 24, "Deduplication window", correlationId, 1);
+  return patch;
+}
+
+async function assertAutomationTemplateReferences(ctx: ReadContext, actor: ActorContext, actions: Data[]): Promise<void> {
+  for (const action of actions) {
+    const templateId = optionalString(action.templateId);
+    if (action.key !== "queue_message" || !templateId) continue;
+    if (!(await recordOfOptional(ctx, actor, "messageTemplate", templateId))) domainError("NOT_FOUND", "Message template not found.", { correlationId: actor.correlationId });
+  }
+}
+
 function automationTriggerMatches(rule: Data, candidate: Data, today: string): boolean {
   const trigger = stringValue(rule.trigger);
   const params = data(rule.triggerParams);
@@ -4095,6 +4183,9 @@ async function executeAutomationCandidate(
   const attemptHistory: Data[] = [];
   const memberId = candidate.subjectType === "member" ? candidate.subjectId : optionalString(candidate.value.memberId);
   const leadId = candidate.subjectType === "lead" ? candidate.subjectId : optionalString(candidate.value.leadId);
+  const linkedMember = memberId && candidate.subjectType !== "member" ? await recordOfOptional(ctx, actor, "member", memberId) : undefined;
+  const marketingRecipient = linkedMember ? data(linkedMember.data) : candidate.value;
+  const marketingSuppression = marketingSuppressionReason(marketingRecipient);
   const occurredAt = isoNow();
 
   for (const action of arrayValue(rule.actions).map(data)) {
@@ -4121,15 +4212,17 @@ async function executeAutomationCandidate(
       continue;
     }
     if (key === "queue_message") {
-      const suppressionReason = quiet
-        ? "Tenant quiet hours"
-        : deliveryMode === "live"
-          ? "Outbound delivery is not enabled for this message type"
-          : undefined;
+      const suppressionReason = marketingSuppression
+        ?? (quiet
+          ? "Tenant quiet hours"
+          : deliveryMode === "live"
+            ? "Outbound delivery is not enabled for this message type"
+            : undefined);
       const status = suppressionReason ? "suppressed" : "queued";
       const message = await insertRecord(ctx, actor, "messageDelivery", {
         id: newPublicId(),
         status,
+        messageClass: "marketing",
         channel: "sandbox",
         requestedChannel: stringValue(action.channel, "whatsapp"),
         language: stringValue(candidate.value.preferredLanguage, "en"),
@@ -6649,15 +6742,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.rule.create": {
       requirePermission(actor, "automations.manage");
-      const rule = await insertRecord(ctx, actor, "automationRule", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), name: stringValue(input.name), trigger: stringValue(input.trigger), triggerParams: data(input.triggerParams), actions: arrayValue(input.actions), enabled: booleanValue(input.enabled), dedupeWindowHours: numberValue(input.dedupeWindowHours, 24), executionsLast30Days: 0, updatedAt: isoNow() });
+      const normalized = normalizedAutomationRulePatch(input, undefined, actor.correlationId, true);
+      await assertAutomationTemplateReferences(ctx, actor, arrayValue(normalized.actions).map(data));
+      const rule = await insertRecord(ctx, actor, "automationRule", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), ...normalized, executionsLast30Days: 0, updatedAt: isoNow() });
       await insertAudit(ctx, actor, { category: "automations", action: "automation.rule_created", entityType: "automation_rule", entityId: rule.id, entityLabel: stringValue(rule.name), summary: "Automation rule created" });
       return rule;
     }
     case "automations.rule.update": {
       requirePermission(actor, "automations.manage");
       const record = await recordOf(ctx, actor, "automationRule", recordId(input.id));
-      const patch: Data = { ...input, updatedAt: isoNow() };
-      delete patch.id;
+      const patch: Data = normalizedAutomationRulePatch(input, data(record.data), actor.correlationId, false);
+      if (patch.actions) await assertAutomationTemplateReferences(ctx, actor, arrayValue(patch.actions).map(data));
+      patch.updatedAt = isoNow();
       const updated = await patchRecord(ctx, actor, record, patch);
       await insertAudit(ctx, actor, { category: "automations", action: "automation.rule_updated", entityType: "automation_rule", entityId: record.publicId, entityLabel: stringValue(updated.name), summary: "Automation rule updated" });
       return updated;

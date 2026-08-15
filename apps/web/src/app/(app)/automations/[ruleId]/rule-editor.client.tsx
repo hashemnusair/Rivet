@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { isApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils/cn";
 import { ACTION_LABELS, TRIGGER_LABELS } from "@/features/automations/labels";
+import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams } from "@/features/automations/form";
 
 export default function RuleEditorPageClient() {
   const { ruleId } = useParams<{ ruleId: string }>();
@@ -49,9 +50,8 @@ export default function RuleEditorPageClient() {
     if (rule) {
       setName(rule.name);
       const dp = rule.triggerParams.daysBefore;
-      setDaysBefore(Array.isArray(dp) ? dp.join(", ") : String(dp ?? "14, 3"));
-      const pv = rule.triggerParams.days ?? rule.triggerParams.hours ?? rule.triggerParams.daysAfter ?? 21;
-      setParamValue(String(pv));
+      setDaysBefore(Array.isArray(dp) ? dp.join(", ") : "14, 3");
+      setParamValue(automationTriggerFieldValue(rule.trigger, rule.triggerParams));
       setDedupe(rule.dedupeWindowHours);
       setActions(rule.actions);
       setDirty(false);
@@ -61,12 +61,9 @@ export default function RuleEditorPageClient() {
   const save = useApiMutation(
     (api) => {
       if (!rule) throw new Error("no rule");
-      const triggerParams: Record<string, number | number[]> =
-        rule.trigger === "membership_expiring"
-          ? { daysBefore: daysBefore.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0) }
-          : rule.trigger === "member_inactive" || rule.trigger === "payment_outstanding"
-            ? { days: Number(paramValue) }
-            : { hours: Number(paramValue) };
+      const rawTriggerValue = rule.trigger === "membership_expiring" ? daysBefore : paramValue;
+      if (!hasValidAutomationTriggerParams(rule.trigger, rawTriggerValue)) throw new Error("Enter a valid automation threshold before saving.");
+      const triggerParams = automationTriggerParams(rule.trigger, rawTriggerValue);
       return api.updateAutomationRule(rule.id, {
         name,
         triggerParams,
@@ -118,18 +115,12 @@ export default function RuleEditorPageClient() {
   }
   if (!rule) return null;
 
-  const paramLabel =
-    rule.trigger === "membership_expiring"
-      ? "Days before expiry (comma separated)"
-      : rule.trigger === "member_inactive"
-        ? "Days without a check-in"
-        : rule.trigger === "payment_outstanding"
-          ? "Days outstanding"
-          : rule.trigger === "lead_untouched"
-            ? "Hours without first contact"
-            : "Hours overdue";
+  const paramLabel = rule.trigger === "membership_expiring" ? `${automationTriggerParameterLabel(rule.trigger)} (comma separated)` : rule.trigger === "member_inactive" ? "Days without a check-in" : rule.trigger === "payment_outstanding" ? "Days outstanding" : automationTriggerParameterLabel(rule.trigger);
 
   const selectedTemplate = templatesQuery.data?.find((t) => t.id === actions.find((a) => a.key === "queue_message")?.templateId);
+  const queueMessageAction = actions.find((action) => action.key === "queue_message");
+  const validTriggerParams = hasValidAutomationTriggerParams(rule.trigger, rule.trigger === "membership_expiring" ? daysBefore : paramValue);
+  const canSave = dirty && name.trim().length > 0 && actions.length > 0 && validTriggerParams && (!queueMessageAction || Boolean(queueMessageAction.templateId));
 
   return (
     <div className="space-y-4">
@@ -147,7 +138,7 @@ export default function RuleEditorPageClient() {
             <Button variant="secondary" onClick={() => setRunOpen(true)} disabled={dirty} title={dirty ? "Save configuration changes before running" : undefined}>
               <Play /> Run now
             </Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!canSave}>
               <Save /> Save changes
             </Button>
           </div>
@@ -163,11 +154,11 @@ export default function RuleEditorPageClient() {
               <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
             </Field>
 
-            <Field label={paramLabel}>
+            <Field label={paramLabel} hint={rule.trigger === "membership_expired" ? "Use 0 for memberships that expired today." : undefined}>
               {rule.trigger === "membership_expiring" ? (
                 <Input value={daysBefore} onChange={(e) => { setDaysBefore(e.target.value); setDirty(true); }} className="tabular" />
               ) : (
-                <Input type="number" min={1} value={paramValue} onChange={(e) => { setParamValue(e.target.value); setDirty(true); }} className="tabular" />
+                <Input type="number" min={rule.trigger === "membership_expired" ? 0 : 1} value={paramValue} onChange={(e) => { setParamValue(e.target.value); setDirty(true); }} className="tabular" />
               )}
             </Field>
 
