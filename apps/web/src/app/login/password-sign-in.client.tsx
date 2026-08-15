@@ -199,7 +199,7 @@ export function PasswordSignIn() {
           value={emailAddress}
           onChange={(event) => setEmailAddress(event.target.value)}
           autoComplete="email"
-          placeholder="you@example.com"
+          placeholder="name@yourgym.com"
           autoFocus
           aria-invalid={Boolean(errors.fields.identifier)}
         />
@@ -212,6 +212,7 @@ export function PasswordSignIn() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
+            placeholder="Enter password"
             className="pe-10"
             aria-invalid={Boolean(errors.fields.password)}
           />
