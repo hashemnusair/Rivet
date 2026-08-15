@@ -9,7 +9,8 @@ Updated 15 August 2026 after the dashboard priorities and Follow-ups workspace r
 - [x] Rebuilt Follow-ups as a responsive attention workspace with a vertical left filter rail, right-side Found matches results, selected-member context, exact Expiring/Expired filters, day/date controls, reset, retry, and empty states.
 - [x] Passed local typechecks, Convex codegen/typecheck, zero-warning lint, 87 test files / 468 tests, the 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
 - [x] Confirmed this frontend-only change made no Convex Production deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation.
-- [ ] Record the exact post-push GitHub Actions and Vercel evidence, then complete credentialed isolated-staging execution and disposable cleanup evidence for `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
+- [x] Recorded the exact post-push [GitHub Actions run 31898075938](https://github.com/hashemnusair/Rivet/actions/runs/31898075938): typecheck/lint/unit tests/build, generated-code verification, and Playwright preview passed; the authenticated Clerk → Convex smoke remained credential-gated/skipped. The exact Vercel Production check [AHWizGwwuvXXPtJjdyPrqwDKQDNe](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/AHWizGwwuvXXPtJjdyPrqwDKQDNe) passed, and the canonical site returned HTTP 200.
+- [ ] Complete credentialed isolated-staging execution and disposable cleanup evidence for `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
 
 ## CRM read-path and realtime responsiveness — 15 August 2026
 
