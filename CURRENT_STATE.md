@@ -1,6 +1,15 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-15 after the Automations UI postponement. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-16 after the Production member-lookup regression fix. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+
+## Production member and lookup regression fixed — direct-main release
+
+- The failure was reproduced against Production on 16 August 2026: member and membership lists loaded, but opening a member detail route crashed with `TypeError: Cannot read properties of undefined (reading 'homeBranchId')`.
+- Root cause was the `c4d8ee0` realtime read optimization. In Convex mode it disabled the ordinary initial query before a native watch had delivered its first snapshot; a connecting watch could therefore leave a detail page with no data while reporting a non-error loading state.
+- Direct-main commit `c9ff56d5dada034689674a8e6fd4077430cdeb1e` keeps the initial query enabled until the realtime watch has delivered a value, restores failure-only polling when the stream falls back, adds defensive no-data guards to member and lead detail routes, and adds a Convex-mode regression test. It is frontend-only: no Convex deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation was performed.
+- Local verification passed: frontend and Convex typechecks, Convex codegen, zero-warning lint, 89 test files / 475 tests, the 43-route Production build, the full Playwright suite with only credential-gated staging skips, the focused member lookup journeys (3/3), and `git diff --check`.
+- GitHub Actions [run 31910859527](https://github.com/hashemnusair/Rivet/actions/runs/31910859527) passed typecheck/lint/unit tests/build, generated-code verification, and Playwright preview; the authenticated smoke was skipped because it remains credential-gated. Vercel Production completed the exact deployment [5xJ4qsgmqDai92jK5XjTjWJWQPGn](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/5xJ4qsgmqDai92jK5XjTjWJWQPGn), and `https://www.rivetjo.com` returned HTTP 200.
+- A fresh Production browser tab then opened the previously failing member record successfully with no error overlay and no console errors. `main` is clean and aligned with `origin/main`.
 
 ## Automations UI postponed — direct-main frontend release
 

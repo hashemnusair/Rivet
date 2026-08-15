@@ -1,6 +1,14 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 15 August 2026 after the Automations UI postponement. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 16 August 2026 after the Production member-lookup regression fix. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Latest direct-main fix — Production member lookups — 16 August 2026
+
+- [x] Reproduced the Production failure: member and membership lists loaded, but opening a member record crashed while reading `homeBranchId` from an absent realtime snapshot.
+- [x] Fixed the realtime bridge in `c9ff56d5dada034689674a8e6fd4077430cdeb1e` so the ordinary initial query remains available until Convex delivers the first live value; added defensive member/lead detail guards and a Convex-mode regression test.
+- [x] Passed frontend/Convex typechecks, Convex codegen, lint, 89 test files / 475 tests, the 43-route build, full Playwright with only credential-gated staging skips, focused member lookup journeys (3/3), and diff checks.
+- [x] GitHub Actions [31910859527](https://github.com/hashemnusair/Rivet/actions/runs/31910859527) and Vercel Production deployment [5xJ4qsgmqDai92jK5XjTjWJWQPGn](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/5xJ4qsgmqDai92jK5XjTjWJWQPGn) completed successfully; `https://www.rivetjo.com` returned HTTP 200.
+- [x] Confirmed a fresh Production member-detail load has no error overlay or console errors. This was frontend-only; no Convex deploy/schema change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation occurred.
 
 ## Latest direct-main change — Automations UI postponed — 15 August 2026
 
