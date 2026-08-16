@@ -1,8 +1,8 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-16 after the Production member-lookup regression fix. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-17 after the simplified Core CRM Pilot release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
-## Simplified core CRM pilot — current implementation slice
+## Simplified Core CRM Pilot — released 17 August 2026
 
 - The primary gym workspace now follows one simple path: **Dashboard → Leads → Follow-ups → Members → Reception → Payments → Personal training → Support → Settings**. Memberships, plans, cash shifts, reports, audit, and Automations remain available through contextual/deep routes without competing with the primary workflow.
 - Payments is the single finance entry point; Shifts & cash and Reports are secondary finance views. The command palette mirrors the same core destinations instead of presenting duplicate top-level routes.
@@ -10,6 +10,11 @@ Updated 2026-08-16 after the Production member-lookup regression fix. This is th
 - Shared loading, empty, retry, and permission states are now used by the gym support workspace. Support remains a two-way persisted conversation between gym staff and RIVET administrators.
 - Staging journey reporting distinguishes implemented, credential-blocked, deferred, and not-run journeys. Automations is explicitly deferred because its product surface is Coming soon; selecting an unconfigured or deferred journey skips it with a truthful reason instead of attempting a Production write.
 - This slice does not change the Convex schema, seed/import/restore/delete Production product data, activate live email, or use Production as a test-writing target.
+- Direct-main commit `e3a4e9d8439738a358a129e32c9289ffa8bd4ea5` was fetched against the unchanged partner head, committed on `main`, and pushed without a branch or PR. `FRONTEND_HANDOFF.md` and `docs/14_MODULAR_WORKSPACE_PLAN.md` remain untouched.
+- Local release gates passed: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm convex:codegen`, `pnpm lint`, `pnpm test` (90 files / 478 tests), `pnpm build` (43 routes), `pnpm test:e2e` (25 passed / 14 intentional staging/deferred skips), and `git diff --check`.
+- GitHub Actions [run 31978650324](https://github.com/hashemnusair/Rivet/actions/runs/31978650324) passed typecheck/lint/unit tests/build, generated-code verification, and Playwright preview; the authenticated Clerk → Convex smoke remained credential-gated/skipped. Vercel Production deployment [J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ) completed successfully, and `https://www.rivetjo.com` returned HTTP 200.
+- Convex Production target `descriptive-meerkat-589` was selected explicitly. The exact-target non-verbose dry run and deploy passed with no deleted indexes and schema validation complete; there is no `schema.ts` delta or destructive migration. The read-only `health:check` returned `{ "status": "ok" }`; the aggregate recent-log check surfaced no error event payloads.
+- The optional functional-staging workflow now reports missing identities as credential-blocked and skips functional writes instead of failing the release. No staging secrets were required for this release, no Production product data was written, and live operational email stayed disabled.
 
 ## Production member and lookup regression fixed — direct-main release
 

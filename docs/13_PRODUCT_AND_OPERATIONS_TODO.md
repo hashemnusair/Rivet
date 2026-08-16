@@ -1,8 +1,8 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 16 August 2026 after the Production member-lookup regression fix. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 17 August 2026 after the simplified Core CRM Pilot release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
-## Latest simplification slice — core CRM pilot
+## Latest simplification slice — core CRM pilot — released 17 August 2026
 
 - [x] Reduced the primary gym navigation and command palette to the core workflow: Dashboard, Leads, Follow-ups, Members, Reception, Payments, Personal training, Support, and Settings.
 - [x] Preserved memberships, plans, cash shifts, reports, audit, and Automations as deep/contextual routes rather than removing them or changing their authorization.
@@ -11,8 +11,12 @@ Updated 16 August 2026 after the Production member-lookup regression fix. This i
 - [x] Standardized the gym support workspace's loading, empty, and retryable error states while preserving two-way staff ↔ RIVET messaging.
 - [x] Added explicit staging journey readiness reporting for implemented, credential-blocked, deferred, and not-run paths. Automations remains deferred behind the intentional Coming soon page.
 - [x] Added the investor-facing readiness summary at `docs/15_INVESTOR_READINESS_BRIEF.md`.
-- [ ] Run the full local quality gate and record the exact release commit/CI/Vercel/Convex evidence after this slice is released.
-- [ ] Keep Production verification read-only: no test memberships, payments, members, media, bulk cleanup, seed/import/restore/delete, or live operational-email activation.
+- [x] Released `e3a4e9d8439738a358a129e32c9289ffa8bd4ea5` directly to `main`; the final fetch found no partner advancement, and the frozen frontend handoff and modular product plan were preserved.
+- [x] Passed the full local quality gate: typechecks, Convex codegen, lint, 90 test files / 478 tests, 43-route build, 25 Playwright passes with 14 intentional staging/deferred skips, and `git diff --check`.
+- [x] Recorded GitHub Actions [31978650324](https://github.com/hashemnusair/Rivet/actions/runs/31978650324), Vercel Production [J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ), and the canonical HTTP 200 check.
+- [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy: schema validation passed, no indexes were deleted, no `schema.ts` or destructive migration was introduced, and read-only `health:check` returned `{ "status": "ok" }`.
+- [x] Kept this release read-only with respect to Production product data: no test memberships, payments, members, media, bulk cleanup, seed/import/restore/delete, or live operational-email activation.
+- [ ] Complete the credentialed isolated-staging bodies when role identities are intentionally configured; the current workflow reports them as credential-blocked and performs no functional staging writes when those prerequisites are absent.
 
 ## Latest direct-main fix — Production member lookups — 16 August 2026
 
