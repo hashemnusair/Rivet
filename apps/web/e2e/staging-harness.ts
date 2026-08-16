@@ -1,12 +1,20 @@
 import { existsSync } from "node:fs";
-import { expect, type Browser, type BrowserContext, type TestInfo } from "@playwright/test";
-import { stagingJourneyRoles, stagingJourneySelected, storageStateEnvironmentKey, type StagingJourney, type StagingRole, validateStagingEnvironment } from "../src/lib/release/staging-guard";
+import { expect, test, type Browser, type BrowserContext, type TestInfo } from "@playwright/test";
+import { stagingJourneyRoles, stagingJourneySelected, stagingJourneyStatus, storageStateEnvironmentKey, type StagingJourney, type StagingRole, validateStagingEnvironment } from "../src/lib/release/staging-guard";
 
 type CleanupEntry = { targetType: string; targetId?: string; action: "archive" | "deactivate" | "unpublish" | "suspend" | "preserve"; reason: string; status: "planned" | "completed" | "failed"; error?: string };
 
 export function requireStagingJourney(journey: StagingJourney, baseURL: string | undefined) {
   const guard = validateStagingEnvironment(process.env, baseURL ?? "http://127.0.0.1:3100");
-  expect(stagingJourneySelected(guard.selectedJourneys, journey), `Journey ${journey} was not selected by PLAYWRIGHT_STAGING_JOURNEYS`).toBe(true);
+  if (!stagingJourneySelected(guard.selectedJourneys, journey)) {
+    test.skip(true, `Journey ${journey} was not selected by PLAYWRIGHT_STAGING_JOURNEYS.`);
+  }
+  const status = stagingJourneyStatus(guard.selectedJourneys, journey);
+  if (status === "deferred") {
+    test.skip(true, `Journey ${journey} is deferred while the product surface is Coming soon.`);
+  }
+  expect(status).not.toBe("not-run");
+  console.log("[staging-journey]", JSON.stringify({ journey, status }));
   return guard;
 }
 

@@ -1,19 +1,13 @@
 import {
   ArrowLeftRight,
-  Banknote,
-  ClipboardList,
-  FileBarChart,
   Gauge,
   KanbanSquare,
   ListFilter,
-  ScrollText,
   Settings,
   ShieldCheck,
   CircleHelp,
   Dumbbell,
   Users,
-  WalletCards,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,36 +32,23 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ href: "/dashboard", label: "Dashboard", icon: Gauge }],
   },
   {
-    label: "Operations",
+    label: "Workspace",
     items: [
-      { href: "/reception", label: "Reception", icon: ShieldCheck },
+      { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
+      { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, anyPermission: ["crm.read"] },
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
-      { href: "/memberships", label: "Memberships", icon: WalletCards, anyPermission: ["members.read"] },
-      { href: "/plans", label: "Plans", icon: ClipboardList, anyPermission: ["members.read"] },
+      { href: "/reception", label: "Reception", icon: ShieldCheck },
       { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     ],
   },
   {
-    label: "Growth",
-    items: [
-      { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
-      { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, anyPermission: ["crm.read"] },
-    ],
-  },
-  {
     label: "Finance",
-    items: [
-      { href: "/payments", label: "Transactions", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
-      { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
-      { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
-    ],
+    items: [{ href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] }],
   },
   {
     label: "System",
     items: [
-      { href: "/automations", label: "Automations", icon: Zap, anyPermission: ["automations.manage"] },
-      { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
-      { href: "/support", label: "RIVET support", icon: CircleHelp },
+      { href: "/support", label: "Support", icon: CircleHelp },
       { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
     ],
   },

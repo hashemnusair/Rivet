@@ -3,22 +3,18 @@
 import { Command } from "cmdk";
 import {
   ArrowRight,
-  Banknote,
+  ArrowLeftRight,
   CircleHelp,
   Dumbbell,
-  FileBarChart,
   Gauge,
   KanbanSquare,
   ListFilter,
   Plus,
   ScanLine,
-  ScrollText,
   Settings,
   ShieldCheck,
   UserPlus,
   Users,
-  WalletCards,
-  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -100,18 +96,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const pages = [
     { href: "/dashboard", label: "Dashboard", icon: Gauge },
-    { href: "/reception", label: "Reception console", icon: ShieldCheck },
-    { href: "/members", label: "Members", icon: Users, perm: ["members.read"] },
-    { href: "/memberships", label: "Memberships", icon: WalletCards, perm: ["members.read"] },
-    { href: "/pt", label: "Personal training", icon: Dumbbell, perm: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, perm: ["crm.read"] },
     { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, perm: ["crm.read"] },
-    { href: "/payments", label: "Transactions", icon: Banknote, perm: ["reports.financial.read", "payments.collect"] },
-    { href: "/payments/shifts", label: "Shifts & cash", icon: ScanLine, perm: ["reports.financial.read", "reconciliation.open_shift"] },
-    { href: "/reports", label: "Reports", icon: FileBarChart, perm: ["reports.financial.read"] },
-    { href: "/automations", label: "Automations", icon: Zap, perm: ["automations.manage"] },
-    { href: "/audit", label: "Audit log", icon: ScrollText, perm: ["audit.read"] },
-    { href: "/support", label: "RIVET support", icon: CircleHelp },
+    { href: "/members", label: "Members", icon: Users, perm: ["members.read"] },
+    { href: "/reception", label: "Reception", icon: ShieldCheck },
+    { href: "/pt", label: "Personal training", icon: Dumbbell, perm: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
+    { href: "/payments", label: "Payments", icon: ArrowLeftRight, perm: ["reports.financial.read"] },
+    { href: "/support", label: "Support", icon: CircleHelp },
     { href: "/settings", label: "Settings", icon: Settings, perm: ["settings.manage", "users.manage"] },
   ].filter((p) => !p.perm || canAny(p.perm));
 

@@ -39,6 +39,8 @@ describe("gym-controlled public profile", () => {
 
     const published = await owner.mutation(api.domain.mutate, operation("profiles.gym.publish")) as { status: string; taglineEn: string; version: number };
     expect(published).toMatchObject({ status: "published", taglineEn: "Train with a plan", version: 1 });
+    const retried = await owner.mutation(api.domain.mutate, operation("profiles.gym.publish")) as { status: string; version: number };
+    expect(retried).toMatchObject({ status: "published", version: 1 });
     publicRows = await owner.query(api.domain.query, operation("public.marketplace")) as Array<Record<string, unknown>>;
     expect(publicRows[0]).toMatchObject({ tagline: "Train with a plan", taglineAr: "تدرب بخطة", memberCount: 1, fromPriceMinor: 45_000, profileVersion: 1 });
 

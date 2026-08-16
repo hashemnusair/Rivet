@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
+import { FinanceNav } from "@/features/finance/finance-nav";
 
 export default function ShiftsPage() {
   const { session } = useApp();
@@ -99,6 +100,8 @@ export default function ShiftsPage() {
           </div>
         }
       />
+
+      <FinanceNav />
 
       {/* Current shift */}
       <section className="panel overflow-hidden">

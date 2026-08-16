@@ -17,6 +17,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { formatMoney, money } from "@/lib/utils/money";
 import type { TransactionSummary } from "@/lib/domain/types";
+import { FinanceNav } from "@/features/finance/finance-nav";
 
 type Range = 7 | 30 | 90;
 
@@ -85,6 +86,8 @@ export default function ReportsPage() {
         description="Reconcile revenue, collections, members, and branch performance from the same persisted facts that power the workspace."
         actions={<Button variant="signal" onClick={exportCsv} disabled={!dashboard || transactions.length === 0}><Download /> Export CSV</Button>}
       />
+
+      <FinanceNav />
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner, manager, and auditor access is required for financial reporting." />}>
         <section className="panel flex flex-wrap items-end gap-3 p-4">

@@ -5494,13 +5494,21 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!stringValue(draftValue.taglineEn).trim() || !stringValue(draftValue.descriptionEn).trim()) domainError("VALIDATION_ERROR", "Complete the English tagline and description before publishing.", { correlationId: actor.correlationId });
       const listing = (await marketplaceRows(ctx)).find((record) => record.organizationId === actor.organization._id);
       if (!listing) domainError("CONFIGURATION_ERROR", "The platform listing must exist before this gym profile can be published.", { correlationId: actor.correlationId });
+      const listingValue = data(listing.data);
+      const draftVersion = numberValue(draftValue.version);
+      // Publishing is a retryable command. If the draft and listing already
+      // agree on the published version, return the authoritative projection
+      // without creating another immutable snapshot or audit event.
+      if (stringValue(draftValue.status) === "published" && booleanValue(listingValue.profilePublished, false) && numberValue(listingValue.profileVersion) === draftVersion) {
+        return await currentGymProfile(ctx, actor);
+      }
       const now = Date.now();
       const publishedAt = utcIso(now);
       const allVersions = await recordsOf(ctx, actor, "gymProfileVersion");
       const oldVersions = allVersions.filter((record) => stringValue(data(record.data).status) === "published");
       for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
       const versionId = newPublicId();
-      const versionValue = { ...draftValue, status: "published", publishedAt, updatedAt: publishedAt };
+      const versionValue = { ...draftValue, status: "published", version: draftVersion, publishedAt, updatedAt: publishedAt };
       await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
       await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
       const listingBefore = data(listing.data);

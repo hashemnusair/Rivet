@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState, ErrorState, ForbiddenState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CollectPaymentMemberPicker } from "@/features/finance/collect-payment-picker";
+import { FinanceNav } from "@/features/finance/finance-nav";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
@@ -67,7 +68,7 @@ export default function TransactionsPage() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Transactions"
+        title="Payments"
         description="Every payment, refund and void — the immutable money trail."
         actions={
           <Button onClick={() => setCollectOpen(true)}>
@@ -75,6 +76,8 @@ export default function TransactionsPage() {
           </Button>
         }
       />
+
+      <FinanceNav />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">

@@ -18,6 +18,24 @@ export const STAGING_JOURNEY_MANIFEST = {
 
 export type StagingJourney = keyof typeof STAGING_JOURNEY_MANIFEST;
 
+export type StagingJourneyStatus = "implemented" | "credential-blocked" | "deferred" | "not-run";
+
+/** Current release readiness; this is deliberately separate from role requirements. */
+export const STAGING_JOURNEY_READINESS: Record<StagingJourney, Exclude<StagingJourneyStatus, "not-run">> = {
+  provisioning: "credential-blocked",
+  "owner-settings": "implemented",
+  "staff-authorization": "credential-blocked",
+  "trial-crm": "credential-blocked",
+  "membership-lifecycle": "implemented",
+  "reception-entry": "credential-blocked",
+  "finance-reconciliation": "credential-blocked",
+  automation: "deferred",
+  "member-portal": "credential-blocked",
+  "isolation-audit": "credential-blocked",
+  "personal-training": "credential-blocked",
+  "realtime-smoke": "implemented",
+};
+
 export type StagingGuardResult = {
   runId: string;
   convexUrl: string;
@@ -60,6 +78,11 @@ export function validateStagingEnvironment(env: Record<string, string | undefine
 
 export function stagingJourneySelected(selected: Array<StagingJourney | "all">, journey: StagingJourney): boolean {
   return selected.includes("all") || selected.includes(journey);
+}
+
+export function stagingJourneyStatus(selected: Array<StagingJourney | "all">, journey: StagingJourney): StagingJourneyStatus {
+  if (!stagingJourneySelected(selected, journey)) return "not-run";
+  return STAGING_JOURNEY_READINESS[journey];
 }
 
 export function stagingJourneyRoles(journey: StagingJourney): readonly StagingRole[] {

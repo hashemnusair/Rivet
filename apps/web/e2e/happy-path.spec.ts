@@ -181,7 +181,7 @@ test.describe("role restrictions", () => {
   test("hides finance and system areas from reception", async ({ page }) => {
     await signIn(page, "Reception");
     const nav = page.getByRole("navigation").first();
-    await expect(nav.getByRole("link", { name: /^Transactions$/ })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: /^Payments$/ })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toHaveCount(0);
   });
@@ -192,12 +192,13 @@ test.describe("role restrictions", () => {
     await expect(page.getByText(/not allowed for this role/i)).toBeVisible();
   });
 
-  test("gives the owner finance, audit and settings", async ({ page }) => {
+  test("gives the owner the simplified finance and settings entry points", async ({ page }) => {
     await signIn(page, "Owner");
     const nav = page.getByRole("navigation").first();
-    await expect(nav.getByRole("link", { name: /^Transactions$/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Payments$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Support$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
   });
 });
 
@@ -275,9 +276,12 @@ test.describe("sensitive actions are audited", () => {
     await page.getByTestId("confirm-override").click();
     await expect(page.getByText(/checked in ·/i)).toBeVisible();
 
-    // Navigate in-app: the mock tenant lives in memory for the page's lifetime,
-    // so a full reload would re-seed it and discard the override we just made.
-    await page.getByRole("link", { name: /^Audit log$/ }).click();
+    // Navigate in-app through the manager dashboard: the mock tenant lives in
+    // memory for the page's lifetime, so a full reload would re-seed it and
+    // discard the override. Audit is intentionally a deep route, not a
+    // primary-navigation item.
+    await page.getByRole("link", { name: "RIVET home" }).click();
+    await page.getByRole("link", { name: /^Audit trail$/ }).click();
     await expect(page).toHaveURL(/\/audit/);
     await page.getByLabel("Category filter").click();
     await page.getByRole("option", { name: /check-?ins/i }).click();

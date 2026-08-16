@@ -65,7 +65,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
       <div className="no-print flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/payments">
-            <ArrowLeft /> Transactions
+            <ArrowLeft /> Payments
           </Link>
         </Button>
         <div className="flex items-center gap-2">

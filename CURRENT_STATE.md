@@ -2,6 +2,15 @@
 
 Updated 2026-08-16 after the Production member-lookup regression fix. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
+## Simplified core CRM pilot — current implementation slice
+
+- The primary gym workspace now follows one simple path: **Dashboard → Leads → Follow-ups → Members → Reception → Payments → Personal training → Support → Settings**. Memberships, plans, cash shifts, reports, audit, and Automations remain available through contextual/deep routes without competing with the primary workflow.
+- Payments is the single finance entry point; Shifts & cash and Reports are secondary finance views. The command palette mirrors the same core destinations instead of presenting duplicate top-level routes.
+- Gym public-profile publishing is idempotent. Retrying a publish for the already-published draft returns the existing authoritative projection without creating another immutable profile version or audit event.
+- Shared loading, empty, retry, and permission states are now used by the gym support workspace. Support remains a two-way persisted conversation between gym staff and RIVET administrators.
+- Staging journey reporting distinguishes implemented, credential-blocked, deferred, and not-run journeys. Automations is explicitly deferred because its product surface is Coming soon; selecting an unconfigured or deferred journey skips it with a truthful reason instead of attempting a Production write.
+- This slice does not change the Convex schema, seed/import/restore/delete Production product data, activate live email, or use Production as a test-writing target.
+
 ## Production member and lookup regression fixed — direct-main release
 
 - The failure was reproduced against Production on 16 August 2026: member and membership lists loaded, but opening a member detail route crashed with `TypeError: Cannot read properties of undefined (reading 'homeBranchId')`.

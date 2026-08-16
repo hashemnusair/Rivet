@@ -2,6 +2,18 @@
 
 Updated 16 August 2026 after the Production member-lookup regression fix. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
+## Latest simplification slice — core CRM pilot
+
+- [x] Reduced the primary gym navigation and command palette to the core workflow: Dashboard, Leads, Follow-ups, Members, Reception, Payments, Personal training, Support, and Settings.
+- [x] Preserved memberships, plans, cash shifts, reports, audit, and Automations as deep/contextual routes rather than removing them or changing their authorization.
+- [x] Added one secondary finance switcher under Payments so transactions, Shifts & cash, and Reports remain discoverable without three competing primary entries.
+- [x] Made gym-profile publish retries idempotent so an already-published draft does not create duplicate immutable versions or audit events.
+- [x] Standardized the gym support workspace's loading, empty, and retryable error states while preserving two-way staff ↔ RIVET messaging.
+- [x] Added explicit staging journey readiness reporting for implemented, credential-blocked, deferred, and not-run paths. Automations remains deferred behind the intentional Coming soon page.
+- [x] Added the investor-facing readiness summary at `docs/15_INVESTOR_READINESS_BRIEF.md`.
+- [ ] Run the full local quality gate and record the exact release commit/CI/Vercel/Convex evidence after this slice is released.
+- [ ] Keep Production verification read-only: no test memberships, payments, members, media, bulk cleanup, seed/import/restore/delete, or live operational-email activation.
+
 ## Latest direct-main fix — Production member lookups — 16 August 2026
 
 - [x] Reproduced the Production failure: member and membership lists loaded, but opening a member record crashed while reading `homeBranchId` from an absent realtime snapshot.
