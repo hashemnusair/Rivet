@@ -15,6 +15,7 @@ Updated 2026-08-17 after the simplified Core CRM Pilot release. This is the livi
 - GitHub Actions [run 31978650324](https://github.com/hashemnusair/Rivet/actions/runs/31978650324) passed typecheck/lint/unit tests/build, generated-code verification, and Playwright preview; the authenticated Clerk → Convex smoke remained credential-gated/skipped. Vercel Production deployment [J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ) completed successfully, and `https://www.rivetjo.com` returned HTTP 200.
 - Convex Production target `descriptive-meerkat-589` was selected explicitly. The exact-target non-verbose dry run and deploy passed with no deleted indexes and schema validation complete; there is no `schema.ts` delta or destructive migration. The read-only `health:check` returned `{ "status": "ok" }`; the aggregate recent-log check surfaced no error event payloads.
 - The optional functional-staging workflow now reports missing identities as credential-blocked and skips functional writes instead of failing the release. No staging secrets were required for this release, no Production product data was written, and live operational email stayed disabled.
+- The staging safety preflight now requires an explicit `PLAYWRIGHT_PRODUCTION_CONVEX_URL` comparison before any staged journey can write, so an absent Production reference cannot silently weaken the Production-target guard.
 
 ## Production member and lookup regression fixed — direct-main release
 

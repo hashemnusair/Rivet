@@ -16,6 +16,7 @@ Updated 17 August 2026 after the simplified Core CRM Pilot release. This is the 
 - [x] Recorded GitHub Actions [31978650324](https://github.com/hashemnusair/Rivet/actions/runs/31978650324), Vercel Production [J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/J4Rz3YsXjUYL5XsjcFxCcdQ4N6TQ), and the canonical HTTP 200 check.
 - [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy: schema validation passed, no indexes were deleted, no `schema.ts` or destructive migration was introduced, and read-only `health:check` returned `{ "status": "ok" }`.
 - [x] Kept this release read-only with respect to Production product data: no test memberships, payments, members, media, bulk cleanup, seed/import/restore/delete, or live operational-email activation.
+- [x] Hardened the staging guard to require an explicit Production Convex URL and refuse to run when the configured staging URL cannot be proven distinct from Production.
 - [ ] Complete the credentialed isolated-staging bodies when role identities are intentionally configured; the current workflow reports them as credential-blocked and performs no functional staging writes when those prerequisites are absent.
 
 ## Latest direct-main fix — Production member lookups — 16 August 2026

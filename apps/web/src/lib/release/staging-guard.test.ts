@@ -11,6 +11,7 @@ describe("staging write guard", () => {
     [{ ...safe, PLAYWRIGHT_TARGET_CLASSIFICATION: "production" }, "PLAYWRIGHT_TARGET_CLASSIFICATION"],
     [{ ...safe, PLAYWRIGHT_RUN_ID: "short" }, "RUN_ID"],
     [{ ...safe, NEXT_PUBLIC_CONVEX_URL: "https://different.convex.cloud" }, "does not match"],
+    [{ ...safe, PLAYWRIGHT_PRODUCTION_CONVEX_URL: undefined }, "must be configured"],
     [{ ...safe, PLAYWRIGHT_PRODUCTION_CONVEX_URL: safe.NEXT_PUBLIC_CONVEX_URL }, "Production Convex"],
   ])("refuses an unsafe environment", (env, message) => expect(() => validateStagingEnvironment(env, "http://127.0.0.1:3100")).toThrow(message));
   it("refuses a Production web host independently of its name", () => expect(() => validateStagingEnvironment(safe, "https://www.rivetjo.com")).toThrow("Production host"));

@@ -62,7 +62,8 @@ export function validateStagingEnvironment(env: Record<string, string | undefine
   if (!expectedConvex || !actualConvex || expectedConvex !== actualConvex) throw new Error("The configured Convex URL does not match PLAYWRIGHT_EXPECTED_CONVEX_URL.");
   if (!/^https:\/\/[^/]+\.convex\.cloud$/i.test(actualConvex)) throw new Error("The staging Convex URL must be an explicit convex.cloud deployment URL.");
   const productionConvex = normalizedUrl(env.PLAYWRIGHT_PRODUCTION_CONVEX_URL);
-  if (productionConvex && productionConvex === actualConvex) throw new Error("The staging suite refuses to target the configured Production Convex deployment.");
+  if (!productionConvex) throw new Error("PLAYWRIGHT_PRODUCTION_CONVEX_URL must be configured so the staging suite can prove it is not targeting Production.");
+  if (productionConvex === actualConvex) throw new Error("The staging suite refuses to target the configured Production Convex deployment.");
   const hostname = new URL(baseUrl).hostname.toLowerCase();
   const productionHosts = (env.PLAYWRIGHT_PRODUCTION_HOSTS ?? "rivetjo.com,www.rivetjo.com").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
   if (productionHosts.includes(hostname)) throw new Error(`The staging suite refuses to write to Production host ${hostname}.`);
