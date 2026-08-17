@@ -3,6 +3,7 @@ import { dashboard } from "./dashboard";
 import { domain } from "./domain";
 import { marketing } from "./marketing";
 import { nav } from "./nav";
+import { reception } from "./reception";
 
 /**
  * English is the source of truth: `Messages` is derived from it, so the Arabic
@@ -15,6 +16,7 @@ export const en = {
   domain,
   marketing,
   nav,
+  reception,
 };
 
 export type Messages = typeof en;

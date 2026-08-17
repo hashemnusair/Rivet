@@ -33,8 +33,10 @@ import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog"
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
+import { useT } from "@/lib/i18n/provider";
 
 export default function ReceptionPage() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
@@ -134,13 +136,13 @@ export default function ReceptionPage() {
   }, [preview, result, checkIn, resetLane]);
 
   if (!can("members.read")) {
-    return <ForbiddenState description="The reception console needs member lookup permission." />;
+    return <ForbiddenState description={t("reception.forbidden")} />;
   }
 
   if (!branchId || !branch) {
     return (
       <ForbiddenState
-        description="Pick a single branch from the branch selector — the desk works one door at a time."
+        description={t("reception.pickBranch")}
       />
     );
   }
@@ -194,8 +196,8 @@ export default function ReceptionPage() {
                 setResult(null);
                 setQuery(e.target.value);
               }}
-              placeholder="Scan, or type a name, phone or number"
-              aria-label="Member lookup"
+              placeholder={t("reception.lookup.placeholder")}
+              aria-label={t("reception.lookup.label")}
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
@@ -206,7 +208,7 @@ export default function ReceptionPage() {
                 <button
                   type="button"
                   onClick={resetLane}
-                  aria-label="Clear"
+                  aria-label={t("common.action.clear")}
                   className="rounded-sm p-1 text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink cursor-pointer"
                 >
                   <X className="size-4" />
@@ -223,7 +225,7 @@ export default function ReceptionPage() {
             {!shown ? (
               <IdleState />
             ) : previewQuery.isLoading && !result ? (
-              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Looking up member">
+              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label={t("reception.lookup.looking")}>
                 <div className="h-4 w-40 animate-pulse rounded-sm bg-night-3" />
                 <div className="mt-3 h-10 w-64 animate-pulse rounded-sm bg-night-3" />
               </div>
@@ -274,9 +276,9 @@ export default function ReceptionPage() {
         {/* ---------------------------------------------------------------- */}
         {/* Right rail: today's attendance log */}
         {/* ---------------------------------------------------------------- */}
-        <aside className="flex min-w-0 flex-col bg-night-2" aria-label="Branch activity">
+        <aside className="flex min-w-0 flex-col bg-night-2" aria-label={t("reception.activity.label")}>
           <section className="border-b border-night-line px-5 py-5">
-            <p className="eyebrow-night">Check-ins today</p>
+            <p className="eyebrow-night">{t("reception.activity.checkInsToday")}</p>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
                 {recentQuery.data?.totalItems ?? "—"}
@@ -285,21 +287,21 @@ export default function ReceptionPage() {
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <dt className="eyebrow-night">Branch</dt>
+                <dt className="eyebrow-night">{t("reception.activity.branch")}</dt>
                 <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
               </div>
               <div>
-                <dt className="eyebrow-night">Peak hour</dt>
+                <dt className="eyebrow-night">{t("reception.activity.peakHour")}</dt>
                 <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.peakHour ?? "—"}</dd>
               </div>
             </dl>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <p className="eyebrow-night border-b border-night-line px-5 py-3">Today&apos;s check-in log</p>
+            <p className="eyebrow-night border-b border-night-line px-5 py-3">{t("reception.activity.todayLog")}</p>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
-                <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">No check-ins yet today.</li>
+                <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">{t("reception.activity.noCheckIns")}</li>
               ) : (
                 (recentQuery.data?.items ?? []).map((c) => (
                   <li key={c.id} className="flex items-start gap-2.5 px-5 py-2.5">
@@ -406,12 +408,13 @@ function ShiftStrip({
   onOpen: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   if (!shift) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
         <Lock className="size-3.5 text-warning" aria-hidden />
         <p className="text-[12.5px] text-night-ink-2">
-          <span className="font-medium text-night-ink">No shift open.</span> Check-ins work, but cash collection is disabled until the
+          <span className="font-medium text-night-ink">{t("reception.shift.none")}</span> Check-ins work, but cash collection is disabled until the
           drawer is counted.
         </p>
         {canOpen ? (
@@ -443,7 +446,7 @@ function ShiftStrip({
       ) : null}
       <div className="ms-auto flex items-center gap-2">
         <Button asChild size="xs" variant="night-ghost">
-          <Link href="/payments/shifts">Shift history</Link>
+          <Link href="/payments/shifts">{t("reception.shift.history")}</Link>
         </Button>
         {canClose ? (
           <Button size="xs" variant="night-outline" onClick={onClose} data-testid="close-shift">
@@ -460,10 +463,11 @@ function ShiftStrip({
 // ---------------------------------------------------------------------------
 
 function IdleState() {
+  const t = useT();
   return (
     <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-night-line px-6 py-10 text-center">
       <ScanLine className="size-6 text-night-ink-3" aria-hidden />
-      <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">Ready for the next member</p>
+      <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">{t("reception.lookup.ready")}</p>
       <p className="mt-1 max-w-sm text-[12.5px] text-night-ink-3">
         Scan their code or start typing. Three characters is enough to match a name, phone or member number.
       </p>
@@ -472,10 +476,11 @@ function IdleState() {
 }
 
 function NoMatchState({ message, query, canCreate }: { message: string; query: string; canCreate: boolean }) {
+  const t = useT();
   return (
     <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center">
       <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
-      <p className="mt-1 text-[12.5px] text-night-ink-3">Check the spelling, or try the phone number instead.</p>
+      <p className="mt-1 text-[12.5px] text-night-ink-3">{t("reception.lookup.checkSpelling")}</p>
       {canCreate ? (
         <Button asChild size="sm" variant="night-outline" className="mt-4">
           <Link href={`/members/new?name=${encodeURIComponent(query)}`}>
@@ -540,6 +545,7 @@ function VerdictPanel({
   onRenew: () => void;
   onNext: () => void;
 }) {
+  const t = useT();
   const verdict = VERDICT[decision] ?? VERDICT.blocked!;
   const Icon = verdict.icon;
   const outstanding = member.outstanding;
@@ -579,16 +585,16 @@ function VerdictPanel({
         </div>
 
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
-          <Cell label="Plan" value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
-          <Cell label="Expires" value={member.membershipEndDate ?? "—"} mono />
+          <Cell label={t("reception.member.plan")} value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
+          <Cell label={t("reception.member.expires")} value={member.membershipEndDate ?? "—"} mono />
           <Cell
-            label="Visits left"
+            label={t("reception.member.visitsLeft")}
             value={membership?.remainingVisits != null ? `${membership.remainingVisits}` : "—"}
             mono
             muted={membership?.remainingVisits == null}
           />
           <Cell
-            label="Balance"
+            label={t("reception.member.balance")}
             value={formatMoney(outstanding, { hideCurrency: true })}
             mono
             tone={hasBalance ? "warn" : undefined}
@@ -610,7 +616,7 @@ function VerdictPanel({
 
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
-          <p className="eyebrow-night text-signal">Critical note</p>
+          <p className="eyebrow-night text-signal">{t("reception.member.criticalNote")}</p>
           <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
         </div>
       ) : null}
@@ -618,7 +624,7 @@ function VerdictPanel({
       {/* Actions */}
       <div className="flex flex-col gap-3 border-t border-night-line bg-night px-5 py-3.5 sm:flex-row sm:flex-wrap sm:items-center">
         <Button asChild size="sm" variant="night-ghost">
-          <Link href={`/members/${member.id}`}>Open profile</Link>
+          <Link href={`/members/${member.id}`}>{t("reception.member.openProfile")}</Link>
         </Button>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ms-auto">
@@ -628,7 +634,7 @@ function VerdictPanel({
               variant="night-outline"
               onClick={onCollect}
               disabled={cashBlocked}
-              title={cashBlocked ? "Open a shift before collecting cash" : undefined}
+              title={cashBlocked ? t("reception.shift.openBeforeCash") : undefined}
               data-testid="quick-collect"
             >
               <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
@@ -651,7 +657,7 @@ function VerdictPanel({
                 <ShieldAlert /> Override
               </Button>
             ) : (
-              <span className="text-[12px] text-night-ink-3">A manager can override this.</span>
+              <span className="text-[12px] text-night-ink-3">{t("reception.member.managerCanOverride")}</span>
             )
           ) : (
             <Button size="sm" variant="night" loading={busy} onClick={onCheckIn} data-testid="confirm-checkin">
