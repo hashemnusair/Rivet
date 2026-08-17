@@ -71,6 +71,19 @@ export const common = {
     optional: "Optional",
   },
 
+  states: {
+    errorTitle: "Something went wrong",
+    errorDescription: "The request could not be completed. Your last loaded data is preserved; try again.",
+    forbiddenTitle: "Not allowed for this role",
+    forbiddenDescription: "Your account role does not have permission to view this area.",
+    notFoundTitle: "Not found",
+    notFoundDescription: "The record you are looking for does not exist — it may have been removed, or the link is wrong.",
+    backToDashboard: "Back to dashboard",
+    previousPage: "Previous page",
+    pageRange: "{from}–{to} of {total}",
+    nextPage: "Next page",
+  },
+
   label: {
     name: "Name",
     fullName: "Full name",

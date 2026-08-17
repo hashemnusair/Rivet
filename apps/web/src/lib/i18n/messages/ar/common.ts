@@ -73,6 +73,19 @@ export const common: typeof EnCommon = {
     optional: "اختياري",
   },
 
+  states: {
+    errorTitle: "حدث خطأ ما",
+    errorDescription: "تعذّر إتمام الطلب. بياناتك المحمّلة سابقًا محفوظة؛ أعد المحاولة.",
+    forbiddenTitle: "غير مسموح لهذا الدور",
+    forbiddenDescription: "دور حسابك لا يملك صلاحية عرض هذا القسم.",
+    notFoundTitle: "غير موجود",
+    notFoundDescription: "السجل الذي تبحث عنه غير موجود — ربما حُذف، أو أن الرابط غير صحيح.",
+    backToDashboard: "العودة إلى لوحة التحكم",
+    previousPage: "الصفحة السابقة",
+    pageRange: "{from}–{to} من {total}",
+    nextPage: "الصفحة التالية",
+  },
+
   label: {
     name: "الاسم",
     fullName: "الاسم الكامل",

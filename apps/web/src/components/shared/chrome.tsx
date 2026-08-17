@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/lib/providers/app-providers";
 import type { Page } from "@/lib/domain/types";
@@ -72,6 +73,7 @@ export function DataPagination<T>({
   onPage: (page: number) => void;
   className?: string;
 }) {
+  const t = useT();
   if (page.totalItems === 0) return null;
   const from = (page.page - 1) * page.pageSize + 1;
   const to = Math.min(page.totalItems, page.page * page.pageSize);
@@ -79,10 +81,10 @@ export function DataPagination<T>({
     <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
       {/* Ranges and page ratios stay LTR so bidi cannot reverse them. */}
       <span className="tabular" dir="ltr">
-        {from}–{to} of {page.totalItems}
+        {t("common.states.pageRange", { from, to, total: page.totalItems })}
       </span>
       <div className="flex items-center gap-1">
-        <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label="Previous page">
+        <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.states.previousPage")}>
           <ChevronLeft />
         </Button>
         <span className="px-2 tabular" dir="ltr">
@@ -93,7 +95,7 @@ export function DataPagination<T>({
           size="icon-sm"
           disabled={page.page >= page.totalPages}
           onClick={() => onPage(page.page + 1)}
-          aria-label="Next page"
+          aria-label={t("common.states.nextPage")}
         >
           <ChevronRight />
         </Button>

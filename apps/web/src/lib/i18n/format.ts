@@ -44,6 +44,8 @@ export interface Formatters {
   weekday: (iso: string) => string;
   monthYear: (iso: string) => string;
   relative: (iso: string, now?: Date) => string;
+  /** Signed day offset as words: "in 4 days" / "3 days ago". */
+  relativeDays: (days: number) => string;
   number: (value: number, options?: Intl.NumberFormatOptions) => string;
   percent: (value: number) => string;
   money: (value: Money, options?: { compact?: boolean; hideCurrency?: boolean }) => string;
@@ -87,6 +89,8 @@ export function makeFormatters(locale: Locale, justNow: string): Formatters {
       if (abs < 30 * 86_400_000) return rtf.format(Math.round(diffMs / 86_400_000), "day");
       return date(iso);
     },
+
+    relativeDays: (days) => rtf.format(days, "day"),
 
     number: (value, options) => new Intl.NumberFormat(numeric, options).format(value),
     percent: (value) =>
