@@ -3,6 +3,7 @@ import {
   Gauge,
   KanbanSquare,
   ListFilter,
+  ScrollText,
   Settings,
   ShieldCheck,
   CircleHelp,
@@ -34,11 +35,16 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Workspace",
     items: [
+      { href: "/reception", label: "Reception", icon: ShieldCheck },
+      { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
+      { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
+    ],
+  },
+  {
+    label: "Sales",
+    items: [
       { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
       { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, anyPermission: ["crm.read"] },
-      { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
-      { href: "/reception", label: "Reception", icon: ShieldCheck },
-      { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     ],
   },
   {
@@ -48,6 +54,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "System",
     items: [
+      { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
       { href: "/support", label: "Support", icon: CircleHelp },
       { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
     ],

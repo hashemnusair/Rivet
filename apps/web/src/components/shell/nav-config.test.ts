@@ -6,18 +6,19 @@ describe("primary workspace navigation", () => {
     const items = NAV_SECTIONS.flatMap((section) => section.items);
     expect(items.map((item) => item.label)).toEqual([
       "Dashboard",
+      "Reception",
+      "Members",
+      "Personal training",
       "Leads",
       "Follow-ups",
-      "Members",
-      "Reception",
-      "Personal training",
       "Payments",
+      "Audit log",
       "Support",
       "Settings",
     ]);
   });
 
-  it("keeps secondary and deferred routes out of the primary navigation", () => {
+  it("keeps the remaining secondary and deferred routes out of the primary navigation", () => {
     const hrefs = NAV_SECTIONS.flatMap((section) => section.items).map((item) => item.href);
     expect(hrefs).not.toEqual(expect.arrayContaining([
       "/memberships",
@@ -25,7 +26,6 @@ describe("primary workspace navigation", () => {
       "/payments/shifts",
       "/reports",
       "/automations",
-      "/audit",
     ]));
   });
 });

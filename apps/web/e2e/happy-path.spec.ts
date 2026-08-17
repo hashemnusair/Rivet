@@ -196,9 +196,9 @@ test.describe("role restrictions", () => {
     await signIn(page, "Owner");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Support$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
   });
 });
 

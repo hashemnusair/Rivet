@@ -33,10 +33,14 @@ export function Sidebar() {
       aria-label="Primary navigation"
     >
       {/* Brand */}
-      <div className={cn("flex h-16 items-center border-b border-night-line", sidebarCollapsed ? "justify-center px-2" : "px-4")}>
-        {/* The lockup already contains the glyph — never render both, or the
-            mark appears twice. Collapsed uses the glyph on its own. */}
-        <Link href="/dashboard" className="flex min-w-0 items-center" aria-label="RIVET home">
+      <div className="flex h-16 items-center border-b border-night-line px-4">
+        {/* Keep the brand wrapper's left edge fixed and use the dedicated glyph
+            when collapsed so the brand never jumps between sidebar states. */}
+        <Link
+          href="/dashboard"
+          className={cn("flex h-7 shrink-0 items-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[110px]")}
+          aria-label="RIVET home"
+        >
           {sidebarCollapsed ? (
             <Image src="/brand/rivet-glyph-rev.png" alt="RIVET" width={18} height={28} className="shrink-0" priority />
           ) : (
@@ -62,11 +66,10 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "group relative flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors duration-100",
+                          "group relative flex items-center gap-2.5 rounded-md px-3.5 py-[7px] text-[13px] transition-colors duration-100",
                           active
                             ? "bg-night-3 text-night-ink font-medium"
                             : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
-                          sidebarCollapsed && "justify-center px-0",
                         )}
                       >
                         {active ? (
@@ -102,7 +105,7 @@ export function Sidebar() {
           type="button"
           onClick={toggleSidebar}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
+          className="flex w-full items-center gap-2.5 rounded-md px-3.5 py-1.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
         >
           {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
           {!sidebarCollapsed ? "Collapse" : null}
