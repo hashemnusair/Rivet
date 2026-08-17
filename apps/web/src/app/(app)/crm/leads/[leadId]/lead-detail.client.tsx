@@ -16,7 +16,8 @@ import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, toMajor } from "@/lib/utils/money";
 import { Breadcrumbs } from "@/components/shared/chrome";
 import { DateTimeText, RelativeText } from "@/components/shared/data-display";
-import { LEAD_SOURCE_LABELS, LeadStageChip } from "@/components/shared/status-chip";
+import { LeadStageChip } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { LogContactForm } from "@/features/crm/contact-work-panel";
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
 export default function LeadDetailPageClient() {
+  const t = useT();
   const { leadId } = useParams<{ leadId: string }>();
   const router = useRouter();
   const invalidate = useInvalidate();
@@ -128,7 +130,7 @@ export default function LeadDetailPageClient() {
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2">
               <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 font-mono text-[12.5px] hover:text-ink" dir="ltr"><Phone className="size-3.5 text-ink-3" /> {lead.phone}</a>
               <span>{lead.branchName}</span>
-              <span>{LEAD_SOURCE_LABELS[lead.source]}</span>
+              <span>{t(`domain.leadSource.${lead.source}`)}</span>
             </div>
           </div>
           {saleDone && lead.convertedMemberId ? (

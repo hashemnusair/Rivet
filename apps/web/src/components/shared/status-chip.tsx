@@ -2,10 +2,12 @@ import type {
   CheckInDecision,
   LeadStage,
   MembershipEffectiveStatus,
+  PaymentMethodKey,
   PaymentStatus,
   TransactionStatus,
 } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * Status language for the whole product. One shape, few colors, meaning first:
@@ -37,89 +39,116 @@ export function StatusChip({ tone, children, className, dot }: { tone: Tone; chi
   );
 }
 
-const MEMBERSHIP_CHIP: Record<MembershipEffectiveStatus, { tone: Tone; label: string }> = {
-  active: { tone: "green", label: "Active" },
-  expiring: { tone: "amber", label: "Expiring" },
-  frozen: { tone: "neutral", label: "Frozen" },
-  expired: { tone: "red", label: "Expired" },
-  cancelled: { tone: "outline", label: "Cancelled" },
-  depleted: { tone: "amber", label: "Visits used up" },
-  scheduled: { tone: "neutral", label: "Scheduled" },
+const MEMBERSHIP_TONE: Record<MembershipEffectiveStatus, Tone> = {
+  active: "green",
+  expiring: "amber",
+  frozen: "neutral",
+  expired: "red",
+  cancelled: "outline",
+  depleted: "amber",
+  scheduled: "neutral",
 };
 
 export function MembershipStatusChip({ status, className }: { status?: MembershipEffectiveStatus; className?: string }) {
-  if (!status) return <StatusChip tone="outline" className={className}>No membership</StatusChip>;
-  const chip = MEMBERSHIP_CHIP[status];
-  return <StatusChip tone={chip.tone} className={className}>{chip.label}</StatusChip>;
+  const t = useT();
+  if (!status) {
+    return <StatusChip tone="outline" className={className}>{t("domain.membershipStatus.none")}</StatusChip>;
+  }
+  return (
+    <StatusChip tone={MEMBERSHIP_TONE[status]} className={className}>
+      {t(`domain.membershipStatus.${status}`)}
+    </StatusChip>
+  );
 }
 
-const PAYMENT_CHIP: Record<PaymentStatus, { tone: Tone; label: string }> = {
-  paid: { tone: "green", label: "Paid" },
-  partial: { tone: "amber", label: "Partial" },
-  unpaid: { tone: "red", label: "Unpaid" },
-  refunded: { tone: "neutral", label: "Refunded" },
-  void: { tone: "outline", label: "Void" },
+const PAYMENT_TONE: Record<PaymentStatus, Tone> = {
+  paid: "green",
+  partial: "amber",
+  unpaid: "red",
+  refunded: "neutral",
+  void: "outline",
 };
 
 export function PaymentStatusChip({ status, className }: { status: PaymentStatus; className?: string }) {
-  const chip = PAYMENT_CHIP[status];
-  return <StatusChip tone={chip.tone} className={className}>{chip.label}</StatusChip>;
+  const t = useT();
+  return (
+    <StatusChip tone={PAYMENT_TONE[status]} className={className}>
+      {t(`domain.paymentStatus.${status}`)}
+    </StatusChip>
+  );
 }
 
-const TRANSACTION_CHIP: Record<TransactionStatus, { tone: Tone; label: string }> = {
-  completed: { tone: "green", label: "Completed" },
-  voided: { tone: "outline", label: "Voided" },
-  refunded: { tone: "neutral", label: "Refunded" },
-  partially_refunded: { tone: "amber", label: "Part-refunded" },
+const TRANSACTION_TONE: Record<TransactionStatus, Tone> = {
+  completed: "green",
+  voided: "outline",
+  refunded: "neutral",
+  partially_refunded: "amber",
 };
 
 export function TransactionStatusChip({ status, className }: { status: TransactionStatus; className?: string }) {
-  const chip = TRANSACTION_CHIP[status];
-  return <StatusChip tone={chip.tone} className={className}>{chip.label}</StatusChip>;
+  const t = useT();
+  return (
+    <StatusChip tone={TRANSACTION_TONE[status]} className={className}>
+      {t(`domain.transactionStatus.${status}`)}
+    </StatusChip>
+  );
 }
 
-const LEAD_CHIP: Record<LeadStage, { tone: Tone; label: string }> = {
-  new: { tone: "ink", label: "New" },
-  attempted: { tone: "neutral", label: "Attempted" },
-  contacted: { tone: "neutral", label: "Contacted" },
-  trial_booked: { tone: "amber", label: "Trial booked" },
-  trial_completed: { tone: "amber", label: "Trial done" },
-  offer_sent: { tone: "amber", label: "Offer sent" },
-  won: { tone: "green", label: "Won" },
-  lost: { tone: "outline", label: "Lost" },
+const LEAD_TONE: Record<LeadStage, Tone> = {
+  new: "ink",
+  attempted: "neutral",
+  contacted: "neutral",
+  trial_booked: "amber",
+  trial_completed: "amber",
+  offer_sent: "amber",
+  won: "green",
+  lost: "outline",
 };
 
 export function LeadStageChip({ stage, className }: { stage: LeadStage; className?: string }) {
-  const chip = LEAD_CHIP[stage];
-  return <StatusChip tone={chip.tone} className={className}>{chip.label}</StatusChip>;
+  const t = useT();
+  return (
+    <StatusChip tone={LEAD_TONE[stage]} className={className}>
+      {t(`domain.leadStage.${stage}`)}
+    </StatusChip>
+  );
 }
 
-const DECISION_CHIP: Record<CheckInDecision, { tone: Tone; label: string }> = {
-  allowed: { tone: "green", label: "Allowed" },
-  warning: { tone: "amber", label: "Warning" },
-  blocked: { tone: "red", label: "Blocked" },
-  overridden: { tone: "ink", label: "Override" },
+const DECISION_TONE: Record<CheckInDecision, Tone> = {
+  allowed: "green",
+  warning: "amber",
+  blocked: "red",
+  overridden: "ink",
 };
 
 export function CheckInDecisionChip({ decision, className }: { decision: CheckInDecision; className?: string }) {
-  const chip = DECISION_CHIP[decision];
-  return <StatusChip tone={chip.tone} className={className}>{chip.label}</StatusChip>;
+  const t = useT();
+  return (
+    <StatusChip tone={DECISION_TONE[decision]} className={className}>
+      {t(`domain.checkInDecision.${decision}`)}
+    </StatusChip>
+  );
 }
 
-export const LEAD_SOURCE_LABELS: Record<string, string> = {
-  instagram: "Instagram",
-  walk_in: "Walk-in",
-  referral: "Referral",
-  whatsapp: "WhatsApp",
-  google: "Google",
-  phone_call: "Phone call",
-  other: "Other",
-};
+/**
+ * Ordered key lists for the pickers that offer these choices. The words live in
+ * `domain.leadSource.*` and `domain.paymentMethod.*`; call sites translate, so
+ * the order stays one decision made in one place.
+ */
+export const LEAD_SOURCE_KEYS = [
+  "instagram",
+  "walk_in",
+  "referral",
+  "whatsapp",
+  "google",
+  "phone_call",
+  "other",
+] as const;
 
-export const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: "Cash",
-  card: "Card",
-  bank_transfer: "Bank transfer",
-  cliq: "CliQ",
-  other: "Other",
-};
+export const PAYMENT_METHOD_KEYS: readonly PaymentMethodKey[] = [
+  "cash",
+  "card",
+  "bank_transfer",
+  "cliq",
+  "other",
+];

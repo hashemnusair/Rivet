@@ -8,8 +8,14 @@ import { DEFAULT_LOCALE } from "./config";
  * are CLDR plural groups. Arabic genuinely uses all six categories (١ عضو,
  * عضوان, ٣ أعضاء, ١١ عضوًا …), so the selection goes through `Intl.PluralRules`
  * rather than the `n === 1` check an English-only codebase gets away with.
+ *
+ * Those groups are branded rather than detected by shape: structural detection
+ * ("has an `other` string") misfires on real vocabulary, where
+ * `leadSource.other` and `paymentMethod.other` are ordinary enum values.
  */
-export interface PluralForms {
+declare const PLURAL_BRAND: unique symbol;
+
+export interface PluralCategories {
   zero?: string;
   one?: string;
   two?: string;
@@ -19,6 +25,8 @@ export interface PluralForms {
   other: string;
 }
 
+export type PluralForms = PluralCategories & { readonly [PLURAL_BRAND]: true };
+
 export type MessageLeaf = string | PluralForms;
 
 /**
@@ -26,8 +34,8 @@ export type MessageLeaf = string | PluralForms;
  * than just the categories English happens to use. Without this, an English
  * catalogue with `{ one, other }` would forbid Arabic's `zero/two/few/many`.
  */
-export function plural(forms: PluralForms): PluralForms {
-  return forms;
+export function plural(forms: PluralCategories): PluralForms {
+  return forms as PluralForms;
 }
 
 export interface MessageTree {
@@ -39,7 +47,7 @@ type Join<K extends string, Rest extends string> = Rest extends "" ? K : `${K}.$
 /** Every dot-path that resolves to a leaf, so `t()` cannot be handed a branch. */
 export type MessagePath<T> = T extends string
   ? ""
-  : T extends { other: string }
+  : T extends PluralForms
     ? ""
     : {
         [K in Extract<keyof T, string>]: Join<K, MessagePath<T[K]>>;
@@ -55,7 +63,10 @@ function resolve(tree: MessageTree, path: string): MessageLeaf | undefined {
   }
   if (node === undefined) return undefined;
   if (typeof node === "string") return node;
-  return "other" in node ? (node as PluralForms) : undefined;
+  // A branch reached instead of a leaf — `t()` was handed a partial path.
+  return "other" in node && typeof (node as PluralCategories).other === "string"
+    ? (node as PluralForms)
+    : undefined;
 }
 
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -69,7 +80,7 @@ function pluralRules(locale: Locale): Intl.PluralRules {
   return rules;
 }
 
-function selectForm(forms: PluralForms, locale: Locale, count: number): string {
+function selectForm(forms: PluralCategories, locale: Locale, count: number): string {
   const category = pluralRules(locale).select(count);
   return forms[category] ?? forms.other;
 }

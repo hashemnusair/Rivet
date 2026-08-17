@@ -11,7 +11,8 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { todayISODate, addDays } from "@/lib/utils/dates";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { PAYMENT_METHOD_KEYS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/misc";
@@ -24,6 +25,7 @@ import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
 export default function TransactionsPage() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const [search, setSearch] = useState("");
@@ -90,8 +92,8 @@ export default function TransactionsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All methods</SelectItem>
-            {Object.entries(PAYMENT_METHOD_LABELS).map(([k, label]) => (
-              <SelectItem key={k} value={k}>{label}</SelectItem>
+            {PAYMENT_METHOD_KEYS.map((k) => (
+              <SelectItem key={k} value={k}>{t(`domain.paymentMethod.${k}`)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -167,7 +169,7 @@ export default function TransactionsPage() {
                     <span className="block font-mono text-[11px] text-ink-3">{p.memberNumber}</span>
                   </TableCell>
                   <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
-                  <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
+                  <TableCell className="text-[12.5px]">{t(`domain.paymentMethod.${p.method}`)}</TableCell>
                   <TableCell className="text-end">
                     <MoneyText money={p.amount} />
                   </TableCell>

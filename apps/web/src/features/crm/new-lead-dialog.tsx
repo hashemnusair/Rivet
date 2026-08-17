@@ -10,7 +10,8 @@ import { qk } from "@/lib/api/keys";
 import type { LeadSource } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { fromMajor } from "@/lib/utils/money";
-import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
+import { LEAD_SOURCE_KEYS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -32,6 +33,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -153,9 +155,9 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.entries(LEAD_SOURCE_LABELS).map(([k, label]) => (
+                        {LEAD_SOURCE_KEYS.map((k) => (
                           <SelectItem key={k} value={k}>
-                            {label}
+                            {t(`domain.leadSource.${k}`)}
                           </SelectItem>
                         ))}
                       </SelectContent>

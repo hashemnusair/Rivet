@@ -11,7 +11,8 @@ import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination } from "@/components/shared/chrome";
-import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, TransactionStatusChip } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/misc";
@@ -260,6 +261,7 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
 // Payments
 // ---------------------------------------------------------------------------
 export function PaymentsTab({ memberId }: { memberId: UUID }) {
+  const t = useT();
   const query = useApiQuery(qk.transactions({ memberId }), (api) =>
     api.listTransactions({ memberId, pageSize: 30 }),
   );
@@ -300,7 +302,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
                 <DateTimeText iso={p.occurredAt} />
               </TableCell>
               <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
-              <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
+              <TableCell className="text-[12.5px]">{t(`domain.paymentMethod.${p.method}`)}</TableCell>
               <TableCell className="text-end">
                 <MoneyText money={p.amount} />
               </TableCell>

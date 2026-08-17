@@ -13,7 +13,8 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import type { DuplicateMatch, LeadSource } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
-import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
+import { LEAD_SOURCE_KEYS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -46,6 +47,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function NewMemberPage() {
+  const t = useT();
   const { session } = useApp();
   const router = useRouter();
   const invalidate = useInvalidate();
@@ -247,9 +249,9 @@ export default function NewMemberPage() {
                       <SelectValue placeholder="How did they find us?" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.entries(LEAD_SOURCE_LABELS).map(([key, label]) => (
+                      {LEAD_SOURCE_KEYS.map((key) => (
                         <SelectItem key={key} value={key}>
-                          {label}
+                          {t(`domain.leadSource.${key}`)}
                         </SelectItem>
                       ))}
                     </SelectContent>

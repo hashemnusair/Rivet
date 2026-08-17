@@ -24,7 +24,7 @@ import { addDays, todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
 import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -72,6 +72,7 @@ export function MembershipSaleDialog({
   renewalOf?: MembershipSummary;
   onCompleted?: (result: MembershipSaleResult) => void;
 }) {
+  const t = useT();
   const isRenewal = Boolean(renewalOf);
   const invalidate = useInvalidate();
   const { can, role } = usePermissions();
@@ -333,7 +334,7 @@ export function MembershipSaleDialog({
                             <SelectContent>
                               {methods.map((m) => (
                                 <SelectItem key={m.key} value={m.key}>
-                                  {PAYMENT_METHOD_LABELS[m.key] ?? m.label}
+                                  {t(`domain.paymentMethod.${m.key}`)}
                                 </SelectItem>
                               ))}
                             </SelectContent>

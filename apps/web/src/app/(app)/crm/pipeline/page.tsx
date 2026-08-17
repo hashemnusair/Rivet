@@ -13,7 +13,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
-import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
@@ -209,6 +209,7 @@ function PipelinePageInner() {
 }
 
 function LeadCard({ lead, column }: { lead: LeadSummary; column: PipelineColumn }) {
+  const t = useT();
   return (
     <Link
       href={`/crm/leads/${lead.id}`}
@@ -226,7 +227,7 @@ function LeadCard({ lead, column }: { lead: LeadSummary; column: PipelineColumn 
         <Monogram name={lead.ownerName ?? "?"} size="xs" />
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
-        <span className="text-ink-3">{LEAD_SOURCE_LABELS[lead.source]}</span>
+        <span className="text-ink-3">{t(`domain.leadSource.${lead.source}`)}</span>
         {lead.expectedValue ? <MoneyText money={lead.expectedValue} className="text-ink-2" /> : null}
       </div>
       {lead.nextFollowUpAt ? (
@@ -240,6 +241,7 @@ function LeadCard({ lead, column }: { lead: LeadSummary; column: PipelineColumn 
 }
 
 function LeadListView({ leads }: { leads: LeadSummary[] }) {
+  const t = useT();
   if (leads.length === 0) {
     return <p className="py-10 text-center text-[13px] text-ink-3">No leads right now.</p>;
   }
@@ -267,7 +269,7 @@ function LeadListView({ leads }: { leads: LeadSummary[] }) {
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{columnLabel(pipelineColumn(lead))}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{LEAD_SOURCE_LABELS[lead.source]}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{t(`domain.leadSource.${lead.source}`)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>
                 <td className={cn("whitespace-nowrap px-3 py-2.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
                   {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}

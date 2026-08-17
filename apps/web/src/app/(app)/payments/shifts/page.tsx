@@ -13,7 +13,7 @@ import { money } from "@/lib/utils/money";
 import { canReviewCashVariance, cashShiftHistoryStatus } from "@/lib/domain/reconciliation";
 import { MoneyText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dial
 import { FinanceNav } from "@/features/finance/finance-nav";
 
 export default function ShiftsPage() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
@@ -188,7 +189,7 @@ export default function ShiftsPage() {
                   ) : (
                     recon.totalsByMethod.map((row) => (
                       <TableRow key={row.method}>
-                        <TableCell className="text-[13px]">{PAYMENT_METHOD_LABELS[row.method]}</TableCell>
+                        <TableCell className="text-[13px]">{t(`domain.paymentMethod.${row.method}`)}</TableCell>
                         <TableCell className="text-end"><MoneyText money={row.payments} /></TableCell>
                         <TableCell className="text-end">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount)} /> : "—"}</TableCell>
                         <TableCell className="text-end font-medium"><MoneyText money={row.net} /></TableCell>

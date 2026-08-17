@@ -14,7 +14,8 @@ import { formatDateTime, todayISODate } from "@/lib/utils/dates";
 import { money, toMajor } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { TransactionStatusChip } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -24,6 +25,7 @@ import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
 
 export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receiptId?: string } = {}) {
+  const t = useT();
   const { receiptId: paramReceiptId } = useParams<{ receiptId: string }>();
   const receiptId = receiptIdProp ?? paramReceiptId;
   const { can } = usePermissions();
@@ -138,7 +140,10 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <div className="space-y-1 border-b border-dashed border-line-3 py-3 text-[12px]">
             <div className="flex justify-between">
-              <span>{isRefund ? "Refunded" : "Paid"} ({PAYMENT_METHOD_LABELS[payment.method]})</span>
+              <span>
+                {isRefund ? t("domain.paymentStatus.refunded") : t("domain.paymentStatus.paid")} (
+                {t(`domain.paymentMethod.${payment.method}`)})
+              </span>
               <span className="tabular">{toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}</span>
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (

@@ -10,7 +10,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import type { MemberSummary, PaymentMethodKey, ReceiptDetail } from "@/lib/domain/types";
 import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +50,7 @@ export function CollectPaymentDialog({
   initialChargeId?: string;
   onCollected?: (receipt: ReceiptDetail) => void;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -182,7 +183,7 @@ export function CollectPaymentDialog({
                           <SelectContent>
                             {methods.map((m) => (
                               <SelectItem key={m.key} value={m.key}>
-                                {PAYMENT_METHOD_LABELS[m.key] ?? m.label}
+                                {t(`domain.paymentMethod.${m.key}`)}
                               </SelectItem>
                             ))}
                           </SelectContent>
