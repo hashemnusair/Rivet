@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
+import { useT } from "@/lib/i18n/provider";
 
 type RenewalBucket = "expiring" | "expired";
 
@@ -26,6 +27,7 @@ const BUCKETS: Array<{ value: RenewalBucket; label: string; hint: string }> = [
 ];
 
 export default function QueuesPage() {
+  const t = useT();
   const { session } = useApp();
   const [bucket, setBucket] = useState<RenewalBucket>("expiring");
   const [days, setDays] = useState("14");
@@ -73,72 +75,72 @@ export default function QueuesPage() {
   };
 
   return <div className="space-y-4">
-    <PageHeader eyebrow="Growth" title="Follow-ups" description="Filter expiring and expired memberships by a number of days or an exact date range." />
+    <PageHeader eyebrow={t("crm.eyebrow")} title={t("crm.queues.title")} description={t("crm.queues.description")} />
 
     <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="panel h-fit self-start lg:sticky lg:top-4" aria-label="Follow-up filters" data-testid="follow-up-filters">
+      <aside className="panel h-fit self-start lg:sticky lg:top-4" aria-label={t("crm.queues.filtersLabel")} data-testid="follow-up-filters">
         <header className="border-b border-line px-4 py-3">
-          <p className="eyebrow">Filter work</p>
-          <h2 className="mt-1 text-[15px] font-semibold">Memberships to review</h2>
+          <p className="eyebrow">{t("crm.queues.filterWork")}</p>
+          <h2 className="mt-1 text-[15px] font-semibold">{t("crm.queues.membershipsToReview")}</h2>
         </header>
         <div className="space-y-4 p-4">
           <div>
-            <p className="text-[11px] font-medium text-ink-2">Status</p>
-            <div className="mt-2 grid gap-1 rounded-md border border-line-2 bg-surface p-1" role="group" aria-label="Follow-up membership status">
+            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.status")}</p>
+            <div className="mt-2 grid gap-1 rounded-md border border-line-2 bg-surface p-1" role="group" aria-label={t("crm.queues.statusLabel")}>
               {BUCKETS.map((option) => <button key={option.value} type="button" aria-pressed={bucket === option.value} onClick={() => changeBucket(option.value)} className={cn("rounded-sm px-3 py-2.5 text-start text-[12.5px] font-medium transition-colors", bucket === option.value ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken")}>{option.label}</button>)}
             </div>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.hint}</p>
           </div>
 
           <div className="border-t border-line pt-4">
-            <p className="text-[11px] font-medium text-ink-2">Window</p>
+            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.window")}</p>
             <div className="mt-2 space-y-3">
               <label htmlFor="follow-up-days" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
                 Days
-                <Input id="follow-up-days" type="number" min={1} max={365} value={days} onChange={(event) => { setDays(event.target.value); setFromDate(""); setToDate(""); }} aria-label="Follow-up days" />
+                <Input id="follow-up-days" type="number" min={1} max={365} value={days} onChange={(event) => { setDays(event.target.value); setFromDate(""); setToDate(""); }} aria-label={t("crm.queues.daysLabel")} />
               </label>
-              <p className="text-[10.5px] text-ink-4">Use an exact range below instead when you need a specific review period.</p>
+              <p className="text-[10.5px] text-ink-4">{t("crm.queues.useExactRange")}</p>
             </div>
           </div>
 
           <div className="border-t border-line pt-4">
-            <p className="text-[11px] font-medium text-ink-2">Exact end-date range</p>
+            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.exactRange")}</p>
             <div className="mt-2 space-y-3">
               <label htmlFor="follow-up-from-date" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
                 From date
-                <Input id="follow-up-from-date" type="date" min={oldestDate} max={toDate || latestDate} value={fromDate} onChange={(event) => { setFromDate(event.target.value); setDays(""); }} aria-label="Follow-up from date" />
+                <Input id="follow-up-from-date" type="date" min={oldestDate} max={toDate || latestDate} value={fromDate} onChange={(event) => { setFromDate(event.target.value); setDays(""); }} aria-label={t("crm.queues.fromLabel")} />
               </label>
               <label htmlFor="follow-up-to-date" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
                 To date
-                <Input id="follow-up-to-date" type="date" min={fromDate || oldestDate} max={latestDate} value={toDate} onChange={(event) => { setToDate(event.target.value); setDays(""); }} aria-label="Follow-up to date" />
+                <Input id="follow-up-to-date" type="date" min={fromDate || oldestDate} max={latestDate} value={toDate} onChange={(event) => { setToDate(event.target.value); setDays(""); }} aria-label={t("crm.queues.toLabel")} />
               </label>
             </div>
           </div>
 
-          <Button type="button" variant="secondary" onClick={reset} className="w-full"><RotateCcw /> Reset filters</Button>
+          <Button type="button" variant="secondary" onClick={reset} className="w-full"><RotateCcw /> {t("crm.queues.resetFilters")}</Button>
         </div>
-        <footer className="border-t border-line px-4 py-3 text-[10.5px] leading-relaxed text-ink-3">Date ranges can go back one year. Results update as soon as a filter changes.</footer>
+        <footer className="border-t border-line px-4 py-3 text-[10.5px] leading-relaxed text-ink-3">{t("crm.queues.rangeNote")}</footer>
       </aside>
 
       <div className={cn("grid gap-4", selectedItem && "xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="follow-up-results-title" data-testid="follow-up-results">
           <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
             <div>
-              <p className="eyebrow">Renewal queue</p>
-              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">Found matches</h2>
+              <p className="eyebrow">{t("crm.queues.renewalQueue")}</p>
+              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">{t("crm.queues.foundMatches")}</h2>
               <p className="mt-0.5 text-[12px] text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.label} memberships · {fromDate || toDate ? `${fromDate || oldestDate} → ${toDate || today}` : `${days || "—"} day window`}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <span className="font-mono text-[11px] text-ink-3 tabular">{renewals.data?.totalItems ?? 0}</span>
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label="Refresh follow-up matches" title="Refresh matches"><RefreshCw className="size-3.5" /></Button>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label={t("crm.queues.refreshLabel")} title={t("crm.queues.refresh")}><RefreshCw className="size-3.5" /></Button>
             </div>
           </header>
-          {renewals.isLoading ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError ? <ErrorState className="m-4" title="Follow-up data could not be loaded" onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships match this expiring filter." : "No memberships match this expired filter."} description="Try a wider day window or an exact end-date range." onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
+          {renewals.isLoading ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError ? <ErrorState className="m-4" title={t("crm.queues.loadFailed")} onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships match this expiring filter." : "No memberships match this expired filter."} description={t("crm.queues.loadFailedDetail")} onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
         </section>
 
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
-        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="eyebrow">{bucket === "expiring" ? "Expiring membership" : "Expired membership"}</p><h3 className="truncate font-display text-[16px] font-semibold">{selectedItem.member.fullName}</h3><p className="font-mono text-[11.5px] text-ink-3" dir="ltr">{selectedItem.member.phone}</p></div><button type="button" onClick={() => setSelectedId(undefined)} aria-label="Close follow-up panel" className="rounded-sm p-1 text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header>
-        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><p className="eyebrow mb-2.5">Log contact</p><LogContactForm subject="member" memberId={selectedItem.member.id} compact onLogged={() => setSelectedId(undefined)} /></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>Open member record</Link></Button></div></div>
+        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="eyebrow">{bucket === "expiring" ? "Expiring membership" : "Expired membership"}</p><h3 className="truncate font-display text-[16px] font-semibold">{selectedItem.member.fullName}</h3><p className="font-mono text-[11.5px] text-ink-3" dir="ltr">{selectedItem.member.phone}</p></div><button type="button" onClick={() => setSelectedId(undefined)} aria-label={t("crm.queues.closePanel")} className="rounded-sm p-1 text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header>
+        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><p className="eyebrow mb-2.5">{t("crm.queues.logContact")}</p><LogContactForm subject="member" memberId={selectedItem.member.id} compact onLogged={() => setSelectedId(undefined)} /></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>{t("crm.queues.openMemberRecord")}</Link></Button></div></div>
         </aside> : null}
       </div>
     </div>
@@ -150,11 +152,13 @@ function RenewalRow({ item, selected, onClick }: { item: RenewalQueueItem; selec
 }
 
 function EmptyQueue({ text, description, onReset }: { text: string; description: string; onReset: () => void }) {
-  return <EmptyState title={text} description={description} compact className="m-4" icon={UserPlus} action={<Button type="button" variant="secondary" size="sm" onClick={onReset}>Reset filters</Button>} />;
+  const t = useT();
+  return <EmptyState title={text} description={description} compact className="m-4" icon={UserPlus} action={<Button type="button" variant="secondary" size="sm" onClick={onReset}>{t("crm.queues.resetFilters")}</Button>} />;
 }
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
-  return <dl className="space-y-1.5 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact"><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  const t = useT();
+  return <dl className="space-y-1.5 text-[12.5px]"><ContextRow label={t("crm.queues.plan")}>{item.membership.planName}</ContextRow><ContextRow label={t("crm.queues.ends")}><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label={t("crm.queues.balance")}><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label={t("crm.queues.lastContact")}><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label={t("crm.queues.lastContact")}><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
 }
 
 function ContextRow({ label, children }: { label: string; children: React.ReactNode }) { return <div className="flex items-center justify-between gap-3"><dt className="text-ink-3">{label}</dt><dd className="text-end">{children}</dd></div>; }

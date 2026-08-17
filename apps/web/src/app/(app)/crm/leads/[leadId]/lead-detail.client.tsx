@@ -66,7 +66,7 @@ export default function LeadDetailPageClient() {
     (api, reason: string) => api.updateLead(leadId, { stage: "lost", lostReason: reason }),
     {
       onSuccess: async () => {
-        toast.success("Sale marked as not successful.");
+        toast.success(t("crm.lead.saleNotSuccessful"));
         setNotSuccessfulOpen(false);
         setNotSuccessfulReason("");
         await invalidate();
@@ -91,7 +91,7 @@ export default function LeadDetailPageClient() {
     (api) => api.scheduleLeadTrial(leadId, { preferredDate: trialDate, preferredTime: trialTime }),
     {
       onSuccess: async () => {
-        toast.success("Trial scheduled and confirmed.");
+        toast.success(t("crm.lead.trialScheduled"));
         await invalidate();
       },
       onError: (error) => toast.error(isApiError(error) ? error.message : "Could not schedule this trial."),
@@ -103,7 +103,7 @@ export default function LeadDetailPageClient() {
   }
   if (leadQuery.isError) {
     return isApiError(leadQuery.error) && leadQuery.error.code === "NOT_FOUND"
-      ? <NotFoundState title="Lead not found" />
+      ? <NotFoundState title={t("crm.lead.notFound")} />
       : <ErrorState onRetry={() => leadQuery.refetch()} />;
   }
   if (!leadQuery.data) {
@@ -134,14 +134,14 @@ export default function LeadDetailPageClient() {
             </div>
           </div>
           {saleDone && lead.convertedMemberId ? (
-            <Button onClick={() => router.push(`/members/${lead.convertedMemberId}`)}>Open member <UserCheck /></Button>
+            <Button onClick={() => router.push(`/members/${lead.convertedMemberId}`)}>{t("crm.lead.openMember")} <UserCheck /></Button>
           ) : null}
         </div>
 
-        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress">
-          <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStatus === "no_show" || trialStatus === "cancelled" ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : "Not booked"} />
-          <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Membership sold" : saleFailed ? "Not sold" : trialDone ? "Ready" : "After trial"} />
-          <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
+        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label={t("crm.lead.progressLabel")}>
+          <SimpleStep number={1} title={t("crm.lead.trial")} state={trialDone ? "done" : trialStatus === "no_show" || trialStatus === "cancelled" ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : "Not booked"} />
+          <SimpleStep number={2} title={t("crm.lead.membershipSale")} state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? t("crm.lead.membershipSold") : saleFailed ? t("crm.lead.notSold") : trialDone ? t("crm.lead.ready") : t("crm.lead.afterTrial")} />
+          <SimpleStep number={3} title={t("crm.lead.member")} state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
         </ol>
       </header>
 
@@ -150,8 +150,8 @@ export default function LeadDetailPageClient() {
           <section className="panel p-4" data-testid="trial-workflow">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Step 1</p>
-                <h2 className="mt-1 font-display text-[16px] font-semibold">Trial</h2>
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">{t("crm.lead.step1")}</p>
+                <h2 className="mt-1 font-display text-[16px] font-semibold">{t("crm.lead.trial")}</h2>
               </div>
               {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatus.replaceAll("_", " ")}</Badge> : null}
             </div>
@@ -161,15 +161,15 @@ export default function LeadDetailPageClient() {
                 <p className="mt-3 text-[13px] font-medium">{formatDate(lead.trialBooking.preferredDate)} · {lead.trialBooking.preferredTime}</p>
                 {lead.trialBooking.goal ? <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{lead.trialBooking.goal}</p> : null}
                 {trialStatus === "requested" ? (
-                  <Button className="mt-4 w-full" loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock /> Confirm trial</Button>
+                  <Button className="mt-4 w-full" loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock /> {t("crm.lead.confirmTrial")}</Button>
                 ) : trialStatus === "confirmed" ? (
                   <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                    <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 /> Completed</Button>
-                    <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> No-show</Button>
-                    <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>Cancelled</Button>
+                    <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 /> {t("crm.lead.completed")}</Button>
+                    <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> {t("crm.lead.noShow")}</Button>
+                    <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>{t("crm.lead.cancelled")}</Button>
                   </div>
                 ) : trialDone ? (
-                  <div className="mt-4 rounded-md border border-success/30 bg-success-bg/50 p-3 text-[13px] text-success-deep">Trial complete. Record whether a membership was sold.</div>
+                  <div className="mt-4 rounded-md border border-success/30 bg-success-bg/50 p-3 text-[13px] text-success-deep">{t("crm.lead.trialComplete")}</div>
                 ) : (
                   <p className="mt-4 rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">This trial was not completed. Keep a follow-up note below if you plan to contact them again.</p>
                 )}
@@ -178,55 +178,55 @@ export default function LeadDetailPageClient() {
               <div className="mt-3 space-y-3">
                 <p className="text-[12.5px] text-ink-2">Schedule the trial first. The member can choose any time inside the gym&apos;s saved trial window.</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
-                  <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
+                  <Field label={t("crm.lead.date")} required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
+                  <Field label={t("crm.lead.time")} required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
                 </div>
                 {settingsQuery.isLoading ? <p className="text-[11.5px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[11.5px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[11.5px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
-                <Button className="w-full" disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button>
+                <Button className="w-full" disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> {t("crm.lead.scheduleTrial")}</Button>
               </div>
             )}
           </section>
 
           {trialDone && !saleDone && !saleFailed ? (
             <section className="panel p-4" data-testid="membership-sale-step">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Step 2</p>
-              <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">{t("crm.lead.step2")}</p>
+              <h2 className="mt-1 font-display text-[16px] font-semibold">{t("crm.lead.wasSold")}</h2>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">{t("crm.lead.saleCreatesMember")}</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> Membership sold</Button>
-                <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>Not sold</Button>
+                <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> {t("crm.lead.membershipSold")}</Button>
+                <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>{t("crm.lead.notSold")}</Button>
               </div>
             </section>
           ) : null}
 
           {saleFailed ? (
             <section className="panel border-signal/25 p-4">
-              <h2 className="font-display text-[15px] font-semibold">Sale not successful</h2>
+              <h2 className="font-display text-[15px] font-semibold">{t("crm.lead.saleNotSuccessfulHeading")}</h2>
               <p className="mt-2 text-[12.5px] text-ink-2">{lead.lostReason ?? "No reason recorded."}</p>
             </section>
           ) : null}
 
           {!saleDone ? (
             <section className="panel p-4">
-              <h2 className="mb-3 font-display text-[14px] font-semibold">Follow-up note</h2>
+              <h2 className="mb-3 font-display text-[14px] font-semibold">{t("crm.lead.followUpNote")}</h2>
               <LogContactForm subject="lead" leadId={lead.id} currentStage={lead.stage} />
             </section>
           ) : null}
 
           <section className="panel p-4">
-            <h2 className="mb-3 font-display text-[14px] font-semibold">Contact</h2>
+            <h2 className="mb-3 font-display text-[14px] font-semibold">{t("crm.lead.contact")}</h2>
             <dl className="space-y-2 text-[12.5px]">
-              <ContextRow label="Phone"><span dir="ltr">{lead.phone}</span></ContextRow>
-              <ContextRow label="Email">{lead.email ?? "—"}</ContextRow>
-              <ContextRow label="Owner">{lead.ownerName ?? "Unassigned"}</ContextRow>
-              <ContextRow label="Next follow-up">{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}</ContextRow>
-              <ContextRow label="Created"><DateTimeText iso={lead.createdAt} /></ContextRow>
+              <ContextRow label={t("crm.newLead.phone")}><span dir="ltr">{lead.phone}</span></ContextRow>
+              <ContextRow label={t("crm.newLead.email")}>{lead.email ?? "—"}</ContextRow>
+              <ContextRow label={t("crm.lead.ownerLabel")}>{lead.ownerName ?? "Unassigned"}</ContextRow>
+              <ContextRow label={t("crm.lead.nextFollowUp")}>{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}</ContextRow>
+              <ContextRow label={t("crm.lead.created")}><DateTimeText iso={lead.createdAt} /></ContextRow>
             </dl>
           </section>
         </div>
 
         <section className="panel self-start px-5 py-4">
-          <h2 className="mb-3 font-display text-[14px] font-semibold">History</h2>
+          <h2 className="mb-3 font-display text-[14px] font-semibold">{t("crm.lead.history")}</h2>
           <TimelineFeed events={lead.activities} empty="No activity yet." />
         </section>
       </div>
@@ -239,32 +239,32 @@ export default function LeadDetailPageClient() {
             <DialogTitle>{trialOutcome === "completed" ? "Trial completed" : trialOutcome === "no_show" ? "Trial marked no-show" : "Trial cancelled"}</DialogTitle>
             <DialogDescription>{trialOutcome === "completed" ? "Next, record whether the membership sale was successful." : "Record a short reason so the next follow-up has context."}</DialogDescription>
           </DialogHeader>
-          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : "Reason"} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did the member miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
+          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : t("common.label.reason")} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did the member miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setTrialOutcome(undefined)}>Back</Button>
-            <Button disabled={!lead.trialBooking || !trialOutcome || (trialOutcome !== "completed" && trialNote.trim().length < 3)} loading={updateTrial.isPending} onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}>Save</Button>
+            <Button variant="secondary" onClick={() => setTrialOutcome(undefined)}>{t("common.action.back")}</Button>
+            <Button disabled={!lead.trialBooking || !trialOutcome || (trialOutcome !== "completed" && trialNote.trim().length < 3)} loading={updateTrial.isPending} onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}>{t("common.action.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={notSuccessfulOpen} onOpenChange={setNotSuccessfulOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Membership not sold</DialogTitle><DialogDescription>Choose the main reason. The lead stays in history and no member is created.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{t("crm.lead.notSoldHeading")}</DialogTitle><DialogDescription>{t("crm.lead.notSoldDetail")}</DialogDescription></DialogHeader>
           <DialogBody>
-            <Field label="Reason" required>
+            <Field label={t("common.label.reason")} required>
               <Select value={notSuccessfulReason} onValueChange={setNotSuccessfulReason}>
-                <SelectTrigger aria-label="Sale outcome reason"><SelectValue placeholder="Choose a reason" /></SelectTrigger>
+                <SelectTrigger aria-label={t("crm.lead.outcomeReasonLabel")}><SelectValue placeholder={t("crm.lead.chooseReason")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Not interested after trial">Not interested</SelectItem>
-                  <SelectItem value="Price did not work">Price</SelectItem>
-                  <SelectItem value="Timing did not work">Timing</SelectItem>
-                  <SelectItem value="Could not reach after trial">Could not reach</SelectItem>
-                  <SelectItem value="Chose another gym">Chose another gym</SelectItem>
+                  <SelectItem value="Not interested after trial">{t("crm.lead.reason.notInterested")}</SelectItem>
+                  <SelectItem value="Price did not work">{t("crm.lead.reason.price")}</SelectItem>
+                  <SelectItem value="Timing did not work">{t("crm.lead.reason.timing")}</SelectItem>
+                  <SelectItem value="Could not reach after trial">{t("crm.lead.reason.couldNotReach")}</SelectItem>
+                  <SelectItem value="Chose another gym">{t("crm.lead.reason.choseAnotherGym")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
           </DialogBody>
-          <DialogFooter><Button variant="secondary" onClick={() => setNotSuccessfulOpen(false)}>Back</Button><Button variant="signal" disabled={!notSuccessfulReason} loading={markNotSuccessful.isPending} onClick={() => markNotSuccessful.mutate(notSuccessfulReason)}>Save outcome</Button></DialogFooter>
+          <DialogFooter><Button variant="secondary" onClick={() => setNotSuccessfulOpen(false)}>{t("common.action.back")}</Button><Button variant="signal" disabled={!notSuccessfulReason} loading={markNotSuccessful.isPending} onClick={() => markNotSuccessful.mutate(notSuccessfulReason)}>{t("crm.lead.saveOutcome")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -284,6 +284,7 @@ function SimpleStep({ number, title, detail, state }: { number: number; title: s
 }
 
 function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenChange }: { leadId: string; fullName: string; phone: string; branchId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useT();
   const { session } = useApp();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -362,58 +363,59 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-line bg-sunken p-3 text-[13px]"><p className="font-medium">{fullName}</p><p className="font-mono text-[12px] text-ink-3" dir="ltr">{phone}</p></div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Home branch" required>
-              <Select value={homeBranchId} onValueChange={setHomeBranchId}><SelectTrigger aria-label="Home branch"><SelectValue /></SelectTrigger><SelectContent>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select>
+            <Field label={t("crm.lead.membership.homeBranch")} required>
+              <Select value={homeBranchId} onValueChange={setHomeBranchId}><SelectTrigger aria-label={t("crm.lead.membership.homeBranch")}><SelectValue /></SelectTrigger><SelectContent>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select>
             </Field>
-            <Field label="Membership starts" required><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
+            <Field label={t("crm.lead.membership.starts")} required><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
           </div>
-          <Field label="Preferred language" required>
+          <Field label={t("crm.lead.membership.preferredLanguage")} required>
             <select
-              aria-label="Preferred language"
+              aria-label={t("crm.lead.membership.preferredLanguage")}
               className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]"
               value={preferredLanguage}
               onChange={(event) => setPreferredLanguage(event.target.value as "en" | "ar")}
               disabled={navigationPending}
             >
-              <option value="en">English</option>
-              <option value="ar">Arabic</option>
+              <option value="en">{t("crm.lead.membership.english")}</option>
+              <option value="ar">{t("crm.lead.membership.arabic")}</option>
             </select>
           </Field>
-          <p className="text-[11.5px] text-ink-3">Marketing updates remain opted in by default; this language choice controls member-facing communication.</p>
-          <Field label="Membership" required>
-            <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label="Membership source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">Choose an existing plan</SelectItem><SelectItem value="custom">Enter a custom membership</SelectItem></SelectContent></Select>
+          <p className="text-[11.5px] text-ink-3">{t("crm.lead.membership.languageNote")}</p>
+          <Field label={t("crm.lead.membership.heading")} required>
+            <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label={t("crm.lead.membership.sourceLabel")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">{t("crm.lead.membership.chooseExisting")}</SelectItem><SelectItem value="custom">{t("crm.lead.membership.enterCustom")}</SelectItem></SelectContent></Select>
           </Field>
 
           {mode === "existing" ? (
             <>
-              <Field label="Plan" required>
-                <Select value={planId} onValueChange={setPlanId} disabled={plansQuery.isLoading}><SelectTrigger aria-label="Membership plan"><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Choose a plan"} /></SelectTrigger><SelectContent>{availablePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
+              <Field label={t("crm.lead.membership.plan")} required>
+                <Select value={planId} onValueChange={setPlanId} disabled={plansQuery.isLoading}><SelectTrigger aria-label={t("crm.lead.membership.planLabel")}><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Choose a plan"} /></SelectTrigger><SelectContent>{availablePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
               </Field>
               {selectedPlan ? <PlanSummary plan={selectedPlan} /> : !plansQuery.isLoading ? <p className="rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">No active plans are available for this branch. Choose “Enter a custom membership”.</p> : null}
             </>
           ) : (
             <div className="space-y-3 rounded-md border border-line bg-sunken/40 p-3">
-              <Field label="Membership name" required><Input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. 8-week transformation" /></Field>
+              <Field label={t("crm.lead.membership.name")} required><Input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder={t("crm.lead.membership.namePlaceholder")} /></Field>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Price (JOD)" required><Input inputMode="decimal" value={customPrice} onChange={(event) => setCustomPrice(event.target.value)} placeholder="120.000" /></Field>
-                <Field label="Duration (days)" required><Input type="number" min={1} max={730} value={customDurationDays} onChange={(event) => setCustomDurationDays(event.target.value)} /></Field>
-                <Field label="PT sessions"><Input type="number" min={0} max={100} value={customPtSessions} onChange={(event) => setCustomPtSessions(event.target.value)} /></Field>
+                <Field label={t("crm.lead.membership.price")} required><Input inputMode="decimal" value={customPrice} onChange={(event) => setCustomPrice(event.target.value)} placeholder="120.000" /></Field>
+                <Field label={t("crm.lead.membership.duration")} required><Input type="number" min={1} max={730} value={customDurationDays} onChange={(event) => setCustomDurationDays(event.target.value)} /></Field>
+                <Field label={t("crm.lead.membership.ptSessions")}><Input type="number" min={0} max={100} value={customPtSessions} onChange={(event) => setCustomPtSessions(event.target.value)} /></Field>
               </div>
               <p className="text-[11.5px] leading-relaxed text-ink-3">This custom membership is saved as an active plan for this branch, so it can be reused later.</p>
             </div>
           )}
 
-          {navigationPending ? <p role="status" className="rounded-md border border-success/30 bg-success-bg/40 px-3 py-2.5 text-[13px] text-success-deep">Membership sold. Opening the member record…</p> : null}
-          {serverError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger"><p>{serverError}</p>{duplicateMemberId ? <Link href={`/members/${duplicateMemberId}`} className="mt-1 inline-flex font-medium underline underline-offset-2">Open existing member</Link> : null}</div> : null}
+          {navigationPending ? <p role="status" className="rounded-md border border-success/30 bg-success-bg/40 px-3 py-2.5 text-[13px] text-success-deep">{t("crm.lead.openingMember")}</p> : null}
+          {serverError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger"><p>{serverError}</p>{duplicateMemberId ? <Link href={`/members/${duplicateMemberId}`} className="mt-1 inline-flex font-medium underline underline-offset-2">{t("crm.lead.membership.openExistingMember")}</Link> : null}</div> : null}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" disabled={navigationPending} onClick={() => onOpenChange(false)}>Cancel</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit || navigationPending} loading={mutation.isPending || navigationPending} onClick={() => mutation.mutate()}>Create member & membership</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" disabled={navigationPending} onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit || navigationPending} loading={mutation.isPending || navigationPending} onClick={() => mutation.mutate()}>{t("crm.lead.membership.createMember")}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
 function PlanSummary({ plan }: { plan: MembershipPlan }) {
-  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">Price</p><p className="mt-0.5 font-medium">JOD {toMajor(plan.basePrice).toFixed(3)}</p></div><div className="p-2"><p className="text-ink-3">Duration</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">PT</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
+  const t = useT();
+  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">{t("crm.lead.reason.price")}</p><p className="mt-0.5 font-medium">JOD {toMajor(plan.basePrice).toFixed(3)}</p></div><div className="p-2"><p className="text-ink-3">{t("crm.lead.membership.durationColumn")}</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">PT</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
 }
 
 function ContextRow({ label, children }: { label: string; children: React.ReactNode }) {

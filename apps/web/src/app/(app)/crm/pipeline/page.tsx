@@ -44,6 +44,7 @@ function columnLabel(column: PipelineColumn): string {
 }
 
 function PipelinePageInner() {
+  const t = useT();
   const { session } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -87,7 +88,7 @@ function PipelinePageInner() {
 
   const moveLead = useApiMutation((api, input: { lead: LeadSummary; target: PipelineColumn }) => {
     const { lead, target } = input;
-    if (target === "sold") return Promise.reject(new Error("Open the lead to complete the membership sale."));
+    if (target === "sold") return Promise.reject(new Error(t("crm.pipeline.openToSell")));
     if (target === "not_sold") return api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost", notes: "Moved to Membership not sold from the pipeline." });
     if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", stage: "attempted", notes: "Moved to Did not answer from the pipeline." });
     return api.updateLead(lead.id, { stage: "contacted", lostReason: undefined });
@@ -100,7 +101,7 @@ function PipelinePageInner() {
     onError: (error, input) => {
       setDragOverColumn(undefined);
       if (input.target === "sold") {
-        toast.error("Open the lead to complete and record the membership sale.");
+        toast.error(t("crm.pipeline.openToRecord"));
         router.push(`/crm/leads/${input.lead.id}`);
       } else {
         toast.error(error instanceof Error ? error.message : "The lead could not be moved.");
@@ -120,12 +121,12 @@ function PipelinePageInner() {
   return (
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
-        eyebrow="Growth"
-        title="Leads"
-        description="Drag leads between trial, sale outcomes, and unanswered contact work."
+        eyebrow={t("crm.eyebrow")}
+        title={t("crm.pipeline.title")}
+        description={t("crm.pipeline.description")}
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
+            <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label={t("crm.pipeline.viewLabel")}>
               <button
                 type="button"
                 onClick={() => setView("board")}
@@ -151,7 +152,7 @@ function PipelinePageInner() {
       />
 
       <div className="max-w-xs">
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter by name or phone…" aria-label="Filter leads" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("crm.pipeline.filterPlaceholder")} aria-label={t("crm.pipeline.filterLabel")} />
       </div>
 
       {isLoading ? (
@@ -243,7 +244,7 @@ function LeadCard({ lead, column }: { lead: LeadSummary; column: PipelineColumn 
 function LeadListView({ leads }: { leads: LeadSummary[] }) {
   const t = useT();
   if (leads.length === 0) {
-    return <p className="py-10 text-center text-[13px] text-ink-3">No leads right now.</p>;
+    return <p className="py-10 text-center text-[13px] text-ink-3">{t("crm.pipeline.empty")}</p>;
   }
   return (
     <div className="panel overflow-hidden">

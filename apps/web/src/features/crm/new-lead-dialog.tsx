@@ -108,30 +108,30 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>New lead</DialogTitle>
-          <DialogDescription>Capture it now — the 24h first-contact automation starts counting immediately.</DialogDescription>
+          <DialogTitle>{t("crm.newLead.title")}</DialogTitle>
+          <DialogDescription>{t("crm.newLead.description")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Full name" required error={form.formState.errors.fullName?.message}>
+              <Field label={t("crm.newLead.fullName")} required error={form.formState.errors.fullName?.message}>
                 <Input autoFocus {...form.register("fullName")} />
               </Field>
-              <Field label="Phone" required error={form.formState.errors.phone?.message}>
+              <Field label={t("crm.newLead.phone")} required error={form.formState.errors.phone?.message}>
                 <Input dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
               </Field>
             </div>
-            <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
-              <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
+            <Field label={t("crm.newLead.email")} htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
+              <Input id="lead-email" type="email" autoComplete="email" placeholder={t("crm.newLead.emailPlaceholder")} {...form.register("email")} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Branch" required>
+              <Field label={t("crm.newLead.branch")} required>
                 <Controller
                   control={form.control}
                   name="branchId"
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Branch">
+                      <SelectTrigger aria-label={t("crm.newLead.branch")}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -145,13 +145,13 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   )}
                 />
               </Field>
-              <Field label="Source">
+              <Field label={t("crm.newLead.source")}>
                 <Controller
                   control={form.control}
                   name="source"
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Source">
+                      <SelectTrigger aria-label={t("crm.newLead.source")}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -167,17 +167,17 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               </Field>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Owner">
+              <Field label={t("crm.newLead.owner")}>
                 <Controller
                   control={form.control}
                   name="ownerId"
                   render={({ field }) => (
                     <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || "unassigned")}>
-                      <SelectTrigger aria-label="Owner">
-                        <SelectValue placeholder="Unassigned" />
+                      <SelectTrigger aria-label={t("crm.newLead.owner")}>
+                        <SelectValue placeholder={t("crm.newLead.unassigned")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        <SelectItem value="unassigned">{t("crm.newLead.unassigned")}</SelectItem>
                         {ownerOptions.map((u) => (
                           <SelectItem key={u.id} value={u.id}>
                             {u.name}
@@ -188,15 +188,15 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   )}
                 />
               </Field>
-              <Field label="Expected value (JOD)">
+              <Field label={t("crm.newLead.expectedValue")}>
                 <Input inputMode="decimal" placeholder="105.000" {...form.register("expectedValue")} />
               </Field>
-              <Field label="First follow-up">
+              <Field label={t("crm.newLead.firstFollowUp")}>
                 <Input type="date" {...form.register("nextFollowUp")} />
               </Field>
             </div>
-            <Field label="Notes">
-              <Textarea placeholder="What did they ask about?" {...form.register("notes")} />
+            <Field label={t("crm.newLead.notes")}>
+              <Textarea placeholder={t("crm.newLead.notesPlaceholder")} {...form.register("notes")} />
             </Field>
           </DialogBody>
           <DialogFooter>

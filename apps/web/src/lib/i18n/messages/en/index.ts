@@ -1,4 +1,5 @@
 import { common } from "./common";
+import { crm } from "./crm";
 import { dashboard } from "./dashboard";
 import { domain } from "./domain";
 import { marketing } from "./marketing";
@@ -13,6 +14,7 @@ import { reception } from "./reception";
  */
 export const en = {
   common,
+  crm,
   dashboard,
   domain,
   marketing,

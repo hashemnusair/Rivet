@@ -12,6 +12,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 const OUTCOMES: Array<{ value: ContactOutcome; label: string }> = [
   { value: "answered_interested", label: "Answered — interested" },
@@ -61,6 +62,7 @@ export function LogContactForm({
   onLogged?: () => void;
   compact?: boolean;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [error, setError] = useState<string | null>(null);
 
@@ -83,12 +85,12 @@ export function LogContactForm({
     },
     {
       onSuccess: async () => {
-        toast.success("Contact logged — timeline updated.");
+        toast.success(t("crm.contact.logged"));
         form.reset({ outcome: "answered_interested", notes: "", nextFollowUp: "", stage: currentStage });
         await invalidate();
         onLogged?.();
       },
-      onError: () => setError("Could not log the contact. Try again."),
+      onError: () => setError(t("crm.contact.logFailed")),
     },
   );
 
@@ -101,13 +103,13 @@ export function LogContactForm({
       className={cn("space-y-3", compact && "space-y-2.5")}
       data-testid="log-contact-form"
     >
-      <Field label="Outcome" required>
+      <Field label={t("crm.contact.outcome")} required>
         <Controller
           control={form.control}
           name="outcome"
           render={({ field }) => (
             <Select value={field.value} onValueChange={field.onChange}>
-              <SelectTrigger aria-label="Call outcome" data-testid="contact-outcome">
+              <SelectTrigger aria-label={t("crm.contact.callOutcome")} data-testid="contact-outcome">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -123,19 +125,19 @@ export function LogContactForm({
       </Field>
 
       {subject === "lead" && (outcome === "trial_booked" || outcome === "trial_completed" || outcome === "answered_interested") ? (
-        <Field label="Move stage to">
+        <Field label={t("crm.contact.moveStageTo")}>
           <Controller
             control={form.control}
             name="stage"
             render={({ field }) => (
               <Select value={field.value ?? currentStage ?? "contacted"} onValueChange={field.onChange}>
-                <SelectTrigger aria-label="Lead stage">
+                <SelectTrigger aria-label={t("crm.contact.leadStage")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="contacted">Contacted</SelectItem>
-                  <SelectItem value="trial_booked">Trial booked</SelectItem>
-                  <SelectItem value="trial_completed">Trial completed</SelectItem>
+                  <SelectItem value="contacted">{t("domain.leadStage.contacted")}</SelectItem>
+                  <SelectItem value="trial_booked">{t("domain.leadStage.trial_booked")}</SelectItem>
+                  <SelectItem value="trial_completed">{t("domain.leadStage.trial_completed")}</SelectItem>
                 </SelectContent>
               </Select>
             )}
@@ -143,11 +145,11 @@ export function LogContactForm({
         </Field>
       ) : null}
 
-      <Field label="Notes">
-        <Textarea rows={compact ? 2 : 3} placeholder="What did they say?" {...form.register("notes")} data-testid="contact-notes" />
+      <Field label={t("crm.contact.notes")}>
+        <Textarea rows={compact ? 2 : 3} placeholder={t("crm.contact.notesPlaceholder")} {...form.register("notes")} data-testid="contact-notes" />
       </Field>
 
-      <Field label="Next follow-up" hint={outcome === "no_answer" ? "Recommended — retry within 2 days." : undefined}>
+      <Field label={t("crm.lead.nextFollowUp")} hint={outcome === "no_answer" ? "Recommended — retry within 2 days." : undefined}>
         <Input type="date" {...form.register("nextFollowUp")} data-testid="contact-next-followup" />
       </Field>
 
