@@ -7,7 +7,7 @@ import type { DashboardData } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
+import { addDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader, Stat } from "@/components/shared/chrome";
@@ -17,8 +17,12 @@ import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
 import { BranchRevenueBars, RevenueChart } from "./charts";
 import { dashboardScopeDescription } from "./dashboard-scope";
+import { useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 export function OwnerDashboard() {
+  const t = useT();
+  const format = useFormat();
   const { session } = useApp();
   const branchId = session?.activeBranchId;
   const today = todayISODate();
@@ -44,59 +48,59 @@ export function OwnerDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={formatDate(today)}
-        title={`${greeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
+        eyebrow={format.date(today)}
+        title={t("dashboard.greeting.withName", { greeting: t(`dashboard.greeting.${greetingKey()}`), name: session?.user.name.split(" ")[0] ?? "" })}
         description={
           dashboardScopeDescription(session?.branches ?? [], branchId)
         }
       />
 
       {/* KPI strip — one ruled panel, not six cards */}
-      <section aria-label="Key numbers" className="panel grid grid-cols-2 divide-line sm:grid-cols-3 sm:divide-x lg:grid-cols-6">
-        <KpiCell label="Collected today" loading={isLoading}>
+      <section aria-label={t("dashboard.owner.keyNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-3 sm:divide-x lg:grid-cols-6">
+        <KpiCell label={t("dashboard.owner.collectedToday")} loading={isLoading}>
           <MoneyText money={kpis?.revenueToday ?? money(0)} />
         </KpiCell>
         <KpiCell
-          label="This month"
+          label={t("dashboard.owner.thisMonth")}
           loading={isLoading}
           context={
             monthDelta !== undefined ? (
               <span className={cn("inline-flex items-center gap-0.5", monthDelta >= 0 ? "text-success-deep" : "text-danger")}>
                 <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} />
-                {Math.abs(monthDelta)}% vs last month
+                {t("dashboard.owner.vsLastMonth", { percent: format.number(Math.abs(monthDelta)) })}
               </span>
             ) : undefined
           }
         >
           <MoneyText money={kpis?.revenueThisMonth ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label="Outstanding" loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="unpaid balances">
+        <KpiCell label={t("dashboard.owner.outstanding")} loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context={t("dashboard.owner.unpaidBalances")}>
           <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label="New members" loading={isLoading} context="this month">
+        <KpiCell label={t("dashboard.owner.newMembers")} loading={isLoading} context={t("dashboard.owner.thisMonthContext")}>
           {kpis?.newMembersThisMonth ?? 0}
         </KpiCell>
-        <KpiCell label="Renewals ≤ 7d" loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={`${kpis?.expiredUnactioned ?? 0} expired ≤ 30d`}>
+        <KpiCell label={t("dashboard.owner.renewals7d")} loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={t("dashboard.owner.expiredContext", { count: kpis?.expiredUnactioned ?? 0 })}>
           {kpis?.renewalsDueNext7Days ?? 0}
         </KpiCell>
-        <KpiCell label="Check-ins today" loading={isLoading} context={`${kpis?.activeLeads ?? 0} open leads`}>
+        <KpiCell label={t("dashboard.owner.checkInsToday")} loading={isLoading} context={t("dashboard.owner.openLeadsContext", { count: kpis?.activeLeads ?? 0 })}>
           {kpis?.checkInsToday ?? 0}
         </KpiCell>
       </section>
 
       {/* Alerts rail */}
       {data && data.alerts.length > 0 ? (
-        <section aria-label="Needs attention" className="panel overflow-hidden">
+        <section aria-label={t("dashboard.owner.needsAttention")} className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <h2 className="flex items-center gap-2 text-[13px] font-semibold">
               <OctagonAlert className="size-4 text-signal" aria-hidden />
-              Needs attention
+              {t("dashboard.owner.needsAttention")}
               <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep tabular">
                 {data.alerts.length}
               </span>
             </h2>
             <Link href="/audit" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              Full audit trail <ArrowRight className="size-3" />
+              {t("dashboard.owner.fullAuditTrail")} <ArrowRight className="size-3" />
             </Link>
           </header>
           <ul className="divide-y divide-line">
@@ -132,7 +136,7 @@ export function OwnerDashboard() {
         </section>
         <div className="grid gap-5">
           <section className="panel p-4">
-            <p className="eyebrow mb-3">Revenue by branch — 30 days</p>
+            <p className="eyebrow mb-3">{t("dashboard.owner.revenueByBranch")}</p>
             {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
           </section>
           <OperatingPriorities kpis={data?.kpis} loading={isLoading || !data} />
@@ -143,7 +147,7 @@ export function OwnerDashboard() {
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Sales this month</h2>
+            <h2 className="text-[13px] font-semibold">{t("dashboard.owner.salesThisMonth")}</h2>
             <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
               Pipeline <ArrowRight className="size-3" />
             </Link>
@@ -157,12 +161,12 @@ export function OwnerDashboard() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-start">
-                    <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Rep</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Collected</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">New</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Renewals</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Follow-ups</th>
-                    <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Overdue</th>
+                    <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.rep")}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.collected")}</th>
+                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.newCol")}</th>
+                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.renewalsCol")}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.followUpsCol")}</th>
+                    <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.overdueCol")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -191,7 +195,7 @@ export function OwnerDashboard() {
 
         <section className="panel overflow-hidden">
           <header className="border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Recent activity</h2>
+            <h2 className="text-[13px] font-semibold">{t("dashboard.owner.recentActivity")}</h2>
           </header>
           <div className="max-h-[380px] overflow-y-auto px-4 py-3">
             {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <TimelineFeed events={data.recentActivity} dense />}
@@ -209,6 +213,7 @@ export function OperatingPriorities({
   kpis?: DashboardData["kpis"];
   loading: boolean;
 }) {
+  const t = useT();
   const priorities: Array<{
     label: string;
     detail: string;
@@ -218,24 +223,24 @@ export function OperatingPriorities({
     tone?: "warning" | "danger";
   }> = [
     {
-      label: "Renewals due next 7 days",
-      detail: `${kpis?.expiredUnactioned ?? 0} expired without a newer membership`,
+      label: t("dashboard.owner.renewalsDue"),
+      detail: t("dashboard.owner.renewalsDueDetail", { count: kpis?.expiredUnactioned ?? 0 }),
       href: "/crm/queues",
       icon: Clock3,
       value: kpis?.renewalsDueNext7Days ?? 0,
       tone: (kpis?.renewalsDueNext7Days ?? 0) > 0 ? "warning" : undefined,
     },
     {
-      label: "Outstanding balances",
-      detail: "Collect open charges",
+      label: t("dashboard.owner.outstandingBalances"),
+      detail: t("dashboard.owner.outstandingBalancesDetail"),
       href: "/payments",
       icon: WalletCards,
       value: <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />,
       tone: (kpis?.outstandingTotal.amount ?? 0) > 0 ? "warning" : undefined,
     },
     {
-      label: "Open lead follow-up",
-      detail: `${kpis?.overdueFollowUps ?? 0} follow-up${kpis?.overdueFollowUps === 1 ? "" : "s"} overdue`,
+      label: t("dashboard.owner.openLeadFollowUp"),
+      detail: t("dashboard.owner.openLeadFollowUpDetail", { count: kpis?.overdueFollowUps ?? 0 }),
       href: "/crm/pipeline",
       icon: UsersRound,
       value: kpis?.activeLeads ?? 0,
@@ -247,8 +252,8 @@ export function OperatingPriorities({
     <section className="panel overflow-hidden" aria-labelledby="operating-priorities-title">
       <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
-          <p className="eyebrow">Operating priorities</p>
-          <h2 id="operating-priorities-title" className="mt-1 text-[15px] font-semibold">Move the numbers that matter</h2>
+          <p className="eyebrow">{t("dashboard.owner.operatingPriorities")}</p>
+          <h2 id="operating-priorities-title" className="mt-1 text-[15px] font-semibold">{t("dashboard.owner.moveTheNumbers")}</h2>
         </div>
         <Link href="/crm/queues" className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
           Open queues <ArrowRight className="size-3" />
@@ -310,11 +315,11 @@ function KpiCell({
   );
 }
 
-function greeting(): string {
+function greetingKey(): "morning" | "afternoon" | "evening" {
   const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  return "evening";
 }
 
 export function DashboardStatPlaceholder() {

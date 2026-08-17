@@ -17,12 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * The salesperson's cockpit: what needs action now, how the month is going,
  * and a direct line into each follow-up.
  */
 export function SalesDashboard() {
+  const t = useT();
   const { session } = useApp();
   const today = todayISODate();
   const invalidate = useInvalidate();
@@ -36,7 +38,7 @@ export function SalesDashboard() {
 
   const completeTask = useApiMutation((api, v: { taskId: string; outcome: string }) => api.completeTask(v.taskId, { outcome: v.outcome }), {
     onSuccess: async () => {
-      toast.success("Follow-up completed.");
+      toast.success(t("dashboard.sales.followUpCompleted"));
       await invalidate();
     },
   });
@@ -52,7 +54,7 @@ export function SalesDashboard() {
       <PageHeader
         eyebrow={formatDate(today)}
         title={`Your day, ${session?.user.name.split(" ")[0] ?? ""}`}
-        description="Everything due now, then everything that makes this month count."
+        description={t("dashboard.sales.description")}
         actions={
           <Button asChild>
             <Link href="/crm/queues">
@@ -62,12 +64,12 @@ export function SalesDashboard() {
         }
       />
 
-      <section aria-label="Your numbers" className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
+      <section aria-label={t("dashboard.sales.yourNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
         {[
-          { label: "Overdue follow-ups", value: overdue.length, danger: overdue.length > 0 },
-          { label: "Due today", value: tasks.length - overdue.length, danger: false },
-          { label: "Collected this month", value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
-          { label: "Leads converted", value: me?.leadsConverted ?? 0, danger: false },
+          { label: t("dashboard.sales.overdueFollowUps"), value: overdue.length, danger: overdue.length > 0 },
+          { label: t("dashboard.sales.dueToday"), value: tasks.length - overdue.length, danger: false },
+          { label: t("dashboard.sales.collectedThisMonth"), value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
+          { label: t("dashboard.sales.leadsConverted"), value: me?.leadsConverted ?? 0, danger: false },
         ].map((cell) => (
           <div key={cell.label} className="px-4 py-3.5">
             <p className="eyebrow">{cell.label}</p>
@@ -82,7 +84,7 @@ export function SalesDashboard() {
         {/* Task list */}
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Follow-ups</h2>
+            <h2 className="text-[13px] font-semibold">{t("dashboard.sales.followUps")}</h2>
             <Link href="/crm/queues" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
               All queues <ArrowRight className="size-3" />
             </Link>
@@ -108,7 +110,7 @@ export function SalesDashboard() {
                       type="button"
                       aria-label={`Complete: ${task.title}`}
                       onClick={() =>
-                        completeTask.mutate({ taskId: task.id, outcome: "Completed from dashboard" })
+                        completeTask.mutate({ taskId: task.id, outcome: t("dashboard.sales.completedFromDashboard") })
                       }
                       className="flex size-5 shrink-0 items-center justify-center rounded-full border border-line-3 text-transparent transition-colors hover:border-success hover:text-success cursor-pointer"
                     >
@@ -121,7 +123,7 @@ export function SalesDashboard() {
                     <span className={cn("shrink-0 text-[11.5px] tabular", isOverdue ? "font-medium text-danger" : "text-ink-3")}>
                       {isOverdue ? <RelativeText iso={task.dueAt} /> : formatTime(task.dueAt)}
                     </span>
-                    <Button asChild variant="secondary" size="icon-sm" aria-label="Open contact">
+                    <Button asChild variant="secondary" size="icon-sm" aria-label={t("dashboard.sales.openContact")}>
                       <Link href={href}>
                         <PhoneCall />
                       </Link>
@@ -136,7 +138,7 @@ export function SalesDashboard() {
         {/* My pipeline */}
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Your open leads</h2>
+            <h2 className="text-[13px] font-semibold">{t("dashboard.sales.yourOpenLeads")}</h2>
             <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
               Pipeline <ArrowRight className="size-3" />
             </Link>
@@ -148,7 +150,7 @@ export function SalesDashboard() {
               ))}
             </div>
           ) : (leadsQuery.data?.items.length ?? 0) === 0 ? (
-            <p className="px-4 py-8 text-center text-[13px] text-ink-3">No open leads assigned to you right now.</p>
+            <p className="px-4 py-8 text-center text-[13px] text-ink-3">{t("dashboard.sales.noOpenLeads")}</p>
           ) : (
             <ul className="divide-y divide-line">
               {leadsQuery.data!.items.map((lead) => (

@@ -6,12 +6,14 @@ import type { DashboardData } from "@/lib/domain/types";
 import { formatDateShort } from "@/lib/utils/dates";
 import { formatMoney, money } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * Revenue over the last 30 days. Answers: "is collection trending up or down,
  * and which days were unusually strong/weak?" Today is marked in signal red.
  */
 export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] }) {
+  const t = useT();
   const chartData = useMemo(
     () =>
       data.map((p) => ({
@@ -30,7 +32,7 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
     <div>
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <div>
-          <p className="eyebrow">Collected — last 30 days</p>
+          <p className="eyebrow">{t("dashboard.charts.collected30")}</p>
           <p className="mt-1 text-[22px] font-medium tabular">
             <MoneyText money={money(total)} compact />
             <span className="ms-2 text-[12px] text-ink-3">
