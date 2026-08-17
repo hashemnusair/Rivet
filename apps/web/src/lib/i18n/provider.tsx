@@ -102,10 +102,29 @@ export function LocaleProvider({
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
+/**
+ * Used when a component renders outside the provider. The provider is mounted
+ * in the root layout, so in the running app this never applies — but a unit
+ * test rendering one component in isolation, or a fragment rendered outside the
+ * tree, should show English rather than crash the page over a presentation
+ * concern.
+ */
+const FALLBACK: LocaleContextValue = {
+  locale: DEFAULT_LOCALE,
+  dir: dirFor(DEFAULT_LOCALE),
+  setLocale: () => undefined,
+  toggleLocale: () => undefined,
+  t: (key, vars) =>
+    translate(
+      { messages: en as unknown as MessageTree, fallback: en as unknown as MessageTree, locale: DEFAULT_LOCALE },
+      key,
+      vars,
+    ),
+  ready: true,
+};
+
 export function useLocale(): LocaleContextValue {
-  const context = useContext(LocaleContext);
-  if (!context) throw new Error("useLocale must be used inside <LocaleProvider>");
-  return context;
+  return useContext(LocaleContext) ?? FALLBACK;
 }
 
 /** The common case — just the translate function. */

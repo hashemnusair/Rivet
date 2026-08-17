@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowLeftRight,
   Bell,
@@ -16,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { DecorativeQr } from "./decorative-qr";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * The hero's product shot: the owner dashboard on a laptop with the member app
@@ -30,47 +33,53 @@ import { DecorativeQr } from "./decorative-qr";
  */
 
 /** Sidebar, in the real section order. Only the first item is active. */
-const NAV: Array<{ label: string; items: Array<[string, LucideIcon]> }> = [
-  { label: "Overview", items: [["Dashboard", Gauge]] },
+type SectionKey = "overview" | "workspace" | "sales" | "finance" | "system";
+type ItemKey = "dashboard" | "reception" | "members" | "personalTraining" | "leads" | "followUps" | "payments" | "auditLog";
+
+const NAV: Array<{ section: SectionKey; items: Array<[ItemKey, LucideIcon]> }> = [
+  { section: "overview", items: [["dashboard", Gauge]] },
   {
-    label: "Workspace",
+    section: "workspace",
     items: [
-      ["Reception", ShieldCheck],
-      ["Members", Users],
-      ["Personal training", Dumbbell],
+      ["reception", ShieldCheck],
+      ["members", Users],
+      ["personalTraining", Dumbbell],
     ],
   },
   {
-    label: "Sales",
+    section: "sales",
     items: [
-      ["Leads", KanbanSquare],
-      ["Follow-ups", ListFilter],
+      ["leads", KanbanSquare],
+      ["followUps", ListFilter],
     ],
   },
-  { label: "Finance", items: [["Payments", ArrowLeftRight]] },
-  { label: "System", items: [["Audit log", ScrollText]] },
+  { section: "finance", items: [["payments", ArrowLeftRight]] },
+  { section: "system", items: [["auditLog", ScrollText]] },
 ];
 
 /** The owner dashboard's KPI strip — one ruled panel, not six cards. */
-const KPIS: ReadonlyArray<{ label: string; value: string; note: string; tone?: string }> = [
-  { label: "Collected today", value: "Receipted", note: "cash · card · CliQ", tone: "text-success" },
-  { label: "This month", value: "On ledger", note: "reconciled" },
-  { label: "Outstanding", value: "Tracked", note: "unpaid balances", tone: "text-warning" },
-  { label: "New members", value: "Recorded", note: "this month" },
-  { label: "Renewals ≤ 7d", value: "Queued", note: "actionable", tone: "text-signal" },
-  { label: "Check-ins today", value: "Verified", note: "at the door" },
+type KpiKey = "collectedToday" | "thisMonth" | "outstanding" | "newMembers" | "renewals" | "checkIns";
+
+const KPIS: ReadonlyArray<{ key: KpiKey; tone?: string }> = [
+  { key: "collectedToday", tone: "text-success" },
+  { key: "thisMonth" },
+  { key: "outstanding", tone: "text-warning" },
+  { key: "newMembers" },
+  { key: "renewals", tone: "text-signal" },
+  { key: "checkIns" },
 ];
 
 /** Revenue series — the last column is the period in progress. */
 const BARS = [34, 46, 39, 55, 48, 62, 57, 71, 64, 78, 69, 90] as const;
 
 const FEED = [
-  { id: "valid", name: "Member entry", note: "membership active", verdict: "VALID", tone: "text-success" },
-  { id: "expiring", name: "Member entry", note: "renewal due", verdict: "EXPIRING", tone: "text-warning" },
-  { id: "frozen", name: "Member entry", note: "membership frozen", verdict: "FROZEN", tone: "text-[#86a7d5]" },
+  { id: "valid", tone: "text-success" },
+  { id: "expiring", tone: "text-warning" },
+  { id: "frozen", tone: "text-[#86a7d5]" },
 ] as const;
 
 export function HeroDevices() {
+  const t = useT();
   return (
     <>
       <div className="relative mx-auto w-full max-w-[620px] pb-16 lg:pb-16" aria-hidden>
@@ -91,9 +100,9 @@ export function HeroDevices() {
                   </div>
 
                   {NAV.map((section, sectionIndex) => (
-                    <div key={section.label} className="mb-1">
+                    <div key={section.section} className="mb-1">
                       <p className="hidden px-1.5 font-mono text-[4.5px] uppercase tracking-[0.16em] text-night-ink-3 sm:block">
-                        {section.label}
+                        {t(`nav.section.${section.section}`)}
                       </p>
                       <div className="mt-0.5 space-y-px">
                         {section.items.map(([item, Icon], itemIndex) => {
@@ -117,7 +126,7 @@ export function HeroDevices() {
                                   active ? "font-medium text-night-ink" : "text-night-ink-2"
                                 }`}
                               >
-                                {item}
+                                {t(`nav.item.${item}`)}
                               </span>
                             </div>
                           );
@@ -130,7 +139,7 @@ export function HeroDevices() {
                     <span className="flex size-3 items-center justify-center rounded-full bg-night-3 font-mono text-[4.5px] text-night-ink-2">
                       OA
                     </span>
-                    <span className="hidden truncate text-[5px] text-night-ink-3 sm:inline">Gym owner</span>
+                    <span className="hidden truncate text-[5px] text-night-ink-3 sm:inline">{t("marketing.device.gymOwner")}</span>
                   </div>
                 </div>
 
@@ -140,10 +149,10 @@ export function HeroDevices() {
                   <div className="flex items-center gap-1.5 border-b border-line bg-surface px-2 py-1.5">
                     <span className="flex min-w-0 flex-1 items-center gap-1 rounded-[3px] border border-line bg-paper px-1.5 py-[3px]">
                       <Search className="size-[6px] shrink-0 text-ink-4" strokeWidth={2.4} />
-                      <span className="truncate text-[5.5px] text-ink-4">Search members, leads and pages</span>
+                      <span className="truncate text-[5.5px] text-ink-4">{t("marketing.device.searchPlaceholder")}</span>
                     </span>
                     <span className="hidden rounded-[3px] border border-line-2 px-1.5 py-[3px] text-[5.5px] text-ink-2 sm:inline">
-                      All branches
+                      {t("marketing.device.allBranches")}
                     </span>
                     <Bell className="size-[7px] shrink-0 text-ink-3" strokeWidth={2.2} />
                     <span className="size-3 shrink-0 rounded-full bg-sunken-2" />
@@ -153,11 +162,11 @@ export function HeroDevices() {
                     {/* page header */}
                     <div className="flex items-end justify-between">
                       <div>
-                        <p className="font-mono text-[4.5px] uppercase tracking-[0.16em] text-ink-3">Today</p>
-                        <p className="mt-[1px] text-[9px] font-semibold leading-none tracking-tight">Good morning</p>
+                        <p className="font-mono text-[4.5px] uppercase tracking-[0.16em] text-ink-3">{t("marketing.device.today")}</p>
+                        <p className="mt-[1px] text-[9px] font-semibold leading-none tracking-tight">{t("marketing.device.greeting")}</p>
                       </div>
                       <span className="flex items-center gap-1 font-mono text-[5px] uppercase tracking-[0.12em] text-success">
-                        <LiveDot /> Live
+                        <LiveDot /> {t("marketing.device.live")}
                       </span>
                     </div>
 
@@ -165,15 +174,19 @@ export function HeroDevices() {
                     <div className="grid grid-cols-3 divide-x divide-line rounded-[4px] border border-line bg-surface sm:grid-cols-6">
                       {KPIS.map((kpi, index) => (
                         <div
-                          key={kpi.label}
+                          key={kpi.key}
                           className={`animate-fade-up px-1.5 py-1.5 ${index > 2 ? "hidden sm:block" : ""}`}
                           style={{ animationDelay: `${320 + index * 70}ms` }}
                         >
                           <p className="truncate font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">
-                            {kpi.label}
+                            {t(`marketing.device.kpi.${kpi.key}`)}
                           </p>
-                          <p className="mt-1 truncate text-[7px] font-semibold leading-none">{kpi.value}</p>
-                          <p className={`mt-[3px] truncate text-[4.5px] ${kpi.tone ?? "text-ink-3"}`}>{kpi.note}</p>
+                          <p className="mt-1 truncate text-[7px] font-semibold leading-none">
+                            {t(`marketing.device.kpi.${kpi.key}Value`)}
+                          </p>
+                          <p className={`mt-[3px] truncate text-[4.5px] ${kpi.tone ?? "text-ink-3"}`}>
+                            {t(`marketing.device.kpi.${kpi.key}Note`)}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -185,12 +198,12 @@ export function HeroDevices() {
                       style={{ animationDelay: "760ms" }}
                     >
                       <OctagonAlert className="size-[7px] shrink-0 text-signal" strokeWidth={2.2} />
-                      <span className="shrink-0 text-[5.5px] font-medium">Needs attention</span>
+                      <span className="shrink-0 text-[5.5px] font-medium">{t("marketing.device.needsAttention")}</span>
                       <span className="shrink-0 rounded-[2px] bg-signal-bg px-1 py-px font-mono text-[4.5px] font-semibold text-signal-deep">
                         3
                       </span>
                       <span className="hidden truncate text-[5px] text-ink-3 sm:inline">
-                        Drawer variance awaiting approval
+                        {t("marketing.device.drawerVariance")}
                       </span>
                     </div>
 
@@ -198,7 +211,7 @@ export function HeroDevices() {
                       {/* revenue chart */}
                       <div className="flex min-h-0 flex-col rounded-[4px] border border-line bg-surface p-1.5">
                         <span className="font-mono text-[4.5px] uppercase tracking-[0.12em] text-ink-3">
-                          Revenue · last 30 days
+                          {t("marketing.device.revenue30")}
                         </span>
                         <div className="mt-1 flex min-h-0 flex-1 items-end gap-[4%] border-b border-line pb-px">
                           {BARS.map((height, index) => (
@@ -217,7 +230,7 @@ export function HeroDevices() {
                           the narrowest screens, so it steps aside there */}
                       <div className="hidden min-h-0 flex-col rounded-[4px] border border-line bg-surface p-1.5 sm:flex">
                         <span className="flex items-center gap-1 font-mono text-[4.5px] uppercase tracking-[0.12em] text-ink-3">
-                          Reception · live <LiveDot />
+                          {t("marketing.device.receptionLive")} <LiveDot />
                         </span>
                         <div className="mt-1 space-y-1">
                           {FEED.map((row, index) => (
@@ -230,14 +243,16 @@ export function HeroDevices() {
                             >
                               <ScanLine className="size-[6px] shrink-0 text-ink-4" strokeWidth={2.2} />
                               <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[5.5px] font-medium leading-tight">{row.name}</span>
+                                <span className="block truncate text-[5.5px] font-medium leading-tight">
+                                  {t("marketing.device.memberEntry")}
+                                </span>
                                 {/* Verdict sits under the name, not at the far
                                     right, so the phone never crops it. */}
                                 <span className="block truncate text-[4.5px] leading-tight text-ink-3">
                                   <span className={`font-mono font-semibold tracking-[0.08em] ${row.tone}`}>
-                                    {row.verdict}
+                                    {t(`marketing.device.verdict.${row.id}`)}
                                   </span>{" "}
-                                  · {row.note}
+                                  · {t(`marketing.device.verdict.${row.id}Note`)}
                                 </span>
                               </span>
                             </div>
@@ -278,10 +293,10 @@ export function HeroDevices() {
                 {/* member header */}
                 <div className="flex items-center justify-between gap-1 border-b border-line px-2.5 pb-1.5">
                   <span className="truncate font-mono text-[5px] uppercase tracking-[0.16em] text-ink-3">
-                    RIVET · Member
+                    {t("marketing.device.phone.member")}
                   </span>
                   <span className="flex shrink-0 items-center gap-1 font-mono text-[5px] uppercase tracking-[0.12em] text-success">
-                    <LiveDot /> Active
+                    <LiveDot /> {t("marketing.device.phone.active")}
                   </span>
                 </div>
 
@@ -291,8 +306,8 @@ export function HeroDevices() {
                       GYM
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[8px] font-semibold leading-tight">Your membership</span>
-                      <span className="block truncate text-[5.5px] leading-tight text-ink-3">Selected gym · branch</span>
+                      <span className="block truncate text-[8px] font-semibold leading-tight">{t("marketing.device.phone.membership")}</span>
+                      <span className="block truncate text-[5.5px] leading-tight text-ink-3">{t("marketing.device.phone.gymBranch")}</span>
                     </span>
                   </div>
 
@@ -300,18 +315,18 @@ export function HeroDevices() {
                       usable square instead of collapsing to a strip. */}
                   <div className="mt-2 hidden grid-cols-2 gap-1 sm:grid">
                     <div className="rounded-[3px] border border-line bg-surface px-1.5 py-1">
-                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">Status</p>
-                      <p className="mt-[2px] text-[7px] font-semibold leading-none text-success-deep">Current</p>
+                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">{t("marketing.device.phone.statusLabel")}</p>
+                      <p className="mt-[2px] text-[7px] font-semibold leading-none text-success-deep">{t("marketing.device.phone.statusValue")}</p>
                     </div>
                     <div className="rounded-[3px] border border-line bg-surface px-1.5 py-1">
-                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">Visits</p>
-                      <p className="mt-[2px] text-[7px] font-semibold leading-none">History</p>
+                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">{t("marketing.device.phone.visitsLabel")}</p>
+                      <p className="mt-[2px] text-[7px] font-semibold leading-none">{t("marketing.device.phone.visitsValue")}</p>
                     </div>
                   </div>
 
                   {/* entry pass — the scan sweep runs continuously */}
                   <div className="night-surface mt-2 flex min-h-0 flex-1 flex-col rounded-[6px] bg-night p-2">
-                    <p className="font-mono text-[4.5px] uppercase tracking-[0.14em] text-night-ink-3">Entry pass</p>
+                    <p className="font-mono text-[4.5px] uppercase tracking-[0.14em] text-night-ink-3">{t("marketing.device.phone.entryPass")}</p>
                     {/* The code keeps its own square inside whatever box the
                         phone's flex column leaves it — `preserveAspectRatio`
                         centres it rather than letting it stretch. */}
@@ -320,21 +335,21 @@ export function HeroDevices() {
                       <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" />
                     </div>
                     <p className="mt-1.5 text-center font-mono text-[4.5px] uppercase tracking-[0.1em] text-night-ink-3">
-                      Scan at the desk
+                      {t("marketing.device.phone.scanAtDesk")}
                     </p>
                   </div>
                 </div>
 
                 {/* member dock */}
                 <div className="mt-2 grid grid-cols-3 border-t border-line px-2 pb-2 pt-1.5">
-                  {[
-                    ["Home", Home, true],
-                    ["Explore", Search, false],
-                    ["Account", UserRound, false],
-                  ].map(([label, Icon, active]) => {
-                    const DockIcon = Icon as LucideIcon;
+                  {([
+                    ["home", Home, true],
+                    ["explore", Search, false],
+                    ["account", UserRound, false],
+                  ] as const).map(([label, Icon, active]) => {
+                    const DockIcon = Icon;
                     return (
-                      <span key={label as string} className="flex flex-col items-center gap-[2px]">
+                      <span key={label} className="flex flex-col items-center gap-[2px]">
                         <span
                           className={`flex size-[13px] items-center justify-center rounded-[3px] ${
                             active ? "bg-sunken text-ink" : "text-ink-4"
@@ -343,7 +358,7 @@ export function HeroDevices() {
                           <DockIcon className="size-[7px]" strokeWidth={2.2} />
                         </span>
                         <span className={`hidden text-[4.5px] sm:block ${active ? "text-ink" : "text-ink-4"}`}>
-                          {label as string}
+                          {t(`marketing.device.phone.${label}`)}
                         </span>
                       </span>
                     );
@@ -358,7 +373,7 @@ export function HeroDevices() {
       </div>
 
       <p className="sr-only">
-        Illustrative RIVET dashboard and member app preview with no customer or operational data.
+        {t("marketing.device.alt")}
       </p>
     </>
   );

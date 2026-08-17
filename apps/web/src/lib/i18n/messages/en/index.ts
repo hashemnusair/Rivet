@@ -1,4 +1,6 @@
 import { common } from "./common";
+import { marketing } from "./marketing";
+import { nav } from "./nav";
 
 /**
  * English is the source of truth: `Messages` is derived from it, so the Arabic
@@ -7,6 +9,8 @@ import { common } from "./common";
  */
 export const en = {
   common,
+  marketing,
+  nav,
 };
 
 export type Messages = typeof en;

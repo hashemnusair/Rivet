@@ -21,6 +21,8 @@ import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { useExperience } from "@/lib/providers/experience-provider";
+import { useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 /** Hero entrance order, in ms — one cascade from eyebrow to the stat rail. */
 const HERO_STEP = {
@@ -36,6 +38,8 @@ const HERO_STEP = {
 
 export default function LandingPage() {
   const { marketplaceGyms, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const t = useT();
+  const format = useFormat();
   return (
     <div className="marketing-body min-h-screen bg-paper text-ink">
       <ScrollProgress />
@@ -57,20 +61,15 @@ export default function LandingPage() {
                 style={{ animationDelay: `${HERO_STEP.eyebrow}ms` }}
               >
                 <span className="h-px w-10 origin-left animate-underline bg-signal [animation-delay:250ms]" />
-                Revenue &amp; operations OS · Built in Amman
+                {t("marketing.hero.eyebrow")}
               </p>
 
               <h1 className="marketing-display mt-7 text-[clamp(2.7rem,5vw,4.7rem)] leading-[0.9]">
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>
-                  Every member.
-                </span>
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>
-                  Every dinar.
-                </span>
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>
                 <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
                   {/* The rule is measured off the words, not a guessed width. */}
-                  <span className="relative inline-block">
-                    Every shift.
+                  <span className="relative inline-block">{t("marketing.hero.line3")}
                     <span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
                   </span>
                 </span>
@@ -80,8 +79,7 @@ export default function LandingPage() {
                 className="mt-8 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
                 style={{ animationDelay: `${HERO_STEP.copy}ms` }}
               >
-                RIVET joins the sales desk, the gym floor, the cash drawer and the member&rsquo;s phone into one record — from
-                the first free trial to the tenth renewal.
+                {t("marketing.hero.body")}
               </p>
 
               <div
@@ -90,12 +88,12 @@ export default function LandingPage() {
               >
                 <Button asChild variant="signal" size="lg" className="group">
                   <Link href="/signup">
-                    Send a gym application{" "}
+                    {t("marketing.actions.apply")}{" "}
                     <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="#product">See how it works</Link>
+                  <Link href="#product">{t("marketing.actions.seeHow")}</Link>
                 </Button>
               </div>
 
@@ -103,25 +101,25 @@ export default function LandingPage() {
                 className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
                 style={{ animationDelay: `${HERO_STEP.note}ms` }}
               >
-                Gym access is issued after application review and operator onboarding.
+                {t("marketing.hero.accessNote")}
               </p>
 
               <dl
                 className="mt-12 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-6 border-t border-ink/10 pt-8 xl:grid-cols-4"
                 style={{ animationDelay: `${HERO_STEP.stats}ms` }}
               >
-                {[
-                  ["Cash · Card · CliQ", "Every tender receipted"],
-                  ["Multi-branch", "One ledger, every floor"],
-                  ["Arabic / RTL", "Native from day one"],
-                  ["Member QR", "One scan, clear verdict"],
-                ].map(([term, detail]) => (
+                {([
+                  ["tenderTerm", "tenderDetail"],
+                  ["branchTerm", "branchDetail"],
+                  ["localeTerm", "localeDetail"],
+                  ["qrTerm", "qrDetail"],
+                ] as const).map(([term, detail]) => (
                   <div key={term} className="group relative">
                     <span className="absolute -top-8 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
                     <dt className="font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-ink transition-colors duration-300 group-hover:text-signal">
-                      {term}
+                      {t(`marketing.hero.stats.${term}`)}
                     </dt>
-                    <dd className="mt-1.5 text-[11.5px] leading-snug text-ink-3">{detail}</dd>
+                    <dd className="mt-1.5 text-[11.5px] leading-snug text-ink-3">{t(`marketing.hero.stats.${detail}`)}</dd>
                   </div>
                 ))}
               </dl>
@@ -137,21 +135,21 @@ export default function LandingPage() {
         {/* ------------------------------------------------------------- Numbers */}
         <section className="border-b border-ink/10 bg-sunken">
           <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
-            {[
-              ["Live", "branch operations in one workspace"],
-              ["One", "chronological member timeline"],
-              ["Audited", "payments, shifts and overrides"],
-              ["Scoped", "roles, branches and tenant access"],
-            ].map(([value, label], index) => (
+            {([
+              ["liveValue", "liveLabel"],
+              ["oneValue", "oneLabel"],
+              ["auditedValue", "auditedLabel"],
+              ["scopedValue", "scopedLabel"],
+            ] as const).map(([value, label], index) => (
               <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
                 <div className="group">
                   <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-4 transition-colors duration-300 group-hover:text-signal">
                     {String(index + 1).padStart(2, "0")}
                   </p>
                   <p className="mt-2 text-[34px] font-semibold leading-none tabular transition-transform duration-500 ease-out group-hover:-translate-y-0.5">
-                    {value}
+                    {t(`marketing.numbers.${value}`)}
                   </p>
-                  <p className="mt-2 text-[12.5px] text-ink-3">{label}</p>
+                  <p className="mt-2 text-[12.5px] text-ink-3">{t(`marketing.numbers.${label}`)}</p>
                 </div>
               </Reveal>
             ))}
@@ -166,44 +164,44 @@ export default function LandingPage() {
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
               dark
-              eyebrow="RIVET for gyms"
-              title="Depth where gyms lose money."
-              description="Not a wall of dashboards — a working surface for selling, collecting, checking in, reconciling and supervising."
+              eyebrow={t("marketing.ops.eyebrow")}
+              title={t("marketing.ops.title")}
+              description={t("marketing.ops.description")}
             />
             <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-night-line bg-night-line md:grid-cols-2 lg:grid-cols-4">
               <DarkFeature
                 index={0}
                 icon={<Users />}
-                label="Member 360"
-                title="The whole story"
-                copy="Calls, trials, plans, payments, freezes, visits and renewals in one chronological record."
+                label={t("marketing.ops.member360.label")}
+                title={t("marketing.ops.member360.title")}
+                copy={t("marketing.ops.member360.copy")}
               />
               <DarkFeature
                 index={1}
                 icon={<ScanLine />}
-                label="Reception"
-                title="A verdict, not a guess"
-                copy="Valid, expiring, frozen, depleted or blocked — with the next action already attached."
+                label={t("marketing.ops.reception.label")}
+                title={t("marketing.ops.reception.title")}
+                copy={t("marketing.ops.reception.copy")}
               />
               <DarkFeature
                 index={2}
                 icon={<Banknote />}
-                label="Shift & drawer"
-                title="Close in ninety seconds"
-                copy="Expected against counted cash, with every variance named, explained and routed for approval."
+                label={t("marketing.ops.drawer.label")}
+                title={t("marketing.ops.drawer.title")}
+                copy={t("marketing.ops.drawer.copy")}
               />
               <DarkFeature
                 index={3}
                 icon={<ShieldCheck />}
-                label="Accountability"
-                title="Every override has a name"
-                copy="Discounts, refunds, freezes and voids are reasoned, tiered and written to an append-only log."
+                label={t("marketing.ops.accountability.label")}
+                title={t("marketing.ops.accountability.title")}
+                copy={t("marketing.ops.accountability.copy")}
               />
             </div>
             <div className="mt-10">
               <Button asChild variant="night" size="lg" className="group">
                 <Link href="/login">
-                  Sign in to RIVET{" "}
+                  {t("marketing.actions.signInToRivet")}{" "}
                   <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                 </Link>
               </Button>
@@ -217,23 +215,18 @@ export default function LandingPage() {
             <div>
               <SectionIntro
                 stacked
-                eyebrow="RIVET for members"
-                title="Their side of the counter."
-                description="One account finds new gyms, books a free trial, and holds every active membership — no app store, no plastic card, no screenshots of old receipts."
+                eyebrow={t("marketing.member.eyebrow")}
+                title={t("marketing.member.title")}
+                description={t("marketing.member.description")}
               />
               <ul className="mt-8 grid gap-3.5">
-                {[
-                  "Membership status, expiry, visits and balance at a glance",
-                  "A dedicated QR identity for fast entry at the desk",
-                  "Receipts and payment history that survive a lost phone",
-                  "Arabic or English, per member",
-                ].map((item, index) => (
+                {(["status", "qr", "receipts", "language"] as const).map((item, index) => (
                   <li key={item}>
                     <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
                       <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 transition-colors duration-300 group-hover:border-success group-hover:bg-success-bg">
                         <Check className="size-3 text-success" />
                       </span>
-                      {item}
+                      {t(`marketing.member.benefits.${item}`)}
                     </Reveal>
                   </li>
                 ))}
@@ -241,12 +234,12 @@ export default function LandingPage() {
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild size="lg" className="group">
                   <Link href="/login/member/create">
-                    Create a free account{" "}
+                    {t("marketing.actions.createFreeAccount")}{" "}
                     <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="/customer/discover">Find a gym</Link>
+                  <Link href="/customer/discover">{t("marketing.actions.findGym")}</Link>
                 </Button>
               </div>
             </div>
@@ -259,13 +252,13 @@ export default function LandingPage() {
         <section className="border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
-              eyebrow="The RIVET network"
-              title="Find the gym. Book before you visit."
-              description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
+              eyebrow={t("marketing.network.eyebrow")}
+              title={t("marketing.network.title")}
+              description={t("marketing.network.description")}
             />
             {experienceStatus !== "ready" || marketplaceGyms.length === 0 ? (
               <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="No RIVET gyms are live yet" emptyDescription="The network directory is ready, but no gym has published a live listing yet." />
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("marketing.network.emptyTitle")} emptyDescription={t("marketing.network.emptyDescription")} />
               </div>
             ) : (
               <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -280,7 +273,7 @@ export default function LandingPage() {
                     <span className="relative flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.16em]">
                       {gym.shortName}
                       <span className="flex items-center gap-1">
-                        <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
+                        <Dumbbell className="size-3" /> {t("marketing.network.ptCount", { count: gym.trainers?.length ?? 0 })}
                       </span>
                     </span>
                     <Dumbbell
@@ -297,7 +290,7 @@ export default function LandingPage() {
                         <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
                       </span>
                       <span className="flex items-center gap-1.5 text-[12px] font-medium">
-                        JD {gym.fromPriceMinor / 1000}+
+                        {t("marketing.network.fromPrice", { price: format.number(gym.fromPriceMinor / 1000) })}
                         <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
                       </span>
                     </div>
@@ -314,13 +307,13 @@ export default function LandingPage() {
         <section id="pricing" className="scroll-mt-20 border-b border-ink/10 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
-              eyebrow="Pricing"
-              title="One branch or eight. Same system."
-              description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends."
+              eyebrow={t("marketing.pricing.eyebrow")}
+              title={t("marketing.pricing.title")}
+              description={t("marketing.pricing.description")}
             />
             {experienceStatus !== "ready" || saasPlans.length === 0 ? (
               <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Pricing is being prepared" emptyDescription="RIVET pricing is not available from the live catalog yet." />
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("marketing.pricing.emptyTitle")} emptyDescription={t("marketing.pricing.emptyDescription")} />
               </div>
             ) : (
               <div className="mt-12 grid gap-4 lg:grid-cols-3">
@@ -339,20 +332,27 @@ export default function LandingPage() {
                     <p className={plan.tone === "night" ? "eyebrow-night" : "eyebrow"}>{plan.name}</p>
                     {plan.tone === "signal" ? (
                       <span className="rounded-sm bg-signal px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-white">
-                        Most popular
+                        {t("marketing.pricing.mostPopular")}
                       </span>
                     ) : null}
                   </div>
                   <p className="mt-6">
-                    <span className="text-[38px] font-semibold tabular">JD {plan.priceMinor / 1000}</span>
-                    <span className={plan.tone === "night" ? "text-night-ink-3" : "text-ink-3"}> / month</span>
+                    <span className="text-[38px] font-semibold tabular">
+                      {t("marketing.pricing.price", { amount: format.number(plan.priceMinor / 1000) })}
+                    </span>
+                    <span className={plan.tone === "night" ? "text-night-ink-3" : "text-ink-3"}>
+                      {" "}
+                      {t("marketing.pricing.perMonth")}
+                    </span>
                   </p>
                   <ul className={`mt-7 grid gap-2.5 text-[13px] ${plan.tone === "night" ? "text-night-ink-2" : "text-ink-2"}`}>
                     {[
-                      `${plan.branches} ${plan.branches === 1 ? "branch" : "branches"}`,
-                      `Up to ${plan.staff} staff accounts`,
-                      `Up to ${plan.members.toLocaleString()} members`,
-                      "Member app and marketplace included",
+                      t("marketing.pricing.branches", { count: plan.branches }),
+                      // `count` drives CLDR plural selection; `formatted` is what
+                      // the reader sees, with thousands separators.
+                      t("marketing.pricing.staff", { count: plan.staff, formatted: format.number(plan.staff) }),
+                      t("marketing.pricing.members", { count: plan.members, formatted: format.number(plan.members) }),
+                      t("marketing.pricing.included"),
                     ].map((line) => (
                       <li key={line} className="flex items-start gap-2.5">
                         <Check className={`mt-0.5 size-3.5 shrink-0 ${plan.tone === "night" ? "text-success" : "text-success"}`} />
@@ -365,7 +365,7 @@ export default function LandingPage() {
                     variant={plan.tone === "night" ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
                     className="mt-8 w-full"
                   >
-                    <Link href="/signup">Send gym application</Link>
+                    <Link href="/signup">{t("marketing.actions.applyShort")}</Link>
                   </Button>
                   </div>
                 </Reveal>
@@ -379,19 +379,19 @@ export default function LandingPage() {
         <section className="marketing-grid relative overflow-hidden px-5 py-24 sm:px-8 lg:px-12">
           <div className="relative mx-auto max-w-3xl text-center">
             <Reveal>
-              <p className="eyebrow">First cohort onboarding in Amman</p>
+              <p className="eyebrow">{t("marketing.cta.eyebrow")}</p>
               <h2 className="marketing-display mt-5 text-[clamp(2.6rem,5.2vw,4.4rem)] leading-[0.92]">
-                See it on your own numbers.
+                {t("marketing.cta.title")}
               </h2>
               <p className="mx-auto mt-6 max-w-xl text-[15.5px] leading-relaxed text-ink-2">
-                We configure a pilot around your own branches, members and operating rules so the team can validate the complete workflow on authoritative data.
+                {t("marketing.cta.body")}
               </p>
               {/* One action here — the header already carries sign-in, and the ops
                   section owns the demo link. */}
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Button asChild variant="signal" size="lg" className="group">
                   <Link href="/signup">
-                    Send a gym application{" "}
+                    {t("marketing.actions.apply")}{" "}
                     <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                   </Link>
                 </Button>
@@ -414,30 +414,31 @@ export default function LandingPage() {
  * not a claim about anyone's membership.
  */
 function MemberCard() {
+  const t = useT();
   return (
     <Reveal>
       <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
         <div className="flex items-center justify-between border-b border-night-line pb-4 font-mono text-[9px] uppercase tracking-[0.15em] text-night-ink-3">
-          <span>RIVET MEMBER</span>
+          <span>{t("marketing.member.card.badge")}</span>
           <span className="flex items-center gap-1.5 text-success">
             <span className="relative flex size-1.5">
               <span className="absolute inset-0 animate-pulse-ring rounded-full bg-current" />
               <span className="relative size-1.5 rounded-full bg-current" />
             </span>
-            LIVE WORKSPACE
+            {t("marketing.member.card.live")}
           </span>
         </div>
-        <p className="mt-6 eyebrow-night">Your gym membership</p>
-        <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">One verified member record</h3>
-        <p className="mt-1 font-mono text-[10px] text-night-ink-3">PLAN · BRANCH · MEMBER NUMBER</p>
+        <p className="mt-6 eyebrow-night">{t("marketing.member.card.eyebrow")}</p>
+        <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">{t("marketing.member.card.title")}</h3>
+        <p className="mt-1 font-mono text-[10px] text-night-ink-3">{t("marketing.member.card.meta")}</p>
         <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
           <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">Membership</p>
-            <p className="mt-2 text-[14px] font-semibold">Live gym status</p>
+            <p className="eyebrow-night">{t("marketing.member.card.membershipLabel")}</p>
+            <p className="mt-2 text-[14px] font-semibold">{t("marketing.member.card.membershipValue")}</p>
           </div>
           <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">Visits</p>
-            <p className="mt-2 text-[14px] font-semibold">Recorded check-ins</p>
+            <p className="eyebrow-night">{t("marketing.member.card.visitsLabel")}</p>
+            <p className="mt-2 text-[14px] font-semibold">{t("marketing.member.card.visitsValue")}</p>
           </div>
         </div>
 
@@ -448,15 +449,15 @@ function MemberCard() {
             <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" aria-hidden />
           </div>
           <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[12px] font-semibold">
-            <ScanLine className="size-3.5 text-signal" /> Entry QR after activation
+            <ScanLine className="size-3.5 text-signal" /> {t("marketing.member.card.qrTitle")}
           </p>
           <p className="mt-1 text-center text-[10px] text-night-ink-3">
-            Issued only from an active persisted membership.
+            {t("marketing.member.card.qrNote")}
           </p>
         </div>
 
         <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-night-ink-3">
-          Check-in identity · authorized by the gym
+          {t("marketing.member.card.footer")}
         </p>
       </div>
     </Reveal>
