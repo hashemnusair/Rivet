@@ -1,149 +1,356 @@
+import {
+  ArrowLeftRight,
+  Bell,
+  Dumbbell,
+  Gauge,
+  Home,
+  KanbanSquare,
+  ListFilter,
+  OctagonAlert,
+  ScanLine,
+  ScrollText,
+  Search,
+  ShieldCheck,
+  UserRound,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { DecorativeQr } from "./decorative-qr";
 
 /**
  * The hero's product shot: the owner dashboard on a laptop with the member app
  * on a phone in front of it. Drawn entirely with the design system — no
- * screenshots to go stale. Values are deliberately non-numeric so the
- * illustration cannot be mistaken for a live customer claim.
+ * screenshots to go stale — but the chrome is traced from the real product:
+ * the sidebar sections come from `nav-config.ts`, the ruled six-cell KPI strip
+ * and the "needs attention" rail from the owner dashboard, and the dock from
+ * the member shell.
+ *
+ * Values stay deliberately non-numeric so the illustration cannot be mistaken
+ * for a live customer claim; the vocabulary carries the meaning instead.
  */
+
+/** Sidebar, in the real section order. Only the first item is active. */
+const NAV: Array<{ label: string; items: Array<[string, LucideIcon]> }> = [
+  { label: "Overview", items: [["Dashboard", Gauge]] },
+  {
+    label: "Workspace",
+    items: [
+      ["Reception", ShieldCheck],
+      ["Members", Users],
+      ["Personal training", Dumbbell],
+    ],
+  },
+  {
+    label: "Sales",
+    items: [
+      ["Leads", KanbanSquare],
+      ["Follow-ups", ListFilter],
+    ],
+  },
+  { label: "Finance", items: [["Payments", ArrowLeftRight]] },
+  { label: "System", items: [["Audit log", ScrollText]] },
+];
+
+/** The owner dashboard's KPI strip — one ruled panel, not six cards. */
+const KPIS: ReadonlyArray<{ label: string; value: string; note: string; tone?: string }> = [
+  { label: "Collected today", value: "Receipted", note: "cash · card · CliQ", tone: "text-success" },
+  { label: "This month", value: "On ledger", note: "reconciled" },
+  { label: "Outstanding", value: "Tracked", note: "unpaid balances", tone: "text-warning" },
+  { label: "New members", value: "Recorded", note: "this month" },
+  { label: "Renewals ≤ 7d", value: "Queued", note: "actionable", tone: "text-signal" },
+  { label: "Check-ins today", value: "Verified", note: "at the door" },
+];
+
+/** Revenue series — the last column is the period in progress. */
+const BARS = [34, 46, 39, 55, 48, 62, 57, 71, 64, 78, 69, 90] as const;
+
 const FEED = [
-  { id: "entry-valid", time: "now", name: "Member entry", note: "membership active", verdict: "VALID", tone: "text-success" },
-  { id: "entry-expiring", time: "now", name: "Member entry", note: "renewal due", verdict: "EXPIRING", tone: "text-warning" },
-  { id: "entry-frozen", time: "now", name: "Member entry", note: "membership frozen", verdict: "FROZEN", tone: "text-[#86a7d5]" },
+  { id: "valid", name: "Member entry", note: "membership active", verdict: "VALID", tone: "text-success" },
+  { id: "expiring", name: "Member entry", note: "renewal due", verdict: "EXPIRING", tone: "text-warning" },
+  { id: "frozen", name: "Member entry", note: "membership frozen", verdict: "FROZEN", tone: "text-[#86a7d5]" },
 ] as const;
-
-/** Weekly revenue bars — the last one is the week in progress. */
-const BARS = [38, 52, 44, 60, 55, 68, 62, 84] as const;
-
-const NAV = ["Dashboard", "Reception", "Members", "Pipeline", "Payments", "Audit"] as const;
 
 export function HeroDevices() {
   return (
     <>
-      <div className="relative pb-12 pe-2 sm:pe-8" aria-hidden>
+      <div className="relative mx-auto w-full max-w-[620px] pb-16 lg:pb-16" aria-hidden>
         {/* ------------------------------------------------------------ laptop */}
-        <div className="animate-fade-up">
-          <div className="overflow-hidden rounded-t-xl border-[6px] border-night bg-night shadow-[0_24px_80px_rgb(27_26_21/0.28)]">
-            <div className="flex aspect-[16/10] bg-paper text-ink">
-              {/* sidebar */}
-              <div className="night-surface flex w-[23%] flex-col bg-night p-2 text-night-ink">
-                <div className="mb-2.5 flex items-center gap-1 px-1 pt-0.5">
-                  <span className="h-2.5 w-1 rounded-[1px] bg-night-ink" />
-                  <span className="font-mono text-[7px] font-semibold tracking-[0.2em] text-night-ink">RIVET</span>
-                </div>
-                {NAV.map((item, index) => (
-                  <div
-                    key={item}
-                    className={`mb-0.5 flex items-center gap-1.5 rounded-sm px-1.5 py-[5px] ${index === 0 ? "bg-night-3" : ""}`}
-                  >
-                    {index === 0 ? <span className="h-2 w-[2px] rounded-full bg-signal" /> : <span className="size-[3px] rounded-full bg-night-ink-3" />}
-                    <span className={`text-[7px] leading-none ${index === 0 ? "text-night-ink" : "text-night-ink-3"}`}>{item}</span>
-                  </div>
-                ))}
-                <div className="mt-auto flex items-center gap-1.5 border-t border-night-line px-1 pt-1.5">
-                  <span className="flex size-3 items-center justify-center rounded-full bg-night-3 font-mono text-[5px] text-night-ink-2">OA</span>
-                  <span className="text-[6px] text-night-ink-3">Gym owner</span>
-                </div>
-              </div>
-
-              {/* main pane */}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <div className="flex items-center justify-between border-b border-line bg-surface px-2.5 py-1.5">
-                  <span className="text-[8px] font-semibold">Dashboard</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="rounded-sm border border-line-2 px-1.5 py-0.5 text-[6px] text-ink-2">Selected branch</span>
-                    <span className="flex items-center gap-1 font-mono text-[6px] uppercase tracking-[0.1em] text-success">
-                      <span className="size-1 animate-pulse rounded-full bg-success" /> Live
+        <div className="w-[86%] animate-rise-in">
+          <div className="animate-drift">
+            <div className="overflow-hidden rounded-t-xl border-[6px] border-night bg-night shadow-[0_28px_90px_-20px_rgb(27_26_21/0.4)]">
+              <div className="flex aspect-[16/10] bg-paper text-ink">
+                {/* ------------------------------------------------ sidebar
+                    Narrow screens render the product's own collapsed sidebar
+                    rather than a squeezed copy of the expanded one. */}
+                <div className="night-surface flex w-[15%] flex-col bg-night px-1.5 pb-1.5 pt-1 text-night-ink sm:w-[25%]">
+                  <div className="mb-2 flex items-center justify-center gap-1 px-1.5 pt-1 sm:justify-start">
+                    <span className="h-2.5 w-1 rounded-[1px] bg-night-ink" />
+                    <span className="hidden font-mono text-[6.5px] font-semibold tracking-[0.22em] text-night-ink sm:inline">
+                      RIVET
                     </span>
                   </div>
-                </div>
 
-                <div className="grid flex-1 grid-rows-[auto_1fr] gap-1.5 p-1.5">
-                  {/* KPI row */}
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <Kpi label="Revenue · month" value="Ledger" note="persisted payments" noteTone="text-success" />
-                    <Kpi label="Active members" value="Live" note="all branches" />
-                    <Kpi label="Renewals · 7d" value="Queue" note="actionable records" noteTone="text-signal" />
-                  </div>
-
-                  <div className="grid min-h-0 grid-cols-[1.15fr_1fr] gap-1.5">
-                    {/* revenue chart */}
-                    <div className="flex min-h-0 flex-col rounded-md border border-line bg-surface p-2">
-                      <span className="font-mono text-[6px] uppercase tracking-[0.12em] text-ink-3">Revenue · last 8 weeks</span>
-                      <div className="mt-1.5 flex min-h-0 flex-1 items-end gap-[5%] border-b border-line pb-px">
-                        {BARS.map((height, index) => (
-                          <div
-                            key={index}
-                            className={`w-full rounded-t-[2px] ${index === BARS.length - 1 ? "bg-signal" : "bg-sunken-2"}`}
-                            style={{ height: `${height}%` }}
-                          />
-                        ))}
+                  {NAV.map((section, sectionIndex) => (
+                    <div key={section.label} className="mb-1">
+                      <p className="hidden px-1.5 font-mono text-[4.5px] uppercase tracking-[0.16em] text-night-ink-3 sm:block">
+                        {section.label}
+                      </p>
+                      <div className="mt-0.5 space-y-px">
+                        {section.items.map(([item, Icon], itemIndex) => {
+                          const active = sectionIndex === 0 && itemIndex === 0;
+                          return (
+                            <div
+                              key={item}
+                              className={`relative flex items-center justify-center gap-1 rounded-[3px] px-1.5 py-[3px] sm:justify-start ${
+                                active ? "bg-night-3" : ""
+                              }`}
+                            >
+                              {active ? (
+                                <span className="absolute inset-y-1 start-0 hidden w-[1.5px] rounded-full bg-signal sm:block" />
+                              ) : null}
+                              <Icon
+                                className={`size-[6px] shrink-0 ${active ? "text-night-ink" : "text-night-ink-3"}`}
+                                strokeWidth={2.2}
+                              />
+                              <span
+                                className={`hidden truncate text-[5.5px] leading-none sm:inline ${
+                                  active ? "font-medium text-night-ink" : "text-night-ink-2"
+                                }`}
+                              >
+                                {item}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+                  ))}
 
-                    {/* reception feed */}
-                    <div className="flex min-h-0 flex-col rounded-md border border-line bg-surface p-2">
-                      <span className="font-mono text-[6px] uppercase tracking-[0.12em] text-ink-3">Reception · live feed</span>
-                      <div className="mt-1.5 space-y-1">
-                        {FEED.map((row) => (
-                          <div key={row.id} className="flex items-center gap-1.5 rounded-sm border border-line px-1.5 py-1">
-                            <span className="font-mono text-[6px] text-ink-3">{row.time}</span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[7px] font-medium leading-tight">{row.name}</span>
-                              <span className="block truncate text-[6px] leading-tight text-ink-3">{row.note}</span>
-                            </span>
-                            <span className={`font-mono text-[5.5px] font-semibold tracking-[0.1em] ${row.tone}`}>{row.verdict}</span>
-                          </div>
-                        ))}
+                  <div className="mt-auto flex items-center justify-center gap-1 border-t border-night-line px-1 pt-1.5 sm:justify-start">
+                    <span className="flex size-3 items-center justify-center rounded-full bg-night-3 font-mono text-[4.5px] text-night-ink-2">
+                      OA
+                    </span>
+                    <span className="hidden truncate text-[5px] text-night-ink-3 sm:inline">Gym owner</span>
+                  </div>
+                </div>
+
+                {/* --------------------------------------------- main pane */}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  {/* topbar */}
+                  <div className="flex items-center gap-1.5 border-b border-line bg-surface px-2 py-1.5">
+                    <span className="flex min-w-0 flex-1 items-center gap-1 rounded-[3px] border border-line bg-paper px-1.5 py-[3px]">
+                      <Search className="size-[6px] shrink-0 text-ink-4" strokeWidth={2.4} />
+                      <span className="truncate text-[5.5px] text-ink-4">Search members, leads and pages</span>
+                    </span>
+                    <span className="hidden rounded-[3px] border border-line-2 px-1.5 py-[3px] text-[5.5px] text-ink-2 sm:inline">
+                      All branches
+                    </span>
+                    <Bell className="size-[7px] shrink-0 text-ink-3" strokeWidth={2.2} />
+                    <span className="size-3 shrink-0 rounded-full bg-sunken-2" />
+                  </div>
+
+                  <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-2">
+                    {/* page header */}
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <p className="font-mono text-[4.5px] uppercase tracking-[0.16em] text-ink-3">Today</p>
+                        <p className="mt-[1px] text-[9px] font-semibold leading-none tracking-tight">Good morning</p>
+                      </div>
+                      <span className="flex items-center gap-1 font-mono text-[5px] uppercase tracking-[0.12em] text-success">
+                        <LiveDot /> Live
+                      </span>
+                    </div>
+
+                    {/* KPI strip — one ruled panel */}
+                    <div className="grid grid-cols-3 divide-x divide-line rounded-[4px] border border-line bg-surface sm:grid-cols-6">
+                      {KPIS.map((kpi, index) => (
+                        <div
+                          key={kpi.label}
+                          className={`animate-fade-up px-1.5 py-1.5 ${index > 2 ? "hidden sm:block" : ""}`}
+                          style={{ animationDelay: `${320 + index * 70}ms` }}
+                        >
+                          <p className="truncate font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">
+                            {kpi.label}
+                          </p>
+                          <p className="mt-1 truncate text-[7px] font-semibold leading-none">{kpi.value}</p>
+                          <p className={`mt-[3px] truncate text-[4.5px] ${kpi.tone ?? "text-ink-3"}`}>{kpi.note}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* needs attention — kept left-weighted so the phone in
+                        front of the laptop never covers the wording */}
+                    <div
+                      className="hidden animate-fade-up items-center gap-1.5 rounded-[4px] border border-line bg-surface px-2 py-1.5 sm:flex"
+                      style={{ animationDelay: "760ms" }}
+                    >
+                      <OctagonAlert className="size-[7px] shrink-0 text-signal" strokeWidth={2.2} />
+                      <span className="shrink-0 text-[5.5px] font-medium">Needs attention</span>
+                      <span className="shrink-0 rounded-[2px] bg-signal-bg px-1 py-px font-mono text-[4.5px] font-semibold text-signal-deep">
+                        3
+                      </span>
+                      <span className="hidden truncate text-[5px] text-ink-3 sm:inline">
+                        Drawer variance awaiting approval
+                      </span>
+                    </div>
+
+                    <div className="grid min-h-0 flex-1 gap-1.5 sm:grid-cols-[1.25fr_1fr]">
+                      {/* revenue chart */}
+                      <div className="flex min-h-0 flex-col rounded-[4px] border border-line bg-surface p-1.5">
+                        <span className="font-mono text-[4.5px] uppercase tracking-[0.12em] text-ink-3">
+                          Revenue · last 30 days
+                        </span>
+                        <div className="mt-1 flex min-h-0 flex-1 items-end gap-[4%] border-b border-line pb-px">
+                          {BARS.map((height, index) => (
+                            <div
+                              key={index}
+                              className={`w-full origin-bottom animate-bar-rise rounded-t-[1.5px] ${
+                                index === BARS.length - 1 ? "bg-signal" : "bg-sunken-2"
+                              } ${index < 4 ? "hidden sm:block" : ""}`}
+                              style={{ height: `${height}%`, animationDelay: `${500 + index * 55}ms` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* reception live feed — the phone covers this column on
+                          the narrowest screens, so it steps aside there */}
+                      <div className="hidden min-h-0 flex-col rounded-[4px] border border-line bg-surface p-1.5 sm:flex">
+                        <span className="flex items-center gap-1 font-mono text-[4.5px] uppercase tracking-[0.12em] text-ink-3">
+                          Reception · live <LiveDot />
+                        </span>
+                        <div className="mt-1 space-y-1">
+                          {FEED.map((row, index) => (
+                            <div
+                              key={row.id}
+                              className={`flex animate-fade-up items-center gap-1 rounded-[3px] border border-line px-1 py-[3px] ${
+                                index === FEED.length - 1 ? "hidden sm:flex" : ""
+                              }`}
+                              style={{ animationDelay: `${900 + index * 220}ms` }}
+                            >
+                              <ScanLine className="size-[6px] shrink-0 text-ink-4" strokeWidth={2.2} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[5.5px] font-medium leading-tight">{row.name}</span>
+                                {/* Verdict sits under the name, not at the far
+                                    right, so the phone never crops it. */}
+                                <span className="block truncate text-[4.5px] leading-tight text-ink-3">
+                                  <span className={`font-mono font-semibold tracking-[0.08em] ${row.tone}`}>
+                                    {row.verdict}
+                                  </span>{" "}
+                                  · {row.note}
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          {/* deck */}
-          <div className="relative mx-[-4.5%] h-[13px] rounded-b-xl bg-night-2">
-            <div className="absolute left-1/2 top-0 h-[5px] w-16 -translate-x-1/2 rounded-b-md bg-night-3" />
+
+            {/* deck */}
+            <div className="relative mx-[-4.5%] h-[13px] rounded-b-xl bg-night-2">
+              <div className="absolute left-1/2 top-0 h-[5px] w-16 -translate-x-1/2 rounded-b-md bg-night-3" />
+            </div>
           </div>
         </div>
 
         {/* ------------------------------------------------------------- phone */}
-        <div className="absolute -bottom-2 -end-1 w-[36%] min-w-[150px] max-w-[200px] animate-fade-up [animation-delay:200ms] sm:-end-4">
+        {/* Fixed widths with a locked aspect ratio: the phone stays a phone at
+            every breakpoint instead of stretching with the column. */}
+        <div className="absolute bottom-0 end-0 w-[108px] animate-rise-in [animation-delay:220ms] sm:w-[146px] xl:w-[158px]">
           <div className="animate-float">
-            <div className="rounded-[1.7rem] border-[5px] border-night bg-night shadow-[0_18px_50px_rgb(27_26_21/0.35)]">
-              <div className="overflow-hidden rounded-[1.4rem] bg-paper">
-                <div className="mx-auto mt-1.5 h-[9px] w-12 rounded-full bg-night" />
-                <div className="p-2.5 pt-2">
-                  <div className="flex items-center justify-between font-mono text-[6px] uppercase tracking-[0.14em] text-ink-3">
-                    <span>RIVET MEMBER</span>
-                    <span>LIVE</span>
-                  </div>
-                  <p className="mt-2 text-[10px] font-semibold leading-tight">Member account</p>
-                  <p className="font-mono text-[6px] text-ink-3">ACTIVE MEMBERSHIP</p>
+            <div className="rounded-[1.9rem] border-[5px] border-night bg-night p-px shadow-[0_22px_60px_-12px_rgb(27_26_21/0.45)]">
+              <div className="relative flex aspect-[9/19.3] flex-col overflow-hidden rounded-[1.65rem] bg-paper">
+                {/* dynamic island */}
+                <div className="relative flex h-[7%] items-center justify-between px-3">
+                  <span className="font-mono text-[5px] text-ink-3">9:41</span>
+                  <span className="absolute left-1/2 top-[22%] h-[9px] w-[34%] -translate-x-1/2 rounded-full bg-night" />
+                  <span className="flex items-center gap-[2px]">
+                    <span className="h-[3px] w-[3px] rounded-full bg-ink-3" />
+                    <span className="h-[4px] w-[3px] rounded-[1px] bg-ink-3" />
+                    <span className="h-[5px] w-[6px] rounded-[1px] bg-ink-3" />
+                  </span>
+                </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-1">
-                    <div className="rounded-sm border border-line bg-surface p-1.5">
-                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Membership</p>
-                      <p className="mt-0.5 text-[9px] font-semibold leading-none text-success-deep">Current</p>
+                {/* member header */}
+                <div className="flex items-center justify-between gap-1 border-b border-line px-2.5 pb-1.5">
+                  <span className="truncate font-mono text-[5px] uppercase tracking-[0.16em] text-ink-3">
+                    RIVET · Member
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1 font-mono text-[5px] uppercase tracking-[0.12em] text-success">
+                    <LiveDot /> Active
+                  </span>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col px-2.5 pt-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-ink font-mono text-[5px] font-semibold text-paper">
+                      GYM
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[8px] font-semibold leading-tight">Your membership</span>
+                      <span className="block truncate text-[5.5px] leading-tight text-ink-3">Selected gym · branch</span>
+                    </span>
+                  </div>
+
+                  {/* Dropped on the narrowest phones so the entry code keeps a
+                      usable square instead of collapsing to a strip. */}
+                  <div className="mt-2 hidden grid-cols-2 gap-1 sm:grid">
+                    <div className="rounded-[3px] border border-line bg-surface px-1.5 py-1">
+                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">Status</p>
+                      <p className="mt-[2px] text-[7px] font-semibold leading-none text-success-deep">Current</p>
                     </div>
-                    <div className="rounded-sm border border-line bg-surface p-1.5">
-                      <p className="font-mono text-[5px] uppercase tracking-[0.1em] text-ink-3">Visits</p>
-                      <p className="mt-0.5 text-[9px] font-semibold leading-none">History</p>
+                    <div className="rounded-[3px] border border-line bg-surface px-1.5 py-1">
+                      <p className="font-mono text-[4.5px] uppercase tracking-[0.1em] text-ink-3">Visits</p>
+                      <p className="mt-[2px] text-[7px] font-semibold leading-none">History</p>
                     </div>
                   </div>
 
-                  <div className="mt-2 rounded-md bg-night p-1.5">
-                    <div className="rounded-sm bg-night-ink p-1.5 text-night">
-                      <DecorativeQr />
+                  {/* entry pass — the scan sweep runs continuously */}
+                  <div className="night-surface mt-2 flex min-h-0 flex-1 flex-col rounded-[6px] bg-night p-2">
+                    <p className="font-mono text-[4.5px] uppercase tracking-[0.14em] text-night-ink-3">Entry pass</p>
+                    {/* The code keeps its own square inside whatever box the
+                        phone's flex column leaves it — `preserveAspectRatio`
+                        centres it rather than letting it stretch. */}
+                    <div className="relative mx-auto mt-1.5 flex min-h-0 w-full max-w-[88%] flex-1 items-center justify-center overflow-hidden rounded-[4px] bg-night-ink p-1.5 text-night">
+                      <DecorativeQr className="h-full w-full" />
+                      <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" />
                     </div>
-                    <p className="mt-1 text-center font-mono text-[5px] uppercase tracking-[0.12em] text-night-ink-3">
-                      Entry pass · selected gym
+                    <p className="mt-1.5 text-center font-mono text-[4.5px] uppercase tracking-[0.1em] text-night-ink-3">
+                      Scan at the desk
                     </p>
                   </div>
-
-                  <div className="mx-auto mt-1.5 h-[3px] w-10 rounded-full bg-sunken-2" />
                 </div>
+
+                {/* member dock */}
+                <div className="mt-2 grid grid-cols-3 border-t border-line px-2 pb-2 pt-1.5">
+                  {[
+                    ["Home", Home, true],
+                    ["Explore", Search, false],
+                    ["Account", UserRound, false],
+                  ].map(([label, Icon, active]) => {
+                    const DockIcon = Icon as LucideIcon;
+                    return (
+                      <span key={label as string} className="flex flex-col items-center gap-[2px]">
+                        <span
+                          className={`flex size-[13px] items-center justify-center rounded-[3px] ${
+                            active ? "bg-sunken text-ink" : "text-ink-4"
+                          }`}
+                        >
+                          <DockIcon className="size-[7px]" strokeWidth={2.2} />
+                        </span>
+                        <span className={`hidden text-[4.5px] sm:block ${active ? "text-ink" : "text-ink-4"}`}>
+                          {label as string}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+
+                <div className="mx-auto mb-1.5 h-[2.5px] w-[28%] rounded-full bg-ink-4" />
               </div>
             </div>
           </div>
@@ -157,22 +364,12 @@ export function HeroDevices() {
   );
 }
 
-function Kpi({
-  label,
-  value,
-  note,
-  noteTone = "text-ink-3",
-}: {
-  label: string;
-  value: string;
-  note: string;
-  noteTone?: string;
-}) {
+/** The realtime marker used across the product — a dot with a breathing ring. */
+function LiveDot() {
   return (
-    <div className="rounded-md border border-line bg-surface p-2">
-      <p className="font-mono text-[6px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
-      <p className="mt-1 text-[11px] font-semibold leading-none tabular">{value}</p>
-      <p className={`mt-0.5 text-[6px] ${noteTone}`}>{note}</p>
-    </div>
+    <span className="relative flex size-1">
+      <span className="absolute inset-0 animate-pulse-ring rounded-full bg-current" />
+      <span className="relative size-1 rounded-full bg-current" />
+    </span>
   );
 }

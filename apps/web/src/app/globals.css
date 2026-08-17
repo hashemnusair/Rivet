@@ -77,6 +77,18 @@
   --animate-pin-pop: pin-pop 0.35s ease-out both;
   --animate-float: float 7s ease-in-out infinite;
 
+  /* Marketing motion — the hero product shot and the section furniture.
+     `rise-in` travels further than `fade-up`: it is for whole blocks arriving,
+     not for text settling. */
+  --animate-rise-in: rise-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-bar-rise: bar-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-qr-scan: qr-scan 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-pulse-ring: pulse-ring 2.4s ease-out infinite;
+  /* Laptop and phone drift out of phase so the pair never looks glued. */
+  --animate-drift: drift 12s ease-in-out infinite;
+  --animate-marquee: marquee 46s linear infinite;
+  --animate-underline: underline-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
@@ -102,6 +114,38 @@
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-7px); }
   }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bar-rise {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+  /* Sweeps the entry code top to bottom. `top` rather than `translateY` so the
+     travel is the height of the code block, whatever size the phone renders. */
+  @keyframes qr-scan {
+    0%, 6% { top: 0; opacity: 0; }
+    12% { opacity: 0.9; }
+    82% { opacity: 0.9; }
+    92%, 100% { top: 100%; opacity: 0; }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.5; }
+    70%, 100% { transform: scale(2.4); opacity: 0; }
+  }
+  @keyframes drift {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-9px); }
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes underline-in {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
 }
 
 @utility marketing-grid {
@@ -109,6 +153,14 @@
     linear-gradient(to right, rgb(27 26 21 / 0.075) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(27 26 21 / 0.075) 1px, transparent 1px);
   background-size: 112px 112px;
+}
+
+/* Same ruling, tighter pitch — for backdrops sitting behind hero content. */
+@utility marketing-grid-sm {
+  background-image:
+    linear-gradient(to right, rgb(27 26 21 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(27 26 21 / 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
 }
 
 @utility marketing-display {

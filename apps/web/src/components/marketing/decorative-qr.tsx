@@ -6,7 +6,7 @@
  * Draws in `currentColor`; finder-ring holes use night-ink, so place it on a
  * night-ink surface.
  */
-export function DecorativeQr() {
+export function DecorativeQr({ className = "h-auto w-full" }: { className?: string }) {
   const size = 25;
   const finder = (x: number, y: number) =>
     (x < 8 && y < 8) || (x >= size - 8 && y < 8) || (x < 8 && y >= size - 8);
@@ -22,7 +22,7 @@ export function DecorativeQr() {
   }
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full" fill="currentColor" aria-hidden>
+    <svg viewBox={`0 0 ${size} ${size}`} className={className} fill="currentColor" aria-hidden>
       {cells}
       {[
         [0, 0],
