@@ -202,6 +202,50 @@ test.describe("role restrictions", () => {
   });
 });
 
+test.describe("sidebar layout", () => {
+  test("keeps the icon rail and row positions stable when collapsed", async ({ page }) => {
+    await signIn(page, "Owner");
+    const sidebar = page.locator('aside[aria-label="Primary navigation"]');
+
+    const measure = () =>
+      sidebar.evaluate((node) => ({
+        width: node.getBoundingClientRect().width,
+        links: [...node.querySelectorAll("nav a")].map((link) => {
+          const linkBox = link.getBoundingClientRect();
+          const iconBox = [...link.querySelectorAll(':scope > span[aria-hidden="true"]')]
+            .map((icon) => icon.getBoundingClientRect())
+            .find((box) => Math.abs(box.width - 16) < 0.1);
+          return {
+            href: link.getAttribute("href"),
+            top: linkBox.top,
+            height: linkBox.height,
+            iconX: iconBox?.x,
+            iconTop: iconBox?.top,
+          };
+        }),
+      }));
+
+    const expanded = await measure();
+    await page.getByRole("button", { name: "Collapse sidebar" }).click({ force: true });
+    await page.waitForTimeout(250);
+    const collapsed = await measure();
+
+    expect(collapsed.width).toBe(60);
+    expect(collapsed.links.map((link) => link.href)).toEqual(expanded.links.map((link) => link.href));
+    expect(
+      collapsed.links.every((link, index) => {
+        const expandedLink = expanded.links[index];
+        return (
+          Math.abs(link.top - expandedLink.top) < 0.1 &&
+          Math.abs(link.height - expandedLink.height) < 0.1 &&
+          Math.abs((link.iconX ?? 0) - (expandedLink.iconX ?? 0)) < 0.1 &&
+          Math.abs((link.iconTop ?? 0) - (expandedLink.iconTop ?? 0)) < 0.1
+        );
+      }),
+    ).toBe(true);
+  });
+});
+
 test.describe("settings navigation", () => {
   test("keeps the full settings tab row reachable by keyboard at tablet width", async ({ page }) => {
     await signIn(page, "Owner");

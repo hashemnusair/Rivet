@@ -57,7 +57,13 @@ export function Sidebar() {
             if (visible.length === 0) return null;
             return (
               <div key={section.label} className="mb-4">
-                {!sidebarCollapsed ? <p className="eyebrow-night px-2.5 pb-1.5">{section.label}</p> : <div className="mb-1.5 h-px bg-night-line mx-2" />}
+                <div className="relative h-5">
+                  {!sidebarCollapsed ? (
+                    <p className="eyebrow-night truncate whitespace-nowrap px-3.5 leading-4">{section.label}</p>
+                  ) : (
+                    <div aria-hidden className="absolute inset-x-2 top-2 h-px bg-night-line" />
+                  )}
+                </div>
                 <ul className="space-y-0.5">
                   {visible.map((item) => {
                     const active = navIsActive(item.href, pathname);
@@ -66,7 +72,7 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "group relative flex items-center gap-2.5 rounded-md px-3.5 py-[7px] text-[13px] transition-colors duration-100",
+                          "group relative flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] transition-colors duration-100",
                           active
                             ? "bg-night-3 text-night-ink font-medium"
                             : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
@@ -75,8 +81,10 @@ export function Sidebar() {
                         {active ? (
                           <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-signal" />
                         ) : null}
-                        <item.icon className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} aria-hidden />
-                        {!sidebarCollapsed ? <span className="truncate">{item.label}</span> : null}
+                        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+                          <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />
+                        </span>
+                        {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{item.label}</span> : null}
                       </Link>
                     );
                     return (
@@ -105,10 +113,12 @@ export function Sidebar() {
           type="button"
           onClick={toggleSidebar}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex w-full items-center gap-2.5 rounded-md px-3.5 py-1.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
+          className="flex h-8 min-w-0 w-full items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
         >
-          {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
-          {!sidebarCollapsed ? "Collapse" : null}
+          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+            {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
+          </span>
+          {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">Collapse</span> : null}
         </button>
       </div>
     </aside>
