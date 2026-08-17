@@ -1,9 +1,9 @@
 import type { reception as EnReception } from "../en/reception";
 
 /**
- * "الدرج" is the cash drawer, and "الوردية" the shift — both are what staff in
- * an Amman gym actually say. "امسح" covers scanning a QR the way a receptionist
- * would phrase it, rather than a literal rendering of "scan".
+ * "الكاش" is the cash drawer and "شيفت" the shift — the words staff in an Amman
+ * gym actually use, not their MSA equivalents. Note that شيفت is masculine where
+ * وردية was feminine, so the agreement travels with the noun.
  */
 export const reception: typeof EnReception = {
   forbidden: "تحتاج وحدة الاستقبال إلى صلاحية البحث عن الأعضاء.",
@@ -29,9 +29,9 @@ export const reception: typeof EnReception = {
   },
 
   shift: {
-    none: "لا توجد وردية مفتوحة.",
-    history: "سجل الورديات",
-    openBeforeCash: "افتح وردية قبل تحصيل النقد",
+    none: "لا يوجد شيفت مفتوح.",
+    history: "سجل الشيفتات",
+    openBeforeCash: "افتح شيفت قبل تحصيل الكاش",
   },
 
   member: {

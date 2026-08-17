@@ -3,8 +3,8 @@ import type { marketing as EnMarketing } from "../en/marketing";
 
 /**
  * The public site in Arabic. The headline keeps its three-beat rhythm rather
- * than translating word-for-word — "كل عضو. كل دينار. كل وردية." lands the same
- * way, and "وردية" is the word a gym in Amman actually uses for a shift.
+ * than translating word-for-word — "كل عضو. كل دينار. كل شيفت." lands the same
+ * way, and "شيفت" is the word a gym in Amman actually uses for a shift.
  */
 export const marketing: typeof EnMarketing = {
   nav: {
@@ -36,8 +36,8 @@ export const marketing: typeof EnMarketing = {
     eyebrow: "نظام الإيرادات والعمليات · صُنع في عمّان",
     line1: "كل عضو.",
     line2: "كل دينار.",
-    line3: "كل وردية.",
-    body: "يجمع RIVET مكتب المبيعات وصالة النادي ودرج النقد وهاتف العضو في سجل واحد — من أول تجربة مجانية حتى التجديد العاشر.",
+    line3: "كل شيفت.",
+    body: "يجمع RIVET مكتب المبيعات وصالة النادي والكاش وهاتف العضو في سجل واحد — من أول تجربة مجانية حتى التجديد العاشر.",
     accessNote: "يُمنح النادي حق الوصول بعد مراجعة الطلب وإتمام تهيئة المشغّل.",
     stats: {
       tenderTerm: "نقدًا · بطاقة · كليك",
@@ -60,7 +60,7 @@ export const marketing: typeof EnMarketing = {
     live: "مباشر",
     gymOwner: "مالك النادي",
     needsAttention: "يحتاج انتباهًا",
-    drawerVariance: "فرق في الدرج بانتظار الموافقة",
+    drawerVariance: "فرق في الكاش بانتظار الموافقة",
     revenue30: "الإيرادات · آخر ٣٠ يومًا",
     receptionLive: "الاستقبال · مباشر",
     memberEntry: "دخول عضو",
@@ -120,8 +120,8 @@ export const marketing: typeof EnMarketing = {
     verdict: "الحكم",
     freeze: "تجميد",
     transfer: "نقل",
-    shiftClose: "إغلاق الوردية",
-    drawerVariance: "فرق الدرج",
+    shiftClose: "إغلاق الشيفت",
+    drawerVariance: "فرق الكاش",
     overrideReason: "سبب التجاوز",
     auditEntry: "قيد تدقيق",
     renewal: "تجديد",
@@ -133,7 +133,7 @@ export const marketing: typeof EnMarketing = {
     oneValue: "واحد",
     oneLabel: "سجل زمني واحد لكل عضو",
     auditedValue: "مُدقَّقة",
-    auditedLabel: "المدفوعات والورديات والتجاوزات",
+    auditedLabel: "المدفوعات والشيفتات والتجاوزات",
     scopedValue: "مُحدَّدة",
     scopedLabel: "الأدوار والفروع وصلاحيات الوصول",
   },
@@ -173,7 +173,7 @@ export const marketing: typeof EnMarketing = {
       payment: {
         label: "دفعة",
         detail:
-          "نقدًا أو ببطاقة أو عبر كليك — كل دينار يُوصَل لحظة حركته، ويستقر في درج لا بد أن يتسوّى عند الإغلاق.",
+          "نقدًا أو ببطاقة أو عبر كليك — كل دينار يُوصَل لحظة حركته، ويستقر في كاش لا بد أن يتسوّى عند الإغلاق.",
       },
       checkIn: {
         label: "تسجيل دخول",
@@ -204,9 +204,9 @@ export const marketing: typeof EnMarketing = {
       copy: "سارٍ أو قارب الانتهاء أو مجمّد أو مستنفد أو ممنوع — ومعه الإجراء التالي جاهزًا.",
     },
     drawer: {
-      label: "الوردية والدرج",
+      label: "الشيفت والكاش",
       title: "أغلِق في تسعين ثانية",
-      copy: "المتوقع مقابل النقد المعدود، مع تسمية كل فرق وتفسيره وتوجيهه للموافقة.",
+      copy: "المتوقع مقابل الكاش المعدود، مع تسمية كل فرق وتفسيره وتوجيهه للموافقة.",
     },
     accountability: {
       label: "المساءلة",

@@ -4,11 +4,11 @@ import type { common as EnCommon } from "../en/common";
 /**
  * Modern Standard Arabic, weighted towards how a gym front desk in Amman
  * actually speaks. Where MSA and the operational reality diverge, the
- * operational word wins — a receptionist reads "الدرج" for the cash drawer, not
- * a literal translation of "till".
+ * operational word wins — the cash drawer is "الكاش" and a shift is "شيفت",
+ * which is what staff say, not the MSA words for them.
  *
  * Flagged for native review: the finance and accountability vocabulary
- * (التسوية، فرق الدرج، التجاوز) is the part most worth a second pair of eyes.
+ * (التسوية، فرق الكاش، التجاوز) is the part most worth a second pair of eyes.
  */
 export const common: typeof EnCommon = {
   action: {
@@ -184,6 +184,6 @@ export const common: typeof EnCommon = {
 
   brand: {
     name: "RIVET",
-    tagline: "كل عضو. كل دينار. كل وردية.",
+    tagline: "كل عضو. كل دينار. كل شيفت.",
   },
 };
