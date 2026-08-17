@@ -18,8 +18,10 @@ import { Monogram, TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useT } from "@/lib/i18n/provider";
 
 export default function MembersPage() {
+  const t = useT();
   const { session } = useApp();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -52,9 +54,9 @@ export default function MembersPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Operations"
-        title="Members"
-        description="Every person who trains with you — search, filter, act."
+        eyebrow={t("members.list.eyebrow")}
+        title={t("members.list.title")}
+        description={t("members.list.description")}
         actions={
           <>
             <Gate permission="members.write">
@@ -83,9 +85,9 @@ export default function MembersPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Name, phone, member number…"
+            placeholder={t("members.list.searchPlaceholder")}
             className="ps-8"
-            aria-label="Search members"
+            aria-label={t("members.list.searchLabel")}
             data-testid="member-search"
           />
         </div>
@@ -96,12 +98,12 @@ export default function MembersPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger sizeVariant="sm" className="w-32" aria-label="Record status filter">
+          <SelectTrigger sizeVariant="sm" className="w-32" aria-label={t("members.list.recordStatusFilter")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="active">Active members</SelectItem>
-            <SelectItem value="archived">Archived members</SelectItem>
+            <SelectItem value="active">{t("members.list.activeMembers")}</SelectItem>
+            <SelectItem value="archived">{t("members.list.archivedMembers")}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -111,18 +113,18 @@ export default function MembersPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Membership status filter">
+          <SelectTrigger sizeVariant="sm" className="w-40" aria-label={t("members.list.membershipStatusFilter")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All membership statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="all">{t("members.list.allStatuses")}</SelectItem>
+            <SelectItem value="active">{t("domain.membershipStatus.active")}</SelectItem>
             <SelectItem value="expiring">Expiring ≤ 14d</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-            <SelectItem value="frozen">Frozen</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-            <SelectItem value="depleted">Visits used up</SelectItem>
-            <SelectItem value="outstanding">Has balance due</SelectItem>
+            <SelectItem value="expired">{t("domain.membershipStatus.expired")}</SelectItem>
+            <SelectItem value="frozen">{t("domain.membershipStatus.frozen")}</SelectItem>
+            <SelectItem value="cancelled">{t("domain.membershipStatus.cancelled")}</SelectItem>
+            <SelectItem value="depleted">{t("domain.membershipStatus.depleted")}</SelectItem>
+            <SelectItem value="outstanding">{t("members.list.hasBalanceDue")}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -132,11 +134,11 @@ export default function MembersPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Plan filter">
+          <SelectTrigger sizeVariant="sm" className="w-44" aria-label={t("members.list.planFilter")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All plans</SelectItem>
+            <SelectItem value="all">{t("members.list.allPlans")}</SelectItem>
             {(plansQuery.data?.items ?? []).map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}
@@ -161,7 +163,7 @@ export default function MembersPage() {
           </div>
         ) : !data || data.items.length === 0 ? (
           <EmptyState
-            title="No members match"
+            title={t("members.list.noMatch")}
             description={debounced ? `Nothing found for “${debounced}”. Check the spelling or filters.` : "Try widening the filters."}
             className="border-0"
           />
@@ -169,14 +171,14 @@ export default function MembersPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Member</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Expiry</TableHead>
-                <TableHead className="text-end">Balance</TableHead>
-                <TableHead>Last check-in</TableHead>
+                <TableHead>{t("members.list.columns.member")}</TableHead>
+                <TableHead>{t("members.list.columns.phone")}</TableHead>
+                <TableHead>{t("members.list.columns.branch")}</TableHead>
+                <TableHead>{t("members.list.columns.plan")}</TableHead>
+                <TableHead>{t("members.list.columns.status")}</TableHead>
+                <TableHead>{t("members.list.columns.expiry")}</TableHead>
+                <TableHead className="text-end">{t("members.list.columns.balance")}</TableHead>
+                <TableHead>{t("members.list.columns.lastCheckIn")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -196,7 +198,7 @@ export default function MembersPage() {
                   <TableCell className="text-ink-2">{m.currentPlanName ?? "—"}</TableCell>
                   <TableCell>
                     {m.status === "archived" ? (
-                      <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">Archived</span>
+                      <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">{t("members.list.archived")}</span>
                     ) : (
                       <MembershipStatusChip status={m.membershipStatus} />
                     )}

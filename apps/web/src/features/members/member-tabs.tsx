@@ -27,6 +27,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 // Overview
 // ---------------------------------------------------------------------------
 export function OverviewTab({ member }: { member: MemberDetail }) {
+  const t = useT();
   const timelineQuery = useApiQuery(qk.memberTimeline(member.id, { pageSize: 6 }), (api) =>
     api.listMemberTimeline(member.id, { pageSize: 6 }),
   );
@@ -34,11 +35,11 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <section className="panel grid grid-cols-2 divide-x divide-line self-start">
-        <StatCell label="Check-ins · 30d" value={member.stats.checkInsLast30Days} />
-        <StatCell label="Check-ins · all time" value={member.stats.totalCheckIns} />
-        <StatCell label="Lifetime value" value={<MoneyText money={member.stats.lifetimeValue} />} border />
+        <StatCell label={t("members.tabs.checkIns30")} value={member.stats.checkInsLast30Days} />
+        <StatCell label={t("members.tabs.checkInsAllTime")} value={member.stats.totalCheckIns} />
+        <StatCell label={t("members.tabs.lifetimeValue")} value={<MoneyText money={member.stats.lifetimeValue} />} border />
         <StatCell
-          label="Last check-in"
+          label={t("members.tabs.lastCheckIn")}
           value={
             member.stats.daysSinceLastCheckIn != null
               ? member.stats.daysSinceLastCheckIn === 0
@@ -52,7 +53,7 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
 
       <section className="panel overflow-hidden">
         <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <h3 className="text-[13px] font-semibold">Latest activity</h3>
+          <h3 className="text-[13px] font-semibold">{t("members.tabs.latestActivity")}</h3>
         </header>
         <div className="px-4 py-3">
           {timelineQuery.isLoading ? (
@@ -87,6 +88,7 @@ const TIMELINE_FILTERS: Array<{ value: string; label: string; types?: TimelineEv
 ];
 
 export function TimelineTab({ memberId }: { memberId: UUID }) {
+  const t = useT();
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const types = TIMELINE_FILTERS.find((f) => f.value === filter)?.types;
@@ -96,7 +98,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Timeline filter">
+      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label={t("members.tabs.timelineFilter")}>
         {TIMELINE_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -137,6 +139,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
 // Memberships
 // ---------------------------------------------------------------------------
 export function MembershipsTab({ memberId }: { memberId: UUID }) {
+  const t = useT();
   const query = useApiQuery(qk.memberships({ memberId }), (api) =>
     api.listMemberships({ memberId, pageSize: 20, sort: "-startDate" }),
   );
@@ -145,7 +148,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No memberships yet" description="Sell the first membership to start this member's commercial record." />;
+    return <EmptyState title={t("members.tabs.noMemberships")} description={t("members.tabs.noMembershipsDetail")} />;
   }
 
   return (
@@ -153,13 +156,13 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Plan</TableHead>
-            <TableHead>Term</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-end">Price</TableHead>
-            <TableHead className="text-end">Discount</TableHead>
-            <TableHead>Payment</TableHead>
-            <TableHead>Lineage</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.plan")}</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.term")}</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.status")}</TableHead>
+            <TableHead className="text-end">{t("members.tabs.membershipColumns.price")}</TableHead>
+            <TableHead className="text-end">{t("members.tabs.membershipColumns.discount")}</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.payment")}</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.lineage")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -230,6 +233,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
 // Personal training
 // ---------------------------------------------------------------------------
 export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
@@ -240,20 +244,20 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
   const selectedTrainer = query.data?.trainers.find((item) => item.id === trainerId);
   const selectedBranch = branchId || selectedTrainer?.branchIds[0] || "";
   const slots = useApiQuery(["pt", "slots", trainerId, selectedBranch, date], (api) => api.listPtAvailableSlots({ trainerProfileId: trainerId, branchId: selectedBranch, from: date, to: date }), { enabled: Boolean(trainerId && selectedBranch && date) });
-  const requestPackage = useApiMutation((api, packageId: string) => api.requestPtPackage({ membershipId: membershipId!, packageId, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT package charge created. Credits activate after full payment."); await invalidate(); } });
-  const book = useApiMutation((api, startsAt: string) => api.createPtBooking({ membershipId: membershipId!, trainerProfileId: trainerId, branchId: selectedBranch, startsAt, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT session reserved."); await invalidate(); } });
+  const requestPackage = useApiMutation((api, packageId: string) => api.requestPtPackage({ membershipId: membershipId!, packageId, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success(t("members.tabs.pt.chargeCreated")); await invalidate(); } });
+  const book = useApiMutation((api, startsAt: string) => api.createPtBooking({ membershipId: membershipId!, trainerProfileId: trainerId, branchId: selectedBranch, startsAt, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success(t("members.tabs.pt.sessionReserved")); await invalidate(); } });
 
-  if (!membershipId) return <EmptyState title="No current membership" description="PT credits and bookings require an active gym membership." />;
+  if (!membershipId) return <EmptyState title={t("members.tabs.pt.noMembership")} description={t("members.tabs.pt.noMembershipDetail")} />;
   if (query.isLoading) return <Skeleton className="h-56 w-full" />;
-  if (query.isError) return <ErrorState title="PT details could not be loaded" onRetry={() => query.refetch()} />;
+  if (query.isError) return <ErrorState title={t("members.tabs.pt.loadFailed")} onRetry={() => query.refetch()} />;
   const experience = query.data!;
   return <div className="space-y-4">
-    <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label="Available PT sessions" value={experience.availableSessions} /><StatCell label="Reserved" value={experience.reservedSessions} /><StatCell label="Next booking" value={experience.upcomingBookings[0] ? <DateTimeText iso={experience.upcomingBookings[0].startsAt} /> : "—"} /></section>
+    <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label={t("members.tabs.pt.available")} value={experience.availableSessions} /><StatCell label={t("members.tabs.pt.reserved")} value={experience.reservedSessions} /><StatCell label={t("members.tabs.pt.nextBooking")} value={experience.upcomingBookings[0] ? <DateTimeText iso={experience.upcomingBookings[0].startsAt} /> : "—"} /></section>
     <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
-      <section className="panel p-4"><div className="flex items-center gap-2"><CalendarClock className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Book a session</h3></div>{experience.availableSessions <= 0 ? <p className="mt-4 border border-warning/25 bg-warning-bg p-3 text-[12px] text-warning-deep">No usable PT credit remains. Create a package charge from the catalog, then collect the full payment before booking.</p> : <div className="mt-4 grid gap-3"><label className="grid gap-1 text-[11px] font-medium">Trainer<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={trainerId} onChange={(event) => { setTrainerId(event.target.value); setBranchId(""); }}><option value="">Choose a trainer</option>{experience.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.displayName}</option>)}</select></label>{selectedTrainer ? <label className="grid gap-1 text-[11px] font-medium">Branch<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={selectedBranch} onChange={(event) => setBranchId(event.target.value)}>{selectedTrainer.branchIds.map((id) => <option key={id} value={id}>{session?.branches.find((branch) => branch.id === id)?.name ?? id}</option>)}</select></label> : null}<label className="grid gap-1 text-[11px] font-medium">Date<input className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" type="date" min={addDays(todayISODate(), 1)} value={date} onChange={(event) => setDate(event.target.value)} /></label>{trainerId && selectedBranch ? <div><p className="mb-2 text-[11px] font-medium">Available times</p>{slots.isLoading ? <p className="text-[11px] text-ink-3">Loading slots…</p> : slots.data?.length ? <div className="flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="text-[11px] text-ink-3">No open 60-minute slots on this date.</p>}</div> : null}</div>}</section>
-      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Package catalog</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[10.5px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Create charge</Button> : null}</div></article>) : <p className="p-5 text-[11px] text-ink-3">No active PT packages.</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="eyebrow">Recent orders</p><div className="mt-2 space-y-1">{experience.orders.slice(0, 3).map((order) => <p key={order.id} className="flex justify-between text-[10.5px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
+      <section className="panel p-4"><div className="flex items-center gap-2"><CalendarClock className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">{t("members.tabs.pt.bookSession")}</h3></div>{experience.availableSessions <= 0 ? <p className="mt-4 border border-warning/25 bg-warning-bg p-3 text-[12px] text-warning-deep">No usable PT credit remains. Create a package charge from the catalog, then collect the full payment before booking.</p> : <div className="mt-4 grid gap-3"><label className="grid gap-1 text-[11px] font-medium">{t("members.tabs.pt.trainer")}<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={trainerId} onChange={(event) => { setTrainerId(event.target.value); setBranchId(""); }}><option value="">{t("members.tabs.pt.chooseTrainer")}</option>{experience.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.displayName}</option>)}</select></label>{selectedTrainer ? <label className="grid gap-1 text-[11px] font-medium">{t("members.tabs.checkIns.branch")}<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={selectedBranch} onChange={(event) => setBranchId(event.target.value)}>{selectedTrainer.branchIds.map((id) => <option key={id} value={id}>{session?.branches.find((branch) => branch.id === id)?.name ?? id}</option>)}</select></label> : null}<label className="grid gap-1 text-[11px] font-medium">{t("members.tabs.pt.date")}<input className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" type="date" min={addDays(todayISODate(), 1)} value={date} onChange={(event) => setDate(event.target.value)} /></label>{trainerId && selectedBranch ? <div><p className="mb-2 text-[11px] font-medium">{t("members.tabs.pt.availableTimes")}</p>{slots.isLoading ? <p className="text-[11px] text-ink-3">Loading slots…</p> : slots.data?.length ? <div className="flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="text-[11px] text-ink-3">{t("members.tabs.pt.noSlots")}</p>}</div> : null}</div>}</section>
+      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">{t("members.tabs.pt.packageCatalog")}</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[10.5px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>{t("members.tabs.pt.createCharge")}</Button> : null}</div></article>) : <p className="p-5 text-[11px] text-ink-3">{t("members.tabs.pt.noPackages")}</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="eyebrow">{t("members.tabs.pt.recentOrders")}</p><div className="mt-2 space-y-1">{experience.orders.slice(0, 3).map((order) => <p key={order.id} className="flex justify-between text-[10.5px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
     </div>
-    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[10.5px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
+    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">{t("members.tabs.pt.upcomingBookings")}</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[10.5px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
   </div>;
 }
 
@@ -270,7 +274,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No payments yet" description="Collected payments, refunds and receipts will appear here." />;
+    return <EmptyState title={t("members.tabs.payments.noPayments")} description={t("members.tabs.payments.empty")} />;
   }
 
   return (
@@ -278,13 +282,13 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Receipt</TableHead>
-            <TableHead>When</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Method</TableHead>
-            <TableHead className="text-end">Amount</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Collected by</TableHead>
+            <TableHead>{t("members.tabs.payments.receipt")}</TableHead>
+            <TableHead>{t("members.tabs.payments.when")}</TableHead>
+            <TableHead>{t("members.tabs.payments.type")}</TableHead>
+            <TableHead>{t("members.tabs.payments.method")}</TableHead>
+            <TableHead className="text-end">{t("members.tabs.payments.amount")}</TableHead>
+            <TableHead>{t("members.tabs.membershipColumns.status")}</TableHead>
+            <TableHead>{t("members.tabs.payments.collectedBy")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -322,6 +326,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
 // Check-ins
 // ---------------------------------------------------------------------------
 export function CheckInsTab({ memberId }: { memberId: UUID }) {
+  const t = useT();
   const [page, setPage] = useState(1);
   const query = useApiQuery(qk.checkIns({ memberId, page }), (api) =>
     api.listRecentCheckIns({ memberId, page, pageSize: 20 }),
@@ -331,7 +336,7 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No check-ins recorded" description="Check-ins from the reception console will appear here." />;
+    return <EmptyState title={t("members.tabs.checkIns.empty")} description={t("members.tabs.checkIns.emptyDetail")} />;
   }
 
   return (
@@ -340,10 +345,10 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>When</TableHead>
-              <TableHead>Branch</TableHead>
-              <TableHead>Decision</TableHead>
-              <TableHead>Details</TableHead>
+              <TableHead>{t("members.tabs.payments.when")}</TableHead>
+              <TableHead>{t("members.tabs.checkIns.branch")}</TableHead>
+              <TableHead>{t("members.tabs.checkIns.decision")}</TableHead>
+              <TableHead>{t("members.tabs.checkIns.details")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -373,20 +378,21 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
 // Tasks
 // ---------------------------------------------------------------------------
 export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const query = useApiQuery(qk.tasks({ memberId, open: true }), (api) =>
     api.listTasks({ status: "open", pageSize: 10 }),
   );
   const complete = useApiMutation((api, taskId: string) => api.completeTask(taskId, { outcome: "Completed from member page" }), {
     onSuccess: async () => {
-      toast.success("Task completed.");
+      toast.success(t("members.tabs.tasks.completed"));
       await invalidate();
     },
   });
 
   const tasks = (query.data?.items ?? []).filter((t) => t.memberId === memberId);
   if (query.isLoading) return <Skeleton className="h-20 w-full" />;
-  if (tasks.length === 0) return <p className="text-[12.5px] text-ink-3">No open tasks for this member.</p>;
+  if (tasks.length === 0) return <p className="text-[12.5px] text-ink-3">{t("members.tabs.tasks.empty")}</p>;
 
   return (
     <ul className="space-y-2">
@@ -416,6 +422,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
 // Details panel
 // ---------------------------------------------------------------------------
 export function MemberDetailsPanel({ member, branchName, salespersonName }: { member: MemberDetail; branchName: string; salespersonName?: string }) {
+  const t = useT();
   const rows: Array<[string, React.ReactNode]> = [
     ["Phone", <span key="p" dir="ltr" className="font-mono text-[12.5px]">{member.phone}</span>],
     ["Email", member.email ?? "—"],
@@ -440,13 +447,13 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
       ))}
       {member.sensitiveNotes ? (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-bg/50 p-3">
-          <p className="eyebrow mb-1 text-warning-deep">Sensitive note</p>
+          <p className="eyebrow mb-1 text-warning-deep">{t("members.tabs.notes.sensitive")}</p>
           <p className="text-[12.5px] text-ink-2">{member.sensitiveNotes}</p>
         </div>
       ) : null}
       {member.notes ? (
         <div className="mt-3 rounded-md border border-line bg-sunken/40 p-3">
-          <p className="eyebrow mb-1">Desk note</p>
+          <p className="eyebrow mb-1">{t("members.tabs.notes.desk")}</p>
           <p className="text-[12.5px] text-ink-2">{member.notes}</p>
         </div>
       ) : null}

@@ -27,6 +27,7 @@ import { Monogram } from "@/components/ui/misc";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
+import { useT } from "@/lib/i18n/provider";
 
 type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "delete" | null;
 
@@ -43,6 +44,7 @@ export function MemberHeader({
   currentMembership?: MembershipSummary;
   branchName: string;
 }) {
+  const t = useT();
   const { can } = usePermissions();
   const { session } = useApp();
   const router = useRouter();
@@ -60,14 +62,14 @@ export function MemberHeader({
 
   const archive = useApiMutation((api) => api.archiveMember(member.id, { reason: archiveReason }), {
     onSuccess: async () => {
-      toast.success("Member archived.");
+      toast.success(t("members.header.toast.archived"));
       await invalidate();
       setDialog(null);
     },
   });
   const deleteMember = useApiMutation((api) => api.deleteMember(member.id, { reason: deleteReason, confirmation: deleteConfirmation }), {
     onSuccess: async () => {
-      toast.success("Archived member deleted. Financial and audit history was preserved.");
+      toast.success(t("members.header.toast.deleted"));
       await invalidate();
       router.push("/members");
     },
@@ -84,12 +86,12 @@ export function MemberHeader({
     marketingPreferenceSource: editForm.marketingPreferenceSource,
   }), {
     onSuccess: async () => {
-      toast.success("Member profile updated — audited.");
+      toast.success(t("members.header.toast.updated"));
       setDialog(null);
       await invalidate();
     },
   });
-  const uploadPhoto = useApiMutation((api, file: File) => api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file }), { onSuccess: async () => { toast.success("Member photo uploaded and sanitized."); await invalidate(); } });
+  const uploadPhoto = useApiMutation((api, file: File) => api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file }), { onSuccess: async () => { toast.success(t("members.header.toast.photoUploaded")); await invalidate(); } });
 
   const outstanding = member.outstanding;
   const canSell = can("memberships.sell");
@@ -148,7 +150,7 @@ export function MemberHeader({
               ) : null}
             </p>
           ) : (
-            <p className="mt-2 text-[12.5px] text-ink-3">No membership on file.</p>
+            <p className="mt-2 text-[12.5px] text-ink-3">{t("members.header.noMembership")}</p>
           )}
         </div>
 
@@ -174,7 +176,7 @@ export function MemberHeader({
           {can("members.write") || canSell || can("memberships.freeze") || can("memberships.override_dates") || can("members.archive") ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="icon" aria-label="More actions">
+                <Button variant="secondary" size="icon" aria-label={t("members.header.moreActions")}>
                   <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
@@ -265,56 +267,56 @@ export function MemberHeader({
             onOpenChange={(v) => !v && setDialog(null)}
             membership={currentMembership}
             allowanceRemaining={Math.max(0, currentMembership.planFreezeAllowanceDays - currentMembership.frozenDaysUsed)}
-            onDone={() => toast.success("Membership frozen.")}
+            onDone={() => toast.success(t("members.header.toast.frozen"))}
           />
-          <UnfreezeDialog open={dialog === "unfreeze"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Freeze ended.")} />
-          <ExtendDialog open={dialog === "extend"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership extended.")} />
-          <TransferMembershipDialog open={dialog === "transfer"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} branches={session?.branches ?? []} onDone={() => toast.success("Membership transferred.")} />
-          <CancelMembershipDialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success("Membership cancelled.")} />
-          <ChangeMembershipPlanDialog open={dialog === "plan-change"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} allowImmediate={can("memberships.override_dates")} onDone={() => toast.success("Membership plan changed — successor term created.")} />
+          <UnfreezeDialog open={dialog === "unfreeze"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("members.header.toast.freezeEnded"))} />
+          <ExtendDialog open={dialog === "extend"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("members.header.toast.extended"))} />
+          <TransferMembershipDialog open={dialog === "transfer"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} branches={session?.branches ?? []} onDone={() => toast.success(t("members.header.toast.transferred"))} />
+          <CancelMembershipDialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("members.header.toast.cancelled"))} />
+          <ChangeMembershipPlanDialog open={dialog === "plan-change"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} allowImmediate={can("memberships.override_dates")} onDone={() => toast.success(t("members.header.toast.planChanged"))} />
         </>
       ) : null}
 
       <Dialog open={dialog === "edit"} onOpenChange={(value) => !value && setDialog(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit member profile</DialogTitle>
+            <DialogTitle>{t("members.header.editProfile")}</DialogTitle>
             <DialogDescription>{memberOwnsProfile ? "Personal details are synchronized from the member account. This gym can still manage branch, tags, service notes, and membership operations." : "Identity, contact, branch and service notes. Changes are authorized and audited server-side."}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Full name" required><Input disabled={memberOwnsProfile} value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
-              <Field label="Arabic name"><Input disabled={memberOwnsProfile} dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
-              <Field label="Phone" required><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
-              <Field label="Email"><Input disabled={memberOwnsProfile} type="email" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
-              <Field label="Home branch">
+              <Field label={t("members.header.fullName")} required><Input disabled={memberOwnsProfile} value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
+              <Field label={t("members.header.arabicName")}><Input disabled={memberOwnsProfile} dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
+              <Field label={t("members.header.phone")} required><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
+              <Field label={t("members.header.email")}><Input disabled={memberOwnsProfile} type="email" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+              <Field label={t("members.header.homeBranch")}>
                 <Select value={editForm.homeBranchId} onValueChange={(value) => setEditForm((form) => ({ ...form, homeBranchId: value }))}>
-                  <SelectTrigger aria-label="Home branch"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t("members.header.homeBranch")}><SelectValue /></SelectTrigger>
                   <SelectContent>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Preferred language">
+              <Field label={t("members.header.preferredLanguage")}>
                 <Select disabled={memberOwnsProfile} value={editForm.preferredLanguage} onValueChange={(value) => setEditForm((form) => ({ ...form, preferredLanguage: value as "en" | "ar" }))}>
-                  <SelectTrigger aria-label="Preferred language"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent>
+                  <SelectTrigger aria-label={t("members.header.preferredLanguage")}><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="en">{t("members.header.english")}</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent>
                 </Select>
               </Field>
-              <Field label="Emergency contact"><Input disabled={memberOwnsProfile} value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
-              <Field label="Emergency phone"><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
+              <Field label={t("members.header.emergencyContact")}><Input disabled={memberOwnsProfile} value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
+              <Field label={t("members.header.emergencyPhone")}><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
             </div>
-            <Field label="Tags" hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder="VIP, morning, personal training" /></Field>
-            <Field label="Service notes"><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Non-sensitive operational context for staff" /></Field>
+            <Field label={t("members.header.tags")} hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder={t("members.header.tagsPlaceholder")} /></Field>
+            <Field label={t("members.header.serviceNotes")}><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder={t("members.header.serviceNotesPlaceholder")} /></Field>
             <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/30 px-3 py-3">
               <div>
-                <p className="text-[13px] font-medium">Marketing messages</p>
-                <p className="text-[12px] text-ink-3">Changing this records who changed the preference and when. Service messages are separate.</p>
+                <p className="text-[13px] font-medium">{t("members.header.marketingMessages")}</p>
+                <p className="text-[12px] text-ink-3">{t("members.header.marketingNote")}</p>
               </div>
-              <Switch checked={editForm.marketingOptIn} onCheckedChange={(checked) => setEditForm((form) => ({ ...form, marketingOptIn: checked, marketingPreferenceSource: "staff_selected" }))} aria-label="Marketing opt-in" />
+              <Switch checked={editForm.marketingOptIn} onCheckedChange={(checked) => setEditForm((form) => ({ ...form, marketingOptIn: checked, marketingPreferenceSource: "staff_selected" }))} aria-label={t("members.header.marketingOptIn")} />
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>
-            <Button disabled={editForm.fullName.trim().length < 2 || editForm.phone.trim().length < 5} loading={updateProfile.isPending} onClick={() => updateProfile.mutate()}>Save profile</Button>
+            <Button variant="secondary" onClick={() => setDialog(null)}>{t("common.action.cancel")}</Button>
+            <Button disabled={editForm.fullName.trim().length < 2 || editForm.phone.trim().length < 5} loading={updateProfile.isPending} onClick={() => updateProfile.mutate()}>{t("members.header.saveProfile")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -322,14 +324,14 @@ export function MemberHeader({
       <Dialog open={dialog === "archive"} onOpenChange={(v) => !v && setDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Archive member</DialogTitle>
+            <DialogTitle>{t("members.header.archiveMember")}</DialogTitle>
             <DialogDescription>
               {member.fullName} will no longer appear in active lists. History, payments and audit records are preserved.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <Field label="Reason" required>
-              <Textarea value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} placeholder="e.g. Duplicate profile, merged after verification" />
+            <Field label={t("common.label.reason")} required>
+              <Textarea value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} placeholder={t("members.header.archiveReasonPlaceholder")} />
             </Field>
           </DialogBody>
           <DialogFooter>
@@ -346,21 +348,21 @@ export function MemberHeader({
       <Dialog open={dialog === "delete"} onOpenChange={(v) => !v && setDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete member</DialogTitle>
+            <DialogTitle>{t("members.header.deleteMember")}</DialogTitle>
             <DialogDescription>
               This permanently removes the archived member&apos;s personal record. Payments, invoices, timeline history and audit facts stay preserved. Active memberships, balances and future PT bookings must be cleared first.
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <Field label={"Type " + member.fullName + " to confirm"} required>
+            <Field label={t("members.header.confirmByTyping", { name: member.fullName })} required>
               <Input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" />
             </Field>
-            <Field label="Reason" required>
-              <Textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="e.g. Duplicate record permanently removed" />
+            <Field label={t("common.label.reason")} required>
+              <Textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder={t("members.header.deleteReasonPlaceholder")} />
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDialog(null)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setDialog(null)}>{t("common.action.cancel")}</Button>
             <Button
               variant="signal"
               disabled={deleteConfirmation.trim() !== member.fullName || deleteReason.trim().length < 3}

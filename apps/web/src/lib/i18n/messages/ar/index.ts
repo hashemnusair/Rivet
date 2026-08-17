@@ -3,6 +3,7 @@ import { common } from "./common";
 import { dashboard } from "./dashboard";
 import { domain } from "./domain";
 import { marketing } from "./marketing";
+import { members } from "./members";
 import { nav } from "./nav";
 import { reception } from "./reception";
 
@@ -12,6 +13,7 @@ export const ar: Messages = {
   dashboard,
   domain,
   marketing,
+  members,
   nav,
   reception,
 };
