@@ -14,7 +14,8 @@ import {
 
 export interface NavItem {
   href: string;
-  label: string;
+  /** Catalogue key under `nav.item.*` — the label is resolved at render. */
+  labelKey: NavItemKey;
   icon: LucideIcon;
   /** any-of permissions required to see the item */
   anyPermission?: string[];
@@ -23,40 +24,55 @@ export interface NavItem {
 }
 
 export interface NavSection {
-  label: string;
+  /** Catalogue key under `nav.section.*`. */
+  labelKey: NavSectionKey;
   items: NavItem[];
 }
 
+export type NavSectionKey = "overview" | "workspace" | "sales" | "finance" | "system";
+
+export type NavItemKey =
+  | "dashboard"
+  | "reception"
+  | "members"
+  | "personalTraining"
+  | "leads"
+  | "followUps"
+  | "payments"
+  | "auditLog"
+  | "support"
+  | "settings";
+
 export const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Overview",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: Gauge }],
+    labelKey: "overview",
+    items: [{ href: "/dashboard", labelKey: "dashboard", icon: Gauge }],
   },
   {
-    label: "Workspace",
+    labelKey: "workspace",
     items: [
-      { href: "/reception", label: "Reception", icon: ShieldCheck },
-      { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
-      { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
+      { href: "/reception", labelKey: "reception", icon: ShieldCheck },
+      { href: "/members", labelKey: "members", icon: Users, anyPermission: ["members.read"] },
+      { href: "/pt", labelKey: "personalTraining", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     ],
   },
   {
-    label: "Sales",
+    labelKey: "sales",
     items: [
-      { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
-      { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, anyPermission: ["crm.read"] },
+      { href: "/crm/pipeline", labelKey: "leads", icon: KanbanSquare, anyPermission: ["crm.read"] },
+      { href: "/crm/queues", labelKey: "followUps", icon: ListFilter, anyPermission: ["crm.read"] },
     ],
   },
   {
-    label: "Finance",
-    items: [{ href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] }],
+    labelKey: "finance",
+    items: [{ href: "/payments", labelKey: "payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] }],
   },
   {
-    label: "System",
+    labelKey: "system",
     items: [
-      { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
-      { href: "/support", label: "Support", icon: CircleHelp },
-      { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
+      { href: "/audit", labelKey: "auditLog", icon: ScrollText, anyPermission: ["audit.read"] },
+      { href: "/support", labelKey: "support", icon: CircleHelp },
+      { href: "/settings", labelKey: "settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
     ],
   },
 ];

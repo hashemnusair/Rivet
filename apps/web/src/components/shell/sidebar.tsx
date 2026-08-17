@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { NAV_SECTIONS } from "./nav-config";
+import { useT } from "@/lib/i18n/provider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
@@ -19,6 +20,7 @@ export function navIsActive(href: string, pathname: string): boolean {
 }
 
 export function Sidebar() {
+  const t = useT();
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar } = useApp();
   const { canAny } = usePermissions();
@@ -30,7 +32,7 @@ export function Sidebar() {
         "night-surface fixed inset-y-0 start-0 z-40 hidden flex-col bg-night text-night-ink transition-[width] duration-200 ease-out lg:flex",
         sidebarCollapsed ? "w-[60px]" : "w-[228px]",
       )}
-      aria-label="Primary navigation"
+      aria-label={t("nav.aria.primary")}
     >
       {/* Brand */}
       <div className="flex h-16 items-center border-b border-night-line px-4">
@@ -39,7 +41,7 @@ export function Sidebar() {
         <Link
           href="/dashboard"
           className={cn("flex h-7 shrink-0 items-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[110px]")}
-          aria-label="RIVET home"
+          aria-label={t("nav.aria.home")}
         >
           {sidebarCollapsed ? (
             <Image src="/brand/rivet-glyph-rev.png" alt="RIVET" width={18} height={28} className="shrink-0" priority />
@@ -56,10 +58,10 @@ export function Sidebar() {
             const visible = section.items.filter((item) => !item.anyPermission || canAny(item.anyPermission));
             if (visible.length === 0) return null;
             return (
-              <div key={section.label} className="mb-4">
+              <div key={section.labelKey} className="mb-4">
                 <div className="relative h-5">
                   {!sidebarCollapsed ? (
-                    <p className="eyebrow-night truncate whitespace-nowrap px-3.5 leading-4">{section.label}</p>
+                    <p className="eyebrow-night truncate whitespace-nowrap px-3.5 leading-4">{t(`nav.section.${section.labelKey}`)}</p>
                   ) : (
                     <div aria-hidden className="absolute inset-x-2 top-2 h-px bg-night-line" />
                   )}
@@ -84,7 +86,7 @@ export function Sidebar() {
                         <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                           <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />
                         </span>
-                        {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{item.label}</span> : null}
+                        {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t(`nav.item.${item.labelKey}`)}</span> : null}
                       </Link>
                     );
                     return (
@@ -92,7 +94,7 @@ export function Sidebar() {
                         {sidebarCollapsed ? (
                           <Tooltip>
                             <TooltipTrigger asChild>{link}</TooltipTrigger>
-                            <TooltipContent side="right">{item.label}</TooltipContent>
+                            <TooltipContent side="right">{t(`nav.item.${item.labelKey}`)}</TooltipContent>
                           </Tooltip>
                         ) : (
                           link
@@ -118,7 +120,7 @@ export function Sidebar() {
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
             {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
           </span>
-          {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">Collapse</span> : null}
+          {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t("nav.chrome.collapse")}</span> : null}
         </button>
       </div>
     </aside>

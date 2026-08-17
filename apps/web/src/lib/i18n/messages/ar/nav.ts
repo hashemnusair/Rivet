@@ -22,6 +22,12 @@ export const nav: typeof EnNav = {
     settings: "الإعدادات",
   },
 
+  chrome: {
+    collapse: "طيّ",
+    navigationMenu: "قائمة التنقل",
+    closeNavigation: "إغلاق التنقل",
+  },
+
   aria: {
     primary: "التنقل الرئيسي",
     openMenu: "فتح قائمة التنقل",

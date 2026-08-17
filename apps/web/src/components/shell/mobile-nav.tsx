@@ -12,6 +12,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS } from "./nav-config";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -19,6 +20,7 @@ import { NAV_SECTIONS } from "./nav-config";
  * Escape handling and scroll lock; styled as a drawer, not a modal.
  */
 export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useT();
   const pathname = usePathname();
   const { canAny } = usePermissions();
   const { session, setBranch } = useApp();
@@ -41,10 +43,10 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in lg:hidden" />
         <DialogPrimitive.Content
           className="night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none data-[state=open]:animate-fade-in lg:hidden"
-          aria-label="Navigation menu"
+          aria-label={t("nav.chrome.navigationMenu")}
         >
           <VisuallyHidden>
-            <DialogPrimitive.Title>Navigation menu</DialogPrimitive.Title>
+            <DialogPrimitive.Title>{t("nav.chrome.navigationMenu")}</DialogPrimitive.Title>
           </VisuallyHidden>
 
           {/* Brand + close */}
@@ -52,20 +54,20 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
             <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} style={{ height: "auto" }} priority />
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
-              aria-label="Close navigation"
+              aria-label={t("nav.chrome.closeNavigation")}
             >
               <X className="size-4" />
             </DialogPrimitive.Close>
           </div>
 
           {/* Nav — same sections and permission filtering as the desktop sidebar */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Primary navigation">
+          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t("nav.aria.primary")}>
             {NAV_SECTIONS.map((section) => {
               const visible = section.items.filter((item) => !item.anyPermission || canAny(item.anyPermission));
               if (visible.length === 0) return null;
               return (
-                <div key={section.label} className="mb-4">
-                  <p className="eyebrow-night px-2.5 pb-1.5">{section.label}</p>
+                <div key={section.labelKey} className="mb-4">
+                  <p className="eyebrow-night px-2.5 pb-1.5">{t(`nav.section.${section.labelKey}`)}</p>
                   <ul className="space-y-0.5">
                     {visible.map((item) => {
                       const active = navIsActive(item.href, pathname);
@@ -88,7 +90,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                               className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")}
                               aria-hidden
                             />
-                            <span className="truncate">{item.label}</span>
+                            <span className="truncate">{t(`nav.item.${item.labelKey}`)}</span>
                           </Link>
                         </li>
                       );
@@ -108,14 +110,14 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                   value={session.activeBranchId ?? "all"}
                   onValueChange={(v) => setBranch(v === "all" ? undefined : v)}
                 >
-                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label="Active branch">
+                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label={t("nav.aria.activeBranch")}>
                     <div className="flex items-center gap-2 truncate">
                       <Building2 className="size-3.5 text-ink-3 shrink-0" aria-hidden />
                       <SelectValue />
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All branches</SelectItem>
+                    <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
                     {session.branches.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
                         {b.name}

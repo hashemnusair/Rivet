@@ -4,17 +4,17 @@ import { NAV_SECTIONS } from "./nav-config";
 describe("primary workspace navigation", () => {
   it("keeps one simple entry point for each core workflow", () => {
     const items = NAV_SECTIONS.flatMap((section) => section.items);
-    expect(items.map((item) => item.label)).toEqual([
-      "Dashboard",
-      "Reception",
-      "Members",
-      "Personal training",
-      "Leads",
-      "Follow-ups",
-      "Payments",
-      "Audit log",
-      "Support",
-      "Settings",
+    expect(items.map((item) => item.labelKey)).toEqual([
+      "dashboard",
+      "reception",
+      "members",
+      "personalTraining",
+      "leads",
+      "followUps",
+      "payments",
+      "auditLog",
+      "support",
+      "settings",
     ]);
   });
 

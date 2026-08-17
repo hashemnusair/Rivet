@@ -25,6 +25,12 @@ export const nav = {
     settings: "Settings",
   },
 
+  chrome: {
+    collapse: "Collapse",
+    navigationMenu: "Navigation menu",
+    closeNavigation: "Close navigation",
+  },
+
   aria: {
     primary: "Primary navigation",
     openMenu: "Open navigation menu",
