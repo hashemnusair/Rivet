@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Monogram } from "@/components/ui/misc";
+import { LanguageToggle } from "@/components/shared/language-toggle";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
@@ -62,6 +63,7 @@ export function PublicHeader() {
         {/* Sign-in lives at /login and nowhere else — no modal, so there is one
             place to authenticate and one place that decides which portal. */}
         <div className="hidden min-w-[246px] items-center justify-end gap-2 lg:flex">
+          <LanguageToggle />
           {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions /> : <ClerkMarketingActions />}
         </div>
 
@@ -85,6 +87,7 @@ export function PublicHeader() {
             ))}
           </nav>
           <div className="mt-3 grid gap-2 border-t border-line pt-3">
+            <LanguageToggle variant="secondary" className="w-full justify-center" />
             {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions mobile onClose={() => setOpen(false)} /> : <ClerkMarketingActions mobile onClose={() => setOpen(false)} />}
           </div>
         </div>
@@ -318,6 +321,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ms-auto flex items-center gap-2">
+            <LanguageToggle showLabel={false} />
             {customerSignedIn && customer ? (
               <div className="hidden sm:block">
                 <DropdownMenu>

@@ -1,0 +1,132 @@
+import { plural } from "../../dictionary";
+
+/**
+ * Vocabulary shared across every surface: actions that appear on more than one
+ * screen, the states a panel can be in, and the words the product uses for its
+ * own concepts. Area-specific copy lives in that area's file.
+ *
+ * Deliberately not `as const`: the Arabic catalogue is typed against this
+ * object, and literal types would demand identical English strings.
+ */
+export const common = {
+  action: {
+    save: "Save",
+    saveChanges: "Save changes",
+    cancel: "Cancel",
+    close: "Close",
+    confirm: "Confirm",
+    continue: "Continue",
+    back: "Back",
+    next: "Next",
+    done: "Done",
+    edit: "Edit",
+    delete: "Delete",
+    remove: "Remove",
+    add: "Add",
+    create: "Create",
+    search: "Search",
+    filter: "Filter",
+    clear: "Clear",
+    clearFilters: "Clear filters",
+    apply: "Apply",
+    retry: "Try again",
+    refresh: "Refresh",
+    reset: "Reset",
+    export: "Export",
+    import: "Import",
+    print: "Print",
+    download: "Download",
+    copy: "Copy",
+    copied: "Copied",
+    viewAll: "View all",
+    viewDetails: "View details",
+    signIn: "Sign in",
+    signOut: "Sign out",
+    submit: "Submit",
+    send: "Send",
+    select: "Select",
+    selectAll: "Select all",
+    more: "More",
+    less: "Less",
+    showMore: "Show more",
+    showLess: "Show less",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+    goBack: "Go back",
+  },
+
+  state: {
+    loading: "Loading…",
+    saving: "Saving…",
+    sending: "Sending…",
+    searching: "Searching…",
+    empty: "Nothing here yet",
+    error: "Something went wrong",
+    errorDetail: "The request could not be completed. Try again, or refresh the page.",
+    offline: "You appear to be offline",
+    notFound: "Not found",
+    noResults: "No results",
+    noResultsDetail: "Nothing matched that search. Try a different term or clear the filters.",
+    required: "Required",
+    optional: "Optional",
+  },
+
+  label: {
+    name: "Name",
+    fullName: "Full name",
+    email: "Email",
+    phone: "Phone",
+    password: "Password",
+    date: "Date",
+    time: "Time",
+    from: "From",
+    to: "To",
+    status: "Status",
+    branch: "Branch",
+    allBranches: "All branches",
+    amount: "Amount",
+    total: "Total",
+    notes: "Notes",
+    reason: "Reason",
+    type: "Type",
+    role: "Role",
+    actions: "Actions",
+    details: "Details",
+    createdAt: "Created",
+    updatedAt: "Updated",
+    language: "Language",
+  },
+
+  time: {
+    today: "Today",
+    yesterday: "Yesterday",
+    tomorrow: "Tomorrow",
+    now: "now",
+    thisWeek: "This week",
+    thisMonth: "This month",
+    lastMonth: "Last month",
+    last7Days: "Last 7 days",
+    last30Days: "Last 30 days",
+    days: plural({ one: "{count} day", other: "{count} days" }),
+    hours: plural({ one: "{count} hour", other: "{count} hours" }),
+    minutes: plural({ one: "{count} minute", other: "{count} minutes" }),
+  },
+
+  count: {
+    members: plural({ one: "{count} member", other: "{count} members" }),
+    results: plural({ one: "{count} result", other: "{count} results" }),
+    selected: plural({ one: "{count} selected", other: "{count} selected" }),
+  },
+
+  language: {
+    switchTo: "Switch to {language}",
+    label: "Language",
+    english: "English",
+    arabic: "العربية",
+  },
+
+  brand: {
+    name: "RIVET",
+    tagline: "Every member. Every dinar. Every shift.",
+  },
+};

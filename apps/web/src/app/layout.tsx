@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
+import { cookies } from "next/headers";
 import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
+import { LocaleProvider } from "@/lib/i18n/provider";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, dirFor, isLocale } from "@/lib/i18n/config";
 import { AppProviders } from "@/lib/providers/app-providers";
 import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
@@ -84,13 +87,20 @@ export const viewport: Viewport = {
   themeColor: "#f5f4ef",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // The language choice is mirrored to a cookie by the locale provider, so the
+  // first painted frame already carries the right direction and font stack
+  // instead of flipping after hydration.
+  const stored = (await cookies()).get(LOCALE_COOKIE)?.value;
+  const locale = isLocale(stored) ? stored : DEFAULT_LOCALE;
+
   return (
-    <html lang="en" dir="ltr" data-scroll-behavior="smooth" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
+    <html lang={locale} dir={dirFor(locale)} data-scroll-behavior="smooth" className={`${locale === "ar" ? "rtl-font " : ""}${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         <ClerkProvider>
           <ConvexClientProvider>
             <RivetIdentityProvider>
+              <LocaleProvider initialLocale={locale}>
               <AppProviders>
                 <ExperienceProvider>
                   {children}
@@ -108,6 +118,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   }}
                 />
               </AppProviders>
+              </LocaleProvider>
             </RivetIdentityProvider>
           </ConvexClientProvider>
         </ClerkProvider>

@@ -45,8 +45,6 @@ interface AppContextValue {
   behavior: MockBehavior;
   setBehavior: (b: Partial<MockBehavior>) => void;
   resetDemo: () => Promise<void>;
-  dir: "ltr" | "rtl";
-  toggleDir: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 }
@@ -56,7 +54,6 @@ const AppContext = createContext<AppContextValue | null>(null);
 const STORAGE_KEYS = {
   persona: "rivet.demo.persona",
   branch: "rivet.demo.branch",
-  dir: "rivet.demo.dir",
   sidebar: "rivet.demo.sidebar",
 } as const;
 
@@ -148,7 +145,6 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [behavior, setBehaviorState] = useState<MockBehavior>({ ...DEFAULT_BEHAVIOR });
-  const [dir, setDir] = useState<"ltr" | "rtl">("ltr");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState<Session | undefined>(undefined);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -159,14 +155,9 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   // UI preferences are local presentation state in both modes. Identity and
   // workspace sessions are deliberately not restored from browser storage in
-  // Convex mode.
+  // Convex mode. Direction is not here: it derives from the language chosen in
+  // LocaleProvider, so there is one switch rather than two that can disagree.
   useEffect(() => {
-    const storedDir = window.sessionStorage.getItem(STORAGE_KEYS.dir);
-    if (storedDir === "rtl") {
-      setDir("rtl");
-      document.documentElement.dir = "rtl";
-      document.documentElement.classList.add("rtl-font");
-    }
     const collapsed = window.localStorage.getItem(STORAGE_KEYS.sidebar);
     if (collapsed === "1") setSidebarCollapsed(true);
   }, []);
@@ -314,16 +305,6 @@ function SessionProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: qk.session });
   }, [convexMode, queryClient]);
 
-  const toggleDir = useCallback(() => {
-    setDir((prev) => {
-      const next = prev === "ltr" ? "rtl" : "ltr";
-      document.documentElement.dir = next;
-      document.documentElement.classList.toggle("rtl-font", next === "rtl");
-      window.sessionStorage.setItem(STORAGE_KEYS.dir, next);
-      return next;
-    });
-  }, []);
-
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
@@ -347,12 +328,10 @@ function SessionProvider({ children }: { children: ReactNode }) {
       behavior,
       setBehavior,
       resetDemo,
-      dir,
-      toggleDir,
       sidebarCollapsed,
       toggleSidebar,
     }),
-    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
+    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, sidebarCollapsed, toggleSidebar],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
