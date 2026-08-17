@@ -13,9 +13,18 @@ import { TENANT_TIMEZONE } from "@/lib/utils/dates";
  * reader's language from `useFormat` rather than the module-scope English
  * formatters in `lib/utils`.
  *
- * The signs stay as they are in both languages. A minus in front of a figure is
- * read the same way in Arabic, and the direction of the surrounding text does
- * not change what the number means.
+ * Money is NOT pinned to `dir="ltr"`. Intl already emits the directional marks
+ * its locale needs — Arabic currency output starts with U+200F — and forcing a
+ * direction over the top of that neutralises the mark and reorders the parts,
+ * which is how "2.3 ألف JOD" came out as "2.3 JOD ألف". Let the formatter's own
+ * marks do the work.
+ *
+ * The sign is Intl's job too, for the same reason: prepending "−" by hand put
+ * the minus on the far side of the figure in Arabic. The value is handed to the
+ * formatter signed, and only the colour is decided here.
+ *
+ * Clock times are pinned, because there the digits are ours rather than a
+ * formatter's composite and a stray neutral could swap the two halves.
  */
 
 /** Money always in tabular mono — the ledger voice of the product. */
@@ -35,13 +44,9 @@ export function MoneyText({
   const format = useFormat();
   if (!money) return <span className={cn("tabular text-ink-3", className)}>—</span>;
   const negative = money.amount < 0;
-  const abs = { ...money, amount: Math.abs(money.amount) };
-  const formatted = format.money(abs, { hideCurrency, compact });
   return (
-    <span className={cn("tabular", negative && "text-danger", className)} dir="ltr">
-      {signed && money.amount > 0 ? "+" : null}
-      {negative ? "−" : null}
-      {formatted}
+    <span className={cn("tabular", negative && "text-danger", className)}>
+      {format.money(money, { hideCurrency, compact, signDisplay: signed ? "exceptZero" : "auto" })}
     </span>
   );
 }

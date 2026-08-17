@@ -80,7 +80,7 @@ export const common = {
     notFoundDescription: "The record you are looking for does not exist — it may have been removed, or the link is wrong.",
     backToDashboard: "Back to dashboard",
     previousPage: "Previous page",
-    pageRange: "{from}–{to} of {total}",
+    pageRange: "{range} of {total}",
     nextPage: "Next page",
   },
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dashboardScopeDescription } from "./dashboard-scope";
+import { dashboardScope } from "./dashboard-scope";
 
 const branches = [
   { id: "abdoun", name: "Abdoun" },
@@ -7,20 +7,20 @@ const branches = [
   { id: "mecca", name: "Mecca Street" },
 ];
 
-describe("dashboard branch scope copy", () => {
+describe("dashboard branch scope", () => {
   it("names the selected branch", () => {
-    expect(dashboardScopeDescription(branches, "sweifieh")).toBe("Showing Sweifieh only.");
+    expect(dashboardScope(branches, "sweifieh")).toEqual({ key: "selectedNamed", vars: { branch: "Sweifieh" } });
   });
 
   it("uses singular copy for one accessible branch", () => {
-    expect(dashboardScopeDescription([branches[0]!])).toBe("Showing Abdoun.");
+    expect(dashboardScope([branches[0]!])).toEqual({ key: "single", vars: { branch: "Abdoun" } });
   });
 
   it("counts all accessible branches", () => {
-    expect(dashboardScopeDescription(branches)).toBe("All 3 branches, consolidated.");
+    expect(dashboardScope(branches)).toEqual({ key: "consolidated", vars: { count: 3 } });
   });
 
   it("does not claim a branch while access is loading", () => {
-    expect(dashboardScopeDescription([])).toBe("Loading your branch access.");
+    expect(dashboardScope([])).toEqual({ key: "loading" });
   });
 });

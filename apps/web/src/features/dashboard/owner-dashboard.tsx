@@ -16,7 +16,7 @@ import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
 import { BranchRevenueBars, RevenueChart } from "./charts";
-import { dashboardScopeDescription } from "./dashboard-scope";
+import { dashboardScope } from "./dashboard-scope";
 import { useT } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
 
@@ -50,9 +50,10 @@ export function OwnerDashboard() {
       <PageHeader
         eyebrow={format.date(today)}
         title={t("dashboard.greeting.withName", { greeting: t(`dashboard.greeting.${greetingKey()}`), name: session?.user.name.split(" ")[0] ?? "" })}
-        description={
-          dashboardScopeDescription(session?.branches ?? [], branchId)
-        }
+        description={(() => {
+          const scope = dashboardScope(session?.branches ?? [], branchId);
+          return t(`dashboard.scope.${scope.key}`, scope.vars);
+        })()}
       />
 
       {/* KPI strip — one ruled panel, not six cards */}
@@ -149,7 +150,7 @@ export function OwnerDashboard() {
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <h2 className="text-[13px] font-semibold">{t("dashboard.owner.salesThisMonth")}</h2>
             <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              Pipeline <ArrowRight className="size-3" />
+              {t("nav.chrome.pipeline")} <ArrowRight className="size-3" />
             </Link>
           </header>
           {isLoading || !data ? (
@@ -173,7 +174,7 @@ export function OwnerDashboard() {
                   {data.leaderboard.map((rep, i) => (
                     <tr key={rep.userId} className="border-b border-line/70 last:border-0">
                       <td className="whitespace-nowrap px-4 py-2.5">
-                        <span className="me-2 text-[11px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="me-2 text-[11px] text-ink-4 tabular [unicode-bidi:isolate]">{String(i + 1).padStart(2, "0")}</span>
                         <span className="font-medium">{rep.name}</span>
                       </td>
                       <td className="px-3 py-2.5 text-end">
@@ -256,7 +257,7 @@ export function OperatingPriorities({
           <h2 id="operating-priorities-title" className="mt-1 text-[15px] font-semibold">{t("dashboard.owner.moveTheNumbers")}</h2>
         </div>
         <Link href="/crm/queues" className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-          Open queues <ArrowRight className="size-3" />
+          {t("nav.chrome.openQueues")} <ArrowRight className="size-3" />
         </Link>
       </header>
       <div className="divide-y divide-line">

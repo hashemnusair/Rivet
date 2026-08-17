@@ -28,6 +28,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
 import { NotificationCenter } from "./notification-center";
+import { useT } from "@/lib/i18n/provider";
 
 const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
   { role: "owner", blurb: "Full visibility — every branch, finance, audit, settings." },
@@ -37,6 +38,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
+  const t = useT();
   const { session, organizations, selectOrganization, setBranch, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -86,10 +88,10 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         type="button"
         onClick={() => setPaletteOpen(true)}
         className="flex h-8 w-full max-w-72 min-w-0 items-center gap-2 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2 cursor-pointer"
-        aria-label="Search members, leads and pages"
+        aria-label={t("nav.aria.search")}
       >
         <Search className="size-3.5" aria-hidden />
-        <span className="flex-1 text-start truncate">Search…</span>
+        <span className="flex-1 text-start truncate">{t("nav.chrome.search")}</span>
         <kbd className="hidden sm:inline-flex h-5 items-center rounded-sm border border-line bg-paper px-1 font-mono text-[10px] text-ink-3">
           ⌘K
         </kbd>
@@ -131,7 +133,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All branches</SelectItem>
+              <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
               {session.branches.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
                   {b.name}

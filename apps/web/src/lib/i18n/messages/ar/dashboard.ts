@@ -9,6 +9,14 @@ export const dashboard: typeof EnDashboard = {
     withName: "{greeting}، {name}",
   },
 
+  scope: {
+    selectedNamed: "عرض {branch} فقط.",
+    selectedUnnamed: "عرض الفرع المحدد فقط.",
+    loading: "جارٍ تحميل صلاحيات الفروع.",
+    single: "عرض {branch}.",
+    consolidated: "كل الفروع ({count})، مجمّعة.",
+  },
+
   owner: {
     salesThisMonth: "مبيعات هذا الشهر",
     rep: "المندوب",
@@ -130,6 +138,7 @@ export const dashboard: typeof EnDashboard = {
   },
 
   charts: {
+    avgPerDay: "بمعدل {amount} يوميًا",
     collected30: "المحصّل — آخر ٣٠ يومًا",
   },
 };

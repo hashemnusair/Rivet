@@ -75,8 +75,8 @@ export function fromMajor(major: number, currency = "JOD"): Money {
 
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
-function formatterFor(currency: string, locale: string): Intl.NumberFormat {
-  const key = `${locale}:${currency}`;
+function formatterFor(currency: string, locale: string, signDisplay?: Intl.NumberFormatOptions["signDisplay"]): Intl.NumberFormat {
+  const key = `${locale}:${currency}:${signDisplay ?? "auto"}`;
   let f = formatterCache.get(key);
   if (!f) {
     const exp = exponentFor(currency);
@@ -86,6 +86,7 @@ function formatterFor(currency: string, locale: string): Intl.NumberFormat {
       minimumFractionDigits: exp,
       maximumFractionDigits: exp,
       currencyDisplay: "code",
+      signDisplay,
     });
     formatterCache.set(key, f);
   }
@@ -98,6 +99,12 @@ export interface FormatMoneyOptions {
   hideCurrency?: boolean;
   /** Render as compact thousands, e.g. JOD 12.5K — dashboards only. */
   compact?: boolean;
+  /**
+   * Let Intl place the sign. It belongs to the formatter because the position
+   * differs by locale and the bidi marks around it have to match: Arabic emits
+   * "\u200F\u200E-7.000 JOD", which a hand-prepended "−" cannot reproduce.
+   */
+  signDisplay?: Intl.NumberFormatOptions["signDisplay"];
 }
 
 export function formatMoney(m: Money, opts: FormatMoneyOptions = {}): string {
@@ -105,19 +112,29 @@ export function formatMoney(m: Money, opts: FormatMoneyOptions = {}): string {
   const exp = exponentFor(m.currency);
   const major = m.amount / 10 ** exp;
   if (opts.compact && Math.abs(major) >= 1000) {
-    const compacted = new Intl.NumberFormat(locale, {
+    if (opts.hideCurrency) {
+      return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(major);
+    }
+    // One formatter call rather than currency + number concatenated: in Arabic
+    // the compact suffix is a word ("ألف"), and gluing it to a code by hand
+    // leaves bidi free to reorder the result.
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: m.currency,
+      currencyDisplay: "code",
       notation: "compact",
       maximumFractionDigits: 1,
+      signDisplay: opts.signDisplay,
     }).format(major);
-    return opts.hideCurrency ? compacted : `${m.currency} ${compacted}`;
   }
   if (opts.hideCurrency) {
     return new Intl.NumberFormat(locale, {
       minimumFractionDigits: exp,
       maximumFractionDigits: exp,
+      signDisplay: opts.signDisplay,
     }).format(major);
   }
-  return formatterFor(m.currency, locale).format(major);
+  return formatterFor(m.currency, locale, opts.signDisplay).format(major);
 }
 
 /** "JOD 40.000" -> minor units. Accepts "40", "40.0", "40.000". */

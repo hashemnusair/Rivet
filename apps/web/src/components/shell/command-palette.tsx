@@ -23,12 +23,14 @@ import type { LeadSummary, MemberSummary } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Monogram } from "@/components/ui/misc";
 import { MembershipStatusChip } from "@/components/shared/status-chip";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * Global command palette (⌘K): member/lead lookup plus navigation actions.
  * This is the fastest way to jump anywhere in daily operations.
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const router = useRouter();
   const { canAny } = usePermissions();
   const { signedIn } = useApp();
@@ -121,7 +123,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <Command.Input
             value={query}
             onValueChange={setQuery}
-            placeholder="Search members by name, phone or number — or jump to a page…"
+            placeholder={t("nav.chrome.commandPalettePlaceholder")}
             className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4"
             autoFocus
           />

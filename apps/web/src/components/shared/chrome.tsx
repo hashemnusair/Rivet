@@ -79,9 +79,14 @@ export function DataPagination<T>({
   const to = Math.min(page.totalItems, page.page * page.pageSize);
   return (
     <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
-      {/* Ranges and page ratios stay LTR so bidi cannot reverse them. */}
-      <span className="tabular" dir="ltr">
-        {t("common.states.pageRange", { from, to, total: page.totalItems })}
+      {/* The range reads in the page's own direction — it is a sentence with a
+          word in it. Only the bare from–to pair is pinned LTR so bidi cannot
+          reverse the two numbers around the dash. */}
+      <span className="tabular">
+        {t("common.states.pageRange", {
+          range: `\u2066${from}\u2013${to}\u2069`,
+          total: page.totalItems,
+        })}
       </span>
       <div className="flex items-center gap-1">
         <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.states.previousPage")}>

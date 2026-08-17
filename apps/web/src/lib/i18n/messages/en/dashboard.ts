@@ -10,6 +10,14 @@ export const dashboard = {
     withName: "{greeting}, {name}",
   },
 
+  scope: {
+    selectedNamed: "Showing {branch} only.",
+    selectedUnnamed: "Showing selected branch only.",
+    loading: "Loading your branch access.",
+    single: "Showing {branch}.",
+    consolidated: "All {count} branches, consolidated.",
+  },
+
   owner: {
     salesThisMonth: "Sales this month",
     rep: "Rep",
@@ -127,6 +135,7 @@ export const dashboard = {
   },
 
   charts: {
+    avgPerDay: "avg {amount} / day",
     collected30: "Collected — last 30 days",
   },
 };

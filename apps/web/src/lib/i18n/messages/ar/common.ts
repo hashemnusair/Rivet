@@ -82,7 +82,7 @@ export const common: typeof EnCommon = {
     notFoundDescription: "السجل الذي تبحث عنه غير موجود — ربما حُذف، أو أن الرابط غير صحيح.",
     backToDashboard: "العودة إلى لوحة التحكم",
     previousPage: "الصفحة السابقة",
-    pageRange: "{from}–{to} من {total}",
+    pageRange: "{range} من {total}",
     nextPage: "الصفحة التالية",
   },
 

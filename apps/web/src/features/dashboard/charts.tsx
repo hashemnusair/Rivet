@@ -3,10 +3,10 @@
 import { useMemo } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import type { DashboardData } from "@/lib/domain/types";
-import { formatDateShort } from "@/lib/utils/dates";
 import { formatMoney, money } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 import { useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 /**
  * Revenue over the last 30 days. Answers: "is collection trending up or down,
@@ -14,15 +14,16 @@ import { useT } from "@/lib/i18n/provider";
  */
 export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] }) {
   const t = useT();
+  const format = useFormat();
   const chartData = useMemo(
     () =>
       data.map((p) => ({
         date: p.date,
-        label: formatDateShort(p.date),
+        label: format.dateShort(p.date),
         collected: p.collected / 1000,
         refunds: p.refunds / 1000,
       })),
-    [data],
+    [data, format],
   );
   const today = chartData[chartData.length - 1]?.date;
   const total = data.reduce((s, p) => s + p.collected, 0);
@@ -36,7 +37,9 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
           <p className="mt-1 text-[22px] font-medium tabular">
             <MoneyText money={money(total)} compact />
             <span className="ms-2 text-[12px] text-ink-3">
-              avg <MoneyText money={money(avg)} className="text-ink-3" /> / day
+              {/* One phrase with the figure interpolated: "avg X / day" glued
+                  English either side of a number, which bidi then reordered. */}
+              {t("dashboard.charts.avgPerDay", { amount: format.money(money(avg)) })}
             </span>
           </p>
         </div>
@@ -83,6 +86,7 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
  * Branch comparison. Answers: "which branch carries the business this month?"
  */
 export function BranchRevenueBars({ data }: { data: DashboardData["branchRevenue"] }) {
+  const t = useT();
   const max = Math.max(...data.map((b) => b.collected.amount), 1);
   return (
     <div className="space-y-4">
@@ -99,7 +103,7 @@ export function BranchRevenueBars({ data }: { data: DashboardData["branchRevenue
             />
           </div>
           <p className="mt-1 text-[11.5px] text-ink-3 tabular">
-            {b.activeMembers} active members · {b.checkInsToday} check-ins today
+            {t("nav.chrome.branchStats", { members: b.activeMembers, checkIns: b.checkInsToday })}
           </p>
         </div>
       ))}

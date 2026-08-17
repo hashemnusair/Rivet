@@ -48,7 +48,10 @@ export interface Formatters {
   relativeDays: (days: number) => string;
   number: (value: number, options?: Intl.NumberFormatOptions) => string;
   percent: (value: number) => string;
-  money: (value: Money, options?: { compact?: boolean; hideCurrency?: boolean }) => string;
+  money: (
+    value: Money,
+    options?: { compact?: boolean; hideCurrency?: boolean; signDisplay?: Intl.NumberFormatOptions["signDisplay"] },
+  ) => string;
 }
 
 export function makeFormatters(locale: Locale, justNow: string): Formatters {

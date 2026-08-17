@@ -23,6 +23,11 @@ export const nav: typeof EnNav = {
   },
 
   chrome: {
+    search: "بحث…",
+    commandPalettePlaceholder: "ابحث عن الأعضاء بالاسم أو الهاتف أو الرقم — أو انتقل إلى صفحة…",
+    branchStats: "{members} عضوًا فعّالًا · {checkIns} تسجيل دخول اليوم",
+    openQueues: "فتح الطوابير",
+    pipeline: "المسار",
     collapse: "طيّ",
     navigationMenu: "قائمة التنقل",
     closeNavigation: "إغلاق التنقل",

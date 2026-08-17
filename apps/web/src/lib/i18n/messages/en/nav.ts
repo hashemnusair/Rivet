@@ -26,6 +26,11 @@ export const nav = {
   },
 
   chrome: {
+    search: "Search…",
+    commandPalettePlaceholder: "Search members by name, phone or number — or jump to a page…",
+    branchStats: "{members} active members · {checkIns} check-ins today",
+    openQueues: "Open queues",
+    pipeline: "Pipeline",
     collapse: "Collapse",
     navigationMenu: "Navigation menu",
     closeNavigation: "Close navigation",
