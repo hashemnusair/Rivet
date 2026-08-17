@@ -246,6 +246,17 @@ test.describe("sidebar layout", () => {
   });
 });
 
+test.describe("personal training operations", () => {
+  test("does not expose manual introductory credit grants", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/pt");
+    await expect(page.getByRole("heading", { name: "Personal training" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Intro credits", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Trainer", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Package", exact: true })).toBeVisible();
+  });
+});
+
 test.describe("settings navigation", () => {
   test("keeps the full settings tab row reachable by keyboard at tablet width", async ({ page }) => {
     await signIn(page, "Owner");
