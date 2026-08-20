@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   "crm.write",
   "crm.assign",
   "reports.financial.read",
+  "operations.manage",
+  "accounting.post",
   "audit.read",
   "users.manage",
   "settings.manage",
@@ -39,6 +41,8 @@ export const PERMISSIONS = [
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
+
+export const PERMISSION_CATALOG_VERSION = 2;
 
 const ALL: Permission[] = [...PERMISSIONS];
 
@@ -77,6 +81,10 @@ const AUDITOR: Permission[] = [
   "reconciliation.read",
 ];
 
+const LEGACY_COMPATIBILITY_PERMISSIONS: Partial<Record<RoleKey, Permission[]>> = {
+  manager: ["operations.manage", "accounting.post"],
+};
+
 export const ROLE_LABELS: Record<RoleKey, string> = {
   owner: "Owner",
   manager: "Manager",
@@ -112,7 +120,19 @@ export function defaultRoleDefinitions(): RoleDefinition[] {
     permissions,
     discountLimitMinor: DEFAULT_DISCOUNT_LIMITS[key],
     isSystem: true,
+    catalogVersion: PERMISSION_CATALOG_VERSION,
   }));
+}
+
+export function effectiveRolePermissions(role: RoleKey, configured?: string[], catalogVersion?: number): string[] {
+  if (role === "owner") return [...ALL];
+  const base = configured
+    ? configured.filter((permission): permission is Permission => PERMISSIONS.includes(permission as Permission))
+    : (defaultRoleDefinitions().find((definition) => definition.key === role)?.permissions ?? []);
+  if (configured && (catalogVersion ?? 0) < PERMISSION_CATALOG_VERSION) {
+    return [...new Set([...base, ...(LEGACY_COMPATIBILITY_PERMISSIONS[role] ?? [])])];
+  }
+  return base;
 }
 
 export function hasPermission(userPermissions: string[], permission: Permission): boolean {

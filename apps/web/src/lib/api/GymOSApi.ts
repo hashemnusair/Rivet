@@ -1,11 +1,26 @@
 import type {
   AuditCategory,
   AuditEvent,
+  AccountingAccount,
+  AccountingJournalEntryDetail,
+  AccountingJournalEntrySummary,
+  AccountingJournalQuery,
+  AccountingPeriod,
+  AccountingSourcePosting,
+  AccountingSourcePostingQuery,
+  RefreshAccountingSourceQueueInput,
+  RefreshAccountingSourceQueueResult,
+  AccountingTrialBalance,
+  BalanceSheet,
+  CashflowStatement,
+  PostAccountingSourceInput,
+  PostManualJournalInput,
   AutomationExecution,
   AutomationExecutionDetail,
   AutomationRule,
   AutomationRunPreview,
   Branch,
+  BrandKit,
   CancelMembershipInput,
   CashShift,
   CheckInPreview,
@@ -79,6 +94,18 @@ import type {
   UpdateLeadInput,
   UpdateMemberInput,
   UpdateOrganizationSettingsInput,
+  UpdateBrandKitInput,
+  UpdateWorkspaceModulePreferencesInput,
+  WorkspaceAccess,
+  OrganizationEntitlements,
+  GeneralManagerAnalysis,
+  IncomeStatement,
+  ManagementReportInput,
+  WorkspaceModulePreferences,
+  WorkspaceModuleKey,
+  WorkspaceModuleStatus,
+  Zone,
+  UpsertZoneInput,
   UpdatePlanInput,
   UpdateRolePermissionsInput,
   UpdateUserAccessInput,
@@ -789,6 +816,26 @@ export interface GymOSApi {
   reviewVariance(shiftId: UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<CashShift>;
   getDailyReconciliation(query: { branchId: UUID; date: ISODate }): Promise<ReconciliationReport>;
 
+  // Immutable management-accounting ledger (Pro finance workspace)
+  listAccountingAccounts(query?: { search?: string }): Promise<AccountingAccount[]>;
+  listAccountingPeriods(query?: { status?: import("@/lib/domain/types").AccountingPeriodStatus }): Promise<AccountingPeriod[]>;
+  listAccountingJournalEntries(query?: AccountingJournalQuery): Promise<Page<AccountingJournalEntrySummary>>;
+  getAccountingJournalEntry(entryId: UUID): Promise<AccountingJournalEntryDetail>;
+  getAccountingTrialBalance(query?: { branchId?: UUID; periodId?: UUID }): Promise<AccountingTrialBalance>;
+  postManualJournal(input: PostManualJournalInput): Promise<AccountingJournalEntryDetail>;
+  listAccountingSourcePostings(query?: AccountingSourcePostingQuery): Promise<Page<AccountingSourcePosting>>;
+  refreshAccountingSourceQueue(input?: RefreshAccountingSourceQueueInput): Promise<RefreshAccountingSourceQueueResult>;
+  postAccountingSource(input: PostAccountingSourceInput): Promise<AccountingSourcePosting>;
+  reverseAccountingEntry(entryId: UUID, input: { reason: string; idempotencyKey: string }): Promise<AccountingJournalEntryDetail>;
+  closeAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;
+  reopenAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;
+
+  // Management statements and general-manager analysis (Pro reporting workspace)
+  getIncomeStatement(input: ManagementReportInput): Promise<IncomeStatement>;
+  getBalanceSheet(input: ManagementReportInput): Promise<BalanceSheet>;
+  getCashflowStatement(input: ManagementReportInput): Promise<CashflowStatement>;
+  getGeneralManagerAnalysis(input: ManagementReportInput): Promise<GeneralManagerAnalysis>;
+
   // Automations
   listAutomationRules(): Promise<AutomationRule[]>;
   getAutomationRule(id: UUID): Promise<AutomationRule>;
@@ -809,6 +856,14 @@ export interface GymOSApi {
 
   // Settings & users
   getOrganizationSettings(): Promise<OrganizationSettings>;
+  getBrandKit(): Promise<BrandKit>;
+  updateBrandKit(input: UpdateBrandKitInput): Promise<BrandKit>;
+  /** Tenant entitlement/preferences boundary. These are not role permissions. */
+  getWorkspaceAccess(): Promise<WorkspaceAccess>;
+  getOrganizationEntitlements(): Promise<OrganizationEntitlements>;
+  getWorkspaceModulePreferences(): Promise<WorkspaceModulePreferences>;
+  getWorkspaceModuleStatus(moduleKey: WorkspaceModuleKey): Promise<WorkspaceModuleStatus>;
+  updateWorkspaceModulePreferences(input: UpdateWorkspaceModulePreferencesInput): Promise<WorkspaceAccess>;
   updateOrganizationSettings(input: UpdateOrganizationSettingsInput): Promise<OrganizationSettings>;
   updatePaymentMethods(input: PaymentMethod[]): Promise<OrganizationSettings>;
   updateNotificationSettings(input: NotificationSettings): Promise<OrganizationSettings>;
@@ -817,6 +872,38 @@ export interface GymOSApi {
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<import("@/lib/domain/types").OperationalEmailActivationSettings>;
   listBranches(): Promise<Branch[]>;
   upsertBranch(input: { id?: UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<Branch>;
+  listZones(input?: { branchId?: UUID; includeArchived?: boolean }): Promise<Zone[]>;
+  upsertZone(input: UpsertZoneInput): Promise<Zone>;
+  archiveZone(zoneId: UUID): Promise<Zone>;
+
+  // Daily operations (Growth+ workspace module)
+  listProducts(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Product[]>;
+  upsertProduct(input: import("@/lib/domain/types").UpsertProductInput): Promise<import("@/lib/domain/types").Product>;
+  archiveProduct(productId: UUID, reason: string): Promise<import("@/lib/domain/types").Product>;
+  listSuppliers(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Supplier[]>;
+  upsertSupplier(input: import("@/lib/domain/types").UpsertSupplierInput): Promise<import("@/lib/domain/types").Supplier>;
+  archiveSupplier(supplierId: UUID, reason: string): Promise<import("@/lib/domain/types").Supplier>;
+  listInventory(input?: { branchId?: UUID; productId?: UUID }): Promise<import("@/lib/domain/types").InventoryBalance[]>;
+  recordStockMovement(input: { branchId: UUID; productId: UUID; type: import("@/lib/domain/types").StockMovementType; quantity: number; unitCost?: import("@/lib/domain/types").Money; reason?: string; referenceType?: string; referenceId?: UUID; idempotencyKey: string }): Promise<import("@/lib/domain/types").StockMovement>;
+  listStockMovements(query?: { branchId?: UUID; productId?: UUID; page?: number; pageSize?: number }): Promise<import("@/lib/domain/types").Page<import("@/lib/domain/types").StockMovement>>;
+  listLowStockAlerts(input?: { branchId?: UUID; includeDismissed?: boolean }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
+  refreshLowStockAlerts(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
+  dismissLowStockAlert(input: { alertId: UUID; reason: string }): Promise<import("@/lib/domain/types").LowStockAlert>;
+  createPurchaseOrder(input: import("@/lib/domain/types").CreatePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  approvePurchaseOrder(purchaseOrderId: UUID, reason?: string): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  listPurchaseOrders(query?: { branchId?: UUID; status?: import("@/lib/domain/types").PurchaseOrderStatus }): Promise<import("@/lib/domain/types").PurchaseOrder[]>;
+  receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
+
+  listFacilityTasks(query?: { branchId?: UUID; zoneId?: UUID; status?: import("@/lib/domain/types").FacilityTaskStatus; kind?: import("@/lib/domain/types").FacilityTaskKind }): Promise<import("@/lib/domain/types").FacilityTask[]>;
+  upsertFacilityTask(input: import("@/lib/domain/types").UpsertFacilityTaskInput): Promise<import("@/lib/domain/types").FacilityTask>;
+  listEquipmentAssets(query?: { branchId?: UUID; status?: import("@/lib/domain/types").EquipmentAssetStatus }): Promise<import("@/lib/domain/types").EquipmentAsset[]>;
+  upsertEquipmentAsset(input: import("@/lib/domain/types").UpsertEquipmentAssetInput): Promise<import("@/lib/domain/types").EquipmentAsset>;
+  reportEquipmentIssue(input: { branchId: UUID; assetId: UUID; title: string; description?: string; severity: import("@/lib/domain/types").EquipmentIssueSeverity; downtimeDays?: number; safetyStatus?: import("@/lib/domain/types").EquipmentIssue["safetyStatus"] }): Promise<import("@/lib/domain/types").EquipmentIssue>;
+  listEquipmentIssues(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentIssueStatus }): Promise<import("@/lib/domain/types").EquipmentIssue[]>;
+  upsertEquipmentWorkOrder(input: import("@/lib/domain/types").UpsertEquipmentWorkOrderInput): Promise<import("@/lib/domain/types").EquipmentWorkOrder>;
+  listEquipmentWorkOrders(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentWorkOrder["status"] }): Promise<import("@/lib/domain/types").EquipmentWorkOrder[]>;
+  getEquipmentRecommendation(assetId: UUID): Promise<import("@/lib/domain/types").EquipmentRecommendation>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
   previewMemberImport(input: { csv: string; branchId: UUID }): Promise<MemberImportPreview>;
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;

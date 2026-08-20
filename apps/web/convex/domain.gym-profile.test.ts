@@ -141,4 +141,54 @@ describe("gym-controlled public profile", () => {
     });
     expect(states).toEqual(expect.arrayContaining([{ id: first.id, status: "active" }, { id: second.id, status: "active" }]));
   });
+
+  it("does not discard logo, cover, or gallery media referenced by a published profile", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    const storageIds = await t.run(async (ctx) => [
+      await ctx.storage.store(new NodeBlob(["published-logo"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["published-cover"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["published-gallery"]) as unknown as Blob),
+      await ctx.storage.store(new NodeBlob(["unreferenced-draft"]) as unknown as Blob),
+    ]);
+    const request = { organizationId: "org-profile", correlationId: "cor-profile-discard-published", altText: "Profile media", contentType: "image/png" as const, sizeBytes: 16 };
+    const [logo, cover, gallery, unreferenced] = await Promise.all([
+      owner.mutation(internal.media.commit, { ...request, ownerType: "gym_logo" as const, ownerPublicId: "org-profile", storageId: storageIds[0]! }),
+      owner.mutation(internal.media.commit, { ...request, ownerType: "gym_cover" as const, ownerPublicId: "org-profile", storageId: storageIds[1]! }),
+      owner.mutation(internal.media.commit, { ...request, ownerType: "gym_gallery" as const, ownerPublicId: "org-profile", storageId: storageIds[2]! }),
+      owner.mutation(internal.media.commit, { ...request, ownerType: "gym_gallery" as const, ownerPublicId: "org-profile", storageId: storageIds[3]! }),
+    ]);
+
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.save", {
+      shortName: "PROFILE",
+      taglineEn: "Train with a plan",
+      descriptionEn: "A real operating gym in Amman.",
+      category: "Gym",
+      audience: "All members",
+      amenities: [],
+      accentColor: "#123456",
+      logoAssetId: logo.id,
+      coverAssetId: cover.id,
+      galleryAssetIds: [gallery.id],
+    }));
+    await owner.mutation(api.domain.mutate, operation("profiles.gym.publish"));
+
+    for (const asset of [logo, cover, gallery]) {
+      await expectCode(owner.mutation(api.media.discardDraft, { organizationId: "org-profile", assetId: asset.id, correlationId: "cor-profile-discard-published" }), "VALIDATION_ERROR");
+    }
+
+    await owner.mutation(api.media.discardDraft, { organizationId: "org-profile", assetId: unreferenced.id, correlationId: "cor-profile-discard-unreferenced" });
+    const state = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      const published = await Promise.all([logo, cover, gallery].map(async (asset) => {
+        const row = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", asset.id)).unique();
+        return row?.status;
+      }));
+      const unreferencedRow = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", unreferenced.id)).unique();
+      return { published, unreferenced: unreferencedRow };
+    });
+    expect(state.published).toEqual(["active", "active", "active"]);
+    expect(state.unreferenced?.status).toBe("replaced");
+    expect(await t.run(async (ctx) => ctx.storage.get(storageIds[3]!))).toBeNull();
+  });
 });

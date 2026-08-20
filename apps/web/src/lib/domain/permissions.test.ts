@@ -35,6 +35,8 @@ describe("role catalogue", () => {
     expect(manager).toContain("payments.refund");
     expect(manager).toContain("reconciliation.approve_variance");
     expect(manager).toContain("audit.read");
+    expect(manager).toContain("operations.manage");
+    expect(manager).toContain("accounting.post");
   });
 });
 
@@ -67,6 +69,8 @@ describe("least privilege per role", () => {
     const auditor = byKey("auditor").permissions;
     expect(auditor).toContain("audit.read");
     expect(auditor).toContain("reports.financial.read");
+    expect(auditor).not.toContain("operations.manage");
+    expect(auditor).not.toContain("accounting.post");
     for (const write of ["members.write", "memberships.sell", "payments.collect", "payments.refund"] as Permission[]) {
       expect(auditor).not.toContain(write);
     }

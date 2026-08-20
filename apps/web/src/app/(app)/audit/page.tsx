@@ -27,6 +27,8 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   crm: "CRM & trials",
   reconciliation: "Reconciliation",
   automations: "Automations",
+  operations: "Operations",
+  accounting: "Accounting",
   users: "Users & roles",
   settings: "Settings",
 };

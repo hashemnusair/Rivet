@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
+import { TenantBrandProvider } from "@/components/shell/tenant-brand-provider";
 import { Topbar } from "@/components/shell/topbar";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
@@ -82,7 +83,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-paper">
+    <TenantBrandProvider>
+      <div className="min-h-screen bg-paper">
       <Sidebar />
       <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
       {/* The fixed sidebar only exists ≥ lg; below that the drawer overlays
@@ -96,6 +98,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
-    </div>
+      </div>
+    </TenantBrandProvider>
   );
 }

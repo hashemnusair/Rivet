@@ -54,6 +54,449 @@ export type AuditActorRole = RoleKey | "member";
 
 export type BranchScope = "all" | "selected";
 
+export type BrandPaletteKey = "rivet" | "gold" | "red" | "green" | "blue" | "violet";
+
+export interface BrandTokens {
+  primary: string;
+  primaryHover: string;
+  primaryForeground: string;
+  primarySoft: string;
+  primarySoftForeground: string;
+  focusRing: string;
+}
+
+export interface BrandKit {
+  organizationId: UUID;
+  paletteKey: BrandPaletteKey;
+  primaryColor: string;
+  tokens: BrandTokens;
+  logoAssetId?: UUID;
+  logoUrl?: string;
+  logoAltText?: string;
+  version: number;
+  updatedAt?: ISODateTime;
+  updatedById?: UUID;
+}
+
+export type ZoneKind = "floor" | "studio" | "weights" | "cardio" | "functional" | "locker_room" | "bathroom" | "reception" | "storage" | "other";
+
+export interface Zone {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  kind: ZoneKind;
+  capacity?: number;
+  status: "active" | "archived";
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertZoneInput {
+  id?: UUID;
+  branchId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  kind: ZoneKind;
+  capacity?: number;
+  status?: "active" | "archived";
+}
+
+// ---------------------------------------------------------------------------
+// Daily operations
+// ---------------------------------------------------------------------------
+
+export type OperationsRecordStatus = "active" | "archived";
+export type FinancialPostingStatus = "not_posted" | "pending" | "posted" | "failed" | "reversed";
+
+export type ProductUnit = "each" | "kg" | "liter" | "box" | "serving";
+
+export interface Product {
+  id: UUID;
+  organizationId: UUID;
+  sku: string;
+  name: string;
+  description?: string;
+  unit: ProductUnit;
+  reorderPoint: number;
+  targetLevel: number;
+  supplierLeadTimeDays: number;
+  preferredSupplierId?: UUID;
+  defaultUnitCost?: Money;
+  status: OperationsRecordStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertProductInput {
+  id?: UUID;
+  sku: string;
+  name: string;
+  description?: string;
+  unit: ProductUnit;
+  reorderPoint: number;
+  targetLevel: number;
+  supplierLeadTimeDays: number;
+  preferredSupplierId?: UUID;
+  defaultUnitCost?: Money;
+  status?: OperationsRecordStatus;
+}
+
+export interface Supplier {
+  id: UUID;
+  organizationId: UUID;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  terms?: string;
+  leadTimeDays?: number;
+  branchIds: UUID[];
+  preferredProductIds: UUID[];
+  status: OperationsRecordStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertSupplierInput {
+  id?: UUID;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  terms?: string;
+  leadTimeDays?: number;
+  branchIds: UUID[];
+  preferredProductIds?: UUID[];
+  status?: OperationsRecordStatus;
+}
+
+export interface InventoryBalance {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  quantityOnHand: number;
+  committedQuantity: number;
+  availableQuantity: number;
+  lastMovementAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export type StockMovementType = "receive" | "sale" | "consumption" | "adjustment" | "return" | "transfer_in" | "transfer_out" | "waste";
+
+export interface StockMovement {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  type: StockMovementType;
+  quantityDelta: number;
+  quantity: number;
+  unitCost?: Money;
+  reason?: string;
+  referenceType?: string;
+  referenceId?: UUID;
+  idempotencyKey: string;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  occurredAt: ISODateTime;
+  createdAt: ISODateTime;
+  createdById: UUID;
+}
+
+export interface LowStockAlert {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  quantityOnHand: number;
+  committedQuantity: number;
+  availableQuantity: number;
+  recentDailyVelocity: number;
+  supplierLeadTimeDays: number;
+  projectedQuantityAtLeadTime: number;
+  reorderPoint: number;
+  targetLevel: number;
+  status: "open" | "dismissed";
+  dismissedAt?: ISODateTime;
+  dismissedReason?: string;
+  updatedAt: ISODateTime;
+}
+
+export type PurchaseOrderStatus = "draft" | "approved" | "partially_received" | "received" | "cancelled";
+
+export interface PurchaseOrderLine {
+  productId: UUID;
+  sku: string;
+  productName: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  unitCost: Money;
+  lineTotal: Money;
+}
+
+export interface PurchaseOrder {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  supplierId: UUID;
+  supplierName: string;
+  lines: PurchaseOrderLine[];
+  status: PurchaseOrderStatus;
+  currency: string;
+  total: Money;
+  supplierInvoiceReference?: string;
+  notes?: string;
+  approvedAt?: ISODateTime;
+  approvedById?: UUID;
+  receivedAt?: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface CreatePurchaseOrderInput {
+  branchId: UUID;
+  supplierId: UUID;
+  lines: Array<{ productId: UUID; quantity: number; unitCost: Money }>;
+  supplierInvoiceReference?: string;
+  notes?: string;
+}
+
+export interface ReceivePurchaseOrderInput {
+  purchaseOrderId: UUID;
+  lines?: Array<{ productId: UUID; quantity: number; unitCost?: Money }>;
+  idempotencyKey: string;
+}
+
+export interface SupplierNotificationResult {
+  purchaseOrderId: UUID;
+  status: "not_configured" | "sandboxed";
+  channel: "supplier_email" | "supplier_sms";
+  detail: string;
+  attemptedAt: ISODateTime;
+}
+
+export type FacilityTaskKind = "cleaning" | "inspection" | "incident";
+export type FacilityTaskSeverity = "low" | "medium" | "high" | "critical";
+export type FacilityTaskStatus = "open" | "in_progress" | "blocked" | "completed" | "cancelled";
+
+export interface TrafficContext {
+  checkInsLastHour?: number;
+  occupancyPercent?: number;
+  capturedAt?: ISODateTime;
+}
+
+export interface FacilityTask {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  zoneId: UUID;
+  zoneName: string;
+  kind: FacilityTaskKind;
+  severity: FacilityTaskSeverity;
+  status: FacilityTaskStatus;
+  title: string;
+  notes?: string;
+  assigneeId?: UUID;
+  dueAt?: ISODateTime;
+  completedAt?: ISODateTime;
+  trafficContext?: TrafficContext;
+  suppliesCost?: Money;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertFacilityTaskInput {
+  id?: UUID;
+  branchId: UUID;
+  zoneId: UUID;
+  kind: FacilityTaskKind;
+  severity: FacilityTaskSeverity;
+  status?: FacilityTaskStatus;
+  title: string;
+  notes?: string;
+  assigneeId?: UUID;
+  dueAt?: ISODateTime;
+  trafficContext?: TrafficContext;
+  suppliesCost?: Money;
+}
+
+export type EquipmentAssetStatus = "active" | "maintenance" | "retired" | "replaced";
+
+export interface EquipmentAsset {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  zoneId?: UUID;
+  code: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  purchaseDate?: ISODate;
+  installationDate?: ISODate;
+  purchaseCost?: Money;
+  warrantyEndDate?: ISODate;
+  status: EquipmentAssetStatus;
+  expectedServiceIntervalDays?: number;
+  expectedUsefulLifeMonths?: number;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertEquipmentAssetInput {
+  id?: UUID;
+  branchId: UUID;
+  zoneId?: UUID;
+  code: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  purchaseDate?: ISODate;
+  installationDate?: ISODate;
+  purchaseCost?: Money;
+  warrantyEndDate?: ISODate;
+  status?: EquipmentAssetStatus;
+  expectedServiceIntervalDays?: number;
+  expectedUsefulLifeMonths?: number;
+}
+
+export type EquipmentIssueSeverity = "low" | "medium" | "high" | "critical";
+export type EquipmentIssueStatus = "open" | "in_progress" | "resolved" | "cancelled";
+
+export interface EquipmentIssue {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  title: string;
+  description?: string;
+  severity: EquipmentIssueSeverity;
+  status: EquipmentIssueStatus;
+  reportedAt: ISODateTime;
+  resolvedAt?: ISODateTime;
+  downtimeDays?: number;
+  safetyStatus: "unknown" | "safe_to_operate" | "out_of_service";
+  createdById: UUID;
+}
+
+export interface EquipmentWorkOrder {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  issueId?: UUID;
+  status: "draft" | "approved" | "in_progress" | "completed" | "cancelled";
+  description: string;
+  assigneeId?: UUID;
+  vendorName?: string;
+  partsCost?: Money;
+  laborCost?: Money;
+  totalCost?: Money;
+  replacementEstimate?: Money;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  openedAt: ISODateTime;
+  completedAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertEquipmentWorkOrderInput {
+  id?: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  issueId?: UUID;
+  status?: EquipmentWorkOrder["status"];
+  description: string;
+  assigneeId?: UUID;
+  vendorName?: string;
+  partsCost?: Money;
+  laborCost?: Money;
+  replacementEstimate?: Money;
+}
+
+export interface EquipmentRecommendation {
+  assetId: UUID;
+  decision: "fix" | "replace" | "insufficient_data";
+  confidence: "recorded_inputs_only";
+  repairCost?: Money;
+  replacementEstimate?: Money;
+  issueCount: number;
+  downtimeDays: number;
+  assetAgeMonths?: number;
+  expectedUsefulLifeMonths?: number;
+  rationale: string[];
+}
+
+
+/**
+ * The five launch pillars of the gym operating system. These keys are a
+ * product contract, not route names: a route may consume more than one
+ * module, and role/branch permissions remain a separate authorization layer.
+ */
+export type WorkspaceModuleKey =
+  | "foundation"
+  | "revenue"
+  | "operations"
+  | "finance"
+  | "reporting";
+
+export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro";
+
+export interface WorkspaceModuleCatalogEntry {
+  key: WorkspaceModuleKey;
+  version: number;
+  label: string;
+  description: string;
+  dependencies: WorkspaceModuleKey[];
+  required: boolean;
+  configurable: boolean;
+  availableOn: WorkspaceModulePlan[];
+  routePrefixes: string[];
+}
+
+export interface OrganizationEntitlements {
+  organizationId: UUID;
+  catalogVersion: number;
+  subscriptionPlan?: WorkspaceModulePlan;
+  entitledModules: WorkspaceModuleKey[];
+  source: "subscription_plan" | "legacy_default";
+  updatedAt?: ISODateTime;
+}
+
+export interface WorkspaceModulePreferences {
+  organizationId: UUID;
+  catalogVersion: number;
+  enabledModules: WorkspaceModuleKey[];
+  updatedAt?: ISODateTime;
+  updatedById?: UUID;
+}
+
+export interface WorkspaceModuleStatus extends WorkspaceModuleCatalogEntry {
+  entitled: boolean;
+  enabled: boolean;
+  lockedReason?: "not_entitled" | "dependency_disabled" | "required";
+}
+
+export interface WorkspaceAccess {
+  catalogVersion: number;
+  catalog: WorkspaceModuleCatalogEntry[];
+  entitlements: OrganizationEntitlements;
+  preferences: WorkspaceModulePreferences;
+  modules: WorkspaceModuleStatus[];
+}
+
+export interface UpdateWorkspaceModulePreferencesInput {
+  enabledModules: WorkspaceModuleKey[];
+}
+
 export interface Organization {
   id: UUID;
   name: string;
@@ -68,6 +511,7 @@ export interface Organization {
   nextReceiptNumber: number;
   receiptFooter: string;
   status: "active" | "suspended";
+  brand?: BrandKit;
 }
 
 export interface Branch {
@@ -103,11 +547,14 @@ export interface Session {
     currency: string;
     timezone: string;
     locale: string;
+    brand?: BrandKit;
   };
   branches: Array<{ id: UUID; name: string; code: string }>;
   activeBranchId?: UUID;
   roles: RoleKey[];
   permissions: string[];
+  /** Workspace entitlements/preferences are distinct from role permissions. */
+  workspace?: WorkspaceAccess;
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,6 +1660,332 @@ export interface ReconciliationReport {
 }
 
 // ---------------------------------------------------------------------------
+// Management accounting ledger
+// ---------------------------------------------------------------------------
+
+export type AccountingAccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+export type AccountingStatementGroup =
+  | "asset_current"
+  | "asset_noncurrent"
+  | "liability_current"
+  | "liability_noncurrent"
+  | "equity"
+  | "revenue"
+  | "cost_of_sales"
+  | "operating_expense"
+  | "other_income"
+  | "other_expense";
+export type AccountingCashflowGroup = "operating" | "investing" | "financing" | "non_cash";
+export type AccountingNormalBalance = "debit" | "credit";
+export type AccountingPeriodStatus = "open" | "closed";
+export type AccountingJournalStatus = "posted" | "reversed";
+export type AccountingSourceStatus = "pending" | "posted" | "unconfigured" | "excluded" | "failed" | "reversed";
+export type AccountingSourceType =
+  | "payment"
+  | "refund"
+  | "void"
+  | "membership_sale"
+  | "membership_renewal"
+  | "purchase_order_receipt"
+  | "stock_movement"
+  | "facility_supplies"
+  | "equipment_acquisition"
+  | "equipment_repair";
+
+export interface AccountingAccount {
+  id: UUID;
+  organizationId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  accountType: AccountingAccountType;
+  statementGroup: AccountingStatementGroup;
+  cashflowGroup: AccountingCashflowGroup;
+  normalBalance: AccountingNormalBalance;
+  active: boolean;
+  isSystem: boolean;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingPeriod {
+  id: UUID;
+  organizationId: UUID;
+  periodStart: ISODate;
+  periodEnd: ISODate;
+  status: AccountingPeriodStatus;
+  closedAt?: ISODateTime;
+  closedById?: UUID;
+  closeReason?: string;
+  reopenedAt?: ISODateTime;
+  reopenedById?: UUID;
+  reopenReason?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingJournalLine {
+  id: UUID;
+  journalEntryId: UUID;
+  branchId?: UUID;
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  debit: Money;
+  credit: Money;
+  description?: string;
+  statementGroup: AccountingStatementGroup;
+  cashflowGroup: AccountingCashflowGroup;
+}
+
+export interface AccountingJournalEntrySummary {
+  id: UUID;
+  organizationId: UUID;
+  branchId?: UUID;
+  scope: "branch" | "consolidated";
+  currency: string;
+  postingDate: ISODate;
+  periodId?: UUID;
+  status: AccountingJournalStatus;
+  memo: string;
+  sourceType?: AccountingSourceType;
+  sourceId?: UUID;
+  policyCode?: string;
+  policyVersion?: number;
+  totalDebit: Money;
+  totalCredit: Money;
+  lineCount: number;
+  createdAt: ISODateTime;
+  postedAt: ISODateTime;
+}
+
+export interface AccountingJournalEntryDetail extends AccountingJournalEntrySummary {
+  reason?: string;
+  idempotencyKey: string;
+  reversalOfEntryId?: UUID;
+  reversedByEntryId?: UUID;
+  createdById: UUID;
+  lines: AccountingJournalLine[];
+}
+
+export interface AccountingTrialBalanceRow {
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  statementGroup: AccountingStatementGroup;
+  debit: Money;
+  credit: Money;
+  balance: Money;
+}
+
+export interface AccountingTrialBalance {
+  organizationId: UUID;
+  branchId?: UUID;
+  periodId?: UUID;
+  currency: string;
+  rows: AccountingTrialBalanceRow[];
+  totalDebit: Money;
+  totalCredit: Money;
+}
+
+export interface AccountingSourcePosting {
+  id: UUID;
+  organizationId: UUID;
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  branchId?: UUID;
+  status: AccountingSourceStatus;
+  amount?: Money;
+  currency: string;
+  policyCode?: string;
+  policyVersion?: number;
+  journalEntryId?: UUID;
+  idempotencyKey?: string;
+  reason?: string;
+  details?: Record<string, unknown>;
+  occurredAt: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingJournalQuery extends ListQuery {
+  branchId?: UUID;
+  periodId?: UUID;
+  status?: AccountingJournalStatus;
+  from?: ISODate;
+  to?: ISODate;
+}
+
+export interface AccountingSourcePostingQuery extends ListQuery {
+  branchId?: UUID;
+  sourceType?: AccountingSourceType;
+  status?: AccountingSourceStatus;
+}
+
+export interface RefreshAccountingSourceQueueInput {
+  branchId?: UUID;
+  sourceTypes?: AccountingSourceType[];
+}
+
+export interface RefreshAccountingSourceQueueResult {
+  organizationId: UUID;
+  branchId?: UUID;
+  scanned: number;
+  created: number;
+  updated: number;
+  skippedPosted: number;
+  pending: number;
+  unconfigured: number;
+  excluded: number;
+  items: AccountingSourcePosting[];
+}
+
+export interface PostManualJournalInput {
+  branchId?: UUID;
+  scope?: "branch" | "consolidated";
+  postingDate?: ISODate;
+  memo: string;
+  reason: string;
+  idempotencyKey: string;
+  lines: Array<{ accountId: UUID; debit: Money; credit: Money; description?: string }>;
+}
+
+export interface PostAccountingSourceInput {
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  idempotencyKey: string;
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Management reporting projections
+// ---------------------------------------------------------------------------
+
+export interface ManagementReportInput {
+  fromDate: ISODate;
+  toDate: ISODate;
+  branchId?: UUID;
+}
+
+export type ManagementMetricStatus = "available" | "not_available" | "not_configured";
+export type ManagementQueueCoverage = "proven" | "refresh_required" | "unavailable";
+export type ManagementReconciliationStatus = "proven" | "unproven" | "not_available";
+
+export interface ManagementReportPolicyVersion {
+  code: string;
+  version: number;
+}
+
+export interface ManagementReportCompleteness {
+  organizationId: UUID;
+  branchId?: UUID;
+  fromDate: ISODate;
+  toDate: ISODate;
+  timezone: string;
+  currency: string;
+  generatedAt: ISODateTime;
+  policyVersions: ManagementReportPolicyVersion[];
+  sourcePostingCounts: Record<AccountingSourceStatus, number>;
+  queueCoverage: ManagementQueueCoverage;
+  lastQueueProjectionAt?: ISODateTime;
+  warnings: string[];
+  disclaimer: string;
+}
+
+export interface ManagementStatementLine {
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  amount: Money;
+  entryIds: UUID[];
+}
+
+export interface ManagementStatementSection {
+  lines: ManagementStatementLine[];
+  total: Money;
+}
+
+export interface IncomeStatement extends ManagementReportCompleteness {
+  revenue: ManagementStatementSection;
+  costOfSales: ManagementStatementSection;
+  operatingExpenses: ManagementStatementSection;
+  otherIncome: ManagementStatementSection;
+  otherExpenses: ManagementStatementSection;
+  totalRevenue: Money;
+  totalCosts: Money;
+  netIncome: Money;
+  membershipRevenueRecognition: ManagementMetricStatus;
+}
+
+export interface BalanceSheetSections {
+  current: ManagementStatementSection;
+  noncurrent: ManagementStatementSection;
+}
+
+export interface BalanceSheet extends ManagementReportCompleteness {
+  asOfDate: ISODate;
+  assets: BalanceSheetSections;
+  liabilities: BalanceSheetSections;
+  equity: ManagementStatementSection;
+  currentEarnings: Money;
+  totalAssets: Money;
+  totalLiabilities: Money;
+  totalEquity: Money;
+  totalLiabilitiesAndEquity: Money;
+  difference: Money;
+  balanced: boolean;
+}
+
+export type ManagementCashflowCategory = "operating" | "investing" | "financing";
+
+export interface CashflowSection {
+  category: ManagementCashflowCategory;
+  lines: ManagementStatementLine[];
+  netChange: Money;
+}
+
+export interface CashflowReconciliation {
+  status: ManagementReconciliationStatus;
+  /** Closing cash implied by opening cash plus classified in-period movement. */
+  expectedClosingCash: Money;
+  /** Independent cash-account/trial-balance position through the as-of date. */
+  asOfCash: Money;
+  /** expectedClosingCash - asOfCash; zero is arithmetic agreement only. */
+  difference: Money;
+  note?: string;
+}
+
+export interface CashflowStatement extends ManagementReportCompleteness {
+  openingCash: Money;
+  operating: CashflowSection;
+  investing: CashflowSection;
+  financing: CashflowSection;
+  netChange: Money;
+  closingCash: Money;
+  reconciliationDifference: Money;
+  reconciliationStatus: ManagementReconciliationStatus;
+  reconciliation: CashflowReconciliation;
+  balanced: boolean;
+  classificationPolicy: { code: string; version: number; description: string };
+}
+
+export interface ManagementAnalysisMetric {
+  key: string;
+  label: string;
+  status: ManagementMetricStatus;
+  value?: Money | number;
+  unit?: "money" | "count" | "days";
+  sourceCount: number;
+  drilldownIds: UUID[];
+  note?: string;
+}
+
+export interface GeneralManagerAnalysis extends ManagementReportCompleteness {
+  metrics: ManagementAnalysisMetric[];
+}
+
+// ---------------------------------------------------------------------------
 // Automations
 // ---------------------------------------------------------------------------
 
@@ -1355,6 +2128,8 @@ export type AuditCategory =
   | "crm"
   | "reconciliation"
   | "automations"
+  | "operations"
+  | "accounting"
   | "users"
   | "settings";
 
@@ -1466,15 +2241,19 @@ export interface RoleDefinition {
   permissions: string[];
   discountLimitMinor: number; // max discount without approval, in minor units
   isSystem: boolean;
+  /** Server-owned permission catalogue version, absent on legacy rows. */
+  catalogVersion?: number;
 }
 
 export interface OrganizationSettings {
   organization: Organization;
+  brand: BrandKit;
   branches: Branch[];
   paymentMethods: PaymentMethod[];
   roles: RoleDefinition[];
   notifications: NotificationSettings;
   operationalPolicies: OperationalPolicies;
+  workspace?: WorkspaceAccess;
 }
 
 export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo";
@@ -1620,6 +2399,12 @@ export type UpdateOrganizationSettingsInput = Partial<{
   receiptPrefix: string;
   receiptFooter: string;
 }>;
+
+export interface UpdateBrandKitInput {
+  paletteKey: BrandPaletteKey;
+  primaryColor?: string;
+  logoAssetId?: UUID | null;
+}
 
 export interface InviteUserInput {
   name: string;

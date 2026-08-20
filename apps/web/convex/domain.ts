@@ -18,7 +18,7 @@ import {
   type OrganizationRole,
   type RequestArgs,
 } from "./security";
-import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
+import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, roleDiscountLimit, rolePermissions, toFrontendRole } from "./permissions";
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
@@ -27,6 +27,22 @@ import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount }
 import { logRedactedServerError } from "./telemetry";
 import { marketingSuppressionReason } from "./marketing";
 import { enqueueOperationalEmail } from "./operationalEmail";
+import {
+  buildWorkspaceAccess,
+  entitledModulesForPlan,
+  requireWorkspaceModule as requireConfiguredWorkspaceModule,
+  resolveWorkspaceEntitlements,
+  resolveWorkspacePreferences,
+  validateWorkspaceModuleSelection,
+  WORKSPACE_MODULE_CATALOG,
+  WORKSPACE_MODULE_CATALOG_VERSION,
+  type WorkspaceModuleKey,
+  type WorkspaceModulePlan,
+} from "./workspaceModules";
+import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
+import { operationsMutation, operationsQuery } from "./operations";
+import { accountingMutation, accountingQuery } from "./accounting";
+import { managementReportQuery } from "./managementReports";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -38,6 +54,7 @@ type DomainRecord = Doc<"domainRecords">;
 type Branch = Doc<"branches">;
 type Organization = Doc<"organizations">;
 type User = Doc<"users">;
+type Zone = Doc<"zones">;
 
 const OPERATION_ARGS = {
   operation: v.string(),
@@ -65,6 +82,7 @@ const DEFAULT_NOTIFICATIONS = {
 };
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ZONE_KINDS = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"] as const;
 
 function normalizedTrialWindow(value: Data): Data {
   if (typeof value.enabled === "boolean" || value.opensAt || value.closesAt) {
@@ -637,6 +655,11 @@ async function branchByPublicId(ctx: ReadContext, organizationId: Id<"organizati
     .unique();
 }
 
+async function zoneByPublicId(ctx: ReadContext, organizationId: Id<"organizations">, id?: string): Promise<Zone | null> {
+  if (!id) return null;
+  return await ctx.db.query("zones").withIndex("by_public_id", (q) => q.eq("organizationId", organizationId).eq("publicId", id)).unique();
+}
+
 async function recordsOf(ctx: ReadContext, actor: ActorContext, entityType: string): Promise<DomainRecord[]> {
   const records = await ctx.db
     .query("domainRecords")
@@ -794,6 +817,90 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
   };
 }
 
+function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
+  return value === "Starter" || value === "Growth" || value === "Pro" ? value : undefined;
+}
+
+async function workspaceEntitlementRecord(ctx: ReadContext, actor: ActorContext) {
+  return await ctx.db
+    .query("organizationEntitlements")
+    .withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id))
+    .unique();
+}
+
+async function workspacePreferencesRecord(ctx: ReadContext, actor: ActorContext) {
+  return await ctx.db
+    .query("workspaceModulePreferences")
+    .withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id))
+    .unique();
+}
+
+async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+  const row = await workspaceEntitlementRecord(ctx, actor);
+  const plan = workspacePlan(actor.organization.subscriptionPlan);
+  const resolved = resolveWorkspaceEntitlements(plan, row ? {
+    subscriptionPlan: row.subscriptionPlan,
+    entitledModules: row.entitledModules,
+    source: row.source,
+    updatedAt: row.updatedAt,
+  } : undefined);
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+    subscriptionPlan: resolved.subscriptionPlan,
+    entitledModules: resolved.entitledModules,
+    source: resolved.source,
+    updatedAt: row ? utcIso(row.updatedAt) : undefined,
+  };
+}
+
+async function workspacePreferencesData(ctx: ReadContext, actor: ActorContext, entitledModules: WorkspaceModuleKey[]): Promise<Data> {
+  const row = await workspacePreferencesRecord(ctx, actor);
+  const updatedById = row ? await publicUserIdFromId(ctx, actor.organization._id, row.updatedByUserId) : undefined;
+  const resolved = resolveWorkspacePreferences(entitledModules, row ? {
+    enabledModules: row.enabledModules,
+    updatedAt: row.updatedAt,
+    updatedById,
+  } : undefined);
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+    enabledModules: resolved.enabledModules,
+    updatedAt: row ? utcIso(row.updatedAt) : undefined,
+    updatedById,
+  };
+}
+
+async function workspaceAccessData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+  const entitlements = await workspaceEntitlementsData(ctx, actor);
+  const entitledModules = entitlements.entitledModules as WorkspaceModuleKey[];
+  const preferences = await workspacePreferencesData(ctx, actor, entitledModules);
+  return buildWorkspaceAccess(publicOrganizationId(actor.organization), entitlements as {
+    catalogVersion: number;
+    subscriptionPlan?: WorkspaceModulePlan;
+    entitledModules: WorkspaceModuleKey[];
+    source: "subscription_plan" | "legacy_default";
+    updatedAt?: string;
+  }, preferences as {
+    catalogVersion: number;
+    enabledModules: WorkspaceModuleKey[];
+    updatedAt?: string;
+    updatedById?: string;
+  });
+}
+
+function requireWorkspaceModule(actor: ActorContext, access: Data, moduleKey: WorkspaceModuleKey): void {
+  const status = arrayValue(access.modules).map(data).find((item) => item.key === moduleKey);
+  try {
+    requireConfiguredWorkspaceModule(moduleKey, {
+      entitledModules: (data(access.entitlements).entitledModules ?? []) as WorkspaceModuleKey[],
+      enabledModules: (data(access.preferences).enabledModules ?? []) as WorkspaceModuleKey[],
+    });
+  } catch {
+    domainError("FEATURE_NOT_AVAILABLE", `The ${moduleKey} workspace module is not enabled for this organization.`, { correlationId: actor.correlationId, details: { module: moduleKey, reason: status?.lockedReason ?? "not_entitled" } });
+  }
+}
+
 async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContext, raw: unknown): Promise<Data> {
   const value = data(raw);
   const entry = data(value.entry);
@@ -905,6 +1012,48 @@ function branchView(branch: Branch, organizationId: string): Data {
   };
 }
 
+function zoneView(zone: Zone, organizationId: string, branchId: string): Data {
+  return {
+    id: zone.publicId,
+    // Convex document IDs are an internal persistence detail. The typed API
+    // contract exposes stable public IDs consistently with branches and the
+    // rest of the authenticated workspace.
+    organizationId,
+    branchId,
+    code: zone.code,
+    name: zone.name,
+    nameAr: zone.nameAr,
+    kind: zone.kind,
+    capacity: zone.capacity,
+    status: zone.status,
+    createdAt: utcIso(zone.createdAt),
+    updatedAt: utcIso(zone.updatedAt),
+  };
+}
+
+async function brandKitView(ctx: ReadContext, organization: Organization): Promise<Data> {
+  const paletteKey: BrandPaletteKey = isBrandPaletteKey(organization.brandPaletteKey) ? organization.brandPaletteKey : DEFAULT_BRAND_PALETTE;
+  const primaryColor = normalizeBrandHex(organization.brandPrimaryColor) ?? BRAND_PALETTE_PRESETS[paletteKey];
+  const logoAssetId = organization.brandLogoAssetId;
+  const logo = logoAssetId
+    ? await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", logoAssetId)).unique()
+    : null;
+  const logoIsUsable = Boolean(logo && logo.status === "active" && logo.visibility === "public" && logo.ownerType === "gym_logo" && logo.ownerPublicId === publicOrganizationId(organization));
+  const logoUrl = logoIsUsable && logo ? await ctx.storage.getUrl(logo.storageId) : undefined;
+  return {
+    organizationId: publicOrganizationId(organization),
+    paletteKey,
+    primaryColor,
+    tokens: deriveBrandTokens(primaryColor),
+    logoAssetId: logoIsUsable ? logoAssetId : undefined,
+    logoUrl: logoIsUsable ? logoUrl ?? undefined : undefined,
+    logoAltText: logoIsUsable ? logo?.altText : undefined,
+    version: organization.brandVersion ?? 0,
+    updatedAt: organization.brandUpdatedAt ? utcIso(organization.brandUpdatedAt) : undefined,
+    updatedById: organization.brandUpdatedByUserId ? await publicUserIdFromId(ctx, organization._id, organization.brandUpdatedByUserId) : undefined,
+  };
+}
+
 async function accessibleBranches(ctx: ReadContext, actor: ActorContext): Promise<Branch[]> {
   const branches = await ctx.db
     .query("branches")
@@ -926,7 +1075,8 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
       key: frontendRole(role),
       label: definition?.label ?? fallback.label,
       description: definition?.description ?? fallback.description,
-      permissions: definition?.permissions ?? fallback.permissions,
+      permissions: rolePermissions(role, definition?.permissions, definition?.catalogVersion),
+      catalogVersion: definition?.catalogVersion ?? PERMISSION_CATALOG_VERSION,
       discountLimitMinor: definition?.discountLimitMinor ?? fallback.discountLimitMinor,
       isSystem: definition?.isSystem ?? true,
     };
@@ -935,6 +1085,8 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
 
 async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchId?: string): Promise<Data> {
   const branches = await accessibleBranches(ctx, actor);
+  const workspace = await workspaceAccessData(ctx, actor);
+  const brand = await brandKitView(ctx, actor.organization);
   let selected: Branch | undefined;
   if (activeBranchId) {
     selected = branches.find((branch) => publicBranchId(branch) === activeBranchId);
@@ -950,11 +1102,13 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       currency: actor.organization.currency,
       timezone: actor.organization.timezone,
       locale: actor.organization.locale ?? "en-JO",
+      brand,
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
     activeBranchId: selected ? publicBranchId(selected) : undefined,
     roles: [frontendRole(actor.role)],
     permissions: actor.permissions,
+    workspace,
   };
 }
 
@@ -1490,6 +1644,13 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
 async function publicBranchIdFromId(ctx: ReadContext, organizationId: Id<"organizations">, id: Id<"branches">): Promise<string> {
   const branch = await ctx.db.get(id);
   return branch?.publicId ?? id;
+}
+
+async function publicUserIdFromId(ctx: ReadContext, organizationId: Id<"organizations">, id: Id<"users">): Promise<string | undefined> {
+  const user = await ctx.db.get(id);
+  if (!user) return undefined;
+  const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organizationId).eq("userId", id)).unique();
+  return membership ? publicUserId(user) : undefined;
 }
 
 function marketplaceView(value: Data, includePlatformFields = false): Data {
@@ -3072,14 +3233,34 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "settings.get": {
       const branches = await accessibleBranches(ctx, actor);
       const settings = await settingsData(ctx, actor);
+      const brand = await brandKitView(ctx, actor.organization);
       return {
-        organization: organizationView(actor.organization),
+        organization: { ...organizationView(actor.organization), brand },
+        brand,
         branches: branches.map((branch) => branchView(branch, orgId)),
         paymentMethods: settings.paymentMethods,
         roles: await roleViews(ctx, actor),
         notifications: settings.notifications,
         operationalPolicies: settings.operationalPolicies,
+        workspace: await workspaceAccessData(ctx, actor),
       };
+    }
+    case "workspace.access":
+      return await workspaceAccessData(ctx, actor);
+    case "workspace.entitlements": {
+      const access = await workspaceAccessData(ctx, actor);
+      return access.entitlements;
+    }
+    case "workspace.preferences": {
+      const access = await workspaceAccessData(ctx, actor);
+      return access.preferences;
+    }
+    case "workspace.module": {
+      const key = stringValue(input.moduleKey);
+      if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "Unknown workspace module.", { correlationId: actor.correlationId, details: { module: key } });
+      const access = await workspaceAccessData(ctx, actor);
+      requireWorkspaceModule(actor, access, key as WorkspaceModuleKey);
+      return arrayValue(access.modules).map(data).find((item) => item.key === key);
     }
     case "settings.operationalEmail.get": {
       requirePermission(actor, "settings.manage");
@@ -3089,8 +3270,31 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
       return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
     }
+    case "settings.brand.get":
+      requirePermission(actor, "settings.manage");
+      return await brandKitView(ctx, actor.organization);
     case "branches.list":
       return (await accessibleBranches(ctx, actor)).map((branch) => branchView(branch, orgId));
+    case "zones.list": {
+      const requestedBranchId = optionalString(input.branchId);
+      const branches = requestedBranchId
+        ? [await branchByPublicId(ctx, actor.organization._id, requestedBranchId)]
+        : await accessibleBranches(ctx, actor);
+      const validBranches = branches.filter((branch): branch is Branch => Boolean(branch));
+      for (const branch of validBranches) assertBranchAccess(actor, branch);
+      if (requestedBranchId && validBranches.length === 0) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
+      const rows = (await Promise.all(validBranches.map((branch) => ctx.db.query("zones").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat();
+      const branchIds = new Map(validBranches.map((branch) => [String(branch._id), publicBranchId(branch)]));
+      const includeArchived = input.includeArchived === true;
+      return rows
+        .filter((zone) => includeArchived || zone.status === "active")
+        .sort((left, right) => left.code.localeCompare(right.code))
+        .map((zone) => {
+          const branchId = branchIds.get(String(zone.branchId));
+          if (!branchId) domainError("NOT_FOUND", "Zone branch not found.", { correlationId: actor.correlationId });
+          return zoneView(zone, orgId, branchId);
+        });
+    }
     case "profiles.gym.get": {
       requirePermission(actor, "profiles.manage");
       return await currentGymProfile(ctx, actor);
@@ -3566,6 +3770,36 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "dashboard":
       return await dashboardData(ctx, actor, input);
+    case "operations.products.list":
+    case "operations.suppliers.list":
+    case "operations.inventory.list":
+    case "operations.stock_movements.list":
+    case "operations.low_stock.list":
+    case "operations.purchase_orders.list":
+    case "operations.facility_tasks.list":
+    case "operations.equipment_assets.list":
+    case "operations.equipment_issues.list":
+    case "operations.equipment_work_orders.list":
+    case "operations.equipment.recommendation":
+      return await operationsQuery(ctx, actor, operation, input);
+    case "accounting.accounts.list":
+    case "finance.accounts.list":
+    case "accounting.periods.list":
+    case "finance.periods.list":
+    case "accounting.journal_entries.list":
+    case "finance.journal_entries.list":
+    case "accounting.journal_entries.get":
+    case "finance.journal_entries.get":
+    case "accounting.trial_balance":
+    case "finance.trial_balance":
+    case "accounting.source_postings.list":
+    case "finance.source_postings.list":
+      return await accountingQuery(ctx, actor, operation, input);
+    case "reports.income_statement":
+    case "reports.balance_sheet":
+    case "reports.cashflow_statement":
+    case "reports.gm_analysis":
+      return await managementReportQuery(ctx, actor, operation, input);
     default:
       domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { correlationId: actor.correlationId });
   }
@@ -4880,6 +5114,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           subscriptionStatusReason: reason,
           updatedAt: Date.now(),
         });
+        const modulePlan = workspacePlan(requestedPlan);
+        if (modulePlan) {
+          const entitledModules = entitledModulesForPlan(modulePlan);
+          const entitlementRow = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+          if (entitlementRow) await ctx.db.patch(entitlementRow._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: Date.now() });
+          else await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: Date.now(), updatedAt: Date.now() });
+        }
       }
     }
     await insertPlatformAudit(ctx, admin, {
@@ -5183,6 +5424,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   const actor = await requireActor(ctx, request);
+  const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
     case "support.reply": {
@@ -6845,6 +7087,69 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       return await automationExecutionView(ctx, actor, { ...executionRecord, data: updated, updatedAt: Date.now() });
     }
+    case "workspace.preferences.update": {
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only an organization owner can change workspace module preferences.", { correlationId: actor.correlationId });
+      const access = await workspaceAccessData(ctx, actor);
+      const inputModules = arrayValue(input.enabledModules);
+      let enabledModules: WorkspaceModuleKey[];
+      try {
+        enabledModules = validateWorkspaceModuleSelection(inputModules, access.entitlements.entitledModules as WorkspaceModuleKey[]);
+      } catch (error) {
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { correlationId: actor.correlationId });
+      }
+      const existing = await workspacePreferencesRecord(ctx, actor);
+      const before = access.preferences.enabledModules as WorkspaceModuleKey[];
+      const changed = JSON.stringify(before) !== JSON.stringify(enabledModules);
+      const now = Date.now();
+      if (existing) {
+        await ctx.db.patch(existing._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: actor.user._id, updatedAt: now });
+      } else {
+        await ctx.db.insert("workspaceModulePreferences", { organizationId: actor.organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: actor.user._id, createdAt: now, updatedAt: now });
+      }
+      if (changed) {
+        await insertAudit(ctx, actor, {
+          category: "settings",
+          action: "workspace.module_preferences.update",
+          entityType: "workspace_module_preferences",
+          entityId: publicOrganizationId(actor.organization),
+          entityLabel: actor.organization.name,
+          summary: "Workspace module preferences updated",
+          before: { enabledModules: before.join(",") },
+          after: { enabledModules: enabledModules.join(",") },
+        });
+      }
+      return await workspaceAccessData(ctx, actor);
+    }
+    case "settings.brand.update": {
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the organization owner can change the Brand Kit.", { correlationId: actor.correlationId });
+      const paletteKeyInput = input.paletteKey;
+      if (!isBrandPaletteKey(paletteKeyInput)) domainError("VALIDATION_ERROR", "Choose a supported Brand Kit palette.", { correlationId: actor.correlationId, fieldErrors: { paletteKey: ["Choose a supported palette."] } });
+      const requestedColor = input.primaryColor === undefined || input.primaryColor === null || input.primaryColor === ""
+        ? BRAND_PALETTE_PRESETS[paletteKeyInput]
+        : normalizeBrandHex(input.primaryColor);
+      if (!requestedColor) domainError("VALIDATION_ERROR", "Primary color must be a six-digit hex color.", { correlationId: actor.correlationId, fieldErrors: { primaryColor: ["Use #RRGGBB."] } });
+      const requestedLogoId = input.logoAssetId === null || input.logoAssetId === "" ? undefined : optionalString(input.logoAssetId);
+      let logo: Doc<"mediaAssets"> | null = null;
+      if (requestedLogoId) {
+        logo = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedLogoId)).unique();
+        if (!logo || logo.ownerType !== "gym_logo" || logo.ownerPublicId !== publicOrganizationId(actor.organization) || logo.visibility !== "public" || !["pending", "active"].includes(logo.status)) {
+          domainError("NOT_FOUND", "Brand logo was not found in this organization.", { correlationId: actor.correlationId });
+        }
+      }
+      const previousLogoId = (actor.organization as Organization & { brandLogoAssetId?: string }).brandLogoAssetId;
+      const now = Date.now();
+      if (logo?.status === "pending") await ctx.db.patch(logo._id, { status: "active", deleteAfter: undefined, updatedAt: now });
+      if (previousLogoId && previousLogoId !== requestedLogoId) {
+        const previous = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", previousLogoId)).unique();
+        if (previous && previous.status === "active") await ctx.db.patch(previous._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+      }
+      const previousBrand = await brandKitView(ctx, actor.organization);
+      const nextVersion = ((actor.organization as Organization & { brandVersion?: number }).brandVersion ?? 0) + 1;
+      await ctx.db.patch(actor.organization._id, { brandLogoAssetId: requestedLogoId, brandPaletteKey: paletteKeyInput, brandPrimaryColor: requestedColor, brandVersion: nextVersion, brandUpdatedAt: now, brandUpdatedByUserId: actor.user._id, updatedAt: now });
+      const nextBrand = await brandKitView(ctx, { ...actor.organization, brandLogoAssetId: requestedLogoId, brandPaletteKey: paletteKeyInput, brandPrimaryColor: requestedColor, brandVersion: nextVersion, brandUpdatedAt: now, brandUpdatedByUserId: actor.user._id });
+      await insertAudit(ctx, actor, { category: "settings", action: "settings.brand.update", entityType: "organization_brand", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Tenant Brand Kit updated", before: { paletteKey: previousBrand.paletteKey, primaryColor: previousBrand.primaryColor, logoAssetId: previousBrand.logoAssetId, version: previousBrand.version }, after: { paletteKey: nextBrand.paletteKey, primaryColor: nextBrand.primaryColor, logoAssetId: nextBrand.logoAssetId, version: nextBrand.version } });
+      return nextBrand;
+    }
     case "settings.organization.update": {
       requirePermission(actor, "settings.manage");
       const allowed = ["name", "timezone", "locale", "defaultLanguage", "taxRatePercent", "receiptPrefix", "receiptFooter"];
@@ -6900,6 +7205,64 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_policies", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Entry, membership, and operating-hour policies updated", before, after: operationalPolicies });
       return await settingsView(ctx, actor);
     }
+    case "zones.upsert": {
+      requirePermission(actor, "settings.manage");
+      if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an owner or manager can manage zones.", { correlationId: actor.correlationId });
+      const branchId = optionalString(input.branchId);
+      const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      assertBranchAccess(actor, branch);
+      const code = stringValue(input.code).trim().toUpperCase();
+      const name = stringValue(input.name).trim();
+      const nameAr = optionalString(input.nameAr)?.trim();
+      const kind = stringValue(input.kind);
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(code)) domainError("VALIDATION_ERROR", "Zone code must be 1–16 letters, numbers, underscores, or hyphens.", { correlationId: actor.correlationId, fieldErrors: { code: ["Use 1–16 uppercase letters, numbers, underscores, or hyphens."] } });
+      if (name.length < 1 || name.length > 80) domainError("VALIDATION_ERROR", "Zone name must be between 1 and 80 characters.", { correlationId: actor.correlationId, fieldErrors: { name: ["Required, up to 80 characters."] } });
+      if (nameAr && nameAr.length > 80) domainError("VALIDATION_ERROR", "Arabic zone name must be 80 characters or fewer.", { correlationId: actor.correlationId, fieldErrors: { nameAr: ["Up to 80 characters."] } });
+      if (!ZONE_KINDS.includes(kind as typeof ZONE_KINDS[number])) domainError("VALIDATION_ERROR", "Zone kind is not supported.", { correlationId: actor.correlationId, fieldErrors: { kind: ["Choose a supported zone kind."] } });
+      const capacity = input.capacity === undefined || input.capacity === null || input.capacity === "" ? undefined : numberValue(input.capacity, Number.NaN);
+      if (capacity !== undefined && (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100_000)) domainError("VALIDATION_ERROR", "Zone capacity must be a positive whole number.", { correlationId: actor.correlationId, fieldErrors: { capacity: ["Use a positive whole number."] } });
+      const inputId = optionalString(input.id);
+      const existing = inputId ? await zoneByPublicId(ctx, actor.organization._id, inputId) : null;
+      if (inputId && !existing) domainError("NOT_FOUND", "Zone not found.", { correlationId: actor.correlationId });
+      if (existing) {
+        assertBranchAccess(actor, await ctx.db.get(existing.branchId));
+        if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A zone cannot be moved between branches.", { correlationId: actor.correlationId });
+      }
+      const duplicate = await ctx.db.query("zones").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).unique();
+      if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That zone code is already used in this branch.", { correlationId: actor.correlationId });
+      const status = input.status === "archived" ? "archived" as const : "active" as const;
+      const now = Date.now();
+      if (existing) {
+        const before = zoneView(existing, orgId, publicBranchId(branch));
+        await ctx.db.patch(existing._id, { code, name, nameAr, kind: kind as typeof ZONE_KINDS[number], capacity, status, updatedAt: now });
+        const updated = await ctx.db.get(existing._id);
+        if (!updated) domainError("NOT_FOUND", "Zone could not be loaded after update.", { correlationId: actor.correlationId });
+        await insertAudit(ctx, actor, { category: "settings", action: "zone.update", entityType: "zone", entityId: updated.publicId, entityLabel: updated.name, summary: "Zone updated", before, after: zoneView(updated, orgId, publicBranchId(branch)), branchId: publicBranchId(branch) });
+        return zoneView(updated, orgId, publicBranchId(branch));
+      }
+      const publicId = newPublicId();
+      const zoneId = await ctx.db.insert("zones", { organizationId: actor.organization._id, branchId: branch._id, publicId, code, name, nameAr, kind: kind as typeof ZONE_KINDS[number], capacity, status, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(zoneId);
+      if (!created) domainError("NOT_FOUND", "Zone could not be created.", { correlationId: actor.correlationId });
+      await insertAudit(ctx, actor, { category: "settings", action: "zone.create", entityType: "zone", entityId: created.publicId, entityLabel: created.name, summary: "Zone created", after: zoneView(created, orgId, publicBranchId(branch)), branchId: publicBranchId(branch) });
+      return zoneView(created, orgId, publicBranchId(branch));
+    }
+    case "zones.archive": {
+      requirePermission(actor, "settings.manage");
+      if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an owner or manager can archive zones.", { correlationId: actor.correlationId });
+      const zone = await zoneByPublicId(ctx, actor.organization._id, optionalString(input.id));
+      if (!zone) domainError("NOT_FOUND", "Zone not found.", { correlationId: actor.correlationId });
+      const branch = await ctx.db.get(zone.branchId);
+      assertBranchAccess(actor, branch);
+      const branchPublicId = publicBranchId(branch);
+      if (zone.status === "archived") return zoneView(zone, orgId, branchPublicId);
+      const now = Date.now();
+      await ctx.db.patch(zone._id, { status: "archived", updatedAt: now });
+      const archived = await ctx.db.get(zone._id);
+      if (!archived) domainError("NOT_FOUND", "Zone could not be loaded after archive.", { correlationId: actor.correlationId });
+      await insertAudit(ctx, actor, { category: "settings", action: "zone.archive", entityType: "zone", entityId: zone.publicId, entityLabel: zone.name, summary: "Zone archived", before: zoneView(zone, orgId, branchPublicId), after: zoneView(archived, orgId, branchPublicId), branchId: branchPublicId });
+      return zoneView(archived, orgId, branchPublicId);
+    }
     case "branches.upsert": {
       requirePermission(actor, "settings.manage");
       const inputId = optionalString(input.id);
@@ -6949,7 +7312,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const role = input.role ? roleFromFrontend(input.role) : membership.role;
       if (role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can grant the owner role.", { correlationId: actor.correlationId });
       const targetDefinition = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role)).unique();
-      const targetPermissions = targetDefinition?.permissions ?? DEFAULT_ROLE_DEFINITIONS[role].permissions;
+      const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       await ctx.db.patch(membership._id, { role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: input.status ? input.status !== "deactivated" : membership.active, updatedAt: Date.now() });
       await ctx.db.patch(user._id, { status: input.status ?? user.status ?? "active", updatedAt: Date.now() });
@@ -6965,16 +7328,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role)).unique();
       const fallback = DEFAULT_ROLE_DEFINITIONS[role];
       if (!current) domainError("NOT_FOUND", "Role not found.", { correlationId: actor.correlationId });
-      const requestedPermissions = input.permissions === undefined ? current.permissions : arrayValue(input.permissions).map(String);
+      const effectiveCurrentPermissions = rolePermissions(role, current.permissions, current.catalogVersion);
+      const requestedPermissions = input.permissions === undefined ? effectiveCurrentPermissions : arrayValue(input.permissions).map(String);
       const invalidPermissions = requestedPermissions.filter((permission) => !PERMISSIONS.includes(permission as (typeof PERMISSIONS)[number]));
       if (invalidPermissions.length > 0) domainError("VALIDATION_ERROR", "One or more permissions are not recognized.", { correlationId: actor.correlationId, details: { permissions: invalidPermissions } });
       if (requestedPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       const discountLimitMinor = input.discountLimitMinor === undefined ? current.discountLimitMinor : numberValue(input.discountLimitMinor);
       if (!Number.isSafeInteger(discountLimitMinor) || discountLimitMinor < 0) domainError("VALIDATION_ERROR", "Discount limit must be a non-negative integer amount.", { correlationId: actor.correlationId });
-      const updated = { permissions: requestedPermissions, discountLimitMinor, updatedAt: Date.now() };
+      const updated = { permissions: requestedPermissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor, updatedAt: Date.now() };
       await ctx.db.patch(current._id, updated);
       await insertAudit(ctx, actor, { category: "users", action: "role.permissions_change", entityType: "role", entityId: publicOrganizationId(actor.organization), entityLabel: current.label, summary: `Permissions updated for the ${current.label} role`, before: { permissions: current.permissions.length, discountLimit: current.discountLimitMinor }, after: { permissions: updated.permissions.length, discountLimit: updated.discountLimitMinor } });
-      return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: updated.permissions, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
+      return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: rolePermissions(role, updated.permissions, updated.catalogVersion), catalogVersion: updated.catalogVersion, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
     }
     case "approvals.review": {
       requirePermission(actor, "audit.read");
@@ -7000,6 +7364,35 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: event.category, action: `${event.action}.${decision}`, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: `${decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`, reason: note, before, after, branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       return undefined;
     }
+    case "operations.product.upsert":
+    case "operations.product.archive":
+    case "operations.supplier.upsert":
+    case "operations.supplier.archive":
+    case "operations.stock_movement.record":
+    case "operations.low_stock.refresh":
+    case "operations.low_stock.dismiss":
+    case "operations.purchase_order.create":
+    case "operations.purchase_order.approve":
+    case "operations.purchase_order.receive":
+    case "operations.supplier_notification.preview":
+    case "operations.facility_task.upsert":
+    case "operations.equipment_asset.upsert":
+    case "operations.equipment_issue.report":
+    case "operations.equipment_work_order.upsert":
+      return await operationsMutation(ctx, actor, operation, input);
+    case "accounting.manual_journal.post":
+    case "finance.manual_journal.post":
+    case "accounting.source.post":
+    case "finance.source.post":
+    case "accounting.source_postings.refresh":
+    case "finance.source_postings.refresh":
+    case "accounting.entry.reverse":
+    case "finance.entry.reverse":
+    case "accounting.period.close":
+    case "finance.period.close":
+    case "accounting.period.reopen":
+    case "finance.period.reopen":
+      return await accountingMutation(ctx, actor, operation, input);
     case "demo.reset":
       requirePermission(actor, "settings.manage");
       return undefined;
@@ -7011,7 +7404,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 async function settingsView(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const settings = await settingsData(ctx, actor);
   const branches = await accessibleBranches(ctx, actor);
-  return { organization: organizationView(actor.organization), branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies };
+  const brand = await brandKitView(ctx, actor.organization);
+  return { organization: { ...organizationView(actor.organization), brand }, brand, branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies, workspace: await workspaceAccessData(ctx, actor) };
 }
 
 async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {

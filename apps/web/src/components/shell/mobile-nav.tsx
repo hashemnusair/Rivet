@@ -22,6 +22,8 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   const pathname = usePathname();
   const { canAny } = usePermissions();
   const { session, setBranch } = useApp();
+  const brandLogo = session?.organization.brand?.logoUrl;
+  const brandName = session?.organization.name ?? "RIVET";
 
   // Close once a navigation lands (covers both drawer links and programmatic nav).
   const previousPath = useRef(pathname);
@@ -49,7 +51,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
 
           {/* Brand + close */}
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} style={{ height: "auto" }} priority />
+            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={{ height: "auto" }} priority unoptimized={Boolean(brandLogo)} />
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
               aria-label="Close navigation"
@@ -82,7 +84,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                             )}
                           >
                             {active ? (
-                              <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-signal" />
+                                <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
                             ) : null}
                             <item.icon
                               className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")}

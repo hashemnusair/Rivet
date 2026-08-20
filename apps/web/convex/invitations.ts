@@ -78,7 +78,7 @@ async function prepareInvitation(ctx: MutationCtx, input: Data, organizationId: 
     .query("roleDefinitions")
     .withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role))
     .unique();
-  const targetPermissions = configuredRole?.permissions ?? rolePermissions(role);
+  const targetPermissions = rolePermissions(role, configuredRole?.permissions, configuredRole?.catalogVersion);
   if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) {
     domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId });
   }

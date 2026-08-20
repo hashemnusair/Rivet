@@ -23,6 +23,8 @@ function profileMediaIds(value: unknown): string[] {
 }
 
 async function isReferencedByPublishedProfile(ctx: MutationCtx, asset: { organizationId: Id<"organizations">; publicId: string }): Promise<boolean> {
+  const organization = await ctx.db.get(asset.organizationId);
+  if (organization?.brandLogoAssetId === asset.publicId) return true;
   const versions = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", asset.organizationId).eq("entityType", "gymProfileVersion")).collect();
   return versions.some((version) => {
     const value = version.data && typeof version.data === "object" && !Array.isArray(version.data) ? version.data as { status?: unknown } : {};
@@ -193,7 +195,10 @@ export const discardDraft = mutation({
     if (!["pending", "active"].includes(asset.status)) domainError("NOT_FOUND", "Draft media asset not found.", { correlationId: actor.correlationId });
     const profile = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
     const draft = profile?.data as { logoAssetId?: string; coverAssetId?: string; galleryAssetIds?: string[] } | undefined;
+    const organization = await ctx.db.get(actor.organization._id);
+    if (organization?.brandLogoAssetId === asset.publicId) domainError("VALIDATION_ERROR", "The active Brand Kit logo cannot be discarded.", { correlationId: actor.correlationId });
     if ([draft?.logoAssetId, draft?.coverAssetId, ...(draft?.galleryAssetIds ?? [])].includes(asset.publicId)) domainError("VALIDATION_ERROR", "Saved profile media cannot be discarded as a draft.", { correlationId: actor.correlationId });
+    if (await isReferencedByPublishedProfile(ctx, asset)) domainError("VALIDATION_ERROR", "Published profile media cannot be discarded.", { correlationId: actor.correlationId });
     const now = Date.now();
     await ctx.storage.delete(asset.storageId);
     await ctx.db.patch(asset._id, { status: "replaced", deleteAfter: undefined, updatedAt: now });

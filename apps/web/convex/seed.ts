@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { organizationRole } from "./schema";
-import { DEFAULT_ROLE_DEFINITIONS } from "./permissions";
+import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
+import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 
 /**
  * Seeds the Forge Fitness demo tenant as real Convex records: the organization,
@@ -157,9 +158,25 @@ export const seedDemoTenant = internalMutation({
     // --- reference data and a compact, deterministic operating scenario ----
     for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<["owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor", (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
       const existing = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", organizationId).eq("role", role)).unique();
-      const value = { label: definition.label, description: definition.description, permissions: definition.permissions, discountLimitMinor: definition.discountLimitMinor, isSystem: true, updatedAt: now };
-      if (existing) await ctx.db.patch(existing._id, value);
+      const value = { label: definition.label, description: definition.description, permissions: definition.permissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor: definition.discountLimitMinor, isSystem: true, updatedAt: now };
+      if (existing) await ctx.db.patch(existing._id, { ...value, permissions: rolePermissions(role, existing.permissions, existing.catalogVersion), discountLimitMinor: existing.discountLimitMinor });
       else await ctx.db.insert("roleDefinitions", { organizationId, role, ...value, createdAt: now });
+    }
+
+    // Preserve the legacy Forge tenant while making the new server-owned
+    // entitlement/preference records explicit and idempotent.
+    const ownerMembership = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect()).find((membership) => membership.active && membership.role === "owner");
+    if (ownerMembership) {
+      const entitledModules = entitledModulesForPlan();
+      const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      if (entitlement) await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: undefined, entitledModules, source: "legacy_default", updatedAt: now });
+      else await ctx.db.insert("organizationEntitlements", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, entitledModules, source: "legacy_default", createdAt: now, updatedAt: now });
+      const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      const storedModules = preferences?.enabledModules.filter((module): module is typeof entitledModules[number] => entitledModules.includes(module as typeof entitledModules[number])) ?? [];
+      let enabledModules = storedModules;
+      try { enabledModules = validateWorkspaceModuleSelection(storedModules, entitledModules); } catch { enabledModules = defaultWorkspacePreferences(entitledModules); }
+      if (preferences) await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: ownerMembership.userId, updatedAt: now });
+      else await ctx.db.insert("workspaceModulePreferences", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: ownerMembership.userId, createdAt: now, updatedAt: now });
     }
 
     const upsertDomain = async (entityType: string, publicId: string, value: Record<string, unknown>, branchId?: Id<"branches">, memberPublicId?: string, leadPublicId?: string) => {

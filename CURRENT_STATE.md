@@ -1,6 +1,171 @@
 # GymOS / RIVET current implementation state
 
-Updated 2026-08-17 after the simplified Core CRM Pilot release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+## Five-pillar expansion — implemented and locally validated, 20 August 2026
+
+The five agreed expansion pillars are implemented and have passed the complete
+local validation gate. The repository remains on local `main` at baseline
+commit `e8c884a` with a large intentional uncommitted working tree. Nothing in
+this expansion has been committed, pushed, deployed, or exercised against
+Production. Do not discard or reset the working tree.
+
+The agreed scope and product decisions are recorded in
+`docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`. In this pass the five implementation
+pillars are: shared tenant/capability foundation, renewal recovery, daily
+operations, immutable management ledger, and trustworthy management reporting.
+Adaptive music, targeted digital advertising, supplier marketplaces,
+autonomous purchasing/replacement, statutory-accounting claims, and live
+provider credentials remain explicitly excluded.
+
+### Implemented in the working tree
+
+1. **Foundation and tenant controls**
+   - Server-owned organization entitlements and separate workspace preferences
+     for `foundation`, `revenue`, `operations`, `finance`, and `reporting`.
+   - Provisional legacy fallback: Starter = foundation/revenue, Growth adds
+     operations, Pro adds finance/reporting. Explicit entitlement rows are
+     authoritative when present; preferences cannot grant an entitlement.
+   - Organization Brand Kit with validated palette/primary color, same-tenant
+     logo reuse and media-retention protection, derived semantic theme tokens,
+     audited owner updates, tenant shell branding, and RIVET fallback.
+   - Typed branch zones with branch/tenant validation, code uniqueness,
+     archive/audit behavior, API/Mock parity, and settings coverage.
+
+2. **Renewal recovery**
+   - Tenant-local 14/7/3-day WhatsApp/SMS policy decisions plus exactly one
+     one-day staff call task.
+   - Explicit consent/opt-out handling, quiet-hour deferral, term-aware
+     deduplication, stop conditions after lifecycle changes, sandbox-only
+     external delivery truthfulness, append-only events, and member timeline.
+   - Live providers and credentials are not configured, and no delivery is
+     falsely represented as sent.
+
+3. **Daily operations**
+   - Typed products, suppliers, inventory balances/movements/alerts, purchase
+     orders, facility tasks, equipment assets/issues/work orders, and recorded-
+     inputs-only fix-versus-replace recommendations.
+   - Branch/tenant/role enforcement, audited writes, low-stock projections,
+     supplier notification sandbox state, zone-linked facilities, idempotent
+     receiving/movements, and protected finance-owned posting fields.
+   - `/operations` command center with working inventory/supplier/PO,
+     facilities, and equipment flows plus module/read-only states.
+   - No supplier marketplace, supplier portal, autonomous order, or autonomous
+     replacement workflow was added.
+
+4. **Management ledger**
+   - Code-owned chart of accounts and posting policies; typed periods, balanced
+     immutable journal entries/lines, source-posting queue, trial balance,
+     manual journals, reversals, and period close/reopen.
+   - Conservative mappings for payments/refunds/voids, net approved membership
+     sales/renewals, fully received purchase orders, supported stock movements,
+     facility supplies, equipment acquisition, and repair costs.
+   - PO-linked stock receipts and unsupported movement types are excluded to
+     avoid double posting. Source discovery classifies facts but never
+     auto-posts. Reused idempotency keys conflict when request content changes.
+   - `/finance` management-ledger workspace includes accounts, periods,
+     journals/detail, trial balance, source refresh/posting, manual journal,
+     reversal, and close/reopen controls.
+
+5. **Management reporting**
+   - Backend projections and contracts are present for income statement,
+     balance sheet, cashflow, and general-manager analysis with Convex/Mock
+     routing and controlled tests.
+   - Reports use effective posted facts, retain original plus reversing entries,
+     expose statement equations and cash reconciliation, provide policy/source
+     metadata, bounded drilldown IDs, and show a management-accounting
+     disclaimer and completeness warnings.
+   - Membership revenue remains deferred because no recognition policy was
+     approved. Depreciation is explicitly `Not configured`; fixed assets remain
+     gross. No historical openings or financial facts are invented.
+   - Mutable current-state GM metrics (open alerts, commitments, equipment
+     issues, outstanding balances) are reported only for a current tenant-date
+     snapshot; historical requests return `Not available` without transition
+     history.
+   - `/reports/statements` contains Income statement, Balance sheet, Cashflow,
+     and GM analysis views with date/accessible-branch scope, metadata,
+     warnings, reconciliation states, read-only/locked states, and Finance-nav
+     discoverability.
+
+### Integrity hardening completed
+
+An independent cross-pillar audit found and resolved the following release
+blockers before final validation:
+
+- Custom roles can no longer bypass the new operations/accounting permission
+  boundaries. Permission catalog v2 is additive for legacy roles, while an
+  explicit current-version role edit can intentionally omit a permission.
+- Financially posted operational facts are immutable, equipment cannot be
+  reassigned across branches, inventory adjustments require reasons, and
+  branch-scoped actors cannot discover consolidated/unattributed finance rows.
+- Published public-profile media and tenant Brand Kit media are protected from
+  discard while referenced.
+- Accounting posting attempts are immutable and keyed by complete source
+  identity plus idempotency key, preserving stable replay across multiple keys
+  and rejecting cross-source key reuse.
+- Cashflow uses independently computed expected and as-of cash. Reconciliation
+  remains `unproven` while source-queue coverage is not proven; the UI does not
+  render that state as success.
+- General-manager branch scope also recognizes legacy `domainRecords` branch
+  identifiers.
+
+### Final local validation
+
+- `pnpm typecheck` — passed.
+- `pnpm convex:typecheck` — passed.
+- `pnpm convex:codegen` — passed. An earlier sandboxed attempt hit external
+  Sentry/DNS resolution; the approved network rerun completed normally.
+- `pnpm lint` — passed with no warnings.
+- `pnpm test` — **553 tests across 107 files passed**.
+- `pnpm build` — passed; Next.js generated **46 routes**, including
+  `/operations`, `/finance`, and `/reports/statements`.
+- `pnpm test:e2e` — **27 passed, 14 skipped, 0 failed**. The skips are the
+  existing credential-gated staging journeys.
+- `git diff --check` — passed.
+
+No Convex dry run/deploy, GitHub CI, Vercel deployment, or Production
+verification was performed. `pnpm convex:codegen` generated local contracts but
+is not a deployment. No Production data or live provider was mutated.
+
+### Remaining decisions and operational work
+
+- Final commercial packaging for Starter/Growth/Pro is still a product decision;
+  the current fallback mapping is provisional and explicit entitlements remain
+  authoritative.
+- WhatsApp/SMS and supplier notifications require approved providers,
+  credentials, templates, and staging acceptance before live delivery.
+- Membership revenue recognition and depreciation policies are not configured;
+  the reports disclose those limitations and do not invent accounting facts.
+- Source-queue coverage is intentionally `refresh_required`/unproven until a
+  complete operational refresh establishes coverage.
+- Credentialed staging journeys, a safe Convex dry run/migration review, CI,
+  deployment, and post-deploy verification remain release-stage work requiring
+  separate authorization and environment access.
+
+### Migration and compatibility notes
+
+- The working tree adds typed schema tables/indexes for entitlements,
+  preferences, zones, renewal/operations data, accounting, posting attempts,
+  and reporting sources. No destructive migration command has been run.
+- Permission catalog v2 preserves legacy-manager access until that role is
+  explicitly edited under the current catalog, avoiding a silent rollout
+  regression.
+- No opening balances, historical management snapshots, revenue schedules, or
+  depreciation entries are fabricated during migration.
+- Preserve `FRONTEND_HANDOFF.md` as the frozen historical artifact; this file is
+  the living implementation/release handoff.
+
+Primary files for orientation:
+
+- `docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`
+- `apps/web/convex/workspaceModules.ts`
+- `apps/web/convex/renewalJobs.ts`
+- `apps/web/convex/operations.ts`
+- `apps/web/convex/accounting.ts`
+- `apps/web/convex/managementReports.ts`
+- `apps/web/src/features/operations/operations-command-center.tsx`
+- `apps/web/src/features/finance/management-ledger-workspace.tsx`
+- `apps/web/src/features/reports/management-statements-workspace.tsx`
+
+Updated 2026-08-20 after the locally validated five-pillar expansion. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Simplified Core CRM Pilot — released 17 August 2026
 

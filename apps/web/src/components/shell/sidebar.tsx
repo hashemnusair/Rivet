@@ -20,8 +20,10 @@ export function navIsActive(href: string, pathname: string): boolean {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarCollapsed, toggleSidebar } = useApp();
+  const { sidebarCollapsed, toggleSidebar, session } = useApp();
   const { canAny } = usePermissions();
+  const brandLogo = session?.organization.brand?.logoUrl;
+  const brandName = session?.organization.name ?? "RIVET";
 
   return (
     <aside
@@ -39,12 +41,12 @@ export function Sidebar() {
         <Link
           href="/dashboard"
           className={cn("flex h-7 shrink-0 items-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[110px]")}
-          aria-label="RIVET home"
+          aria-label={`${brandName} home`}
         >
           {sidebarCollapsed ? (
-            <Image src="/brand/rivet-glyph-rev.png" alt="RIVET" width={18} height={28} className="shrink-0" priority />
+            <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} style={{ height: "auto" }} className="shrink-0" priority />
+            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={{ height: "auto" }} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           )}
         </Link>
       </div>
@@ -79,7 +81,7 @@ export function Sidebar() {
                         )}
                       >
                         {active ? (
-                          <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-signal" />
+                          <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
                         ) : null}
                         <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                           <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />

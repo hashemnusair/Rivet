@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   "crm.write",
   "crm.assign",
   "reports.financial.read",
+  "operations.manage",
+  "accounting.post",
   "audit.read",
   "users.manage",
   "settings.manage",
@@ -39,6 +41,13 @@ export const PERMISSIONS = [
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
+
+/**
+ * Increment when a permission is added to the server-owned catalogue. Stored
+ * role definitions may omit this field because they predate the catalogue
+ * versioning boundary; those rows are handled by effectiveRolePermissions.
+ */
+export const PERMISSION_CATALOG_VERSION = 2;
 
 const ALL = [...PERMISSIONS] as Permission[];
 const MANAGER = ALL.filter((permission) => permission !== "users.manage" && permission !== "settings.manage");
@@ -103,9 +112,30 @@ export const DEFAULT_ROLE_DEFINITIONS: Record<OrganizationRole, { label: string;
   },
 };
 
-export function rolePermissions(role: OrganizationRole, configured?: string[]): string[] {
-  if (configured) return configured.filter((permission): permission is Permission => PERMISSIONS.includes(permission as Permission));
-  return DEFAULT_ROLE_DEFINITIONS[role].permissions;
+const LEGACY_COMPATIBILITY_PERMISSIONS: Partial<Record<OrganizationRole, Permission[]>> = {
+  // Before catalog versioning, owners and managers were the only roles with
+  // the deliberate operations/accounting write capability. Preserve that
+  // capability for legacy manager rows while allowing a current-version role
+  // edit to intentionally omit either permission.
+  manager: ["operations.manage", "accounting.post"],
+};
+
+export function effectiveRolePermissions(role: OrganizationRole, configured?: string[], catalogVersion?: number): string[] {
+  // Owners are never allowed to lock themselves out of a tenant. This also
+  // makes the owner guarantee explicit instead of depending on stored data.
+  if (role === "owner") return [...ALL];
+  const base = configured
+    ? configured.filter((permission): permission is Permission => PERMISSIONS.includes(permission as Permission))
+    : DEFAULT_ROLE_DEFINITIONS[role].permissions;
+  if (configured && (catalogVersion ?? 0) < PERMISSION_CATALOG_VERSION) {
+    return [...new Set([...base, ...(LEGACY_COMPATIBILITY_PERMISSIONS[role] ?? [])])];
+  }
+  return base;
+}
+
+/** Backwards-compatible name used by existing server callers and tests. */
+export function rolePermissions(role: OrganizationRole, configured?: string[], catalogVersion?: number): string[] {
+  return effectiveRolePermissions(role, configured, catalogVersion);
 }
 
 export function roleDiscountLimit(role: OrganizationRole, configured?: number): number {

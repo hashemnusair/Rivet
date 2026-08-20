@@ -42,7 +42,15 @@ import type {
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
-import { discountNeedsApproval, type Permission } from "@/lib/domain/permissions";
+import { discountNeedsApproval, effectiveRolePermissions, PERMISSION_CATALOG_VERSION, PERMISSIONS, type Permission } from "@/lib/domain/permissions";
+import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex } from "@/lib/domain/brand";
+import {
+  buildWorkspaceAccess,
+  defaultWorkspacePreferences,
+  entitledModulesForPlan,
+  validateWorkspaceModuleSelection,
+  WORKSPACE_MODULE_CATALOG_VERSION,
+} from "@/lib/domain/workspace-modules";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
@@ -51,6 +59,7 @@ import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/ut
 import { money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
+import { manualJournalRequestFingerprint, reversalRequestFingerprint } from "../../../convex/accountingLedger";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -72,6 +81,72 @@ import {
 const TZ = "Asia/Amman";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
+
+function managementLocalDate(value: string | number, timezone: string): string {
+  return todayISODate(timezone, new Date(value));
+}
+
+const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" | "accountType" | "statementGroup" | "cashflowGroup" | "normalBalance">> = [
+  { code: "1100", name: "Cash on hand", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1110", name: "Card clearing", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1120", name: "Bank transfer clearing", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1200", name: "Accounts receivable", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1300", name: "Inventory", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1500", name: "Gym equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "investing", normalBalance: "debit" },
+  { code: "2100", name: "Supplier payables", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
+  { code: "4100", name: "Membership revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+];
+
+function mockAccount(orgId: string, definition: (typeof MOCK_ACCOUNT_DEFINITIONS)[number]): T.AccountingAccount {
+  const timestamp = "2026-08-19T00:00:00.000Z";
+  return { id: `acct-${definition.code}`, organizationId: orgId, ...definition, active: true, isSystem: true, createdAt: timestamp, updatedAt: timestamp };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+type MockAccountingSourceDecisionStatus = Extract<T.AccountingSourceStatus, "unconfigured" | "excluded">;
+interface MockAccountingSourceAttempt {
+  id: T.UUID;
+  sourceType: T.AccountingSourceType;
+  sourceId: T.UUID;
+  sourcePostingId?: T.UUID;
+  branchId?: T.UUID;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  status: MockAccountingSourceDecisionStatus;
+  amount?: T.Money;
+  currency: string;
+  policyCode?: string;
+  policyVersion?: number;
+  reason?: string;
+  details?: Record<string, unknown>;
+  occurredAt: T.ISODateTime;
+  createdAt: T.ISODateTime;
+  updatedAt: T.ISODateTime;
+}
+
+function accountingSourceKey(sourceType: T.AccountingSourceType, sourceId: T.UUID): string {
+  return `${sourceType}:${sourceId}`;
+}
+
+function accountingSourceAttemptKey(sourceType: T.AccountingSourceType, sourceId: T.UUID, idempotencyKey: string): string {
+  return `${accountingSourceKey(sourceType, sourceId)}:${idempotencyKey}`;
+}
+
+function accountingSourceRequestFingerprint(input: { sourceType: T.AccountingSourceType; sourceId: T.UUID; idempotencyKey: string; reason?: string }): string {
+  return stableJson({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason?.trim() ?? "" });
+}
 
 function createMockMediaUrl(file: Blob, fallbackId: string): string {
   return typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : `mock-media://${fallbackId}`;
@@ -210,6 +285,13 @@ export class MockGymOSApi implements GymOSApi {
   private ptEntitlements: T.PtEntitlement[] = [];
   private ptBookings: T.PtBooking[] = [];
   private ptOrders: T.PtPackageOrder[] = [];
+  private operationsIdempotency = new Map<string, { signature: string; result: unknown }>();
+  private accountingAccounts: T.AccountingAccount[];
+  private accountingPeriods: T.AccountingPeriod[] = [];
+  private accountingEntries: T.AccountingJournalEntryDetail[] = [];
+  private accountingSources: T.AccountingSourcePosting[] = [];
+  private accountingSourceAttempts = new Map<string, MockAccountingSourceAttempt>();
+  private accountingEntryFingerprints = new Map<string, string>();
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
   private mediaAssets = new Map<string, T.MediaAsset>();
@@ -218,6 +300,7 @@ export class MockGymOSApi implements GymOSApi {
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
+    this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
       ...gym,
@@ -1131,6 +1214,128 @@ export class MockGymOSApi implements GymOSApi {
     }
   }
 
+  private requireOwner() {
+    if (currentRole(this.db) !== "owner") {
+      throw ApiError.of(ERR.FORBIDDEN, "Only an organization owner can change workspace module preferences.");
+    }
+  }
+
+  private requireOwnerOrManager() {
+    const role = currentRole(this.db);
+    if (role !== "owner" && role !== "manager") throw ApiError.of(ERR.FORBIDDEN, "Only an organization owner or manager can manage zones.");
+  }
+
+  private requireOperations() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "operations");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The operations workspace module is not enabled for this organization.");
+  }
+
+  private requireOperationsRead() {
+    this.requireOperations();
+    this.require("members.read");
+  }
+
+  private requireOperationsWrite() {
+    // Writes are governed by the dedicated write permission. Do not make a
+    // manager's unrelated member-directory read permission an accidental
+    // prerequisite for operations mutations.
+    this.requireOperations();
+    this.require("operations.manage");
+    this.requireOwnerOrManager();
+  }
+
+  private requireFinanceModule() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "finance");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The finance workspace module is not enabled for this organization.");
+  }
+
+  private requireFinanceRead() {
+    this.requireFinanceModule();
+    this.require("reports.financial.read");
+  }
+
+  private requireReportingRead() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "reporting");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The reporting workspace module is not enabled for this organization.");
+    this.require("reports.financial.read");
+  }
+
+  private requireAccountingPosting() {
+    // Posting is a write boundary, not a financial-report read. Keep it
+    // aligned with Convex so a deliberately scoped posting role need not also
+    // hold the unrelated reports.financial.read permission.
+    this.requireFinanceModule();
+    this.require("accounting.post");
+    this.requireOwnerOrManager();
+  }
+
+  private requireAccountingOwner() {
+    this.requireFinanceModule();
+    this.requireOwner();
+  }
+
+  private accountingPeriodFor(date = this.today()): T.AccountingPeriod {
+    const id = date.slice(0, 7);
+    const existing = this.accountingPeriods.find((period) => period.id === id);
+    if (existing) {
+      if (existing.status === "closed") throw ApiError.of(ERR.CONFLICT, "The accounting period is closed.");
+      return existing;
+    }
+    const start = `${id}-01`;
+    const [year = 0, month = 0] = id.split("-").map(Number);
+    const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const period: T.AccountingPeriod = { id, organizationId: this.db.organization.id, periodStart: start, periodEnd: end, status: "open", createdAt: nowISO(), updatedAt: nowISO() };
+    this.accountingPeriods.push(period);
+    return period;
+  }
+
+  private accountingBranch(branchId?: T.UUID): T.Branch | undefined {
+    if (!branchId) return undefined;
+    const branch = this.db.branches.find((candidate) => candidate.id === branchId && candidate.status === "active");
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
+  private immutableAccountingStatus(sourceType: T.AccountingSourceType, sourceId: T.UUID): Extract<T.AccountingSourceStatus, "posted" | "reversed"> | undefined {
+    const source = this.accountingSources.find((row) => row.sourceType === sourceType && row.sourceId === sourceId);
+    return source?.status === "posted" || source?.status === "reversed" ? source.status : undefined;
+  }
+
+  private rejectImmutableAccountingMutation(entityLabel: string, status: Extract<T.AccountingSourceStatus, "posted" | "reversed">): never {
+    throw ApiError.of(ERR.CONFLICT, `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`);
+  }
+
+  private accountingAccount(accountId: T.UUID): T.AccountingAccount {
+    const account = this.accountingAccounts.find((candidate) => candidate.id === accountId || candidate.code === accountId);
+    if (!account || !account.active) throw ApiError.of(ERR.NOT_FOUND, "Accounting account not found.");
+    return account;
+  }
+
+  private accountingEntry(entryId: T.UUID): T.AccountingJournalEntryDetail {
+    const entry = this.accountingEntries.find((candidate) => candidate.id === entryId);
+    if (!entry || !this.accountingBranchIsVisible(entry.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Journal entry not found.");
+    return entry;
+  }
+
+  private operationsBranch(id: T.UUID): T.Branch {
+    const branch = this.db.branches.find((candidate) => candidate.id === id && candidate.status === "active");
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
+  private operationsZone(branchId: T.UUID, zoneId: T.UUID): T.Zone {
+    const zone = this.db.zones.find((candidate) => candidate.id === zoneId && candidate.branchId === branchId && candidate.status === "active");
+    if (!zone || !this.branchIsVisible(branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+    return zone;
+  }
+
+  private operationsIdempotent(operation: string, key: string, signature: string): unknown | undefined {
+    const existing = this.operationsIdempotency.get(`${operation}:${key}`);
+    if (!existing) return undefined;
+    if (existing.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This idempotency key was already used for a different request.");
+    return existing.result;
+  }
+
   private actor() {
     return currentUser(this.db);
   }
@@ -1158,6 +1363,40 @@ export class MockGymOSApi implements GymOSApi {
   private branchIsVisible(branchId?: T.UUID): boolean {
     const user = this.actor();
     return user.branchScope === "all" || !branchId || user.branchIds.includes(branchId);
+  }
+
+  /**
+   * Ledger/report rows use stricter visibility than ordinary branch-scoped
+   * records: a missing branch means consolidated or unattributed financial
+   * data, which is organization-wide and must not be exposed to a selected
+   * branch actor.
+   */
+  private accountingBranchIsVisible(branchId?: T.UUID): boolean {
+    const user = this.actor();
+    return user.branchScope === "all" || Boolean(branchId && user.branchIds.includes(branchId));
+  }
+
+  private accountingSourceAttemptView(attempt: MockAccountingSourceAttempt): T.AccountingSourcePosting {
+    if (!this.accountingBranchIsVisible(attempt.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+    return {
+      id: attempt.sourcePostingId ?? attempt.id,
+      organizationId: this.db.organization.id,
+      sourceType: attempt.sourceType,
+      sourceId: attempt.sourceId,
+      branchId: attempt.branchId,
+      status: attempt.status,
+      amount: attempt.amount ? { ...attempt.amount } : undefined,
+      currency: attempt.currency,
+      policyCode: attempt.policyCode,
+      policyVersion: attempt.policyVersion,
+      journalEntryId: undefined,
+      idempotencyKey: attempt.idempotencyKey,
+      reason: attempt.reason,
+      details: attempt.details ? { ...attempt.details } : undefined,
+      occurredAt: attempt.occurredAt,
+      createdAt: attempt.createdAt,
+      updatedAt: attempt.updatedAt,
+    };
   }
 
   private audit(input: Omit<T.AuditEvent, "id" | "organizationId" | "correlationId" | "occurredAt" | "actorId" | "actorName" | "actorRole">) {
@@ -1427,11 +1666,12 @@ export class MockGymOSApi implements GymOSApi {
     const org = this.db.organization;
     return {
       user: { id: user.id, name: user.name, email: user.email },
-      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale },
+      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, brand: this.db.brand },
       branches: this.db.branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
       activeBranchId: this.db.session.activeBranchId,
       roles: [user.role],
       permissions: permissionsFor(this.db, user.role),
+      workspace: this.workspaceAccess(),
     };
   }
 
@@ -4364,6 +4604,570 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  private managementReportInput(input: T.ManagementReportInput): { fromDate: string; toDate: string; branchId?: T.UUID } {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.toDate)) throw ApiError.of(ERR.VALIDATION, "Report dates must use YYYY-MM-DD.");
+    const from = new Date(`${input.fromDate}T00:00:00.000Z`);
+    const to = new Date(`${input.toDate}T00:00:00.000Z`);
+    if (!Number.isFinite(from.getTime()) || from.toISOString().slice(0, 10) !== input.fromDate || !Number.isFinite(to.getTime()) || to.toISOString().slice(0, 10) !== input.toDate) throw ApiError.of(ERR.VALIDATION, "Report dates must use YYYY-MM-DD.");
+    if (input.fromDate > input.toDate) throw ApiError.of(ERR.VALIDATION, "Report fromDate must be on or before toDate.");
+    const branchId = input.branchId ? this.accountingBranch(input.branchId)?.id : undefined;
+    return { fromDate: input.fromDate, toDate: input.toDate, branchId };
+  }
+
+  private managementBranchVisible(branchId: T.UUID | undefined, requestedBranchId?: T.UUID): boolean {
+    if (requestedBranchId) return branchId === requestedBranchId;
+    return branchId ? this.branchIsVisible(branchId) : this.actor().branchScope === "all";
+  }
+
+  private managementReportEntries(range: { fromDate: string; toDate: string; branchId?: T.UUID }, throughOnly = false): T.AccountingJournalEntryDetail[] {
+    return this.accountingEntries.filter((entry) => {
+      if (entry.status !== "posted" && entry.status !== "reversed") return false;
+      if (!this.managementBranchVisible(entry.branchId, range.branchId)) return false;
+      return throughOnly ? entry.postingDate <= range.toDate : entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate;
+    });
+  }
+
+  private managementStatementSection(entries: T.AccountingJournalEntryDetail[], groups: T.AccountingStatementGroup[], sign: "debit" | "credit", branchId?: T.UUID): T.ManagementStatementSection {
+    const rows = new Map<string, { account: T.AccountingAccount; amount: number; ids: Set<string> }>();
+    const groupSet = new Set(groups);
+    for (const entry of entries) for (const line of entry.lines.filter((candidate) => groupSet.has(candidate.statementGroup) && this.managementBranchVisible(candidate.branchId, branchId))) {
+      const account = this.accountingAccounts.find((candidate) => candidate.code === line.accountCode) ?? this.accountingAccount(line.accountId);
+      const amount = sign === "credit" ? line.credit.amount - line.debit.amount : line.debit.amount - line.credit.amount;
+      if (amount === 0) continue;
+      const current = rows.get(account.code) ?? { account, amount: 0, ids: new Set<string>() };
+      current.amount += amount;
+      current.ids.add(entry.id);
+      rows.set(account.code, current);
+    }
+    const lines = [...rows.values()].filter((row) => row.amount !== 0).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, amount: money(row.amount), entryIds: [...row.ids].sort() }));
+    return { lines, total: money(lines.reduce((sum, row) => sum + row.amount.amount, 0)) };
+  }
+
+  private managementReportMetadata(range: { fromDate: string; toDate: string; branchId?: T.UUID }): T.ManagementReportCompleteness {
+    const sourceRows = this.accountingSources.filter((row) => managementLocalDate(row.occurredAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.occurredAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+    const sourcePostingCounts: Record<T.AccountingSourceStatus, number> = { pending: 0, posted: 0, unconfigured: 0, excluded: 0, failed: 0, reversed: 0 };
+    for (const row of sourceRows) sourcePostingCounts[row.status] += 1;
+    const latest = sourceRows.map((row) => row.updatedAt).sort().at(-1);
+    const policyVersions = [...new Map(this.accountingEntries
+      .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate && this.managementBranchVisible(entry.branchId, range.branchId) && entry.policyCode && entry.policyVersion)
+      .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
+    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: "refresh_required", lastQueueProjectionAt: latest, warnings: ["Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.", "Membership revenue recognition is not configured; deferred membership sales are excluded from recognized revenue until an approved policy exists.", "Fixed assets are shown gross because accumulated depreciation is not configured."], disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
+  }
+
+  getIncomeStatement(input: T.ManagementReportInput): Promise<T.IncomeStatement> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range);
+      const revenue = this.managementStatementSection(entries, ["revenue"], "credit");
+      const costOfSales = this.managementStatementSection(entries, ["cost_of_sales"], "debit");
+      const operatingExpenses = this.managementStatementSection(entries, ["operating_expense"], "debit");
+      const otherIncome = this.managementStatementSection(entries, ["other_income"], "credit");
+      const otherExpenses = this.managementStatementSection(entries, ["other_expense"], "debit");
+      const totalRevenue = revenue.total.amount + otherIncome.total.amount;
+      const totalCosts = costOfSales.total.amount + operatingExpenses.total.amount + otherExpenses.total.amount;
+      return { ...this.managementReportMetadata(range), revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue), totalCosts: money(totalCosts), netIncome: money(totalRevenue - totalCosts), membershipRevenueRecognition: "not_configured" };
+    });
+  }
+
+  getBalanceSheet(input: T.ManagementReportInput): Promise<T.BalanceSheet> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range, true);
+      const currentAssets = this.managementStatementSection(entries, ["asset_current"], "debit");
+      const noncurrentAssets = this.managementStatementSection(entries, ["asset_noncurrent"], "debit");
+      const currentLiabilities = this.managementStatementSection(entries, ["liability_current"], "credit");
+      const noncurrentLiabilities = this.managementStatementSection(entries, ["liability_noncurrent"], "credit");
+      const equity = this.managementStatementSection(entries, ["equity"], "credit");
+      const recognizedRevenue = this.managementStatementSection(entries, ["revenue", "other_income"], "credit").total.amount;
+      const recognizedCosts = this.managementStatementSection(entries, ["cost_of_sales", "operating_expense", "other_expense"], "debit").total.amount;
+      const currentEarnings = recognizedRevenue - recognizedCosts;
+      const totalAssets = currentAssets.total.amount + noncurrentAssets.total.amount;
+      const totalLiabilities = currentLiabilities.total.amount + noncurrentLiabilities.total.amount;
+      const totalEquity = equity.total.amount + currentEarnings;
+      const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+      return { ...this.managementReportMetadata(range), asOfDate: range.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, currentEarnings: money(currentEarnings), totalAssets: money(totalAssets), totalLiabilities: money(totalLiabilities), totalEquity: money(totalEquity), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity), difference: money(totalAssets - totalLiabilitiesAndEquity), balanced: totalAssets === totalLiabilitiesAndEquity };
+    });
+  }
+
+  getCashflowStatement(input: T.ManagementReportInput): Promise<T.CashflowStatement> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range);
+      const allEntries = this.managementReportEntries({ ...range, fromDate: "0000-01-01" });
+      const openingCash = allEntries.filter((entry) => entry.postingDate < range.fromDate).flatMap((entry) => entry.lines).filter((line) => ["1100", "1110", "1120"].includes(line.accountCode)).reduce((sum, line) => sum + line.debit.amount - line.credit.amount, 0);
+      const throughCash = allEntries.filter((entry) => entry.postingDate <= range.toDate).flatMap((entry) => entry.lines).filter((line) => ["1100", "1110", "1120"].includes(line.accountCode)).reduce((sum, line) => sum + line.debit.amount - line.credit.amount, 0);
+      const rows = new Map<string, { category: T.ManagementCashflowCategory; account: T.AccountingAccount; amount: number; ids: Set<string> }>();
+      const sectionFor = (category: T.ManagementCashflowCategory): T.CashflowSection => {
+        const lines = [...rows.values()].filter((row) => row.category === category).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, amount: money(row.amount), entryIds: [...row.ids].sort() }));
+        return { category, lines, netChange: money(lines.reduce((sum, line) => sum + line.amount.amount, 0)) };
+      };
+      for (const entry of entries) {
+        for (const cashLine of entry.lines.filter((line) => ["1100", "1110", "1120"].includes(line.accountCode))) {
+          const counterparts = entry.lines.filter((line) => line !== cashLine && !["1100", "1110", "1120"].includes(line.accountCode));
+          const category: T.ManagementCashflowCategory = counterparts.some((line) => line.statementGroup === "asset_noncurrent") ? "investing" : counterparts.some((line) => line.statementGroup === "equity" || line.statementGroup === "liability_noncurrent") ? "financing" : "operating";
+          const account = this.accountingAccounts.find((candidate) => candidate.code === cashLine.accountCode) ?? this.accountingAccount(cashLine.accountId);
+          const key = `${category}:${account.code}`;
+          const current = rows.get(key) ?? { category, account, amount: 0, ids: new Set<string>() };
+          current.amount += cashLine.debit.amount - cashLine.credit.amount;
+          current.ids.add(entry.id);
+          rows.set(key, current);
+        }
+      }
+      const operating = sectionFor("operating");
+      const investing = sectionFor("investing");
+      const financing = sectionFor("financing");
+      const netChange = operating.netChange.amount + investing.netChange.amount + financing.netChange.amount;
+      // Keep the two sides independent: expected closing cash comes from
+      // opening cash plus classified movements, while as-of cash comes from
+      // the cash-account position through the report end date. A zero
+      // difference is not a completeness assertion while queue coverage is
+      // still awaiting refresh.
+      const expectedClosingCash = openingCash + netChange;
+      const asOfCash = throughCash;
+      const metadata = this.managementReportMetadata(range);
+      const reconciliationStatus: T.ManagementReconciliationStatus = metadata.queueCoverage === "proven"
+        ? expectedClosingCash === asOfCash ? "proven" : "not_available"
+        : "unproven";
+      const reconciliationNote = reconciliationStatus === "unproven"
+        ? "Cash arithmetic agrees with the current ledger projection, but source queue coverage is not proven. Refresh the source queue before treating this reconciliation as complete."
+        : reconciliationStatus === "not_available"
+          ? "The classified cash movement does not agree with the independent cash-account position through the as-of date."
+          : undefined;
+      return {
+        ...metadata,
+        openingCash: money(openingCash),
+        operating,
+        investing,
+        financing,
+        netChange: money(netChange),
+        closingCash: money(asOfCash),
+        reconciliationDifference: money(expectedClosingCash - asOfCash),
+        reconciliationStatus,
+        reconciliation: {
+          status: reconciliationStatus,
+          expectedClosingCash: money(expectedClosingCash),
+          asOfCash: money(asOfCash),
+          difference: money(expectedClosingCash - asOfCash),
+          note: reconciliationNote,
+        },
+        balanced: reconciliationStatus === "proven" && expectedClosingCash === asOfCash,
+        classificationPolicy: { code: "cashflow-classification.v1", version: 1, description: "Actual cash and clearing account movements are classified as investing when paired with fixed assets, financing when paired with equity or non-current financing, and operating otherwise." },
+      };
+    });
+  }
+
+  getGeneralManagerAnalysis(input: T.ManagementReportInput): Promise<T.GeneralManagerAnalysis> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const metadata = this.managementReportMetadata(range);
+      const currentSnapshot = range.toDate === todayISODate(this.db.organization.timezone, new Date());
+      const sourceRows = this.accountingSources.filter((row) => managementLocalDate(row.occurredAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.occurredAt, this.db.organization.timezone) <= range.toDate && row.status === "posted" && this.managementBranchVisible(row.branchId, range.branchId));
+      const moneyMetric = (key: string, label: string, amount: number, ids: string[], note?: string, statusOverride?: T.ManagementMetricStatus): T.ManagementAnalysisMetric => ({ key, label, status: statusOverride ?? (ids.length > 0 ? "available" : "not_available"), value: statusOverride === "not_available" || statusOverride === "not_configured" || (!statusOverride && ids.length === 0) ? undefined : money(amount), unit: "money", sourceCount: ids.length, drilldownIds: ids.slice(0, 100), note });
+      const collectionRows = sourceRows.filter((row) => ["payment", "refund", "void"].includes(row.sourceType));
+      const membershipRows = sourceRows.filter((row) => ["membership_sale", "membership_renewal"].includes(row.sourceType));
+      const metrics: T.ManagementAnalysisMetric[] = [moneyMetric("collections", "Recorded collections", collectionRows.reduce((sum, row) => sum + (row.sourceType === "payment" ? row.amount?.amount ?? 0 : -(row.amount?.amount ?? 0)), 0), collectionRows.map((row) => row.id)), moneyMetric("deferred_membership_sales", "Deferred membership sales", membershipRows.reduce((sum, row) => sum + (row.amount?.amount ?? 0), 0), membershipRows.map((row) => row.id), "Membership sales follow the configured deferred policy.")];
+      metrics.push({ key: "renewal_deliveries", label: "Renewal recovery deliveries", status: "not_available", value: undefined, unit: "count", sourceCount: 0, drilldownIds: [], note: "The mock adapter has no provider-neutral renewal delivery ledger." });
+      const visibleCharge = (charge: T.Charge): boolean => {
+        const membership = charge.membershipId ? this.db.memberships.find((candidate) => candidate.id === charge.membershipId) : undefined;
+        const member = this.db.members.find((candidate) => candidate.id === charge.memberId);
+        return this.managementBranchVisible(membership?.homeBranchId ?? member?.homeBranchId, range.branchId);
+      };
+      const outstanding = this.db.charges.filter((charge) => visibleCharge(charge) && (charge.dueDate ?? charge.createdAt.slice(0, 10)) <= range.toDate && !["void", "refunded"].includes(charge.status) && charge.outstandingAmount.amount > 0);
+      metrics.push(currentSnapshot
+        ? { key: "outstanding_balances", label: "Outstanding collectible balances", status: outstanding.length > 0 ? "available" : "not_available", value: outstanding.length > 0 ? money(outstanding.reduce((sum, charge) => sum + charge.outstandingAmount.amount, 0)) : undefined, unit: "money", sourceCount: outstanding.length, drilldownIds: outstanding.map((charge) => charge.id), note: "Current snapshot from charge records." }
+        : { key: "outstanding_balances", label: "Outstanding collectible balances", status: "not_available", value: undefined, unit: "money", sourceCount: 0, drilldownIds: [], note: "Historical outstanding balances are unavailable because the mock charge model has no immutable balance-transition history." });
+      const openAlerts = this.db.lowStockAlerts.filter((row) => row.status === "open" && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? { key: "low_stock", label: "Open low-stock alerts", status: "available", value: openAlerts.length, unit: "count", sourceCount: openAlerts.length, drilldownIds: openAlerts.map((row) => row.id), note: "Current snapshot from inventory alerts." }
+        : { key: "low_stock", label: "Open low-stock alerts", status: "not_available", value: undefined, unit: "count", sourceCount: 0, drilldownIds: [], note: "Historical low-stock state is unavailable because inventory alerts are mutable projections without transition history." });
+      const openOrders = this.db.purchaseOrders.filter((row) => ["approved", "partially_received"].includes(row.status) && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? moneyMetric("supplier_commitments", "Open supplier commitments", openOrders.reduce((sum, row) => sum + row.lines.reduce((lineSum, line) => lineSum + Math.max(0, line.orderedQuantity - line.receivedQuantity) * line.unitCost.amount, 0), 0), openOrders.map((row) => row.id), "Current snapshot from purchase order projections.", "available")
+        : { key: "supplier_commitments", label: "Open supplier commitments", status: "not_available", value: undefined, unit: "money", sourceCount: 0, drilldownIds: [], note: "Historical supplier commitments are unavailable because purchase-order status is mutable without transition history." });
+      const openIssues = this.db.equipmentIssues.filter((row) => ["open", "in_progress"].includes(row.status) && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? { key: "equipment_downtime", label: "Open equipment issues", status: "available", value: openIssues.reduce((sum, row) => sum + (row.downtimeDays ?? 0), 0), unit: "days", sourceCount: openIssues.length, drilldownIds: openIssues.map((row) => row.id), note: "Current snapshot from equipment issue projections." }
+        : { key: "equipment_downtime", label: "Open equipment issues", status: "not_available", value: undefined, unit: "days", sourceCount: 0, drilldownIds: [], note: "Historical equipment issue state is unavailable because issue status is mutable without transition history." });
+      const completedFacilities = this.db.facilityTasks.filter((row) => row.status === "completed" && managementLocalDate(row.updatedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.updatedAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+      const facilityCostRows = completedFacilities.filter((row) => row.suppliesCost !== undefined);
+      metrics.push({ key: "facility_supplies_cost", label: "Recorded facility supplies cost", status: facilityCostRows.length > 0 ? "available" : "not_configured", value: facilityCostRows.length > 0 ? money(facilityCostRows.reduce((sum, row) => sum + (row.suppliesCost?.amount ?? 0), 0)) : undefined, unit: "money", sourceCount: facilityCostRows.length, drilldownIds: facilityCostRows.map((row) => row.id), note: facilityCostRows.length > 0 ? undefined : "No completed facility tasks with configured supplies costs are recorded in this period." });
+      const completedRepairs = this.db.equipmentWorkOrders.filter((row) => row.status === "completed" && managementLocalDate(row.updatedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.updatedAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+      const repairCostRows = completedRepairs.filter((row) => row.totalCost !== undefined || row.partsCost !== undefined || row.laborCost !== undefined);
+      metrics.push({ key: "equipment_repair_cost", label: "Recorded equipment repair cost", status: repairCostRows.length > 0 ? "available" : "not_configured", value: repairCostRows.length > 0 ? money(repairCostRows.reduce((sum, row) => sum + (row.totalCost?.amount ?? (row.partsCost?.amount ?? 0) + (row.laborCost?.amount ?? 0)), 0)) : undefined, unit: "money", sourceCount: repairCostRows.length, drilldownIds: repairCostRows.map((row) => row.id), note: repairCostRows.length > 0 ? undefined : "No completed repair work orders with configured costs are recorded in this period." });
+      const variance = this.db.shifts.filter((shift) => this.managementBranchVisible(shift.branchId, range.branchId) && shift.closedAt && managementLocalDate(shift.closedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(shift.closedAt, this.db.organization.timezone) <= range.toDate && shift.variance).map((shift) => shift.variance!.amount);
+      metrics.push({ key: "cash_variance", label: "Recorded cash shift variance", status: variance.length > 0 ? "available" : "not_available", value: variance.length > 0 ? money(variance.reduce((sum, amount) => sum + amount, 0)) : undefined, unit: "money", sourceCount: variance.length, drilldownIds: [] });
+      return { ...metadata, metrics };
+    });
+  }
+
+  listAccountingAccounts(query: { search?: string } = {}): Promise<T.AccountingAccount[]> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.accountingAccounts.filter((account) => !search || `${account.code} ${account.name}`.toLowerCase().includes(search)).map((account) => ({ ...account }));
+    });
+  }
+
+  listAccountingPeriods(query: { status?: T.AccountingPeriodStatus } = {}): Promise<T.AccountingPeriod[]> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      return [...this.accountingPeriods].filter((period) => !query.status || period.status === query.status).sort((a, b) => b.periodStart.localeCompare(a.periodStart)).map((period) => ({ ...period }));
+    });
+  }
+
+  listAccountingJournalEntries(query: T.AccountingJournalQuery = {}): Promise<T.Page<T.AccountingJournalEntrySummary>> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      let rows = this.accountingEntries.filter((entry) => (!branchId || entry.branchId === branchId) && (!query.periodId || entry.periodId === query.periodId) && (!query.status || entry.status === query.status) && (!query.from || entry.postingDate >= query.from) && (!query.to || entry.postingDate <= query.to));
+      rows = rows.filter((entry) => this.accountingBranchIsVisible(entry.branchId));
+      const items = rows.sort((a, b) => b.postingDate.localeCompare(a.postingDate)).map(({ lines: _lines, reason: _reason, idempotencyKey: _idempotencyKey, reversalOfEntryId: _reversalOfEntryId, reversedByEntryId: _reversedByEntryId, createdById: _createdById, ...summary }) => ({ ...summary }));
+      return paginate(items, query);
+    });
+  }
+
+  getAccountingJournalEntry(entryId: T.UUID): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const entry = this.accountingEntry(entryId);
+      return { ...entry, lines: entry.lines.map((line) => ({ ...line, debit: { ...line.debit }, credit: { ...line.credit } })) };
+    });
+  }
+
+  getAccountingTrialBalance(query: { branchId?: T.UUID; periodId?: T.UUID } = {}): Promise<T.AccountingTrialBalance> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      const balances = new Map(this.accountingAccounts.map((account) => [account.code, { account, debit: 0, credit: 0 }]));
+      for (const entry of this.accountingEntries.filter((candidate) => (candidate.status === "posted" || candidate.status === "reversed") && (!query.periodId || candidate.periodId === query.periodId) && (!branchId || candidate.branchId === branchId) && this.accountingBranchIsVisible(candidate.branchId))) {
+        for (const line of entry.lines.filter((candidate) => !branchId || candidate.branchId === branchId)) {
+          const current = balances.get(line.accountCode);
+          if (current) { current.debit += line.debit.amount; current.credit += line.credit.amount; }
+        }
+      }
+      const rows = [...balances.values()].map((row) => ({ ...row, net: row.debit - row.credit })).filter((row) => row.net !== 0).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, accountType: row.account.accountType, statementGroup: row.account.statementGroup, debit: money(Math.max(row.net, 0)), credit: money(Math.max(-row.net, 0)), balance: money(row.net) }));
+      return { organizationId: this.db.organization.id, branchId, periodId: query.periodId, currency: this.db.organization.currency, rows, totalDebit: money(rows.reduce((sum, row) => sum + row.debit.amount, 0)), totalCredit: money(rows.reduce((sum, row) => sum + row.credit.amount, 0)) };
+    });
+  }
+
+  postManualJournal(input: T.PostManualJournalInput): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(input.reason);
+      const key = `manual:${input.idempotencyKey}`;
+      if (!input.idempotencyKey.trim()) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
+      const scope = input.scope ?? "branch";
+      if (scope !== "branch" && scope !== "consolidated") throw ApiError.of(ERR.VALIDATION, "Journal scope must be branch or consolidated.");
+      if (scope === "consolidated" && this.actor().branchScope !== "all") throw ApiError.of(ERR.FORBIDDEN, "Consolidated journals require organization-wide branch scope.");
+      const branch = this.accountingBranch(input.branchId);
+      if (scope === "consolidated" && input.branchId) throw ApiError.of(ERR.VALIDATION, "A consolidated journal cannot specify a branch.");
+      if (scope === "branch" && !branch) throw ApiError.of(ERR.VALIDATION, "A branch is required for a branch journal.");
+      const lines: T.AccountingJournalLine[] = [];
+      let debitTotal = 0;
+      let creditTotal = 0;
+      for (const lineInput of input.lines) {
+        const debit = lineInput.debit.amount;
+        const credit = lineInput.credit.amount;
+        if (lineInput.debit.currency !== this.db.organization.currency || lineInput.credit.currency !== this.db.organization.currency || !Number.isSafeInteger(debit) || !Number.isSafeInteger(credit) || debit < 0 || credit < 0 || (debit === 0 && credit === 0) || (debit > 0 && credit > 0)) throw ApiError.of(ERR.VALIDATION, "Each journal line needs one positive integer debit or credit in the organization currency.");
+        const account = this.accountingAccount(lineInput.accountId);
+        const nextDebitTotal = debitTotal + debit;
+        const nextCreditTotal = creditTotal + credit;
+        if (!Number.isSafeInteger(nextDebitTotal) || !Number.isSafeInteger(nextCreditTotal)) throw ApiError.of(ERR.VALIDATION, "Journal totals must remain safe integer minor-unit amounts.");
+        debitTotal = nextDebitTotal;
+        creditTotal = nextCreditTotal;
+        lines.push({ id: mockUuid(), journalEntryId: "pending", branchId: branch?.id, accountId: account.id, accountCode: account.code, accountName: account.name, debit: money(debit), credit: money(credit), description: lineInput.description, statementGroup: account.statementGroup, cashflowGroup: account.cashflowGroup });
+      }
+      if (lines.length < 2 || debitTotal <= 0 || debitTotal !== creditTotal) throw ApiError.of(ERR.VALIDATION, "Journal debits and credits must be equal and non-zero.");
+      const now = nowISO();
+      const memo = input.memo.trim() || "Manual journal";
+      const postingDate = input.postingDate ?? this.today();
+      const fingerprint = manualJournalRequestFingerprint({ scope, branchId: branch?.id, postingDate, memo, reason: input.reason.trim(), lines: lines.map((line) => ({ accountId: line.accountId, debitMinor: line.debit.amount, creditMinor: line.credit.amount, description: line.description })) });
+      const replay = this.accountingEntries.find((entry) => entry.idempotencyKey === key);
+      if (replay) {
+        const replayFingerprint = this.accountingEntryFingerprints.get(replay.id) ?? manualJournalRequestFingerprint({ scope: replay.scope, branchId: replay.branchId, postingDate: replay.postingDate, memo: replay.memo, reason: replay.reason ?? "", lines: replay.lines.map((line) => ({ accountId: line.accountId, debitMinor: line.debit.amount, creditMinor: line.credit.amount, description: line.description })) });
+        if (replayFingerprint !== fingerprint) throw ApiError.of(ERR.CONFLICT, "This manual journal idempotency key was already used for a different request.");
+        return replay;
+      }
+      const period = this.accountingPeriodFor(postingDate);
+      const entryId = mockUuid();
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope, currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo, reason: input.reason.trim(), idempotencyKey: key, totalDebit: money(debitTotal), totalCredit: money(creditTotal), lineCount: lines.length, createdAt: now, postedAt: now, createdById: this.actor().id, lines: lines.map((line) => ({ ...line, journalEntryId: entryId })) };
+      this.accountingEntries.unshift(entry);
+      this.accountingEntryFingerprints.set(entry.id, fingerprint);
+      this.audit({ category: "accounting", action: "accounting.manual_post", entityType: "accounting_journal_entry", entityId: entry.id, entityLabel: entry.memo, summary: `Posted manual journal ${entry.id}`, reason: input.reason, branchId: branch?.id });
+      return entry;
+    });
+  }
+
+  listAccountingSourcePostings(query: T.AccountingSourcePostingQuery = {}): Promise<T.Page<T.AccountingSourcePosting>> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      const rows = this.accountingSources.filter((row) => (!branchId || row.branchId === branchId) && (!query.status || row.status === query.status) && (!query.sourceType || row.sourceType === query.sourceType) && this.accountingBranchIsVisible(row.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      return paginate(rows.map((row) => ({ ...row, amount: row.amount ? { ...row.amount } : undefined })), query);
+    });
+  }
+
+  refreshAccountingSourceQueue(input: T.RefreshAccountingSourceQueueInput = {}): Promise<T.RefreshAccountingSourceQueueResult> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      const supported: T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_repair"];
+      const sourceTypes = input.sourceTypes ?? supported;
+      if (sourceTypes.some((sourceType) => !supported.includes(sourceType))) throw ApiError.of(ERR.VALIDATION, "Source queue refresh contains an unsupported source type.");
+      const allowed = new Set(sourceTypes);
+      const requestedBranchId = input.branchId ? this.accountingBranch(input.branchId)?.id : undefined;
+      const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> = [];
+      const seen = new Set<string>();
+      const add = (sourceType: T.AccountingSourceType, sourceId: T.UUID, branchId?: T.UUID) => {
+        if (!allowed.has(sourceType) || (requestedBranchId && branchId !== requestedBranchId) || !this.accountingBranchIsVisible(branchId)) return;
+        const key = `${sourceType}:${sourceId}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        candidates.push({ sourceType, sourceId, branchId });
+      };
+      for (const payment of this.db.payments) {
+        const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
+        add(sourceType, payment.id, payment.branchId);
+      }
+      for (const membership of this.db.memberships) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
+      for (const order of this.db.purchaseOrders) add("purchase_order_receipt", order.id, order.branchId);
+      for (const movement of this.db.stockMovements) add("stock_movement", movement.id, movement.branchId);
+      for (const task of this.db.facilityTasks) add("facility_supplies", task.id, task.branchId);
+      for (const asset of this.db.equipmentAssets) add("equipment_acquisition", asset.id, asset.branchId);
+      for (const workOrder of this.db.equipmentWorkOrders) add("equipment_repair", workOrder.id, workOrder.branchId);
+
+      let created = 0;
+      let updated = 0;
+      let skippedPosted = 0;
+      let pending = 0;
+      let unconfigured = 0;
+      let excluded = 0;
+      const items: T.AccountingSourcePosting[] = [];
+      for (const candidate of candidates) {
+        const fact = this.mockAccountingFact(candidate.sourceType, candidate.sourceId);
+        const currency = fact.currency ?? this.db.organization.currency;
+        const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+        const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
+        if (existing?.status === "posted" || existing?.status === "reversed") {
+          skippedPosted += 1;
+          continue;
+        }
+        const now = nowISO();
+        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
+        let row: T.AccountingSourcePosting;
+        if (existing) {
+          const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
+          if (changed) { Object.assign(existing, next); updated += 1; }
+          row = existing;
+        } else {
+          row = { id: mockUuid(), organizationId: this.db.organization.id, sourceType: candidate.sourceType, sourceId: candidate.sourceId, ...next, createdAt: now };
+          this.accountingSources.unshift(row);
+          created += 1;
+        }
+        if (row.status === "pending") pending += 1;
+        if (row.status === "unconfigured") unconfigured += 1;
+        if (row.status === "excluded") excluded += 1;
+        items.push({ ...row, amount: row.amount ? { ...row.amount } : undefined });
+      }
+      if (created > 0 || updated > 0) this.audit({ category: "accounting", action: "accounting.source_queue.refresh", entityType: "accounting_source_posting", entityId: requestedBranchId ?? this.db.organization.id, entityLabel: "Source queue", summary: `Refreshed accounting source queue (${created} created, ${updated} updated)`, branchId: requestedBranchId });
+      return { organizationId: this.db.organization.id, branchId: requestedBranchId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, items };
+    });
+  }
+
+  private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): { amount?: number; currency?: string; branchId?: T.UUID; occurredAt: string; debitCode?: string; creditCode?: string; policyCode?: string; reason?: string; status?: T.AccountingSourceStatus; details?: Record<string, unknown> } {
+    const accountForMethod = (method: T.PaymentMethodKey) => method === "card" ? "1110" : method === "bank_transfer" || method === "cliq" ? "1120" : "1100";
+    if (["payment", "refund", "void"].includes(sourceType)) {
+      const payment = this.db.payments.find((candidate) => candidate.id === sourceId);
+      if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Payment source not found.");
+      const valid = sourceType === "payment" ? payment.type === "payment" && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : payment.type === "payment" && payment.status === "voided";
+      const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : "1200";
+      const creditCode = sourceType === "payment" ? "1200" : accountForMethod(payment.method);
+      const normalizedAmount = sourceType === "refund" ? Math.abs(payment.amount.amount) : payment.amount.amount;
+      const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
+      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${sourceType}-${payment.method}.v1`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method } };
+    }
+    if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
+      const membership = this.db.memberships.find((candidate) => candidate.id === sourceId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership source not found.");
+      const renewal = Boolean(membership.previousMembershipId);
+      const netAmount = membership.salePrice.amount - membership.discount.amount;
+      const validLifecycle = !membership.cancelledAt && ((sourceType === "membership_renewal" && renewal) || (sourceType === "membership_sale" && !renewal));
+      const validDiscount = membership.discount.currency === this.db.organization.currency && Number.isSafeInteger(membership.discount.amount) && membership.discount.amount >= 0 && membership.discount.amount <= membership.salePrice.amount && membership.discountApprovalStatus !== "pending" && membership.discountApprovalStatus !== "rejected";
+      const validAmount = Number.isSafeInteger(netAmount) && netAmount >= 0;
+      const currencyMismatch = membership.salePrice.currency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
+      return { amount: netAmount, currency: membership.salePrice.currency, branchId: membership.homeBranchId, occurredAt: membership.createdAt, debitCode: "1200", creditCode: "2200", policyCode: `${sourceType === "membership_sale" ? "membership-sale" : "membership-renewal"}.v1`, status: currencyMismatch ? "excluded" : validLifecycle && validDiscount && validAmount ? undefined : "unconfigured", reason: currencyMismatch ? "Membership currency does not match organization currency." : !validLifecycle ? "Membership lifecycle does not match the requested sale or renewal source type." : !validDiscount ? "Membership discount approval or currency is not configured." : !validAmount ? "Membership sale net amount is not a safe non-negative integer." : undefined, details: { previousMembershipId: membership.previousMembershipId, salePriceMinor: membership.salePrice.amount, discountMinor: membership.discount.amount, netAmountMinor: netAmount, discountApprovalStatus: membership.discountApprovalStatus } };
+    }
+    if (sourceType === "stock_movement") {
+      const movement = this.db.stockMovements.find((candidate) => candidate.id === sourceId);
+      if (!movement) throw ApiError.of(ERR.NOT_FOUND, "Stock movement source not found.");
+      const receive = movement.type === "receive";
+      const consumptive = ["sale", "consumption", "waste"].includes(movement.type);
+      const amount = movement.unitCost ? Math.abs(movement.quantity) * movement.unitCost.amount : undefined;
+      const purchaseOrderLinked = movement.referenceType?.toLowerCase() === "purchase_order";
+      const excludedMovementType = ["return", "transfer_in", "transfer_out", "adjustment"].includes(movement.type);
+      const currencyMismatch = movement.unitCost?.currency !== undefined && movement.unitCost.currency !== this.db.organization.currency;
+      return { amount, currency: movement.unitCost?.currency ?? this.db.organization.currency, branchId: movement.branchId, occurredAt: movement.occurredAt, debitCode: receive ? "1300" : consumptive ? "5100" : undefined, creditCode: receive ? "2100" : consumptive ? "1300" : undefined, policyCode: receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : undefined, status: currencyMismatch ? "excluded" : purchaseOrderLinked || excludedMovementType ? "excluded" : !receive && !consumptive || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: currencyMismatch ? "Stock movement currency does not match organization currency." : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded to prevent duplicate inventory and AP posting." : excludedMovementType ? `Stock movement type ${movement.type} has no configured accounting policy.` : !receive && !consumptive ? `No accounting policy exists for stock movement type ${movement.type}.` : movement.unitCost ? undefined : "Stock movement unit cost is not configured.", details: { type: movement.type, referenceType: movement.referenceType } };
+    }
+    if (sourceType === "purchase_order_receipt") {
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === sourceId);
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "Purchase order source not found.");
+      let amount = 0;
+      let invalidCost = false;
+      let currencyMismatch = order.currency !== this.db.organization.currency;
+      for (const line of order.lines) {
+        if (line.unitCost.currency !== this.db.organization.currency) currencyMismatch = true;
+        const lineTotal = line.receivedQuantity * line.unitCost.amount;
+        if (!Number.isSafeInteger(lineTotal) || lineTotal < 0 || !Number.isSafeInteger(amount + lineTotal)) invalidCost = true;
+        else amount += lineTotal;
+      }
+      const fullyReceived = order.status === "received" && order.lines.length > 0 && order.lines.every((line) => line.receivedQuantity >= line.orderedQuantity);
+      return { amount: invalidCost ? undefined : amount, currency: order.currency, branchId: order.branchId, occurredAt: order.receivedAt ?? order.updatedAt, debitCode: "1300", creditCode: "2100", policyCode: "purchase-order-receipt.v1", status: currencyMismatch ? "excluded" : invalidCost || order.status === "cancelled" || !fullyReceived || !amount ? "unconfigured" : undefined, reason: currencyMismatch ? "Purchase order currency does not match organization currency." : invalidCost ? "Purchase order receipt cost is not a safe integer minor-unit amount." : order.status === "cancelled" ? "Cancelled purchase orders are excluded." : !fullyReceived ? "Purchase order inventory must be fully received before posting." : !amount ? "No receiving cost is recorded." : undefined };
+    }
+    if (sourceType === "facility_supplies") {
+      const task = this.db.facilityTasks.find((candidate) => candidate.id === sourceId);
+      if (!task) throw ApiError.of(ERR.NOT_FOUND, "Facility task source not found.");
+      const amount = task.suppliesCost?.amount;
+      return { amount, currency: task.suppliesCost?.currency ?? this.db.organization.currency, branchId: task.branchId, occurredAt: task.completedAt ?? task.updatedAt, debitCode: "5300", creditCode: "2100", policyCode: "facility-supplies.v1", status: task.suppliesCost?.currency !== undefined && task.suppliesCost.currency !== this.db.organization.currency ? "excluded" : task.status !== "completed" || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: task.suppliesCost?.currency !== undefined && task.suppliesCost.currency !== this.db.organization.currency ? "Facility supplies currency does not match organization currency." : task.status !== "completed" ? "Facility supplies post only after completion." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Facility supplies cost is not a configured safe integer minor-unit amount." : undefined };
+    }
+    if (sourceType === "equipment_acquisition") {
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === sourceId);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset source not found.");
+      const amount = asset.purchaseCost?.amount;
+      return { amount, currency: asset.purchaseCost?.currency ?? this.db.organization.currency, branchId: asset.branchId, occurredAt: asset.purchaseDate ? `${asset.purchaseDate}T00:00:00.000Z` : asset.createdAt, debitCode: "1500", creditCode: "2100", policyCode: "equipment-acquisition.v1", status: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "excluded" : !asset.purchaseDate || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "Equipment acquisition currency does not match organization currency." : !asset.purchaseDate ? "Equipment purchase date is not configured." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined };
+    }
+    const workOrder = this.db.equipmentWorkOrders.find((candidate) => candidate.id === sourceId);
+    if (!workOrder) throw ApiError.of(ERR.NOT_FOUND, "Equipment work-order source not found.");
+    const amount = workOrder.totalCost?.amount ?? (workOrder.partsCost?.amount ?? 0) + (workOrder.laborCost?.amount ?? 0);
+    const repairCurrency = workOrder.totalCost?.currency ?? workOrder.partsCost?.currency ?? workOrder.laborCost?.currency ?? this.db.organization.currency;
+    return { amount, currency: repairCurrency, branchId: workOrder.branchId, occurredAt: workOrder.completedAt ?? workOrder.updatedAt, debitCode: "5200", creditCode: "2100", policyCode: "equipment-repair.v1", status: repairCurrency !== this.db.organization.currency ? "excluded" : workOrder.status !== "completed" || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: repairCurrency !== this.db.organization.currency ? "Equipment repair currency does not match organization currency." : workOrder.status !== "completed" ? "Equipment repairs post only after completion." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment repair cost is not a configured safe integer minor-unit amount." : undefined };
+  }
+
+  postAccountingSource(input: T.PostAccountingSourceInput): Promise<T.AccountingSourcePosting> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      if (!input.idempotencyKey.trim()) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
+      const sourceRows = this.accountingSources.filter((row) => row.sourceType === input.sourceType && row.sourceId === input.sourceId);
+      const replay = sourceRows.find((row) => row.status === "posted" || row.status === "reversed") ?? sourceRows[0];
+      for (const row of sourceRows) {
+        if (!this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      const requestFingerprint = accountingSourceRequestFingerprint({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason });
+      const attemptsWithKey = [...this.accountingSourceAttempts.values()].filter((attempt) => attempt.idempotencyKey === input.idempotencyKey);
+      for (const attempt of attemptsWithKey) {
+        if (!this.accountingBranchIsVisible(attempt.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      if (attemptsWithKey.some((attempt) => attempt.sourceType !== input.sourceType || attempt.sourceId !== input.sourceId)) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key belongs to another source.");
+      const attempt = this.accountingSourceAttempts.get(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey));
+      if (attempt) {
+        if (attempt.requestFingerprint !== requestFingerprint) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key was already used for a different source-posting request.");
+        return this.accountingSourceAttemptView(attempt);
+      }
+      const existingKeyRows = this.accountingSources.filter((row) => row.idempotencyKey === input.idempotencyKey);
+      for (const row of existingKeyRows) {
+        if (!this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      if (existingKeyRows.some((row) => row.sourceType !== input.sourceType || row.sourceId !== input.sourceId)) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key belongs to another source.");
+      const existingKey = existingKeyRows.find((row) => row.sourceType === input.sourceType && row.sourceId === input.sourceId);
+      if (existingKey?.status === "posted" || existingKey?.status === "reversed") return existingKey;
+      if (replay?.status === "posted" || replay?.status === "reversed") return replay;
+      const fact = this.mockAccountingFact(input.sourceType, input.sourceId);
+      if (!this.accountingBranchIsVisible(fact.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      if (!fact.branchId && !fact.status) {
+        fact.status = "unconfigured";
+        fact.reason = "Source fact is missing an active branch.";
+      }
+      const branch = this.accountingBranch(fact.branchId);
+      if (fact.status) {
+        const now = nowISO();
+        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        this.accountingSourceAttempts.set(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey), attempt);
+        return this.accountingSourceAttemptView(attempt);
+      }
+      if (!fact.amount || !Number.isSafeInteger(fact.amount) || !fact.debitCode || !fact.creditCode || fact.amount <= 0) throw ApiError.of(ERR.VALIDATION, "Source has no configured positive accounting amount.");
+      const period = this.accountingPeriodFor(fact.occurredAt.slice(0, 10));
+      const debit = this.accountingAccount(`acct-${fact.debitCode}`);
+      const credit = this.accountingAccount(`acct-${fact.creditCode}`);
+      const now = nowISO();
+      const entryId = mockUuid();
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate: fact.occurredAt.slice(0, 10), periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount), totalCredit: money(fact.amount), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount), credit: money(0), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0), credit: money(fact.amount), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
+      this.accountingEntries.unshift(entry);
+      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion: 1, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion: 1, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+      this.audit({ category: "accounting", action: "accounting.source.post", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Posted ${input.sourceType} source`, reason: input.reason, branchId: branch?.id });
+      return row;
+    });
+  }
+
+  reverseAccountingEntry(entryId: T.UUID, input: { reason: string; idempotencyKey: string }): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(input.reason);
+      const replay = this.accountingEntries.find((entry) => entry.idempotencyKey === `reverse:${entryId}:${input.idempotencyKey}`);
+      const fingerprint = reversalRequestFingerprint({ entryId, reason: input.reason.trim() });
+      if (replay) {
+        const replayFingerprint = this.accountingEntryFingerprints.get(replay.id) ?? reversalRequestFingerprint({ entryId: replay.reversalOfEntryId ?? entryId, reason: replay.reason ?? "" });
+        if (replayFingerprint !== fingerprint) throw ApiError.of(ERR.CONFLICT, "This reversal idempotency key was already used for a different request.");
+        return replay;
+      }
+      const original = this.accountingEntry(entryId);
+      if (original.status !== "posted") throw ApiError.of(ERR.CONFLICT, "Only a posted journal entry can be reversed once.");
+      const period = this.accountingPeriodFor(this.today());
+      const now = nowISO();
+      const reversalId = mockUuid();
+      const reversal: T.AccountingJournalEntryDetail = { ...original, id: reversalId, periodId: period.id, postingDate: this.today(), status: "posted", memo: `Reversal of ${original.id}`, reason: input.reason, idempotencyKey: `reverse:${entryId}:${input.idempotencyKey}`, reversalOfEntryId: original.id, reversedByEntryId: undefined, createdAt: now, postedAt: now, createdById: this.actor().id, lines: original.lines.map((line) => ({ ...line, id: mockUuid(), journalEntryId: reversalId, debit: line.credit, credit: line.debit, description: `Reversal of ${original.id}` })) };
+      this.accountingEntries.unshift(reversal);
+      this.accountingEntryFingerprints.set(reversal.id, fingerprint);
+      original.status = "reversed";
+      original.reversedByEntryId = reversal.id;
+      const source = this.accountingSources.find((row) => row.journalEntryId === original.id);
+      if (source) source.status = "reversed";
+      this.audit({ category: "accounting", action: "accounting.entry.reverse", entityType: "accounting_journal_entry", entityId: original.id, entityLabel: original.memo, summary: `Reversed journal entry ${original.id}`, reason: input.reason, branchId: original.branchId });
+      return reversal;
+    });
+  }
+
+  closeAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(reason);
+      const period = this.accountingPeriods.find((candidate) => candidate.id === periodId);
+      if (!period) throw ApiError.of(ERR.NOT_FOUND, "Accounting period not found.");
+      if (period.status !== "open") throw ApiError.of(ERR.CONFLICT, "Accounting period is already closed.");
+      const pending = this.accountingSources.some((source) => source.status === "pending" && source.occurredAt.slice(0, 7) === period.id);
+      if (pending) throw ApiError.of(ERR.CONFLICT, "Resolve pending source postings before closing the period.");
+      period.status = "closed";
+      period.closedAt = nowISO();
+      period.closedById = this.actor().id;
+      period.closeReason = reason;
+      period.updatedAt = nowISO();
+      this.audit({ category: "accounting", action: "accounting.period.close", entityType: "accounting_period", entityId: period.id, entityLabel: period.id, summary: `Closed accounting period ${period.id}`, reason });
+      return { ...period };
+    });
+  }
+
+  reopenAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(reason);
+      const period = this.accountingPeriods.find((candidate) => candidate.id === periodId);
+      if (!period) throw ApiError.of(ERR.NOT_FOUND, "Accounting period not found.");
+      if (period.status !== "closed") throw ApiError.of(ERR.CONFLICT, "Only a closed accounting period can be reopened.");
+      if (this.accountingPeriods.some((candidate) => candidate.status === "closed" && candidate.periodStart > period.periodStart)) throw ApiError.of(ERR.CONFLICT, "Reopen later accounting periods first.");
+      period.status = "open";
+      period.reopenedAt = nowISO();
+      period.reopenedById = this.actor().id;
+      period.reopenReason = reason;
+      period.updatedAt = nowISO();
+      this.audit({ category: "accounting", action: "accounting.period.reopen", entityType: "accounting_period", entityId: period.id, entityLabel: period.id, summary: `Reopened accounting period ${period.id}`, reason });
+      return { ...period };
+    });
+  }
+
   // -------------------------------------------------------------------------
   // automations
   // -------------------------------------------------------------------------
@@ -4615,13 +5419,138 @@ export class MockGymOSApi implements GymOSApi {
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> {
     return this.respond(() => ({
-      organization: this.db.organization,
+      organization: { ...this.db.organization, brand: this.db.brand },
+      brand: this.db.brand,
       branches: this.db.branches,
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
       operationalPolicies: this.db.operationalPolicies,
+      workspace: this.workspaceAccess(),
     }));
+  }
+
+  getBrandKit(): Promise<T.BrandKit> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      return { ...this.db.brand, tokens: { ...this.db.brand.tokens } };
+    });
+  }
+
+  updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> {
+    return this.respond(() => {
+      this.requireOwner();
+      if (!isBrandPaletteKey(input.paletteKey)) throw ApiError.of(ERR.VALIDATION, "Choose a supported Brand Kit palette.");
+      const primaryColor = input.primaryColor === undefined || input.primaryColor === "" ? BRAND_PALETTE_PRESETS[input.paletteKey] : normalizeBrandHex(input.primaryColor);
+      if (!primaryColor) throw ApiError.of(ERR.VALIDATION, "Primary color must be a six-digit hex color.");
+      const requestedLogoId = input.logoAssetId ?? undefined;
+      const logo = requestedLogoId ? this.mediaAssets.get(requestedLogoId) : undefined;
+      if (requestedLogoId && (!logo || logo.ownerType !== "gym_logo" || logo.ownerId !== this.db.organization.id || logo.visibility !== "public" || !["pending", "active"].includes(logo.status))) throw ApiError.of(ERR.NOT_FOUND, "Brand logo was not found in this organization.");
+      const previousLogoId = this.db.brand.logoAssetId;
+      const now = nowISO();
+      if (logo?.status === "pending") this.mediaAssets.set(logo.id, { ...logo, status: "active", deleteAfter: undefined, updatedAt: now });
+      if (previousLogoId && previousLogoId !== requestedLogoId) {
+        const previous = this.mediaAssets.get(previousLogoId);
+        if (previous?.status === "active") this.mediaAssets.set(previousLogoId, { ...previous, status: "scheduled_for_deletion", deleteAfter: new Date(Date.parse(now) + 30 * 86_400_000).toISOString(), updatedAt: now });
+      }
+      const before = this.db.brand;
+      const next: T.BrandKit = { organizationId: this.db.organization.id, paletteKey: input.paletteKey, primaryColor, tokens: deriveBrandTokens(primaryColor), logoAssetId: requestedLogoId, logoUrl: logo?.url, logoAltText: logo?.altText, version: before.version + 1, updatedAt: now, updatedById: this.actor().id };
+      this.db.brand = next;
+      this.db.organization.brand = next;
+      this.audit({ category: "settings", action: "settings.brand.update", entityType: "organization_brand", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: "Tenant Brand Kit updated", before: { paletteKey: before.paletteKey, primaryColor: before.primaryColor, logoAssetId: before.logoAssetId ?? null, version: before.version }, after: { paletteKey: next.paletteKey, primaryColor: next.primaryColor, logoAssetId: next.logoAssetId ?? null, version: next.version } });
+      return { ...next, tokens: { ...next.tokens } };
+    });
+  }
+
+  getWorkspaceAccess(): Promise<T.WorkspaceAccess> {
+    return this.respond(() => this.workspaceAccess());
+  }
+
+  getOrganizationEntitlements(): Promise<T.OrganizationEntitlements> {
+    return this.respond(() => this.workspaceEntitlements());
+  }
+
+  getWorkspaceModulePreferences(): Promise<T.WorkspaceModulePreferences> {
+    return this.respond(() => this.workspacePreferences(this.workspaceEntitlements().entitledModules));
+  }
+
+  getWorkspaceModuleStatus(moduleKey: T.WorkspaceModuleKey): Promise<T.WorkspaceModuleStatus> {
+    return this.respond(() => {
+      const status = this.workspaceAccess().modules.find((module) => module.key === moduleKey);
+      if (!status) throw ApiError.of(ERR.VALIDATION, `Unknown workspace module: ${moduleKey}`);
+      if (!status.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, `The ${moduleKey} workspace module is not enabled for this organization.`);
+      return status;
+    });
+  }
+
+  updateWorkspaceModulePreferences(input: T.UpdateWorkspaceModulePreferencesInput): Promise<T.WorkspaceAccess> {
+    return this.respond(() => {
+      this.requireOwner();
+      const entitled = this.workspaceAccess().entitlements.entitledModules;
+      let enabledModules: T.WorkspaceModuleKey[];
+      try {
+        enabledModules = validateWorkspaceModuleSelection(Array.isArray(input.enabledModules) ? input.enabledModules : [], entitled);
+      } catch (error) {
+        throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace module preferences are invalid.");
+      }
+      const before = [...this.workspaceAccess().preferences.enabledModules];
+      this.db.workspaceModulePreferences = {
+        ...this.db.workspaceModulePreferences,
+        catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+        enabledModules,
+        updatedAt: nowISO(),
+        updatedById: this.actor().id,
+      };
+      if (JSON.stringify(before) !== JSON.stringify(enabledModules)) {
+        this.audit({
+          category: "settings",
+          action: "workspace.module_preferences.update",
+          entityType: "workspace_module_preferences",
+          entityId: this.db.organization.id,
+          entityLabel: this.db.organization.name,
+          summary: "Workspace module preferences updated",
+          before: { enabledModules: before.join(",") },
+          after: { enabledModules: enabledModules.join(",") },
+        });
+      }
+      return this.workspaceAccess();
+    });
+  }
+
+  private workspaceEntitlements(): T.OrganizationEntitlements {
+    const plan = this.db.organization.subscriptionPlan;
+    const stored = this.db.organizationEntitlements;
+    return {
+      ...stored,
+      organizationId: this.db.organization.id,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      subscriptionPlan: plan,
+      entitledModules: entitledModulesForPlan(plan),
+      source: plan ? "subscription_plan" : "legacy_default",
+    };
+  }
+
+  private workspacePreferences(entitledModules: readonly T.WorkspaceModuleKey[]): T.WorkspaceModulePreferences {
+    const stored = this.db.workspaceModulePreferences;
+    const filtered = stored.enabledModules.filter((module): module is T.WorkspaceModuleKey => entitledModules.includes(module as T.WorkspaceModuleKey));
+    let enabledModules: T.WorkspaceModuleKey[];
+    try {
+      enabledModules = validateWorkspaceModuleSelection(filtered, entitledModules);
+    } catch {
+      enabledModules = defaultWorkspacePreferences(entitledModules);
+    }
+    return {
+      ...stored,
+      organizationId: this.db.organization.id,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      enabledModules,
+    };
+  }
+
+  private workspaceAccess(): T.WorkspaceAccess {
+    const entitlements = this.workspaceEntitlements();
+    const preferences = this.workspacePreferences(entitlements.entitledModules);
+    return buildWorkspaceAccess(entitlements, preferences);
   }
 
   updateOrganizationSettings(input: T.UpdateOrganizationSettingsInput): Promise<T.OrganizationSettings> {
@@ -4645,12 +5574,14 @@ export class MockGymOSApi implements GymOSApi {
 
   private getOrganizationSettingsSync(): T.OrganizationSettings {
     return {
-      organization: this.db.organization,
+      organization: { ...this.db.organization, brand: this.db.brand },
+      brand: this.db.brand,
       branches: this.db.branches,
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
       operationalPolicies: this.db.operationalPolicies,
+      workspace: this.workspaceAccess(),
     };
   }
 
@@ -4758,6 +5689,519 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  listZones(input: { branchId?: T.UUID; includeArchived?: boolean } = {}): Promise<T.Zone[]> {
+    return this.respond(() => {
+      const branchIds = input.branchId ? [input.branchId] : this.db.branches.filter((branch) => this.branchIsVisible(branch.id)).map((branch) => branch.id);
+      if (input.branchId && !this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      return this.db.zones.filter((zone) => branchIds.includes(zone.branchId) && (input.includeArchived || zone.status === "active")).sort((left, right) => left.code.localeCompare(right.code));
+    });
+  }
+
+  upsertZone(input: T.UpsertZoneInput): Promise<T.Zone> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.requireOwnerOrManager();
+      const branch = this.db.branches.find((candidate) => candidate.id === input.branchId);
+      if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const code = input.code.trim().toUpperCase();
+      const name = input.name.trim();
+      const nameAr = input.nameAr?.trim() || undefined;
+      const kinds: T.ZoneKind[] = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"];
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(code)) throw ApiError.of(ERR.VALIDATION, "Zone code must be 1–16 uppercase letters, numbers, underscores, or hyphens.");
+      if (!name || name.length > 80 || (nameAr?.length ?? 0) > 80) throw ApiError.of(ERR.VALIDATION, "Zone names must be between 1 and 80 characters.");
+      if (!kinds.includes(input.kind)) throw ApiError.of(ERR.VALIDATION, "Zone kind is not supported.");
+      if (input.capacity !== undefined && (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 100_000)) throw ApiError.of(ERR.VALIDATION, "Zone capacity must be a positive whole number.");
+      const existing = input.id ? this.db.zones.find((zone) => zone.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A zone cannot be moved between branches.");
+      if (existing && !this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      const duplicate = this.db.zones.find((zone) => zone.branchId === branch.id && zone.code === code && zone.id !== existing?.id);
+      if (duplicate) throw ApiError.of("CONFLICT", "That zone code is already used in this branch.");
+      const now = nowISO();
+      if (existing) {
+        const before = { ...existing };
+        Object.assign(existing, { code, name, nameAr, kind: input.kind, capacity: input.capacity, status: input.status === "archived" ? "archived" : "active", updatedAt: now });
+        this.audit({ category: "settings", action: "zone.update", entityType: "zone", entityId: existing.id, entityLabel: existing.name, summary: "Zone updated", before, after: { ...existing }, branchId: branch.id });
+        return { ...existing };
+      }
+      const zone: T.Zone = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, code, name, nameAr, kind: input.kind, capacity: input.capacity, status: input.status === "archived" ? "archived" : "active", createdAt: now, updatedAt: now };
+      this.db.zones.push(zone);
+      this.audit({ category: "settings", action: "zone.create", entityType: "zone", entityId: zone.id, entityLabel: zone.name, summary: "Zone created", after: { ...zone }, branchId: branch.id });
+      return { ...zone };
+    });
+  }
+
+  archiveZone(zoneId: T.UUID): Promise<T.Zone> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.requireOwnerOrManager();
+      const zone = this.db.zones.find((candidate) => candidate.id === zoneId);
+      if (!zone || !this.branchIsVisible(zone.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      if (zone.status === "archived") return { ...zone };
+      const before = { ...zone };
+      zone.status = "archived";
+      zone.updatedAt = nowISO();
+      this.audit({ category: "settings", action: "zone.archive", entityType: "zone", entityId: zone.id, entityLabel: zone.name, summary: "Zone archived", before, after: { ...zone }, branchId: zone.branchId });
+      return { ...zone };
+    });
+  }
+
+  listProducts(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Product[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined }));
+    });
+  }
+
+  upsertProduct(input: T.UpsertProductInput): Promise<T.Product> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const sku = input.sku.trim().toUpperCase();
+      const name = input.name.trim();
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(sku) || !name || name.length > 120) throw ApiError.of(ERR.VALIDATION, "Product SKU and name are invalid.");
+      if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0 || !Number.isSafeInteger(input.targetLevel) || input.targetLevel < input.reorderPoint || !Number.isSafeInteger(input.supplierLeadTimeDays) || input.supplierLeadTimeDays < 0) throw ApiError.of(ERR.VALIDATION, "Product stock thresholds are invalid.");
+      if (input.defaultUnitCost && (input.defaultUnitCost.amount < 0 || input.defaultUnitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product cost is invalid.");
+      const duplicate = this.db.products.find((product) => product.sku === sku && product.id !== input.id);
+      if (duplicate) throw ApiError.of(ERR.CONFLICT, "That SKU is already used by another product.");
+      if (input.preferredSupplierId && !this.db.suppliers.some((supplier) => supplier.id === input.preferredSupplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const now = nowISO();
+      const existing = input.id ? this.db.products.find((product) => product.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      const product: T.Product = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, targetLevel: input.targetLevel, supplierLeadTimeDays: input.supplierLeadTimeDays, preferredSupplierId: input.preferredSupplierId, defaultUnitCost: input.defaultUnitCost, status: input.status ?? "active", createdAt: now, updatedAt: now };
+      if (!existing) this.db.products.push(product);
+      this.audit({ category: "operations", action: existing ? "operations.product.update" : "operations.product.create", entityType: "product", entityId: product.id, entityLabel: product.name, summary: existing ? "Product updated" : "Product created" });
+      return { ...product, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined };
+    });
+  }
+
+  archiveProduct(productId: T.UUID, reason: string): Promise<T.Product> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(reason);
+      const product = this.db.products.find((candidate) => candidate.id === productId);
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      product.status = "archived";
+      product.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.product.archive", entityType: "product", entityId: product.id, entityLabel: product.name, summary: "Product archived", reason });
+      return { ...product };
+    });
+  }
+
+  listSuppliers(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Supplier[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.db.suppliers.filter((supplier) => (query.includeArchived || supplier.status === "active") && (!search || `${supplier.name} ${supplier.contactName ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((supplier) => ({ ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] }));
+    });
+  }
+
+  upsertSupplier(input: T.UpsertSupplierInput): Promise<T.Supplier> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const name = input.name.trim();
+      if (!name || name.length > 120 || input.branchIds.length === 0) throw ApiError.of(ERR.VALIDATION, "Supplier name and at least one branch are required.");
+      input.branchIds.forEach((branchId) => this.operationsBranch(branchId));
+      input.preferredProductIds?.forEach((productId) => { if (!this.db.products.some((product) => product.id === productId)) throw ApiError.of(ERR.NOT_FOUND, "Preferred product not found."); });
+      const existing = input.id ? this.db.suppliers.find((supplier) => supplier.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const now = nowISO();
+      const supplier: T.Supplier = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, name, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, leadTimeDays: input.leadTimeDays, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", createdAt: now, updatedAt: now };
+      if (!existing) this.db.suppliers.push(supplier);
+      this.audit({ category: "operations", action: existing ? "operations.supplier.update" : "operations.supplier.create", entityType: "supplier", entityId: supplier.id, entityLabel: supplier.name, summary: existing ? "Supplier updated" : "Supplier created" });
+      return { ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] };
+    });
+  }
+
+  archiveSupplier(supplierId: T.UUID, reason: string): Promise<T.Supplier> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(reason);
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === supplierId);
+      if (!supplier) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      supplier.status = "archived";
+      supplier.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.supplier.archive", entityType: "supplier", entityId: supplier.id, entityLabel: supplier.name, summary: "Supplier archived", reason });
+      return { ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] };
+    });
+  }
+
+  listInventory(input: { branchId?: T.UUID; productId?: T.UUID } = {}): Promise<T.InventoryBalance[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
+      if (input.productId && !this.db.products.some((product) => product.id === input.productId)) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      return this.db.inventoryBalances.filter((balance) => branchIds.includes(balance.branchId) && (!input.productId || balance.productId === input.productId)).map((balance) => ({ ...balance, availableQuantity: balance.quantityOnHand - balance.committedQuantity, lastMovementAt: balance.lastMovementAt }));
+    });
+  }
+
+  recordStockMovement(input: { branchId: T.UUID; productId: T.UUID; type: T.StockMovementType; quantity: number; unitCost?: T.Money; reason?: string; referenceType?: string; referenceId?: T.UUID; idempotencyKey: string }): Promise<T.StockMovement> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const product = this.db.products.find((candidate) => candidate.id === input.productId && candidate.status === "active");
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      if (!Number.isSafeInteger(input.quantity) || input.quantity === 0 || (input.type !== "adjustment" && input.quantity < 0)) throw ApiError.of(ERR.VALIDATION, "Stock movement quantity is invalid.");
+      if (input.unitCost && (input.unitCost.amount < 0 || input.unitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Unit cost is invalid.");
+      const reason = input.reason?.trim() || undefined;
+      if (input.type === "adjustment" && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const signature = JSON.stringify({ branchId: branch.id, productId: product.id, type: input.type, quantity: input.quantity, unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId });
+      const existing = this.operationsIdempotent("stock_movement", input.idempotencyKey, signature) as T.StockMovement | undefined;
+      if (existing) return { ...existing, unitCost: existing.unitCost ? { ...existing.unitCost } : undefined };
+      const delta = ["receive", "return", "transfer_in"].includes(input.type) ? input.quantity : input.type === "adjustment" ? input.quantity : -input.quantity;
+      let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+      if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
+      if (balance.quantityOnHand + delta < 0) throw ApiError.of(ERR.CONFLICT, "Stock movement would make inventory negative.");
+      balance.quantityOnHand += delta;
+      balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+      balance.lastMovementAt = nowISO();
+      balance.updatedAt = nowISO();
+      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
+      this.db.stockMovements.unshift(movement);
+      this.operationsIdempotency.set(`stock_movement:${input.idempotencyKey}`, { signature, result: movement });
+      this.audit({ category: "operations", action: "operations.stock_movement.create", entityType: "stock_movement", entityId: movement.id, entityLabel: `${product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason, branchId: branch.id });
+      return { ...movement };
+    });
+  }
+
+  listStockMovements(query: { branchId?: T.UUID; productId?: T.UUID; page?: number; pageSize?: number } = {}): Promise<T.Page<T.StockMovement>> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      const rows = this.db.stockMovements.filter((movement) => (!branchId || movement.branchId === branchId) && (!query.productId || movement.productId === query.productId) && this.branchIsVisible(movement.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      return paginate(rows.map((row) => ({ ...row, unitCost: row.unitCost ? { ...row.unitCost } : undefined })), { page: query.page, pageSize: query.pageSize });
+    });
+  }
+
+  private lowStockSnapshot(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): T.LowStockAlert[] {
+    const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
+    const alerts: T.LowStockAlert[] = [];
+    for (const branchId of branchIds) {
+      for (const product of this.db.products.filter((candidate) => candidate.status === "active")) {
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branchId && candidate.productId === product.id);
+        const quantityOnHand = balance?.quantityOnHand ?? 0;
+        const committedQuantity = balance?.committedQuantity ?? 0;
+        const outbound = this.db.stockMovements.filter((movement) => movement.branchId === branchId && movement.productId === product.id && movement.quantityDelta < 0).filter((movement) => Date.parse(movement.occurredAt) >= Date.now() - 30 * 86_400_000).reduce((sum, movement) => sum + Math.abs(movement.quantityDelta), 0);
+        const recentDailyVelocity = outbound / 30;
+        const availableQuantity = quantityOnHand - committedQuantity;
+        const projectedQuantityAtLeadTime = availableQuantity - recentDailyVelocity * product.supplierLeadTimeDays;
+        if (availableQuantity > product.reorderPoint && projectedQuantityAtLeadTime > product.reorderPoint) continue;
+        const existing = this.db.lowStockAlerts.find((alert) => alert.branchId === branchId && alert.productId === product.id);
+        if (!input.includeDismissed && existing?.status === "dismissed") continue;
+        alerts.push({ id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, branchId, productId: product.id, quantityOnHand, committedQuantity, availableQuantity, recentDailyVelocity, supplierLeadTimeDays: product.supplierLeadTimeDays, projectedQuantityAtLeadTime, reorderPoint: product.reorderPoint, targetLevel: product.targetLevel, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt, dismissedReason: existing?.dismissedReason, updatedAt: existing?.updatedAt ?? nowISO() });
+      }
+    }
+    return alerts;
+  }
+
+  listLowStockAlerts(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): Promise<T.LowStockAlert[]> {
+    return this.respond(() => { this.requireOperationsRead(); return this.lowStockSnapshot(input).map((alert) => ({ ...alert })); });
+  }
+
+  refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      for (const snapshot of this.lowStockSnapshot({ ...input, includeDismissed: true })) {
+        if (!this.db.lowStockAlerts.some((alert) => alert.branchId === snapshot.branchId && alert.productId === snapshot.productId)) this.db.lowStockAlerts.push({ ...snapshot, status: "open" });
+      }
+      return this.lowStockSnapshot({ ...input, includeDismissed: true });
+    });
+  }
+
+  dismissLowStockAlert(input: { alertId: T.UUID; reason: string }): Promise<T.LowStockAlert> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const alert = this.db.lowStockAlerts.find((candidate) => candidate.id === input.alertId);
+      if (!alert || !this.branchIsVisible(alert.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Low-stock alert not found.");
+      alert.status = "dismissed";
+      alert.dismissedAt = nowISO();
+      alert.dismissedReason = input.reason;
+      alert.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.inventory_alert.dismiss", entityType: "inventory_alert", entityId: alert.id, entityLabel: alert.id, summary: "Low-stock alert dismissed", reason: input.reason, branchId: alert.branchId });
+      return { ...alert };
+    });
+  }
+
+  createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === input.supplierId && candidate.status === "active");
+      if (!supplier || (supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch.id))) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found for this branch.");
+      if (!input.lines.length) throw ApiError.of(ERR.VALIDATION, "A purchase order must contain at least one line.");
+      const seen = new Set<T.UUID>();
+      const lines: T.PurchaseOrderLine[] = input.lines.map((raw) => {
+        const product = this.db.products.find((candidate) => candidate.id === raw.productId && candidate.status === "active");
+        if (!product || seen.has(raw.productId)) throw ApiError.of(ERR.VALIDATION, "Purchase product is invalid or repeated.");
+        seen.add(raw.productId);
+        if (!Number.isSafeInteger(raw.quantity) || raw.quantity <= 0 || raw.unitCost.currency !== this.db.organization.currency || raw.unitCost.amount < 0) throw ApiError.of(ERR.VALIDATION, "Purchase line is invalid.");
+        return { productId: product.id, sku: product.sku, productName: product.name, orderedQuantity: raw.quantity, receivedQuantity: 0, unitCost: { ...raw.unitCost }, lineTotal: { amount: raw.quantity * raw.unitCost.amount, currency: raw.unitCost.currency } };
+      });
+      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, supplierId: supplier.id, supplierName: supplier.name, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
+      this.db.purchaseOrders.unshift(order);
+      this.audit({ category: "operations", action: "operations.purchase_order.create", entityType: "purchase_order", entityId: order.id, entityLabel: supplier.name, summary: "Purchase order created", branchId: branch.id });
+      return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+    });
+  }
+
+  approvePurchaseOrder(purchaseOrderId: T.UUID, reason?: string): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      if (order.status !== "draft") throw ApiError.of(ERR.CONFLICT, "Only draft purchase orders can be approved.");
+      order.status = "approved";
+      order.approvedAt = nowISO();
+      order.approvedById = this.actor().id;
+      order.updatedAt = nowISO();
+      for (const line of order.lines) {
+        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === order.branchId && candidate.productId === line.productId);
+        if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: order.branchId, productId: line.productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
+        balance.committedQuantity += line.orderedQuantity;
+        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+        balance.updatedAt = nowISO();
+      }
+      this.audit({ category: "operations", action: "operations.purchase_order.approve", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Purchase order approved", reason, branchId: order.branchId });
+      return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+    });
+  }
+
+  listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.purchaseOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } }));
+    });
+  }
+
+  receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> {
+    return this.respond(async () => {
+      this.requireOperationsWrite();
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === input.purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      const signature = JSON.stringify(input);
+      const existing = this.operationsIdempotent("purchase_order.receive", input.idempotencyKey, signature) as T.PurchaseOrder | undefined;
+      if (existing) return existing;
+      if (order.status !== "approved" && order.status !== "partially_received") throw ApiError.of(ERR.CONFLICT, "Only approved purchase orders can be received.");
+      const requested: Array<{ productId: T.UUID; quantity: number; unitCost?: T.Money }> = input.lines?.length ? input.lines : order.lines.filter((line) => line.receivedQuantity < line.orderedQuantity).map((line) => ({ productId: line.productId, quantity: line.orderedQuantity - line.receivedQuantity }));
+      if (!requested?.length) throw ApiError.of(ERR.CONFLICT, "This purchase order has no remaining quantity to receive.");
+      for (const raw of requested) {
+        const line = order.lines.find((candidate) => candidate.productId === raw.productId);
+        if (!line || !Number.isSafeInteger(raw.quantity) || raw.quantity <= 0 || line.receivedQuantity + raw.quantity > line.orderedQuantity) throw ApiError.of(ERR.VALIDATION, "Received quantity exceeds the remaining purchase order quantity.");
+        const product = this.db.products.find((candidate) => candidate.id === raw.productId)!;
+        const unitCost = raw.unitCost ?? line.unitCost;
+        await this.recordStockMovement({ branchId: order.branchId, productId: product.id, type: "receive", quantity: raw.quantity, unitCost, reason: `Purchase order ${order.id} receiving`, referenceType: "purchase_order", referenceId: order.id, idempotencyKey: `${input.idempotencyKey}:${product.id}` });
+        line.receivedQuantity += raw.quantity;
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === order.branchId && candidate.productId === product.id);
+        if (balance) { balance.committedQuantity = Math.max(0, balance.committedQuantity - raw.quantity); balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity; }
+      }
+      order.status = order.lines.every((line) => line.receivedQuantity === line.orderedQuantity) ? "received" : "partially_received";
+      order.receivedAt = order.status === "received" ? nowISO() : order.receivedAt;
+      order.updatedAt = nowISO();
+      const result = { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+      this.operationsIdempotency.set(`purchase_order.receive:${input.idempotencyKey}`, { signature, result });
+      this.audit({ category: "operations", action: "operations.purchase_order.receive", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: `Purchase order ${order.status}`, branchId: order.branchId });
+      return result;
+    });
+  }
+
+  notifyPurchaseOrderSupplier(input: { purchaseOrderId: T.UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<T.SupplierNotificationResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === input.purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
+      this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
+      return result;
+    });
+  }
+
+  listFacilityTasks(query: { branchId?: T.UUID; zoneId?: T.UUID; status?: T.FacilityTaskStatus; kind?: T.FacilityTaskKind } = {}): Promise<T.FacilityTask[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      if (query.branchId && query.zoneId) this.operationsZone(query.branchId, query.zoneId);
+      return this.db.facilityTasks.filter((task) => (!query.branchId || task.branchId === query.branchId) && (!query.zoneId || task.zoneId === query.zoneId) && (!query.status || task.status === query.status) && (!query.kind || task.kind === query.kind) && this.branchIsVisible(task.branchId)).map((task) => ({ ...task, trafficContext: task.trafficContext ? { ...task.trafficContext } : undefined, suppliesCost: task.suppliesCost ? { ...task.suppliesCost } : undefined }));
+    });
+  }
+
+  upsertFacilityTask(input: T.UpsertFacilityTaskInput): Promise<T.FacilityTask> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const zone = this.operationsZone(branch.id, input.zoneId);
+      const title = input.title.trim();
+      if (!title || title.length > 160 || input.suppliesCost?.currency !== undefined && input.suppliesCost.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Facility task fields are invalid.");
+      if (input.trafficContext?.occupancyPercent !== undefined && (input.trafficContext.occupancyPercent < 0 || input.trafficContext.occupancyPercent > 100)) throw ApiError.of(ERR.VALIDATION, "Occupancy must be between 0 and 100.");
+      const existing = input.id ? this.db.facilityTasks.find((task) => task.id === input.id) : undefined;
+      if (input.id && (!existing || existing.branchId !== branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Facility task not found.");
+      const status = input.status ?? existing?.status ?? "open";
+      const immutableStatus = existing ? this.immutableAccountingStatus("facility_supplies", existing.id) : undefined;
+      const completedAt = immutableStatus && input.status === undefined
+        ? existing?.completedAt
+        : status === "completed" ? existing?.completedAt ?? nowISO() : undefined;
+      const suppliesCost = immutableStatus && input.suppliesCost === undefined ? existing?.suppliesCost : input.suppliesCost;
+      if (existing && immutableStatus && (
+        zone.id !== existing.zoneId ||
+        status !== existing.status ||
+        completedAt !== existing.completedAt ||
+        suppliesCost?.amount !== existing.suppliesCost?.amount ||
+        suppliesCost?.currency !== existing.suppliesCost?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This facility task", immutableStatus);
+      }
+      const now = nowISO();
+      const task: T.FacilityTask = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, zoneId: zone.id, zoneName: zone.name, title, status, assigneeId: input.assigneeId, completedAt, suppliesCost, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: zone.id, zoneName: zone.name, kind: input.kind, severity: input.severity, status, title, notes: input.notes?.trim() || undefined, assigneeId: input.assigneeId, dueAt: input.dueAt, trafficContext: input.trafficContext, suppliesCost: input.suppliesCost, financialPostingStatus: "not_posted", createdAt: now, updatedAt: now };
+      if (!existing) this.db.facilityTasks.unshift(task);
+      this.audit({ category: "operations", action: existing ? "operations.facility_task.update" : "operations.facility_task.create", entityType: "facility_task", entityId: task.id, entityLabel: task.title, summary: existing ? "Facility task updated" : "Facility task created", branchId: branch.id });
+      return { ...task, trafficContext: task.trafficContext ? { ...task.trafficContext } : undefined, suppliesCost: task.suppliesCost ? { ...task.suppliesCost } : undefined };
+    });
+  }
+
+
+
+
+  listEquipmentAssets(query: { branchId?: T.UUID; status?: T.EquipmentAssetStatus } = {}): Promise<T.EquipmentAsset[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentAssets.filter((asset) => (!query.branchId || asset.branchId === query.branchId) && (!query.status || asset.status === query.status) && this.branchIsVisible(asset.branchId)).map((asset) => ({ ...asset, purchaseCost: asset.purchaseCost ? { ...asset.purchaseCost } : undefined, issueCount: this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id).length }));
+    });
+  }
+
+  upsertEquipmentAsset(input: T.UpsertEquipmentAssetInput): Promise<T.EquipmentAsset> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      if (input.zoneId) this.operationsZone(branch.id, input.zoneId);
+      const code = input.code.trim().toUpperCase();
+      const name = input.name.trim();
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
+      const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && asset.id !== input.id);
+      if (duplicate) throw ApiError.of(ERR.CONFLICT, "That equipment code is already used in this branch.");
+      const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
+      if (input.id && (!existing || !this.branchIsVisible(existing.branchId))) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.CONFLICT, "Equipment assets cannot be reassigned between branches; use a future transfer workflow.");
+      const immutableStatus = existing ? this.immutableAccountingStatus("equipment_acquisition", existing.id) : undefined;
+      const purchaseDate = immutableStatus && input.purchaseDate === undefined ? existing?.purchaseDate : input.purchaseDate;
+      const purchaseCost = immutableStatus && input.purchaseCost === undefined ? existing?.purchaseCost : input.purchaseCost;
+      if (existing && immutableStatus && (
+        purchaseDate !== existing.purchaseDate ||
+        purchaseCost?.amount !== existing.purchaseCost?.amount ||
+        purchaseCost?.currency !== existing.purchaseCost?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This equipment acquisition", immutableStatus);
+      }
+      const now = nowISO();
+      const asset: T.EquipmentAsset = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, code, name, purchaseDate, purchaseCost, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: input.zoneId, code, name, manufacturer: input.manufacturer?.trim() || undefined, model: input.model?.trim() || undefined, serialNumber: input.serialNumber?.trim() || undefined, purchaseDate: input.purchaseDate, installationDate: input.installationDate, purchaseCost: input.purchaseCost, warrantyEndDate: input.warrantyEndDate, status: input.status ?? "active", expectedServiceIntervalDays: input.expectedServiceIntervalDays, expectedUsefulLifeMonths: input.expectedUsefulLifeMonths, createdAt: now, updatedAt: now };
+      if (!existing) this.db.equipmentAssets.unshift(asset);
+      this.audit({ category: "operations", action: existing ? "operations.equipment_asset.update" : "operations.equipment_asset.create", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: existing ? "Equipment asset updated" : "Equipment asset created", branchId: branch.id });
+      return { ...asset, purchaseCost: asset.purchaseCost ? { ...asset.purchaseCost } : undefined, issueCount: this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id).length };
+    });
+  }
+
+  reportEquipmentIssue(input: { branchId: T.UUID; assetId: T.UUID; title: string; description?: string; severity: T.EquipmentIssueSeverity; downtimeDays?: number; safetyStatus?: T.EquipmentIssue["safetyStatus"] }): Promise<T.EquipmentIssue> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === input.assetId && candidate.branchId === branch.id);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      const title = input.title.trim();
+      if (!title || title.length > 160 || (input.downtimeDays !== undefined && input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Equipment issue fields are invalid.");
+      const issue: T.EquipmentIssue = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, title, description: input.description?.trim() || undefined, severity: input.severity, status: "open", reportedAt: nowISO(), downtimeDays: input.downtimeDays, safetyStatus: input.safetyStatus ?? "unknown", createdById: this.actor().id };
+      this.db.equipmentIssues.unshift(issue);
+      this.audit({ category: "operations", action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: "Equipment issue reported", branchId: branch.id });
+      return { ...issue };
+    });
+  }
+
+  listEquipmentIssues(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentIssueStatus } = {}): Promise<T.EquipmentIssue[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentIssues.filter((issue) => (!query.branchId || issue.branchId === query.branchId) && (!query.assetId || issue.assetId === query.assetId) && (!query.status || issue.status === query.status) && this.branchIsVisible(issue.branchId)).map((issue) => ({ ...issue }));
+    });
+  }
+
+  upsertEquipmentWorkOrder(input: T.UpsertEquipmentWorkOrderInput): Promise<T.EquipmentWorkOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === input.assetId && candidate.branchId === branch.id);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      const issue = input.issueId ? this.db.equipmentIssues.find((candidate) => candidate.id === input.issueId && candidate.assetId === asset.id) : undefined;
+      if (input.issueId && !issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found for this asset.");
+      const costs = [input.partsCost, input.laborCost, input.replacementEstimate].filter(Boolean) as T.Money[];
+      if (costs.some((cost) => cost.amount < 0 || cost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Work-order costs are invalid.");
+      const existing = input.id ? this.db.equipmentWorkOrders.find((order) => order.id === input.id) : undefined;
+      if (input.id && (!existing || existing.assetId !== asset.id)) throw ApiError.of(ERR.NOT_FOUND, "Work order not found.");
+      const immutableStatus = existing ? this.immutableAccountingStatus("equipment_repair", existing.id) : undefined;
+      const issueId = immutableStatus && input.issueId === undefined ? existing?.issueId : issue?.id;
+      const partsCost = immutableStatus && input.partsCost === undefined ? existing?.partsCost : input.partsCost;
+      const laborCost = immutableStatus && input.laborCost === undefined ? existing?.laborCost : input.laborCost;
+      const totalCost = immutableStatus && input.partsCost === undefined && input.laborCost === undefined
+        ? existing?.totalCost
+        : input.partsCost || input.laborCost ? money((partsCost?.amount ?? 0) + (laborCost?.amount ?? 0), this.db.organization.currency) : undefined;
+      const status = input.status ?? existing?.status ?? "draft";
+      const completedAt = immutableStatus && input.status === undefined
+        ? existing?.completedAt
+        : status === "completed" ? existing?.completedAt ?? nowISO() : undefined;
+      if (existing && immutableStatus && (
+        branch.id !== existing.branchId ||
+        asset.id !== existing.assetId ||
+        issueId !== existing.issueId ||
+        status !== existing.status ||
+        completedAt !== existing.completedAt ||
+        partsCost?.amount !== existing.partsCost?.amount ||
+        partsCost?.currency !== existing.partsCost?.currency ||
+        laborCost?.amount !== existing.laborCost?.amount ||
+        laborCost?.currency !== existing.laborCost?.currency ||
+        totalCost?.amount !== existing.totalCost?.amount ||
+        totalCost?.currency !== existing.totalCost?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This equipment work order", immutableStatus);
+      }
+      const now = nowISO();
+      const order: T.EquipmentWorkOrder = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId, status, totalCost, partsCost, laborCost, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, completedAt, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId: issue?.id, status, description: input.description.trim(), assigneeId: input.assigneeId, vendorName: input.vendorName?.trim() || undefined, partsCost: input.partsCost, laborCost: input.laborCost, totalCost, replacementEstimate: input.replacementEstimate, financialPostingStatus: "not_posted", openedAt: now, completedAt: status === "completed" ? now : undefined, updatedAt: now };
+      if (!existing) this.db.equipmentWorkOrders.unshift(order);
+      this.audit({ category: "operations", action: existing ? "operations.equipment_work_order.update" : "operations.equipment_work_order.create", entityType: "equipment_work_order", entityId: order.id, entityLabel: order.description, summary: existing ? "Equipment work order updated" : "Equipment work order created", branchId: branch.id });
+      return { ...order, partsCost: order.partsCost ? { ...order.partsCost } : undefined, laborCost: order.laborCost ? { ...order.laborCost } : undefined, totalCost: order.totalCost ? { ...order.totalCost } : undefined, replacementEstimate: order.replacementEstimate ? { ...order.replacementEstimate } : undefined };
+    });
+  }
+
+  listEquipmentWorkOrders(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentWorkOrder["status"] } = {}): Promise<T.EquipmentWorkOrder[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentWorkOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.assetId || order.assetId === query.assetId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, partsCost: order.partsCost ? { ...order.partsCost } : undefined, laborCost: order.laborCost ? { ...order.laborCost } : undefined, totalCost: order.totalCost ? { ...order.totalCost } : undefined, replacementEstimate: order.replacementEstimate ? { ...order.replacementEstimate } : undefined }));
+    });
+  }
+
+  getEquipmentRecommendation(assetId: T.UUID): Promise<T.EquipmentRecommendation> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === assetId && this.branchIsVisible(candidate.branchId));
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      const issues = this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id);
+      const orders = this.db.equipmentWorkOrders.filter((order) => order.assetId === asset.id && order.status !== "cancelled");
+      const repairCostMinor = orders.reduce((sum, order) => sum + (order.totalCost?.amount ?? 0), 0);
+      const replacement = [...orders].reverse().find((order) => order.replacementEstimate);
+      const downtimeDays = issues.reduce((sum, issue) => sum + (issue.downtimeDays ?? 0), 0);
+      const ageMonths = asset.purchaseDate ? Math.max(0, Math.floor((Date.now() - Date.parse(asset.purchaseDate)) / (30.44 * 86_400_000))) : undefined;
+      const rationale: string[] = [];
+      if (!repairCostMinor) rationale.push("No recorded repair cost is available.");
+      if (!replacement?.replacementEstimate) rationale.push("No recorded replacement estimate is available.");
+      if (!asset.purchaseDate) rationale.push("Purchase date is not recorded, so age cannot be assessed.");
+      if (!asset.expectedUsefulLifeMonths) rationale.push("Expected useful life is not recorded.");
+      const safetyIssue = issues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
+      let decision: T.EquipmentRecommendation["decision"] = "insufficient_data";
+      if (repairCostMinor > 0 && replacement?.replacementEstimate && asset.purchaseDate && asset.expectedUsefulLifeMonths) decision = ageMonths! >= asset.expectedUsefulLifeMonths || repairCostMinor >= replacement.replacementEstimate.amount * 0.6 || safetyIssue ? "replace" : "fix";
+      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: issues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+    });
+  }
+
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> {
     return this.respond(() => {
       let items = [...this.db.users];
@@ -4772,6 +6216,11 @@ export class MockGymOSApi implements GymOSApi {
   inviteUser(input: T.InviteUserInput): Promise<T.StaffUser> {
     return this.respond(() => {
       this.require("users.manage");
+      if (input.role === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");
+      const targetPermissions = permissionsFor(this.db, input.role);
+      if (targetPermissions.some((permission) => !permissionsFor(this.db, currentRole(this.db)).includes(permission))) {
+        throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      }
       const user: T.StaffUser = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
@@ -4805,6 +6254,12 @@ export class MockGymOSApi implements GymOSApi {
       if (user.id === this.actor().id && input.status === "deactivated") {
         throw ApiError.of(ERR.VALIDATION, "You cannot deactivate your own account.");
       }
+      const nextRole = input.role ?? user.role;
+      if (nextRole === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");
+      const actorPermissions = permissionsFor(this.db, currentRole(this.db));
+      if (nextRole !== user.role && permissionsFor(this.db, nextRole).some((permission) => !actorPermissions.includes(permission))) {
+        throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      }
       const before = { role: user.role, status: user.status, branches: user.branchIds.length };
       Object.assign(user, input);
       this.audit({
@@ -4829,7 +6284,13 @@ export class MockGymOSApi implements GymOSApi {
       if (!def) throw ApiError.of(ERR.NOT_FOUND, "Role not found.");
       if (role === "owner") throw ApiError.of(ERR.VALIDATION, "The owner role always has full access.");
       const before = { permissions: def.permissions.length, discountLimit: def.discountLimitMinor };
-      if (input.permissions) def.permissions = input.permissions;
+      const requestedPermissions = input.permissions ?? effectiveRolePermissions(role, def.permissions, def.catalogVersion);
+      const invalidPermissions = requestedPermissions.filter((permission) => !PERMISSIONS.includes(permission as Permission));
+      if (invalidPermissions.length > 0) throw ApiError.of(ERR.VALIDATION, "One or more permissions are not recognized.");
+      const actorPermissions = permissionsFor(this.db, currentRole(this.db));
+      if (requestedPermissions.some((permission) => !actorPermissions.includes(permission))) throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      def.permissions = requestedPermissions;
+      def.catalogVersion = PERMISSION_CATALOG_VERSION;
       if (input.discountLimitMinor !== undefined) def.discountLimitMinor = input.discountLimitMinor;
       this.audit({
         category: "users",

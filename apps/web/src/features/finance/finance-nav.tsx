@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Banknote, FileBarChart } from "lucide-react";
+import { ArrowLeftRight, Banknote, FileBarChart, LineChart } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -10,10 +10,12 @@ const FINANCE_LINKS = [
   { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
   { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
   { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
+  { href: "/reports/statements", label: "Management statements", icon: LineChart, anyPermission: ["reports.financial.read"] },
 ] as const;
 
 function financeLinkIsActive(href: string, pathname: string) {
   if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/receipts");
+  if (href === "/reports") return pathname === "/reports";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

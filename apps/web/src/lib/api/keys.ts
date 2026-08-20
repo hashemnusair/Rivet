@@ -35,6 +35,10 @@ export const qk = {
   approvals: ["approvals"] as const,
   platformGymDetail: (id: string) => ["platform", "gyms", "detail", id] as const,
   settings: ["settings"] as const,
+  workspaceAccess: ["workspace", "access"] as const,
+  operations: (params?: unknown) => ["operations", params] as const,
+  finance: (params?: unknown) => ["finance", params] as const,
+  managementReports: (params?: unknown) => ["managementReports", params] as const,
   branches: ["branches"] as const,
   users: (params?: unknown) => ["users", params] as const,
 };

@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  Boxes,
   Gauge,
   KanbanSquare,
   ListFilter,
@@ -38,6 +39,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/reception", label: "Reception", icon: ShieldCheck },
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
       { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
+      { href: "/operations", label: "Operations", icon: Boxes, anyPermission: ["members.read"] },
     ],
   },
   {
@@ -49,7 +51,10 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Finance",
-    items: [{ href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] }],
+    items: [
+      { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
+      { href: "/finance", label: "Management ledger", icon: ScrollText, anyPermission: ["reports.financial.read"] },
+    ],
   },
   {
     label: "System",

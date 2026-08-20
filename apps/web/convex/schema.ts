@@ -37,6 +37,89 @@ export const organizationRole = v.union(
   v.literal("auditor"),
 );
 
+// Workspace keys are code-owned. Keeping the storage contract closed prevents
+// an arbitrary database value from becoming a routable capability.
+const workspaceModuleKey = v.union(
+  v.literal("foundation"),
+  v.literal("revenue"),
+  v.literal("operations"),
+  v.literal("finance"),
+  v.literal("reporting"),
+);
+
+const brandPaletteKey = v.union(
+  v.literal("rivet"),
+  v.literal("gold"),
+  v.literal("red"),
+  v.literal("green"),
+  v.literal("blue"),
+  v.literal("violet"),
+);
+
+const zoneKind = v.union(
+  v.literal("floor"),
+  v.literal("studio"),
+  v.literal("weights"),
+  v.literal("cardio"),
+  v.literal("functional"),
+  v.literal("locker_room"),
+  v.literal("bathroom"),
+  v.literal("reception"),
+  v.literal("storage"),
+  v.literal("other"),
+);
+
+const operationsRecordStatus = v.union(v.literal("active"), v.literal("archived"));
+const productUnit = v.union(v.literal("each"), v.literal("kg"), v.literal("liter"), v.literal("box"), v.literal("serving"));
+const financialPostingStatus = v.union(v.literal("not_posted"), v.literal("pending"), v.literal("posted"), v.literal("failed"), v.literal("reversed"));
+const stockMovementType = v.union(v.literal("receive"), v.literal("sale"), v.literal("consumption"), v.literal("adjustment"), v.literal("return"), v.literal("transfer_in"), v.literal("transfer_out"), v.literal("waste"));
+const purchaseOrderStatus = v.union(v.literal("draft"), v.literal("approved"), v.literal("partially_received"), v.literal("received"), v.literal("cancelled"));
+const facilityTaskKind = v.union(v.literal("cleaning"), v.literal("inspection"), v.literal("incident"));
+const facilityTaskSeverity = v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical"));
+const facilityTaskStatus = v.union(v.literal("open"), v.literal("in_progress"), v.literal("blocked"), v.literal("completed"), v.literal("cancelled"));
+const equipmentAssetStatus = v.union(v.literal("active"), v.literal("maintenance"), v.literal("retired"), v.literal("replaced"));
+const equipmentIssueSeverity = v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical"));
+const equipmentIssueStatus = v.union(v.literal("open"), v.literal("in_progress"), v.literal("resolved"), v.literal("cancelled"));
+const equipmentWorkOrderStatus = v.union(v.literal("draft"), v.literal("approved"), v.literal("in_progress"), v.literal("completed"), v.literal("cancelled"));
+const safetyStatus = v.union(v.literal("unknown"), v.literal("safe_to_operate"), v.literal("out_of_service"));
+
+// Accounting is a management-accounting projection over authoritative
+// operational facts. These unions are intentionally code-owned: an account
+// or statement grouping cannot be invented by a tenant request.
+const accountingAccountType = v.union(v.literal("asset"), v.literal("liability"), v.literal("equity"), v.literal("revenue"), v.literal("expense"));
+const accountingStatementGroup = v.union(
+  v.literal("asset_current"),
+  v.literal("asset_noncurrent"),
+  v.literal("liability_current"),
+  v.literal("liability_noncurrent"),
+  v.literal("equity"),
+  v.literal("revenue"),
+  v.literal("cost_of_sales"),
+  v.literal("operating_expense"),
+  v.literal("other_income"),
+  v.literal("other_expense"),
+);
+const accountingCashflowGroup = v.union(v.literal("operating"), v.literal("investing"), v.literal("financing"), v.literal("non_cash"));
+const accountingNormalBalance = v.union(v.literal("debit"), v.literal("credit"));
+const accountingPeriodStatus = v.union(v.literal("open"), v.literal("closed"));
+const accountingScope = v.union(v.literal("branch"), v.literal("consolidated"));
+const accountingEntryStatus = v.union(v.literal("posted"), v.literal("reversed"));
+const accountingPolicyStatus = v.union(v.literal("active"), v.literal("retired"));
+const accountingSourceType = v.union(
+  v.literal("payment"),
+  v.literal("refund"),
+  v.literal("void"),
+  v.literal("membership_sale"),
+  v.literal("membership_renewal"),
+  v.literal("purchase_order_receipt"),
+  v.literal("stock_movement"),
+  v.literal("facility_supplies"),
+  v.literal("equipment_acquisition"),
+  v.literal("equipment_repair"),
+);
+const accountingSourceStatus = v.union(v.literal("pending"), v.literal("posted"), v.literal("unconfigured"), v.literal("excluded"), v.literal("failed"), v.literal("reversed"));
+const accountingPostingDecisionStatus = v.union(v.literal("unconfigured"), v.literal("excluded"));
+
 const auditActorRole = v.union(
   v.literal("owner"),
   v.literal("manager"),
@@ -68,11 +151,44 @@ export default defineSchema({
     receiptPrefix: v.optional(v.string()),
     nextReceiptNumber: v.optional(v.number()),
     receiptFooter: v.optional(v.string()),
+    // Tenant dashboard branding is deliberately separate from the public
+    // profile's accent. Only server-validated values are stored here.
+    brandLogoAssetId: v.optional(v.string()),
+    brandPaletteKey: v.optional(brandPaletteKey),
+    brandPrimaryColor: v.optional(v.string()),
+    brandVersion: v.optional(v.number()),
+    brandUpdatedAt: v.optional(v.number()),
+    brandUpdatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_slug", ["slug"])
     .index("by_public_id", ["publicId"]),
+
+  // Entitlements are derived and written by server/platform subscription
+  // workflows. Gym owners can never submit an entitled-module list.
+  organizationEntitlements: defineTable({
+    organizationId: v.id("organizations"),
+    catalogVersion: v.number(),
+    subscriptionPlan: v.optional(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"))),
+    entitledModules: v.array(workspaceModuleKey),
+    source: v.union(v.literal("subscription_plan"), v.literal("legacy_default")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
+  // Preferences are a separate tenant-owned record. They may only disable
+  // modules the organization is entitled to, and only its owner may change
+  // them. Historical records remain in this table; no route silently deletes
+  // data when a module is disabled.
+  workspaceModulePreferences: defineTable({
+    organizationId: v.id("organizations"),
+    catalogVersion: v.number(),
+    enabledModules: v.array(workspaceModuleKey),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
 
   branches: defineTable({
     organizationId: v.id("organizations"),
@@ -90,6 +206,417 @@ export default defineSchema({
     .index("by_organization", ["organizationId"])
     .index("by_organization_code", ["organizationId", "code"])
     .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  zones: defineTable({
+    organizationId: v.id("organizations"),
+    branchId: v.id("branches"),
+    publicId: v.string(),
+    code: v.string(),
+    name: v.string(),
+    nameAr: v.optional(v.string()),
+    kind: zoneKind,
+    capacity: v.optional(v.number()),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch", ["organizationId", "branchId"])
+    .index("by_branch_code", ["organizationId", "branchId", "code"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  // Typed daily-operations records. These are intentionally separate from
+  // domainRecords so stock, facilities, equipment, and supplier history have
+  // durable indexes and cannot be silently overwritten by a generic payload.
+  products: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    sku: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    unit: productUnit,
+    reorderPoint: v.number(),
+    targetLevel: v.number(),
+    supplierLeadTimeDays: v.number(),
+    preferredSupplierId: v.optional(v.string()),
+    defaultUnitCostMinor: v.optional(v.number()),
+    defaultUnitCostCurrency: v.optional(v.string()),
+    status: operationsRecordStatus,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_sku", ["organizationId", "sku"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  suppliers: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    name: v.string(),
+    contactName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    terms: v.optional(v.string()),
+    leadTimeDays: v.optional(v.number()),
+    branchIds: v.array(v.id("branches")),
+    preferredProductIds: v.array(v.string()),
+    status: operationsRecordStatus,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  inventoryBalances: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    productId: v.id("products"),
+    quantityOnHand: v.number(),
+    committedQuantity: v.number(),
+    lastMovementAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch", ["organizationId", "branchId"])
+    .index("by_branch_product", ["organizationId", "branchId", "productId"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  stockMovements: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    productId: v.id("products"),
+    type: stockMovementType,
+    quantityDelta: v.number(),
+    quantity: v.number(),
+    unitCostMinor: v.optional(v.number()),
+    unitCostCurrency: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    referenceType: v.optional(v.string()),
+    referenceId: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    financialPostingStatus,
+    financialSourceId: v.optional(v.string()),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+    createdByUserId: v.id("users"),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch_product_occurred", ["organizationId", "branchId", "productId", "occurredAt"])
+    .index("by_product_occurred", ["organizationId", "productId", "occurredAt"])
+    .index("by_idempotency", ["organizationId", "idempotencyKey"]),
+
+  inventoryAlerts: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    productId: v.id("products"),
+    status: v.union(v.literal("open"), v.literal("dismissed")),
+    dismissedAt: v.optional(v.number()),
+    dismissedReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch_product", ["organizationId", "branchId", "productId"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  purchaseOrders: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    supplierId: v.id("suppliers"),
+    supplierName: v.string(),
+    lines: v.array(v.object({
+      productId: v.id("products"),
+      sku: v.string(),
+      productName: v.string(),
+      orderedQuantity: v.number(),
+      receivedQuantity: v.number(),
+      unitCostMinor: v.number(),
+      unitCostCurrency: v.string(),
+      lineTotalMinor: v.number(),
+    })),
+    status: purchaseOrderStatus,
+    currency: v.string(),
+    totalMinor: v.number(),
+    supplierInvoiceReference: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    approvedByUserId: v.optional(v.id("users")),
+    receivedAt: v.optional(v.number()),
+    // Accounting owns the posting state; operations can only expose the
+    // current projection and never accept a client-supplied posted marker.
+    financialPostingStatus: v.optional(financialPostingStatus),
+    financialSourceId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch_status", ["organizationId", "branchId", "status"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  facilityTasks: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    zoneId: v.id("zones"),
+    kind: facilityTaskKind,
+    severity: facilityTaskSeverity,
+    status: facilityTaskStatus,
+    title: v.string(),
+    notes: v.optional(v.string()),
+    assigneeId: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    trafficContext: v.optional(v.object({ checkInsLastHour: v.optional(v.number()), occupancyPercent: v.optional(v.number()), capturedAt: v.optional(v.number()) })),
+    suppliesCostMinor: v.optional(v.number()),
+    suppliesCostCurrency: v.optional(v.string()),
+    financialPostingStatus,
+    financialSourceId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch_status", ["organizationId", "branchId", "status"])
+    .index("by_zone", ["organizationId", "zoneId"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  equipmentAssets: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    zoneId: v.optional(v.id("zones")),
+    code: v.string(),
+    name: v.string(),
+    manufacturer: v.optional(v.string()),
+    model: v.optional(v.string()),
+    serialNumber: v.optional(v.string()),
+    purchaseDate: v.optional(v.string()),
+    installationDate: v.optional(v.string()),
+    purchaseCostMinor: v.optional(v.number()),
+    purchaseCostCurrency: v.optional(v.string()),
+    warrantyEndDate: v.optional(v.string()),
+    status: equipmentAssetStatus,
+    expectedServiceIntervalDays: v.optional(v.number()),
+    expectedUsefulLifeMonths: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch", ["organizationId", "branchId"])
+    .index("by_branch_code", ["organizationId", "branchId", "code"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  equipmentIssues: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    assetId: v.id("equipmentAssets"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    severity: equipmentIssueSeverity,
+    status: equipmentIssueStatus,
+    reportedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+    downtimeDays: v.optional(v.number()),
+    safetyStatus,
+    createdByUserId: v.id("users"),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_asset", ["organizationId", "assetId", "reportedAt"])
+    .index("by_branch_status", ["organizationId", "branchId", "status"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  equipmentWorkOrders: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    assetId: v.id("equipmentAssets"),
+    issueId: v.optional(v.id("equipmentIssues")),
+    status: equipmentWorkOrderStatus,
+    description: v.string(),
+    assigneeId: v.optional(v.string()),
+    vendorName: v.optional(v.string()),
+    partsCostMinor: v.optional(v.number()),
+    laborCostMinor: v.optional(v.number()),
+    totalCostMinor: v.optional(v.number()),
+    replacementEstimateMinor: v.optional(v.number()),
+    costCurrency: v.optional(v.string()),
+    financialPostingStatus,
+    financialSourceId: v.optional(v.string()),
+    openedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_asset", ["organizationId", "assetId", "openedAt"])
+    .index("by_branch_status", ["organizationId", "branchId", "status"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  // Code-owned chart metadata. Account rows are seeded lazily for legacy
+  // tenants and during provisioning for new tenants; no balance is ever
+  // created as part of chart seeding.
+  accountingAccounts: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    code: v.string(),
+    name: v.string(),
+    nameAr: v.optional(v.string()),
+    accountType: accountingAccountType,
+    statementGroup: accountingStatementGroup,
+    cashflowGroup: accountingCashflowGroup,
+    normalBalance: accountingNormalBalance,
+    active: v.boolean(),
+    isSystem: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_code", ["organizationId", "code"])
+    .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  accountingPeriods: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    periodStart: v.string(),
+    periodEnd: v.string(),
+    status: accountingPeriodStatus,
+    closedAt: v.optional(v.number()),
+    closedByUserId: v.optional(v.id("users")),
+    closeReason: v.optional(v.string()),
+    reopenedAt: v.optional(v.number()),
+    reopenedByUserId: v.optional(v.id("users")),
+    reopenReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_status", ["organizationId", "status"])
+    .index("by_organization_start", ["organizationId", "periodStart"])
+    .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  accountingPostingPolicies: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    policyCode: v.string(),
+    sourceType: accountingSourceType,
+    version: v.number(),
+    status: accountingPolicyStatus,
+    debitAccountCode: v.string(),
+    creditAccountCode: v.string(),
+    recognition: v.union(v.literal("immediate"), v.literal("deferred"), v.literal("excluded")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_code", ["organizationId", "policyCode", "version"])
+    .index("by_organization_source", ["organizationId", "sourceType", "status"]),
+
+  accountingJournalEntries: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.optional(v.id("branches")),
+    scope: accountingScope,
+    currency: v.string(),
+    postingDate: v.string(),
+    accountingPeriodId: v.id("accountingPeriods"),
+    status: accountingEntryStatus,
+    memo: v.string(),
+    reason: v.optional(v.string()),
+    sourceType: v.optional(accountingSourceType),
+    sourcePublicId: v.optional(v.string()),
+    policyCode: v.optional(v.string()),
+    policyVersion: v.optional(v.number()),
+    idempotencyKey: v.string(),
+    // Canonical request payload used to reject material idempotency-key reuse.
+    requestFingerprint: v.optional(v.string()),
+    reversalOfEntryPublicId: v.optional(v.string()),
+    reversedByEntryPublicId: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    postedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_period", ["organizationId", "accountingPeriodId"])
+    .index("by_organization_branch_date", ["organizationId", "branchId", "postingDate"])
+    .index("by_organization_source", ["organizationId", "sourceType", "sourcePublicId"])
+    .index("by_organization_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  accountingJournalLines: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    journalEntryId: v.id("accountingJournalEntries"),
+    branchId: v.optional(v.id("branches")),
+    accountId: v.id("accountingAccounts"),
+    accountCode: v.string(),
+    accountName: v.string(),
+    debitMinor: v.number(),
+    creditMinor: v.number(),
+    description: v.optional(v.string()),
+    statementGroup: accountingStatementGroup,
+    cashflowGroup: accountingCashflowGroup,
+    createdAt: v.number(),
+  })
+    .index("by_entry", ["organizationId", "journalEntryId"])
+    .index("by_organization_account", ["organizationId", "accountCode"])
+    .index("by_organization_branch_account", ["organizationId", "branchId", "accountCode"]),
+
+  // This is the source-of-truth projection for whether an operational fact
+  // has an accounting treatment. Unsupported or incomplete facts remain
+  // explicit rows; they are never silently treated as zero or posted.
+  accountingSourcePostings: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    sourceType: accountingSourceType,
+    sourcePublicId: v.string(),
+    branchId: v.optional(v.id("branches")),
+    status: accountingSourceStatus,
+    amountMinor: v.optional(v.number()),
+    currency: v.string(),
+    policyCode: v.optional(v.string()),
+    policyVersion: v.optional(v.number()),
+    journalEntryPublicId: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    details: v.optional(v.any()),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_source", ["organizationId", "sourceType", "sourcePublicId"])
+    .index("by_organization_status", ["organizationId", "status"])
+    .index("by_organization_branch_status", ["organizationId", "branchId", "status"])
+    .index("by_organization_idempotency", ["organizationId", "idempotencyKey"]),
+
+  // Every failed/excluded source-posting request is retained independently
+  // from the mutable per-source queue projection. This preserves replay
+  // semantics when a later request for the same source succeeds.
+  accountingPostingAttempts: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    sourceType: accountingSourceType,
+    sourcePublicId: v.string(),
+    sourcePostingPublicId: v.optional(v.string()),
+    branchId: v.optional(v.id("branches")),
+    idempotencyKey: v.string(),
+    requestFingerprint: v.string(),
+    status: accountingPostingDecisionStatus,
+    amountMinor: v.optional(v.number()),
+    currency: v.string(),
+    policyCode: v.optional(v.string()),
+    policyVersion: v.optional(v.number()),
+    reason: v.optional(v.string()),
+    details: v.optional(v.any()),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_source_key", ["organizationId", "sourceType", "sourcePublicId", "idempotencyKey"])
+    .index("by_organization_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_organization_source", ["organizationId", "sourceType", "sourcePublicId"]),
 
   users: defineTable({
     publicId: v.optional(v.string()),
@@ -237,6 +764,79 @@ export default defineSchema({
     receivedAt: v.number(),
   }).index("by_webhook_id", ["webhookId"]),
 
+  // Provider-neutral renewal journey ledger. A row represents one
+  // membership/checkpoint/policy decision, not an optimistic provider send.
+  // The first production slice is sandbox-only for SMS/WhatsApp until a
+  // channel-specific provider and webhook contract is explicitly enabled.
+  renewalDeliveries: defineTable({
+    publicId: v.string(),
+    organizationId: v.id("organizations"),
+    branchId: v.optional(v.id("branches")),
+    membershipPublicId: v.string(),
+    membershipEndDate: v.string(),
+    memberPublicId: v.string(),
+    customerUserId: v.optional(v.string()),
+    checkpointDaysBefore: v.union(v.literal(14), v.literal(7), v.literal(3), v.literal(1)),
+    checkpointKey: v.union(v.literal("14_day"), v.literal("7_day"), v.literal("3_day"), v.literal("1_day_call")),
+    channel: v.union(v.literal("whatsapp"), v.literal("sms"), v.literal("staff_task")),
+    templateVersion: v.string(),
+    policyVersion: v.string(),
+    dedupeKey: v.string(),
+    recipientReference: v.string(),
+    recipientPhone: v.optional(v.string()),
+    language: v.union(v.literal("en"), v.literal("ar")),
+    consentStatus: v.union(v.literal("explicit_opt_in"), v.literal("explicit_opt_out"), v.literal("unknown"), v.literal("not_applicable")),
+    consentSource: v.optional(v.string()),
+    consentChangedAt: v.optional(v.number()),
+    channelOptedOut: v.boolean(),
+    status: v.union(v.literal("deferred"), v.literal("sandboxed"), v.literal("queued"), v.literal("suppressed"), v.literal("cancelled"), v.literal("failed"), v.literal("sent"), v.literal("completed")),
+    suppressionReason: v.optional(v.string()),
+    cancellationReason: v.optional(v.string()),
+    deferredUntil: v.optional(v.number()),
+    taskPublicId: v.optional(v.string()),
+    attempts: v.array(v.object({
+      attemptedAt: v.number(),
+      outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure"), v.literal("suppressed"), v.literal("cancelled")),
+      statusCode: v.optional(v.number()),
+      errorCode: v.optional(v.string()),
+      providerMessageId: v.optional(v.string()),
+    })),
+    lastAttemptAt: v.optional(v.number()),
+    lastErrorCode: v.optional(v.string()),
+    nextAttemptAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_dedupe", ["dedupeKey"])
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_membership", ["organizationId", "membershipPublicId"])
+    .index("by_organization_member", ["organizationId", "memberPublicId"])
+    .index("by_status_next_attempt", ["status", "nextAttemptAt"]),
+
+  // Renewal decisions are append-only facts. The delivery row is the
+  // current projection; this table preserves every system decision without
+  // pretending that a sandboxed action reached a member.
+  renewalDeliveryEvents: defineTable({
+    publicId: v.string(),
+    organizationId: v.id("organizations"),
+    branchId: v.optional(v.id("branches")),
+    deliveryPublicId: v.string(),
+    membershipPublicId: v.string(),
+    memberPublicId: v.string(),
+    eventType: v.union(v.literal("created"), v.literal("deferred"), v.literal("sandboxed"), v.literal("queued"), v.literal("suppressed"), v.literal("cancelled"), v.literal("task_created"), v.literal("completed"), v.literal("provider_attempt")),
+    beforeStatus: v.optional(v.string()),
+    afterStatus: v.string(),
+    reason: v.optional(v.string()),
+    details: v.optional(v.any()),
+    source: v.literal("system"),
+    occurredAt: v.number(),
+  })
+    .index("by_organization_delivery", ["organizationId", "deliveryPublicId"])
+    .index("by_organization_membership", ["organizationId", "membershipPublicId"])
+    .index("by_organization_occurred", ["organizationId", "occurredAt"]),
+
   marketingPreferenceMigrations: defineTable({
     publicId: v.string(),
     status: v.union(v.literal("previewed"), v.literal("running"), v.literal("completed"), v.literal("failed")),
@@ -334,6 +934,7 @@ export default defineSchema({
     label: v.string(),
     description: v.string(),
     permissions: v.array(v.string()),
+    catalogVersion: v.optional(v.number()),
     discountLimitMinor: v.number(),
     isSystem: v.boolean(),
     createdAt: v.number(),

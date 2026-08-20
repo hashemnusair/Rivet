@@ -241,7 +241,7 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
     organization: organization as NonNullable<MaybeOrganization>,
     membership: membership as NonNullable<MaybeMembership>,
     role,
-    permissions: rolePermissions(role, roleDefinition?.permissions),
+    permissions: rolePermissions(role, roleDefinition?.permissions, roleDefinition?.catalogVersion),
     branchIds,
     branchScope,
     branch: branch ?? undefined,

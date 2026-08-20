@@ -449,6 +449,24 @@ export class ConvexGymOSApi implements GymOSApi {
   reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<T.CashShift> { return this.mutate("shifts.review", { shiftId, ...input }); }
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> { return this.query("reconciliation.daily", query); }
 
+  listAccountingAccounts(query: { search?: string } = {}): Promise<T.AccountingAccount[]> { return this.query("accounting.accounts.list", query); }
+  listAccountingPeriods(query: { status?: T.AccountingPeriodStatus } = {}): Promise<T.AccountingPeriod[]> { return this.query("accounting.periods.list", query); }
+  listAccountingJournalEntries(query: T.AccountingJournalQuery = {}): Promise<T.Page<T.AccountingJournalEntrySummary>> { return this.query("accounting.journal_entries.list", query); }
+  getAccountingJournalEntry(entryId: T.UUID): Promise<T.AccountingJournalEntryDetail> { return this.query("accounting.journal_entries.get", { entryId }); }
+  getAccountingTrialBalance(query: { branchId?: T.UUID; periodId?: T.UUID } = {}): Promise<T.AccountingTrialBalance> { return this.query("accounting.trial_balance", query); }
+  postManualJournal(input: T.PostManualJournalInput): Promise<T.AccountingJournalEntryDetail> { return this.mutate("accounting.manual_journal.post", input); }
+  listAccountingSourcePostings(query: T.AccountingSourcePostingQuery = {}): Promise<T.Page<T.AccountingSourcePosting>> { return this.query("accounting.source_postings.list", query); }
+  refreshAccountingSourceQueue(input: T.RefreshAccountingSourceQueueInput = {}): Promise<T.RefreshAccountingSourceQueueResult> { return this.mutate("accounting.source_postings.refresh", input); }
+  postAccountingSource(input: T.PostAccountingSourceInput): Promise<T.AccountingSourcePosting> { return this.mutate("accounting.source.post", input); }
+  reverseAccountingEntry(entryId: T.UUID, input: { reason: string; idempotencyKey: string }): Promise<T.AccountingJournalEntryDetail> { return this.mutate("accounting.entry.reverse", { entryId, ...input }); }
+  closeAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> { return this.mutate("accounting.period.close", { periodId, reason }); }
+  reopenAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> { return this.mutate("accounting.period.reopen", { periodId, reason }); }
+
+  getIncomeStatement(input: T.ManagementReportInput): Promise<T.IncomeStatement> { return this.query("reports.income_statement", input); }
+  getBalanceSheet(input: T.ManagementReportInput): Promise<T.BalanceSheet> { return this.query("reports.balance_sheet", input); }
+  getCashflowStatement(input: T.ManagementReportInput): Promise<T.CashflowStatement> { return this.query("reports.cashflow_statement", input); }
+  getGeneralManagerAnalysis(input: T.ManagementReportInput): Promise<T.GeneralManagerAnalysis> { return this.query("reports.gm_analysis", input); }
+
   listAutomationRules(): Promise<T.AutomationRule[]> { return this.query("automations.rules"); }
   getAutomationRule(id: T.UUID): Promise<T.AutomationRule> { return this.query("automations.rule", { id }); }
   createAutomationRule(input: T.CreateAutomationRuleInput): Promise<T.AutomationRule> { return this.mutate("automations.rule.create", input); }
@@ -465,6 +483,13 @@ export class ConvexGymOSApi implements GymOSApi {
   listAuditEvents(query: AuditQuery): Promise<T.Page<T.AuditEvent>> { return this.query("audit.list", query); }
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> { return this.query("settings.get"); }
+  getBrandKit(): Promise<T.BrandKit> { return this.query("settings.brand.get"); }
+  updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> { return this.mutate("settings.brand.update", input); }
+  getWorkspaceAccess(): Promise<T.WorkspaceAccess> { return this.query("workspace.access"); }
+  getOrganizationEntitlements(): Promise<T.OrganizationEntitlements> { return this.query("workspace.entitlements"); }
+  getWorkspaceModulePreferences(): Promise<T.WorkspaceModulePreferences> { return this.query("workspace.preferences"); }
+  getWorkspaceModuleStatus(moduleKey: T.WorkspaceModuleKey): Promise<T.WorkspaceModuleStatus> { return this.query("workspace.module", { moduleKey }); }
+  updateWorkspaceModulePreferences(input: T.UpdateWorkspaceModulePreferencesInput): Promise<T.WorkspaceAccess> { return this.mutate("workspace.preferences.update", input); }
   updateOrganizationSettings(input: T.UpdateOrganizationSettingsInput): Promise<T.OrganizationSettings> { return this.mutate("settings.organization.update", input); }
   updatePaymentMethods(input: T.PaymentMethod[]): Promise<T.OrganizationSettings> { return this.mutate("settings.paymentMethods", { paymentMethods: input }); }
   updateNotificationSettings(input: T.NotificationSettings): Promise<T.OrganizationSettings> { return this.mutate("settings.notifications", { notifications: input }); }
@@ -473,6 +498,35 @@ export class ConvexGymOSApi implements GymOSApi {
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> { return this.mutate("settings.operationalEmail.update", input); }
   listBranches(): Promise<T.Branch[]> { return this.query("branches.list"); }
   upsertBranch(input: { id?: T.UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<T.Branch> { return this.mutate("branches.upsert", input); }
+  listZones(input: { branchId?: T.UUID; includeArchived?: boolean } = {}): Promise<T.Zone[]> { return this.query("zones.list", input); }
+  upsertZone(input: T.UpsertZoneInput): Promise<T.Zone> { return this.mutate("zones.upsert", input); }
+  archiveZone(zoneId: T.UUID): Promise<T.Zone> { return this.mutate("zones.archive", { id: zoneId }); }
+  listProducts(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Product[]> { return this.query("operations.products.list", query); }
+  upsertProduct(input: T.UpsertProductInput): Promise<T.Product> { return this.mutate("operations.product.upsert", input); }
+  archiveProduct(productId: T.UUID, reason: string): Promise<T.Product> { return this.mutate("operations.product.archive", { id: productId, reason }); }
+  listSuppliers(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Supplier[]> { return this.query("operations.suppliers.list", query); }
+  upsertSupplier(input: T.UpsertSupplierInput): Promise<T.Supplier> { return this.mutate("operations.supplier.upsert", input); }
+  archiveSupplier(supplierId: T.UUID, reason: string): Promise<T.Supplier> { return this.mutate("operations.supplier.archive", { id: supplierId, reason }); }
+  listInventory(input: { branchId?: T.UUID; productId?: T.UUID } = {}): Promise<T.InventoryBalance[]> { return this.query("operations.inventory.list", input); }
+  recordStockMovement(input: Parameters<GymOSApi["recordStockMovement"]>[0]): Promise<T.StockMovement> { return this.mutate("operations.stock_movement.record", input); }
+  listStockMovements(query: { branchId?: T.UUID; productId?: T.UUID; page?: number; pageSize?: number } = {}): Promise<T.Page<T.StockMovement>> { return this.query("operations.stock_movements.list", query); }
+  listLowStockAlerts(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): Promise<T.LowStockAlert[]> { return this.query("operations.low_stock.list", input); }
+  refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> { return this.mutate("operations.low_stock.refresh", input); }
+  dismissLowStockAlert(input: { alertId: T.UUID; reason: string }): Promise<T.LowStockAlert> { return this.mutate("operations.low_stock.dismiss", input); }
+  createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.create", input); }
+  approvePurchaseOrder(purchaseOrderId: T.UUID, reason?: string): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.approve", { id: purchaseOrderId, reason }); }
+  listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> { return this.query("operations.purchase_orders.list", query); }
+  receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.receive", input); }
+  notifyPurchaseOrderSupplier(input: { purchaseOrderId: T.UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<T.SupplierNotificationResult> { return this.mutate("operations.supplier_notification.preview", input); }
+  listFacilityTasks(query: { branchId?: T.UUID; zoneId?: T.UUID; status?: T.FacilityTaskStatus; kind?: T.FacilityTaskKind } = {}): Promise<T.FacilityTask[]> { return this.query("operations.facility_tasks.list", query); }
+  upsertFacilityTask(input: T.UpsertFacilityTaskInput): Promise<T.FacilityTask> { return this.mutate("operations.facility_task.upsert", input); }
+  listEquipmentAssets(query: { branchId?: T.UUID; status?: T.EquipmentAssetStatus } = {}): Promise<T.EquipmentAsset[]> { return this.query("operations.equipment_assets.list", query); }
+  upsertEquipmentAsset(input: T.UpsertEquipmentAssetInput): Promise<T.EquipmentAsset> { return this.mutate("operations.equipment_asset.upsert", input); }
+  reportEquipmentIssue(input: Parameters<GymOSApi["reportEquipmentIssue"]>[0]): Promise<T.EquipmentIssue> { return this.mutate("operations.equipment_issue.report", input); }
+  listEquipmentIssues(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentIssueStatus } = {}): Promise<T.EquipmentIssue[]> { return this.query("operations.equipment_issues.list", query); }
+  upsertEquipmentWorkOrder(input: T.UpsertEquipmentWorkOrderInput): Promise<T.EquipmentWorkOrder> { return this.mutate("operations.equipment_work_order.upsert", input); }
+  listEquipmentWorkOrders(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentWorkOrder["status"] } = {}): Promise<T.EquipmentWorkOrder[]> { return this.query("operations.equipment_work_orders.list", query); }
+  getEquipmentRecommendation(assetId: T.UUID): Promise<T.EquipmentRecommendation> { return this.query("operations.equipment.recommendation", { id: assetId }); }
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> { return this.query("users.list", query); }
   previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> { return this.mutate("members.import.commit", input); }

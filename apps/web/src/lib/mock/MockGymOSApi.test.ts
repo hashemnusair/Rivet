@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
-import type { MemberSummary, OperationalPolicies } from "@/lib/domain/types";
+import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payment } from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
@@ -59,6 +59,24 @@ describe("session and role switching", () => {
       email: "nusairhashem04+owner@gmail.com",
     });
     expect(owner.roles).toEqual(["owner"]);
+  });
+});
+
+describe("workspace entitlement and preference boundary", () => {
+  it("keeps entitlement state separate from permissions and audits owner preferences", async () => {
+    const access = await api.getWorkspaceAccess();
+    expect(access.entitlements.source).toBe("legacy_default");
+    expect(access.entitlements.entitledModules).toContain("finance");
+    expect(access.preferences.enabledModules).toContain("finance");
+
+    await api.switchDemoRole("manager");
+    await expect(api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue", "operations"] })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
+    await api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue", "operations"] });
+    expect((await api.getWorkspaceModulePreferences()).enabledModules).toEqual(["foundation", "revenue", "operations"]);
+    await expect(api.getWorkspaceModuleStatus("finance")).rejects.toMatchObject({ code: ERR.FEATURE_NOT_AVAILABLE });
+    await expect(api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "reporting"] })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    expect((await api.listAuditEvents({ category: "settings", pageSize: 20 })).items.some((event) => event.action === "workspace.module_preferences.update")).toBe(true);
   });
 });
 
@@ -1439,5 +1457,155 @@ describe("seed coverage required by the docs", () => {
   it("includes members with an outstanding balance", async () => {
     const outstanding = await api.listMembers({ membershipStatus: "outstanding", pageSize: 50 });
     expect(outstanding.totalItems).toBeGreaterThan(0);
+  });
+});
+
+describe("management accounting mock contract", () => {
+  it("keeps reversal lines immutable and nets the original plus reversal to zero", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const input = {
+      branchId: branch.id,
+      scope: "branch" as const,
+      memo: "Mock correction",
+      reason: "Owner-approved test correction",
+      idempotencyKey: "mock-accounting-manual-1",
+      lines: [
+        { accountId: "acct-1100", debit: money(1_000), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(1_000) },
+      ],
+    };
+    const entry = await api.postManualJournal(input);
+    const originalLines = entry.lines.map((line) => ({ ...line, debit: { ...line.debit }, credit: { ...line.credit } }));
+    await expect(api.postManualJournal({ ...input, memo: "Different memo" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    expect((await api.postManualJournal(input)).id).toBe(entry.id);
+
+    const reversal = await api.reverseAccountingEntry(entry.id, { reason: "Owner-approved reversal", idempotencyKey: "mock-accounting-reversal-1" });
+    expect(reversal.reversalOfEntryId).toBe(entry.id);
+    expect((await api.reverseAccountingEntry(entry.id, { reason: "Owner-approved reversal", idempotencyKey: "mock-accounting-reversal-1" })).id).toBe(reversal.id);
+    await expect(api.reverseAccountingEntry(entry.id, { reason: "Different reversal reason", idempotencyKey: "mock-accounting-reversal-1" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const originalAfter = await api.getAccountingJournalEntry(entry.id);
+    expect(originalAfter.lines).toEqual(originalLines);
+    expect(await api.getAccountingTrialBalance()).toMatchObject({ rows: [], totalDebit: money(0), totalCredit: money(0) });
+  });
+
+  it("scopes source idempotency keys by full source identity", async () => {
+    const internals = api as unknown as { db: { payments: Payment[] } };
+    const payment = internals.db.payments.find((candidate) => candidate.status === "completed");
+    expect(payment).toBeDefined();
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Verified cash collection" });
+    expect(posted.status).toBe("posted");
+    const replay = await api.postAccountingSource({ sourceType: "payment", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Verified cash collection" });
+    expect(replay.journalEntryId).toBe(posted.journalEntryId);
+    await expect(api.postAccountingSource({ sourceType: "void", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Attempted void with a reused key" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const differentKey = await api.postAccountingSource({ sourceType: "void", sourceId: payment!.id, idempotencyKey: "different-void-key-mock", reason: "Void lifecycle is not complete" });
+    expect(differentKey).toMatchObject({ status: "unconfigured" });
+    expect(differentKey.journalEntryId).toBeUndefined();
+    const journal = await api.listAccountingJournalEntries({});
+    expect(journal.items.filter((item) => item.sourceId === payment!.id)).toHaveLength(1);
+  });
+
+  it("refreshes supported source facts into an idempotent, non-posting queue", async () => {
+    const sourceTypes = ["payment", "refund", "void", "membership_sale", "membership_renewal"] as const;
+    const first = await api.refreshAccountingSourceQueue({ sourceTypes: [...sourceTypes] });
+    expect(first.scanned).toBeGreaterThan(0);
+    expect(first.created).toBe(first.scanned);
+    expect(first.items.every((item) => !item.journalEntryId)).toBe(true);
+    expect(first.pending + first.unconfigured + first.excluded).toBe(first.scanned);
+
+    const replay = await api.refreshAccountingSourceQueue({ sourceTypes: [...sourceTypes] });
+    expect(replay).toMatchObject({ scanned: first.scanned, created: 0, updated: 0 });
+  });
+
+  it("replays an unconfigured source decision by key while a new key retries after source repair", async () => {
+    const internals = api as unknown as { db: { payments: Payment[] } };
+    const voided = internals.db.payments.find((payment) => payment.status === "voided");
+    expect(voided).toBeDefined();
+
+    const first = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(first).toMatchObject({ status: "unconfigured" });
+    expect(first.journalEntryId).toBeUndefined();
+
+    voided!.status = "completed";
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const refreshedDecision = refreshed.items.find((item) => item.sourceId === voided!.id);
+    expect(refreshedDecision).toMatchObject({ sourceId: voided!.id, status: "pending" });
+    expect(refreshedDecision?.journalEntryId).toBeUndefined();
+
+    const replay = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(replay).toMatchObject({ status: "unconfigured" });
+    expect(replay.journalEntryId).toBeUndefined();
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "A materially different review reason" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const retried = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-retry-mock", reason: "Post after the source was corrected" });
+    expect(retried.status).toBe("posted");
+    expect(retried.journalEntryId).toBeDefined();
+    const replayAfterRetry = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(replayAfterRetry).toMatchObject({ status: "unconfigured" });
+    expect(replayAfterRetry.journalEntryId).toBeUndefined();
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "A materially different review reason" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("hides consolidated and unknown-branch accounting rows from selected-branch managers", async () => {
+    const ownerSession = await api.getSession();
+    const branch = ownerSession.branches[0]!;
+    const normal = await api.postManualJournal({
+      branchId: branch.id,
+      scope: "branch",
+      memo: "Branch adjustment",
+      reason: "Owner-approved branch adjustment",
+      idempotencyKey: "scope-normal-mock",
+      lines: [
+        { accountId: "acct-1100", debit: money(1_000), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(1_000) },
+      ],
+    });
+    const consolidated = await api.postManualJournal({
+      scope: "consolidated",
+      memo: "Consolidated adjustment",
+      reason: "Owner-approved organization adjustment",
+      idempotencyKey: "scope-consolidated-mock",
+      lines: [
+        { accountId: "acct-1100", debit: money(7_500), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(7_500) },
+      ],
+    });
+    const now = new Date().toISOString();
+    const internals = api as unknown as { accountingSources: AccountingSourcePosting[] };
+    internals.accountingSources.push({
+      id: "mock-consolidated-source",
+      organizationId: ownerSession.organization.id,
+      sourceType: "payment",
+      sourceId: "mock-consolidated-source-fact",
+      status: "posted",
+      amount: money(9_900),
+      currency: "JOD",
+      journalEntryId: "mock-consolidated-journal",
+      occurredAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await api.switchDemoRole("manager", branch.id);
+    const managerInternals = api as unknown as { db: { session: { userId: string }; users: Array<{ id: string; branchScope: string; branchIds: string[] }> } };
+    const selectedManager = managerInternals.db.users.find((user) => user.id === managerInternals.db.session.userId);
+    expect(selectedManager).toBeDefined();
+    selectedManager!.branchScope = "selected";
+    selectedManager!.branchIds = [branch.id];
+    const managerEntries = await api.listAccountingJournalEntries();
+    expect(managerEntries.items.map((entry) => entry.id)).toContain(normal.id);
+    expect(managerEntries.items.map((entry) => entry.id)).not.toContain(consolidated.id);
+    await expect(api.getAccountingJournalEntry(consolidated.id)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    const managerTrialBalance = await api.getAccountingTrialBalance();
+    expect(managerTrialBalance.rows.some((row) => Math.abs(row.balance.amount) === 7_500)).toBe(false);
+    expect(managerTrialBalance).toMatchObject({ totalDebit: money(1_000), totalCredit: money(1_000) });
+
+    const managerSources = await api.listAccountingSourcePostings();
+    expect(managerSources.items.map((source) => source.sourceId)).not.toContain("mock-consolidated-source-fact");
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: "mock-consolidated-source-fact", idempotencyKey: "scope-hidden-mock", reason: "Should not disclose consolidated source" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    await api.switchDemoRole("owner");
+    expect((await api.listAccountingSourcePostings()).items.map((source) => source.sourceId)).toContain("mock-consolidated-source-fact");
   });
 });

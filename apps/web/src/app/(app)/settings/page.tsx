@@ -17,6 +17,7 @@ import {
 } from "@/features/settings/settings-sections";
 import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-section";
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
+import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 
 export function SettingsPageInner() {
@@ -36,6 +37,7 @@ export function SettingsPageInner() {
         <Tabs value={activeSection} onValueChange={(nextSection) => requestNavigation(() => setActiveSection(nextSection))}>
           <TabsList className="max-w-full overflow-x-auto [scrollbar-width:thin]">
             <TabsTrigger value="organization">Organization</TabsTrigger>
+            <TabsTrigger value="brand">Brand Kit</TabsTrigger>
             <TabsTrigger value="profile">Public profile</TabsTrigger>
             <TabsTrigger value="branches">Branches</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
@@ -48,6 +50,9 @@ export function SettingsPageInner() {
           </TabsList>
           <TabsContent value="organization">
             <OrganizationSection />
+          </TabsContent>
+          <TabsContent value="brand">
+            <BrandKitSection />
           </TabsContent>
           <TabsContent value="profile">
             <GymPublicProfileSection />

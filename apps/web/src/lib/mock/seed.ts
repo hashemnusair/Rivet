@@ -16,8 +16,20 @@ import type {
   Task,
   TimelineEvent,
   UUID,
+  EquipmentAsset,
+  EquipmentIssue,
+  EquipmentWorkOrder,
+  FacilityTask,
+  InventoryBalance,
+  LowStockAlert,
+  Product,
+  PurchaseOrder,
+  StockMovement,
+  Supplier,
 } from "@/lib/domain/types";
 import { defaultRoleDefinitions } from "@/lib/domain/permissions";
+import { entitledModulesForPlan, defaultWorkspacePreferences, WORKSPACE_MODULE_CATALOG_VERSION } from "@/lib/domain/workspace-modules";
+import { BRAND_PALETTE_PRESETS, deriveBrandTokens } from "@/lib/domain/brand";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import type { LeadRecord, MemberRecord, MembershipRecord, MockDb } from "./store";
@@ -92,6 +104,17 @@ const RULE_IDS = {
   leadUntouched: seedUuid(63),
   followUpOverdue: seedUuid(64),
   outstanding: seedUuid(65),
+} as const;
+
+const OPS_IDS = {
+  creatine: seedUuid(70),
+  protein: seedUuid(71),
+  supplier: seedUuid(72),
+  zone: seedUuid(73),
+  asset: seedUuid(74),
+  issue: seedUuid(75),
+  workOrder: seedUuid(76),
+  facility: seedUuid(77),
 } as const;
 
 interface Gen {
@@ -1839,6 +1862,35 @@ export function buildSeed(now: Date = new Date()): MockDb {
   // -------------------------------------------------------------------------
   // Organization settings
   // -------------------------------------------------------------------------
+  const operationsZone: import("@/lib/domain/types").Zone = {
+    id: OPS_IDS.zone,
+    organizationId: ORG_ID,
+    branchId: BRANCH_ABD,
+    code: "MAIN-FLOOR",
+    name: "Main floor",
+    nameAr: "الطابق الرئيسي",
+    kind: "floor",
+    capacity: 80,
+    status: "active",
+    createdAt: iso(daysAgo(now, 30)),
+    updatedAt: iso(daysAgo(now, 30)),
+  };
+  const products: Product[] = [
+    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, targetLevel: 80, supplierLeadTimeDays: 5, preferredSupplierId: OPS_IDS.supplier, defaultUnitCost: money(650, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, targetLevel: 60, supplierLeadTimeDays: 3, defaultUnitCost: money(450, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+  ];
+  const suppliers: Supplier[] = [{ id: OPS_IDS.supplier, organizationId: ORG_ID, name: "Jordan Sports Supply", contactName: "Maya Haddad", email: "orders@jss.example", phone: "+962 79 700 1000", terms: "Net 15", leadTimeDays: 5, branchIds: [BRANCH_ABD, BRANCH_SWF], preferredProductIds: [OPS_IDS.creatine, OPS_IDS.protein], status: "active", createdAt: iso(daysAgo(now, 60)), updatedAt: iso(daysAgo(now, 7)) }];
+  const inventoryBalances: InventoryBalance[] = [
+    { id: seedUuid(78), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, quantityOnHand: 16, committedQuantity: 0, availableQuantity: 16, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
+    { id: seedUuid(79), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.protein, quantityOnHand: 42, committedQuantity: 0, availableQuantity: 42, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
+  ];
+  const stockMovements: StockMovement[] = [{ id: seedUuid(80), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, type: "receive", quantityDelta: 40, quantity: 40, unitCost: money(650, "JOD"), referenceType: "opening_balance", idempotencyKey: "seed-opening-creatine", financialPostingStatus: "not_posted", occurredAt: iso(daysAgo(now, 30)), createdAt: iso(daysAgo(now, 30)), createdById: U.omar }];
+  const lowStockAlerts: LowStockAlert[] = [];
+  const purchaseOrders: PurchaseOrder[] = [];
+  const facilityTasks: FacilityTask[] = [{ id: OPS_IDS.facility, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, zoneName: operationsZone.name, kind: "cleaning", severity: "medium", status: "open", title: "Main floor inspection", notes: "Check supplies and wipe high-touch surfaces.", assigneeId: U.hala, trafficContext: { checkInsLastHour: 18, occupancyPercent: 72, capturedAt: iso(hoursAgo(now, 1)) }, financialPostingStatus: "not_posted", createdAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) }];
+  const equipmentAssets: EquipmentAsset[] = [{ id: OPS_IDS.asset, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, code: "TREAD-01", name: "Commercial treadmill", manufacturer: "Life Fitness", model: "Integrity 95Ti", serialNumber: "LF-AB-001", purchaseDate: iso(daysAgo(now, 900)).slice(0, 10), purchaseCost: money(2_900_000, "JOD"), warrantyEndDate: iso(daysAgo(now, 170)).slice(0, 10), status: "maintenance", expectedServiceIntervalDays: 90, expectedUsefulLifeMonths: 84, createdAt: iso(daysAgo(now, 900)), updatedAt: iso(daysAgo(now, 4)) }];
+  const equipmentIssues: EquipmentIssue[] = [{ id: OPS_IDS.issue, organizationId: ORG_ID, branchId: BRANCH_ABD, assetId: OPS_IDS.asset, title: "Belt slipping under load", description: "Reported by front desk during evening peak.", severity: "high", status: "in_progress", reportedAt: iso(daysAgo(now, 4)), downtimeDays: 2, safetyStatus: "out_of_service", createdById: U.hala }];
+  const equipmentWorkOrders: EquipmentWorkOrder[] = [{ id: OPS_IDS.workOrder, organizationId: ORG_ID, branchId: BRANCH_ABD, assetId: OPS_IDS.asset, issueId: OPS_IDS.issue, status: "approved", description: "Inspect belt and motor; quote replacement.", assigneeId: U.layla, vendorName: "Life Fitness service", partsCost: money(220_000, "JOD"), laborCost: money(80_000, "JOD"), totalCost: money(300_000, "JOD"), replacementEstimate: money(1_900_000, "JOD"), financialPostingStatus: "pending", openedAt: iso(daysAgo(now, 4)), updatedAt: iso(daysAgo(now, 3)) }];
   const db: MockDb = {
     organization: {
       id: ORG_ID,
@@ -1854,7 +1906,25 @@ export function buildSeed(now: Date = new Date()): MockDb {
       receiptFooter: "Thank you for training with Forge. Follow @forgefitness.jo",
       status: "active",
     },
+    brand: {
+      organizationId: ORG_ID,
+      paletteKey: "rivet",
+      primaryColor: BRAND_PALETTE_PRESETS.rivet,
+      tokens: deriveBrandTokens(BRAND_PALETTE_PRESETS.rivet),
+      version: 0,
+    },
     branches,
+    zones: [operationsZone],
+    products,
+    suppliers,
+    inventoryBalances,
+    stockMovements,
+    lowStockAlerts,
+    purchaseOrders,
+    facilityTasks,
+    equipmentAssets,
+    equipmentIssues,
+    equipmentWorkOrders,
     users,
     roles: defaultRoleDefinitions(),
     paymentMethods: [
@@ -1869,6 +1939,20 @@ export function buildSeed(now: Date = new Date()): MockDb {
       automationDeliveryMode: "sandbox",
       quietHoursStart: "22:00",
       quietHoursEnd: "07:00",
+    },
+    organizationEntitlements: {
+      organizationId: ORG_ID,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      entitledModules: entitledModulesForPlan(),
+      source: "legacy_default",
+      updatedAt: iso(now),
+    },
+    workspaceModulePreferences: {
+      organizationId: ORG_ID,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      enabledModules: defaultWorkspacePreferences(entitledModulesForPlan()),
+      updatedAt: iso(now),
+      updatedById: U.omar,
     },
     operationalPolicies: {
       entry: {

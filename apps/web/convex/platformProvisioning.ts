@@ -1,9 +1,11 @@
 import { v } from "convex/values";
 import { internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { DEFAULT_ROLE_DEFINITIONS } from "./permissions";
+import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
 import { domainError, publicBranchId, publicOrganizationId, publicUserId, requirePlatformAdmin, type OrganizationRole } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
+import { seedAccountingMetadata } from "./accounting";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -166,6 +168,7 @@ function roleDefinitionValue(role: OrganizationRole, now: number) {
     label: definition.label,
     description: definition.description,
     permissions: definition.permissions,
+    catalogVersion: PERMISSION_CATALOG_VERSION,
     discountLimitMinor: definition.discountLimitMinor,
     isSystem: true,
     createdAt: now,
@@ -273,6 +276,9 @@ export const createWorkspace = internalMutation({
       organization = await ctx.db.get(organization._id);
     }
     if (!organization) domainError("INTERNAL_ERROR", "The gym workspace could not be created.", { correlationId: args.correlationId });
+    // Seed only code-owned accounting metadata during provisioning. No
+    // periods, balances, journal entries, or source facts are created here.
+    await seedAccountingMetadata(ctx, organization._id, now);
 
     let branch = await ctx.db
       .query("branches")
@@ -331,9 +337,24 @@ export const createWorkspace = internalMutation({
     for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<[OrganizationRole, (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
       const existing = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", organization._id).eq("role", role)).unique();
       const value = roleDefinitionValue(role, now);
-      if (existing) await ctx.db.patch(existing._id, { label: definition.label, description: definition.description, permissions: definition.permissions, discountLimitMinor: definition.discountLimitMinor, updatedAt: now });
+      if (existing) {
+        // Provisioning is idempotent and may run after an owner has edited a
+        // role. Preserve current-version omissions and other custom removals;
+        // only legacy rows receive the narrowly-scoped compatibility additions.
+        await ctx.db.patch(existing._id, { label: definition.label, description: definition.description, permissions: rolePermissions(role, existing.permissions, existing.catalogVersion), catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor: existing.discountLimitMinor, updatedAt: now });
+      }
       else await ctx.db.insert("roleDefinitions", { organizationId: organization._id, ...value });
     }
+    const entitledModules = entitledModulesForPlan(application.plan);
+    const existingEntitlements = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+    if (existingEntitlements) await ctx.db.patch(existingEntitlements._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: application.plan, entitledModules, source: "subscription_plan", updatedAt: now });
+    else await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: application.plan, entitledModules, source: "subscription_plan", createdAt: now, updatedAt: now });
+    const existingPreferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+    const storedModules = existingPreferences?.enabledModules.filter((module): module is typeof entitledModules[number] => entitledModules.includes(module as typeof entitledModules[number])) ?? [];
+    let enabledModules = storedModules;
+    try { enabledModules = validateWorkspaceModuleSelection(storedModules, entitledModules); } catch { enabledModules = defaultWorkspacePreferences(entitledModules); }
+    if (existingPreferences) await ctx.db.patch(existingPreferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, updatedAt: now });
+    else await ctx.db.insert("workspaceModulePreferences", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, createdAt: now, updatedAt: now });
     await upsertSettings(ctx, organization._id, now);
     await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan: application.plan, branchPublicId: publicBranchId(branch), branchName: branch.name, now });
 

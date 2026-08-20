@@ -3,6 +3,7 @@ import type {
   AutomationRule,
   AuditEvent,
   Branch,
+  BrandKit,
   CashShift,
   Charge,
   CheckInSummary,
@@ -14,6 +15,7 @@ import type {
   MessageTemplate,
   Money,
   NotificationSettings,
+  OrganizationEntitlements,
   OperationalPolicies,
   Offer,
   Organization,
@@ -26,7 +28,20 @@ import type {
   Task,
   TimelineEvent,
   UUID,
+  WorkspaceModulePreferences,
+  Zone,
+  EquipmentAsset,
+  EquipmentIssue,
+  EquipmentWorkOrder,
+  FacilityTask,
+  InventoryBalance,
+  LowStockAlert,
+  Product,
+  PurchaseOrder,
+  StockMovement,
+  Supplier,
 } from "@/lib/domain/types";
+import { effectiveRolePermissions } from "@/lib/domain/permissions";
 
 
 // ---------------------------------------------------------------------------
@@ -95,12 +110,27 @@ export interface LeadRecord extends Lead {
 
 export interface MockDb {
   organization: Organization;
+  brand: BrandKit;
   branches: Branch[];
+  zones: Zone[];
+  products: Product[];
+  suppliers: Supplier[];
+  inventoryBalances: InventoryBalance[];
+  stockMovements: StockMovement[];
+  lowStockAlerts: LowStockAlert[];
+  purchaseOrders: PurchaseOrder[];
+  facilityTasks: FacilityTask[];
+  equipmentAssets: EquipmentAsset[];
+  equipmentIssues: EquipmentIssue[];
+  equipmentWorkOrders: EquipmentWorkOrder[];
   users: StaffUser[];
   roles: RoleDefinition[];
   paymentMethods: PaymentMethod[];
   notificationSettings: NotificationSettings;
   operationalPolicies: OperationalPolicies;
+  /** Mock persistence mirrors the separate server entitlement/preference records. */
+  organizationEntitlements: OrganizationEntitlements;
+  workspaceModulePreferences: WorkspaceModulePreferences;
   members: MemberRecord[];
   memberships: MembershipRecord[];
   plans: MembershipPlan[];
@@ -154,5 +184,6 @@ export function currentRole(db: MockDb): RoleKey {
 }
 
 export function permissionsFor(db: MockDb, role: RoleKey): string[] {
-  return db.roles.find((r) => r.key === role)?.permissions ?? [];
+  const definition = db.roles.find((r) => r.key === role);
+  return effectiveRolePermissions(role, definition?.permissions, definition?.catalogVersion);
 }

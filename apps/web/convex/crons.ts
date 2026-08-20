@@ -7,6 +7,7 @@ crons.interval("evaluate GymOS automation rules", { minutes: 15 }, internal.auto
 crons.interval("process enabled operational email", { minutes: 1 }, internal.operationalEmail.processDue, {});
 crons.interval("queue upcoming PT reminders", { minutes: 15 }, internal.ptJobs.queueUpcomingReminders, {});
 crons.interval("queue membership lifecycle reminders", { hours: 1 }, internal.membershipJobs.queueLifecycleReminders, {});
+crons.interval("queue renewal recovery journey", { minutes: 15 }, internal.renewalJobs.queueRenewalJourney, {});
 crons.daily("clean expired profile media", { hourUTC: 2, minuteUTC: 20 }, internal.media.cleanupExpired, {});
 
 export default crons;

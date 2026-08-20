@@ -335,7 +335,11 @@ test.describe("sensitive actions are audited", () => {
     // memory for the page's lifetime, so a full reload would re-seed it and
     // discard the override. Audit is intentionally a deep route, not a
     // primary-navigation item.
-    await page.getByRole("link", { name: "RIVET home" }).click();
+    // The tenant shell uses the organization name for the brand link (for
+    // example, "Forge Fitness Club home"), so it is intentionally not a
+    // stable cross-tenant contract. The primary navigation's Dashboard link
+    // is the accessible, tenant-independent route back to the manager home.
+    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
     await page.getByRole("link", { name: /^Audit trail$/ }).click();
     await expect(page).toHaveURL(/\/audit/);
     await page.getByLabel("Category filter").click();
