@@ -407,6 +407,10 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
   const today = todayIn(organization.timezone || "UTC", now);
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
   const notifications = value(value(settings?.data).notifications);
+  // Existing organizations have no value for this setting. Treat absence as
+  // disabled so deploying the scheduler cannot create renewal facts or staff
+  // tasks until an authorized operator explicitly enables the journey.
+  if (notifications.renewalRecoveryEnabled !== true) return { memberships: 0, created: 0, deferred: 0, sandboxed: 0, queued: 0, suppressed: 0, cancelled: 0, completed: 0 };
   const quietStart = stringValue(notifications.quietHoursStart, "22:00");
   const quietEnd = stringValue(notifications.quietHoursEnd, "08:00");
   const quiet = isQuietHours(organization.timezone || "UTC", quietStart, quietEnd, new Date(now));

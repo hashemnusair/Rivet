@@ -2385,6 +2385,11 @@ export interface NotificationSettings {
     checkinOverride: boolean;
     discountApproval: boolean;
   };
+  /**
+   * The scheduled renewal journey is opt-in. Missing legacy values are false
+   * so a backend deploy cannot silently create member timelines or staff tasks.
+   */
+  renewalRecoveryEnabled?: boolean;
   automationDeliveryMode: "sandbox" | "live";
   quietHoursStart?: string;
   quietHoursEnd?: string;

@@ -1,7 +1,7 @@
 # 16 — Five-Pillar Gym Operating System Expansion Plan
 
-Status: **Foundation slice implemented locally — unreleased and unverified by the full gate; later pillars remain incomplete**
-Last reviewed: **2026-08-19**
+Status: **All five implementation slices are on `main`; the renewal opt-in safety deploy and signed-in release verification remain open**
+Last reviewed: **2026-08-20**
 
 ## Purpose
 

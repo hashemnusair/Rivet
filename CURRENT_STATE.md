@@ -1,12 +1,41 @@
 # GymOS / RIVET current implementation state
 
+## Five-pillar release safety implementation, 20 August 2026
+
+- GitHub `main` and local `main` now include the two five-pillar commits through
+  `22326dc`. GitHub CI passed at that exact commit, Vercel deployed it to
+  Production, and the new `/operations`, `/finance`, and
+  `/reports/statements` routes return HTTP 200.
+- The Production bundle contains
+  `https://descriptive-meerkat-589.eu-west-1.convex.cloud`. The configured
+  public `health:check` returns `status: ok`. The current local
+  `CONVEX_DEPLOY_KEY` selects Development target `fleet-otter-621`, not
+  Production, so this agent did not deploy through the wrong credential. A
+  count-only Production audit and the Production backend deploy remain blocked
+  until the operator supplies the correct Production deployment context.
+- Renewal recovery is now explicitly opt-in per organization through
+  `notifications.renewalRecoveryEnabled`. Missing legacy values are false. The
+  15-minute job cannot create delivery facts, member timeline entries, or staff
+  tasks until an authorized settings user enables the journey. External
+  WhatsApp and SMS delivery remains sandboxed independently.
+- The hand-written `arabic-localisation` branch remains unmerged by product
+  decision. Arabic work moves to the last optimization pass. That pass should
+  evaluate General Translation's `gt-next` integration, review workflow, and
+  RTL direction support instead of merging the current custom catalogue. No GT
+  dependency, account, key, or build step has been added yet.
+- Local verification passed both typechecks, zero-warning lint, 108 test files
+  with 555 tests, the 46-route Production build, 27 Playwright journeys with 14
+  credential-gated skips, and `git diff --check`. The guarded Convex dry run
+  passed against Development with no deleted indexes. It was not a Production
+  deploy.
+
 ## Five-pillar expansion — implemented and locally validated, 20 August 2026
 
 The five agreed expansion pillars are implemented and have passed the complete
-local validation gate. Implementation commit `acc9c7e` is published on GitHub
-branch `codex/five-pillar-expansion`. Convex schema and functions from that
-commit are deployed to Production target `descriptive-meerkat-589`; the
-frontend has not been merged to `main` or deployed through Vercel.
+local validation gate. Implementation commit `acc9c7e` and deployment record
+`22326dc` are on GitHub `main` and branch `codex/five-pillar-expansion`. Vercel
+has deployed `22326dc`. Convex schema and functions from `acc9c7e` were pushed
+to target `descriptive-meerkat-589`, whose public health query is active.
 
 The agreed scope and product decisions are recorded in
 `docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`. In this pass the five implementation
@@ -123,10 +152,12 @@ blockers before final validation:
 
 The guarded Convex Production dry run and deploy both completed against
 `descriptive-meerkat-589`. Schema validation passed, no indexes were deleted,
-and the post-deploy read-only `health:check` returned `status: ok`. GitHub CI,
-Vercel deployment, and browser verification against the Production frontend
-have not been performed. No seed, import, restore, delete, live provider, or
-Production product-data mutation was run.
+and the post-deploy read-only `health:check` returned `status: ok`. GitHub CI
+and the Vercel Production deployment later passed at `22326dc`; the
+authenticated Clerk-to-Convex smoke was skipped. No seed, import, restore,
+delete, or live provider action was run during the release. A later count-only
+audit could not authenticate to the Production database, so this handoff does
+not claim that the cron created zero Product records after deployment.
 
 ### Remaining decisions and operational work
 
@@ -139,9 +170,9 @@ Production product-data mutation was run.
   the reports disclose those limitations and do not invent accounting facts.
 - Source-queue coverage is intentionally `refresh_required`/unproven until a
   complete operational refresh establishes coverage.
-- Credentialed staging journeys, GitHub CI, merge review, Vercel deployment,
-  and post-deploy browser verification remain release-stage work requiring
-  separate authorization and environment access.
+- The opt-in renewal gate must be deployed with the exact Production Convex
+  credential before the scheduled job can be treated as safe. Credentialed
+  staging journeys and the signed-in Production browser check remain open.
 
 ### Migration and compatibility notes
 
@@ -523,9 +554,9 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The owner-selected modular workspace is currently a product plan, not shipped behavior. `docs/14_MODULAR_WORKSPACE_PLAN.md` defines a staged page-preference system, first-owner onboarding survey, future dashboard-block controls, and non-interactive premium placeholders. Product steering is required before implementation, especially around always-visible pages, existing-tenant rollout, dependency behavior, background automations, and future plan entitlements.
+The five-pillar release now includes server-owned workspace entitlements and owner-controlled module preferences. `docs/14_MODULAR_WORKSPACE_PLAN.md` still owns the unimplemented first-owner survey, later dashboard-block preferences, and premium-placeholder behavior. Final tier packaging, limits, grandfathering, downgrade behavior, and existing-tenant rollout still require product steering.
 
-The Production Clerk instance, custom-domain DNS, Vercel environment split, Production Convex environment/deployment, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. TODO-006's code-shaped money/staff matrix is complete at integrated code `1f29af3`, carried by the aligned `main`/branch handoff at `d200ba5`; realistic-volume/concurrency reconciliation evidence remains under TODO-007 and must be demonstrated in staging later, not fabricated from Production. The dedicated invited-owner route and platform tenant-directory visibility fix are implemented locally; before onboarding a real gym, run the two credentialed Production invitation cases and the hidden/suspended/cancelled directory check, then complete the remaining workflow/provider coverage in the canonical backlog. The platform gym detail now shows only authorized target-scoped facts; external SaaS billing and storage remain explicit `Not configured` capabilities until their providers are integrated, and no health score is exposed without an approved model. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability and live WhatsApp/SMS delivery remain provider-bound follow-ups. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The Production Clerk instance, custom-domain DNS, Vercel environment split, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. The Production Convex public health query is active, but this checkout has only a Development deploy key. Deploy the renewal opt-in gate with the exact Production credential before treating the scheduled journey as safe. TODO-006's code-shaped money/staff matrix is complete at integrated code `1f29af3`, carried by the aligned `main`/branch handoff at `d200ba5`; realistic-volume/concurrency reconciliation evidence remains under TODO-007 and must be demonstrated in staging later, not fabricated from Production. The dedicated invited-owner route and platform tenant-directory visibility fix are implemented locally; before onboarding a real gym, run the two credentialed Production invitation cases and the hidden/suspended/cancelled directory check, then complete the remaining workflow/provider coverage in the canonical backlog. The platform gym detail now shows only authorized target-scoped facts; external SaaS billing and storage remain explicit `Not configured` capabilities until their providers are integrated, and no health score is exposed without an approved model. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability and live WhatsApp/SMS delivery remain provider-bound follow-ups. No unapproved marketplace, mobile, biometric, or provider-backed billing surface was added.
 
 ## Files another agent should read first
 

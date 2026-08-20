@@ -824,10 +824,9 @@ The UI/API now expose persisted execution/action/attempt history, dedupe keys, s
 
 ## P2 — Deliberately deferred until after the first pilot
 
-- Modular owner-selected workspace pages, first-owner survey, later dashboard-block preferences, and premium placeholders are specified in `docs/14_MODULAR_WORKSPACE_PLAN.md`. Implementation is deliberately paused for owner steering; no tier entitlement matrix has been approved.
+- The five-pillar release implements server-owned workspace entitlements and owner-controlled module preferences. The first-owner survey, later dashboard-block preferences, final tier packaging, and premium-placeholder behavior remain deferred for product steering.
 - Full class schedules, capacity, waitlists, and no-shows.
 - Corporate accounts and commissions.
-- POS/inventory and equipment maintenance.
 - Native mobile app and offline-tolerant reception queue.
 - Advanced churn/anomaly prediction.
 - Live WhatsApp/SMS and external SaaS billing beyond approved provider boundaries.

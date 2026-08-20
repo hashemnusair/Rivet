@@ -76,6 +76,7 @@ const DEFAULT_PAYMENT_METHODS = [
 ];
 const DEFAULT_NOTIFICATIONS = {
   managerAlerts: { cashVariance: true, refundOrVoid: true, checkinOverride: true, discountApproval: true },
+  renewalRecoveryEnabled: false,
   automationDeliveryMode: "sandbox",
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",

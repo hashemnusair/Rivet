@@ -742,6 +742,17 @@ export function NotificationsSection() {
       <section className="panel self-start p-5">
         <h2 className="mb-1 font-display text-[15px] font-semibold">Automation delivery</h2>
         <p className="mb-4 text-[12.5px] text-ink-3">Automation messages are retained in the sandbox delivery ledger. No external WhatsApp or SMS provider is configured.</p>
+        <label className="mb-3 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+          <div>
+            <p className="text-[13px] font-medium">Renewal recovery</p>
+            <p className="text-[11.5px] text-ink-3">When enabled, prepare sandbox reminders at 14, 7, and 3 days, then create a real staff call task one day before expiry.</p>
+          </div>
+          <Switch
+            checked={notifications.renewalRecoveryEnabled === true}
+            onCheckedChange={(enabled) => save.mutate({ ...notifications, renewalRecoveryEnabled: enabled })}
+            aria-label="Renewal recovery"
+          />
+        </label>
         <label className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5 cursor-pointer">
           <div>
             <p className="text-[13px] font-medium">External delivery</p>
