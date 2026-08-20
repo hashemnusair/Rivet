@@ -40,8 +40,28 @@ describe("renewal recovery job", () => {
       deliveries: await ctx.db.query("renewalDeliveries").collect(),
       tasks: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect(),
       events: await ctx.db.query("renewalDeliveryEvents").collect(),
+      timeline: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect(),
     }));
-    expect(state).toEqual({ deliveries: [], tasks: [], events: [] });
+    expect(state).toEqual({ deliveries: [], tasks: [], events: [], timeline: [] });
+  });
+
+  it("exposes only aggregate counts and timestamps through the internal release audit", async () => {
+    const t = convexTest(schema, modules);
+    await addOrganization(t, { publicId: "audit-disabled-org", memberId: "audit-disabled-member", membershipId: "audit-disabled-membership", endDate: "2026-08-26", member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
+    await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") });
+    const disabled = await t.query(internal.renewalJobs.releaseAudit, {});
+    expect(disabled).toMatchObject({ scope: "renewal-records-only", deliveries: { count: 0 }, deliveryEvents: { count: 0 }, memberTimeline: { count: 0 }, staffCallTasks: { count: 0 } });
+    expect(disabled).not.toHaveProperty("memberPublicId");
+    expect(disabled).not.toHaveProperty("organizationId");
+
+    await addOrganization(t, { publicId: "audit-enabled-org", memberId: "audit-enabled-member", membershipId: "audit-enabled-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
+    const now = atUtc("2026-08-12");
+    await t.mutation(internal.renewalJobs.queueRenewalJourney, { now });
+    const enabled = await t.query(internal.renewalJobs.releaseAudit, { since: now });
+    expect(enabled.deliveries).toMatchObject({ count: 1, groups: { sandboxed: 1 }, firstAt: now, lastAt: now });
+    expect(enabled.deliveryEvents).toMatchObject({ count: 2, groups: { created: 1, sandboxed: 1 }, firstAt: now, lastAt: now });
+    expect(enabled.memberTimeline).toMatchObject({ count: 1, groups: { renewal_message_sandboxed: 1 }, firstAt: now, lastAt: now });
+    expect(enabled.staffCallTasks).toMatchObject({ count: 0 });
   });
 
   it("creates exact 14/7/3 reminders and one 1-day call, then deduplicates", async () => {

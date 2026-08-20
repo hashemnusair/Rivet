@@ -1,6 +1,42 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 17 August 2026 after the simplified Core CRM Pilot release. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 20 August 2026 after the Five Pillars renewal-safety verification pass. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+
+## Current Five Pillars release index — 20 August 2026
+
+Historical release sections below remain for traceability. The categories here are the canonical active list for this release; do not duplicate these items in a new backlog.
+
+### Release blockers
+
+- [x] Land the Five Pillars implementation and explicit renewal opt-in gate on `main` at `492f93312a59f5618b0c09e345cce46cef2a34f9`.
+- [x] Pass the exact-commit GitHub Actions run `32387977071` and matching Vercel Production deployment status `VDB56W6feAsKFn5MYy9v97EX5V5p`.
+- [ ] Deploy the safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The only available local deployment context targets Development `fleet-otter-621`; its guarded dry run passed schema validation with no deleted indexes, so no Production deploy was attempted.
+
+### Staging or Production verification
+
+- [ ] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy and record counts/timestamps only. The query is tested locally but is not yet deployed; no pre-gate Production count is claimed.
+- [ ] Use an existing signed-in Production GymOS session for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layout checks. No such session was available in this pass.
+- [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. The required role-specific staging identities are not available; no functional staging writes were run.
+
+### Product decisions
+
+- [ ] Resolve final Starter/Growth/Pro capability packaging and downgrade/read-only policy; the current server mapping remains provisional.
+- [ ] Approve membership revenue-recognition, depreciation, chart-of-accounts, inventory valuation, period-close, tax, and opening-balance policies before stronger accounting claims or historical backfill.
+- [ ] Approve WhatsApp/SMS/supplier providers, templates, consent/quiet-hour/retry policy, and accountable owners before any live delivery.
+
+### Future features
+
+- [ ] Keep supplier marketplaces, supplier portals, autonomous purchasing/replacement, adaptive music, digital advertising, demographic targeting, hardware integrations, and statutory/tax/e-invoicing claims out of this release. Reconsider only as separate scoped work.
+
+### Pre-launch cleanup
+
+- [ ] Complete credentialed staging bodies and cleanup evidence for the registered journeys listed under TODO-012, plus realistic-volume/concurrency proof under TODO-007.
+- [ ] Close the remaining deployed read-only Production verification items in the issue sections below without mutating real gym data.
+
+### Final Arabic and optimization pass
+
+- [ ] Keep `arabic-localisation` unmerged. Decide later whether to use General Translation/`gt-next`, complete RTL review, and perform the final Arabic pass.
+- [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
 
 ## Latest simplification slice — core CRM pilot — released 17 August 2026
 
@@ -482,10 +518,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
 
-- Status: **Production frontend/backend alignment was reverified and deployed on 11 August 2026; configuration-regression monitoring remains ongoing**.
-- Evidence: `main` was fast-forwarded to `009b1b8`; GitHub Actions run `31481872192` passed and Vercel Production deployment `dpl_5M3xaECxsTtqxEqcN1NfLNmQ3g2x` reached `READY` at that commit. Convex Production `descriptive-meerkat-589` (not Development `fleet-otter-621`) passed isolated dry-run/schema validation and deployment with no index deletions; health, Platform Overview/Gyms/Subscriptions, Support, and the empty notification center loaded from persisted facts. The documented 8 August recovery/export point remains the rollback reference. No Production product data was seeded, imported, restored, or mutated.
+- Status: **Frontend alignment is verified for `492f933`; the renewal-gated Convex Production deployment and authenticated verification remain blocked by missing Production context/session access**.
+- Evidence: GitHub Actions run `32387977071` passed for `492f93312a59f5618b0c09e345cce46cef2a34f9`, and Vercel status `VDB56W6feAsKFn5MYy9v97EX5V5p` is `READY` for that commit. The required guarded Convex dry run targeted Development `fleet-otter-621`, not Production `descriptive-meerkat-589`, and reported no deleted indexes with schema validation complete. No Production deploy was attempted through the wrong context.
 - Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
-- Fix/acceptance: retain the value-free ownership/verification record in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, rerun classification checks after relevant configuration changes, and record the exact deployed commit for every release. Never seed Production as a shortcut.
+- Fix/acceptance: obtain the correct Production deployment context, rerun the required dry run and deploy through `pnpm convex:deploy`, run the read-only health/audit checks, and record exact target/commit evidence. Never seed Production as a shortcut.
 
 ### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
 

@@ -1,197 +1,54 @@
 # GymOS / RIVET current implementation state
 
-## Five-pillar release safety implementation, 20 August 2026
+## Five-pillar release status — 20 August 2026
 
-- GitHub `main` and local `main` now include the two five-pillar commits through
-  `22326dc`. GitHub CI passed at that exact commit, Vercel deployed it to
-  Production, and the new `/operations`, `/finance`, and
-  `/reports/statements` routes return HTTP 200.
-- The Production bundle contains
-  `https://descriptive-meerkat-589.eu-west-1.convex.cloud`. The configured
-  public `health:check` returns `status: ok`. The current local
-  `CONVEX_DEPLOY_KEY` selects Development target `fleet-otter-621`, not
-  Production, so this agent did not deploy through the wrong credential. A
-  count-only Production audit and the Production backend deploy remain blocked
-  until the operator supplies the correct Production deployment context.
-- Renewal recovery is now explicitly opt-in per organization through
-  `notifications.renewalRecoveryEnabled`. Missing legacy values are false. The
-  15-minute job cannot create delivery facts, member timeline entries, or staff
-  tasks until an authorized settings user enables the journey. External
-  WhatsApp and SMS delivery remains sandboxed independently.
-- The hand-written `arabic-localisation` branch remains unmerged by product
-  decision. Arabic work moves to the last optimization pass. That pass should
-  evaluate General Translation's `gt-next` integration, review workflow, and
-  RTL direction support instead of merging the current custom catalogue. No GT
-  dependency, account, key, or build step has been added yet.
-- Local verification passed both typechecks, zero-warning lint, 108 test files
-  with 555 tests, the 46-route Production build, 27 Playwright journeys with 14
-  credential-gated skips, and `git diff --check`. The guarded Convex dry run
-  passed against Development with no deleted indexes. It was not a Production
-  deploy.
+- Local and remote `main` are synchronized at `492f93312a59f5618b0c09e345cce46cef2a34f9`. The renewal safety change is on `main`; the hand-written `arabic-localisation` branch remains separate at `f98e324`.
+- The five implementation pillars are present on `main`: shared tenant/capability foundation, renewal recovery, daily operations, immutable management ledger, and management reporting. The implementation remains additive and locally validated; no future marketplace, autonomous purchasing/replacement, statutory-accounting, Arabic, or optimization work was added here.
+- GitHub Actions run `32387977071` passed for this exact commit, and the Vercel status attached to that commit is `READY` (`VDB56W6feAsKFn5MYy9v97EX5V5p`). The local production build includes 46 routes, including `/operations`, `/finance`, and `/reports/statements`.
+- The intended Production Convex target is `descriptive-meerkat-589`. The only available local deployment context selects Development `fleet-otter-621`; the required guarded dry run targeted that Development deployment, passed schema validation, and reported no deleted indexes. The Production deploy was correctly not attempted with the Development credential, so `492f933`'s renewal gate is not verified as deployed to Production.
+- `notifications.renewalRecoveryEnabled` defaults to false by omission and by explicit false. The scheduler cannot create renewal deliveries, delivery events, member timeline entries, or renewal call tasks while disabled. An authorized settings user with `settings.manage` can enable it explicitly; the owner path is covered by the server test, and WhatsApp/SMS remain sandboxed independently.
+- An internal read-only `renewalJobs.releaseAudit` query now returns only aggregate counts, status/type buckets, and first/last timestamps for renewal deliveries, renewal events, renewal timelines, and renewal call tasks. It is tested locally but is not deployed to Production, so no Production pre-gate count is claimed.
+- No authenticated Production GymOS session or Convex dashboard session was available. The unauthenticated `/operations` route redirected to `/login` with no browser console errors; authenticated checks of `/finance`, `/reports/statements`, Settings, workspace visibility, error states, drill-downs, and responsive layouts could not be completed.
+- No Production data was seeded, created, edited, deleted, or archived. Live WhatsApp, SMS, email, supplier messaging, and other providers remain disabled. `FRONTEND_HANDOFF.md` is unchanged.
 
-## Five-pillar expansion — implemented and locally validated, 20 August 2026
+### Five-pillar implementation summary
 
-The five agreed expansion pillars are implemented and have passed the complete
-local validation gate. Implementation commit `acc9c7e` and deployment record
-`22326dc` are on GitHub `main` and branch `codex/five-pillar-expansion`. Vercel
-has deployed `22326dc`. Convex schema and functions from `acc9c7e` were pushed
-to target `descriptive-meerkat-589`, whose public health query is active.
+- Foundation: server-owned entitlements, workspace preferences, Brand Kit, typed zones, consent/event primitives, tenant/branch/role enforcement, audit, and mock/Convex parity.
+- Renewal recovery: exact 14/7/3-day sandbox reminders, one-day staff call task, consent/quiet-hours/deduplication/stop rules, truthful delivery state, append-only events, and timeline records behind the opt-in gate.
+- Daily operations: typed inventory, suppliers, purchasing, facilities, equipment, work orders, alerts, recorded-input recommendations, protected writes, and `/operations` workflows.
+- Management ledger: code-owned accounts and posting policies, balanced immutable journals, source postings, reversals, periods, reconciliation, and `/finance` controls.
+- Reporting: income statement, balance sheet, cashflow, GM analysis, scope/policy metadata, bounded drill-downs, completeness warnings, and management-accounting disclaimer in `/reports/statements`.
 
-The agreed scope and product decisions are recorded in
-`docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`. In this pass the five implementation
-pillars are: shared tenant/capability foundation, renewal recovery, daily
-operations, immutable management ledger, and trustworthy management reporting.
-Adaptive music, targeted digital advertising, supplier marketplaces,
-autonomous purchasing/replacement, statutory-accounting claims, and live
-provider credentials remain explicitly excluded.
-
-### Implemented in the working tree
-
-1. **Foundation and tenant controls**
-   - Server-owned organization entitlements and separate workspace preferences
-     for `foundation`, `revenue`, `operations`, `finance`, and `reporting`.
-   - Provisional legacy fallback: Starter = foundation/revenue, Growth adds
-     operations, Pro adds finance/reporting. Explicit entitlement rows are
-     authoritative when present; preferences cannot grant an entitlement.
-   - Organization Brand Kit with validated palette/primary color, same-tenant
-     logo reuse and media-retention protection, derived semantic theme tokens,
-     audited owner updates, tenant shell branding, and RIVET fallback.
-   - Typed branch zones with branch/tenant validation, code uniqueness,
-     archive/audit behavior, API/Mock parity, and settings coverage.
-
-2. **Renewal recovery**
-   - Tenant-local 14/7/3-day WhatsApp/SMS policy decisions plus exactly one
-     one-day staff call task.
-   - Explicit consent/opt-out handling, quiet-hour deferral, term-aware
-     deduplication, stop conditions after lifecycle changes, sandbox-only
-     external delivery truthfulness, append-only events, and member timeline.
-   - Live providers and credentials are not configured, and no delivery is
-     falsely represented as sent.
-
-3. **Daily operations**
-   - Typed products, suppliers, inventory balances/movements/alerts, purchase
-     orders, facility tasks, equipment assets/issues/work orders, and recorded-
-     inputs-only fix-versus-replace recommendations.
-   - Branch/tenant/role enforcement, audited writes, low-stock projections,
-     supplier notification sandbox state, zone-linked facilities, idempotent
-     receiving/movements, and protected finance-owned posting fields.
-   - `/operations` command center with working inventory/supplier/PO,
-     facilities, and equipment flows plus module/read-only states.
-   - No supplier marketplace, supplier portal, autonomous order, or autonomous
-     replacement workflow was added.
-
-4. **Management ledger**
-   - Code-owned chart of accounts and posting policies; typed periods, balanced
-     immutable journal entries/lines, source-posting queue, trial balance,
-     manual journals, reversals, and period close/reopen.
-   - Conservative mappings for payments/refunds/voids, net approved membership
-     sales/renewals, fully received purchase orders, supported stock movements,
-     facility supplies, equipment acquisition, and repair costs.
-   - PO-linked stock receipts and unsupported movement types are excluded to
-     avoid double posting. Source discovery classifies facts but never
-     auto-posts. Reused idempotency keys conflict when request content changes.
-   - `/finance` management-ledger workspace includes accounts, periods,
-     journals/detail, trial balance, source refresh/posting, manual journal,
-     reversal, and close/reopen controls.
-
-5. **Management reporting**
-   - Backend projections and contracts are present for income statement,
-     balance sheet, cashflow, and general-manager analysis with Convex/Mock
-     routing and controlled tests.
-   - Reports use effective posted facts, retain original plus reversing entries,
-     expose statement equations and cash reconciliation, provide policy/source
-     metadata, bounded drilldown IDs, and show a management-accounting
-     disclaimer and completeness warnings.
-   - Membership revenue remains deferred because no recognition policy was
-     approved. Depreciation is explicitly `Not configured`; fixed assets remain
-     gross. No historical openings or financial facts are invented.
-   - Mutable current-state GM metrics (open alerts, commitments, equipment
-     issues, outstanding balances) are reported only for a current tenant-date
-     snapshot; historical requests return `Not available` without transition
-     history.
-   - `/reports/statements` contains Income statement, Balance sheet, Cashflow,
-     and GM analysis views with date/accessible-branch scope, metadata,
-     warnings, reconciliation states, read-only/locked states, and Finance-nav
-     discoverability.
-
-### Integrity hardening completed
-
-An independent cross-pillar audit found and resolved the following release
-blockers before final validation:
-
-- Custom roles can no longer bypass the new operations/accounting permission
-  boundaries. Permission catalog v2 is additive for legacy roles, while an
-  explicit current-version role edit can intentionally omit a permission.
-- Financially posted operational facts are immutable, equipment cannot be
-  reassigned across branches, inventory adjustments require reasons, and
-  branch-scoped actors cannot discover consolidated/unattributed finance rows.
-- Published public-profile media and tenant Brand Kit media are protected from
-  discard while referenced.
-- Accounting posting attempts are immutable and keyed by complete source
-  identity plus idempotency key, preserving stable replay across multiple keys
-  and rejecting cross-source key reuse.
-- Cashflow uses independently computed expected and as-of cash. Reconciliation
-  remains `unproven` while source-queue coverage is not proven; the UI does not
-  render that state as success.
-- General-manager branch scope also recognizes legacy `domainRecords` branch
-  identifiers.
-
-### Final local validation
+### Local validation for this release
 
 - `pnpm typecheck` — passed.
 - `pnpm convex:typecheck` — passed.
-- `pnpm convex:codegen` — passed. An earlier sandboxed attempt hit external
-  Sentry/DNS resolution; the approved network rerun completed normally.
-- `pnpm lint` — passed with no warnings.
-- `pnpm test` — **553 tests across 107 files passed**.
-- `pnpm build` — passed; Next.js generated **46 routes**, including
-  `/operations`, `/finance`, and `/reports/statements`.
-- `pnpm test:e2e` — **27 passed, 14 skipped, 0 failed**. The skips are the
-  existing credential-gated staging journeys.
+- `pnpm lint` — passed with no warnings; secret-output audit passed.
+- `pnpm test` — **557 tests across 109 files passed**.
+- `pnpm build` — passed; Next.js generated **46 routes**.
+- `pnpm test:e2e` — **27 passed, 14 skipped, 0 failed**. Skips are credential-gated staging journeys; no Production target was used.
 - `git diff --check` — passed.
 
-The guarded Convex Production dry run and deploy both completed against
-`descriptive-meerkat-589`. Schema validation passed, no indexes were deleted,
-and the post-deploy read-only `health:check` returned `status: ok`. GitHub CI
-and the Vercel Production deployment later passed at `22326dc`; the
-authenticated Clerk-to-Convex smoke was skipped. No seed, import, restore,
-delete, or live provider action was run during the release. A later count-only
-audit could not authenticate to the Production database, so this handoff does
-not claim that the cron created zero Product records after deployment.
+### Remaining release evidence
 
-### Remaining decisions and operational work
-
-- Final commercial packaging for Starter/Growth/Pro is still a product decision;
-  the current fallback mapping is provisional and explicit entitlements remain
-  authoritative.
-- WhatsApp/SMS and supplier notifications require approved providers,
-  credentials, templates, and staging acceptance before live delivery.
-- Membership revenue recognition and depreciation policies are not configured;
-  the reports disclose those limitations and do not invent accounting facts.
-- Source-queue coverage is intentionally `refresh_required`/unproven until a
-  complete operational refresh establishes coverage.
-- The opt-in renewal gate must be deployed with the exact Production Convex
-  credential before the scheduled job can be treated as safe. Credentialed
-  staging journeys and the signed-in Production browser check remain open.
+- The Production Convex operator must provide an existing Production deployment context that targets exactly `descriptive-meerkat-589`; then rerun the required dry run and deploy through `pnpm convex:deploy` only, followed by the approved read-only health check.
+- After the exact Production deployment, run the internal count-only renewal audit and record aggregate counts/timestamps. Do not expose member, phone, tenant, or message details.
+- Run the signed-in Production read-only route checks and one isolated Development staging journey only when the documented role identities are available. Preserve cleanup evidence for every disposable staging record.
 
 ### Migration and compatibility notes
 
-- The working tree adds typed schema tables/indexes for entitlements,
-  preferences, zones, renewal/operations data, accounting, posting attempts,
-  and reporting sources. No destructive migration command has been run.
-- Permission catalog v2 preserves legacy-manager access until that role is
-  explicitly edited under the current catalog, avoiding a silent rollout
-  regression.
-- No opening balances, historical management snapshots, revenue schedules, or
-  depreciation entries are fabricated during migration.
-- Preserve `FRONTEND_HANDOFF.md` as the frozen historical artifact; this file is
-  the living implementation/release handoff.
+- Five-pillar schema additions are typed/additive; no destructive migration, seed, import, restore, or Production write was run in this release.
+- Permission catalog v2 remains additive for legacy roles; explicit current-version role edits can omit permissions intentionally.
+- Reports do not invent opening balances, historical snapshots, revenue recognition, depreciation, or unsupported source postings. Cashflow remains unproven while source-queue coverage is incomplete.
+- Preserve `FRONTEND_HANDOFF.md` as the frozen historical artifact; this file is the living implementation and release-status handoff.
 
 Primary files for orientation:
 
 - `docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`
-- `apps/web/convex/workspaceModules.ts`
+- `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`
 - `apps/web/convex/renewalJobs.ts`
+- `apps/web/convex/renewalJobs.test.ts`
+- `apps/web/convex/domain.renewal-settings.test.ts`
 - `apps/web/convex/operations.ts`
 - `apps/web/convex/accounting.ts`
 - `apps/web/convex/managementReports.ts`
@@ -199,7 +56,7 @@ Primary files for orientation:
 - `apps/web/src/features/finance/management-ledger-workspace.tsx`
 - `apps/web/src/features/reports/management-statements-workspace.tsx`
 
-Updated 2026-08-20 after the locally validated five-pillar expansion. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-20 after the renewal safety-gate verification pass. The historical frontend-only pass remains preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Simplified Core CRM Pilot — released 17 August 2026
 

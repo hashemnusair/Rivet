@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { checkpointForDays, consentForRenewalChannel, isRenewalQuietHours as isQuietHours, nextRenewalQuietHoursEnd as nextQuietHoursEnd, renewalDedupeKey, renewalMessageSuppressionReason, renewalStopReason, RENEWAL_CHECKPOINTS, RENEWAL_POLICY_VERSION } from "./renewalPolicy";
 
 type Data = Record<string, unknown>;
@@ -508,6 +508,60 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
   }
   return { memberships: memberships.length, created, deferred, sandboxed, queued, suppressed, cancelled: reconciliation.cancelled, completed: reconciliation.completed };
 }
+
+type ReleaseAuditRow = { timestamp: number; group: string };
+
+function releaseAuditSummary(rows: ReleaseAuditRow[]): { count: number; firstAt?: number; lastAt?: number; groups: Record<string, number> } {
+  let firstAt: number | undefined;
+  let lastAt: number | undefined;
+  const groups: Record<string, number> = {};
+  for (const row of rows) {
+    firstAt = firstAt === undefined ? row.timestamp : Math.min(firstAt, row.timestamp);
+    lastAt = lastAt === undefined ? row.timestamp : Math.max(lastAt, row.timestamp);
+    groups[row.group] = (groups[row.group] ?? 0) + 1;
+  }
+  return { count: rows.length, firstAt, lastAt, groups };
+}
+
+/**
+ * Count-only release audit for renewal facts. This is intentionally internal:
+ * it has no tenant/member identity in its result and is callable only through
+ * an authenticated operator/deployment workflow, not the product API.
+ */
+export const releaseAudit = internalQuery({
+  args: { since: v.optional(v.number()) },
+  returns: v.object({
+    scope: v.literal("renewal-records-only"),
+    since: v.optional(v.number()),
+    deliveries: v.object({ count: v.number(), firstAt: v.optional(v.number()), lastAt: v.optional(v.number()), groups: v.record(v.string(), v.number()) }),
+    deliveryEvents: v.object({ count: v.number(), firstAt: v.optional(v.number()), lastAt: v.optional(v.number()), groups: v.record(v.string(), v.number()) }),
+    memberTimeline: v.object({ count: v.number(), firstAt: v.optional(v.number()), lastAt: v.optional(v.number()), groups: v.record(v.string(), v.number()) }),
+    staffCallTasks: v.object({ count: v.number(), firstAt: v.optional(v.number()), lastAt: v.optional(v.number()), groups: v.record(v.string(), v.number()) }),
+  }),
+  handler: async (ctx, args) => {
+    const include = (timestamp: number) => args.since === undefined || timestamp >= args.since;
+    const [deliveries, deliveryEvents, timelineRecords, taskRecords] = await Promise.all([
+      ctx.db.query("renewalDeliveries").collect(),
+      ctx.db.query("renewalDeliveryEvents").collect(),
+      ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect(),
+      ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect(),
+    ]);
+    const timelineRows = timelineRecords
+      .filter((record) => record.publicId.startsWith("RENEWAL-TIMELINE-") && include(record.createdAt))
+      .map((record) => ({ timestamp: record.createdAt, group: stringValue(value(record.data).type, "unknown") }));
+    const taskRows = taskRecords
+      .filter((record) => record.publicId.startsWith("RENEWAL-CALL-") && include(record.createdAt))
+      .map((record) => ({ timestamp: record.createdAt, group: stringValue(value(record.data).status, "unknown") }));
+    return {
+      scope: "renewal-records-only" as const,
+      since: args.since,
+      deliveries: releaseAuditSummary(deliveries.filter((row) => include(row.createdAt)).map((row) => ({ timestamp: row.createdAt, group: row.status }))),
+      deliveryEvents: releaseAuditSummary(deliveryEvents.filter((row) => include(row.occurredAt)).map((row) => ({ timestamp: row.occurredAt, group: row.eventType }))),
+      memberTimeline: releaseAuditSummary(timelineRows),
+      staffCallTasks: releaseAuditSummary(taskRows),
+    };
+  },
+});
 
 /**
  * Tenant-local renewal recovery scan. External channels are intentionally

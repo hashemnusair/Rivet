@@ -1,6 +1,6 @@
 # 16 — Five-Pillar Gym Operating System Expansion Plan
 
-Status: **All five implementation slices are on `main`; the renewal opt-in safety deploy and signed-in release verification remain open**
+Status: **All five implementation slices are locally validated on `main` at `492f933`; the renewal opt-in Production deploy, count-only audit, signed-in Production checks, and credentialed staging journey remain open**
 Last reviewed: **2026-08-20**
 
 ## Purpose
@@ -26,6 +26,17 @@ and does not replace `CURRENT_STATE.md`, which remains the evidence and release
 status handoff. Existing documents such as the domain model, API contract,
 security guide, workspace-preference plan, and release runbook remain binding
 where this plan does not explicitly extend them.
+
+## Current release evidence — 20 August 2026
+
+- `main` and `origin/main` are synchronized at `492f93312a59f5618b0c09e345cce46cef2a34f9`. This includes the five-pillar implementation and the renewal safety change; `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
+- GitHub Actions run `32387977071` passed for the exact commit. Vercel Production is `READY` for the matching application deployment (`VDB56W6feAsKFn5MYy9v97EX5V5p`). The 46-route build includes `/operations`, `/finance`, and `/reports/statements`.
+- The intended Convex Production target is `descriptive-meerkat-589`. The available local deployment context targets Development `fleet-otter-621`; its required guarded dry run passed schema validation with no deleted indexes. Because the target was Development, no Production deploy was run and the renewal safety gate is not yet confirmed in Production.
+- Renewal recovery is off by default, treats missing legacy values as false, and does not create delivery/events/timeline/staff-task facts while disabled. An authorized settings user can explicitly enable the journey; external WhatsApp/SMS remains sandboxed.
+- The internal `renewalJobs.releaseAudit` query is aggregate-only and locally tested. It is intended for authenticated read-only release auditing after the Production deploy; it has not been deployed or run against Production in this pass.
+- No authenticated Production GymOS or Convex dashboard session was available. Production route/settings/report visual checks, Production renewal counts, and the isolated staging accounting journey therefore remain unverified.
+
+This plan records implementation status and release evidence; it does not close the unresolved commercial, provider, accounting-policy, Arabic, performance, or future-feature decisions below.
 
 ## Product thesis
 
