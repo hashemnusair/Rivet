@@ -1,6 +1,6 @@
 # 16 — Five-Pillar Gym Operating System Expansion Plan
 
-Status: **All five implementation slices are locally validated on `main` at `1e01163`; the renewal opt-in Production deploy, count-only audit, signed-in Production checks, and credentialed staging journey remain open**
+Status: **All five implementation slices are locally validated; the exact Production Convex deploy, count-only audit, signed-in Production checks, and credentialed staging journey remain open**
 Last reviewed: **2026-08-20**
 
 ## Purpose
@@ -31,10 +31,10 @@ where this plan does not explicitly extend them.
 
 - The Five Pillars application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is on `main` and `origin/main`; this plan refresh is a subsequent direct-main documentation commit. It includes the five-pillar implementation, renewal safety change, and release evidence; `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
 - GitHub Actions run `32391568593` passed for the exact commit. Vercel Production is `READY` for the matching application deployment (`ER5WksGThgB9BiBupZNZAxUsig85`). The 46-route build includes `/operations`, `/finance`, and `/reports/statements`.
-- The intended Convex Production target is `descriptive-meerkat-589`. The available local deployment context targets Development `fleet-otter-621`; its required guarded dry run passed schema validation with no deleted indexes. Because the target was Development, no Production deploy was run and the renewal safety gate is not yet confirmed in Production.
+- The intended Convex Production target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the available deployment context targets Development `fleet-otter-621`; the required guarded dry run passed schema validation with no deleted indexes. Because the target was Development, no Production deploy was run and the renewal safety gate is not confirmed in Production.
 - Renewal recovery is off by default, treats missing legacy values as false, and does not create delivery/events/timeline/staff-task facts while disabled. An authorized settings user can explicitly enable the journey; external WhatsApp/SMS remains sandboxed.
 - The internal `renewalJobs.releaseAudit` query is aggregate-only and locally tested. It is intended for authenticated read-only release auditing after the Production deploy; it has not been deployed or run against Production in this pass.
-- No authenticated Production GymOS or Convex dashboard session was available. Production route/settings/report visual checks, Production renewal counts, and the isolated staging accounting journey therefore remain unverified.
+- No authenticated Production GymOS or Convex dashboard session was available. `/operations`, `/finance`, `/reports/statements`, and `/settings` redirected to `/login` without console errors; authenticated route/settings/report checks, Production renewal counts, and the isolated staging accounting journey remain unverified.
 
 This plan records implementation status and release evidence; it does not close the unresolved commercial, provider, accounting-policy, Arabic, performance, or future-feature decisions below.
 

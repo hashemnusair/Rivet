@@ -1,6 +1,6 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 20 August 2026 after the Five Pillars renewal-safety verification pass. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 20 August 2026 after the Five Pillars Production closure attempt. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
 
 ## Current Five Pillars release index — 20 August 2026
 
@@ -10,13 +10,13 @@ Historical release sections below remain for traceability. The categories here a
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
 - [x] Pass the exact-commit GitHub Actions run `32391568593` and matching Vercel Production deployment status `ER5WksGThgB9BiBupZNZAxUsig85`.
-- [ ] Deploy the safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The only available local deployment context targets Development `fleet-otter-621`; its guarded dry run passed schema validation with no deleted indexes, so no Production deploy was attempted.
+- [ ] Deploy the safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The guarded dry run resolved to Development `fleet-otter-621`, passed schema validation with no deleted indexes, and was not followed by a deploy because the target was wrong.
 
 ### Staging or Production verification
 
 - [ ] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy and record counts/timestamps only. The query is tested locally but is not yet deployed; no pre-gate Production count is claimed.
-- [ ] Use an existing signed-in Production GymOS session for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layout checks. No such session was available in this pass.
-- [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. The required role-specific staging identities are not available; no functional staging writes were run.
+- [ ] Use an existing signed-in Production GymOS session for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layout checks. The available Chrome profile redirected all four routes to `/login`; no authenticated check was completed.
+- [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. No role-specific staging identities or connected-staging variables were available; no functional staging writes were run.
 
 ### Product decisions
 

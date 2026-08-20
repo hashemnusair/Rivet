@@ -1,14 +1,15 @@
 # GymOS / RIVET current implementation state
 
-## Five-pillar release status — 20 August 2026
+## Five-pillar release closure status — 20 August 2026
 
-- The Five Pillars application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is on `main` and `origin/main`; this living-document refresh is a subsequent direct-main documentation commit. The renewal safety change and its release evidence are on `main`; the hand-written `arabic-localisation` branch remains separate at `f98e324`.
+- The closure attempt started from `7a1237dc719bfb4c767aa824ca73cf93410c2d8d`, which matched `origin/main`; this is a subsequent direct-main documentation update. The Five Pillars application/release commit remains `1e01163d25cc6f9123001329877a45e33e5670ea`, and the hand-written `arabic-localisation` branch remains separate at `f98e324`.
 - The five implementation pillars are present on `main`: shared tenant/capability foundation, renewal recovery, daily operations, immutable management ledger, and management reporting. The implementation remains additive and locally validated; no future marketplace, autonomous purchasing/replacement, statutory-accounting, Arabic, or optimization work was added here.
 - GitHub Actions run `32391568593` passed for this exact commit, and the matching Vercel Production status is `READY` (`ER5WksGThgB9BiBupZNZAxUsig85`). The local production build includes 46 routes, including `/operations`, `/finance`, and `/reports/statements`.
-- The intended Production Convex target is `descriptive-meerkat-589`. The only available local deployment context selects Development `fleet-otter-621`; the required guarded dry run targeted that Development deployment, passed schema validation, and reported no deleted indexes. The Production deploy was correctly not attempted with the Development credential, so `1e01163`'s renewal gate is not verified as deployed to Production.
+- The intended Production Convex target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the configured deployment context selected by the safe wrapper is Development `fleet-otter-621`; the required dry run targeted that Development deployment, passed schema validation, and reported no deleted indexes. The Production deploy was not attempted with the wrong context, so `1e01163`'s renewal gate is not verified as deployed to Production.
 - `notifications.renewalRecoveryEnabled` defaults to false by omission and by explicit false. The scheduler cannot create renewal deliveries, delivery events, member timeline entries, or renewal call tasks while disabled. An authorized settings user with `settings.manage` can enable it explicitly; the owner path is covered by the server test, and WhatsApp/SMS remain sandboxed independently.
-- An internal read-only `renewalJobs.releaseAudit` query now returns only aggregate counts, status/type buckets, and first/last timestamps for renewal deliveries, renewal events, renewal timelines, and renewal call tasks. It is tested locally but is not deployed to Production, so no Production pre-gate count is claimed.
-- No authenticated Production GymOS session or Convex dashboard session was available. The unauthenticated `/operations` route redirected to `/login` with no browser console errors; authenticated checks of `/finance`, `/reports/statements`, Settings, workspace visibility, error states, drill-downs, and responsive layouts could not be completed.
+- An internal read-only `renewalJobs.releaseAudit` query now returns only aggregate counts, status/type buckets, and first/last timestamps for renewal deliveries, renewal events, renewal timelines, and renewal call tasks. It was not deployed or run against Production because the context was Development and no authenticated Convex operator session was available; no Production pre-gate count is claimed.
+- The existing Chrome profile had no authenticated Production GymOS or Convex session. `/operations`, `/finance`, `/reports/statements`, and `/settings` each redirected to `/login`; no browser console errors were observed. Authenticated workspace visibility, authorization failures, loading/error states, drill-downs, failed-request review, and laptop/mobile layout checks remain unverified.
+- No staging role storage states or connected staging variables were available in the environment. No accounting journey was run, no staging records were created, and no cleanup evidence is claimed.
 - No Production data was seeded, created, edited, deleted, or archived. Live WhatsApp, SMS, email, supplier messaging, and other providers remain disabled. `FRONTEND_HANDOFF.md` is unchanged.
 
 ### Five-pillar implementation summary
@@ -28,10 +29,11 @@
 - `pnpm build` — passed; Next.js generated **46 routes**.
 - `pnpm test:e2e` — **27 passed, 14 skipped, 0 failed**. Skips are credential-gated staging journeys; no Production target was used.
 - `git diff --check` — passed.
+- Required Production dry run — safely blocked from Production because the verified context selected Development `fleet-otter-621`.
 
 ### Remaining release evidence
 
-- The Production Convex operator must provide an existing Production deployment context that targets exactly `descriptive-meerkat-589`; then rerun the required dry run and deploy through `pnpm convex:deploy` only, followed by the approved read-only health check.
+- Provide an existing Production deployment context that targets exactly `descriptive-meerkat-589`; then rerun the required dry run and deploy through `pnpm convex:deploy` only, followed by the approved read-only health check.
 - After the exact Production deployment, run the internal count-only renewal audit and record aggregate counts/timestamps. Do not expose member, phone, tenant, or message details.
 - Run the signed-in Production read-only route checks and one isolated Development staging journey only when the documented role identities are available. Preserve cleanup evidence for every disposable staging record.
 
@@ -56,7 +58,7 @@ Primary files for orientation:
 - `apps/web/src/features/finance/management-ledger-workspace.tsx`
 - `apps/web/src/features/reports/management-statements-workspace.tsx`
 
-Updated 2026-08-20 after the renewal safety-gate verification pass. The historical frontend-only pass remains preserved separately in `FRONTEND_HANDOFF.md`.
+Updated 2026-08-20 after the Production closure attempt. The historical frontend-only pass remains preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Simplified Core CRM Pilot — released 17 August 2026
 

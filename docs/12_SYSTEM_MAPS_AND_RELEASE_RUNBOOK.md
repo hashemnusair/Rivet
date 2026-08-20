@@ -1,6 +1,6 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-20 after the Five Pillars renewal-safety verification pass.
+Last reviewed: 2026-08-20 after the Five Pillars Production closure attempt.
 
 ## Purpose
 
@@ -17,16 +17,19 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 - The application is a release candidate, not a blank scaffold.
 - Main application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is deployed to Vercel Production; GitHub Actions run `32391568593` passed and the matching Vercel status is `READY` (`ER5WksGThgB9BiBupZNZAxUsig85`).
-- The intended Convex Production target is `descriptive-meerkat-589`. The available local `CONVEX_DEPLOY_KEY` selects Development `fleet-otter-621`; the required guarded dry run targeted Development, passed schema validation, and reported no deleted indexes. The renewal safety gate has not been verified in Production and no deploy was attempted with the wrong context.
+- The intended Convex Production target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the available local deployment context selected by the safe wrapper is Development `fleet-otter-621`; the required guarded dry run targeted Development, passed schema validation, and reported no deleted indexes. The renewal safety gate has not been verified in Production and no deploy was attempted with the wrong context.
 - Local gates pass: frontend and Convex typecheck, zero-warning lint, 557 tests across 109 files, the 46-route production build, 27 Playwright passes with 14 credential-gated skips, and diff checks. Credential-complete staging remains gated on the documented role storage states.
-- No authenticated Production GymOS or Convex dashboard session was available. An unauthenticated `/operations` request redirected to `/login` without browser console errors; authenticated route, settings, report drill-down, responsive, and Production data-audit checks remain pending.
+- No authenticated Production GymOS or Convex dashboard session was available. `/operations`, `/finance`, `/reports/statements`, and `/settings` each redirected to `/login` without browser console errors; authenticated route, authorization, settings, report drill-down, responsive, health, and Production data-audit checks remain pending.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
-### Five Pillars release evidence — 20 August 2026
+### Five Pillars Production closure attempt — 20 August 2026
 
 - Renewal recovery is explicitly opt-in through `notifications.renewalRecoveryEnabled`. Missing legacy values and explicit false behave as disabled; the scheduler creates no renewal delivery, event, member timeline, or staff call-task facts until an authorized settings user enables the journey.
-- The internal `renewalJobs.releaseAudit` query is aggregate-only and returns counts, status/type buckets, and timestamps. It is tested locally but is not yet deployed to Production, so no pre-gate Production count is claimed.
+- The guarded command `pnpm convex:deploy -- --dry-run --typecheck enable --codegen enable` resolved to Development `fleet-otter-621`, not the intended Production deployment `descriptive-meerkat-589`. Schema validation passed and no indexes would be deleted. The matching deploy command, Production health check, and internal audit query were not run.
+- The internal `renewalJobs.releaseAudit` query is aggregate-only and returns counts, status/type buckets, and timestamps. It remains locally tested but unavailable in Production until the exact Production deployment is completed; no pre-gate Production count is claimed.
+- Chrome had no signed-in Production session. All four requested routes redirected to `/login`; no console errors were observed. Authenticated authorization, loading/error, drill-down, failed-request, and responsive checks remain unverified.
+- No staging role identities or connected-staging environment variables were available. No staging writes or cleanup actions were performed.
 - `FRONTEND_HANDOFF.md` remains frozen. The `arabic-localisation` branch remains unmerged. Arabic and performance work are deferred to the final pass.
 
 ## Map 1 — Provider and deployment topology
