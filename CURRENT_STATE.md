@@ -3,10 +3,10 @@
 ## Five-pillar expansion — implemented and locally validated, 20 August 2026
 
 The five agreed expansion pillars are implemented and have passed the complete
-local validation gate. The repository remains on local `main` at baseline
-commit `e8c884a` with a large intentional uncommitted working tree. Nothing in
-this expansion has been committed, pushed, deployed, or exercised against
-Production. Do not discard or reset the working tree.
+local validation gate. Implementation commit `acc9c7e` is published on GitHub
+branch `codex/five-pillar-expansion`. Convex schema and functions from that
+commit are deployed to Production target `descriptive-meerkat-589`; the
+frontend has not been merged to `main` or deployed through Vercel.
 
 The agreed scope and product decisions are recorded in
 `docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`. In this pass the five implementation
@@ -121,9 +121,12 @@ blockers before final validation:
   existing credential-gated staging journeys.
 - `git diff --check` — passed.
 
-No Convex dry run/deploy, GitHub CI, Vercel deployment, or Production
-verification was performed. `pnpm convex:codegen` generated local contracts but
-is not a deployment. No Production data or live provider was mutated.
+The guarded Convex Production dry run and deploy both completed against
+`descriptive-meerkat-589`. Schema validation passed, no indexes were deleted,
+and the post-deploy read-only `health:check` returned `status: ok`. GitHub CI,
+Vercel deployment, and browser verification against the Production frontend
+have not been performed. No seed, import, restore, delete, live provider, or
+Production product-data mutation was run.
 
 ### Remaining decisions and operational work
 
@@ -136,8 +139,8 @@ is not a deployment. No Production data or live provider was mutated.
   the reports disclose those limitations and do not invent accounting facts.
 - Source-queue coverage is intentionally `refresh_required`/unproven until a
   complete operational refresh establishes coverage.
-- Credentialed staging journeys, a safe Convex dry run/migration review, CI,
-  deployment, and post-deploy verification remain release-stage work requiring
+- Credentialed staging journeys, GitHub CI, merge review, Vercel deployment,
+  and post-deploy browser verification remain release-stage work requiring
   separate authorization and environment access.
 
 ### Migration and compatibility notes
