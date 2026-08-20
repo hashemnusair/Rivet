@@ -37,7 +37,24 @@ function toRoleKey(role: string): RoleKey {
   return role === "sales" ? "salesperson" : (role as RoleKey);
 }
 
-const DEMO_IDENTITY: RivetIdentity = { status: "demo", platformAdmin: false, memberships: [] };
+/**
+ * The deterministic mock seed uses the same operator for its default session.
+ * Keeping this ID aligned lets preview-only actions (for example, assigning a
+ * support case to yourself) exercise the mock API without inventing a second
+ * user that the adapter cannot resolve. This value is never used by the
+ * Convex/Clerk branch below.
+ */
+export const DEMO_IDENTITY: RivetIdentity = {
+  status: "demo",
+  userId: "10000000-0000-4a00-8a00-000000000010",
+  email: "omar@forgefitness.jo",
+  fullName: "Omar Al-Khatib",
+  // The mock operator is the seeded gym owner, not a production platform
+  // administrator. Keep this false so customer and gym preview routes cannot
+  // be elevated merely because they share the deterministic demo identity.
+  platformAdmin: false,
+  memberships: [],
+};
 const IdentityContext = createContext<RivetIdentity>({ status: "loading", platformAdmin: false, memberships: [] });
 
 /**

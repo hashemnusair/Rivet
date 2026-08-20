@@ -1,6 +1,8 @@
 import { query } from "./_generated/server";
 import { toFrontendRole } from "./permissions";
 
+const ROUTABLE_ORGANIZATION_STATUSES: readonly string[] = ["trial", "active", "past_due"];
+
 /**
  * Everything the frontend needs to route a signed-in person to the right place:
  * who they are, whether they administer the platform, and which gyms they work
@@ -30,6 +32,12 @@ export const current = query({
       };
     }
 
+    // Keep deactivated accounts from learning their former role or tenant
+    // memberships through this routing projection. The operation guards still
+    // enforce this server-side, but identity.current must not advertise access
+    // that requireAuthenticated will reject.
+    if (user.status === "deactivated" || user.status === "invited") return null;
+
     const rows = await ctx.db
       .query("organizationMemberships")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -39,7 +47,11 @@ export const current = query({
     for (const row of rows) {
       if (!row.active) continue;
       const organization = await ctx.db.get(row.organizationId);
-      if (!organization) continue;
+      // A staff membership is not enough to route into a workspace: the
+      // tenant itself must still be operational. Suspended/cancelled gyms
+      // remain in storage for history and billing, but must disappear from
+      // the identity projection so the client cannot advertise a dead route.
+      if (!organization || !ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status)) continue;
 
       const branches = [];
       for (const branchId of row.branchIds) {

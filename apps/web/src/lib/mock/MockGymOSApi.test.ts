@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
+import { DEMO_IDENTITY } from "@/lib/auth/rivet-identity";
+import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
 import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payment } from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
@@ -65,7 +67,8 @@ describe("session and role switching", () => {
 describe("workspace entitlement and preference boundary", () => {
   it("keeps entitlement state separate from permissions and audits owner preferences", async () => {
     const access = await api.getWorkspaceAccess();
-    expect(access.entitlements.source).toBe("legacy_default");
+    expect(access.entitlements.source).toBe("subscription_plan");
+    expect(access.entitlements.subscriptionPlan).toBe("Pro");
     expect(access.entitlements.entitledModules).toContain("finance");
     expect(access.preferences.enabledModules).toContain("finance");
 
@@ -77,6 +80,25 @@ describe("workspace entitlement and preference boundary", () => {
     await expect(api.getWorkspaceModuleStatus("finance")).rejects.toMatchObject({ code: ERR.FEATURE_NOT_AVAILABLE });
     await expect(api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "reporting"] })).rejects.toMatchObject({ code: ERR.VALIDATION });
     expect((await api.listAuditEvents({ category: "settings", pageSize: 20 })).items.some((event) => event.action === "workspace.module_preferences.update")).toBe(true);
+  });
+
+  it("projects the provisioned Pro tenant and fail-closed cleanup rows in the initial platform state", async () => {
+    const snapshot = await api.getPlatformSnapshot();
+    const forge = snapshot.gyms.find((gym) => gym.id === "forge-fitness");
+    const cleanupRows = snapshot.gyms.filter((gym) => gym.id !== "forge-fitness");
+
+    expect(forge).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Pro", isPublic: true, isProvisioned: true });
+    expect(snapshot.overview.activeMrr).toEqual({ amount: 249_000, currency: "JOD" });
+    expect(cleanupRows.length).toBeGreaterThan(0);
+    for (const gym of cleanupRows) {
+      expect(gym).toMatchObject({ subscriptionStatus: "suspended", isPublic: false, isProvisioned: false, subscriptionStatusReason: "Organization is not provisioned." });
+    }
+
+    const cleanupDetail = await api.getPlatformGymDetail(cleanupRows[0]!.id);
+    expect(cleanupDetail.controls).toMatchObject({ status: "suspended", isPublic: false });
+    expect(cleanupDetail.organization).toEqual({ state: "not_available" });
+    expect(cleanupDetail.subscription.status).toEqual({ state: "not_available" });
+    expect((await api.listMarketplaceGyms()).map((gym) => gym.id)).toEqual(["forge-fitness"]);
   });
 });
 
@@ -115,6 +137,14 @@ describe("platform gym applications", () => {
 });
 
 describe("platform subscription controls", () => {
+  it("accepts the deterministic preview identity for support self-assignment", async () => {
+    const supportCase = (await api.listSupportCases())[0];
+    if (!supportCase) throw new Error("mock support seed should contain a case");
+
+    const assigned = await api.assignPlatformSupportCase(supportCase.id, DEMO_IDENTITY.userId);
+    expect(assigned).toMatchObject({ assigneeId: DEMO_IDENTITY.userId, assigneeName: DEMO_IDENTITY.fullName });
+  });
+
   it("persists gym support cases and their append-only platform conversation", async () => {
     const reception = await api.switchDemoRole("receptionist");
     const supportCase = await api.createSupportCase({ email: reception.user.email, subject: "Scanner unavailable", body: "The scanner is not detected.", priority: "urgent", branchId: reception.activeBranchId });
@@ -139,6 +169,14 @@ describe("platform subscription controls", () => {
 
   it("keeps platform invoices as a manual audited-style lifecycle", async () => {
     const gym = (await api.getPlatformSnapshot()).gyms[0]!;
+    await expect(api.createPlatformInvoice({
+      gymId: gym.id,
+      amountMinor: 149_000,
+      currency: "USD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const invoice = await api.createPlatformInvoice({
       gymId: gym.id,
       amountMinor: 149_000,
@@ -174,13 +212,110 @@ describe("platform subscription controls", () => {
     const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." });
     expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth", isPublic: false });
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
+    const branch = gym.branches[0]!;
+    await expect(api.createTrialBooking({ gymId: gym.id, branchId: branch.id, fullName: "Blocked Visitor", email: "blocked@example.com", phone: "+962 79 000 0000", preferredDate: "2026-08-20", preferredTime: branch.trialSlots[0] ?? "18:00", goal: "Should not be accepted" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
 
     const plan = before.plans.find((item) => item.name === "Growth")!;
     const originalPrice = plan.priceMinor;
     const originalMembers = plan.members;
-    const updatedPlan = await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 1_000, members: plan.members + 100 });
+    const updatedPlan = await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 1_000, members: plan.members + 100, reason: "Annual pricing review approved." });
     expect(updatedPlan.priceMinor).toBe(originalPrice + 1_000);
     expect(updatedPlan.members).toBe(originalMembers + 100);
+  });
+
+  it("keeps unprovisioned directory rows cleanup-only and out of public/active counts", async () => {
+    const snapshot = await api.getPlatformSnapshot();
+    const directoryOnly = snapshot.gyms.find((gym) => gym.id !== "forge-fitness");
+    expect(directoryOnly).toBeDefined();
+    expect(snapshot.overview.gymCounts.active).toBe(1);
+    expect((await api.listMarketplaceGyms()).some((gym) => gym.id === directoryOnly?.id)).toBe(false);
+
+    await expect(api.updatePlatformGym({ gymId: directoryOnly!.id, status: "suspended", reason: "Reject unprovisioned tenant mutation." })).rejects.toMatchObject({ code: ERR.CONFIGURATION });
+    const hidden = await api.updatePlatformGym({ gymId: directoryOnly!.id, isPublic: false, reason: "Remove stale directory visibility." });
+    expect(hidden).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
+    expect((await api.getPlatformSnapshot()).overview.gymCounts.active).toBe(1);
+  });
+
+  it("synchronizes provisioned subscription facts, MRR, entitlements, and audit evidence", async () => {
+    const before = await api.getPlatformSnapshot();
+    const forgeBefore = before.gyms.find((gym) => gym.id === "forge-fitness")!;
+    const growthBefore = before.plans.find((plan) => plan.name === "Growth")!;
+
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "suspended", plan: "Growth", isPublic: true, reason: "Billing review requires access suspension." });
+
+    const suspended = await api.getPlatformGymDetail(forgeBefore.id);
+    expect(suspended.controls).toEqual({ status: "suspended", plan: "Growth", isPublic: false });
+    expect(suspended.organization).toMatchObject({ state: "available", value: { status: "suspended" } });
+    expect(suspended.subscription).toMatchObject({
+      plan: { state: "available", value: "Growth" },
+      status: { state: "available", value: "suspended" },
+      statusReason: { state: "available", value: "Billing review requires access suspension." },
+    });
+    expect(suspended.activity).toMatchObject({
+      state: "available",
+      value: [expect.objectContaining({ action: "gym.subscription.update", actorName: expect.any(String), summary: expect.stringContaining("suspended") })],
+    });
+
+    const suspendedSnapshot = await api.getPlatformSnapshot();
+    const suspendedGym = suspendedSnapshot.gyms.find((gym) => gym.id === forgeBefore.id)!;
+    expect(suspendedGym.lastActiveAt).toBe(forgeBefore.lastActiveAt);
+    expect(suspendedSnapshot.overview.gymCounts.suspended).toBe(1);
+    expect(suspendedSnapshot.overview.activeMrr.amount).toBe(0);
+    expect(suspendedSnapshot.auditEvents[0]).toMatchObject({ action: "gym.subscription.update", summary: expect.stringContaining("suspended"), actorName: expect.any(String) });
+
+    const workspace = await api.getWorkspaceAccess();
+    expect(workspace.entitlements).toMatchObject({ subscriptionPlan: "Growth", source: "subscription_plan", entitledModules: expect.arrayContaining(["foundation", "operations"]) });
+
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "active", plan: "Growth", isPublic: true, reason: "Billing review cleared; restore access." });
+    const restoredSnapshot = await api.getPlatformSnapshot();
+    expect(restoredSnapshot.gyms.find((gym) => gym.id === forgeBefore.id)).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Growth", isPublic: true });
+    expect(restoredSnapshot.overview.activeMrr.amount).toBe(growthBefore.priceMinor);
+  });
+
+  it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start a trial without an end date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", reason: "Attempt an unsupported provisioned plan." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+
+    const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", isPublic: true, reason: "Payment is past due." });
+    expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
+  });
+
+  it("emits plan catalog changes and truthful audit events through the platform stream", async () => {
+    const snapshots: PlatformSnapshot[] = [];
+    const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => snapshots.push(snapshot));
+    const plan = (await api.getPlatformSnapshot()).plans.find((item) => item.name === "Growth")!;
+
+    await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 5_000, reason: "Annual platform catalog review." });
+
+    expect(snapshots.at(-1)?.plans.find((item) => item.name === plan.name)).toMatchObject({ priceMinor: plan.priceMinor + 5_000 });
+    expect(snapshots.at(-1)?.auditEvents[0]).toMatchObject({ action: "plan.catalog_update", summary: "Updated Growth plan catalog limits", actorName: expect.any(String) });
+    unsubscribe();
+  });
+
+  it("reports initial platform snapshot failures to subscribers instead of claiming ready data", async () => {
+    api.setBehavior({ failNextRequest: true });
+    const values: PlatformSnapshot[] = [];
+    const errors: unknown[] = [];
+    const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => values.push(snapshot), (error) => errors.push(error));
+
+    expect(values).toHaveLength(0);
+    expect(errors).toEqual([expect.objectContaining({ code: ERR.FORCED_FAILURE })]);
+    unsubscribe();
+  });
+
+  it("pushes subscription visibility changes to the mock marketplace stream", async () => {
+    const values: string[][] = [];
+    const unsubscribe = await api.subscribeMarketplaceGyms((gyms) => values.push(gyms.map((gym) => gym.id)));
+    const gym = (await api.getPlatformSnapshot()).gyms[0]!;
+
+    expect(values.at(-1)).toContain(gym.id);
+    await api.updatePlatformGym({ gymId: gym.id, status: "suspended", isPublic: false, reason: "Suspended for marketplace visibility test." });
+
+    expect(values.at(-1)).not.toContain(gym.id);
+    unsubscribe();
   });
 
   it("returns target-scoped tenant facts and explicit provider gaps", async () => {

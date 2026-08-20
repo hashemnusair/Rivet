@@ -119,6 +119,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [saasPlans, setSaasPlans] = useState<PlatformSaasPlan[]>([]);
   const marketplaceReadyRef = useRef(!convexMode);
   const catalogReadyRef = useRef(!convexMode);
+  const platformSnapshotHydratedRef = useRef(false);
 
   const markPublicExperienceReady = useCallback(() => {
     if (!marketplaceReadyRef.current || !catalogReadyRef.current) return;
@@ -188,7 +189,6 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
     setPreviewSessionReady(false);
     const restored = readStored<CustomerPersona[]>(STORAGE_KEYS.registered) ?? [];
-    void getApi().getPlatformSnapshot().then(setPlatformSnapshot).catch(() => undefined);
     void getApi().listPublicSaasPlans().then(setSaasPlans).catch(() => undefined);
     if (restored.length > 0) setRegistered(restored);
 
@@ -210,7 +210,6 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // visibility, package pricing, subscription eligibility, and branch counts
   // update without asking visitors to refresh the page.
   useEffect(() => {
-    if (!convexMode) return;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
@@ -222,7 +221,12 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
     }, (error) => {
       if (cancelled) return;
-      setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
+      const message = error instanceof Error ? error.message : "RIVET could not refresh the gym directory.";
+      const failure = refreshFailureState(marketplaceReadyRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!marketplaceReadyRef.current) setExperienceReady(false);
     }).then((disposer) => {
       if (cancelled) disposer();
       else unsubscribe = disposer;
@@ -285,25 +289,27 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // underlying tenant total changes, so operator screens update without a
   // refresh and retain their last good snapshot through transient failures.
   useEffect(() => {
-    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
-    if (!convexMode || !platformIdentity) return;
+    const platformIdentity = convexMode
+      ? identity.status === "ready" && identity.platformAdmin
+      : platformAdminSignedIn;
+    if (!platformIdentity) return;
 
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     const handleError = (error: unknown) => {
       if (cancelled) return;
       const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh platform operations.";
-      setExperienceError(message);
-      setExperienceRefreshing(false);
-      if (!experienceHydratedRef.current) {
-        setExperienceStatus("error");
-        setExperienceReady(false);
-      }
+      const failure = refreshFailureState(platformSnapshotHydratedRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!platformSnapshotHydratedRef.current) setExperienceReady(false);
     };
 
     void getApi().subscribePlatformSnapshot((snapshot) => {
       if (cancelled) return;
       setPlatformSnapshot(snapshot);
+      platformSnapshotHydratedRef.current = true;
       setMarketplaceGyms(snapshot.gyms);
       setSaasPlans(snapshot.plans);
       setBookings(snapshot.bookings);
@@ -322,7 +328,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [convexMode, identity.platformAdmin, identity.status]);
+  }, [convexMode, identity.platformAdmin, identity.status, platformAdminSignedIn]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded
@@ -512,7 +518,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const showStaleNotice = convexMode && experienceStatus === "ready" && Boolean(experienceError);
+  const showStaleNotice = experienceStatus === "ready" && Boolean(experienceError);
 
   return (
     <ExperienceContext.Provider value={value}>

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConvexGymOSApi, type ConvexTransport, dataMode } from "./ConvexGymOSApi";
 import { ApiError, ERR } from "./errors";
 import type { CashShift, Session, ShiftTotals } from "@/lib/domain/types";
+import type { MarketplaceGym } from "@/lib/public/experience-data";
 
 const session: Session = {
   user: { id: "10000000-0000-4a00-8a00-000000000010", name: "Omar Al-Khatib", email: "omar@example.com" },
@@ -78,6 +79,86 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(values).toEqual([experience]);
     expect(errors).toHaveLength(0);
     expect(calls[0]).toMatchObject({ operation: "customer.experience", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes the public Convex projection without reviving non-operational rows", async () => {
+    const publicRow = {
+      id: "live-gym",
+      name: "Live Gym",
+      shortName: "LIVE",
+      tagline: "",
+      description: "",
+      city: "Amman",
+      areas: [],
+      category: "Gym",
+      audience: "All members",
+      memberCount: 1,
+      branchCount: 1,
+      fromPriceMinor: 0,
+      amenities: [],
+      accent: "#000000",
+      featured: false,
+      subscriptionStatus: "active" as const,
+      rivetPlan: "Starter" as const,
+      joinedAt: "2026-08-01",
+      lastActiveAt: "2026-08-01T00:00:00.000Z",
+      monthlyRevenueMinor: 0,
+      branches: [],
+    };
+    const suspendedRow = { ...publicRow, id: "suspended-gym", subscriptionStatus: "suspended" as const };
+    const hiddenRow = { ...publicRow, id: "hidden-gym", isPublic: false };
+    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, isProvisioned: false }, suspendedRow, hiddenRow] }));
+
+    const gyms = await api.listMarketplaceGyms();
+    expect(gyms).toEqual([expect.objectContaining({ id: "live-gym", isPublic: true })]);
+    expect(gyms[0]).not.toHaveProperty("isProvisioned");
+  });
+
+  it("keeps provisioning metadata on platform snapshots while stripping it from public rows", async () => {
+    const platformSnapshot = { gyms: [{ id: "legacy-gym", isProvisioned: false }], bookings: [], invoices: [], supportCases: [], plans: [], applications: [], auditEvents: [], overview: {} };
+    const api = new ConvexGymOSApi(transportFor({ query: platformSnapshot }));
+
+    await expect(api.getPlatformSnapshot()).resolves.toMatchObject({ gyms: [{ id: "legacy-gym", isProvisioned: false }] });
+  });
+
+  it("applies the same visibility contract to live marketplace updates", async () => {
+    const values: MarketplaceGym[][] = [];
+    const stop = vi.fn();
+    const row = {
+      id: "live-gym",
+      name: "Live Gym",
+      shortName: "LIVE",
+      tagline: "",
+      description: "",
+      city: "Amman",
+      areas: [],
+      category: "Gym",
+      audience: "All members",
+      memberCount: 1,
+      branchCount: 1,
+      fromPriceMinor: 0,
+      amenities: [],
+      accent: "#000000",
+      featured: false,
+      subscriptionStatus: "trial" as const,
+      rivetPlan: "Starter" as const,
+      joinedAt: "2026-08-01",
+      lastActiveAt: "2026-08-01T00:00:00.000Z",
+      monthlyRevenueMinor: 0,
+      branches: [],
+    };
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, _args, onValue) => {
+        onValue([row]);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribeMarketplaceGyms((gyms) => values.push(gyms));
+    expect(values).toEqual([[expect.objectContaining({ id: "live-gym", isPublic: true })]]);
     unsubscribe();
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -392,7 +473,7 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: plan }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000 })).resolves.toEqual(plan);
+    await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000, reason: "Annual pricing review approved." })).resolves.toEqual(plan);
     expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Growth", priceMinor: 159_000 } });
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinationFor, type RivetIdentity } from "./rivet-identity";
+import { DEMO_IDENTITY, destinationFor, type RivetIdentity } from "./rivet-identity";
 
 const baseIdentity: RivetIdentity = {
   status: "ready",
@@ -8,6 +8,21 @@ const baseIdentity: RivetIdentity = {
 };
 
 describe("destinationFor", () => {
+  it("exposes the seeded mock operator for explicit mock/preview workflows", () => {
+    expect(DEMO_IDENTITY).toMatchObject({
+      status: "demo",
+      userId: "10000000-0000-4a00-8a00-000000000010",
+      fullName: "Omar Al-Khatib",
+      email: "omar@forgefitness.jo",
+      platformAdmin: false,
+      memberships: [],
+    });
+  });
+
+  it("keeps the demo operator in member routing scope rather than elevating it to platform", () => {
+    expect(destinationFor(DEMO_IDENTITY)).toEqual({ area: "member", href: "/customer/my-gyms" });
+  });
+
   it("routes platform administrators to the platform even when they also have a gym role", () => {
     expect(
       destinationFor({

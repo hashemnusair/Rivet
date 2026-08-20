@@ -42,6 +42,7 @@ describe("buildPlatformOverview", () => {
       outstanding: { amount: 79_000, currency: "JOD" },
       overdue: { amount: 79_000, currency: "JOD" },
     });
+    expect(overview.billingCurrencyMismatches).toBe(0);
     expect(overview.trialRequests).toBe(2);
     expect(overview.trialConversions).toBe(1);
     expect(overview).toMatchObject({ pendingApplications: 1, provisioningFailures: 0, pastDueAccounts: 1, trialsExpiringSoon: 1, openSupportCases: 1, urgentSupportCases: 1 });
@@ -60,6 +61,37 @@ describe("buildPlatformOverview", () => {
     expect(overview.activeMrr).toEqual({ amount: 0, currency: "JOD" });
     expect(overview.invoiceTotals.collected.amount).toBe(0);
     expect(overview.billingHistory).toEqual([]);
+    expect(overview.operatorQueue).toEqual([]);
+  });
+
+  it("excludes non-JOD and ambiguous legacy invoices instead of relabeling them as JOD", () => {
+    const overview = buildPlatformOverview({
+      now: Date.parse("2026-08-10T00:00:00.000Z"),
+      gyms: [],
+      organizations: [],
+      plans: [],
+      branches: [],
+      members: [],
+      staffMemberships: [],
+      bookings: [],
+      applications: [],
+      invoices: [
+        { id: "jod-paid", amountMinor: 100_000, currency: "JOD", status: "paid", issuedAt: "2026-08-01T00:00:00.000Z" },
+        { id: "legacy-jd", amount: "JD 10.000", status: "paid", issuedAt: "2026-08-02T00:00:00.000Z" },
+        { id: "usd-paid", amountMinor: 50_000, currency: "USD", status: "paid", issuedAt: "2026-08-03T00:00:00.000Z" },
+        { id: "legacy-usd", amount: "USD 75.00", status: "past_due", issuedAt: "2026-08-04T00:00:00.000Z" },
+        { id: "ambiguous", amount: "75.00", status: "paid", issuedAt: "2026-08-05T00:00:00.000Z" },
+      ],
+      supportCases: [],
+    });
+
+    expect(overview.billingCurrencyMismatches).toBe(3);
+    expect(overview.invoiceTotals).toEqual({
+      collected: { amount: 110_000, currency: "JOD" },
+      outstanding: { amount: 0, currency: "JOD" },
+      overdue: { amount: 0, currency: "JOD" },
+    });
+    expect(overview.billingHistory.every((month) => month.issued.currency === "JOD")).toBe(true);
     expect(overview.operatorQueue).toEqual([]);
   });
 });

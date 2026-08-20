@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Ban, Building2, CalendarClock, Check, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
+import { ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -9,18 +9,24 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
+import { isApiError } from "@/lib/api/errors";
 import type { PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
-import { ErrorState } from "@/components/ui/states";
+import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { formatDateTime } from "@/lib/utils/dates";
+import { formatMoney } from "@/lib/utils/money";
+
+type LifecycleField = "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt";
+type LifecycleErrors = Partial<Record<LifecycleField, string>>;
 
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const detailQuery = useRealtimeApiQuery({ queryKey: qk.platformGymDetail(gymId), query: (api) => api.getPlatformGymDetail(gymId), subscribe: (api, onValue, onError) => api.subscribePlatformGymDetail(gymId, onValue, onError), enabled: Boolean(gymId) });
   const invalidate = useInvalidate();
   const detail = detailQuery.data;
+  const organizationAvailable = detail?.organization.state === "available";
   const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
   const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
   const [isPublic, setIsPublic] = useState(false);
@@ -29,20 +35,22 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
   const [cancelledAt, setCancelledAt] = useState("");
   const [reason, setReason] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<LifecycleErrors>({});
   const editing = useRef(false);
 
   useEffect(() => {
     if (!detail || editing.current) return;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
-    setIsPublic(detail.controls.isPublic);
+    setIsPublic(detail.organization.state === "available" && normalizePublicListing(detail.controls.isPublic, detail.controls.status));
     setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
     setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
     setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
-    setCancelledAt(dateInputValue(detail.subscription.cancelledAt));
+    setCancelledAt(detail.controls.status === "cancelled" ? dateInputValue(detail.subscription.cancelledAt) : "");
+    setFieldErrors({});
   }, [detail]);
 
-  const dirty = detail ? subscriptionDraftIsDirty(detail, {
+  const dirty = detail && organizationAvailable ? subscriptionDraftIsDirty(detail, {
     status,
     plan,
     isPublic,
@@ -62,18 +70,26 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [dirty]);
 
-  const update = useApiMutation((api) => api.updatePlatformGym({ gymId, status, plan, isPublic, trialEndsAt: trialEndsAt || undefined, subscriptionStartedAt: subscriptionStartedAt || undefined, currentPeriodEndsAt: currentPeriodEndsAt || undefined, cancelledAt: cancelledAt || undefined, reason: reason.trim() }), {
+  const update = useApiMutation((api) => {
+    if (!organizationAvailable) throw new Error("Subscription controls are unavailable until this gym is provisioned.");
+    return api.updatePlatformGym({ gymId, status, plan, isPublic: normalizePublicListing(isPublic, status), trialEndsAt: trialEndsAt || undefined, subscriptionStartedAt: subscriptionStartedAt || undefined, currentPeriodEndsAt: currentPeriodEndsAt || undefined, cancelledAt: status === "cancelled" ? cancelledAt || undefined : undefined, reason: reason.trim() });
+  }, {
     onSuccess: async () => {
       editing.current = false;
       await invalidate([qk.platformGymDetail(gymId)]);
       setReason("");
+      setFieldErrors({});
       toast.success("Gym subscription controls saved and audited.");
+    },
+    onError: (error) => {
+      if (!isApiError(error) || !error.fieldErrors) return;
+      setFieldErrors(lifecycleErrorsFromApi(error.fieldErrors));
     },
   });
 
   if (detailQuery.isLoading || !detail) {
     if (detailQuery.isError) {
-      return <div className="p-10"><ErrorState title="Gym detail unavailable" description="The selected gym detail could not be loaded. No changes were made." onRetry={() => detailQuery.refetch()} /></div>;
+      return <div className="p-10"><QueryErrorState error={detailQuery.error} notFoundTitle="Gym not found" forbiddenDescription="Your platform role cannot view this gym." onRetry={() => detailQuery.refetch()} /></div>;
     }
     return <div className="space-y-5 p-6 sm:p-8" role="status" aria-label="Loading gym detail"><Skeleton className="h-4 w-24" /><Skeleton className="h-20 w-full" /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div></div>;
   }
@@ -83,12 +99,52 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     editing.current = false;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
-    setIsPublic(detail.controls.isPublic);
+    setIsPublic(detail.organization.state === "available" && detail.controls.isPublic);
     setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
     setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
     setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
-    setCancelledAt(dateInputValue(detail.subscription.cancelledAt));
+    setCancelledAt(detail.controls.status === "cancelled" ? dateInputValue(detail.subscription.cancelledAt) : "");
     setReason("");
+    setFieldErrors({});
+  };
+  const draftStatus = status ?? detail.controls.status;
+  const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(draftStatus);
+  // Keep the shortcut label tied to the persisted record. The selector and
+  // listing switch intentionally show the local draft, but the shortcut must
+  // not imply that a restore/suspension has already been written.
+  const statusAction = detail.controls.status === "suspended" || detail.controls.status === "cancelled"
+    ? { label: detail.controls.status === "cancelled" ? "Reactivate" : "Restore access", next: "active" as const }
+    : { label: "Suspend", next: "suspended" as const };
+  const marketplaceProfileAvailable = organizationAvailable && isPublicSubscriptionStatus(detail.controls.status) && detail.controls.isPublic;
+  const editStatus = (next: PlatformGymDetail["controls"]["status"]) => {
+    if (!organizationAvailable) return;
+    editing.current = true;
+    setStatus(next);
+    if (!isPublicSubscriptionStatus(next)) setIsPublic(false);
+    if (next !== "cancelled") setCancelledAt("");
+    setFieldErrors({});
+  };
+  const editLifecycleDate = (field: LifecycleField, setter: (value: string) => void, value: string) => {
+    edit(setter, value);
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+  const saveControls = () => {
+    if (!detail || !organizationAvailable || !status || !plan) return;
+    const nextErrors = validateSubscriptionDraft(detail, {
+      status,
+      trialEndsAt,
+      subscriptionStartedAt,
+      currentPeriodEndsAt,
+      cancelledAt,
+    });
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+    update.mutate();
   };
   const protectNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     if (dirty && !window.confirm("Discard the unsaved subscription changes?")) event.preventDefault();
@@ -97,7 +153,14 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
-        <Link href="/platform/gyms" onClick={protectNavigation} className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5" />All gyms</Link>
+        <Link href="/platform/gyms" onClick={protectNavigation} className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5 rtl:rotate-180" />All gyms</Link>
+
+        {detailQuery.isBackgroundError || detailQuery.streamState === "fallback" ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status" aria-live="polite">
+            <span>Showing the last known gym record while the live connection recovers.</span>
+            <Button variant="secondary" size="sm" onClick={() => detailQuery.refetch()}>Retry</Button>
+          </div>
+        ) : null}
 
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
           <div className="flex items-center gap-4">
@@ -108,29 +171,39 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`} onClick={protectNavigation}>Marketplace profile <ExternalLink /></Link></Button>
-            <Button variant={detail.controls.status === "suspended" ? "primary" : "danger"} onClick={() => edit(setStatus, detail.controls.status === "suspended" ? "active" : "suspended")}><Ban />{detail.controls.status === "suspended" ? "Restore access" : "Suspend"}</Button>
+            {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`} onClick={protectNavigation}>Marketplace profile <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="This gym is hidden from public discovery">Marketplace profile unavailable <ExternalLink /></Button>}
+            <Button variant={statusAction.next === "active" ? "primary" : "danger"} onClick={() => editStatus(statusAction.next)} disabled={!organizationAvailable} title={!organizationAvailable ? "Subscription controls are unavailable until this gym is provisioned" : undefined}><Ban />{statusAction.label}</Button>
           </div>
         </div>
 
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">Changes update the tenant record, public directory state, and immutable platform audit trail.</p></div>
-            <Button variant="signal" onClick={() => update.mutate()} loading={update.isPending} disabled={!dirty || !status || !plan || !reason.trim() || (status === "trial" && !trialEndsAt)}><Check />Save controls</Button>
+            <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">{organizationAvailable ? "Changes update the tenant record, public directory state, and immutable platform audit trail." : "This directory row is retained for audit and cleanup, but is not linked to a provisioned tenant. Subscription changes are unavailable."}</p></div>
+            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim()}><Check />Save controls</Button>
           </div>
+          {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so plan, status, lifecycle dates, public visibility, and save actions are disabled. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
           {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => edit(setStatus, value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label className="grid gap-1.5 text-[12px] font-medium">Trial ends<Input type="date" value={trialEndsAt} onChange={(event) => edit(setTrialEndsAt, event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Subscription started<Input type="date" value={subscriptionStartedAt} onChange={(event) => edit(setSubscriptionStartedAt, event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Current period ends<Input type="date" value={currentPeriodEndsAt} onChange={(event) => edit(setCurrentPeriodEndsAt, event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Cancelled on<Input type="date" value={cancelledAt} onChange={(event) => edit(setCancelledAt, event.target.value)} disabled={status !== "cancelled"} /></label>
-          </div>
-          <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
-          <div className="mt-4 flex items-center justify-between border-t border-line pt-4"><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] text-ink-3">Let members discover this gym and request a free trial.</p></div><Switch checked={isPublic} onCheckedChange={(value) => edit(setIsPublic, value)} aria-label="Public directory listing" /></div>
+          <fieldset disabled={!organizationAvailable} className="mt-5 min-w-0">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
+              <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <LifecycleInput id="gym-trial-ends" label="Trial ends" value={trialEndsAt} onChange={(value) => editLifecycleDate("trialEndsAt", setTrialEndsAt, value)} error={fieldErrors.trialEndsAt} disabled={!organizationAvailable} />
+              <LifecycleInput id="gym-subscription-started" label="Subscription started" value={subscriptionStartedAt} onChange={(value) => editLifecycleDate("subscriptionStartedAt", setSubscriptionStartedAt, value)} error={fieldErrors.subscriptionStartedAt} disabled={!organizationAvailable} />
+              <LifecycleInput id="gym-current-period-ends" label="Current period ends" value={currentPeriodEndsAt} onChange={(value) => editLifecycleDate("currentPeriodEndsAt", setCurrentPeriodEndsAt, value)} error={fieldErrors.currentPeriodEndsAt} disabled={!organizationAvailable} />
+              <LifecycleInput id="gym-cancelled-on" label="Cancelled on" value={cancelledAt} onChange={(value) => editLifecycleDate("cancelledAt", setCancelledAt, value)} error={fieldErrors.cancelledAt} disabled={!organizationAvailable || draftStatus !== "cancelled"} />
+            </div>
+            <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" disabled={!organizationAvailable} /></label>
+            <div className="mt-4 flex items-start justify-between gap-4 border-t border-line pt-4">
+              <div>
+                <p className="text-[12px] font-medium">Public directory listing</p>
+                <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while this subscription is not active or in trial." : "Already suppressed because this directory row is not provisioned."}</p>
+                {!publicListingAllowed ? <p className="mt-2 flex items-start gap-1.5 text-[10.5px] text-warning"><CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden />{organizationAvailable ? "Save controls to persist this listing as hidden from public discovery." : "Complete the provisioning workflow before managing this listing; no save is available for cleanup-only rows."}</p> : null}
+              </div>
+              <Switch checked={publicListingAllowed && isPublic} onCheckedChange={(value) => edit(setIsPublic, value)} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
+            </div>
+          </fieldset>
         </section>
 
         <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -174,7 +247,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                 <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
                 <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
                 <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
-                <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => `${value.currency} ${(value.amount / 1000).toFixed(3)}`} /></FactRow>
+                <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></FactRow>
                 <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} /></FactRow>
                 <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
                 <FactRow label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></FactRow>
@@ -210,6 +283,99 @@ function statusLabel(value: string) {
 
 function dateInputValue(field: PlatformData<string>): string {
   return field.state === "available" ? field.value.slice(0, 10) : "";
+}
+
+function LifecycleInput({ id, label, value, onChange, error, disabled }: { id: string; label: string; value: string; onChange: (value: string) => void; error?: string; disabled?: boolean }) {
+  const errorId = `${id}-error`;
+  return (
+    <div className="grid gap-1.5 text-[12px] font-medium">
+      <label htmlFor={id}>{label}</label>
+      <Input id={id} type="date" dir="ltr" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />
+      {error ? <p id={errorId} role="alert" className="text-[10.5px] font-normal text-danger">{error}</p> : null}
+    </div>
+  );
+}
+
+function parseLifecycleTimestamp(value: string): number | undefined {
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const datePrefix = normalized.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
+    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
+    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
+  }
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function lifecycleErrorsFromApi(fieldErrors: Record<string, string[]>): LifecycleErrors {
+  return {
+    trialEndsAt: fieldErrors.trialEndsAt?.[0],
+    subscriptionStartedAt: fieldErrors.subscriptionStartedAt?.[0],
+    currentPeriodEndsAt: fieldErrors.currentPeriodEndsAt?.[0],
+    cancelledAt: fieldErrors.cancelledAt?.[0],
+  };
+}
+
+export function validateSubscriptionDraft(
+  detail: PlatformGymDetail,
+  draft: Pick<{
+    status: PlatformGymDetail["controls"]["status"];
+    trialEndsAt: string;
+    subscriptionStartedAt: string;
+    currentPeriodEndsAt: string;
+    cancelledAt: string;
+  }, "status" | LifecycleField>,
+  now = Date.now(),
+): LifecycleErrors {
+  const errors: LifecycleErrors = {};
+  const values: Record<LifecycleField, string> = {
+    trialEndsAt: draft.trialEndsAt || dateInputValue(detail.subscription.trialEndsAt),
+    subscriptionStartedAt: draft.subscriptionStartedAt || dateInputValue(detail.subscription.startedAt),
+    currentPeriodEndsAt: draft.currentPeriodEndsAt || dateInputValue(detail.subscription.currentPeriodEndsAt),
+    cancelledAt: draft.status === "cancelled" ? draft.cancelledAt || dateInputValue(detail.subscription.cancelledAt) : draft.cancelledAt,
+  };
+  const parsed: Partial<Record<LifecycleField, number>> = {};
+  for (const field of Object.keys(values) as LifecycleField[]) {
+    if (!values[field]) continue;
+    const timestamp = parseLifecycleTimestamp(values[field]);
+    if (timestamp === undefined) errors[field] = "Enter a valid date";
+    else parsed[field] = timestamp;
+  }
+  if (Object.keys(errors).length > 0) return errors;
+
+  if (parsed.cancelledAt !== undefined && draft.status !== "cancelled") {
+    errors.cancelledAt = "Only valid for cancelled subscriptions";
+  }
+  const statusTransitioned = draft.status !== detail.controls.status;
+  const nextSubscriptionStartedAt = parsed.subscriptionStartedAt ?? ((statusTransitioned && (draft.status === "trial" || draft.status === "active")) ? now : undefined);
+  const nextTrialEndsAt = parsed.trialEndsAt;
+  const nextCurrentPeriodEndsAt = parsed.currentPeriodEndsAt;
+  const nextCancelledAt = draft.status === "cancelled" ? parsed.cancelledAt ?? now : undefined;
+  if (draft.status === "trial" && nextTrialEndsAt === undefined && !errors.trialEndsAt) {
+    errors.trialEndsAt = "Required for trials";
+  }
+  if (draft.status === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= now && !errors.trialEndsAt) {
+    errors.trialEndsAt = "Must be in the future";
+  }
+  if (nextSubscriptionStartedAt !== undefined && nextTrialEndsAt !== undefined && nextTrialEndsAt < nextSubscriptionStartedAt && !errors.trialEndsAt) {
+    errors.trialEndsAt = "Must be on or after the start date";
+  }
+  if (nextSubscriptionStartedAt !== undefined && nextCurrentPeriodEndsAt !== undefined && nextCurrentPeriodEndsAt < nextSubscriptionStartedAt && !errors.currentPeriodEndsAt) {
+    errors.currentPeriodEndsAt = "Must be on or after the start date";
+  }
+  if (nextCancelledAt !== undefined && nextSubscriptionStartedAt !== undefined && nextCancelledAt < nextSubscriptionStartedAt && !errors.cancelledAt) {
+    errors.cancelledAt = "Must be on or after the start date";
+  }
+  return errors;
+}
+
+function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
+  return status === "active" || status === "trial";
+}
+
+function normalizePublicListing(isPublic: boolean, status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
+  return isPublic && isPublicSubscriptionStatus(status);
 }
 
 export function subscriptionDraftIsDirty(

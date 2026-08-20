@@ -439,6 +439,8 @@ export interface PlatformOverview {
     outstanding: Money;
     overdue: Money;
   };
+  /** Count of legacy/invalid invoices excluded from JOD monetary totals. */
+  billingCurrencyMismatches: number;
   trialRequests: number;
   trialConversions: number;
   pendingApplications: number;
@@ -608,6 +610,7 @@ export interface UpdatePlatformPlanInput {
   branches?: number;
   staff?: number;
   members?: number;
+  reason: string;
 }
 
 export interface EntryPass {

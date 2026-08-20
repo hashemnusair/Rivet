@@ -50,6 +50,11 @@ export interface MarketplaceGym {
   monthlyRevenueMinor: number;
   /** Platform-only visibility flag; public API responses omit it. */
   isPublic?: boolean;
+  /**
+   * Platform-only linkage flag. A false value identifies a legacy directory
+   * row without a provisioned tenant; public API responses omit it.
+   */
+  isProvisioned?: boolean;
   /** Platform-only subscription lifecycle facts. */
   trialEndsAt?: string;
   subscriptionStartedAt?: string;
@@ -186,6 +191,9 @@ function previewTrialSchedule(slots: string[]): Record<WeekdayKey, TrialSchedule
 }
 
 export const MARKETPLACE_GYMS: MarketplaceGym[] = [
+  // These rows are explicit preview fixtures. They are only loaded by the
+  // mock adapter/provider; production Convex mode starts with an empty live
+  // snapshot and never falls back to this catalog.
   {
     id: "forge-fitness",
     name: "Forge Fitness Club",
@@ -210,6 +218,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-04-18",
     lastActiveAt: "2026-07-31T13:42:00+03:00",
     monthlyRevenueMinor: 48_750_000,
+    isPublic: true,
     branches: [
       {
         id: "forge-abdoun",
@@ -255,6 +264,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-05-06",
     lastActiveAt: "2026-07-31T12:18:00+03:00",
     monthlyRevenueMinor: 29_400_000,
+    isPublic: true,
     branches: [
       {
         id: "pulse-dabouq",
@@ -290,6 +300,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-03-11",
     lastActiveAt: "2026-07-31T13:51:00+03:00",
     monthlyRevenueMinor: 62_900_000,
+    isPublic: true,
     branches: [
       {
         id: "her-khalda",
@@ -330,9 +341,11 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     featured: false,
     subscriptionStatus: "trial",
     rivetPlan: "Starter",
+    trialEndsAt: "2026-09-30T20:59:59.999Z",
     joinedAt: "2026-07-22",
     lastActiveAt: "2026-07-31T11:04:00+03:00",
     monthlyRevenueMinor: 13_850_000,
+    isPublic: true,
     branches: [
       {
         id: "district-jabal-amman",

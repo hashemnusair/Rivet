@@ -67,6 +67,19 @@ const OPERATION_ARGS = {
 
 const TZ_FALLBACK = "Asia/Amman";
 const JOD = "JOD";
+const CURRENCY_MINOR_EXPONENTS: Record<string, number> = {
+  AED: 2,
+  BHD: 3,
+  EUR: 2,
+  GBP: 2,
+  IQD: 3,
+  JOD: 3,
+  KWD: 3,
+  OMR: 3,
+  SAR: 2,
+  TND: 3,
+  USD: 2,
+};
 const DEFAULT_PAYMENT_METHODS = [
   { key: "cash", label: "Cash", enabled: true, affectsCashDrawer: true },
   { key: "card", label: "Card", enabled: true, affectsCashDrawer: false },
@@ -265,9 +278,14 @@ function customerPreferenceEventView(value: Data): Data {
 
 async function platformPlans(ctx: ReadContext): Promise<Data[]> {
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
-  return rows.length > 0
-    ? rows.map((row): Data => ({ id: row.publicId, ...data(row.data) }))
-    : DEFAULT_PLATFORM_PLANS.map((plan) => ({ id: plan.name, ...plan }));
+  const persisted = new Map(rows.map((row): [string, Data] => {
+    const persistedValue = data(row.data);
+    const defaultValue = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === stringValue(persistedValue.name, row.publicId));
+    return [stringValue(persistedValue.name, row.publicId), { id: row.publicId, ...(defaultValue ?? {}), ...persistedValue }];
+  }));
+  const defaults = DEFAULT_PLATFORM_PLANS.map((plan) => persisted.get(stringValue(plan.name)) ?? { id: plan.name, ...plan });
+  const defaultNames = new Set(DEFAULT_PLATFORM_PLANS.map((plan) => stringValue(plan.name)));
+  return [...defaults, ...[...persisted.entries()].filter(([name]) => !defaultNames.has(name)).map(([, plan]) => plan)];
 }
 
 function recordId(value: unknown): string {
@@ -318,13 +336,95 @@ async function insertPlatformAudit(
   });
 }
 
+function currencyMinorExponent(currency: string): number {
+  return CURRENCY_MINOR_EXPONENTS[currency.toUpperCase()] ?? 2;
+}
+
 function platformInvoiceAmount(amountMinor: number, currency: string): string {
-  return `${currency} ${(amountMinor / 1_000).toFixed(3)}`;
+  const exponent = currencyMinorExponent(currency);
+  return `${currency} ${(amountMinor / 10 ** exponent).toFixed(exponent)}`;
 }
 
 function validTimestamp(value: string): number | undefined {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+/**
+ * Lifecycle controls accept either a date-only value from the admin form or a
+ * complete ISO timestamp. Date.parse normalizes impossible date-only values
+ * (for example, 2026-02-31), so date-only inputs are checked round-trip before
+ * they are persisted.
+ */
+function validSubscriptionTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim();
+  const datePrefix = normalized.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
+    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
+    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
+  }
+  return validTimestamp(normalized);
+}
+
+function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
+  return status === "past_due" ? "overdue" : status;
+}
+
+function platformPlanFromFacts(gym: Data, organization: Organization | null, entitlement: Doc<"organizationEntitlements"> | null): string | undefined {
+  return optionalString(entitlement?.subscriptionPlan) ?? organization?.subscriptionPlan ?? optionalString(gym.rivetPlan);
+}
+
+function platformSubscriptionSnapshot(
+  gym: Data,
+  organization: Organization | null,
+  entitlement: Doc<"organizationEntitlements"> | null,
+): Data {
+  const listingPlan = optionalString(gym.rivetPlan) ?? null;
+  const organizationPlan = organization?.subscriptionPlan ?? null;
+  const entitlementPlan = entitlement?.subscriptionPlan ?? null;
+  return {
+    subscriptionStatus: optionalString(gym.subscriptionStatus) ?? null,
+    rivetPlan: optionalString(gym.rivetPlan) ?? null,
+    isPublic: typeof gym.isPublic === "boolean" ? gym.isPublic : null,
+    trialEndsAt: optionalString(gym.trialEndsAt) ?? null,
+    subscriptionStartedAt: optionalString(gym.subscriptionStartedAt) ?? null,
+    currentPeriodEndsAt: optionalString(gym.currentPeriodEndsAt) ?? null,
+    cancelledAt: optionalString(gym.cancelledAt) ?? null,
+    subscriptionStatusReason: optionalString(gym.subscriptionStatusReason) ?? null,
+    lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
+    planResolution: {
+      source: entitlementPlan ? "organization_entitlement" : organizationPlan ? "organization" : "marketplace_listing",
+      listingPlan,
+      organizationPlan,
+      entitlementPlan,
+      drift: Boolean(
+        (entitlementPlan && organizationPlan !== entitlementPlan)
+        || (entitlementPlan && listingPlan !== entitlementPlan)
+        || (!entitlementPlan && organizationPlan && listingPlan !== organizationPlan),
+      ),
+    },
+    organization: organization
+      ? {
+          id: publicOrganizationId(organization),
+          status: organization.status,
+          subscriptionPlan: organization.subscriptionPlan ?? null,
+          subscriptionStartedAt: organization.subscriptionStartedAt ?? null,
+          trialEndsAt: organization.trialEndsAt ?? null,
+          currentPeriodEndsAt: organization.currentPeriodEndsAt ?? null,
+          cancelledAt: organization.cancelledAt ?? null,
+          subscriptionStatusReason: organization.subscriptionStatusReason ?? null,
+        }
+      : null,
+    entitlements: entitlement
+      ? {
+          catalogVersion: entitlement.catalogVersion,
+          subscriptionPlan: entitlement.subscriptionPlan ?? null,
+          entitledModules: entitlement.entitledModules,
+          source: entitlement.source,
+        }
+      : null,
+  };
 }
 
 async function supportCaseView(ctx: ReadContext, record: DomainRecord): Promise<Data> {
@@ -1689,6 +1789,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
     monthlyRevenueMinor: includePlatformFields ? numberValue(value.monthlyRevenueMinor) : 0,
     ...(includePlatformFields ? {
       isPublic: booleanValue(value.isPublic),
+      isProvisioned: typeof value.isProvisioned === "boolean" ? value.isProvisioned : undefined,
       trialEndsAt: optionalString(value.trialEndsAt),
       subscriptionStartedAt: optionalString(value.subscriptionStartedAt),
       currentPeriodEndsAt: optionalString(value.currentPeriodEndsAt),
@@ -1708,8 +1809,46 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
   };
 }
 
-function acceptsPublicTrialRequests(value: Data): boolean {
-  return booleanValue(value.isPublic) && booleanValue(value.profilePublished, true) && ["active", "trial"].includes(stringValue(value.subscriptionStatus));
+function platformMarketplaceProjection(value: Data, organization: Organization | null, entitlement: Doc<"organizationEntitlements"> | null = null): Data {
+  // Keep unprovisioned legacy rows in the platform snapshot for cleanup, but
+  // never present them as publishable tenants.
+  if (!organization) return {
+    ...value,
+    isProvisioned: false,
+    subscriptionStatus: "suspended",
+    rivetPlan: undefined,
+    isPublic: false,
+    trialEndsAt: undefined,
+    subscriptionStartedAt: undefined,
+    currentPeriodEndsAt: undefined,
+    cancelledAt: undefined,
+    subscriptionStatusReason: "Organization is not provisioned.",
+    lastActiveAt: undefined,
+  };
+  const status = platformSubscriptionStatusForOrganization(organization.status);
+  const plan = platformPlanFromFacts(value, organization, entitlement);
+  const trialCurrent = status !== "trial" || (organization.trialEndsAt !== undefined && organization.trialEndsAt > Date.now());
+  return {
+    ...value,
+    isProvisioned: true,
+    subscriptionStatus: status,
+    ...(plan ? { rivetPlan: plan } : {}),
+    isPublic: (status === "active" || (status === "trial" && trialCurrent)) && booleanValue(value.isPublic),
+    // Lifecycle dates and reasons are tenant-owned. Explicitly clear stale
+    // directory values when the authoritative organization has no value.
+    subscriptionStartedAt: organization.subscriptionStartedAt !== undefined ? utcIso(organization.subscriptionStartedAt) : undefined,
+    trialEndsAt: organization.trialEndsAt !== undefined ? utcIso(organization.trialEndsAt) : undefined,
+    currentPeriodEndsAt: organization.currentPeriodEndsAt !== undefined ? utcIso(organization.currentPeriodEndsAt) : undefined,
+    cancelledAt: organization.cancelledAt !== undefined ? utcIso(organization.cancelledAt) : undefined,
+    subscriptionStatusReason: organization.subscriptionStatusReason ?? undefined,
+  };
+}
+
+function acceptsPublicTrialRequests(value: Data, authoritativeStatus = stringValue(value.subscriptionStatus), authoritativeTrialEndsAt?: number, useAuthoritativeTrialDate = false): boolean {
+  if (!booleanValue(value.isPublic) || !booleanValue(value.profilePublished, true) || !["active", "trial"].includes(authoritativeStatus)) return false;
+  if (authoritativeStatus !== "trial") return true;
+  const trialEndsAt = useAuthoritativeTrialDate ? authoritativeTrialEndsAt : validSubscriptionTimestamp(value.trialEndsAt);
+  return trialEndsAt !== undefined && trialEndsAt > Date.now();
 }
 
 function gymApplicationView(application: Doc<"gymApplications">): Data {
@@ -2288,13 +2427,13 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   const { user } = await requireMember(ctx);
   const gyms = await marketplaceRows(ctx);
   const gymRecord = gyms.find((record) => record.publicId === stringValue(input.gymId));
-  if (!gymRecord || !acceptsPublicTrialRequests(data(gymRecord.data))) domainError("NOT_FOUND", "Gym not found.");
+  if (!gymRecord) domainError("NOT_FOUND", "Gym not found.");
   const gym = data(gymRecord.data);
   const targetOrgPublicId = optionalString(gym.targetOrganizationId);
   const targetOrganization = targetOrgPublicId
     ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrgPublicId)).unique()
     : null;
-  if (!targetOrganization || !["trial", "active"].includes(targetOrganization.status)) {
+  if (!targetOrganization || gymRecord.organizationId !== targetOrganization._id || !acceptsPublicTrialRequests(gym, platformSubscriptionStatusForOrganization(targetOrganization.status), targetOrganization.trialEndsAt, true)) {
     domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
   }
   const storageOrganization = targetOrganization;
@@ -2957,9 +3096,28 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
-    return await Promise.all(rows.filter((row) => acceptsPublicTrialRequests(data(row.data))).map(async (row) => {
-      const organization = await ctx.db.get(row.organizationId);
-      if (!organization) return marketplaceView(data(row.data));
+    const visibleRows: Array<{ row: DomainRecord; organization: Organization; entitlement: Doc<"organizationEntitlements"> | null }> = [];
+    for (const row of rows) {
+      const listing = data(row.data);
+      // Publication/profile flags belong to the directory record, but tenant
+      // lifecycle is authoritative on organizations. Do not reject a healthy
+      // tenant solely because an old directory status is stale; the projection
+      // below will replace that status from the organization row.
+      if (!booleanValue(listing.isPublic) || !booleanValue(listing.profilePublished, true)) continue;
+      // The directory projection is not an authority for tenant lifecycle.
+      // Require a real, same-tenant organization and read its status before a
+      // gym is exposed to member discovery. This prevents stale active/public
+      // rows (including unprovisioned demo rows) surviving suspension.
+      const targetOrganizationId = optionalString(listing.targetOrganizationId);
+      if (!targetOrganizationId) continue;
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
+      const entitlement = organization
+        ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+        : null;
+      if (!organization || organization._id !== row.organizationId || !acceptsPublicTrialRequests(listing, platformSubscriptionStatusForOrganization(organization.status), organization.trialEndsAt, true)) continue;
+      visibleRows.push({ row, organization, entitlement });
+    }
+    return await Promise.all(visibleRows.map(async ({ row, organization, entitlement }) => {
       const listingValue = data(row.data);
       const [trainers, packages, plans, members, branches, tenantSettings, logo, cover, gallery] = await Promise.all([
         ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
@@ -2974,7 +3132,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       ]);
       const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active");
       const activePrices = activePlans.map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
-      const baseView = marketplaceView(data(row.data));
+      // Keep the public projection aligned with the tenant lifecycle even if
+      // an older directory row has not yet been repaired by an admin.
+      const baseView = marketplaceView(platformMarketplaceProjection(listingValue, organization, entitlement));
       const rawBranches = arrayValue(listingValue.branches).map(data);
       const trialSchedules = arrayValue(data(data(tenantSettings?.data).operationalPolicies).trialSchedules).map(data);
       const liveBranches = branches.filter((branch) => branch.active && branch.status !== "inactive");
@@ -3057,7 +3217,22 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
   if (operation === "platform.snapshot") {
     await requirePlatformAdmin(ctx, request.correlationId);
-    const gyms = (await marketplaceRows(ctx)).map((row) => marketplaceView(data(row.data), true));
+    const gymProjections = await Promise.all((await marketplaceRows(ctx)).map(async (row) => {
+      const listing = data(row.data);
+      const targetOrganizationId = optionalString(listing.targetOrganizationId);
+      const organization = targetOrganizationId
+        ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+        : null;
+      const sameTenantOrganization = organization && organization._id === row.organizationId ? organization : null;
+      const entitlement = sameTenantOrganization
+        ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", sameTenantOrganization._id)).unique()
+        : null;
+      return {
+        view: marketplaceView(platformMarketplaceProjection(listing, sameTenantOrganization, entitlement), true),
+        provisioned: Boolean(sameTenantOrganization),
+      };
+    }));
+    const gyms = gymProjections.map(({ view }) => view);
     const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
     const invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
     const supportCaseRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect();
@@ -3068,15 +3243,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       .slice(0, 100)
       .map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     const plans = await platformPlans(ctx);
-    const [organizations, branches, staffMemberships, memberRows] = await Promise.all([
+    const [organizations, branches, staffMemberships, memberRows, entitlements] = await Promise.all([
       ctx.db.query("organizations").collect(),
       ctx.db.query("branches").collect(),
       ctx.db.query("organizationMemberships").collect(),
       ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect(),
+      ctx.db.query("organizationEntitlements").collect(),
     ]);
+    const entitlementByOrganization = new Map(entitlements.map((entitlement) => [String(entitlement.organizationId), entitlement]));
     const overview = buildPlatformOverview({
-      gyms: gyms.map((gym) => ({ id: stringValue(gym.id), subscriptionStatus: stringValue(gym.subscriptionStatus), trialEndsAt: optionalString(gym.trialEndsAt) })),
-      organizations: organizations.map((organization) => ({ status: organization.status, subscriptionPlan: organization.subscriptionPlan })),
+      gyms: gymProjections.map(({ view, provisioned }) => ({ id: stringValue(view.id), subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned })),
+      organizations: organizations.map((organization) => ({ status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
       branches: branches.map((branch) => ({ active: branch.active, status: branch.status })),
       members: memberRows.map((member) => ({ status: optionalString(data(member.data).status) })),
@@ -3121,18 +3298,22 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     if (!row) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
 
     const gym = data(row.data);
-    const rawStatus = stringValue(gym.subscriptionStatus);
-    const rawPlan = stringValue(gym.rivetPlan);
-    const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
-    const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
-    if (!allowedStatuses.includes(rawStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(rawPlan as (typeof allowedPlans)[number])) {
-      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
-    }
-
     const targetOrganizationId = optionalString(gym.targetOrganizationId);
-    const organization = targetOrganizationId
+    const organizationCandidate = targetOrganizationId
       ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
       : null;
+    const organization = organizationCandidate && organizationCandidate._id === row.organizationId ? organizationCandidate : null;
+    const entitlement = organization
+      ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+      : null;
+    const rawPlan = stringValue(gym.rivetPlan);
+    const effectiveStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : "suspended";
+    const effectivePlan = organization ? platformPlanFromFacts(gym, organization, entitlement) ?? rawPlan : rawPlan;
+    const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    if (!allowedStatuses.includes(effectiveStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(effectivePlan as (typeof allowedPlans)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
+    }
 
     let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
     let owner: { name: string; email: string; phone?: string } | undefined;
@@ -3169,7 +3350,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       memberCount = memberRows.filter((member) => stringValue(data(member.data).status) === "active").length;
       automationRuleCount = ruleRows.length;
       paymentTransactionCount = paymentRows.length;
-      const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === rawPlan);
+      const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === effectivePlan);
       const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
       if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
 
@@ -3185,8 +3366,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       activity = targetActivity.map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     }
 
-    const status = rawStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
-    const plan = rawPlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
+    const plan = effectivePlan as "Starter" | "Growth" | "Pro" | "Enterprise";
     return buildPlatformGymDetail({
       gym: {
         id: gymId,
@@ -3195,7 +3376,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         accent: stringValue(gym.accent, "#1b1a15"),
         subscriptionStatus: status,
         rivetPlan: plan,
-        isPublic: booleanValue(gym.isPublic),
+        isPublic: Boolean(organization && (status === "active" || status === "trial") && booleanValue(gym.isPublic)),
       },
       organization: organization
         ? {
@@ -3205,7 +3386,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
             currency: organization.currency,
             timezone: organization.timezone,
             createdAt: organization.createdAt,
-            subscriptionPlan: organization.subscriptionPlan,
+            subscriptionPlan: plan,
             subscriptionStartedAt: organization.subscriptionStartedAt,
             trialEndsAt: organization.trialEndsAt,
             currentPeriodEndsAt: organization.currentPeriodEndsAt,
@@ -5056,22 +5237,71 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const gymId = recordId(input.gymId);
     const requestedStatus = optionalString(input.status);
     const requestedPlan = optionalString(input.plan);
-    const requestedPublic = input.isPublic === undefined ? undefined : booleanValue(input.isPublic);
+    const requestedPublic = input.isPublic === undefined ? undefined : input.isPublic;
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
-    const statuses = new Set(["trial", "active", "overdue", "suspended", "cancelled"]);
-    const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
-    if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
-    if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
+    const statuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const plans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    if (requestedStatus && !statuses.includes(requestedStatus as (typeof statuses)[number])) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
+    if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
     const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.currentPeriodEndsAt, input.cancelledAt];
     if (!requestedStatus && !requestedPlan && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    const targetOrganization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = targetOrganization && record.organizationId === targetOrganization._id ? targetOrganization : null;
+    const entitlementBefore = organization
+      ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+      : null;
+    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || lifecycleInputs.some((value) => value !== undefined));
+    if (!organization) {
+      // Directory-only and mismatched rows stay in the platform snapshot for
+      // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
+      // The only safe mutation is an explicit hide operation.
+      if (hasTenantMutation || requestedPublic !== false) {
+        domainError("CONFIGURATION_ERROR", "This directory row is not linked to a provisioned organization; only hiding it is supported.", { correlationId: admin.correlationId });
+      }
+      const hidden = { ...current, isPublic: false };
+      await ctx.db.patch(record._id, { data: hidden, updatedAt: Date.now() });
+      await insertPlatformAudit(ctx, admin, {
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gymId,
+        entityLabel: stringValue(current.name, gymId),
+        summary: "Hid an unprovisioned gym directory row",
+        reason,
+        before: platformSubscriptionSnapshot(current, null, null),
+        after: platformSubscriptionSnapshot(hidden, null, null),
+      });
+      return marketplaceView(platformMarketplaceProjection(hidden, null), true);
+    }
+    const organizationStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : undefined;
+    const previousSubscriptionStatus = organizationStatus ?? optionalString(current.subscriptionStatus);
+    const statusTransitioned = requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus;
+    const rawStatus = requestedStatus ?? organizationStatus ?? optionalString(current.subscriptionStatus);
+    if (!rawStatus || !statuses.includes(rawStatus as (typeof statuses)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription status.", { correlationId: admin.correlationId });
+    }
+    const nextStatus = rawStatus as (typeof statuses)[number];
+    // A provisioned organization is the authoritative source for its plan. A
+    // directory row can therefore be repaired by a status/listing save even
+    // when an older projection contains a stale plan value.
+    const rawPlan = requestedPlan ?? optionalString(entitlementBefore?.subscriptionPlan) ?? organization?.subscriptionPlan ?? optionalString(current.rivetPlan);
+    if (!rawPlan || !plans.includes(rawPlan as (typeof plans)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
+    }
+    const nextPlan = rawPlan as (typeof plans)[number];
+    if (organization && nextPlan === "Enterprise") {
+      domainError("VALIDATION_ERROR", "Enterprise is not a configured workspace subscription plan.", { correlationId: admin.correlationId, fieldErrors: { plan: ["Choose Starter, Growth, or Pro"] } });
+    }
     const lifecycleDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt"): { iso?: string; timestamp?: number } => {
       if (input[key] === undefined) return {};
-      const timestamp = validTimestamp(stringValue(input[key]));
+      const timestamp = validSubscriptionTimestamp(input[key]);
       if (timestamp === undefined) domainError("VALIDATION_ERROR", "Subscription lifecycle dates are invalid.", { correlationId: admin.correlationId, fieldErrors: { [key]: ["Enter a valid date"] } });
       return { iso: new Date(timestamp).toISOString(), timestamp };
     };
@@ -5079,49 +5309,86 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const subscriptionStarted = lifecycleDate("subscriptionStartedAt");
     const currentPeriodEnds = lifecycleDate("currentPeriodEndsAt");
     const cancelled = lifecycleDate("cancelledAt");
-    if (requestedStatus === "trial" && !trialEnds.iso && !optionalString(current.trialEndsAt)) domainError("VALIDATION_ERROR", "A trial end date is required when starting a trial.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Required for trials"] } });
-    const now = isoNow();
+    if (cancelled.timestamp !== undefined && nextStatus !== "cancelled") {
+      domainError("VALIDATION_ERROR", "A cancellation date can only be set for a cancelled subscription.", { correlationId: admin.correlationId, fieldErrors: { cancelledAt: ["Only valid for cancelled subscriptions"] } });
+    }
+    // Once a row is linked, organization lifecycle timestamps are authoritative.
+    // Never promote stale directory dates into the tenant on an unrelated save.
+    const storedTrialEndsAt = organization?.trialEndsAt;
+    const storedSubscriptionStartedAt = organization?.subscriptionStartedAt;
+    const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt;
+    const storedCancelledAt = organization?.cancelledAt;
+    const nextTrialEndsAt = trialEnds.timestamp ?? storedTrialEndsAt;
+    const nextSubscriptionStartedAt = subscriptionStarted.timestamp
+      ?? storedSubscriptionStartedAt
+      ?? (statusTransitioned && (nextStatus === "trial" || nextStatus === "active") ? Date.now() : undefined);
+    const nextCurrentPeriodEndsAt = currentPeriodEnds.timestamp ?? storedCurrentPeriodEndsAt;
+    const nextCancelledAt = nextStatus === "cancelled" ? cancelled.timestamp ?? storedCancelledAt ?? Date.now() : undefined;
+    if (nextStatus === "trial" && nextTrialEndsAt === undefined) {
+      domainError("VALIDATION_ERROR", "A trial end date is required when starting a trial.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Required for trials"] } });
+    }
+    if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= Date.now()) {
+      domainError("VALIDATION_ERROR", "A trial must end in the future.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Must be in the future"] } });
+    }
+    if (nextSubscriptionStartedAt !== undefined && nextTrialEndsAt !== undefined && nextTrialEndsAt < nextSubscriptionStartedAt) {
+      domainError("VALIDATION_ERROR", "The trial end date must be on or after the subscription start date.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Must be on or after the start date"] } });
+    }
+    if (nextSubscriptionStartedAt !== undefined && nextCurrentPeriodEndsAt !== undefined && nextCurrentPeriodEndsAt < nextSubscriptionStartedAt) {
+      domainError("VALIDATION_ERROR", "The current period end date must be on or after the subscription start date.", { correlationId: admin.correlationId, fieldErrors: { currentPeriodEndsAt: ["Must be on or after the start date"] } });
+    }
+    if (nextCancelledAt !== undefined && nextSubscriptionStartedAt !== undefined && nextCancelledAt < nextSubscriptionStartedAt) {
+      domainError("VALIDATION_ERROR", "The cancellation date must be on or after the subscription start date.", { correlationId: admin.correlationId, fieldErrors: { cancelledAt: ["Must be on or after the start date"] } });
+    }
+    const nowMs = Date.now();
+    const now = new Date(nowMs).toISOString();
+    const nextPublic = organization && (nextStatus === "active" || nextStatus === "trial")
+      ? requestedPublic ?? booleanValue(current.isPublic)
+      : false;
     const updated = {
       ...current,
-      ...(requestedStatus ? { subscriptionStatus: requestedStatus } : {}),
-      ...(requestedPlan ? { rivetPlan: requestedPlan } : {}),
-      ...(requestedPublic !== undefined ? { isPublic: requestedPublic } : {}),
-      ...(trialEnds.iso ? { trialEndsAt: trialEnds.iso } : {}),
-      ...(subscriptionStarted.iso ? { subscriptionStartedAt: subscriptionStarted.iso } : {}),
-      ...(currentPeriodEnds.iso ? { currentPeriodEndsAt: currentPeriodEnds.iso } : {}),
-      ...(cancelled.iso ? { cancelledAt: cancelled.iso } : {}),
-      ...(requestedStatus === "active" && !subscriptionStarted.iso && !optionalString(current.subscriptionStartedAt) ? { subscriptionStartedAt: now } : {}),
-      ...(requestedStatus === "cancelled" && !cancelled.iso ? { cancelledAt: now } : {}),
-      ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
+      subscriptionStatus: nextStatus,
+      rivetPlan: nextPlan,
+      isPublic: nextPublic,
+      trialEndsAt: nextTrialEndsAt !== undefined ? new Date(nextTrialEndsAt).toISOString() : undefined,
+      subscriptionStartedAt: nextSubscriptionStartedAt !== undefined ? new Date(nextSubscriptionStartedAt).toISOString() : undefined,
+      currentPeriodEndsAt: nextCurrentPeriodEndsAt !== undefined ? new Date(nextCurrentPeriodEndsAt).toISOString() : undefined,
+      ...(nextStatus === "cancelled" ? { cancelledAt: new Date(nextCancelledAt!).toISOString() } : { cancelledAt: undefined }),
       subscriptionStatusReason: reason,
-      lastActiveAt: now,
+      ...(nextStatus === "active" || nextStatus === "trial" ? { lastActiveAt: now } : {}),
     };
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
-    const targetOrganizationId = optionalString(current.targetOrganizationId);
-    if (targetOrganizationId) {
-      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
-      if (organization) {
-        const statusMap: Record<string, "trial" | "active" | "past_due" | "suspended" | "cancelled"> = { trial: "trial", active: "active", overdue: "past_due", suspended: "suspended", cancelled: "cancelled" };
-        await ctx.db.patch(organization._id, {
-          ...(requestedStatus ? { status: statusMap[requestedStatus] } : {}),
-          ...(requestedPlan && requestedPlan !== "Enterprise" ? { subscriptionPlan: requestedPlan as "Starter" | "Growth" | "Pro" } : {}),
-          ...(trialEnds.timestamp !== undefined ? { trialEndsAt: trialEnds.timestamp } : {}),
-          ...(subscriptionStarted.timestamp !== undefined ? { subscriptionStartedAt: subscriptionStarted.timestamp } : {}),
-          ...(currentPeriodEnds.timestamp !== undefined ? { currentPeriodEndsAt: currentPeriodEnds.timestamp } : {}),
-          ...(cancelled.timestamp !== undefined ? { cancelledAt: cancelled.timestamp } : {}),
-          ...(requestedStatus === "active" && subscriptionStarted.timestamp === undefined && !organization.subscriptionStartedAt ? { subscriptionStartedAt: Date.now() } : {}),
-          ...(requestedStatus === "cancelled" && cancelled.timestamp === undefined ? { cancelledAt: Date.now() } : {}),
-          ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
-          subscriptionStatusReason: reason,
-          updatedAt: Date.now(),
-        });
-        const modulePlan = workspacePlan(requestedPlan);
-        if (modulePlan) {
-          const entitledModules = entitledModulesForPlan(modulePlan);
-          const entitlementRow = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
-          if (entitlementRow) await ctx.db.patch(entitlementRow._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: Date.now() });
-          else await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: Date.now(), updatedAt: Date.now() });
-        }
+    let updatedOrganization: Organization | null = organization;
+    let updatedEntitlement: Doc<"organizationEntitlements"> | null = entitlementBefore;
+    if (organization) {
+      const modulePlan = workspacePlan(nextPlan);
+      if (!modulePlan) domainError("CONFIGURATION_ERROR", "This organization has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
+      const organizationStatus = nextStatus === "overdue" ? "past_due" : nextStatus;
+      await ctx.db.patch(organization._id, {
+        status: organizationStatus,
+        subscriptionPlan: modulePlan,
+        ...(nextTrialEndsAt !== undefined ? { trialEndsAt: nextTrialEndsAt } : {}),
+        ...(nextSubscriptionStartedAt !== undefined ? { subscriptionStartedAt: nextSubscriptionStartedAt } : {}),
+        ...(nextCurrentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: nextCurrentPeriodEndsAt } : {}),
+        ...(nextStatus === "cancelled" ? { cancelledAt: nextCancelledAt } : { cancelledAt: undefined }),
+        subscriptionStatusReason: reason,
+        updatedAt: nowMs,
+      });
+      updatedOrganization = await ctx.db.get(organization._id);
+      if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
+      const entitledModules = entitledModulesForPlan(modulePlan);
+      const entitlementUpdatedAt = Date.now();
+      const entitlementNeedsSync = !entitlementBefore
+        || requestedPlan !== undefined
+        || entitlementBefore.subscriptionPlan !== modulePlan
+        || entitlementBefore.catalogVersion !== WORKSPACE_MODULE_CATALOG_VERSION
+        || entitlementBefore.source !== "subscription_plan"
+        || JSON.stringify(entitlementBefore.entitledModules) !== JSON.stringify(entitledModules);
+      if (entitlementBefore && entitlementNeedsSync) {
+        await ctx.db.patch(entitlementBefore._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+        updatedEntitlement = await ctx.db.get(entitlementBefore._id);
+      } else if (!entitlementBefore) {
+        const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+        updatedEntitlement = await ctx.db.get(entitlementId);
       }
     }
     await insertPlatformAudit(ctx, admin, {
@@ -5131,18 +5398,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       entityLabel: stringValue(current.name, gymId),
       summary: "Updated gym subscription controls",
       reason,
-      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan, isPublic: current.isPublic, trialEndsAt: current.trialEndsAt, subscriptionStartedAt: current.subscriptionStartedAt, currentPeriodEndsAt: current.currentPeriodEndsAt, cancelledAt: current.cancelledAt },
-      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan, isPublic: updated.isPublic, trialEndsAt: updated.trialEndsAt, subscriptionStartedAt: updated.subscriptionStartedAt, currentPeriodEndsAt: updated.currentPeriodEndsAt, cancelledAt: updated.cancelledAt },
+      before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
+      after: platformSubscriptionSnapshot(updated, updatedOrganization, updatedEntitlement),
     });
-    if (requestedStatus === "suspended" || requestedStatus === "cancelled") {
+    if (organization && statusTransitioned && (requestedStatus === "suspended" || requestedStatus === "cancelled")) {
       const recipient = await platformGymOwnerRecipient(ctx, gymId);
-      if (recipient) await queueOperationalEmail(ctx, {
+      if (recipient && recipient.organization._id === organization._id) await queueOperationalEmail(ctx, {
         organizationId: recipient.organization._id,
         kind: requestedStatus === "suspended" ? "platform_subscription_suspended" : "platform_subscription_cancelled",
         templateVersion: requestedStatus === "suspended" ? "subscription-suspended-v1" : "subscription-cancelled-v1",
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
-        dedupeKey: `subscription-${requestedStatus}:${gymId}:${now}`,
+        dedupeKey: `subscription-${requestedStatus}:${gymId}`,
       });
     }
     return marketplaceView(updated, true);
@@ -5151,20 +5418,33 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "platform.plan.update") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const name = stringValue(input.name);
+    requireReason(input.reason, admin.correlationId);
+    const reason = input.reason.trim();
     if (!["Starter", "Growth", "Pro"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => stringValue(data(row.data).name) === name);
-    if (!record) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
+    const defaultPlan = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === name);
+    if (!record && !defaultPlan) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
+    const current: Data = record
+      ? { id: record.publicId, ...(defaultPlan ?? {}), ...data(record.data) }
+      : { id: name, ...(defaultPlan ?? {}) };
     const numeric = (key: string, fallback: number) => input[key] === undefined ? fallback : numberValue(input[key], -1);
-    const priceMinor = numeric("priceMinor", numberValue(data(record.data).priceMinor));
-    const branches = numeric("branches", numberValue(data(record.data).branches));
-    const staff = numeric("staff", numberValue(data(record.data).staff));
-    const members = numeric("members", numberValue(data(record.data).members));
+    const priceMinor = numeric("priceMinor", numberValue(current.priceMinor));
+    const branches = numeric("branches", numberValue(current.branches));
+    const staff = numeric("staff", numberValue(current.staff));
+    const members = numeric("members", numberValue(current.members));
     if (![priceMinor, branches, staff, members].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
-    const current = data(record.data);
     const updated = { ...current, name, priceMinor, branches, staff, members };
-    await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    const updatedAt = Date.now();
+    const planRecord = record ?? await (async () => {
+      const organization = await ctx.db.query("organizations").first();
+      if (!organization) domainError("CONFIGURATION_ERROR", "A platform organization is required before the plan catalog can be persisted.", { correlationId: admin.correlationId });
+      const id = await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "platformPlan", publicId: name, createdAt: updatedAt, updatedAt, data: updated });
+      return await ctx.db.get(id);
+    })();
+    if (!planRecord) domainError("CONFIGURATION_ERROR", "The platform plan catalog row could not be persisted.", { correlationId: admin.correlationId });
+    if (record) await ctx.db.patch(record._id, { data: updated, updatedAt });
     await ctx.db.insert("platformAuditEvents", {
       publicId: crypto.randomUUID(),
       actorUserId: admin.user._id,
@@ -5172,22 +5452,27 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       actorName: admin.user.fullName,
       action: "plan.catalog_update",
       entityType: "platform_plan",
-      entityPublicId: record.publicId,
+      entityPublicId: planRecord.publicId,
       entityLabel: name,
       summary: `Updated ${name} plan catalog limits`,
+      reason,
       before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members },
       after: { priceMinor, branches, staff, members },
       correlationId: admin.correlationId,
       occurredAt: Date.now(),
     });
-    return { id: record.publicId, ...updated };
+    return { id: planRecord.publicId, ...updated };
   }
 
   if (operation === "platform.invoice.create") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const gymId = recordId(input.gymId);
     const amountMinor = numberValue(input.amountMinor, -1);
-    const currency = stringValue(input.currency, JOD).trim().toUpperCase();
+    const currency = input.currency === undefined
+      ? JOD
+      : typeof input.currency === "string"
+        ? input.currency.trim().toUpperCase()
+        : "";
     const dueAtValue = stringValue(input.dueAt);
     const periodStartValue = stringValue(input.periodStart);
     const periodEndValue = stringValue(input.periodEnd);
@@ -5197,7 +5482,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
       domainError("VALIDATION_ERROR", "Invoice amount must be a positive integer in minor units.", { correlationId: admin.correlationId });
     }
-    if (!/^[A-Z]{3}$/.test(currency)) domainError("VALIDATION_ERROR", "Invoice currency must be a three-letter ISO code.", { correlationId: admin.correlationId });
+    if (currency !== JOD) domainError("VALIDATION_ERROR", "Platform invoices must use JOD in the MVP.", { correlationId: admin.correlationId, fieldErrors: { currency: ["Only JOD is supported"] } });
     if (dueAt === undefined || periodStart === undefined || periodEnd === undefined || periodEnd < periodStart) {
       domainError("VALIDATION_ERROR", "Invoice dates are invalid.", { correlationId: admin.correlationId });
     }
@@ -5209,6 +5494,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
       : null;
     if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
+    if (gymRecord.organizationId !== organization._id) domainError("CONFIGURATION_ERROR", "The gym directory record is linked to a different organization.", { correlationId: admin.correlationId });
     const invoiceId = `INV-${newPublicId()}`;
     const createdAt = isoNow();
     const invoice: Data = {

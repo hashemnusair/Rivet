@@ -171,7 +171,11 @@ export async function requireAuthenticated(ctx: ReadCtx) {
   if (!identity) domainError("UNAUTHENTICATED", "Authentication is required.");
 
   const user = await findUser(ctx, identity.subject);
-  if (!user || user.status === "deactivated") {
+  // Invitation rows are deliberately inert until users.ensureCurrent claims
+  // the Clerk identity and promotes the row to active. Keeping this check in
+  // the shared authentication kernel prevents a caller from skipping that
+  // bootstrap mutation and using an invited staff/owner row directly.
+  if (!user || user.status === "deactivated" || user.status === "invited") {
     domainError("UNAUTHENTICATED", "This account is not active in RIVET.");
   }
   return { identity, user } as { identity: NonNullable<typeof identity>; user: NonNullable<MaybeUser> };

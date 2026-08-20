@@ -20,7 +20,7 @@ import { VocabularyMarquee } from "@/components/marketing/vocabulary-marquee";
 import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
-import { useExperience } from "@/lib/providers/experience-provider";
+import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 
 /** Hero entrance order, in ms — one cascade from eyebrow to the stat rail. */
 const HERO_STEP = {
@@ -35,7 +35,8 @@ const HERO_STEP = {
 } as const;
 
 export default function LandingPage() {
-  const { marketplaceGyms, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const marketplaceGyms = useMarketplaceGyms();
   return (
     <div className="marketing-body min-h-screen bg-paper text-ink">
       <ScrollProgress />

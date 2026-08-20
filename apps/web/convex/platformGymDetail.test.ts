@@ -74,6 +74,15 @@ describe("platform gym detail projection", () => {
     expect(detail.activity).toEqual({ state: "not_available" });
   });
 
+  it("does not present a stale public toggle for a suspended tenant", () => {
+    const detail = buildPlatformGymDetail(source({
+      gym: { ...source().gym, isPublic: true },
+      organization: { ...source().organization!, status: "suspended" },
+    }));
+
+    expect(detail.controls).toMatchObject({ status: "suspended", plan: "Growth", isPublic: false });
+  });
+
   it("does not expose an invented health score and keeps missing billing providers explicit", () => {
     const detail = buildPlatformGymDetail(source());
 

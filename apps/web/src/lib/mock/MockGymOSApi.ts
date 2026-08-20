@@ -16,6 +16,7 @@ import type {
   UserListQuery,
   PlatformBillingInvoice,
   PlatformGymDetail,
+  PlatformGymActivity,
   PlatformData,
   PlatformGymApplication,
   PlatformSnapshot,
@@ -56,7 +57,7 @@ import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/l
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
-import { money, zeroMoney } from "@/lib/utils/money";
+import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
 import { manualJournalRequestFingerprint, reversalRequestFingerprint } from "../../../convex/accountingLedger";
@@ -67,6 +68,7 @@ import {
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
 import type { CustomerMarketingPreference, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
   currentRole,
@@ -210,6 +212,58 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
 
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
 
+type MockPlatformAuditEvent = PlatformGymActivity & {
+  entityType: "platform_gym" | "platform_plan";
+  entityPublicId: string;
+  entityLabel: string;
+  reason: string;
+};
+
+const PUBLIC_SUBSCRIPTION_STATUSES: ReadonlySet<MarketplaceGym["subscriptionStatus"]> = new Set(["active", "trial"]);
+const PROVISIONED_MOCK_GYM_ID = "forge-fitness";
+const UNPROVISIONED_GYM_REASON = "Organization is not provisioned.";
+
+function organizationStatusForPlatform(status: MarketplaceGym["subscriptionStatus"]): T.Organization["status"] {
+  return status === "overdue" ? "past_due" : status;
+}
+
+function platformStatusForOrganization(status: T.Organization["status"]): MarketplaceGym["subscriptionStatus"] {
+  return status === "past_due" ? "overdue" : status;
+}
+
+function lifecycleTimestamp(value: string | undefined, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw ApiError.of(ERR.VALIDATION, "Subscription lifecycle dates are invalid.", { fieldErrors: { [field]: ["Enter a valid date"] } });
+  return timestamp;
+}
+
+function cloneMarketplaceGym(gym: MarketplaceGym): MarketplaceGym {
+  return {
+    ...gym,
+    areas: [...gym.areas],
+    amenities: [...gym.amenities],
+    branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots], trialSchedule: branch.trialSchedule ? { ...branch.trialSchedule } : undefined })),
+  };
+}
+
+function initialPlatformGyms(): MarketplaceGym[] {
+  return MARKETPLACE_GYMS.map((gym) => {
+    const cloned = cloneMarketplaceGym(gym);
+    if (cloned.id === PROVISIONED_MOCK_GYM_ID) return cloned;
+    return {
+      ...cloned,
+      subscriptionStatus: "suspended",
+      isPublic: false,
+      trialEndsAt: undefined,
+      subscriptionStartedAt: undefined,
+      currentPeriodEndsAt: undefined,
+      cancelledAt: undefined,
+      subscriptionStatusReason: UNPROVISIONED_GYM_REASON,
+    };
+  });
+}
+
 function paginate<I>(items: I[], q: PageParams): T.Page<I> {
   const page = Math.max(1, q.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, q.pageSize ?? 20));
@@ -265,6 +319,9 @@ export class MockGymOSApi implements GymOSApi {
   private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
+  private platformAuditEvents: MockPlatformAuditEvent[] = [];
+  private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
+  private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
   private platformSupportCases: PlatformSupportCase[];
@@ -302,12 +359,7 @@ export class MockGymOSApi implements GymOSApi {
     this.db = db ?? buildSeed();
     this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
-    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
-      ...gym,
-      areas: [...gym.areas],
-      amenities: [...gym.amenities],
-      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
-    }));
+    this.platformGyms = initialPlatformGyms();
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
@@ -329,12 +381,23 @@ export class MockGymOSApi implements GymOSApi {
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
   }
 
-  listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => this.platformGyms.filter((gym) => (gym.isPublic ?? true) && (gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial")));
+  /** The seeded Forge row is the only mock directory record linked to the tenant database. */
+  private isProvisionedGym(gym: MarketplaceGym): boolean {
+    return gym.id === PROVISIONED_MOCK_GYM_ID;
   }
 
-  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
-    return this.subscribeOnce(() => this.listMarketplaceGyms(), onValue, onError);
+  listMarketplaceGyms(): Promise<MarketplaceGym[]> {
+    return this.respond(() => publicMarketplaceGyms(this.platformGyms.filter((gym) => this.isProvisionedGym(gym))));
+  }
+
+  async subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.listMarketplaceGyms());
+      this.marketplaceSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.marketplaceSubscribers.delete(onValue); };
   }
 
   getGymPublicProfile(): Promise<T.GymPublicProfile> {
@@ -502,7 +565,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
-      if (!gym || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
+      if (!gym || !this.isProvisionedGym(gym) || !publicMarketplaceGyms([gym]).length || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
       if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
       // The browser experience owns whether a member is signed in. Falling
       // back to the mock adapter's last persona would silently attach a guest
@@ -614,15 +677,18 @@ export class MockGymOSApi implements GymOSApi {
 
   getPlatformSnapshot(): Promise<PlatformSnapshot> {
     return this.respond(() => ({
-      gyms: this.platformGyms,
-      bookings: this.trialBookings,
-      invoices: this.platformInvoices,
-      supportCases: this.platformSupportCases,
+      // This flag belongs to the platform projection only. Public directory
+      // reads continue through listMarketplaceGyms(), which filters and
+      // returns only provisioned rows.
+      gyms: this.platformGyms.map((gym) => ({ ...cloneMarketplaceGym(gym), isProvisioned: this.isProvisionedGym(gym) })),
+      bookings: this.trialBookings.map((booking) => ({ ...booking })),
+      invoices: this.platformInvoices.map((invoice) => ({ ...invoice })),
+      supportCases: this.platformSupportCases.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) })),
       applications: this.gymApplications.map((application) => ({ ...application })),
-      auditEvents: [],
-      plans: this.platformPlans,
+      auditEvents: this.platformAuditEvents.map((event) => ({ ...event })),
+      plans: this.platformPlans.map((plan) => ({ ...plan })),
       overview: buildPlatformOverview({
-        gyms: this.platformGyms.map((gym) => ({ id: gym.id, subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt })),
+        gyms: this.platformGyms.map((gym) => ({ id: gym.id, subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt, provisioned: this.isProvisionedGym(gym) })),
         organizations: [{ status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan }],
         plans: this.platformPlans.map((plan) => ({ name: plan.name, priceMinor: plan.priceMinor })),
         branches: this.db.branches.map((branch) => ({ active: branch.status === "active", status: branch.status })),
@@ -655,10 +721,11 @@ export class MockGymOSApi implements GymOSApi {
   async subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
       onValue(await this.getPlatformSnapshot());
+      this.platformSnapshotSubscribers.set(onValue, onError);
     } catch (error) {
       onError?.(error);
     }
-    return () => undefined;
+    return () => { this.platformSnapshotSubscribers.delete(onValue); };
   }
 
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> {
@@ -671,12 +738,14 @@ export class MockGymOSApi implements GymOSApi {
       const notConfigured = <T,>(): PlatformData<T> => ({ state: "not_configured" });
       // The mock has one authoritative tenant. Other directory rows are
       // intentionally detail-incomplete rather than borrowing Forge facts.
-      const isSeedTenant = gym.id === "forge-fitness";
+      const isSeedTenant = this.isProvisionedGym(gym);
       const organization = isSeedTenant ? this.db.organization : undefined;
       const branches = isSeedTenant
         ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
         : [];
       const owner = organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined;
+      const effectiveStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      const effectivePlan = organization?.subscriptionPlan ?? gym.rivetPlan;
       const plan = organization?.subscriptionPlan ? this.platformPlans.find((item) => item.name === organization.subscriptionPlan) : undefined;
       const activeMemberCount = organization ? this.db.members.filter((member) => member.status === "active").length : 0;
       const activeStaffCount = organization ? this.db.users.filter((user) => user.status === "active").length : 0;
@@ -687,7 +756,7 @@ export class MockGymOSApi implements GymOSApi {
         name: gym.name,
         shortName: gym.shortName,
         accent: gym.accent,
-        controls: { status: gym.subscriptionStatus, plan: gym.rivetPlan, isPublic: gym.isPublic ?? true },
+        controls: { status: effectiveStatus, plan: effectivePlan, isPublic: Boolean(organization && PUBLIC_SUBSCRIPTION_STATUSES.has(effectiveStatus) && gym.isPublic) },
         organization: organization
           ? available({ id: organization.id, name: organization.name, status: organization.status, currency: organization.currency, timezone: organization.timezone })
           : notAvailable(),
@@ -704,18 +773,20 @@ export class MockGymOSApi implements GymOSApi {
         },
         subscription: {
           plan: organization ? field(organization.subscriptionPlan, "not_configured") : notAvailable(),
-          status: organization ? available(organization.status === "active" ? "active" : "suspended") : notAvailable(),
-          startedAt: organization ? field(gym.subscriptionStartedAt, "not_configured") : notAvailable(),
-          trialEndsAt: organization ? field(gym.trialEndsAt, "not_configured") : notAvailable(),
-          currentPeriodEndsAt: organization ? field(gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
-          cancelledAt: organization ? field(gym.cancelledAt, "not_configured") : notAvailable(),
-          statusReason: organization ? field(gym.subscriptionStatusReason, "not_configured") : notAvailable(),
+          status: organization ? available(effectiveStatus) : notAvailable(),
+          startedAt: organization ? field(organization.subscriptionStartedAt ?? gym.subscriptionStartedAt, "not_configured") : notAvailable(),
+          trialEndsAt: organization ? field(organization.trialEndsAt ?? gym.trialEndsAt, "not_configured") : notAvailable(),
+          currentPeriodEndsAt: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
+          cancelledAt: organization ? field(organization.cancelledAt ?? gym.cancelledAt, "not_configured") : notAvailable(),
+          statusReason: organization ? field(organization.subscriptionStatusReason ?? gym.subscriptionStatusReason, "not_configured") : notAvailable(),
           recurringAmount: notConfigured(),
-          renewalDate: notConfigured(),
+          renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
           invoices: notConfigured(),
         },
-        activity: notConfigured(),
+        activity: organization
+          ? available(this.platformAuditEvents.filter((event) => event.entityType === "platform_gym" && event.entityPublicId === gym.id).map(({ entityType: _entityType, entityPublicId: _entityPublicId, entityLabel: _entityLabel, reason: _reason, ...event }) => ({ ...event })))
+          : notAvailable(),
       };
     });
   }
@@ -853,60 +924,161 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
-    return this.respond(() => {
+  async updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
+    const result = await this.respond(() => {
       this.requireReason(input.reason);
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
-      if (input.status) gym.subscriptionStatus = input.status;
-      if (input.plan) gym.rivetPlan = input.plan;
-      if (input.isPublic !== undefined) gym.isPublic = input.isPublic;
-      const applyDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt", value?: string) => {
-        if (value === undefined) return;
-        const timestamp = Date.parse(value);
-        if (!Number.isFinite(timestamp)) throw ApiError.of(ERR.VALIDATION, "Subscription lifecycle dates are invalid.");
-        gym[key] = new Date(timestamp).toISOString();
-      };
-      applyDate("trialEndsAt", input.trialEndsAt);
-      applyDate("subscriptionStartedAt", input.subscriptionStartedAt);
-      applyDate("currentPeriodEndsAt", input.currentPeriodEndsAt);
-      applyDate("cancelledAt", input.cancelledAt);
-      if (input.status === "cancelled" && !input.cancelledAt) gym.cancelledAt = nowISO();
-      if (input.status && input.status !== "cancelled") gym.cancelledAt = undefined;
+      const organization = this.isProvisionedGym(gym) ? this.db.organization : undefined;
+      const nextStatus = input.status ?? (organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus);
+      const nextPlan = input.plan ?? this.db.organizationEntitlements.subscriptionPlan ?? organization?.subscriptionPlan ?? gym.rivetPlan;
+      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.isPublic !== undefined
+        || input.trialEndsAt !== undefined || input.subscriptionStartedAt !== undefined
+        || input.currentPeriodEndsAt !== undefined || input.cancelledAt !== undefined;
+      if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
+      if (!organization) {
+        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.trialEndsAt !== undefined || input.subscriptionStartedAt !== undefined || input.currentPeriodEndsAt !== undefined || input.cancelledAt !== undefined) {
+          throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
+        }
+        gym.isPublic = false;
+        gym.subscriptionStatus = "suspended";
+        gym.trialEndsAt = undefined;
+        gym.subscriptionStartedAt = undefined;
+        gym.currentPeriodEndsAt = undefined;
+        gym.cancelledAt = undefined;
+        gym.subscriptionStatusReason = input.reason.trim();
+        this.recordPlatformAudit({
+          action: "gym.subscription.update",
+          entityType: "platform_gym",
+          entityPublicId: gym.id,
+          entityLabel: gym.name,
+          summary: `Hid unprovisioned directory row ${gym.name}`,
+          reason: input.reason.trim(),
+        });
+        return cloneMarketplaceGym(gym);
+      }
+      if (organization && nextPlan === "Enterprise") throw ApiError.of(ERR.VALIDATION, "Enterprise is not a configured workspace subscription plan.", { fieldErrors: { plan: ["Choose Starter, Growth, or Pro"] } });
+      if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") throw ApiError.of(ERR.VALIDATION, "Public listing must be a boolean.");
+
+      const trialEndsTimestamp = lifecycleTimestamp(input.trialEndsAt, "trialEndsAt");
+      const startedTimestamp = lifecycleTimestamp(input.subscriptionStartedAt, "subscriptionStartedAt");
+      const periodEndsTimestamp = lifecycleTimestamp(input.currentPeriodEndsAt, "currentPeriodEndsAt");
+      const cancelledTimestamp = lifecycleTimestamp(input.cancelledAt, "cancelledAt");
+      if (cancelledTimestamp !== undefined && nextStatus !== "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancellation date can only be set for a cancelled subscription.", { fieldErrors: { cancelledAt: ["Only valid for cancelled subscriptions"] } });
+
+      const storedTimestamp = (organizationValue: string | undefined, field: string): number | undefined => lifecycleTimestamp(organizationValue, field);
+      const storedTrialEndsAt = storedTimestamp(organization?.trialEndsAt, "trialEndsAt");
+      const storedSubscriptionStartedAt = storedTimestamp(organization?.subscriptionStartedAt, "subscriptionStartedAt");
+      const storedCurrentPeriodEndsAt = storedTimestamp(organization?.currentPeriodEndsAt, "currentPeriodEndsAt");
+      const storedCancelledAt = storedTimestamp(organization?.cancelledAt, "cancelledAt");
+      const nowTimestamp = Date.now();
+      const nextTrialEndsAt = trialEndsTimestamp ?? storedTrialEndsAt;
+      const organizationStatus = organization ? platformStatusForOrganization(organization.status) : undefined;
+      const statusTransitioned = input.status !== undefined && input.status !== organizationStatus;
+      const nextSubscriptionStartedAt = startedTimestamp ?? storedSubscriptionStartedAt ?? (statusTransitioned && PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? nowTimestamp : undefined);
+      const nextCurrentPeriodEndsAt = periodEndsTimestamp ?? storedCurrentPeriodEndsAt;
+      const nextCancelledAt = nextStatus === "cancelled" ? cancelledTimestamp ?? storedCancelledAt ?? nowTimestamp : undefined;
+
+      if (nextStatus === "trial" && nextTrialEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "A trial end date is required when starting a trial.", { fieldErrors: { trialEndsAt: ["Required for trials"] } });
+      if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "A trial must end in the future.", { fieldErrors: { trialEndsAt: ["Must be in the future"] } });
+      if (nextSubscriptionStartedAt !== undefined && nextTrialEndsAt !== undefined && nextTrialEndsAt < nextSubscriptionStartedAt) throw ApiError.of(ERR.VALIDATION, "The trial end date must be on or after the subscription start date.", { fieldErrors: { trialEndsAt: ["Must be on or after the start date"] } });
+      if (nextSubscriptionStartedAt !== undefined && nextCurrentPeriodEndsAt !== undefined && nextCurrentPeriodEndsAt < nextSubscriptionStartedAt) throw ApiError.of(ERR.VALIDATION, "The current period end date must be on or after the subscription start date.", { fieldErrors: { currentPeriodEndsAt: ["Must be on or after the start date"] } });
+      if (nextCancelledAt !== undefined && nextSubscriptionStartedAt !== undefined && nextCancelledAt < nextSubscriptionStartedAt) throw ApiError.of(ERR.VALIDATION, "The cancellation date must be on or after the subscription start date.", { fieldErrors: { cancelledAt: ["Must be on or after the start date"] } });
+
+      const previousStatus = gym.subscriptionStatus;
+      const previousPlan = gym.rivetPlan;
+      const previousIsPublic = gym.isPublic === true;
+      gym.subscriptionStatus = nextStatus;
+      gym.rivetPlan = nextPlan;
+      gym.isPublic = PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? input.isPublic ?? previousIsPublic : false;
+      gym.trialEndsAt = nextTrialEndsAt === undefined ? undefined : new Date(nextTrialEndsAt).toISOString();
+      gym.subscriptionStartedAt = nextSubscriptionStartedAt === undefined ? undefined : new Date(nextSubscriptionStartedAt).toISOString();
+      gym.currentPeriodEndsAt = nextCurrentPeriodEndsAt === undefined ? undefined : new Date(nextCurrentPeriodEndsAt).toISOString();
+      gym.cancelledAt = nextCancelledAt === undefined ? undefined : new Date(nextCancelledAt).toISOString();
       gym.subscriptionStatusReason = input.reason.trim();
-      gym.lastActiveAt = nowISO();
-      return { ...gym, areas: [...gym.areas], amenities: [...gym.amenities], branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })) };
+      if (PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus)) gym.lastActiveAt = nowISO();
+
+      if (organization) {
+        organization.status = organizationStatusForPlatform(nextStatus);
+        organization.subscriptionPlan = nextPlan as T.Organization["subscriptionPlan"];
+        organization.subscriptionStartedAt = gym.subscriptionStartedAt;
+        organization.trialEndsAt = gym.trialEndsAt;
+        organization.currentPeriodEndsAt = gym.currentPeriodEndsAt;
+        organization.cancelledAt = gym.cancelledAt;
+        organization.subscriptionStatusReason = gym.subscriptionStatusReason;
+        organization.updatedAt = nowISO();
+        const modulePlan = nextPlan as T.WorkspaceModulePlan;
+        this.db.organizationEntitlements = {
+          ...this.db.organizationEntitlements,
+          organizationId: organization.id,
+          catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+          subscriptionPlan: modulePlan,
+          entitledModules: entitledModulesForPlan(modulePlan),
+          source: "subscription_plan",
+          updatedAt: organization.updatedAt,
+        };
+      }
+
+      this.recordPlatformAudit({
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gym.id,
+        entityLabel: gym.name,
+        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}`,
+        reason: input.reason.trim(),
+      });
+      return cloneMarketplaceGym(gym);
     });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers()]);
+    return result;
   }
 
-  updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
-    return this.respond(() => {
+  async updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
+    const result = await this.respond(() => {
+      this.requireReason(input.reason);
       const plan = this.platformPlans.find((item) => item.name === input.name);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
       if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
       if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
       if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
       if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      this.recordPlatformAudit({
+        action: "plan.catalog_update",
+        entityType: "platform_plan",
+        entityPublicId: plan.name,
+        entityLabel: plan.name,
+        summary: `Updated ${plan.name} plan catalog limits`,
+        reason: input.reason.trim(),
+      });
       return { ...plan };
     });
+    await this.emitPlatformSnapshotSubscribers();
+    return result;
   }
 
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (!this.isProvisionedGym(gym)) throw ApiError.of(ERR.CONFIGURATION, "This gym is not linked to a provisioned organization.");
       if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Invoice amount must be a positive integer.");
       const periodStart = Date.parse(input.periodStart);
       const periodEnd = Date.parse(input.periodEnd);
       const dueAt = Date.parse(input.dueAt);
       if (![periodStart, periodEnd, dueAt].every(Number.isFinite) || periodEnd < periodStart) throw ApiError.of(ERR.VALIDATION, "Invoice dates are invalid.");
-      const currency = input.currency ?? "JOD";
+      const currency = input.currency === undefined
+        ? "JOD"
+        : typeof input.currency === "string"
+          ? input.currency.trim().toUpperCase()
+          : "";
+      if (currency !== "JOD") throw ApiError.of(ERR.VALIDATION, "Platform invoices must use JOD in the MVP.", { fieldErrors: { currency: ["Only JOD is supported"] } });
+      const exponent = exponentFor(currency);
       const invoice: PlatformBillingInvoice = {
         id: `INV-${crypto.randomUUID()}`,
         gymId: gym.id,
         gym: gym.name,
         amountMinor: input.amountMinor,
-        amount: `${currency} ${(input.amountMinor / 1_000).toFixed(3)}`,
+        amount: `${currency} ${(input.amountMinor / 10 ** exponent).toFixed(exponent)}`,
         currency,
         date: "Not issued",
         dueAt: new Date(dueAt).toISOString(),
@@ -1131,12 +1303,8 @@ export class MockGymOSApi implements GymOSApi {
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
-    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
-      ...gym,
-      areas: [...gym.areas],
-      amenities: [...gym.amenities],
-      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
-    }));
+    this.platformGyms = initialPlatformGyms();
+    this.platformAuditEvents = [];
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
@@ -1172,7 +1340,7 @@ export class MockGymOSApi implements GymOSApi {
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
     this.db.session.activeBranchId = branch;
-    return Promise.resolve();
+    return Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers()]).then(() => undefined);
   }
 
   private async respond<R>(fn: () => R | Promise<R>): Promise<R> {
@@ -1188,6 +1356,35 @@ export class MockGymOSApi implements GymOSApi {
   private async subscribeOnce<R>(load: () => Promise<R>, onValue: (value: R) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try { onValue(await load()); } catch (error) { onError?.(error); }
     return () => undefined;
+  }
+
+  private async emitMarketplaceSubscribers(): Promise<void> {
+    if (this.marketplaceSubscribers.size === 0) return;
+    try {
+      const gyms = await this.listMarketplaceGyms();
+      for (const onValue of this.marketplaceSubscribers.keys()) onValue(gyms);
+    } catch (error) {
+      for (const onError of this.marketplaceSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private async emitPlatformSnapshotSubscribers(): Promise<void> {
+    if (this.platformSnapshotSubscribers.size === 0) return;
+    try {
+      const snapshot = await this.getPlatformSnapshot();
+      for (const onValue of this.platformSnapshotSubscribers.keys()) onValue(snapshot);
+    } catch (error) {
+      for (const onError of this.platformSnapshotSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private recordPlatformAudit(input: Omit<MockPlatformAuditEvent, "id" | "actorName" | "occurredAt">): void {
+    this.platformAuditEvents.unshift({
+      ...input,
+      id: mockUuid(),
+      actorName: this.actor().name,
+      occurredAt: nowISO(),
+    });
   }
 
   private today(): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import { rolePermissions } from "./permissions";
-import { assertBranchAccess, domainError, requireMember, requirePermission, requireReason, type ActorContext } from "./security";
+import { assertBranchAccess, domainError, requireMember, requirePermission, requirePlatformAdmin, requireReason, type ActorContext } from "./security";
 
 const organizationId = "org-test" as Id<"organizations">;
 const branchA = "branch-a" as Id<"branches">;
@@ -97,7 +97,15 @@ describe("Convex security kernel", () => {
 
   it("fails closed for deactivated or unknown identities", async () => {
     await expect(requireMember(memberContext({ user: { status: "deactivated" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+    await expect(requireMember(memberContext({ user: { status: "invited" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
     await expect(requireMember(memberContext({ identity: { subject: "unknown-clerk-user" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
     await expect(requireMember(memberContext({ user: null }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+  });
+
+  it("requires an active platform-admin account for platform operations", async () => {
+    await expect(requirePlatformAdmin(memberContext({ user: { platformAdmin: false } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    await expect(requirePlatformAdmin(memberContext({ user: { platformAdmin: true, status: "invited" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+    await expect(requirePlatformAdmin(memberContext({ user: { platformAdmin: true, status: "deactivated" } }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+    await expect(requirePlatformAdmin(memberContext({ user: { platformAdmin: true } }))).resolves.toMatchObject({ user: expect.objectContaining({ platformAdmin: true }) });
   });
 });

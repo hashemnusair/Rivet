@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MarketplaceGym } from "./experience-data";
+import { MARKETPLACE_GYMS, type MarketplaceGym } from "./experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "./marketplace-filters";
 
 const gym = (id: string, subscriptionStatus: MarketplaceGym["subscriptionStatus"], isPublic = true): MarketplaceGym => ({
@@ -34,6 +34,17 @@ describe("marketplace surface filters", () => {
     const gyms = [gym("visible", "active"), gym("hidden", "active", false), gym("suspended", "suspended")];
 
     expect(publicMarketplaceGyms(gyms).map((item) => item.id)).toEqual(["visible"]);
+  });
+
+  it("fails closed when a listing has no explicit public visibility", () => {
+    const missingVisibility = gym("missing-visibility", "active");
+    delete missingVisibility.isPublic;
+
+    expect(publicMarketplaceGyms([missingVisibility, gym("trial-visible", "trial")]).map((item) => item.id)).toEqual(["trial-visible"]);
+  });
+
+  it("keeps bundled preview fixtures explicit and separate from live visibility defaults", () => {
+    expect(MARKETPLACE_GYMS.every((item) => item.isPublic === true)).toBe(true);
   });
 
   it("keeps every tenant available to the authorized platform directory", () => {

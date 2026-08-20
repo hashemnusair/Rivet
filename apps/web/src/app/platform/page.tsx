@@ -11,7 +11,11 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { formatMoney } from "@/lib/utils/money";
 
 export default function PlatformOverviewPage() {
-  const { marketplaceGyms, platformSnapshot } = useExperience();
+  const { platformSnapshot } = useExperience();
+  // The platform snapshot is the authoritative tenant directory. The public
+  // marketplace stream intentionally excludes hidden/suspended tenants and
+  // can update independently of the operator console.
+  const directoryGyms = platformSnapshot?.gyms ?? [];
   const overview = platformSnapshot?.overview;
   const openCases = overview?.openSupportCases ?? 0;
   const urgentCases = overview?.urgentSupportCases ?? 0;
@@ -30,7 +34,7 @@ export default function PlatformOverviewPage() {
         />
 
         <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi icon={<Building2 />} label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} detail={overview ? `${overview.gymCounts.trial} trial · ${overview.gymCounts.past_due} past due` : "Loading tenant status"} />
+          <Kpi icon={<Building2 />} label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} detail={overview ? `${overview.gymCounts.trial} trial · ${overview.gymCounts.past_due} past due · ${overview.gymCounts.suspended} suspended · ${overview.gymCounts.cancelled} cancelled` : "Loading tenant status"} />
           <Kpi icon={<CreditCard />} label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} detail={overview ? "From active plan assignments" : "Loading subscriptions"} />
           <Kpi icon={<Users />} label="Active members" value={overview ? overview.memberCount.toLocaleString() : "—"} detail={overview ? `${overview.branchCount} active branches · ${overview.activeStaffCount} active staff` : "Loading tenant usage"} />
           <Kpi icon={<LifeBuoy />} label="Open support cases" value={overview ? String(openCases) : "—"} detail={overview ? `${urgentCases} urgent` : "Loading support queue"} warning={urgentCases > 0} />
@@ -76,7 +80,7 @@ export default function PlatformOverviewPage() {
           <section className="overflow-hidden border border-line bg-surface">
             <div className="flex items-center justify-between border-b border-line px-5 py-4"><div><p className="eyebrow">Tenant directory</p><h2 className="mt-1 text-[17px] font-semibold">Subscribed gyms</h2></div><Button asChild variant="ghost" size="sm"><Link href="/platform/gyms">View all <ArrowRight /></Link></Button></div>
             <div className="divide-y divide-line">
-              {marketplaceGyms.length ? marketplaceGyms.map((gym) => (
+              {directoryGyms.length ? directoryGyms.map((gym) => (
                 <Link key={gym.id} href={`/platform/gyms/${gym.id}`} className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-sunken sm:grid-cols-[1fr_130px_100px_auto]">
                   <div className="flex min-w-0 items-center gap-3"><span className="flex size-9 shrink-0 items-center justify-center font-mono text-[9px] font-semibold text-white" style={{ backgroundColor: gym.accent }}>{gym.shortName.slice(0, 2)}</span><div className="min-w-0"><p className="truncate text-[13px] font-semibold">{gym.name}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{gym.rivetPlan} plan</p></div></div>
                   <DirectoryFact label="Branches" value={String(gym.branchCount)} />
@@ -150,13 +154,17 @@ function Kpi({ icon, label, value, detail, warning = false }: { icon: React.Reac
 }
 
 function Attention({ item }: { item: PlatformOperatorQueueItem }) {
-  return <Link href={item.href} className="group flex items-start gap-3 border-t border-night-line px-1 py-4 first:border-t-0"><span className={`mt-1 size-2 shrink-0 rounded-full ${item.severity === "danger" ? "bg-danger" : item.severity === "warning" ? "bg-warning" : "bg-info"}`} /><span className="min-w-0 flex-1"><strong className="block text-[12px] font-medium">{item.title}</strong><span className="mt-1 block text-[10.5px] text-night-ink-3">{item.detail}</span></span><ArrowRight className="mt-1 size-3.5 text-night-ink-3 transition-transform group-hover:translate-x-1" /></Link>;
+  const href = item.id.startsWith("invoice:")
+    ? `/platform/billing?invoice=${encodeURIComponent(item.id.slice("invoice:".length))}`
+    : item.href;
+  return <Link href={href} className="group flex items-start gap-3 border-t border-night-line px-1 py-4 first:border-t-0"><span className={`mt-1 size-2 shrink-0 rounded-full ${item.severity === "danger" ? "bg-danger" : item.severity === "warning" ? "bg-warning" : "bg-info"}`} /><span className="min-w-0 flex-1"><strong className="block text-[12px] font-medium">{item.title}</strong><span className="mt-1 block text-[10.5px] text-night-ink-3">{item.detail}</span></span><ArrowRight className="mt-1 size-3.5 text-night-ink-3 transition-transform group-hover:translate-x-1" /></Link>;
 }
 
 function Status({ status }: { status: string }) {
   const active = status === "active";
   const trial = status === "trial";
-  return <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[0.1em] ${active ? "bg-success-bg text-success" : trial ? "bg-info-bg text-info" : "bg-warning-bg text-warning"}`}>{status.replace("_", " ")}</span>;
+  const danger = status === "suspended" || status === "cancelled";
+  return <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[0.1em] ${active ? "bg-success-bg text-success" : trial ? "bg-info-bg text-info" : danger ? "bg-danger-bg text-danger" : "bg-warning-bg text-warning"}`}>{status.replaceAll("_", " ")}</span>;
 }
 
 function DirectoryFact({ label, value }: { label: string; value: string }) {

@@ -2,8 +2,8 @@ export type PlatformQueueSeverity = "danger" | "warning" | "info";
 
 export interface PlatformOverviewInput {
   now?: number;
-  gyms: Array<{ id: string; subscriptionStatus: string; trialEndsAt?: string }>;
-  organizations: Array<{ status: string; subscriptionPlan?: string }>;
+  gyms: Array<{ id: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
+  organizations: Array<{ status: string; subscriptionPlan?: string; entitlementPlan?: string }>;
   plans: Array<{ name: string; priceMinor: number }>;
   branches: Array<{ active: boolean; status?: string }>;
   members: Array<{ status?: string }>;
@@ -40,18 +40,66 @@ export interface PlatformOverviewInput {
   }>;
 }
 
-function invoiceAmountMinor(invoice: PlatformOverviewInput["invoices"][number]): number {
+const PLATFORM_BILLING_CURRENCY = "JOD";
+const CURRENCY_MINOR_EXPONENTS: Record<string, number> = {
+  AED: 2,
+  BHD: 3,
+  EUR: 2,
+  GBP: 2,
+  IQD: 3,
+  JOD: 3,
+  KWD: 3,
+  OMR: 3,
+  SAR: 2,
+  TND: 3,
+  USD: 2,
+};
+
+type InvoiceCurrencyResolution = {
+  currency?: string;
+  eligible: boolean;
+};
+
+function normalizedCurrency(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim().toUpperCase() : undefined;
+}
+
+function currencyFromAmountLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const prefix = value.trim().match(/^([A-Za-z]{3}|JD)(?=\s|\d|$)/)?.[1]?.toUpperCase();
+  return prefix === "JD" ? PLATFORM_BILLING_CURRENCY : prefix;
+}
+
+function resolveInvoiceCurrency(invoice: PlatformOverviewInput["invoices"][number]): InvoiceCurrencyResolution {
+  const explicit = normalizedCurrency(invoice.currency);
+  const labeled = currencyFromAmountLabel(invoice.amount);
+  // A legacy amount label is useful only when it agrees with the persisted
+  // currency. Conflicting evidence is configuration-invalid, not JOD.
+  if (explicit && labeled && explicit !== labeled) return { currency: undefined, eligible: false };
+  const currency = explicit ?? labeled;
+  return { currency, eligible: currency === PLATFORM_BILLING_CURRENCY };
+}
+
+function invoiceAmountMinor(invoice: PlatformOverviewInput["invoices"][number], currency?: string): number {
   if (Number.isSafeInteger(invoice.amountMinor) && (invoice.amountMinor ?? 0) >= 0) return invoice.amountMinor ?? 0;
+  const exponent = currency ? CURRENCY_MINOR_EXPONENTS[currency] : undefined;
+  if (exponent === undefined) return 0;
   const parsed = Number((invoice.amount ?? "").replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 1_000) : 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10 ** exponent) : 0;
 }
 
 export function buildPlatformOverview(input: PlatformOverviewInput) {
-  const currency = input.invoices.find((invoice) => invoice.currency)?.currency ?? "JOD";
+  const currency = PLATFORM_BILLING_CURRENCY;
+  const eligibleInvoices = input.invoices.flatMap((invoice) => {
+    const resolution = resolveInvoiceCurrency(invoice);
+    return resolution.eligible ? [{ invoice, currency: resolution.currency ?? PLATFORM_BILLING_CURRENCY }] : [];
+  });
+  const billingCurrencyMismatches = input.invoices.length - eligibleInvoices.length;
   const planPrices = new Map(input.plans.map((plan) => [plan.name, plan.priceMinor]));
   const gymCounts = { trial: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
 
   for (const gym of input.gyms) {
+    if (gym.provisioned === false) continue;
     if (gym.subscriptionStatus === "trial") gymCounts.trial += 1;
     else if (gym.subscriptionStatus === "active") gymCounts.active += 1;
     else if (gym.subscriptionStatus === "overdue" || gym.subscriptionStatus === "past_due") gymCounts.past_due += 1;
@@ -60,21 +108,23 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
   }
 
   const activeMrr = input.organizations.reduce((total, organization) => {
-    if (organization.status !== "active" || !organization.subscriptionPlan) return total;
-    return total + (planPrices.get(organization.subscriptionPlan) ?? 0);
+    if (organization.status !== "active") return total;
+    const plan = organization.entitlementPlan ?? organization.subscriptionPlan;
+    if (!plan) return total;
+    return total + (planPrices.get(plan) ?? 0);
   }, 0);
-  const paidInvoices = input.invoices.filter((invoice) => invoice.status === "paid");
-  const overdueInvoices = input.invoices.filter((invoice) => ["failed", "past_due", "overdue"].includes(invoice.status ?? ""));
-  const outstandingInvoices = input.invoices.filter((invoice) => !["paid", "void", "trial"].includes(invoice.status ?? ""));
+  const paidInvoices = eligibleInvoices.filter(({ invoice }) => invoice.status === "paid");
+  const overdueInvoices = eligibleInvoices.filter(({ invoice }) => ["failed", "past_due", "overdue"].includes(invoice.status ?? ""));
+  const outstandingInvoices = eligibleInvoices.filter(({ invoice }) => !["paid", "void", "trial"].includes(invoice.status ?? ""));
   const now = input.now ?? Date.now();
   const fourteenDaysFromNow = now + 14 * 86_400_000;
   const billingByMonth = new Map<string, { issued: number; collected: number; outstanding: number }>();
-  for (const invoice of input.invoices) {
+  for (const { invoice, currency: invoiceCurrency } of eligibleInvoices) {
     const timestamp = Date.parse(invoice.issuedAt ?? invoice.date ?? invoice.occurredAt ?? "");
     if (!Number.isFinite(timestamp)) continue;
     const month = new Date(timestamp).toISOString().slice(0, 7);
     const totals = billingByMonth.get(month) ?? { issued: 0, collected: 0, outstanding: 0 };
-    const amount = invoiceAmountMinor(invoice);
+    const amount = invoiceAmountMinor(invoice, invoiceCurrency);
     if (!["draft", "void", "trial"].includes(invoice.status ?? "")) totals.issued += amount;
     if (invoice.status === "paid") totals.collected += amount;
     if (!["paid", "void", "trial", "draft"].includes(invoice.status ?? "")) totals.outstanding += amount;
@@ -111,7 +161,7 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
         href: `/platform/applications?application=${application.id}`,
         occurredAt: application.updatedAt,
       })),
-    ...overdueInvoices.map((invoice) => ({
+    ...overdueInvoices.map(({ invoice }) => ({
       id: `invoice:${invoice.id}`,
       severity: "danger" as PlatformQueueSeverity,
       title: "Platform invoice needs attention",
@@ -138,16 +188,18 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     activeStaffCount: input.staffMemberships.filter((membership) => membership.active).length,
     activeMrr: { amount: activeMrr, currency },
     invoiceTotals: {
-      collected: { amount: paidInvoices.reduce((total, invoice) => total + invoiceAmountMinor(invoice), 0), currency },
-      outstanding: { amount: outstandingInvoices.reduce((total, invoice) => total + invoiceAmountMinor(invoice), 0), currency },
-      overdue: { amount: overdueInvoices.reduce((total, invoice) => total + invoiceAmountMinor(invoice), 0), currency },
+      collected: { amount: paidInvoices.reduce((total, { invoice, currency: invoiceCurrency }) => total + invoiceAmountMinor(invoice, invoiceCurrency), 0), currency },
+      outstanding: { amount: outstandingInvoices.reduce((total, { invoice, currency: invoiceCurrency }) => total + invoiceAmountMinor(invoice, invoiceCurrency), 0), currency },
+      overdue: { amount: overdueInvoices.reduce((total, { invoice, currency: invoiceCurrency }) => total + invoiceAmountMinor(invoice, invoiceCurrency), 0), currency },
     },
+    billingCurrencyMismatches,
     trialRequests: input.bookings.length,
     trialConversions: input.bookings.filter((booking) => booking.status === "converted").length,
     pendingApplications: input.applications.filter((application) => application.status === "pending" || application.status === "under_review").length,
     provisioningFailures: input.applications.filter((application) => application.provisioningStatus === "failed").length,
-    pastDueAccounts: new Set(overdueInvoices.map((invoice) => invoice.gymId ?? invoice.gym ?? invoice.id)).size,
+    pastDueAccounts: new Set(overdueInvoices.map(({ invoice }) => invoice.gymId ?? invoice.gym ?? invoice.id)).size,
     trialsExpiringSoon: input.gyms.filter((gym) => {
+      if (gym.provisioned === false) return false;
       if (gym.subscriptionStatus !== "trial" || !gym.trialEndsAt) return false;
       const trialEndsAt = Date.parse(gym.trialEndsAt);
       return Number.isFinite(trialEndsAt) && trialEndsAt >= now && trialEndsAt <= fourteenDaysFromNow;

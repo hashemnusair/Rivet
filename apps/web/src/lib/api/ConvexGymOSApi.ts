@@ -48,6 +48,7 @@ import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
 import type { CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 
 export type ConvexOperationArgs = {
   operation: string;
@@ -82,6 +83,29 @@ function correlationId(): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Normalize the deliberately public marketplace contract at the adapter
+ * boundary. The server query is the authority that decides which rows are
+ * publishable; its public projection omits platform-only controls, including
+ * `isPublic`. Marking a row returned by that query as explicitly visible lets
+ * the shared client filter fail closed for all other payloads without falling
+ * back to the bundled preview catalog.
+ */
+function publicMarketplaceRows(value: unknown): MarketplaceGym[] {
+  if (!Array.isArray(value)) return [];
+  const rows = value
+    .filter(isRecord)
+    .map((row) => {
+      // Keep platform linkage metadata out of the public marketplace seam even
+      // if a future server projection accidentally includes it.
+      const publicRow = { ...row };
+      delete publicRow.isProvisioned;
+      return { ...publicRow, isPublic: typeof publicRow.isPublic === "boolean" ? publicRow.isPublic : true };
+    })
+    .map((row) => row as unknown as MarketplaceGym);
+  return publicMarketplaceGyms(rows);
 }
 
 function errorFromConvex(error: unknown): ApiError {
@@ -243,8 +267,12 @@ export class ConvexGymOSApi implements GymOSApi {
     return undefined;
   }
 
-  listMarketplaceGyms(): Promise<MarketplaceGym[]> { return this.query("public.marketplace"); }
-  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.marketplace", {}, onValue, onError); }
+  async listMarketplaceGyms(): Promise<MarketplaceGym[]> {
+    return publicMarketplaceRows(await this.query<unknown>("public.marketplace"));
+  }
+  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeQuery<unknown>("public.marketplace", {}, (value) => onValue(publicMarketplaceRows(value)), onError);
+  }
   getCustomerExperience(): Promise<CustomerExperience> { return this.query("customer.experience"); }
   subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeQuery("customer.experience", {}, onValue, onError);

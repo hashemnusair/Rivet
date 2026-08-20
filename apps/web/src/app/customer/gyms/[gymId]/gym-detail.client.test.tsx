@@ -45,6 +45,7 @@ const state = vi.hoisted(() => ({
       trialSchedule: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((weekday) => [weekday, { enabled: true, opensAt: "08:00", closesAt: "20:00" }])),
     }],
   },
+  showGym: true,
   previewSessionReady: true,
   bookTrial: vi.fn(),
   push: vi.fn(),
@@ -60,7 +61,7 @@ vi.mock("@/lib/api/ConvexGymOSApi", () => ({
 
 vi.mock("@/lib/providers/experience-provider", () => ({
   useCustomerPersona: () => state.customer ?? undefined,
-  useMarketplaceGyms: () => [state.gym],
+  useMarketplaceGyms: () => state.showGym ? [state.gym] : [],
   useExperience: () => ({
     bookTrial: state.bookTrial,
     customerSignedIn: Boolean(state.customer),
@@ -71,6 +72,7 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 describe("GymDetailClient trial form", () => {
   beforeEach(() => {
     state.customer = null;
+    state.showGym = true;
     state.previewSessionReady = true;
     state.bookTrial.mockReset().mockResolvedValue({ id: "booking-1" });
     state.push.mockReset();
@@ -133,5 +135,14 @@ describe("GymDetailClient trial form", () => {
     await user.click(screen.getByRole("button", { name: "Send trial request" }));
 
     expect(state.bookTrial).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: "13:30" }));
+  });
+
+  it("denies a direct public detail route when the gym is no longer publishable", () => {
+    state.showGym = false;
+
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByRole("heading", { name: "Gym not found" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send trial request" })).not.toBeInTheDocument();
   });
 });

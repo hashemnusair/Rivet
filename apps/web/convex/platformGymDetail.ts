@@ -106,6 +106,10 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
   const status = organization ? subscriptionStatus(organization.status) : undefined;
   const controlStatus = status ?? source.gym.subscriptionStatus;
   const controlPlan = organization?.subscriptionPlan ?? source.gym.rivetPlan;
+  // A directory projection cannot publish a tenant that is suspended,
+  // cancelled, overdue, or not provisioned. Keep the admin control truthful
+  // even when an older marketplace row still says public.
+  const controlIsPublic = Boolean(organization && (organization.status === "active" || organization.status === "trial") && source.gym.isPublic);
 
   return {
     id: source.gym.id,
@@ -115,7 +119,7 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     controls: {
       status: controlStatus,
       plan: controlPlan,
-      isPublic: source.gym.isPublic,
+      isPublic: controlIsPublic,
     },
     organization: organizationData,
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),

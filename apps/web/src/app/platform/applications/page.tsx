@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { StatePanel } from "@/components/ui/states";
@@ -43,26 +44,37 @@ export default function PlatformApplicationsPage() {
   const [busyProvisioning, setBusyProvisioning] = useState(false);
   const [error, setError] = useState<string>();
   const [feedback, setFeedback] = useState<string>();
-  const requestedApplicationId = useRef<string | undefined>(undefined);
+  const searchParams = useSearchParams();
+  const requestedApplicationId = searchParams.get("application")?.trim() || undefined;
+  const requestedApplicationIdRef = useRef<string | undefined>(requestedApplicationId);
+  const initialLoadRef = useRef(true);
+  const liveSnapshotRef = useRef(false);
+  const loadRequestRef = useRef(0);
 
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("application")?.trim();
-    if (!requested) return;
-    requestedApplicationId.current = requested;
-    setSelectedId(requested);
-  }, []);
+    requestedApplicationIdRef.current = requestedApplicationId;
+    setSelectedId(requestedApplicationId);
+  }, [requestedApplicationId]);
 
   const loadApplications = useCallback(async (background = false) => {
+    const requestId = ++loadRequestRef.current;
+    const isInitialLoad = !background && initialLoadRef.current;
+    if (isInitialLoad) initialLoadRef.current = false;
     if (background) setRefreshing(true);
     else setLoading(true);
     setError(undefined);
     try {
       const rows = await getApi().listGymApplications();
+      // The live subscription is authoritative once it has delivered a
+      // snapshot. Do not let a slower one-shot read overwrite it during the
+      // initial mount race; explicit refreshes still apply their result.
+      if (requestId !== loadRequestRef.current || (isInitialLoad && liveSnapshotRef.current)) return;
       setApplications(rows);
-      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationId.current)?.id ?? rows[0]?.id);
+      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationIdRef.current)?.id ?? rows[0]?.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Applications could not be loaded.");
+      if (requestId === loadRequestRef.current && (!isInitialLoad || !liveSnapshotRef.current)) setError(cause instanceof Error ? cause.message : "Applications could not be loaded.");
     } finally {
+      if (requestId !== loadRequestRef.current) return;
       setLoading(false);
       setRefreshing(false);
     }
@@ -88,8 +100,9 @@ export default function PlatformApplicationsPage() {
 
     void getApi().subscribePlatformApplications((rows) => {
       if (cancelled) return;
+      liveSnapshotRef.current = true;
       setApplications(rows);
-      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationId.current)?.id ?? rows[0]?.id);
+      setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationIdRef.current)?.id ?? rows[0]?.id);
       setError(undefined);
       setLoading(false);
       setRefreshing(false);
@@ -150,7 +163,12 @@ export default function PlatformApplicationsPage() {
           : " The decision was saved; owner email delivery is not configured.";
       setFeedback(decision === "under_review" ? "Application moved to the review queue." : decision === "approved" ? `Application approved.${notification}` : `Application rejected.${notification}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The review decision could not be saved.");
+      const message = cause instanceof Error ? cause.message : "The review decision could not be saved.";
+      // A second operator may have finalized the application while this page
+      // was open. Re-read the authoritative row before showing the retryable
+      // error so the detail pane does not strand the operator on stale actions.
+      await loadApplications(true);
+      setError(message);
     } finally {
       setBusyDecision(undefined);
     }
@@ -212,7 +230,7 @@ export default function PlatformApplicationsPage() {
             <h1 className="mt-2 text-[30px] font-semibold tracking-tight">Gym applications</h1>
             <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-ink-2">Review every gym before provisioning a workspace or sending access. Decisions are recorded for the platform team.</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => void loadApplications(true)} loading={refreshing}>
+          <Button variant="secondary" size="sm" onClick={() => void loadApplications(true)} loading={refreshing} disabled={Boolean(busyDecision || busyNote || busyProvisioning)}>
             <RefreshCcw /> Refresh
           </Button>
         </div>
@@ -231,11 +249,11 @@ export default function PlatformApplicationsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-3">
             <label className="relative min-w-[240px] flex-1">
               <Search className="absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" />
-              <Input className="ps-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search gym, owner, email, or plan" aria-label="Search gym applications" />
+              <Input className="ps-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search gym, owner, email, or plan" aria-label="Search gym applications" disabled={Boolean(busyDecision || busyNote || busyProvisioning || refreshing)} />
             </label>
             <div className="flex max-w-full gap-1 overflow-x-auto" role="tablist" aria-label="Application status filter">
               {FILTERS.map((item) => (
-                <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} onClick={() => setFilter(item.value)} className={cn("whitespace-nowrap rounded-md px-3 py-2 text-[11px] transition-colors", filter === item.value ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken hover:text-ink")}>
+                <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} onClick={() => setFilter(item.value)} disabled={Boolean(busyDecision || busyNote || busyProvisioning || refreshing)} className={cn("whitespace-nowrap rounded-md px-3 py-2 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50", filter === item.value ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken hover:text-ink")}>
                   {item.label} <span className="ms-1 font-mono text-[9px] opacity-70">{counts[item.value]}</span>
                 </button>
               ))}
@@ -247,7 +265,7 @@ export default function PlatformApplicationsPage() {
               <aside className="border-b border-line lg:border-b-0 lg:border-e" aria-label="Gym applications list">
                 <div className="divide-y divide-line">
                   {visibleApplications.map((application) => (
-                    <button key={application.id} type="button" onClick={() => { setSelectedId(application.id); setFeedback(undefined); setError(undefined); }} className={cn("w-full p-4 text-start transition-colors hover:bg-sunken", selected?.id === application.id && "bg-sunken shadow-[inset_3px_0_0_#d9232b]")}>
+                    <button key={application.id} type="button" aria-pressed={selected?.id === application.id} disabled={Boolean(busyDecision || busyNote || busyProvisioning || refreshing)} onClick={() => { setSelectedId(application.id); setFeedback(undefined); setError(undefined); }} className={cn("w-full p-4 text-start transition-colors hover:bg-sunken disabled:cursor-not-allowed disabled:opacity-60", selected?.id === application.id && "bg-sunken shadow-[inset_3px_0_0_#d9232b]")}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0"><p className="truncate text-[13px] font-semibold">{application.gymName}</p><p className="mt-1 truncate text-[10.5px] text-ink-3">{application.ownerName} · {application.plan}</p></div>
                         <Status status={application.status} />
@@ -258,7 +276,7 @@ export default function PlatformApplicationsPage() {
                 </div>
               </aside>
 
-              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} busyNote={busyNote} busyProvisioning={busyProvisioning} onReview={review} onSaveNote={saveNote} onProvision={() => void provision({ applicationId: selected.id })} /> : null}
+              {selected ? <ApplicationDetail application={selected} note={note} setNote={setNote} busyDecision={busyDecision} busyNote={busyNote} busyProvisioning={busyProvisioning} refreshing={refreshing} onReview={review} onSaveNote={saveNote} onProvision={() => void provision({ applicationId: selected.id })} onRefresh={() => void loadApplications(true)} /> : null}
             </div>
           )}
         </section>
@@ -267,7 +285,7 @@ export default function PlatformApplicationsPage() {
   );
 }
 
-function ApplicationDetail({ application, note, setNote, busyDecision, busyNote, busyProvisioning, onReview, onSaveNote, onProvision }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void }) {
+function ApplicationDetail({ application, note, setNote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
   const finalized = application.status === "approved" || application.status === "rejected";
   const noteDirty = note.trim() !== (application.reviewNotes ?? "");
   return (
@@ -285,8 +303,8 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
         <div className="space-y-5">
           <section><p className="eyebrow">Applicant details</p><div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-2"><Detail icon={<UserRound />} label="Owner" value={application.ownerName} /><Detail icon={<Mail />} label="Email" value={application.email} /><Detail icon={<Phone />} label="Contact number" value={application.contactNumber} /><Detail icon={<CheckCircle2 />} label="Chosen plan" value={application.plan} /></div></section>
           <section><p className="eyebrow">Review notes</p><Textarea className="mt-3" value={note} onChange={(event) => setNote(event.target.value)} disabled={Boolean(busyDecision) || busyNote} placeholder="Record what you verified, or why the application was rejected." aria-label="Review notes" /><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="text-[10px] text-ink-3">A rejection requires a reason. Notes are visible to the platform team only.</p><Button type="button" variant="secondary" size="sm" onClick={() => void onSaveNote()} loading={busyNote} disabled={!noteDirty || Boolean(busyDecision)}>{noteDirty ? "Save note" : "Saved"}</Button></div></section>
-          {finalized ? <div className={cn("flex items-start gap-3 border p-4 text-[12px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4" /><div><strong>{application.status === "approved" ? "Application approved" : "Application rejected"}</strong><p className="mt-1 text-[11px] opacity-80">{application.reviewedBy ? `Decision by ${application.reviewedBy} on ${formatDate(application.reviewedAt ?? application.updatedAt)}.` : "Decision recorded."} {application.reviewNotificationStatus === "sent" ? "The owner was notified by email." : application.reviewNotificationStatus === "failed" ? "The decision was saved, but the email failed." : "The owner notification is not configured."}</p></div></div> : null}
-          {application.status === "approved" ? <ProvisioningCard application={application} busy={busyProvisioning} onProvision={onProvision} /> : null}
+          {finalized ? <div className={cn("flex items-start gap-3 border p-4 text-[12px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4" /><div><strong>{application.status === "approved" ? "Application approved" : "Application rejected"}</strong><p className="mt-1 text-[11px] opacity-80">{application.reviewedBy ? `Decision by ${application.reviewedBy} on ${formatDate(application.reviewedAt ?? application.updatedAt)}.` : "Decision recorded."} {application.reviewNotificationStatus === "sent" ? "The owner was notified by email." : application.reviewNotificationStatus === "failed" ? "The decision was saved, but the email failed." : "The owner notification is not configured."} {application.status === "rejected" ? " This decision is final; the applicant can submit a new application if circumstances change." : ""}</p></div></div> : null}
+          {application.status === "approved" ? <ProvisioningCard application={application} busy={busyProvisioning} refreshing={refreshing} onProvision={onProvision} onRefresh={onRefresh} /> : null}
         </div>
 
         <aside className="space-y-5 border-t border-line pt-5 xl:border-s xl:border-t-0 xl:ps-5 xl:pt-0">
@@ -299,7 +317,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
   );
 }
 
-function ProvisioningCard({ application, busy, onProvision }: { application: PlatformGymApplication; busy: boolean; onProvision: () => void }) {
+function ProvisioningCard({ application, busy, refreshing, onProvision, onRefresh }: { application: PlatformGymApplication; busy: boolean; refreshing: boolean; onProvision: () => void; onRefresh: () => void }) {
   const status = application.provisioningStatus ?? "not_started";
   if (status === "completed") {
     return <div className="mt-5 flex items-start gap-3 border border-success/30 bg-success-bg p-4 text-[12px] text-success"><CheckCircle2 className="mt-0.5 size-4" /><div><strong>Workspace provisioned</strong><p className="mt-1 text-[11px] opacity-80">The first branch and owner invitation are ready. The gym can now sign in after accepting the Clerk invitation.</p></div></div>;
@@ -308,7 +326,7 @@ function ProvisioningCard({ application, busy, onProvision }: { application: Pla
     return <div className="mt-5 border border-danger/30 bg-danger-bg p-4 text-[12px] text-danger"><div className="flex items-start gap-3"><X className="mt-0.5 size-4" /><div><strong>Provisioning needs attention</strong><p className="mt-1 text-[11px] opacity-80">{application.provisioningError ?? "The workspace was not completed."}</p></div></div><Button className="mt-4" variant="danger" size="sm" onClick={onProvision} loading={busy}>Retry provisioning</Button></div>;
   }
   if (status === "in_progress") {
-    return <div className="mt-5 border border-warning/30 bg-warning-bg p-4 text-[12px] text-warning" role="status"><div className="flex items-start gap-3"><Clock3 className="mt-0.5 size-4" /><div><strong>Provisioning in progress</strong><p className="mt-1 text-[11px] opacity-80">The workspace request is being completed. Refresh this application in a moment before trying again.</p></div></div></div>;
+    return <div className="mt-5 border border-warning/30 bg-warning-bg p-4 text-[12px] text-warning" role="status"><div className="flex items-start gap-3"><Clock3 className="mt-0.5 size-4" /><div><strong>Provisioning in progress</strong><p className="mt-1 text-[11px] opacity-80">The workspace request is being completed. Refresh this application in a moment before trying again.</p></div></div><Button className="mt-4" variant="secondary" size="sm" onClick={onRefresh} loading={refreshing} disabled={busy}><RefreshCcw /> Refresh status</Button></div>;
   }
   return <div className="mt-5 border border-info/30 bg-info-bg p-4 text-[12px] text-info"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4" /><div><strong>Ready to provision</strong><p className="mt-1 text-[11px] opacity-80">Creates the gym workspace, assigns the {application.plan} plan, and emails an owner invitation.</p></div></div><Button className="mt-4" variant="signal" size="sm" onClick={onProvision} loading={busy}><Check />Provision gym workspace</Button></div>;
 }

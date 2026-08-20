@@ -7,10 +7,16 @@ export const current = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
 
-    return await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_auth_subject", (q) => q.eq("authSubject", identity.subject))
       .unique();
+
+    // Keep inactive accounts from receiving a raw user projection. The
+    // identity routing query applies the same boundary; this lower-level
+    // endpoint must not become a way to recover a former role or status.
+    if (!user || user.status === "invited" || user.status === "deactivated") return null;
+    return user;
   },
 });
 

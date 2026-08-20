@@ -188,7 +188,7 @@ test.describe("RIVET platform administration", () => {
     await page.goto("/platform/gyms/forge-fitness");
 
     await expect(page.getByRole("heading", { name: "Forge Fitness Club" })).toBeVisible();
-    await expect(page.getByText("Omar Al-Khatib")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Omar Al-Khatib", exact: true })).toBeVisible();
     await expect(page.getByText("Not configured").first()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Dana Al-Khatib");
     await expect(page.locator("body")).not.toContainText("Visa");
@@ -214,5 +214,44 @@ test.describe("RIVET platform administration", () => {
     await page.getByRole("button", { name: /Cancel changes/i }).click();
     await expect(page.getByRole("status")).toHaveCount(0);
     await expect(page.getByLabel("Subscription status")).toContainText("Active");
+  });
+
+  test("suppresses a suspended gym from public surfaces while retaining the authorized platform record", async ({ page }) => {
+    await page.goto("/login/admin");
+    await page.getByRole("button", { name: /Open platform console/i }).click();
+    await page.goto("/platform/gyms/forge-fitness");
+
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Suspend", exact: true }).click();
+    await page.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
+    await page.getByRole("button", { name: "Save controls", exact: true }).click();
+
+    await expect(page.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+    await expect(page.getByText(/Updated Forge Fitness Club subscription: active → suspended/i)).toBeVisible();
+
+    // The authorized platform directory retains the tenant for audit and
+    // restoration, even though its public listing is now suppressed.
+    // Keep this as an in-app navigation: the mock adapter intentionally holds
+    // the audited mutation in its browser session, just like the realtime
+    // Convex client holds it in its live query cache.
+    await page.getByRole("link", { name: "All gyms", exact: true }).click();
+    await expect(page).toHaveURL(/\/platform\/gyms$/);
+    const suspendedCard = page.locator("article").filter({ hasText: "Forge Fitness Club" });
+    await expect(suspendedCard).toBeVisible();
+    await expect(suspendedCard.getByLabel("Subscription status: Suspended")).toBeVisible();
+    await expect(suspendedCard.getByLabel("Public directory status: Suppressed")).toBeVisible();
+
+    // Public discovery and the landing-page network section must both consume
+    // the filtered marketplace projection, never the platform tenant array.
+    await page.getByRole("link", { name: /Public site/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("link", { name: "Find a gym", exact: true }).first().click();
+    await expect(page).toHaveURL(/\/customer\/discover$/);
+    await expect(page.getByRole("heading", { name: "Find a gym", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
+
+    await page.locator('a[href="/"]').first().click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
   });
 });

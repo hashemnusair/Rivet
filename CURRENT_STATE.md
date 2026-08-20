@@ -1,5 +1,89 @@
 # GymOS / RIVET current implementation state
 
+## Platform admin hardening pass — 20 August 2026 (working-tree update)
+
+This additive entry records the platform-operations hardening completed after
+the earlier platform-console work. It preserves the historical release notes
+below and makes no deployment, Production-verification, or merge claim.
+
+### Subscription, tenant, and authorization integrity
+
+- Platform subscription controls now use reason-gated lifecycle updates with
+  server validation for status, plan, trial/started/current-period/cancelled
+  dates, future trial ends, date ordering, and configured-plan boundaries.
+  Suspended, overdue, and cancelled states force the public listing hidden;
+  only active/trial tenants can remain discoverable.
+- For a linked tenant, the organization and its subscription entitlement are
+  authoritative. A platform change synchronizes the organization lifecycle,
+  subscription plan, entitlement catalog/modules, and directory projection;
+  before/after snapshots, actor, reason, and correlation ID are retained in an
+  immutable platform audit event. Stale directory lifecycle values cannot
+  silently overwrite the tenant record.
+- Directory-only, mismatched, unprovisioned, or otherwise fake legacy rows are
+  retained privately for audit and cleanup, but are not treated as tenants:
+  lifecycle/plan mutation is unavailable, the safe cleanup action is hide, and
+  their public listing is suppressed. Suspended/overdue/cancelled rows remain
+  visible to platform operators for recovery or cleanup only.
+- Public marketplace projections, direct gym detail, and trial creation now
+  require the persisted public/listing and operational tenant/branch boundary;
+  private, suspended, overdue, cancelled, unprovisioned, and inactive-branch
+  records do not leak through direct routes or member discovery.
+- Platform authorization is identity-backed: the Clerk/RIVET identity record
+  must be an active platform administrator, and server-side platform guards
+  remain authoritative. Deactivated/invited users and suspended/cancelled
+  tenant memberships are not advertised as routable access; client session
+  flags cannot grant platform access.
+
+### Platform surfaces hardened
+
+- Overview uses the complete platform snapshot/tenant directory rather than
+  the independently updating public marketplace stream, and invoice queue
+  links preserve the invoice ID for ledger deep-linking.
+- The platform search combobox now supports active-option highlighting,
+  ArrowUp/ArrowDown/Home/End navigation, Enter selection, and correct
+  `aria-selected`/`aria-activedescendant` semantics. Applications, billing,
+  and support react to same-route query changes from header search. Application
+  initial reads are sequence-guarded against live-subscription races; review,
+  provisioning, and stale/error states retain actionable recovery paths.
+- Billing focuses and scrolls to an invoice only after its row is loaded;
+  invoice entry rejects malformed, scientific-notation, zero-rounding, and
+  unsafe values before converting to a positive safe minor-unit integer.
+  Support now has explicit loading/empty/search/deep-link states and keeps
+  persisted operator actions visible after local updates.
+- Platform billing integrity is JOD-only for platform totals: eligible
+  invoices are resolved from explicit/legacy labels, mismatches are excluded
+  from monetary totals and counted, and the UI remains a manual ledger rather
+  than implying card charging, settlement, or payout capability.
+
+### Final local validation
+
+- Mock/live adapter parity and focused platform regression coverage are in
+  place for subscription synchronization, authorization, directory privacy,
+  billing currency classification, platform navigation/search, applications,
+  billing, support, and gym detail.
+- Final root gates: **116 test files / 626 tests** passed; both TypeScript
+  checks, lint, and the production build passed. Playwright recorded **28
+  passed / 14 staged-credential tests skipped**.
+- In-app browser validation covered a reason-gated Pro → Growth plan change
+  with live MRR refresh and an audit toast, unprovisioned cleanup-only
+  controls, keyboard global search, and zero page errors. The only observed
+  console warning was the expected Clerk development warning.
+
+### External provider limitations and release follow-up
+
+- External SaaS billing/card charging, payout, settlement, and provider-backed
+  storage remain unavailable; the platform surface intentionally exposes
+  manual JOD ledger behavior and explicit `Not configured` states.
+- Clerk remains the external identity/invitation provider; invitation flows
+  have a protected implementation, while fresh/existing-owner credentialed
+  acceptance remains release follow-up. Resend/WhatsApp/SMS delivery still
+  depends on configured external credentials, templates, allowlists, and
+  staging acceptance; operational messages remain suppressed where those
+  boundaries are not enabled.
+- This pass is a local working-tree update only. No Convex or Vercel deploy,
+  Production product-data mutation, seed/import/restore/delete operation, or
+  external-provider activation is claimed here.
+
 ## Five-pillar release closure status — 20 August 2026
 
 - The closure attempt started from `7a1237dc719bfb4c767aa824ca73cf93410c2d8d`, which matched `origin/main`; this is a subsequent direct-main documentation update. The Five Pillars application/release commit remains `1e01163d25cc6f9123001329877a45e33e5670ea`, and the hand-written `arabic-localisation` branch remains separate at `f98e324`.

@@ -502,6 +502,14 @@ export interface Organization {
   name: string;
   slug: string;
   subscriptionPlan?: "Starter" | "Growth" | "Pro";
+  /** Platform subscription state mirrored by the preview adapter. */
+  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  subscriptionStartedAt?: ISODateTime;
+  trialEndsAt?: ISODateTime;
+  currentPeriodEndsAt?: ISODateTime;
+  cancelledAt?: ISODateTime;
+  subscriptionStatusReason?: string;
+  updatedAt?: ISODateTime;
   currency: string;
   timezone: string;
   locale: string;
@@ -510,7 +518,6 @@ export interface Organization {
   receiptPrefix: string;
   nextReceiptNumber: number;
   receiptFooter: string;
-  status: "active" | "suspended";
   brand?: BrandKit;
 }
 

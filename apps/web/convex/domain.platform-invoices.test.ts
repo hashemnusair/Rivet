@@ -107,6 +107,7 @@ describe("exported Convex platform invoice boundaries", () => {
     };
 
     await expectCode(staff.mutation(api.domain.mutate, operation("platform.invoice.create", input)), "FORBIDDEN");
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.invoice.create", { ...input, currency: "USD" })), "VALIDATION_ERROR");
     const draft = await platform.mutation(api.domain.mutate, operation("platform.invoice.create", input)) as { id: string; status: string };
     expect(draft).toMatchObject({ id: expect.stringMatching(/^INV-/), status: "draft" });
 
@@ -158,5 +159,34 @@ describe("exported Convex platform invoice boundaries", () => {
     const rows = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect());
     expect(rows).toHaveLength(1);
     expect(rows[0]?.data).toMatchObject({ id: draft.id, status: "void" });
+  });
+
+  it("rejects invoices when the directory row and target organization disagree", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    await t.run(async (ctx) => {
+      const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique();
+      if (!listing) throw new Error("seed marketplace listing missing");
+      const otherOrganization = await ctx.db.insert("organizations", {
+        publicId: "org-other-invoice",
+        name: "Other Invoice Gym",
+        slug: "other-invoice-gym",
+        status: "active",
+        timezone: "Asia/Amman",
+        currency: "JOD",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(listing._id, { organizationId: otherOrganization, updatedAt: Date.now() });
+    });
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.invoice.create", {
+      gymId: "invoice-gym",
+      amountMinor: 149_000,
+      currency: "JOD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })), "CONFIGURATION_ERROR");
   });
 });

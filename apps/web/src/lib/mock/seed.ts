@@ -1905,6 +1905,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
       nextReceiptNumber: receiptCounter,
       receiptFooter: "Thank you for training with Forge. Follow @forgefitness.jo",
       status: "active",
+      subscriptionPlan: "Pro",
     },
     brand: {
       organizationId: ORG_ID,
@@ -1944,8 +1945,9 @@ export function buildSeed(now: Date = new Date()): MockDb {
     organizationEntitlements: {
       organizationId: ORG_ID,
       catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
-      entitledModules: entitledModulesForPlan(),
-      source: "legacy_default",
+      subscriptionPlan: "Pro",
+      entitledModules: entitledModulesForPlan("Pro"),
+      source: "subscription_plan",
       updatedAt: iso(now),
     },
     workspaceModulePreferences: {
