@@ -16,7 +16,7 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 ## Current release posture
 
 - The application is a release candidate, not a blank scaffold.
-- Main implementation commit `492f93312a59f5618b0c09e345cce46cef2a34f9` is deployed to Vercel Production; GitHub Actions run `32387977071` passed and the Vercel status attached to that commit is `READY` (`VDB56W6feAsKFn5MYy9v97EX5V5p`).
+- Main application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is deployed to Vercel Production; GitHub Actions run `32391568593` passed and the matching Vercel status is `READY` (`ER5WksGThgB9BiBupZNZAxUsig85`).
 - The intended Convex Production target is `descriptive-meerkat-589`. The available local `CONVEX_DEPLOY_KEY` selects Development `fleet-otter-621`; the required guarded dry run targeted Development, passed schema validation, and reported no deleted indexes. The renewal safety gate has not been verified in Production and no deploy was attempted with the wrong context.
 - Local gates pass: frontend and Convex typecheck, zero-warning lint, 557 tests across 109 files, the 46-route production build, 27 Playwright passes with 14 credential-gated skips, and diff checks. Credential-complete staging remains gated on the documented role storage states.
 - No authenticated Production GymOS or Convex dashboard session was available. An unauthenticated `/operations` request redirected to `/login` without browser console errors; authenticated route, settings, report drill-down, responsive, and Production data-audit checks remain pending.
@@ -427,7 +427,7 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 - [ ] Confirm the selected deployment is Production, not the linked development deployment.
 - [ ] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
-- [ ] Confirm the current safety-gated schema/functions are deployed for commit `492f933` or later.
+- [ ] Confirm the current safety-gated schema/functions are deployed for commit `1e01163` or later.
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.

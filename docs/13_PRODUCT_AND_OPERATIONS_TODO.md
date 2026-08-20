@@ -8,8 +8,8 @@ Historical release sections below remain for traceability. The categories here a
 
 ### Release blockers
 
-- [x] Land the Five Pillars implementation and explicit renewal opt-in gate on `main` at `492f93312a59f5618b0c09e345cce46cef2a34f9`.
-- [x] Pass the exact-commit GitHub Actions run `32387977071` and matching Vercel Production deployment status `VDB56W6feAsKFn5MYy9v97EX5V5p`.
+- [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
+- [x] Pass the exact-commit GitHub Actions run `32391568593` and matching Vercel Production deployment status `ER5WksGThgB9BiBupZNZAxUsig85`.
 - [ ] Deploy the safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The only available local deployment context targets Development `fleet-otter-621`; its guarded dry run passed schema validation with no deleted indexes, so no Production deploy was attempted.
 
 ### Staging or Production verification
@@ -518,8 +518,8 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
 
-- Status: **Frontend alignment is verified for `492f933`; the renewal-gated Convex Production deployment and authenticated verification remain blocked by missing Production context/session access**.
-- Evidence: GitHub Actions run `32387977071` passed for `492f93312a59f5618b0c09e345cce46cef2a34f9`, and Vercel status `VDB56W6feAsKFn5MYy9v97EX5V5p` is `READY` for that commit. The required guarded Convex dry run targeted Development `fleet-otter-621`, not Production `descriptive-meerkat-589`, and reported no deleted indexes with schema validation complete. No Production deploy was attempted through the wrong context.
+- Status: **Frontend alignment is verified for `1e01163`; the renewal-gated Convex Production deployment and authenticated verification remain blocked by missing Production context/session access**.
+- Evidence: GitHub Actions run `32391568593` passed for `1e01163d25cc6f9123001329877a45e33e5670ea`, and Vercel status `ER5WksGThgB9BiBupZNZAxUsig85` is `READY` for that commit. The required guarded Convex dry run targeted Development `fleet-otter-621`, not Production `descriptive-meerkat-589`, and reported no deleted indexes with schema validation complete. No Production deploy was attempted through the wrong context.
 - Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
 - Fix/acceptance: obtain the correct Production deployment context, rerun the required dry run and deploy through `pnpm convex:deploy`, run the read-only health/audit checks, and record exact target/commit evidence. Never seed Production as a shortcut.
 
