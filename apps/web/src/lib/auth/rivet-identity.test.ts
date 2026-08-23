@@ -4,6 +4,7 @@ import { DEMO_IDENTITY, destinationFor, type RivetIdentity } from "./rivet-ident
 const baseIdentity: RivetIdentity = {
   status: "ready",
   platformAdmin: false,
+  gymAccessUnavailable: false,
   memberships: [],
 };
 
@@ -15,6 +16,7 @@ describe("destinationFor", () => {
       fullName: "Omar Al-Khatib",
       email: "omar@forgefitness.jo",
       platformAdmin: false,
+      gymAccessUnavailable: false,
       memberships: [],
     });
   });
@@ -71,5 +73,9 @@ describe("destinationFor", () => {
 
   it("uses the member dashboard only when the account has no elevated role", () => {
     expect(destinationFor(baseIdentity)).toEqual({ area: "member", href: "/customer/my-gyms" });
+  });
+
+  it("does not misclassify a gym account with unavailable access as a member", () => {
+    expect(destinationFor({ ...baseIdentity, gymAccessUnavailable: true })).toEqual({ area: "unavailable", href: "/login" });
   });
 });

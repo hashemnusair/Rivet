@@ -250,7 +250,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const elevatedDestination = protectedMemberRoute
     ? platformAdminSignedIn || identity.platformAdmin
       ? "/platform"
-      : identityDestination?.area === "gym"
+      : identityDestination && identityDestination.area !== "member"
         ? identityDestination.href
         : mockGymRole
           ? mockGymRole === "receptionist" ? "/reception" : "/dashboard"

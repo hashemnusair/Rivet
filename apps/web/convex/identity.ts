@@ -44,6 +44,7 @@ export const current = query({
       .collect();
 
     const memberships = [];
+    let gymAccessUnavailable = false;
     for (const row of rows) {
       if (!row.active) continue;
       const organization = await ctx.db.get(row.organizationId);
@@ -51,7 +52,10 @@ export const current = query({
       // tenant itself must still be operational. Suspended/cancelled gyms
       // remain in storage for history and billing, but must disappear from
       // the identity projection so the client cannot advertise a dead route.
-      if (!organization || !ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status)) continue;
+      if (!organization || !ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status)) {
+        gymAccessUnavailable = true;
+        continue;
+      }
 
       const branches = [];
       for (const branchId of row.branchIds) {
@@ -77,6 +81,7 @@ export const current = query({
         fullName: user.fullName,
         platformAdmin: user.platformAdmin,
       },
+      gymAccessUnavailable,
       memberships,
     };
   },

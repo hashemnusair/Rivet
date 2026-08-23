@@ -29,6 +29,8 @@ export interface RivetIdentity {
   email?: string;
   fullName?: string;
   platformAdmin: boolean;
+  /** The account has an active gym-team row, but that gym cannot be entered. */
+  gymAccessUnavailable: boolean;
   memberships: RivetMembership[];
 }
 
@@ -53,9 +55,10 @@ export const DEMO_IDENTITY: RivetIdentity = {
   // administrator. Keep this false so customer and gym preview routes cannot
   // be elevated merely because they share the deterministic demo identity.
   platformAdmin: false,
+  gymAccessUnavailable: false,
   memberships: [],
 };
-const IdentityContext = createContext<RivetIdentity>({ status: "loading", platformAdmin: false, memberships: [] });
+const IdentityContext = createContext<RivetIdentity>({ status: "loading", platformAdmin: false, gymAccessUnavailable: false, memberships: [] });
 
 /**
  * The branch below is on module-level constants, never on state, so the
@@ -69,7 +72,7 @@ export function RivetIdentityProvider({ children }: { children: ReactNode }) {
     return <IdentityContext.Provider value={DEMO_IDENTITY}>{children}</IdentityContext.Provider>;
   }
   if (!CONVEX_ENABLED) {
-    return <IdentityContext.Provider value={{ status: "anonymous", platformAdmin: false, memberships: [] }}>{children}</IdentityContext.Provider>;
+    return <IdentityContext.Provider value={{ status: "anonymous", platformAdmin: false, gymAccessUnavailable: false, memberships: [] }}>{children}</IdentityContext.Provider>;
   }
   return <ConvexIdentity>{children}</ConvexIdentity>;
 }
@@ -122,29 +125,31 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
 
   let value: RivetIdentity;
   if (!clerkLoaded || authLoading) {
-    value = { status: "loading", platformAdmin: false, memberships: [] };
+    value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else if (!clerkSignedIn) {
-    value = { status: "anonymous", platformAdmin: false, memberships: [] };
+    value = { status: "anonymous", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else if (!isAuthenticated || sync.status === "idle" || sync.status === "syncing") {
-    value = { status: "loading", platformAdmin: false, memberships: [] };
+    value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else if (sync.status === "error") {
     value = {
       status: "error",
       errorMessage: sync.message,
       platformAdmin: false,
+      gymAccessUnavailable: false,
       memberships: [],
     };
   } else if (result === undefined) {
-    value = { status: "loading", platformAdmin: false, memberships: [] };
+    value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else if (result === null) {
     value = {
       status: "error",
       errorMessage: "RIVET could not verify this account with Convex.",
       platformAdmin: false,
+      gymAccessUnavailable: false,
       memberships: [],
     };
   } else if (result.pending || !result.user) {
-    value = { status: "pending", platformAdmin: false, memberships: [] };
+    value = { status: "pending", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else {
     value = {
       status: "ready",
@@ -152,6 +157,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
       email: result.user.email,
       fullName: result.user.fullName,
       platformAdmin: result.user.platformAdmin,
+      gymAccessUnavailable: result.gymAccessUnavailable,
       memberships: result.memberships.map((m) => ({
         organizationId: m.organizationId,
         organizationName: m.organizationName,
@@ -169,7 +175,7 @@ export function useRivetIdentity() {
   return useContext(IdentityContext);
 }
 
-export type Destination = { area: "platform" | "gym" | "member"; href: string; role?: RoleKey };
+export type Destination = { area: "platform" | "gym" | "member" | "unavailable"; href: string; role?: RoleKey };
 
 /**
  * Where this person belongs. Platform administration outranks gym staff, which
@@ -187,6 +193,8 @@ export function destinationFor(identity: RivetIdentity): Destination {
       role: membership.role,
     };
   }
+
+  if (identity.gymAccessUnavailable) return { area: "unavailable", href: "/login" };
 
   return { area: "member", href: "/customer/my-gyms" };
 }
