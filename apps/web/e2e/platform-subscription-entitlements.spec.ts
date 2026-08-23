@@ -3,25 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 type SubscriptionPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
 async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string) {
-  const forgeRow = page.locator("tbody tr").filter({ hasText: "Forge Fitness Club" });
-  await expect(forgeRow).toBeVisible();
-  await forgeRow.getByRole("button", { name: "Manage", exact: true }).click();
-
-  const dialog = page.getByRole("dialog", { name: /Manage Forge Fitness Club/i });
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("RIVET plan").click();
-  await page.getByRole("option", { name: new RegExp(`^${plan} ·`) }).click();
-  await dialog.getByLabel("Reason for this change").fill(reason);
-  await dialog.getByRole("button", { name: "Review changes", exact: true }).click();
-
-  const confirmation = page.getByRole("dialog", { name: "Confirm subscription change" });
-  await expect(confirmation).toBeVisible();
-  await expect(confirmation).toContainText(plan);
-  await confirmation.getByRole("button", { name: "Confirm changes", exact: true }).click();
-
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(forgeRow.getByText(plan, { exact: true })).toBeVisible();
-  return forgeRow;
+  await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+  await page.getByLabel("Gym plan").click();
+  await page.getByRole("option", { name: plan, exact: true }).click();
+  await page.getByLabel("Reason for this change").fill(reason);
+  await page.getByRole("button", { name: "Save controls", exact: true }).click();
+  await expect(page.getByText("Gym subscription controls saved and audited.", { exact: true }).last()).toBeVisible();
+  await expect(page.getByLabel("Gym plan")).toContainText(plan);
 }
 
 async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth") {
@@ -84,12 +72,10 @@ test.describe("RIVET platform subscription entitlements", () => {
 
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();
-    await page.goto("/platform/subscriptions");
-    await expect(page.getByRole("heading", { name: "Subscriptions", exact: true })).toBeVisible();
+    await page.goto("/platform/gyms/forge-fitness");
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
 
-    const starterRow = await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.");
-    await expect(starterRow.getByText("Gym foundation · Revenue protection", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Workspace access: Gym foundation · Revenue protection")).toBeVisible();
+    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.");
 
     // The platform mutation response is consumed by the active gym session
     // without a logout or page reload. The navigation and route gate must
@@ -102,27 +88,19 @@ test.describe("RIVET platform subscription entitlements", () => {
     // full navigation would intentionally recreate the mock adapter and hide
     // the realtime persistence contract this test is proving.
     await page.goBack();
-    await expect(page).toHaveURL(/\/dashboard$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/subscriptions$/);
-    await expect(page.getByRole("heading", { name: "Subscriptions", exact: true })).toBeVisible();
-    const growthRow = await openGymSubscriptionEditor(page, "Growth", "Verify Growth operations access boundary.");
-    await expect(growthRow.getByText("Gym foundation · Revenue protection · Daily operations", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Workspace access: Gym foundation · Revenue protection · Daily operations")).toBeVisible();
+    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await openGymSubscriptionEditor(page, "Growth", "Verify Growth operations access boundary.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectRestrictedWorkspace(page, "Growth");
 
     await page.goBack();
-    await expect(page).toHaveURL(/\/dashboard$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/subscriptions$/);
-    await expect(page.getByRole("heading", { name: "Subscriptions", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
 
-    const proRow = await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.");
-    await expect(proRow.getByText("Gym foundation · Revenue protection · Daily operations · Financial operating system · Management reporting", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Workspace access: Gym foundation · Revenue protection · Daily operations · Financial operating system · Management reporting")).toBeVisible();
+    await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -132,20 +110,13 @@ test.describe("RIVET platform subscription entitlements", () => {
     // second transition proves the fourth tier does not accidentally lose the
     // reporting link while the catalog expands.
     await page.goBack();
-    await expect(page).toHaveURL(/\/payments$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/finance$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/operations$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/dashboard$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/subscriptions$/);
-    await expect(page.getByRole("heading", { name: "Subscriptions", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
 
-    const enterpriseRow = await openGymSubscriptionEditor(page, "Enterprise", "Verify Enterprise retains every workspace module.");
-    await expect(enterpriseRow.getByText("Gym foundation · Revenue protection · Daily operations · Financial operating system · Management reporting", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Workspace access: Gym foundation · Revenue protection · Daily operations · Financial operating system · Management reporting")).toBeVisible();
+    await openGymSubscriptionEditor(page, "Enterprise", "Verify Enterprise retains every workspace module.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);

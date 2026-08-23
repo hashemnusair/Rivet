@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformGymDetail } from "@/lib/api/GymOSApi";
-import GymAdminDetail, { validateSubscriptionDraft } from "./gym-admin-detail";
+import GymAdminDetail from "./gym-admin-detail";
 
 const state = vi.hoisted(() => ({
   query: {
@@ -12,9 +13,12 @@ const state = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
   mutate: vi.fn(),
-  mutationFactory: undefined as unknown,
   invalidate: vi.fn(async () => undefined),
-  api: { updatePlatformGym: vi.fn() },
+  api: { updatePlatformGym: vi.fn(), archivePlatformGym: vi.fn() },
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
@@ -23,9 +27,14 @@ vi.mock("@/lib/hooks/use-realtime-api", () => ({
 
 vi.mock("@/lib/hooks/use-api", () => ({
   useInvalidate: () => state.invalidate,
-  useApiMutation: (factory: unknown) => {
-    state.mutationFactory = factory;
-    return { mutate: state.mutate, isPending: false };
+  useApiMutation: (factory: (api: typeof state.api, variables: unknown) => Promise<unknown>) => {
+    return {
+      mutate: (variables: unknown) => {
+        state.mutate(variables);
+        void factory(state.api, variables);
+      },
+      isPending: false,
+    };
   },
 }));
 
@@ -52,9 +61,10 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
     },
     subscription: {
       plan: available("Growth"),
+      billingInterval: available("monthly"),
       status: available("active"),
       startedAt: available("2026-01-01T00:00:00.000Z"),
-      trialEndsAt: { state: "not_configured" },
+      trialEndsAt: available("2026-01-31T00:00:00.000Z"),
       currentPeriodEndsAt: available("2026-02-01T00:00:00.000Z"),
       cancelledAt: { state: "not_configured" },
       statusReason: available("Initial subscription"),
@@ -73,17 +83,24 @@ describe("Gym admin detail subscription controls", () => {
     state.mutate.mockReset();
     state.invalidate.mockClear();
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
-    state.mutationFactory = undefined;
+    state.api.archivePlatformGym.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", { configurable: true, value: () => false });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: () => undefined });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", { configurable: true, value: () => undefined });
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
   });
 
-  it("mirrors backend lifecycle validation for malformed, future, and ordered dates", () => {
-    const base = detail();
-    const now = Date.parse("2026-08-20T12:00:00.000Z");
-    expect(validateSubscriptionDraft(base, { status: "trial", trialEndsAt: "2026-02-31", subscriptionStartedAt: "2026-01-01", currentPeriodEndsAt: "2026-03-01", cancelledAt: "" }, now)).toMatchObject({ trialEndsAt: "Enter a valid date" });
-    expect(validateSubscriptionDraft(base, { status: "trial", trialEndsAt: "2026-08-20", subscriptionStartedAt: "2026-01-01", currentPeriodEndsAt: "2026-09-01", cancelledAt: "" }, now)).toMatchObject({ trialEndsAt: "Must be in the future" });
-    expect(validateSubscriptionDraft(base, { status: "trial", trialEndsAt: "2026-09-09", subscriptionStartedAt: "2026-09-10", currentPeriodEndsAt: "2026-09-30", cancelledAt: "" }, now)).toMatchObject({ trialEndsAt: "Must be on or after the start date" });
-    expect(validateSubscriptionDraft(base, { status: "active", trialEndsAt: "", subscriptionStartedAt: "2026-09-10", currentPeriodEndsAt: "2026-09-09", cancelledAt: "" }, now)).toMatchObject({ currentPeriodEndsAt: "Must be on or after the start date" });
-    expect(validateSubscriptionDraft(base, { status: "cancelled", trialEndsAt: "", subscriptionStartedAt: "2026-09-10", currentPeriodEndsAt: "2026-09-30", cancelledAt: "2026-09-09" }, now)).toMatchObject({ cancelledAt: "Must be on or after the start date" });
+  it("renders server-owned lifecycle dates without editable date controls", () => {
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    expect(screen.queryByLabelText("Trial ends")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Subscription started")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Current period ends")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Cancelled on")).not.toBeInTheDocument();
+    expect(screen.getByText(/Subscription dates are server-owned/)).toBeInTheDocument();
+    expect(screen.getByText("Trial ends")).toBeInTheDocument();
+    expect(screen.getByText("Period ends")).toBeInTheDocument();
+    expect(screen.getAllByText("Billing cadence").length).toBeGreaterThanOrEqual(2);
   });
 
   it("keeps an unprovisioned directory row cleanup-only", () => {
@@ -96,25 +113,9 @@ describe("Gym admin detail subscription controls", () => {
     expect(screen.getByText("Already suppressed because this directory row is not provisioned.")).toBeInTheDocument();
     expect(screen.getByText(/no save is available for cleanup-only rows/i)).toBeInTheDocument();
     expect(screen.getAllByRole("combobox").every((control) => (control as HTMLButtonElement).disabled)).toBe(true);
-    expect(screen.getByLabelText("Trial ends")).toBeDisabled();
-    expect(screen.getByLabelText("Subscription started")).toBeDisabled();
-    expect(screen.getByLabelText("Current period ends")).toBeDisabled();
     expect(screen.getByLabelText("Public directory listing")).toBeDisabled();
     expect(screen.getByLabelText("Public directory listing")).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Save controls" })).toBeDisabled();
-  });
-
-  it("shows lifecycle ordering errors inline before calling the API", () => {
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
-    fireEvent.change(screen.getByLabelText("Subscription started"), { target: { value: "2026-09-10" } });
-    fireEvent.change(screen.getByLabelText("Current period ends"), { target: { value: "2026-09-09" } });
-    fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Correcting lifecycle dates." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
-
-    expect(screen.getByText("Must be on or after the start date")).toBeInTheDocument();
-    expect(state.mutate).not.toHaveBeenCalled();
   });
 
   it("suppresses the public listing when an operator suspends a gym", () => {
@@ -150,10 +151,6 @@ describe("Gym admin detail subscription controls", () => {
   });
 
   it("sends an explicit hidden listing when saving a suspension", () => {
-    state.mutate.mockImplementation(() => {
-      const factory = state.mutationFactory as ((api: typeof state.api) => Promise<unknown>);
-      return factory(state.api);
-    });
     render(<GymAdminDetail gymId="gym-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
@@ -163,20 +160,48 @@ describe("Gym admin detail subscription controls", () => {
     expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", status: "suspended", isPublic: false, reason: "Account requested a temporary pause." }));
   });
 
+  it("submits an annual billing cadence change with the audited controls", async () => {
+    const user = userEvent.setup();
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    await user.click(screen.getByRole("combobox", { name: "Billing cadence" }));
+    await user.click(screen.getByRole("option", { name: /Annual/ }));
+    await user.type(screen.getByPlaceholderText("Required for the immutable platform audit trail"), "Approved annual billing.");
+    await user.click(screen.getByRole("button", { name: "Save controls" }));
+
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", billingInterval: "annual", reason: "Approved annual billing." }));
+  });
+
   it("omits a historical cancellation date when reactivating a cancelled gym", () => {
     const cancelled = detail({ status: "cancelled", isPublic: false });
     cancelled.subscription.cancelledAt = available("2026-08-01T00:00:00.000Z");
     state.query = { data: cancelled, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
-    state.mutate.mockImplementation(() => {
-      const factory = state.mutationFactory as ((api: typeof state.api) => Promise<unknown>);
-      return factory(state.api);
-    });
     render(<GymAdminDetail gymId="gym-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
     fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Reactivated after billing review." } });
     fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
 
-    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ status: "active", cancelledAt: undefined, reason: "Reactivated after billing review." }));
+    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input).toMatchObject({ status: "active", reason: "Reactivated after billing review." });
+    expect(input).not.toHaveProperty("cancelledAt");
+  });
+
+  it("requires an exact gym name and reason before archiving", () => {
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete gym" })[0]!);
+    const confirm = () => screen.getAllByRole("button", { name: "Delete gym" })[1]!;
+    expect(confirm()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge" } });
+    fireEvent.change(screen.getByLabelText("Reason for deletion"), { target: { value: "Customer requested account closure." } });
+    expect(confirm()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });
+    expect(confirm()).toBeEnabled();
+    fireEvent.click(confirm());
+
+    expect(state.api.archivePlatformGym).toHaveBeenCalledWith({ gymId: "gym-1", confirmation: "Forge Fitness", reason: "Customer requested account closure." });
   });
 });

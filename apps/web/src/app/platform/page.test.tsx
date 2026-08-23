@@ -19,7 +19,10 @@ vi.mock("@/lib/hooks/use-api", () => ({
 
 function snapshot(): PlatformSnapshot {
   return {
-    gyms: [{ id: "tenant-hidden", name: "Suspended Tenant", shortName: "ST", tagline: "", description: "", city: "Amman", areas: [], category: "", audience: "", memberCount: 0, branchCount: 2, fromPriceMinor: 0, amenities: [], accent: "#111111", featured: false, subscriptionStatus: "suspended", rivetPlan: "Growth", joinedAt: "", lastActiveAt: "", monthlyRevenueMinor: 0, isPublic: false, branches: [] }],
+    gyms: [
+      { id: "tenant-live", name: "Live Tenant", shortName: "LT", tagline: "", description: "", city: "Amman", areas: [], category: "", audience: "", memberCount: 0, branchCount: 2, fromPriceMinor: 0, amenities: [], accent: "#222222", featured: false, subscriptionStatus: "active", rivetPlan: "Growth", joinedAt: "", lastActiveAt: "", monthlyRevenueMinor: 0, isPublic: true, isProvisioned: true, branches: [] },
+      { id: "tenant-hidden", name: "Suspended Tenant", shortName: "ST", tagline: "", description: "", city: "Amman", areas: [], category: "", audience: "", memberCount: 0, branchCount: 2, fromPriceMinor: 0, amenities: [], accent: "#111111", featured: false, subscriptionStatus: "suspended", rivetPlan: "Growth", joinedAt: "", lastActiveAt: "", monthlyRevenueMinor: 0, isPublic: false, isProvisioned: false, branches: [] },
+    ],
     bookings: [],
     invoices: [],
     supportCases: [],
@@ -27,7 +30,7 @@ function snapshot(): PlatformSnapshot {
     applications: [],
     auditEvents: [],
     overview: {
-      gymCounts: { trial: 0, active: 0, past_due: 0, suspended: 1, cancelled: 0 },
+      gymCounts: { trial: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 },
       branchCount: 2,
       memberCount: 0,
       activeStaffCount: 0,
@@ -57,12 +60,17 @@ describe("PlatformOverviewPage", () => {
     state.snapshot = snapshot();
   });
 
-  it("uses the complete platform snapshot directory instead of public marketplace rows", () => {
+  it("shows provisioned tenants first and excludes cleanup rows from the active preview", () => {
     render(<PlatformOverviewPage />);
 
-    expect(screen.getByText("Suspended Tenant")).toBeInTheDocument();
+    expect(screen.getByText("Live Tenant")).toBeInTheDocument();
+    expect(screen.queryByText("Suspended Tenant")).not.toBeInTheDocument();
     expect(screen.queryByText("Public Stream Gym")).not.toBeInTheDocument();
-    expect(screen.queryByText("No provisioned gyms are present in the platform directory.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Marketplace views")).not.toBeInTheDocument();
+    expect(screen.queryByText("Historical marketing preference migration")).not.toBeInTheDocument();
+    expect(screen.queryByText("Payment provider: Not configured")).not.toBeInTheDocument();
+    const gymLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("href")?.startsWith("/platform/gyms/") === true);
+    expect(gymLinks.map((link) => link.getAttribute("href"))).toEqual(["/platform/gyms/tenant-live"]);
   });
 
   it("deep-links invoice queue items to their ledger row", () => {

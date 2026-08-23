@@ -5,6 +5,14 @@ import { organizationRole } from "./schema";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 
+function addCalendarMonths(timestamp: number, months: number): number {
+  const source = new Date(timestamp);
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(source.getUTCDate(), lastDay));
+  return target.getTime();
+}
+
 /**
  * Seeds the Forge Fitness demo tenant as real Convex records: the organization,
  * its two Amman branches, the four staff members and the two customers that the
@@ -25,6 +33,8 @@ export const seedDemoTenant = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
+    const seedSubscriptionStartedAt = now - 12 * 86_400_000;
+    const seedCurrentPeriodEndsAt = addCalendarMonths(seedSubscriptionStartedAt, 1);
 
     // --- organization -------------------------------------------------------
     const slug = "forge-fitness";
@@ -36,7 +46,25 @@ export const seedDemoTenant = internalMutation({
     let organizationId: Id<"organizations">;
     if (organization) {
       organizationId = organization._id;
-      await ctx.db.patch(organizationId, { publicId: "10000000-0000-4a00-8a00-000000000001", locale: "en-JO", defaultLanguage: "en", taxRatePercent: 0, receiptPrefix: "RV", nextReceiptNumber: organization.nextReceiptNumber ?? 1001, receiptFooter: "Thank you for training with RIVET.", updatedAt: now });
+      await ctx.db.patch(organizationId, {
+        publicId: "10000000-0000-4a00-8a00-000000000001",
+        locale: "en-JO",
+        defaultLanguage: "en",
+        taxRatePercent: 0,
+        receiptPrefix: "RV",
+        nextReceiptNumber: organization.nextReceiptNumber ?? 1001,
+        receiptFooter: "Thank you for training with RIVET.",
+        // Billing facts are tenant-owned. Repair only fields that are absent
+        // on an existing demo record so a real lifecycle is never reset by a
+        // subsequent seed run.
+        ...(organization.subscriptionPlan === undefined ? { subscriptionPlan: "Pro" as const } : {}),
+        ...(organization.billingInterval === undefined ? { billingInterval: "monthly" as const } : {}),
+        ...(organization.status === "active" && organization.subscriptionStartedAt === undefined ? { subscriptionStartedAt: seedSubscriptionStartedAt } : {}),
+        ...(organization.status === "active" && organization.currentPeriodEndsAt === undefined
+          ? { currentPeriodEndsAt: addCalendarMonths(organization.subscriptionStartedAt ?? seedSubscriptionStartedAt, organization.billingInterval === "annual" ? 12 : 1) }
+          : {}),
+        updatedAt: now,
+      });
     } else {
       organizationId = await ctx.db.insert("organizations", {
         publicId: "10000000-0000-4a00-8a00-000000000001",
@@ -47,6 +75,10 @@ export const seedDemoTenant = internalMutation({
         currency: "JOD",
         locale: "en-JO",
         defaultLanguage: "en",
+        subscriptionPlan: "Pro",
+        billingInterval: "monthly",
+        subscriptionStartedAt: seedSubscriptionStartedAt,
+        currentPeriodEndsAt: seedCurrentPeriodEndsAt,
         taxRatePercent: 0,
         receiptPrefix: "RV",
         nextReceiptNumber: 1001,
@@ -241,17 +273,17 @@ export const seedDemoTenant = internalMutation({
     await upsertDomain("trialBooking", "trial-1001", { gymId: "pulse-lab", branchId: "pulse-dabouq", fullName: "Maya Odeh", email: "maya@example.com", phone: "+962 79 882 1402", preferredDate: "2026-08-02", preferredTime: "18:30", goal: "Build strength with coaching", status: "confirmed", createdAt: "2026-07-31T10:12:00+03:00" });
     await upsertDomain("trialBooking", "trial-1002", { gymId: "forge-fitness", branchId: "forge-abdoun", fullName: "Rami Tahboub", email: "rami@example.com", phone: "+962 78 510 8831", preferredDate: "2026-08-01", preferredTime: "19:00", goal: "Return to training after a long break", status: "requested", createdAt: "2026-07-31T12:35:00+03:00" }, abdoun);
     for (const invoice of [
-      { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
-      { id: "RV-1047", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
-      { id: "RV-1046", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
-      { id: "RV-1045", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
-      { id: "RV-1044", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
+      { id: "RV-1048", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
+      { id: "RV-1047", gymId: "her-house", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
+      { id: "RV-1046", gymId: "forge-fitness", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
+      { id: "RV-1045", gymId: "district-strength", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
+      { id: "RV-1044", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
     ]) await upsertDomain("platformInvoice", invoice.id, invoice);
     for (const supportCase of [
-      { id: "SUP-218", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
-      { id: "SUP-217", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
-      { id: "SUP-216", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
-      { id: "SUP-214", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
+      { id: "SUP-218", gymId: "pulse-lab", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
+      { id: "SUP-217", gymId: "forge-fitness", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
+      { id: "SUP-216", gymId: "district-strength", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
+      { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
     ]) await upsertDomain("supportCase", supportCase.id, supportCase);
     for (const plan of [
       { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },

@@ -1,30 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
+import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { setApiForTests } from "@/lib/api/client";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
-import type { MarketplaceGym } from "@/lib/public/experience-data";
-import {
-  default as SubscriptionsPage,
-  directoryListingAllowed,
-  draftFromGym,
-  reconcileSubscriptionRows,
-  subscriptionProjectionMatches,
-  validateSubscriptionDraft,
-  workspaceFeatureLabels,
-} from "./page";
+import SubscriptionsPage, { workspaceFeatureLabels } from "./page";
 
-const state = vi.hoisted(() => ({
-  gyms: [] as MarketplaceGym[],
-  snapshot: undefined as PlatformSnapshot | undefined,
-}));
+const state = vi.hoisted(() => ({ snapshot: undefined as PlatformSnapshot | undefined }));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
-  usePlatformGyms: () => state.gyms,
   useExperience: () => ({
     platformSnapshot: state.snapshot,
+    saasPlans: state.snapshot?.plans ?? [],
     experienceError: undefined,
     experienceStatus: "ready",
     retryExperience: vi.fn(),
@@ -33,16 +21,10 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const renderCurrentPage = () => <QueryClientProvider client={client}><SubscriptionsPage /></QueryClientProvider>;
-  const view = render(renderCurrentPage());
-  return { ...view, rerenderPage: () => view.rerender(renderCurrentPage()) };
+  return render(<QueryClientProvider client={client}><SubscriptionsPage /></QueryClientProvider>);
 }
 
-function dateFromNow(days: number): string {
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-describe("subscription lifecycle controls", () => {
+describe("pricing and entitlement catalog", () => {
   let api: MockGymOSApi;
 
   beforeEach(async () => {
@@ -53,10 +35,9 @@ describe("subscription lifecycle controls", () => {
     api = new MockGymOSApi();
     setApiForTests(api);
     state.snapshot = await api.getPlatformSnapshot();
-    state.gyms = state.snapshot.gyms;
   });
 
-  it("uses the shared entitlement contract when showing plan consequences", () => {
+  it("uses the shared workspace entitlement contract for all four tiers", () => {
     expect(workspaceFeatureLabels("Starter")).toEqual(["Gym foundation", "Revenue protection"]);
     expect(workspaceFeatureLabels("Growth")).toContain("Daily operations");
     expect(workspaceFeatureLabels("Growth")).not.toContain("Financial operating system");
@@ -64,50 +45,20 @@ describe("subscription lifecycle controls", () => {
     expect(workspaceFeatureLabels("Enterprise")).toEqual(["Gym foundation", "Revenue protection", "Daily operations", "Financial operating system", "Management reporting"]);
   });
 
-  it("keeps a committed subscription projection over a stale snapshot", () => {
-    const current = state.gyms[0]!;
-    const committed = { ...current, rivetPlan: "Growth" as const, subscriptionStatusReason: "Plan upgrade approved." };
-    const stale = { ...current, subscriptionStatusReason: "Old snapshot." };
-    expect(subscriptionProjectionMatches(stale, committed)).toBe(false);
-    const reconciled = reconcileSubscriptionRows([stale], [committed]);
-    expect(reconciled[0]).toMatchObject({ rivetPlan: "Growth", subscriptionStatusReason: "Plan upgrade approved." });
-    expect(subscriptionProjectionMatches(reconciled[0]!, committed)).toBe(true);
+  it("renders one canonical catalog without duplicate gym subscription controls", () => {
+    renderPage();
+    expect(screen.getByRole("heading", { name: "Pricing & entitlements" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Four tiers, one live contract" })).toBeInTheDocument();
+    expect(screen.getAllByText(/branches?/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Manage a gym subscription")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current subscriptions")).not.toBeInTheDocument();
+    expect(screen.getByText("Up to 25 branches")).toBeInTheDocument();
+    expect(screen.getByText("Up to 50,000 members")).toBeInTheDocument();
   });
 
-  it("keeps non-operational gyms hidden even when a stale listing flag is true", () => {
-    expect(directoryListingAllowed("active")).toBe(true);
-    expect(directoryListingAllowed("trial")).toBe(true);
-    expect(directoryListingAllowed("suspended")).toBe(false);
-    expect(directoryListingAllowed("overdue")).toBe(false);
-    expect(directoryListingAllowed("cancelled")).toBe(false);
-
-    const staleSuspended = { ...state.gyms[0]!, subscriptionStatus: "suspended" as const, isPublic: true };
-    expect(draftFromGym(staleSuspended).isPublic).toBe(false);
-
-    const missingVisibility = { ...state.gyms[0]!, isPublic: undefined };
-    expect(draftFromGym(missingVisibility).isPublic).toBe(false);
-
-    const staleActive = { ...state.gyms[0]!, subscriptionStatus: "active" as const, cancelledAt: "2026-08-20T00:00:00.000Z" };
-    expect(draftFromGym(staleActive).cancelledAt).toBe("");
-  });
-
-  it("requires reasons and trial end dates before confirmation", () => {
-    const gym = state.gyms[0]!;
-    const draft = draftFromGym(gym);
-    expect(validateSubscriptionDraft(draft)).toMatchObject({ reason: expect.any(String) });
-    expect(validateSubscriptionDraft({ ...draft, status: "trial", reason: "Start trial" })).toMatchObject({ trialEndsAt: "Required when starting a trial." });
-    expect(validateSubscriptionDraft({ ...draft, reason: "Pause account", subscriptionStartedAt: "2026-08-20", currentPeriodEndsAt: "2026-08-19" })).toMatchObject({ currentPeriodEndsAt: expect.any(String) });
-
-    const trialStart = dateFromNow(3);
-    expect(validateSubscriptionDraft({ ...draft, status: "trial", reason: "Start trial", trialEndsAt: dateFromNow(2), subscriptionStartedAt: trialStart })).toMatchObject({ trialEndsAt: "Must be on or after the subscription start date." });
-    expect(validateSubscriptionDraft({ ...draft, status: "trial", reason: "Start trial", trialEndsAt: dateFromNow(-1) })).toMatchObject({ trialEndsAt: "Must be in the future for a trial." });
-    expect(validateSubscriptionDraft({ ...draft, status: "cancelled", reason: "End account", subscriptionStartedAt: trialStart, cancelledAt: dateFromNow(2) })).toMatchObject({ cancelledAt: "Must be on or after the subscription start date." });
-  });
-
-  it("requires a reason before saving a plan catalog edit", async () => {
+  it("requires an audit reason and updates the shared catalog", async () => {
     const user = userEvent.setup();
     renderPage();
-
     await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     expect(screen.getByRole("alert")).toHaveTextContent("A reason is required");
@@ -115,178 +66,18 @@ describe("subscription lifecycle controls", () => {
     const price = screen.getByRole("textbox", { name: "Monthly price (JOD)" });
     await user.clear(price);
     await user.type(price, "80");
-    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Updated pricing after review.");
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Approved annual catalog review.");
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_000 })]));
   });
 
-  it("blocks audited no-op plan catalog saves", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
-    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Reviewed catalog values.");
-    await user.click(screen.getByRole("button", { name: "Save plan" }));
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Change at least one price or limit before saving.");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
-  it("preserves an unsaved draft when a background snapshot refresh replaces table rows", async () => {
-    const user = userEvent.setup();
-    const view = renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
-    await user.click(screen.getByRole("option", { name: /suspended/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Draft must survive refresh." } });
-
-    state.snapshot = {
-      ...state.snapshot!,
-      gyms: state.snapshot!.gyms.map((gym) => gym.id === "forge-fitness" ? { ...gym, subscriptionStatusReason: "Background operator update." } : gym),
-    };
-    state.gyms = state.snapshot.gyms;
-    view.rerenderPage();
-
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Reason for this change" })).toHaveValue("Draft must survive refresh."));
-    expect(screen.getByRole("combobox", { name: "Subscription status" })).toHaveTextContent("suspended");
-  });
-
-  it("fails closed for missing visibility and allows stale public flags to be repaired", async () => {
-    const staleSuspended = { ...state.gyms[0]!, subscriptionStatus: "suspended" as const, isPublic: true };
-    state.snapshot = { ...state.snapshot!, gyms: [staleSuspended, ...state.snapshot!.gyms.slice(1)] };
-    state.gyms = state.snapshot.gyms;
-    const updateSpy = vi.spyOn(api, "updatePlatformGym");
-    const user = userEvent.setup();
-    renderPage();
-
-    expect(screen.getAllByText("Hidden", { selector: "span" }).length).toBeGreaterThan(0);
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    expect(screen.getByRole("button", { name: "Review changes" })).toBeEnabled();
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Repair stale public flag." } });
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("gym will be hidden from member discovery");
-    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
-
-    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
-    expect(updateSpy.mock.calls.at(-1)?.[0]).toMatchObject({ status: "suspended", isPublic: false, reason: "Repair stale public flag." });
-  });
-
-  it("keeps unprovisioned platform rows cleanup-only instead of opening subscription controls", async () => {
-    const cleanupGym = state.gyms.find((gym) => gym.isProvisioned === false);
-    expect(cleanupGym).toBeDefined();
-    const user = userEvent.setup();
-    renderPage();
-
-    expect(screen.getByRole("button", { name: `Cleanup-only ${cleanupGym!.name}` })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Manage" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("combobox", { name: "Gym to manage" }));
-    const cleanupOption = screen.getByRole("option", { name: `${cleanupGym!.name} · Cleanup-only · not provisioned` });
-    expect(cleanupOption).toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("guards closing a dirty dialog until the operator confirms discard", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
-    await user.click(screen.getByRole("option", { name: /suspended/i }));
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(confirmSpy).toHaveBeenCalledWith("Discard the unsaved subscription changes?");
-
-    confirmSpy.mockReturnValue(true);
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    confirmSpy.mockRestore();
-  });
-
-  it("selects a gym, reviews the consequences, and persists a suspension as hidden", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    expect(screen.getByRole("dialog")).toHaveTextContent("Manage Forge Fitness Club");
-
-    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
-    await user.click(screen.getByRole("option", { name: /suspended/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Payment account is overdue." } });
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-
-    expect(screen.getByRole("dialog")).toHaveTextContent("The tenant loses public discovery");
-    expect(screen.getByRole("button", { name: "Confirm changes" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(await api.getPlatformSnapshot()).toEqual(expect.objectContaining({ gyms: expect.arrayContaining([expect.objectContaining({ id: "forge-fitness", subscriptionStatus: "suspended" })]) }));
-    expect(screen.getAllByText("Hidden", { selector: "span" }).length).toBeGreaterThan(0);
-  });
-
-  it("persists a plan change in the operator view and shows the unlocked tier features", async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    await user.click(screen.getByRole("combobox", { name: "RIVET plan" }));
-    await user.click(screen.getByRole("option", { name: /Growth/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Upgrade workspace access." } });
-    expect(screen.getByRole("status")).toHaveTextContent("Daily operations");
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Daily operations");
-    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByLabelText(/Workspace access:.*Daily operations/)).toBeInTheDocument();
-    expect(screen.getAllByText("Growth", { selector: "td" }).length).toBeGreaterThan(0);
-    await expect(api.getWorkspaceAccess()).resolves.toMatchObject({
-      entitlements: expect.objectContaining({ subscriptionPlan: "Growth", entitledModules: expect.arrayContaining(["operations"]) }),
-    });
-  });
-
-  it("does not revert a successful plan change when the follow-up snapshot is stale", async () => {
-    const staleSnapshot = structuredClone(state.snapshot!);
-    const staleForge = staleSnapshot.gyms.find((gym) => gym.id === "forge-fitness");
-    expect(staleForge).toBeDefined();
-    const snapshotSpy = vi.spyOn(api, "getPlatformSnapshot").mockResolvedValue(staleSnapshot);
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    await user.click(screen.getByRole("combobox", { name: "RIVET plan" }));
-    await user.click(screen.getByRole("option", { name: /Growth/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Keep stale refresh from hiding upgrade." } });
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByLabelText(/Workspace access:.*Daily operations/)).toBeInTheDocument();
-    expect(screen.getAllByText("Growth", { selector: "td" }).length).toBeGreaterThan(0);
-    expect(snapshotSpy).toHaveBeenCalled();
-    snapshotSpy.mockRestore();
-  });
-
-  it("omits a stale cancellation date when reactivating a cancelled gym", async () => {
-    await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", reason: "Customer ended service." });
-    state.snapshot = await api.getPlatformSnapshot();
-    state.gyms = state.snapshot.gyms;
-    const updateSpy = vi.spyOn(api, "updatePlatformGym");
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
-    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
-    await user.click(screen.getByRole("option", { name: /^active$/i }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Customer resumed service." } });
-    await user.click(screen.getByRole("button", { name: "Review changes" }));
-    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
-
-    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
-    const lastInput = updateSpy.mock.calls.at(-1)?.[0];
-    expect(lastInput).toMatchObject({ gymId: "forge-fitness", status: "active" });
-    expect(lastInput).not.toHaveProperty("cancelledAt");
+  it("publishes catalog edits to a public plan subscriber", async () => {
+    const values: PlatformSaasPlan[][] = [];
+    const unsubscribe = await api.subscribePublicSaasPlans((plans) => values.push(plans));
+    const starter = values[0]!.find((plan) => plan.name === "Starter")!;
+    await api.updatePlatformPlan({ name: "Starter", priceMinor: starter.priceMinor + 1_000, reason: "Public catalog review." });
+    expect(values.at(-1)?.find((plan) => plan.name === "Starter")).toMatchObject({ priceMinor: starter.priceMinor + 1_000 });
+    unsubscribe();
   });
 });

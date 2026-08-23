@@ -68,6 +68,43 @@
   deploy or Production product-data mutation is claimed by this working-tree
   update.
 
+## Admin platform overhaul — 23 August 2026 (working-tree update)
+
+- Platform Overview is now an operational surface rather than a placeholder:
+  live snapshot data feeds the KPIs, invoice/support/trial queues are scoped to
+  provisioned tenants, suspended/cancelled tenants cannot inflate active usage,
+  stale entitlement plans cannot override the authoritative organization plan
+  for MRR, and unlinked cleanup fixtures fail closed. The fake Marketplace
+  Views, payment-provider placeholder, and unrelated marketing migration panel
+  were removed; gym applications have an actionable link.
+- The admin gym directory is leaner and active-first. Provisioned gyms appear
+  before trial, past-due, suspended, and cancelled rows; unprovisioned/archived
+  cleanup records remain available only for audited operator cleanup and do not
+  appear in the active tenant preview.
+- Subscription catalog and landing pricing stay canonical across Starter,
+  Growth, Pro, and Enterprise. Upgrade requests are support-only; a gym cannot
+  self-upgrade from the dashboard. Monthly and annual cadence remain aligned
+  with the landing page and drive the subscription lifecycle.
+- Trial and renewal lifecycle is server-derived: onboarding starts a one-month
+  calendar trial with a fixed end date; an invoice is created automatically at
+  T-3 days and is due at period end; a two-day grace window follows the end
+  date, then unpaid access is suspended and the public listing is hidden.
+  Recording a verified payment reactivates the gym and restores its period;
+  subscription dates are not manually selectable in the admin controls.
+- The subscriptions surface is simplified around the gym directory and billing
+  ledger. Duplicate management controls and current-subscription summaries are
+  removed from the standalone subscriptions view; gym detail remains the place
+  to manage a tenant, while billing exposes invoice state, due dates, and
+  payment/reconciliation actions.
+- Billing remains intentionally manual: there is no external payment provider,
+  card auto-charge, or automatic card verification. Payment confirmation uses a
+  bank-transfer/reference entry or another operator-verified manual record;
+  email delivery for invoices and lifecycle notices depends on a configured
+  external provider and is not claimed when that provider is unavailable.
+
+This is a local working-tree update only. No Convex/Vercel Production deploy or
+Production product-data mutation is claimed here.
+
 ## Subscription tier activation repair — 22 August 2026 (working-tree update)
 
 - Platform plan changes now treat the provisioned organization as the billing

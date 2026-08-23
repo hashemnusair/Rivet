@@ -45,6 +45,7 @@ export interface MarketplaceGym {
   featured: boolean;
   subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
   rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval?: "monthly" | "annual";
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;
@@ -61,6 +62,11 @@ export interface MarketplaceGym {
   currentPeriodEndsAt?: string;
   cancelledAt?: string;
   subscriptionStatusReason?: string;
+  /** Platform-only archive marker. Archived tenants remain auditable but are
+   * excluded from public discovery and normal admin directory views. */
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
   branches: MarketplaceBranch[];
 }
 

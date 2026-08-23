@@ -32,6 +32,7 @@ import type {
   ProvisionGymInput,
   GymProvisioningResult,
   UpdatePlatformGymInput,
+  ArchivePlatformGymInput,
   UpdatePlatformPlanInput,
   CreatePlatformInvoiceInput,
   RecordPlatformInvoicePaymentInput,
@@ -102,6 +103,9 @@ function publicMarketplaceRows(value: unknown): MarketplaceGym[] {
       // if a future server projection accidentally includes it.
       const publicRow = { ...row };
       delete publicRow.isProvisioned;
+      delete publicRow.isArchived;
+      delete publicRow.archivedAt;
+      delete publicRow.archiveReason;
       return { ...publicRow, isPublic: typeof publicRow.isPublic === "boolean" ? publicRow.isPublic : true };
     })
     .map((row) => row as unknown as MarketplaceGym);
@@ -289,6 +293,7 @@ export class ConvexGymOSApi implements GymOSApi {
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> { return this.query("platform.gym.detail", { gymId }); }
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.gym.detail", { gymId }, onValue, onError); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
+  subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.catalog", {}, onValue, onError); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
@@ -323,6 +328,7 @@ export class ConvexGymOSApi implements GymOSApi {
     }
   }
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutate("platform.gym.update", input); }
+  async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> { await this.mutate("platform.gym.archive", input); }
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.create", input); }
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.issue", { invoiceId }); }

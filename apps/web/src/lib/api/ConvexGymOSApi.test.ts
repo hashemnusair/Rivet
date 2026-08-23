@@ -128,11 +128,14 @@ describe("ConvexGymOSApi contract boundary", () => {
     };
     const suspendedRow = { ...publicRow, id: "suspended-gym", subscriptionStatus: "suspended" as const };
     const hiddenRow = { ...publicRow, id: "hidden-gym", isPublic: false };
-    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, isProvisioned: false }, suspendedRow, hiddenRow] }));
+    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, isProvisioned: false, isArchived: true, archivedAt: "2026-08-20T00:00:00.000Z", archiveReason: "retained" }, suspendedRow, hiddenRow] }));
 
     const gyms = await api.listMarketplaceGyms();
     expect(gyms).toEqual([expect.objectContaining({ id: "live-gym", isPublic: true })]);
     expect(gyms[0]).not.toHaveProperty("isProvisioned");
+    expect(gyms[0]).not.toHaveProperty("isArchived");
+    expect(gyms[0]).not.toHaveProperty("archivedAt");
+    expect(gyms[0]).not.toHaveProperty("archiveReason");
   });
 
   it("keeps provisioning metadata on platform snapshots while stripping it from public rows", async () => {
@@ -223,6 +226,27 @@ describe("ConvexGymOSApi contract boundary", () => {
     const unsubscribe = await api.subscribePlatformSnapshot((value) => values.push(value));
     expect(values).toEqual([snapshot]);
     expect(calls[0]).toMatchObject({ operation: "platform.snapshot", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("subscribes to the public pricing catalog used by the landing page", async () => {
+    const values: unknown[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    const stop = vi.fn();
+    const plans = [{ name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" }];
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, args, onValue) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        onValue(plans);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribePublicSaasPlans((value) => values.push(value));
+    expect(values).toEqual([plans]);
+    expect(calls[0]).toMatchObject({ operation: "public.catalog", input: {}, correlationId: expect.any(String) });
     unsubscribe();
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -483,8 +507,8 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
-    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false } });
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", isPublic: false } });
   });
 
   it("keeps SaaS catalog edits behind the platform mutation boundary", async () => {
@@ -494,6 +518,14 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000, reason: "Annual pricing review approved." })).resolves.toEqual(plan);
     expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Growth", priceMinor: 159_000 } });
+  });
+
+  it("routes archive-only gym removal with exact confirmation and reason", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi(transportFor({ mutation: undefined }, (_kind, args) => calls.push(args)));
+
+    await expect(api.archivePlatformGym({ gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." })).resolves.toBeUndefined();
+    expect(calls[0]).toMatchObject({ operation: "platform.gym.archive", input: { gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." } });
   });
 
   it("carries the Enterprise tier through the live adapter boundary", async () => {

@@ -85,6 +85,7 @@ describe("platform operation authorization", () => {
       "platform.marketingMigration.apply": { reason: "test" },
       "platform.application.note": { applicationId: "unknown", note: "test" },
       "platform.gym.update": { gymId: "unknown", status: "suspended", reason: "test" },
+      "platform.gym.archive": { gymId: "unknown", confirmation: "Unknown", reason: "test" },
       "platform.plan.update": { name: "Growth", priceMinor: 1, branches: 1, staff: 1, members: 1 },
       "platform.invoice.create": { gymId: "unknown", amountMinor: 1, currency: "JOD", periodStart: "2026-08-01", periodEnd: "2026-08-31", dueAt: "2026-09-01" },
       "platform.invoice.issue": { invoiceId: "unknown" },

@@ -137,11 +137,17 @@ export default defineSchema({
     slug: v.string(),
     status: organizationStatus,
     subscriptionPlan: v.optional(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"))),
+    billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("annual"))),
     subscriptionStartedAt: v.optional(v.number()),
     trialEndsAt: v.optional(v.number()),
     currentPeriodEndsAt: v.optional(v.number()),
     cancelledAt: v.optional(v.number()),
     subscriptionStatusReason: v.optional(v.string()),
+    // Platform archive markers are authoritative lifecycle facts. Archiving
+    // suspends access but intentionally leaves all tenant records intact.
+    archivedAt: v.optional(v.number()),
+    archiveReason: v.optional(v.string()),
+    archivedByUserId: v.optional(v.id("users")),
     clerkOrganizationId: v.optional(v.string()),
     timezone: v.string(),
     currency: v.string(),
@@ -863,6 +869,7 @@ export default defineSchema({
     email: v.string(),
     contactNumber: v.string(),
     plan: v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise")),
+    billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("annual"))),
     status: gymApplicationStatus,
     notificationStatus: gymApplicationNotificationStatus,
     notificationError: v.optional(v.string()),
@@ -891,7 +898,10 @@ export default defineSchema({
   // audit stream rather than being attached to a gym's organization audit log.
   platformAuditEvents: defineTable({
     publicId: v.string(),
-    actorUserId: v.id("users"),
+    // Automated platform jobs are first-class audit actors but do not
+    // impersonate a platform administrator. Human-authored events still
+    // provide this user link.
+    actorUserId: v.optional(v.id("users")),
     actorPublicId: v.string(),
     actorName: v.string(),
     action: v.string(),

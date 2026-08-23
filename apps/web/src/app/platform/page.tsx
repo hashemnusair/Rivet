@@ -2,11 +2,8 @@
 
 import { ArrowRight, Building2, CircleAlert, CreditCard, LifeBuoy, Users } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { PlatformOperatorQueueItem } from "@/lib/api/GymOSApi";
-import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { formatMoney } from "@/lib/utils/money";
 
@@ -15,7 +12,9 @@ export default function PlatformOverviewPage() {
   // The platform snapshot is the authoritative tenant directory. The public
   // marketplace stream intentionally excludes hidden/suspended tenants and
   // can update independently of the operator console.
-  const directoryGyms = platformSnapshot?.gyms ?? [];
+  const directoryGyms = (platformSnapshot?.gyms ?? [])
+    .filter((gym) => gym.isProvisioned !== false)
+    .sort((left, right) => subscriptionStatusOrder(left.subscriptionStatus) - subscriptionStatusOrder(right.subscriptionStatus));
   const overview = platformSnapshot?.overview;
   const openCases = overview?.openSupportCases ?? 0;
   const urgentCases = overview?.urgentSupportCases ?? 0;
@@ -59,7 +58,6 @@ export default function PlatformOverviewPage() {
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
               <Button asChild variant="secondary" size="sm"><Link href="/platform/billing">Open invoice ledger <ArrowRight /></Link></Button>
-              <span className="self-center text-[10.5px] text-ink-3">Payment provider: Not configured</span>
             </div>
             <div className="mt-6 border-t border-line pt-5">
               <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Monthly invoice history</p>
@@ -94,13 +92,12 @@ export default function PlatformOverviewPage() {
           <section className="border border-line bg-surface p-5 sm:p-6">
             <p className="eyebrow">Member acquisition</p>
             <h2 className="mt-2 text-[18px] font-semibold">Network demand</h2>
-            <div className="mt-7 grid grid-cols-2 gap-px border border-line bg-line">
+            <div className="mt-7 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-3">
               <MiniMetric label="Trial requests" value={overview ? String(overview.trialRequests) : "—"} />
               <MiniMetric label="Converted trials" value={overview ? String(overview.trialConversions) : "—"} />
               <MiniMetric label="Conversion" value={conversionRate === undefined ? "Not available" : `${conversionRate}%`} />
-              <MiniMetric label="Marketplace views" value="Not configured" />
             </div>
-            <p className="mt-5 text-[10.5px] leading-relaxed text-ink-3">Response-time and discovery-ranking metrics will appear only after those events are recorded by an approved analytics boundary.</p>
+            <div className="mt-5"><Button asChild variant="secondary" size="sm"><Link href="/platform/applications">Review gym applications <ArrowRight /></Link></Button></div>
           </section>
         </div>
 
@@ -108,40 +105,8 @@ export default function PlatformOverviewPage() {
           <div className="border-b border-line px-5 py-4"><p className="eyebrow">Immutable platform audit</p><h2 className="mt-1 text-[17px] font-semibold">Recent operator activity</h2></div>
           {platformSnapshot?.auditEvents.length ? <div className="divide-y divide-line">{platformSnapshot.auditEvents.slice(0, 8).map((event) => <div key={event.id} className="grid gap-1 px-5 py-3 sm:grid-cols-[170px_1fr_auto] sm:items-center sm:gap-4"><span className="font-mono text-[8px] uppercase tracking-[.08em] text-ink-3">{event.action}</span><span className="text-[11.5px]">{event.summary}</span><span className="text-[9.5px] text-ink-3">{event.actorName} · {displayTimestamp(event.occurredAt)}</span></div>)}</div> : <p className="px-5 py-8 text-center text-[11.5px] text-ink-3">No platform operator actions have been recorded.</p>}
         </section>
-
-        <MarketingMigrationPanel />
       </div>
     </div>
-  );
-}
-
-function MarketingMigrationPanel() {
-  const [reason, setReason] = useState("");
-  const [migrationId, setMigrationId] = useState<string>();
-  const preview = useApiQuery(["platform", "marketing-preference-migration"], (api) => api.previewMarketingPreferenceMigration());
-  const apply = useApiMutation((api) => api.applyMarketingPreferenceMigration({ migrationId, batchSize: 100, reason: reason.trim() }), {
-    onSuccess: async (progress) => {
-      setMigrationId(progress.id);
-      await preview.refetch();
-    },
-  });
-  const count = preview.data?.totalCount ?? 0;
-  return (
-    <section className="mt-5 border border-line bg-surface p-5 sm:p-6">
-      <p className="eyebrow">Consent integrity</p>
-      <h2 className="mt-2 text-[18px] font-semibold">Historical marketing preference migration</h2>
-      <p className="mt-2 max-w-3xl text-[11.5px] leading-relaxed text-ink-3">Preview and idempotently mark missing or system-default preferences as unknown. Unknown recipients are suppressed from promotional email, SMS, and WhatsApp; essential service messages remain separate.</p>
-      <div className="mt-5 grid gap-px border border-line bg-line sm:grid-cols-3">
-        <MiniMetric label="Customer profiles" value={preview.isLoading ? "—" : String(preview.data?.profileCount ?? 0)} />
-        <MiniMetric label="Gym member records" value={preview.isLoading ? "—" : String(preview.data?.memberCount ?? 0)} />
-        <MiniMetric label="Eligible total" value={preview.isLoading ? "—" : String(count)} warning={count > 0} />
-      </div>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required reason for the audited migration" className="max-w-xl" />
-        <Button variant="secondary" disabled={count === 0 || reason.trim().length < 3} loading={apply.isPending} onClick={() => apply.mutate()}>{migrationId ? "Continue migration" : "Apply next 100"}</Button>
-      </div>
-      {apply.data ? <p className="mt-3 text-[10.5px] text-ink-3" role="status">{apply.data.processedCount} processed · {apply.data.failedCount} failed · {apply.data.remainingCount} remaining · {apply.data.status}</p> : null}
-    </section>
   );
 }
 
@@ -165,6 +130,10 @@ function Status({ status }: { status: string }) {
   const trial = status === "trial";
   const danger = status === "suspended" || status === "cancelled";
   return <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[0.1em] ${active ? "bg-success-bg text-success" : trial ? "bg-info-bg text-info" : danger ? "bg-danger-bg text-danger" : "bg-warning-bg text-warning"}`}>{status.replaceAll("_", " ")}</span>;
+}
+
+function subscriptionStatusOrder(status: string) {
+  return { active: 0, trial: 1, overdue: 2, past_due: 2, suspended: 3, cancelled: 4 }[status as "active" | "trial" | "overdue" | "past_due" | "suspended" | "cancelled"] ?? 5;
 }
 
 function DirectoryFact({ label, value }: { label: string; value: string }) {

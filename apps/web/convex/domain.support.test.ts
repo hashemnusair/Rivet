@@ -69,6 +69,26 @@ describe("exported Convex support workflow", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("support.reply", { caseId: created.id, body: "One more question." })), "VALIDATION_ERROR");
   });
 
+  it("persists structured plan upgrade requests without changing the gym plan", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-a" });
+    const created = await owner.mutation(api.domain.mutate, operation("support.create", {
+      email: "owner@gym-a.example",
+      subject: "Please review our Pro upgrade",
+      body: "We need finance and management reporting for the next renewal.",
+      priority: "normal",
+      requestType: "plan_upgrade",
+      requestedPlan: "Pro",
+      billingInterval: "annual",
+    })) as SupportCaseResult & { requestType?: string; requestedPlan?: string; billingInterval?: string };
+    expect(created).toMatchObject({ requestType: "plan_upgrade", requestedPlan: "Pro", billingInterval: "annual" });
+    expect(await owner.query(api.domain.query, operation("support.list"))).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id, requestType: "plan_upgrade", requestedPlan: "Pro", billingInterval: "annual" })]));
+    await t.run(async (ctx) => {
+      expect((await ctx.db.query("organizations").collect()).find((organization) => organization.publicId === "org-a")?.subscriptionPlan).toBeUndefined();
+    });
+  });
+
   it("persists append-only platform replies, assignment, resolution, and reopen history", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

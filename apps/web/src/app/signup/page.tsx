@@ -78,11 +78,8 @@ export default function GymApplicationPage() {
         gymName: gymName.trim(),
         email: email.trim().toLowerCase(),
         contactNumber: contactNumber.trim(),
-        // Enterprise is already part of the Convex application contract. The
-        // shared API type is kept as a narrow compatibility seam until the
-        // live adapter contract is regenerated; the selected cadence remains
-        // visible and stable here for the application handoff.
         plan: plan as PlatformSaasPlan["name"],
+        billingInterval,
       });
       setResult(submitted);
     } catch (error) {

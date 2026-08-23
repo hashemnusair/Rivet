@@ -53,7 +53,7 @@ describe("gym provisioning retry convergence", () => {
     expect(state.settings).toHaveLength(1);
     expect(state.roles).toHaveLength(6);
     expect(state.ownerMemberships).toHaveLength(1);
-    expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise" });
+    expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise", billingInterval: "monthly", status: "trial", subscriptionStartedAt: expect.any(Number), trialEndsAt: expect.any(Number) });
     expect(state.application).toMatchObject({ plan: "Enterprise", provisioningStatus: "completed", clerkOrganizationId: "org_clerk_retry", clerkInvitationId: "orginv_retry", provisionedOrganizationId: ids.organizationPublicId, provisionedBranchId: ids.branchPublicId });
     expect(state.entitlements).toMatchObject({ subscriptionPlan: "Enterprise", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] });
   });

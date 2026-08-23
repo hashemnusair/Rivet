@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import GymApplicationPage from "./page";
 
-const state = vi.hoisted(() => ({ saasPlans: [] as PlatformSaasPlan[] }));
+const state = vi.hoisted(() => ({
+  saasPlans: [] as PlatformSaasPlan[],
+  submitGymApplication: vi.fn(),
+}));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({
@@ -17,12 +20,13 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 vi.mock("@/components/public/public-shell", () => ({ PublicHeader: () => <header aria-label="Public header" /> }));
 vi.mock("@/lib/api/client", () => ({
-  getApi: () => ({ submitGymApplication: vi.fn() }),
+  getApi: () => ({ submitGymApplication: state.submitGymApplication }),
 }));
 
 describe("gym application pricing selection", () => {
   beforeEach(() => {
     state.saasPlans = [];
+    state.submitGymApplication.mockReset();
     window.history.replaceState({}, "", "/signup?plan=Enterprise&interval=annual");
   });
 
@@ -37,5 +41,33 @@ describe("gym application pricing selection", () => {
     await user.click(screen.getByRole("radio", { name: /Starter/ }));
     expect(screen.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("submits the selected annual cadence with the application", async () => {
+    const user = userEvent.setup();
+    state.submitGymApplication.mockResolvedValue({
+      applicationId: "application-annual",
+      status: "pending",
+      notificationStatus: "sent",
+      submittedAt: "2026-08-23T00:00:00.000Z",
+      duplicate: false,
+    });
+    render(<GymApplicationPage />);
+
+    await screen.findByRole("radio", { name: /Enterprise/ });
+    await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
+    await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
+    await user.type(screen.getByPlaceholderText("+962 79 555 0194"), "+962790000999");
+    await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
+    await user.click(screen.getByRole("button", { name: /Send gym application/ }));
+
+    expect(state.submitGymApplication).toHaveBeenCalledWith({
+      ownerName: "Annual Owner",
+      gymName: "Annual Gym",
+      email: "annual-owner@example.test",
+      contactNumber: "+962790000999",
+      plan: "Enterprise",
+      billingInterval: "annual",
+    });
   });
 });

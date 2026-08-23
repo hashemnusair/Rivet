@@ -2,13 +2,13 @@ export type PlatformQueueSeverity = "danger" | "warning" | "info";
 
 export interface PlatformOverviewInput {
   now?: number;
-  gyms: Array<{ id: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
-  organizations: Array<{ status: string; subscriptionPlan?: string; entitlementPlan?: string }>;
+  gyms: Array<{ id: string; organizationId?: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
+  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; provisioned?: boolean }>;
   plans: Array<{ name: string; priceMinor: number }>;
-  branches: Array<{ active: boolean; status?: string }>;
-  members: Array<{ status?: string }>;
-  staffMemberships: Array<{ active: boolean }>;
-  bookings: Array<{ status?: string }>;
+  branches: Array<{ organizationId?: string; active: boolean; status?: string }>;
+  members: Array<{ organizationId?: string; status?: string }>;
+  staffMemberships: Array<{ organizationId?: string; active: boolean }>;
+  bookings: Array<{ organizationId?: string; gymId?: string; status?: string }>;
   applications: Array<{
     id: string;
     gymName: string;
@@ -20,6 +20,7 @@ export interface PlatformOverviewInput {
   }>;
   invoices: Array<{
     id: string;
+    organizationId?: string;
     gymId?: string;
     gym?: string;
     amount?: string;
@@ -32,6 +33,8 @@ export interface PlatformOverviewInput {
   }>;
   supportCases: Array<{
     id: string;
+    organizationId?: string;
+    gymId?: string;
     gym?: string;
     subject?: string;
     priority?: string;
@@ -90,16 +93,35 @@ function invoiceAmountMinor(invoice: PlatformOverviewInput["invoices"][number], 
 
 export function buildPlatformOverview(input: PlatformOverviewInput) {
   const currency = PLATFORM_BILLING_CURRENCY;
-  const eligibleInvoices = input.invoices.flatMap((invoice) => {
+  // Platform snapshots retain legacy directory rows for cleanup, but every
+  // operational aggregate must be scoped to a provisioned tenant. A record
+  // with neither a provisioned gym nor organization link is intentionally
+  // ignored instead of being guessed into the totals.
+  const provisionedGymIds = new Set(input.gyms.filter((gym) => gym.provisioned === true).map((gym) => gym.id));
+  const provisionedOrganizationIds = new Set(input.organizations.filter((organization) => organization.provisioned === true && organization.id).map((organization) => organization.id as string));
+  const operationalOrganizationIds = new Set(input.organizations
+    .filter((organization) => organization.provisioned === true && ["trial", "active", "past_due"].includes(organization.status) && organization.id)
+    .map((organization) => organization.id as string));
+  const belongsToProvisionedTenant = (record: { gymId?: string; organizationId?: string }, operationalOnly = false) => {
+    // An explicit gym link takes precedence. This prevents a stale database
+    // organization link from reviving an unprovisioned cleanup fixture.
+    if (record.gymId !== undefined) return provisionedGymIds.has(record.gymId);
+    const allowedOrganizations = operationalOnly ? operationalOrganizationIds : provisionedOrganizationIds;
+    return record.organizationId !== undefined && allowedOrganizations.has(record.organizationId);
+  };
+  const provisionedGyms = input.gyms.filter((gym) => gym.provisioned === true);
+  const provisionedInvoices = input.invoices.filter((invoice) => belongsToProvisionedTenant(invoice));
+  const provisionedBookings = input.bookings.filter((booking) => belongsToProvisionedTenant(booking));
+  const provisionedSupportCases = input.supportCases.filter((supportCase) => belongsToProvisionedTenant(supportCase));
+  const eligibleInvoices = provisionedInvoices.flatMap((invoice) => {
     const resolution = resolveInvoiceCurrency(invoice);
     return resolution.eligible ? [{ invoice, currency: resolution.currency ?? PLATFORM_BILLING_CURRENCY }] : [];
   });
-  const billingCurrencyMismatches = input.invoices.length - eligibleInvoices.length;
+  const billingCurrencyMismatches = provisionedInvoices.length - eligibleInvoices.length;
   const planPrices = new Map(input.plans.map((plan) => [plan.name, plan.priceMinor]));
   const gymCounts = { trial: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
 
-  for (const gym of input.gyms) {
-    if (gym.provisioned === false) continue;
+  for (const gym of provisionedGyms) {
     if (gym.subscriptionStatus === "trial") gymCounts.trial += 1;
     else if (gym.subscriptionStatus === "active") gymCounts.active += 1;
     else if (gym.subscriptionStatus === "overdue" || gym.subscriptionStatus === "past_due") gymCounts.past_due += 1;
@@ -108,8 +130,10 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
   }
 
   const activeMrr = input.organizations.reduce((total, organization) => {
-    if (organization.status !== "active") return total;
-    const plan = organization.entitlementPlan ?? organization.subscriptionPlan;
+    if (organization.status !== "active" || organization.provisioned !== true) return total;
+    // The organization billing plan is authoritative. Entitlement materiality
+    // can lag a plan mutation and must never make MRR look stale.
+    const plan = organization.subscriptionPlan ?? organization.entitlementPlan;
     if (!plan) return total;
     return total + (planPrices.get(plan) ?? 0);
   }, 0);
@@ -169,7 +193,7 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
       href: "/platform/billing",
       occurredAt: invoice.occurredAt ?? invoice.date,
     })),
-    ...input.supportCases
+    ...provisionedSupportCases
       .filter((supportCase) => supportCase.status !== "resolved")
       .map((supportCase) => ({
         id: `support:${supportCase.id}`,
@@ -183,9 +207,9 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
 
   return {
     gymCounts,
-    branchCount: input.branches.filter((branch) => branch.active && branch.status !== "inactive").length,
-    memberCount: input.members.filter((member) => member.status === "active").length,
-    activeStaffCount: input.staffMemberships.filter((membership) => membership.active).length,
+    branchCount: input.branches.filter((branch) => belongsToProvisionedTenant(branch, true) && branch.active && branch.status !== "inactive").length,
+    memberCount: input.members.filter((member) => belongsToProvisionedTenant(member, true) && member.status === "active").length,
+    activeStaffCount: input.staffMemberships.filter((membership) => belongsToProvisionedTenant(membership, true) && membership.active).length,
     activeMrr: { amount: activeMrr, currency },
     invoiceTotals: {
       collected: { amount: paidInvoices.reduce((total, { invoice, currency: invoiceCurrency }) => total + invoiceAmountMinor(invoice, invoiceCurrency), 0), currency },
@@ -193,19 +217,18 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
       overdue: { amount: overdueInvoices.reduce((total, { invoice, currency: invoiceCurrency }) => total + invoiceAmountMinor(invoice, invoiceCurrency), 0), currency },
     },
     billingCurrencyMismatches,
-    trialRequests: input.bookings.length,
-    trialConversions: input.bookings.filter((booking) => booking.status === "converted").length,
+    trialRequests: provisionedBookings.length,
+    trialConversions: provisionedBookings.filter((booking) => booking.status === "converted").length,
     pendingApplications: input.applications.filter((application) => application.status === "pending" || application.status === "under_review").length,
     provisioningFailures: input.applications.filter((application) => application.provisioningStatus === "failed").length,
     pastDueAccounts: new Set(overdueInvoices.map(({ invoice }) => invoice.gymId ?? invoice.gym ?? invoice.id)).size,
-    trialsExpiringSoon: input.gyms.filter((gym) => {
-      if (gym.provisioned === false) return false;
+    trialsExpiringSoon: provisionedGyms.filter((gym) => {
       if (gym.subscriptionStatus !== "trial" || !gym.trialEndsAt) return false;
       const trialEndsAt = Date.parse(gym.trialEndsAt);
       return Number.isFinite(trialEndsAt) && trialEndsAt >= now && trialEndsAt <= fourteenDaysFromNow;
     }).length,
-    openSupportCases: input.supportCases.filter((supportCase) => supportCase.status !== "resolved").length,
-    urgentSupportCases: input.supportCases.filter((supportCase) => supportCase.status !== "resolved" && supportCase.priority === "urgent").length,
+    openSupportCases: provisionedSupportCases.filter((supportCase) => supportCase.status !== "resolved").length,
+    urgentSupportCases: provisionedSupportCases.filter((supportCase) => supportCase.status !== "resolved" && supportCase.priority === "urgent").length,
     billingHistory,
     operatorQueue,
   };

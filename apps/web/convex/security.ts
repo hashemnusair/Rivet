@@ -53,6 +53,9 @@ type MaybeOrganization = {
   currentPeriodEndsAt?: number;
   cancelledAt?: number;
   subscriptionStatusReason?: string;
+  archivedAt?: number;
+  archiveReason?: string;
+  archivedByUserId?: Id<"users">;
   clerkOrganizationId?: string;
   timezone: string;
   currency: string;

@@ -6,6 +6,7 @@ import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
+const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
 const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"), v.literal("rejected"));
 
@@ -15,6 +16,7 @@ const applicationArgs = {
   email: v.string(),
   contactNumber: v.string(),
   plan,
+  billingInterval: v.optional(billingInterval),
 };
 
 const applicationResult = v.object({
@@ -31,6 +33,7 @@ type ApplicationInput = {
   email: string;
   contactNumber: string;
   plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval?: "monthly" | "annual";
 };
 
 type ApplicationResult = {
@@ -47,6 +50,7 @@ type ReviewResult = {
   ownerName: string;
   email: string;
   plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval: "monthly" | "annual";
   status: "under_review" | "approved" | "rejected";
   reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
   reviewNotificationError?: string;
@@ -91,7 +95,7 @@ function inputValues(args: ApplicationInput) {
   const ownerName = clean(args.ownerName, "owner_name", 160);
   const email = cleanEmail(args.email);
   const contactNumber = cleanPhone(args.contactNumber);
-  return { gymName, ownerName, email, contactNumber, plan: args.plan };
+  return { gymName, ownerName, email, contactNumber, plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
 }
 
 /**
@@ -236,6 +240,7 @@ export const reviewRecord = internalMutation({
       ownerName: application.ownerName,
       email: application.email,
       plan: application.plan,
+      billingInterval: application.billingInterval ?? "monthly",
       status: args.decision,
       reviewNotificationStatus,
       reviewNotificationError: undefined,
@@ -281,7 +286,7 @@ function detailsHtml(values: ApplicationInput): string {
     <tr><td style="padding:8px 0;color:#777">Owner name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.ownerName)}</td></tr>
     <tr><td style="padding:8px 0;color:#777">Email</td><td style="padding:8px 0"><a href="mailto:${encodeURIComponent(values.email)}">${escapeHtml(values.email)}</a></td></tr>
     <tr><td style="padding:8px 0;color:#777">Contact number</td><td style="padding:8px 0">${escapeHtml(values.contactNumber)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Chosen plan</td><td style="padding:8px 0">${escapeHtml(values.plan)}</td></tr>
+    <tr><td style="padding:8px 0;color:#777">Chosen plan</td><td style="padding:8px 0">${escapeHtml(values.plan)} (${escapeHtml(values.billingInterval ?? "monthly")} billing)</td></tr>
   </table>`;
 }
 
@@ -370,6 +375,7 @@ export const review = action({
       ownerName: string;
       email: string;
       plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+      billingInterval: "monthly" | "annual";
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
       reviewNotificationError?: string;

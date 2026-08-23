@@ -161,6 +161,47 @@ describe("exported Convex platform invoice boundaries", () => {
     expect(rows[0]?.data).toMatchObject({ id: draft.id, status: "void" });
   });
 
+  it("projects automatic invoice lifecycle fields through the platform snapshot", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique();
+      if (!organization) throw new Error("invoice organization missing");
+      await ctx.db.insert("domainRecords", {
+        organizationId: organization._id,
+        entityType: "platformInvoice",
+        publicId: "INV-AUTOMATIC-PROJECTION",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        data: {
+          id: "INV-AUTOMATIC-PROJECTION",
+          gymId: "invoice-gym",
+          gym: "Invoice Gym",
+          amount: "JOD 119.520",
+          amountMinor: 119_520,
+          currency: "JOD",
+          status: "open",
+          cycleKey: "subscription:org-invoice:annual:1788177600000",
+          billingInterval: "annual",
+          issuedAt: "2026-08-28T12:00:00.000Z",
+          dueAt: "2026-08-31T12:00:00.000Z",
+          periodStart: "2026-08-31T12:00:00.000Z",
+          periodEnd: "2027-08-31T12:00:00.000Z",
+        },
+      });
+    });
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as { invoices: Array<Record<string, unknown>> };
+    expect(snapshot.invoices.find((invoice) => invoice.id === "INV-AUTOMATIC-PROJECTION")).toMatchObject({
+      gymId: "invoice-gym",
+      cycleKey: "subscription:org-invoice:annual:1788177600000",
+      billingInterval: "annual",
+      dueAt: "2026-08-31T12:00:00.000Z",
+      periodStart: "2026-08-31T12:00:00.000Z",
+      periodEnd: "2027-08-31T12:00:00.000Z",
+    });
+  });
+
   it("rejects invoices when the directory row and target organization disagree", async () => {
     const t = convexTest(schema, modules);
     await seedPlatformInvoiceFixtures(t);

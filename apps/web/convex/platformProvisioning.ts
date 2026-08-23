@@ -30,6 +30,16 @@ const DEFAULT_NOTIFICATIONS = {
 };
 
 const PROVISIONING_LOCK_MS = 10 * 60_000;
+type BillingInterval = "monthly" | "annual";
+
+function addCalendarMonth(timestamp: number): number {
+  const source = new Date(timestamp);
+  const day = source.getUTCDate();
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + 1, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.getTime();
+}
 
 /**
  * Clerk appends __clerk_ticket and __clerk_status to this route when an
@@ -81,6 +91,7 @@ function organizationResult(application: Application) {
     branchId: application.provisionedBranchId ?? "",
     branchName: branchName(application.gymName),
     plan: application.plan,
+    billingInterval: application.billingInterval ?? "monthly",
     ownerName: application.ownerName,
     ownerEmail: application.email,
     clerkOrganizationId: application.clerkOrganizationId ?? "",
@@ -192,7 +203,7 @@ async function upsertSettings(ctx: MutationCtx, organizationId: Id<"organization
   else await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: value });
 }
 
-async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; branchPublicId: string; branchName: string; now: number }) {
+async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; billingInterval: BillingInterval; branchPublicId: string; branchName: string; now: number; trialEndsAt: number }) {
   const existing = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "marketplaceGym").eq("publicId", input.marketplacePublicId))
@@ -217,6 +228,7 @@ async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizat
     featured: false,
     subscriptionStatus: "trial",
     rivetPlan: input.plan,
+    billingInterval: input.billingInterval,
     joinedAt: new Date(input.now).toISOString().slice(0, 10),
     lastActiveAt: new Date(input.now).toISOString(),
     monthlyRevenueMinor: 0,
@@ -226,6 +238,7 @@ async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizat
     isPublic: true,
     branches: [{ id: input.branchPublicId, name: input.branchName, area: "Amman", address: "", trialSlots: [] }],
     applicationId: input.applicationId,
+    trialEndsAt: new Date(input.trialEndsAt).toISOString(),
   };
   if (existing) await ctx.db.patch(existing._id, { data: value, updatedAt: input.now });
   else await ctx.db.insert("domainRecords", { organizationId, entityType: "marketplaceGym", publicId: input.marketplacePublicId, createdAt: input.now, updatedAt: input.now, data: value });
@@ -250,6 +263,7 @@ export const createWorkspace = internalMutation({
       .query("organizations")
       .withIndex("by_public_id", (q) => q.eq("publicId", ids.organizationPublicId))
       .unique();
+    const billingInterval: BillingInterval = application.billingInterval === "annual" ? "annual" : "monthly";
     if (!organization) {
       const organizationId = await ctx.db.insert("organizations", {
         publicId: ids.organizationPublicId,
@@ -257,7 +271,9 @@ export const createWorkspace = internalMutation({
         slug: ids.organizationSlug,
         status: "trial",
         subscriptionPlan: application.plan,
+        billingInterval,
         subscriptionStartedAt: now,
+        trialEndsAt: addCalendarMonth(now),
         clerkOrganizationId: args.clerkOrganizationId,
         timezone: "Asia/Amman",
         currency: "JOD",
@@ -272,7 +288,16 @@ export const createWorkspace = internalMutation({
       });
       organization = await ctx.db.get(organizationId);
     } else {
-      await ctx.db.patch(organization._id, { name: application.gymName, subscriptionPlan: application.plan, clerkOrganizationId: args.clerkOrganizationId, updatedAt: now });
+      await ctx.db.patch(organization._id, {
+        name: application.gymName,
+        subscriptionPlan: application.plan,
+        billingInterval,
+        subscriptionStartedAt: organization.subscriptionStartedAt ?? now,
+        trialEndsAt: organization.trialEndsAt ?? addCalendarMonth(organization.subscriptionStartedAt ?? now),
+        status: "trial",
+        clerkOrganizationId: args.clerkOrganizationId,
+        updatedAt: now,
+      });
       organization = await ctx.db.get(organization._id);
     }
     if (!organization) domainError("INTERNAL_ERROR", "The gym workspace could not be created.", { correlationId: args.correlationId });
@@ -356,7 +381,7 @@ export const createWorkspace = internalMutation({
     if (existingPreferences) await ctx.db.patch(existingPreferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, updatedAt: now });
     else await ctx.db.insert("workspaceModulePreferences", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, createdAt: now, updatedAt: now });
     await upsertSettings(ctx, organization._id, now);
-    await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan: application.plan, branchPublicId: publicBranchId(branch), branchName: branch.name, now });
+    await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan: application.plan, billingInterval, branchPublicId: publicBranchId(branch), branchName: branch.name, now, trialEndsAt: organization.trialEndsAt ?? addCalendarMonth(organization.subscriptionStartedAt ?? now) });
 
     const auditRows = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "gym_application").eq("entityPublicId", application.publicId)).collect();
     if (!auditRows.some((row) => row.action === "gym.provisioning.workspace_created")) {
@@ -377,7 +402,7 @@ export const createWorkspace = internalMutation({
       });
     }
 
-    return { applicationId: application.publicId, organizationId: ids.organizationPublicId, organizationName: organization.name, branchId: publicBranchId(branch), branchName: branch.name, plan: application.plan, ownerName: application.ownerName, ownerEmail: application.email, clerkOrganizationId: args.clerkOrganizationId, ownerUserPublicId: publicUserId(user), correlationId: args.correlationId };
+    return { applicationId: application.publicId, organizationId: ids.organizationPublicId, organizationName: organization.name, branchId: publicBranchId(branch), branchName: branch.name, plan: application.plan, billingInterval, ownerName: application.ownerName, ownerEmail: application.email, clerkOrganizationId: args.clerkOrganizationId, ownerUserPublicId: publicUserId(user), correlationId: args.correlationId };
   },
 });
 

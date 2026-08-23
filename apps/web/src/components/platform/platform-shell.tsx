@@ -32,7 +32,7 @@ const NAVIGATION = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/platform/applications", label: "Applications", icon: ClipboardList },
   { href: "/platform/gyms", label: "Gyms", icon: Building2 },
-  { href: "/platform/subscriptions", label: "Subscriptions", icon: BadgeDollarSign },
+  { href: "/platform/subscriptions", label: "Pricing & entitlements", icon: BadgeDollarSign },
   { href: "/platform/billing", label: "Billing", icon: CreditCard },
   { href: "/platform/support", label: "Support", icon: CircleHelp },
 ];

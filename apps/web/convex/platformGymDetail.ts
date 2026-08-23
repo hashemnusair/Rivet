@@ -6,6 +6,7 @@ export type PlatformField<T> =
 type SubscriptionStatus = "trial" | "active" | "overdue" | "suspended" | "cancelled";
 type OrganizationStatus = "trial" | "active" | "past_due" | "suspended" | "cancelled";
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+type BillingInterval = "monthly" | "annual";
 
 export interface PlatformGymDetailSource {
   gym: {
@@ -16,6 +17,9 @@ export interface PlatformGymDetailSource {
     subscriptionStatus: SubscriptionStatus;
     rivetPlan: PlatformPlan;
     isPublic: boolean;
+    isArchived?: boolean;
+    archivedAt?: number;
+    archiveReason?: string;
   };
   organization?: {
     id: string;
@@ -25,11 +29,14 @@ export interface PlatformGymDetailSource {
     timezone: string;
     createdAt?: number;
     subscriptionPlan?: PlatformPlan;
+    billingInterval?: BillingInterval;
     subscriptionStartedAt?: number;
     trialEndsAt?: number;
     currentPeriodEndsAt?: number;
     cancelledAt?: number;
     subscriptionStatusReason?: string;
+    archivedAt?: number;
+    archiveReason?: string;
   };
   branches: Array<{
     id: string;
@@ -95,6 +102,8 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
         status: organization.status,
         currency: organization.currency,
         timezone: organization.timezone,
+        archivedAt: iso(organization.archivedAt),
+        archiveReason: organization.archiveReason,
       })
     : notAvailable();
   const tenantAvailable = Boolean(organization);
@@ -110,6 +119,8 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
   // cancelled, overdue, or not provisioned. Keep the admin control truthful
   // even when an older marketplace row still says public.
   const controlIsPublic = Boolean(organization && (organization.status === "active" || organization.status === "trial") && source.gym.isPublic);
+  const archivedAt = organization?.archivedAt ?? source.gym.archivedAt;
+  const archiveReason = organization?.archiveReason ?? source.gym.archiveReason;
 
   return {
     id: source.gym.id,
@@ -120,6 +131,9 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
       status: controlStatus,
       plan: controlPlan,
       isPublic: controlIsPublic,
+      isArchived: Boolean(archivedAt || source.gym.isArchived),
+      archivedAt: iso(archivedAt),
+      archiveReason,
     },
     organization: organizationData,
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),
@@ -135,6 +149,7 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     },
     subscription: {
       plan: organization?.subscriptionPlan ? available(organization.subscriptionPlan) : organization ? notConfigured() : notAvailable(),
+      billingInterval: organization ? available(organization.billingInterval ?? "monthly") : notAvailable(),
       status: status ? available(status) : notAvailable(),
       startedAt: startedAt ? available(startedAt) : notAvailable(),
       trialEndsAt: trialEndsAt ? available(trialEndsAt) : organization ? notConfigured() : notAvailable(),

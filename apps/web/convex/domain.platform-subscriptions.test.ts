@@ -24,32 +24,71 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("exported Convex platform subscription lifecycle", () => {
-  it("requires platform authorization, a reason, and a trial end date", async () => {
+  it("requires platform authorization and a reason while deriving trial dates", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
     const owner = t.withIdentity({ subject: "clerk-owner" });
     await expectCode(owner.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Test" })), "FORBIDDEN");
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "" })), "VALIDATION_ERROR");
-    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Starting pilot trial." })), "VALIDATION_ERROR");
+    const trial = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Starting pilot trial." })) as Record<string, unknown>;
+    expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String), subscriptionStartedAt: expect.any(String) });
+  });
+
+  it("persists the requested billing cadence and derives the matching paid period", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+
+    const annual = await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      status: "active",
+      billingInterval: "annual",
+      reason: "Approve annual billing for the tenant.",
+    })) as Record<string, unknown>;
+    const startedAt = Date.parse(String(annual.subscriptionStartedAt));
+    const annualPeriodEnd = Date.parse(String(annual.currentPeriodEndsAt));
+    expect(annual).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
+    expect(annualPeriodEnd).toBeGreaterThan(startedAt + 364 * 86_400_000);
+    expect(annualPeriodEnd).toBeLessThan(startedAt + 367 * 86_400_000);
+
+    const monthly = await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      billingInterval: "monthly",
+      reason: "Move the tenant to monthly billing.",
+    })) as Record<string, unknown>;
+    const monthlyPeriodEnd = Date.parse(String(monthly.currentPeriodEndsAt));
+    expect(monthly).toMatchObject({ subscriptionStatus: "active", billingInterval: "monthly" });
+    expect(monthlyPeriodEnd).toBeGreaterThan(startedAt + 27 * 86_400_000);
+    expect(monthlyPeriodEnd).toBeLessThan(startedAt + 32 * 86_400_000);
+
+    const persisted = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique();
+      const audit = (await ctx.db.query("platformAuditEvents").collect()).find((event) => event.entityPublicId === "subscription-gym" && (event.after as Record<string, unknown> | undefined)?.billingInterval === "monthly");
+      return { organization, listing, audit };
+    });
+    expect(persisted.organization).toMatchObject({ billingInterval: "monthly" });
+    expect(persisted.listing?.data).toMatchObject({ billingInterval: "monthly" });
+    expect(persisted.audit).toMatchObject({
+      action: "gym.subscription.update",
+      before: { billingInterval: "annual" },
+      after: { billingInterval: "monthly" },
+    });
   });
 
   it("keeps the directory, tenant lifecycle, and immutable audit reason aligned", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
-    const subscriptionStartedAt = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
       gymId: "subscription-gym",
       status: "trial",
       plan: "Starter",
       isPublic: false,
-      trialEndsAt: "2026-09-30",
-      subscriptionStartedAt,
-      currentPeriodEndsAt: "2026-09-30",
       reason: "Approved thirty-day pilot.",
     })) as Record<string, unknown>;
-    expect(updated).toMatchObject({ subscriptionStatus: "trial", rivetPlan: "Starter", isPublic: false, trialEndsAt: "2026-09-30T00:00:00.000Z", subscriptionStatusReason: "Approved thirty-day pilot." });
+    expect(updated).toMatchObject({ subscriptionStatus: "trial", rivetPlan: "Starter", isPublic: false, trialEndsAt: expect.any(String), subscriptionStartedAt: expect.any(String), subscriptionStatusReason: "Approved thirty-day pilot." });
 
     const persisted = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
@@ -60,7 +99,7 @@ describe("exported Convex platform subscription lifecycle", () => {
       };
     });
     expect(persisted.organization).toMatchObject({ status: "trial", subscriptionPlan: "Starter", subscriptionStatusReason: "Approved thirty-day pilot." });
-    expect(persisted.organization?.trialEndsAt).toBe(Date.parse("2026-09-30"));
+    expect(persisted.organization?.trialEndsAt).toBe(Date.parse(String(updated.trialEndsAt)));
     expect(persisted.entitlement).toMatchObject({ subscriptionPlan: "Starter", source: "subscription_plan", entitledModules: ["foundation", "revenue"] });
     expect(persisted.audit).toMatchObject({ action: "gym.subscription.update", reason: "Approved thirty-day pilot.", before: { subscriptionStatus: "active", organization: { status: "active", subscriptionPlan: "Growth" }, entitlements: { subscriptionPlan: "Growth" } }, after: { subscriptionStatus: "trial", organization: { status: "trial", subscriptionPlan: "Starter" }, entitlements: { subscriptionPlan: "Starter" } } });
 
@@ -132,7 +171,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(persisted.audit).toMatchObject({ before: { planResolution: { source: "organization", drift: true } }, after: { planResolution: { source: "organization", drift: false } } });
   });
 
-  it("does not promote stale directory lifecycle dates into the organization", async () => {
+  it("ignores stale directory lifecycle dates and derives a fresh tenant lifecycle", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
@@ -160,10 +199,10 @@ describe("exported Convex platform subscription lifecycle", () => {
     }));
     expect(persisted.organization).toMatchObject({ subscriptionPlan: "Starter" });
     expect(persisted.organization?.trialEndsAt).toBeUndefined();
-    expect(persisted.organization?.subscriptionStartedAt).toBeUndefined();
+    expect(persisted.organization?.subscriptionStartedAt).toEqual(expect.any(Number));
     expect(persisted.listing?.data).toMatchObject({ rivetPlan: "Starter" });
     expect((persisted.listing?.data as Record<string, unknown> | undefined)?.trialEndsAt).toBeUndefined();
-    expect((persisted.listing?.data as Record<string, unknown> | undefined)?.subscriptionStartedAt).toBeUndefined();
+    expect((persisted.listing?.data as Record<string, unknown> | undefined)?.subscriptionStartedAt).toEqual(expect.any(String));
   });
 
   it("persists every tier change and immediately projects the matching workspace modules", async () => {
@@ -245,6 +284,51 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(snapshot.overview.gymCounts.active).toBe(1);
   });
 
+  it("archives a gym without deleting tenant records and keeps audit detail retrievable", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const owner = t.withIdentity({ subject: "clerk-owner" });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      if (!organization) throw new Error("seed organization missing");
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "platformInvoice", publicId: "archive-invoice", createdAt: now, updatedAt: now, data: { id: "archive-invoice", gymId: "subscription-gym", gym: "Subscription Gym", amount: "JD 149.000", amountMinor: 149_000, currency: "JOD", status: "paid", date: "2026-08-20" } });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "supportCase", publicId: "archive-support", createdAt: now, updatedAt: now, data: { id: "archive-support", gymId: "subscription-gym", gym: "Subscription Gym", subject: "Historical support case", body: "Retain this record.", priority: "normal", status: "open", createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() } });
+      await ctx.db.insert("accountingSourcePostings", { organizationId: organization._id, publicId: "archive-posting", sourceType: "payment", sourcePublicId: "payment-archive", status: "posted", amountMinor: 149_000, currency: "JOD", occurredAt: now, createdAt: now, updatedAt: now });
+    });
+
+    await expectCode(owner.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Subscription Gym", reason: "Customer requested account closure." })), "FORBIDDEN");
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Wrong Name", reason: "Customer requested account closure." })), "VALIDATION_ERROR");
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Subscription Gym", reason: "" })), "VALIDATION_ERROR");
+
+    const archived = await platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Subscription Gym", reason: "Customer requested account closure." })) as Record<string, unknown>;
+    expect(archived).toMatchObject({ id: "subscription-gym", subscriptionStatus: "suspended", isPublic: false, isArchived: true, archiveReason: "Customer requested account closure." });
+
+    const persisted = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "marketplaceGym").eq("publicId", "subscription-gym")).unique();
+      const invoice = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "platformInvoice").eq("publicId", "archive-invoice")).unique();
+      const support = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "supportCase").eq("publicId", "archive-support")).unique();
+      const posting = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", organization!._id).eq("sourceType", "payment").eq("sourcePublicId", "payment-archive")).unique();
+      const audit = (await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "platform_gym").eq("entityPublicId", "subscription-gym")).collect()).find((event) => event.action === "gym.archive");
+      return { organization, listing, invoice, support, posting, audit };
+    });
+    expect(persisted.organization).toMatchObject({ status: "suspended", archivedAt: expect.any(Number), archiveReason: "Customer requested account closure.", subscriptionStatusReason: "Customer requested account closure." });
+    expect(persisted.listing?.data).toMatchObject({ subscriptionStatus: "suspended", isPublic: false, isArchived: true });
+    expect(persisted.invoice).toBeTruthy();
+    expect(persisted.support).toBeTruthy();
+    expect(persisted.posting).toBeTruthy();
+    expect(persisted.audit).toMatchObject({ action: "gym.archive", reason: "Customer requested account closure.", before: { organization: { status: "active" } }, after: { organization: { status: "suspended", archiveReason: "Customer requested account closure." } } });
+
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as { gyms: Array<Record<string, unknown>>; overview: { gymCounts: Record<string, number> } };
+    expect(snapshot.gyms).toEqual([expect.objectContaining({ id: "subscription-gym", isArchived: true, subscriptionStatus: "suspended", isPublic: false })]);
+    expect(snapshot.overview.gymCounts.suspended).toBe(0);
+    expect(await t.query(api.domain.query, operation("public.marketplace"))).toEqual([]);
+    await expect(platform.query(api.domain.query, operation("platform.gym.detail", { gymId: "subscription-gym" }))).resolves.toMatchObject({ controls: { isArchived: true, isPublic: false, status: "suspended" } });
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "active", reason: "Attempt to revive archived gym." })), "CONFLICT");
+  });
+
   it("keeps expired trials out of public discovery", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
@@ -281,6 +365,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", trialEndsAt: "2026-02-31", reason: "Reject malformed lifecycle date." })), "VALIDATION_ERROR");
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "active", cancelledAt: "2026-01-01", reason: "Reject cancellation date on active subscription." })), "VALIDATION_ERROR");
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", subscriptionStartedAt: "2099-01-01", reason: "Reject cancellation before a future start." })), "VALIDATION_ERROR");
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", billingInterval: "weekly", reason: "Reject an unsupported billing cadence." })), "VALIDATION_ERROR");
     const audits = await t.run(async (ctx) => ctx.db.query("platformAuditEvents").collect());
     expect(audits).toEqual([]);
   });

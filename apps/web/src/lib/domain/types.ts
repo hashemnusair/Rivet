@@ -502,6 +502,7 @@ export interface Organization {
   name: string;
   slug: string;
   subscriptionPlan?: WorkspaceModulePlan;
+  billingInterval?: "monthly" | "annual";
   /** Platform subscription state mirrored by the preview adapter. */
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionStartedAt?: ISODateTime;
@@ -509,6 +510,10 @@ export interface Organization {
   currentPeriodEndsAt?: ISODateTime;
   cancelledAt?: ISODateTime;
   subscriptionStatusReason?: string;
+  /** Platform lifecycle marker. Archiving is reversible at the data layer and
+   * never deletes tenant financial or operational history. */
+  archivedAt?: ISODateTime;
+  archiveReason?: string;
   updatedAt?: ISODateTime;
   currency: string;
   timezone: string;

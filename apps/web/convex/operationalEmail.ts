@@ -11,7 +11,7 @@ const LEASE_MS = 2 * 60 * 1000;
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
-const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"]);
+const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"]);
 
 function providerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
@@ -84,6 +84,10 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
   platform_invoice_issued: {
     en: { subject: "A RIVET invoice was issued", body: "A platform invoice was issued for your gym. Sign in to RIVET to view the amount, billing period, and due date." },
     ar: { subject: "تم إصدار فاتورة RIVET", body: "تم إصدار فاتورة منصة للنادي. سجّل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
+  },
+  platform_invoice_reminder: {
+    en: { subject: "Your RIVET invoice is coming due", body: "Your next RIVET platform invoice is due in three days. Sign in to review the amount, billing period, and due date." },
+    ar: { subject: "فاتورة RIVET مستحقة قريباً", body: "تستحق فاتورة منصة RIVET القادمة خلال ثلاثة أيام. سجّل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
   },
   platform_invoice_paid: {
     en: { subject: "Your RIVET invoice was marked paid", body: "An offline payment was recorded against your platform invoice. Sign in to RIVET to view the reference and status." },

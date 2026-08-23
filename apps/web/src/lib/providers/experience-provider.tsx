@@ -154,7 +154,6 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      let cancelled = false;
       const hadRenderedData = experienceHydratedRef.current;
       if (!hadRenderedData) {
         setExperienceStatus("loading");
@@ -169,27 +168,11 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
       const platformIdentity = identity.status === "ready" && identity.platformAdmin;
       if (memberIdentity || platformIdentity) return;
-      void getApi().listPublicSaasPlans().then((plans) => {
-        if (cancelled) return;
-        setSaasPlans(plans);
-        catalogReadyRef.current = true;
-        markPublicExperienceReady();
-      }).catch((error: unknown) => {
-        if (cancelled) return;
-        const message = error instanceof Error && error.message ? error.message : "RIVET could not load its live catalog.";
-        const failure = refreshFailureState(hadRenderedData, message);
-        setExperienceRefreshing(false);
-        setExperienceError(failure.message);
-        setExperienceStatus(failure.status);
-      });
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
 
     setPreviewSessionReady(false);
     const restored = readStored<CustomerPersona[]>(STORAGE_KEYS.registered) ?? [];
-    void getApi().listPublicSaasPlans().then(setSaasPlans).catch(() => undefined);
     if (restored.length > 0) setRegistered(restored);
 
     const storedBookings = readStored<TrialBooking[]>(STORAGE_KEYS.bookings);
@@ -205,6 +188,35 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceReady(true);
     setPreviewSessionReady(true);
   }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+
+  // The public pricing catalog is a shared live projection. Subscribing here
+  // keeps the landing page and the platform catalog on the same plan records,
+  // including edits made by an administrator while a public page is open.
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
+    const onError = (error: unknown) => {
+      if (cancelled) return;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh its live pricing catalog.";
+      const failure = refreshFailureState(catalogReadyRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!catalogReadyRef.current && !platformIdentity) setExperienceReady(false);
+    };
+    void getApi().subscribePublicSaasPlans((plans) => {
+      if (cancelled) return;
+      setSaasPlans(plans);
+      catalogReadyRef.current = true;
+      if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
+    }, onError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(onError);
+    return () => { cancelled = true; unsubscribe?.(); };
+  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // Public discovery is a live projection too: profile publication, trainer
   // visibility, package pricing, subscription eligibility, and branch counts

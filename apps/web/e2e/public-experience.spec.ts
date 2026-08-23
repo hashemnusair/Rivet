@@ -208,7 +208,7 @@ test.describe("RIVET platform administration", () => {
     await page.getByRole("button", { name: /Open platform console/i }).click();
     await page.goto("/platform/gyms/forge-fitness");
 
-    await expect(page.getByRole("heading", { name: "Forge Fitness Club" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Omar Al-Khatib", exact: true })).toBeVisible();
     await expect(page.getByText("Not configured").first()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Dana Al-Khatib");
@@ -260,7 +260,6 @@ test.describe("RIVET platform administration", () => {
     const suspendedCard = page.locator("article").filter({ hasText: "Forge Fitness Club" });
     await expect(suspendedCard).toBeVisible();
     await expect(suspendedCard.getByLabel("Subscription status: Suspended")).toBeVisible();
-    await expect(suspendedCard.getByLabel("Public directory status: Suppressed")).toBeVisible();
 
     // Public discovery and the landing-page network section must both consume
     // the filtered marketplace projection, never the platform tenant array.

@@ -157,10 +157,28 @@ function hoursAgo(now: Date, hours: number, extraMinutes = 0): Date {
   return new Date(now.getTime() - hours * 3_600_000 - extraMinutes * 60_000);
 }
 
+/** Add calendar months without allowing dates such as January 31 to roll into
+ * the following month. Subscription periods are calendar-based, so this is
+ * intentionally different from adding a fixed number of milliseconds. */
+function addCalendarMonths(timestamp: number, months: number): Date {
+  const source = new Date(timestamp);
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(source.getUTCDate(), lastDay));
+  return target;
+}
+
 export function buildSeed(now: Date = new Date()): MockDb {
   resetUuidCounter();
   const g = makeGen();
   const today = todayISODate("Asia/Amman", now);
+  // Forge is an already-converted demo tenant. Keep its lifecycle facts
+  // realistic so admin detail and platform snapshot screens never fall back
+  // to "Not configured" for the canonical active tenant.
+  const subscriptionStartedAt = new Date(now);
+  subscriptionStartedAt.setUTCDate(subscriptionStartedAt.getUTCDate() - 12);
+  subscriptionStartedAt.setUTCHours(7, 0, 0, 0);
+  const currentPeriodEndsAt = addCalendarMonths(subscriptionStartedAt.getTime(), 1);
 
   // -------------------------------------------------------------------------
   // Organization, branches, config
@@ -1906,6 +1924,9 @@ export function buildSeed(now: Date = new Date()): MockDb {
       receiptFooter: "Thank you for training with Forge. Follow @forgefitness.jo",
       status: "active",
       subscriptionPlan: "Pro",
+      billingInterval: "monthly",
+      subscriptionStartedAt: iso(subscriptionStartedAt),
+      currentPeriodEndsAt: iso(currentPeriodEndsAt),
     },
     brand: {
       organizationId: ORG_ID,

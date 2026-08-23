@@ -25,9 +25,7 @@ export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
   { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
   { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  // Enterprise keeps one clear public price for the initial launch. Contract,
-  // onboarding, and any future volume terms remain a sales conversation.
-  { name: "Enterprise", priceMinor: 500_000, branches: 0, staff: 0, members: 0, tone: "night" },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
 ];
 
 const PLAN_NAMES = new Set<PublicPricingPlanName>(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name));
@@ -106,7 +104,7 @@ export function pricingSignupHref(plan: PublicPricingPlanName, interval: Billing
 export function publicPlanFeatures(plan: PublicPricingPlan): string[] {
   const common = ["Member app and marketplace listing", "Staff permissions and audit history"];
   if (plan.name === "Enterprise") {
-    return ["Unlimited branches", "Unlimited staff accounts", "Unlimited members", "All workspace modules", "Priority onboarding and support", ...common];
+    return ["Up to 25 branches", "Up to 250 staff accounts", "Up to 50,000 members", "All workspace modules", "Priority onboarding and support", ...common];
   }
   const tierFeatures: Record<Exclude<PublicPricingPlanName, "Enterprise">, string[]> = {
     Starter: ["1 branch", "Up to 8 staff accounts", "Up to 500 members", "Gym foundation and revenue tools"],

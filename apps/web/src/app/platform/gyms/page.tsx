@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Building2, CircleAlert, MapPin, Plus, Search, Users } from "lucide-react";
+import { ArrowRight, Building2, MapPin, Plus, Search, Users } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import { formatMoney } from "@/lib/utils/money";
+import { formatDateTime } from "@/lib/utils/dates";
 
 type GymFilter = "all" | MarketplaceGym["subscriptionStatus"];
 
@@ -32,13 +32,13 @@ export default function PlatformGymsPage() {
     query: (api) => api.getPlatformSnapshot(),
     subscribe: (api, onValue, onError) => api.subscribePlatformSnapshot(onValue, onError),
   });
-  const directory = directoryQuery.data?.gyms ?? EMPTY_GYMS;
+  const directory = (directoryQuery.data?.gyms ?? EMPTY_GYMS).filter((gym) => !isArchivedGym(gym));
   const normalizedQuery = query.trim().toLowerCase();
   const gyms = useMemo(
-    () => directory.filter((gym) => {
+    () => sortGymDirectory(directory.filter((gym) => {
       const matchesSearch = !normalizedQuery || `${gym.id} ${gym.name} ${gym.areas.join(" ")} ${gym.rivetPlan}`.toLowerCase().includes(normalizedQuery);
       return matchesSearch && (filter === "all" || gym.subscriptionStatus === filter);
-    }),
+    })),
     [directory, filter, normalizedQuery],
   );
   const statusCounts = useMemo(
@@ -46,10 +46,6 @@ export default function PlatformGymsPage() {
       counts[item.value] = item.value === "all" ? directory.length : directory.filter((gym) => gym.subscriptionStatus === item.value).length;
       return counts;
     }, { all: 0, active: 0, trial: 0, overdue: 0, suspended: 0, cancelled: 0 }),
-    [directory],
-  );
-  const unsafeListings = useMemo(
-    () => directory.filter((gym) => !isPublicSubscriptionStatus(gym.subscriptionStatus) && gym.isPublic !== false),
     [directory],
   );
   const hasFilters = Boolean(normalizedQuery) || filter !== "all";
@@ -95,13 +91,6 @@ export default function PlatformGymsPage() {
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status" aria-live="polite">
             <span>Showing the last known tenant directory while the live connection recovers.</span>
             <Button variant="secondary" size="sm" onClick={() => directoryQuery.refetch()}>Retry</Button>
-          </div>
-        ) : null}
-
-        {unsafeListings.length > 0 ? (
-          <div className="mt-5 flex items-start gap-3 border border-danger/30 bg-danger-bg px-4 py-3 text-[11.5px] text-danger" role="alert">
-            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <p><strong>{unsafeListings.length} non-public-eligible {unsafeListings.length === 1 ? "gym still carries" : "gyms still carry"} a public flag.</strong> Public discovery is suppressed for past-due, suspended, and cancelled statuses; open each record to save the hidden listing state and preserve the audit trail.</p>
           </div>
         ) : null}
 
@@ -152,8 +141,8 @@ export default function PlatformGymsPage() {
 
 function GymCard({ gym }: { gym: MarketplaceGym }) {
   const status = statusPresentation(gym.subscriptionStatus);
-  const listing = listingPresentation(gym);
   const titleId = `gym-card-${gym.id}`;
+  const lifecycle = lifecycleDeadline(gym);
   return (
     <article aria-labelledby={titleId} className="group border border-line bg-surface p-5 transition-all hover:-translate-y-0.5 hover:border-ink hover:shadow-pop">
       <div className="flex items-start justify-between gap-4">
@@ -162,7 +151,6 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
         </span>
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
           <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[.1em] ${status.className}`} aria-label={`Subscription status: ${status.label}`}>{status.label}</span>
-          <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[.1em] ${listing.className}`} aria-label={`Public directory status: ${listing.label}`}>{listing.label}</span>
         </div>
       </div>
       <h2 id={titleId} className="mt-5 truncate text-[19px] font-semibold">{gym.name}</h2>
@@ -174,8 +162,8 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
       </div>
       <div className="mt-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Gym revenue</p>
-          <p className="mt-1 truncate text-[13px] font-semibold">{formatMoney({ amount: gym.monthlyRevenueMinor, currency: "JOD" })}</p>
+          <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">{lifecycle.label}</p>
+          <p className="mt-1 truncate text-[12px] font-semibold">{lifecycle.value}</p>
         </div>
         <Button asChild variant="secondary" size="sm">
           <Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name} admin details`}>Open <ArrowRight className="rtl:rotate-180" /></Link>
@@ -208,16 +196,37 @@ function statusPresentation(status: MarketplaceGym["subscriptionStatus"]) {
   return { label: status === "cancelled" ? "Cancelled" : "Suspended", className: "bg-danger-bg text-danger" };
 }
 
-function listingPresentation(gym: MarketplaceGym) {
-  if (!isPublicSubscriptionStatus(gym.subscriptionStatus)) {
-    return { label: "Suppressed", className: "bg-danger-bg text-danger" };
-  }
-  if (gym.isPublic === false) return { label: "Hidden", className: "bg-warning-bg text-warning" };
-  return { label: "Public", className: "bg-success-bg text-success" };
+const GYM_STATUS_ORDER: Record<MarketplaceGym["subscriptionStatus"], number> = {
+  active: 0,
+  trial: 1,
+  overdue: 2,
+  suspended: 3,
+  cancelled: 4,
+};
+
+/** Keep the directory operationally useful: healthy tenants first, then a
+ * stable lifecycle order and alphabetical names within each status. */
+export function sortGymDirectory(gyms: MarketplaceGym[]): MarketplaceGym[] {
+  return [...gyms].sort((left, right) => {
+    const statusOrder = GYM_STATUS_ORDER[left.subscriptionStatus] - GYM_STATUS_ORDER[right.subscriptionStatus];
+    if (statusOrder !== 0) return statusOrder;
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.id.localeCompare(right.id);
+  });
 }
 
-function isPublicSubscriptionStatus(status: MarketplaceGym["subscriptionStatus"]): boolean {
-  return status === "active" || status === "trial";
+function lifecycleDeadline(gym: MarketplaceGym): { label: string; value: string } {
+  if (gym.subscriptionStatus === "trial") return { label: "Trial ends", value: formatLifecycleDate(gym.trialEndsAt) };
+  if (gym.subscriptionStatus === "cancelled") return { label: "Cancelled", value: formatLifecycleDate(gym.cancelledAt) };
+  return { label: "Period ends", value: formatLifecycleDate(gym.currentPeriodEndsAt) };
+}
+
+function formatLifecycleDate(value: string | undefined): string {
+  return value ? formatDateTime(value) : "Date not configured";
+}
+
+function isArchivedGym(gym: MarketplaceGym): boolean {
+  const lifecycle = gym as MarketplaceGym & { isArchived?: boolean; archivedAt?: string | null };
+  return lifecycle.isArchived === true || Boolean(lifecycle.archivedAt);
 }
 
 function Metric({ icon, value, label }: { icon?: React.ReactNode; value: string; label: string }) {

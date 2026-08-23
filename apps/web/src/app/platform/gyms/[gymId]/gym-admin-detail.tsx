@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
+import { ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Trash2, Users } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { toast } from "sonner";
@@ -9,55 +10,48 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import { isApiError } from "@/lib/api/errors";
-import type { PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
+import { Dialog, DialogBody, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDateTime } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 
-type LifecycleField = "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt";
-type LifecycleErrors = Partial<Record<LifecycleField, string>>;
+type GymArchiveApi = { archivePlatformGym?: (input: ArchivePlatformGymInput) => Promise<void> };
 
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
+  const router = useRouter();
   const detailQuery = useRealtimeApiQuery({ queryKey: qk.platformGymDetail(gymId), query: (api) => api.getPlatformGymDetail(gymId), subscribe: (api, onValue, onError) => api.subscribePlatformGymDetail(gymId, onValue, onError), enabled: Boolean(gymId) });
   const invalidate = useInvalidate();
   const detail = detailQuery.data;
   const organizationAvailable = detail?.organization.state === "available";
   const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
   const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [isPublic, setIsPublic] = useState(false);
-  const [trialEndsAt, setTrialEndsAt] = useState("");
-  const [subscriptionStartedAt, setSubscriptionStartedAt] = useState("");
-  const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
-  const [cancelledAt, setCancelledAt] = useState("");
   const [reason, setReason] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<LifecycleErrors>({});
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string>();
   const editing = useRef(false);
 
   useEffect(() => {
     if (!detail || editing.current) return;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
+    setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
     setIsPublic(detail.organization.state === "available" && normalizePublicListing(detail.controls.isPublic, detail.controls.status));
-    setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
-    setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
-    setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
-    setCancelledAt(detail.controls.status === "cancelled" ? dateInputValue(detail.subscription.cancelledAt) : "");
-    setFieldErrors({});
   }, [detail]);
 
   const dirty = detail && organizationAvailable ? subscriptionDraftIsDirty(detail, {
     status,
     plan,
+    billingInterval,
     isPublic,
-    trialEndsAt,
-    subscriptionStartedAt,
-    currentPeriodEndsAt,
-    cancelledAt,
   }) : false;
 
   useEffect(() => {
@@ -72,19 +66,28 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
   const update = useApiMutation((api) => {
     if (!organizationAvailable) throw new Error("Subscription controls are unavailable until this gym is provisioned.");
-    return api.updatePlatformGym({ gymId, status, plan, isPublic: normalizePublicListing(isPublic, status), trialEndsAt: trialEndsAt || undefined, subscriptionStartedAt: subscriptionStartedAt || undefined, currentPeriodEndsAt: currentPeriodEndsAt || undefined, cancelledAt: status === "cancelled" ? cancelledAt || undefined : undefined, reason: reason.trim() });
+    return api.updatePlatformGym({ gymId, status, plan, billingInterval, isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
   }, {
     onSuccess: async () => {
       editing.current = false;
       await invalidate([qk.platformGymDetail(gymId)]);
       setReason("");
-      setFieldErrors({});
       toast.success("Gym subscription controls saved and audited.");
     },
-    onError: (error) => {
-      if (!isApiError(error) || !error.fieldErrors) return;
-      setFieldErrors(lifecycleErrorsFromApi(error.fieldErrors));
+  });
+
+  const archive = useApiMutation<void, ArchivePlatformGymInput>((api, input) => {
+    const archivePlatformGym = (api as typeof api & GymArchiveApi).archivePlatformGym;
+    if (!archivePlatformGym) throw new Error("Gym archiving is not available in this deployment yet.");
+    return archivePlatformGym.call(api, input);
+  }, {
+    onSuccess: async () => {
+      await invalidate([qk.platformGymDetail(gymId)]);
+      toast.success("Gym archived. Access and public discovery were removed; history was retained.");
+      setDeleteOpen(false);
+      router.push("/platform/gyms");
     },
+    onError: (error) => setDeleteError(error.message || "The gym could not be archived. No changes were made."),
   });
 
   if (detailQuery.isLoading || !detail) {
@@ -99,13 +102,9 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     editing.current = false;
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
+    setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
     setIsPublic(detail.organization.state === "available" && detail.controls.isPublic);
-    setTrialEndsAt(dateInputValue(detail.subscription.trialEndsAt));
-    setSubscriptionStartedAt(dateInputValue(detail.subscription.startedAt));
-    setCurrentPeriodEndsAt(dateInputValue(detail.subscription.currentPeriodEndsAt));
-    setCancelledAt(detail.controls.status === "cancelled" ? dateInputValue(detail.subscription.cancelledAt) : "");
     setReason("");
-    setFieldErrors({});
   };
   const draftStatus = status ?? detail.controls.status;
   const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(draftStatus);
@@ -121,29 +120,9 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     editing.current = true;
     setStatus(next);
     if (!isPublicSubscriptionStatus(next)) setIsPublic(false);
-    if (next !== "cancelled") setCancelledAt("");
-    setFieldErrors({});
-  };
-  const editLifecycleDate = (field: LifecycleField, setter: (value: string) => void, value: string) => {
-    edit(setter, value);
-    setFieldErrors((current) => {
-      if (!current[field]) return current;
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
   };
   const saveControls = () => {
     if (!detail || !organizationAvailable || !status || !plan) return;
-    const nextErrors = validateSubscriptionDraft(detail, {
-      status,
-      trialEndsAt,
-      subscriptionStartedAt,
-      currentPeriodEndsAt,
-      cancelledAt,
-    });
-    setFieldErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
     update.mutate();
   };
   const protectNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -184,15 +163,14 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so plan, status, lifecycle dates, public visibility, and save actions are disabled. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
           {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
           <fieldset disabled={!organizationAvailable} className="mt-5 min-w-0">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
               <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
+              <label className="grid gap-1.5 text-[12px] font-medium">Billing cadence<Select value={billingInterval} onValueChange={(value) => edit(setBillingInterval, value as BillingInterval)}><SelectTrigger aria-label="Billing cadence" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="annual">Annual · saves 20%</SelectItem></SelectContent></Select></label>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <LifecycleInput id="gym-trial-ends" label="Trial ends" value={trialEndsAt} onChange={(value) => editLifecycleDate("trialEndsAt", setTrialEndsAt, value)} error={fieldErrors.trialEndsAt} disabled={!organizationAvailable} />
-              <LifecycleInput id="gym-subscription-started" label="Subscription started" value={subscriptionStartedAt} onChange={(value) => editLifecycleDate("subscriptionStartedAt", setSubscriptionStartedAt, value)} error={fieldErrors.subscriptionStartedAt} disabled={!organizationAvailable} />
-              <LifecycleInput id="gym-current-period-ends" label="Current period ends" value={currentPeriodEndsAt} onChange={(value) => editLifecycleDate("currentPeriodEndsAt", setCurrentPeriodEndsAt, value)} error={fieldErrors.currentPeriodEndsAt} disabled={!organizationAvailable} />
-              <LifecycleInput id="gym-cancelled-on" label="Cancelled on" value={cancelledAt} onChange={(value) => editLifecycleDate("cancelledAt", setCancelledAt, value)} error={fieldErrors.cancelledAt} disabled={!organizationAvailable || draftStatus !== "cancelled"} />
+            <div className="mt-4 border border-line bg-sunken/60 px-4 py-3 text-[10.5px] leading-relaxed text-ink-2" role="note">
+              <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Subscription dates are server-owned. Trial starts from onboarding, ends on the fixed trial date, and the current period end is calculated from the selected plan and billing cadence.</p>
+              <p className="mt-2 text-ink-3">Use status changes for access decisions; historical dates remain visible below and are never manually edited here.</p>
             </div>
             <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" disabled={!organizationAvailable} /></label>
             <div className="mt-4 flex items-start justify-between gap-4 border-t border-line pt-4">
@@ -206,11 +184,31 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           </fieldset>
         </section>
 
-        <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <Stat label="RIVET plan" value={<FieldValue field={detail.subscription.plan} />} detail={<FieldValue field={detail.subscription.status} render={statusLabel} />} />
-          <Stat label="Active members" value={<FieldValue field={detail.usage.memberCount} render={(value) => value.toLocaleString()} />} detail={<FieldValue field={detail.branches} render={(value) => `${value.length} branch${value.length === 1 ? "" : "es"}`} />} />
-          <Stat label="Payment transactions" value={<FieldValue field={detail.usage.paymentTransactionCount} render={(value) => value.toLocaleString()} />} detail="Tenant payment records" />
+        <section className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-danger/30 bg-danger-bg p-5">
+          <div>
+            <p className="eyebrow text-danger">Danger zone</p>
+            <h2 className="mt-1 text-[16px] font-semibold">Remove gym access</h2>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archive this gym to remove workspace access and public discovery. Financial records, subscription facts, and the platform audit trail are retained.</p>
+          </div>
+          <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Trash2 />Delete gym</Button>
         </section>
+
+        <Dialog open={deleteOpen} onOpenChange={(open) => { if (!archive.isPending) setDeleteOpen(open); }}>
+          <DialogHeader>
+            <DialogTitle>Delete {detail.name}?</DialogTitle>
+            <DialogDescription>This archives the gym from RIVET. Access and public discovery are removed, while financial and audit history is retained.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="grid gap-4">
+            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for deletion<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
+            {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[10.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
+            {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
+            <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Trash2 />Delete gym</Button>
+          </DialogFooter>
+        </Dialog>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
           <section className="border border-line bg-surface">
@@ -241,6 +239,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
               <p className="eyebrow-night">Subscription facts</p>
               <dl className="mt-5 grid gap-3 text-[12px]">
                 <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
+                <FactRow label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></FactRow>
                 <FactRow label="Status"><FieldValue field={detail.subscription.status} render={statusLabel} /></FactRow>
                 <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
                 <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
@@ -281,95 +280,6 @@ function statusLabel(value: string) {
   return value === "overdue" ? "Past due" : value.replaceAll("_", " ");
 }
 
-function dateInputValue(field: PlatformData<string>): string {
-  return field.state === "available" ? field.value.slice(0, 10) : "";
-}
-
-function LifecycleInput({ id, label, value, onChange, error, disabled }: { id: string; label: string; value: string; onChange: (value: string) => void; error?: string; disabled?: boolean }) {
-  const errorId = `${id}-error`;
-  return (
-    <div className="grid gap-1.5 text-[12px] font-medium">
-      <label htmlFor={id}>{label}</label>
-      <Input id={id} type="date" dir="ltr" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />
-      {error ? <p id={errorId} role="alert" className="text-[10.5px] font-normal text-danger">{error}</p> : null}
-    </div>
-  );
-}
-
-function parseLifecycleTimestamp(value: string): number | undefined {
-  const normalized = value.trim();
-  if (!normalized) return undefined;
-  const datePrefix = normalized.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
-    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
-    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
-  }
-  const timestamp = Date.parse(normalized);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
-function lifecycleErrorsFromApi(fieldErrors: Record<string, string[]>): LifecycleErrors {
-  return {
-    trialEndsAt: fieldErrors.trialEndsAt?.[0],
-    subscriptionStartedAt: fieldErrors.subscriptionStartedAt?.[0],
-    currentPeriodEndsAt: fieldErrors.currentPeriodEndsAt?.[0],
-    cancelledAt: fieldErrors.cancelledAt?.[0],
-  };
-}
-
-export function validateSubscriptionDraft(
-  detail: PlatformGymDetail,
-  draft: Pick<{
-    status: PlatformGymDetail["controls"]["status"];
-    trialEndsAt: string;
-    subscriptionStartedAt: string;
-    currentPeriodEndsAt: string;
-    cancelledAt: string;
-  }, "status" | LifecycleField>,
-  now = Date.now(),
-): LifecycleErrors {
-  const errors: LifecycleErrors = {};
-  const values: Record<LifecycleField, string> = {
-    trialEndsAt: draft.trialEndsAt || dateInputValue(detail.subscription.trialEndsAt),
-    subscriptionStartedAt: draft.subscriptionStartedAt || dateInputValue(detail.subscription.startedAt),
-    currentPeriodEndsAt: draft.currentPeriodEndsAt || dateInputValue(detail.subscription.currentPeriodEndsAt),
-    cancelledAt: draft.status === "cancelled" ? draft.cancelledAt || dateInputValue(detail.subscription.cancelledAt) : draft.cancelledAt,
-  };
-  const parsed: Partial<Record<LifecycleField, number>> = {};
-  for (const field of Object.keys(values) as LifecycleField[]) {
-    if (!values[field]) continue;
-    const timestamp = parseLifecycleTimestamp(values[field]);
-    if (timestamp === undefined) errors[field] = "Enter a valid date";
-    else parsed[field] = timestamp;
-  }
-  if (Object.keys(errors).length > 0) return errors;
-
-  if (parsed.cancelledAt !== undefined && draft.status !== "cancelled") {
-    errors.cancelledAt = "Only valid for cancelled subscriptions";
-  }
-  const statusTransitioned = draft.status !== detail.controls.status;
-  const nextSubscriptionStartedAt = parsed.subscriptionStartedAt ?? ((statusTransitioned && (draft.status === "trial" || draft.status === "active")) ? now : undefined);
-  const nextTrialEndsAt = parsed.trialEndsAt;
-  const nextCurrentPeriodEndsAt = parsed.currentPeriodEndsAt;
-  const nextCancelledAt = draft.status === "cancelled" ? parsed.cancelledAt ?? now : undefined;
-  if (draft.status === "trial" && nextTrialEndsAt === undefined && !errors.trialEndsAt) {
-    errors.trialEndsAt = "Required for trials";
-  }
-  if (draft.status === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= now && !errors.trialEndsAt) {
-    errors.trialEndsAt = "Must be in the future";
-  }
-  if (nextSubscriptionStartedAt !== undefined && nextTrialEndsAt !== undefined && nextTrialEndsAt < nextSubscriptionStartedAt && !errors.trialEndsAt) {
-    errors.trialEndsAt = "Must be on or after the start date";
-  }
-  if (nextSubscriptionStartedAt !== undefined && nextCurrentPeriodEndsAt !== undefined && nextCurrentPeriodEndsAt < nextSubscriptionStartedAt && !errors.currentPeriodEndsAt) {
-    errors.currentPeriodEndsAt = "Must be on or after the start date";
-  }
-  if (nextCancelledAt !== undefined && nextSubscriptionStartedAt !== undefined && nextCancelledAt < nextSubscriptionStartedAt && !errors.cancelledAt) {
-    errors.cancelledAt = "Must be on or after the start date";
-  }
-  return errors;
-}
-
 function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
   return status === "active" || status === "trial";
 }
@@ -383,24 +293,22 @@ export function subscriptionDraftIsDirty(
   draft: {
     status: PlatformGymDetail["controls"]["status"] | undefined;
     plan: PlatformGymDetail["controls"]["plan"] | undefined;
+    billingInterval: BillingInterval;
     isPublic: boolean;
-    trialEndsAt: string;
-    subscriptionStartedAt: string;
-    currentPeriodEndsAt: string;
-    cancelledAt: string;
   },
 ): boolean {
   return draft.status !== detail.controls.status
     || draft.plan !== detail.controls.plan
-    || draft.isPublic !== detail.controls.isPublic
-    || draft.trialEndsAt !== dateInputValue(detail.subscription.trialEndsAt)
-    || draft.subscriptionStartedAt !== dateInputValue(detail.subscription.startedAt)
-    || draft.currentPeriodEndsAt !== dateInputValue(detail.subscription.currentPeriodEndsAt)
-    || draft.cancelledAt !== dateInputValue(detail.subscription.cancelledAt);
+    || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval)
+    || draft.isPublic !== detail.controls.isPublic;
 }
 
-function Stat({ label, value, detail }: { label: string; value: React.ReactNode; detail: React.ReactNode }) {
-  return <div className="border border-line bg-surface p-5"><p className="font-mono text-[8px] uppercase tracking-[.11em] text-ink-3">{label}</p><p className="mt-3 text-[23px] font-semibold">{value}</p><p className="mt-2 text-[10px] text-ink-3">{detail}</p></div>;
+function readBillingInterval(field: PlatformGymDetail["subscription"]["billingInterval"]): BillingInterval {
+  return field?.state === "available" ? field.value : "monthly";
+}
+
+function billingIntervalLabel(value: BillingInterval): string {
+  return value === "annual" ? "Annual · saves 20%" : "Monthly";
 }
 
 function Usage({ icon, label, field }: { icon: React.ReactNode; label: string; field: PlatformData<number | string> }) {

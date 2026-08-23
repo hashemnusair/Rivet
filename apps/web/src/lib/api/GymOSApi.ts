@@ -261,12 +261,17 @@ export interface PlatformBillingInvoice {
   dueAt?: string;
   periodStart?: string;
   periodEnd?: string;
+  /** Deterministic subscription cycle key; prevents duplicate automation invoices. */
+  cycleKey?: string;
+  billingInterval?: BillingInterval;
   paymentReference?: string;
   paidAt?: string;
   pastDueAt?: string;
   voidedAt?: string;
   status: "draft" | "open" | "paid" | "past_due" | "void" | "failed" | "trial";
 }
+
+export type BillingInterval = "monthly" | "annual";
 
 export interface CreatePlatformInvoiceInput {
   gymId: string;
@@ -275,6 +280,8 @@ export interface CreatePlatformInvoiceInput {
   dueAt: string;
   periodStart: string;
   periodEnd: string;
+  billingInterval?: BillingInterval;
+  cycleKey?: string;
 }
 
 export interface RecordPlatformInvoicePaymentInput {
@@ -328,6 +335,9 @@ export interface PlatformGymDetail {
     status: MarketplaceGym["subscriptionStatus"];
     plan: MarketplaceGym["rivetPlan"];
     isPublic: boolean;
+    isArchived?: boolean;
+    archivedAt?: string;
+    archiveReason?: string;
   };
   organization: PlatformData<{
     id: UUID;
@@ -335,6 +345,8 @@ export interface PlatformGymDetail {
     status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
     currency: string;
     timezone: string;
+    archivedAt?: string;
+    archiveReason?: string;
   }>;
   joinedAt: PlatformData<string>;
   branches: PlatformData<PlatformGymDetailBranch[]>;
@@ -349,6 +361,7 @@ export interface PlatformGymDetail {
   };
   subscription: {
     plan: PlatformData<MarketplaceGym["rivetPlan"]>;
+    billingInterval?: PlatformData<BillingInterval>;
     status: PlatformData<MarketplaceGym["subscriptionStatus"]>;
     startedAt: PlatformData<string>;
     trialEndsAt: PlatformData<string>;
@@ -384,6 +397,10 @@ export interface PlatformSupportCase {
   updatedAt?: string;
   resolvedAt?: string;
   resolutionSummary?: string;
+  /** Structured metadata for workflows such as a plan-change request. */
+  requestType?: "general" | "plan_upgrade";
+  requestedPlan?: PlatformSaasPlan["name"];
+  billingInterval?: "monthly" | "annual";
   messages?: PlatformSupportMessage[];
 }
 
@@ -403,6 +420,9 @@ export interface CreateSupportCaseInput {
   subject: string;
   body: string;
   priority: PlatformSupportCase["priority"];
+  requestType?: PlatformSupportCase["requestType"];
+  requestedPlan?: PlatformSupportCase["requestedPlan"];
+  billingInterval?: PlatformSupportCase["billingInterval"];
 }
 
 export interface PlatformOperatorQueueItem {
@@ -473,6 +493,8 @@ export interface SubmitGymApplicationInput {
   email: string;
   contactNumber: string;
   plan: PlatformSaasPlan["name"];
+  /** Defaults to monthly for legacy clients. */
+  billingInterval?: BillingInterval;
 }
 
 export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
@@ -486,6 +508,7 @@ export interface PlatformGymApplication {
   email: string;
   contactNumber: string;
   plan: PlatformSaasPlan["name"];
+  billingInterval?: BillingInterval;
   status: GymApplicationStatus;
   notificationStatus: GymApplicationNotificationStatus;
   notificationError?: string;
@@ -530,6 +553,7 @@ export interface GymProvisioningResult {
   branchId: UUID;
   branchName: string;
   plan: PlatformSaasPlan["name"];
+  billingInterval?: BillingInterval;
   ownerName: string;
   ownerEmail: string;
   clerkOrganizationId: string;
@@ -596,11 +620,19 @@ export interface UpdatePlatformGymInput {
   gymId: string;
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
+  billingInterval?: BillingInterval;
   isPublic?: boolean;
-  trialEndsAt?: string;
-  subscriptionStartedAt?: string;
-  currentPeriodEndsAt?: string;
-  cancelledAt?: string;
+  reason: string;
+}
+
+/**
+ * Archives a gym from the platform directory while retaining its financial
+ * and audit history. This is an archive-only operation: no tenant records are
+ * deleted and the platform detail route remains available for audit review.
+ */
+export interface ArchivePlatformGymInput {
+  gymId: string;
+  confirmation: string;
   reason: string;
 }
 
@@ -668,6 +700,7 @@ export interface GymOSApi {
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
+  subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
@@ -675,6 +708,7 @@ export interface GymOSApi {
   saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication>;
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
+  archivePlatformGym?(input: ArchivePlatformGymInput): Promise<void>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice>;
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;

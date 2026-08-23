@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformBillingInvoice, PlatformSnapshot } from "@/lib/api/GymOSApi";
@@ -117,10 +117,46 @@ describe("BillingPage", () => {
     const user = userEvent.setup();
     state.snapshot = snapshot([]);
     render(<BillingPage />);
-    await user.click(screen.getByRole("button", { name: "New invoice" }));
+    await user.click(screen.getByRole("button", { name: "Create exception invoice" }));
     const amount = screen.getByRole("textbox", { name: "Amount (JOD)" });
     await user.type(amount, value);
     expect(screen.getByRole("alert")).toHaveTextContent(message);
     expect(screen.getByRole("button", { name: "Create draft" })).toBeDisabled();
+  });
+
+  it("foregrounds automatic renewal states and shows the two-day grace deadline", async () => {
+    state.snapshot = snapshot([
+      invoice({ id: "AUTO-OPEN", cycleKey: "subscription:gym-1:monthly:1788264000000", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "open" }),
+      invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000:grace", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "past_due" }),
+      invoice({ id: "AUTO-PAID", cycleKey: "subscription:gym-1:monthly:1785672000000", billingInterval: "monthly", issuedAt: "2026-08-01T12:00:00.000Z", dueAt: "2026-08-04T12:00:00.000Z", periodEnd: "2026-09-04T12:00:00.000Z", status: "paid", paymentReference: "BANK-PAID" }),
+    ]);
+    render(<BillingPage />);
+
+    expect(screen.getByText("Automatic renewal invoices")).toBeInTheDocument();
+    expect(screen.getByText("Issued T−3 and due at term end")).toBeInTheDocument();
+    expect(screen.getByText("In grace / past due")).toBeInTheDocument();
+    expect(screen.getAllByText("Automatic renewal", { selector: "span" })).toHaveLength(3);
+    expect(screen.getByRole("row", { name: /AUTO-OPEN/ })).toHaveTextContent("Upcoming");
+    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("In grace");
+    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("Grace ends");
+    expect(screen.getByRole("row", { name: /AUTO-PAID/ })).toHaveTextContent("Paid");
+    expect(screen.queryByText("Manual invoices")).not.toBeInTheDocument();
+  });
+
+  it("offers bank/reference payment reactivation during the automated grace period", async () => {
+    const user = userEvent.setup();
+    state.snapshot = snapshot([invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000", billingInterval: "monthly", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "past_due" })]);
+    render(<BillingPage />);
+
+    const row = screen.getByRole("row", { name: /AUTO-GRACE/ });
+    await user.click(within(row).getByRole("button", { name: "Reactivate" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Record bank payment & reactivate");
+    expect(screen.getByRole("dialog")).toHaveTextContent("RIVET does not charge a provider");
+    await user.type(screen.getByRole("textbox", { name: "Payment reference" }), "BANK-GRACE-1");
+    await user.type(screen.getByRole("textbox", { name: "Reason" }), "Bank transfer verified.");
+    await user.click(screen.getByRole("button", { name: "Reactivate gym" }));
+
+    const paymentMutation = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
+    expect(paymentMutation?.mutate).toHaveBeenCalledWith({ invoiceId: "AUTO-GRACE", reference: "BANK-GRACE-1", reason: "Bank transfer verified." });
   });
 });

@@ -7,6 +7,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
+import type { MockDb } from "./store";
 
 /**
  * These exercise the mock as the application's stand-in backend: mutations must
@@ -88,7 +89,20 @@ describe("workspace entitlement and preference boundary", () => {
     const forge = snapshot.gyms.find((gym) => gym.id === "forge-fitness");
     const cleanupRows = snapshot.gyms.filter((gym) => gym.id !== "forge-fitness");
 
-    expect(forge).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Pro", isPublic: true, isProvisioned: true });
+    expect(forge).toMatchObject({
+      subscriptionStatus: "active",
+      rivetPlan: "Pro",
+      billingInterval: "monthly",
+      isPublic: true,
+      isProvisioned: true,
+      subscriptionStartedAt: expect.any(String),
+      currentPeriodEndsAt: expect.any(String),
+    });
+    expect(Date.parse(forge!.currentPeriodEndsAt!)).toBeGreaterThan(Date.now());
+    const forgeDetail = await api.getPlatformGymDetail("forge-fitness");
+    expect(forgeDetail.subscription.startedAt).toEqual({ state: "available", value: forge!.subscriptionStartedAt });
+    expect(forgeDetail.subscription.currentPeriodEndsAt).toEqual({ state: "available", value: forge!.currentPeriodEndsAt });
+    expect(forgeDetail.subscription.trialEndsAt).toEqual({ state: "not_configured" });
     expect(snapshot.overview.activeMrr).toEqual({ amount: 249_000, currency: "JOD" });
     expect(cleanupRows.length).toBeGreaterThan(0);
     for (const gym of cleanupRows) {
@@ -110,6 +124,11 @@ describe("workspace entitlement and preference boundary", () => {
 });
 
 describe("platform gym applications", () => {
+  it("persists the selected billing cadence through the application queue", async () => {
+    const submitted = await api.submitGymApplication({ gymName: "Annual Reconcile Gym", ownerName: "Annual Owner", email: "annual-owner@example.test", contactNumber: "+962 79 700 0000", plan: "Pro", billingInterval: "annual" });
+    expect((await api.listGymApplications()).find((application) => application.id === submitted.applicationId)).toMatchObject({ plan: "Pro", billingInterval: "annual" });
+  });
+
   it("delivers the current application queue through the mock subscription contract", async () => {
     const values: unknown[] = [];
     const unsubscribe = await api.subscribePlatformApplications((applications) => values.push(applications));
@@ -174,6 +193,13 @@ describe("platform subscription controls", () => {
     await expect(api.reopenPlatformSupportCase(supportCase.id)).resolves.toMatchObject({ status: "open" });
   });
 
+  it("records a plan upgrade request without changing the tenant plan", async () => {
+    const before = await api.getWorkspaceAccess();
+    const request = await api.createSupportCase({ email: DEMO_IDENTITY.email ?? "demo@example.test", subject: "Request Growth", body: "Please review our operations needs.", priority: "normal", requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
+    expect(request).toMatchObject({ requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
+    expect((await api.getWorkspaceAccess()).entitlements.subscriptionPlan).toBe(before.entitlements.subscriptionPlan);
+  });
+
   it("keeps platform invoices as a manual audited-style lifecycle", async () => {
     const gym = (await api.getPlatformSnapshot()).gyms[0]!;
     await expect(api.createPlatformInvoice({
@@ -203,6 +229,26 @@ describe("platform subscription controls", () => {
     await expect(api.voidPlatformInvoice(invoice.id, "Duplicate invoice.")).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
+  it("reconciles one annual cycle, enters grace, suspends after two days, and reactivates on payment", async () => {
+    const internalApi = api as unknown as { db: MockDb };
+    const boundary = Date.parse("2026-09-30T12:00:00.000Z");
+    internalApi.db.organization.billingInterval = "annual";
+    internalApi.db.organization.status = "active";
+    internalApi.db.organization.subscriptionStartedAt = "2025-09-30T12:00:00.000Z";
+    internalApi.db.organization.currentPeriodEndsAt = new Date(boundary).toISOString();
+    const reminder = await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000);
+    expect(reminder).toMatchObject({ invoicesCreated: 1, markedPastDue: 0, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000)).toMatchObject({ invoicesCreated: 0 });
+    const invoice = (await api.getPlatformSnapshot()).invoices.find((item) => item.cycleKey);
+    expect(invoice).toMatchObject({ billingInterval: "annual", amountMinor: 2_390_400, status: "open" });
+    await api.reconcilePlatformSubscriptions(boundary);
+    await api.reconcilePlatformSubscriptions(boundary + 2 * 86_400_000);
+    expect((await api.getPlatformSnapshot()).gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
+    const paid = await api.recordPlatformInvoicePayment({ invoiceId: invoice!.id, reference: "BANK-ANNUAL", reason: "Annual transfer received." });
+    expect(paid.status).toBe("paid");
+    expect(internalApi.db.organization).toMatchObject({ status: "active", billingInterval: "annual", currentPeriodEndsAt: "2027-09-30T12:00:00.000Z" });
+  });
+
   it("delivers the complete platform projection through the realtime contract", async () => {
     const values: unknown[] = [];
     const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => values.push(snapshot));
@@ -230,6 +276,27 @@ describe("platform subscription controls", () => {
     expect(updatedPlan.members).toBe(originalMembers + 100);
   });
 
+  it("persists an admin billing cadence change and derives its period in the mock", async () => {
+    const annual = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", reason: "Approve annual billing for the tenant." });
+    const annualStart = Date.parse(annual.subscriptionStartedAt!);
+    const annualEnd = Date.parse(annual.currentPeriodEndsAt!);
+    expect(annual).toMatchObject({ billingInterval: "annual", subscriptionStatus: "active" });
+    expect(annualEnd).toBeGreaterThan(annualStart + 364 * 86_400_000);
+    expect(annualEnd).toBeLessThan(annualStart + 367 * 86_400_000);
+
+    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", reason: "Move the tenant to monthly billing." });
+    const monthlyStart = Date.parse(monthly.subscriptionStartedAt!);
+    const monthlyEnd = Date.parse(monthly.currentPeriodEndsAt!);
+    expect(monthly).toMatchObject({ billingInterval: "monthly", subscriptionStatus: "active" });
+    expect(monthlyStart).toBe(annualStart);
+    expect(monthlyEnd).toBeGreaterThan(monthlyStart + 27 * 86_400_000);
+    expect(monthlyEnd).toBeLessThan(monthlyStart + 32 * 86_400_000);
+
+    const detail = await api.getPlatformGymDetail("forge-fitness");
+    const latestActivity = detail.activity.state === "available" ? detail.activity.value[0] as PlatformSnapshot["auditEvents"][number] & Record<string, unknown> : undefined;
+    expect(latestActivity).toMatchObject({ before: { billingInterval: "annual" }, after: { billingInterval: "monthly" } });
+  });
+
   it("keeps unprovisioned directory rows cleanup-only and out of public/active counts", async () => {
     const snapshot = await api.getPlatformSnapshot();
     const directoryOnly = snapshot.gyms.find((gym) => gym.id !== "forge-fitness");
@@ -251,7 +318,7 @@ describe("platform subscription controls", () => {
     await api.updatePlatformGym({ gymId: forgeBefore.id, status: "suspended", plan: "Growth", isPublic: true, reason: "Billing review requires access suspension." });
 
     const suspended = await api.getPlatformGymDetail(forgeBefore.id);
-    expect(suspended.controls).toEqual({ status: "suspended", plan: "Growth", isPublic: false });
+    expect(suspended.controls).toMatchObject({ status: "suspended", plan: "Growth", isPublic: false });
     expect(suspended.organization).toMatchObject({ state: "available", value: { status: "suspended" } });
     expect(suspended.subscription).toMatchObject({
       plan: { state: "available", value: "Growth" },
@@ -308,14 +375,30 @@ describe("platform subscription controls", () => {
   });
 
   it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start a trial without an end date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const trial = await api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start the one-month onboarding trial." });
+    expect(trial).toMatchObject({ subscriptionStatus: "trial", subscriptionStartedAt: expect.any(String), trialEndsAt: expect.any(String) });
+    expect(Date.parse(trial.trialEndsAt!) - Date.parse(trial.subscriptionStartedAt!)).toBeGreaterThanOrEqual(28 * 86_400_000);
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." } as Parameters<MockGymOSApi["updatePlatformGym"]>[0])).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
 
     const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", isPublic: true, reason: "Payment is past due." });
     expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
     const snapshot = await api.getPlatformSnapshot();
     expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
+  });
+
+  it("archives a gym only after typed confirmation and retains an audit record", async () => {
+    await expect(api.archivePlatformGym({ gymId: "forge-fitness", confirmation: "Forge", reason: "Customer requested account closure." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await api.archivePlatformGym({ gymId: "forge-fitness", confirmation: "Forge Fitness Club", reason: "Customer requested account closure." });
+
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ isArchived: true, isPublic: false, subscriptionStatus: "suspended" });
+    expect(snapshot.invoices.some((invoice) => invoice.gymId === "forge-fitness")).toBe(true);
+    expect(snapshot.supportCases.some((supportCase) => supportCase.gymId === "forge-fitness")).toBe(true);
+    expect(snapshot.auditEvents[0]).toMatchObject({ action: "gym.archive", entityPublicId: "forge-fitness", reason: "Customer requested account closure." });
+    await expect(api.getPlatformGymDetail("forge-fitness")).resolves.toMatchObject({ controls: { isArchived: true, isPublic: false, status: "suspended" } });
+    await expect(api.listMarketplaceGyms()).resolves.toEqual([]);
+    await expect(api.getSession()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 
   it("emits plan catalog changes and truthful audit events through the platform stream", async () => {

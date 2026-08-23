@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
-import PlatformGymsPage from "./page";
+import PlatformGymsPage, { sortGymDirectory } from "./page";
 
 const state = vi.hoisted(() => ({
   query: {
@@ -62,14 +62,44 @@ describe("Platform gyms directory", () => {
     };
   });
 
-  it("shows authoritative status/listing badges and links Add gym to applications", () => {
+  it("shows lean status cards and links Add gym to applications", () => {
     render(<PlatformGymsPage />);
 
     expect(screen.getByRole("heading", { name: "Gym organizations" })).toBeInTheDocument();
-    expect(screen.getByText("Suppressed")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("1 non-public-eligible gym still carries a public flag");
+    expect(screen.getAllByText("Period ends").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Gym revenue")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add gym" })).toHaveAttribute("href", "/platform/applications");
     expect(screen.getByRole("link", { name: "Open Paused Fitness admin details" })).toHaveAttribute("href", "/platform/gyms/paused");
+  });
+
+  it("sorts active gyms first, then lifecycle status and name", () => {
+    const gyms = [
+      gym("cancelled-z", "cancelled", { name: "Zulu Fitness" }),
+      gym("trial-a", "trial", { name: "Alpha Fitness" }),
+      gym("active-z", "active", { name: "Zulu Active" }),
+      gym("active-a", "active", { name: "Alpha Active" }),
+      gym("overdue-a", "overdue", { name: "Alpha Past Due" }),
+    ];
+
+    expect(sortGymDirectory(gyms).map((item) => item.id)).toEqual(["active-a", "active-z", "trial-a", "overdue-a", "cancelled-z"]);
+  });
+
+  it("does not show archived rows in the default directory", () => {
+    const archived = gym("archived", "cancelled", { name: "Archived Fitness" }) as MarketplaceGym & { isArchived: boolean };
+    archived.isArchived = true;
+    state.query = {
+      data: { gyms: [gym("active", "active"), archived] },
+      isLoading: false,
+      isError: false,
+      isBackgroundError: false,
+      refetch: vi.fn(),
+    };
+
+    render(<PlatformGymsPage />);
+
+    expect(screen.getByRole("heading", { name: "active Fitness" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Archived Fitness" })).not.toBeInTheDocument();
+    expect(screen.getByText("1 gym shown.")).toBeInTheDocument();
   });
 
   it("filters by subscription status and supports searching by gym id", () => {
