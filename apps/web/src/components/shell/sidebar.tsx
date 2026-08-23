@@ -5,8 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
-import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { NAV_SECTIONS } from "./nav-config";
+import { useApp } from "@/lib/providers/app-providers";
+import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
@@ -21,7 +21,6 @@ export function navIsActive(href: string, pathname: string): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, session } = useApp();
-  const { canAny } = usePermissions();
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
 
@@ -55,7 +54,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         <TooltipProvider delayDuration={200}>
           {NAV_SECTIONS.map((section) => {
-            const visible = section.items.filter((item) => !item.anyPermission || canAny(item.anyPermission));
+            const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
             if (visible.length === 0) return null;
             return (
               <div key={section.label} className="mb-4">

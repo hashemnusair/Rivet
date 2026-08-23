@@ -105,7 +105,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(snapshot.gyms).toEqual([expect.objectContaining({ id: "subscription-gym", subscriptionStatus: "suspended", isPublic: false, isProvisioned: true })]);
   });
 
-  it("uses an explicit entitlement plan as authority and audits projection drift", async () => {
+  it("uses the organization plan as authority and audits entitlement/listing drift", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
@@ -117,8 +117,8 @@ describe("exported Convex platform subscription lifecycle", () => {
       await ctx.db.patch(listing._id, { data: { ...(listing.data as Record<string, unknown>), rivetPlan: "Starter" }, updatedAt: Date.now() });
     });
 
-    const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Repair lifecycle while preserving the entitled plan." })) as Record<string, unknown>;
-    expect(updated).toMatchObject({ rivetPlan: "Growth", subscriptionStatus: "suspended", isPublic: false });
+    const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Repair lifecycle while preserving the organization plan." })) as Record<string, unknown>;
+    expect(updated).toMatchObject({ rivetPlan: "Pro", subscriptionStatus: "suspended", isPublic: false });
     const persisted = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
       const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique();
@@ -126,10 +126,10 @@ describe("exported Convex platform subscription lifecycle", () => {
       const audit = (await ctx.db.query("platformAuditEvents").collect()).find((event) => event.entityPublicId === "subscription-gym");
       return { organization, listing, entitlement, audit };
     });
-    expect(persisted.organization).toMatchObject({ status: "suspended", subscriptionPlan: "Growth" });
-    expect(persisted.entitlement).toMatchObject({ subscriptionPlan: "Growth" });
-    expect(persisted.listing?.data).toMatchObject({ rivetPlan: "Growth" });
-    expect(persisted.audit).toMatchObject({ before: { planResolution: { source: "organization_entitlement", drift: true } }, after: { planResolution: { source: "organization_entitlement", drift: false } } });
+    expect(persisted.organization).toMatchObject({ status: "suspended", subscriptionPlan: "Pro" });
+    expect(persisted.entitlement).toMatchObject({ subscriptionPlan: "Pro" });
+    expect(persisted.listing?.data).toMatchObject({ rivetPlan: "Pro" });
+    expect(persisted.audit).toMatchObject({ before: { planResolution: { source: "organization", drift: true } }, after: { planResolution: { source: "organization", drift: false } } });
   });
 
   it("does not promote stale directory lifecycle dates into the organization", async () => {
@@ -164,6 +164,61 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(persisted.listing?.data).toMatchObject({ rivetPlan: "Starter" });
     expect((persisted.listing?.data as Record<string, unknown> | undefined)?.trialEndsAt).toBeUndefined();
     expect((persisted.listing?.data as Record<string, unknown> | undefined)?.subscriptionStartedAt).toBeUndefined();
+  });
+
+  it("persists every tier change and immediately projects the matching workspace modules", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const owner = t.withIdentity({ subject: "clerk-owner" });
+    const tiers = [
+      { plan: "Starter" as const, entitled: ["foundation", "revenue"], locked: ["operations", "finance", "reporting"] },
+      { plan: "Growth" as const, entitled: ["foundation", "revenue", "operations"], locked: ["finance", "reporting"] },
+      { plan: "Pro" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+      { plan: "Enterprise" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+    ];
+
+    for (const tier of tiers) {
+      await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
+        gymId: "subscription-gym",
+        status: "active",
+        plan: tier.plan,
+        isPublic: true,
+        reason: `Enable ${tier.plan} workspace tier for the tenant.`,
+      }));
+
+      const persisted = await t.run(async (ctx) => {
+        const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+        const entitlement = organization ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique() : null;
+        return { organization, entitlement };
+      });
+      expect(persisted.organization).toMatchObject({ subscriptionPlan: tier.plan, status: "active" });
+      expect(persisted.entitlement).toMatchObject({ subscriptionPlan: tier.plan, source: "subscription_plan", entitledModules: tier.entitled });
+
+      const access = await owner.query(api.domain.query, operation("workspace.access")) as { entitlements: { subscriptionPlan: string; entitledModules: string[] }; modules: Array<{ key: string; entitled: boolean; enabled: boolean; lockedReason?: string }> };
+      expect(access.entitlements).toMatchObject({ subscriptionPlan: tier.plan, entitledModules: tier.entitled });
+      expect(access.modules.filter((module) => module.entitled && module.enabled).map((module) => module.key)).toEqual(tier.entitled);
+      for (const moduleKey of tier.locked) {
+        const status = access.modules.find((module) => module.key === moduleKey);
+        expect(status).toMatchObject({ entitled: false, enabled: false, lockedReason: "not_entitled" });
+        await expectCode(owner.query(api.domain.query, operation("workspace.module", { moduleKey })), "FEATURE_NOT_AVAILABLE");
+      }
+      const session = await owner.query(api.domain.query, operation("session")) as { workspace: { entitlements: { subscriptionPlan: string; entitledModules: string[] } } };
+      expect(session.workspace.entitlements).toMatchObject({ subscriptionPlan: tier.plan, entitledModules: tier.entitled });
+      if (tier.plan === "Starter") {
+        // Simulate a tenant provisioned directly on Starter. Its preference
+        // row must not prevent a later Growth upgrade from enabling the newly
+        // purchased operations module.
+        await t.run(async (ctx) => {
+          const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+          const ownerUser = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "owner")).unique();
+          if (!organization || !ownerUser) throw new Error("seed organization missing");
+          const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+          if (preferences) await ctx.db.patch(preferences._id, { enabledModules: ["foundation", "revenue"], updatedAt: Date.now() });
+          else await ctx.db.insert("workspaceModulePreferences", { organizationId: organization._id, catalogVersion: 1, enabledModules: ["foundation", "revenue"], updatedByUserId: ownerUser._id, createdAt: Date.now(), updatedAt: Date.now() });
+        });
+      }
+    }
   });
 
   it("allows cleanup-only hiding but rejects tenant mutations for unprovisioned rows", async () => {
@@ -254,6 +309,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     const persisted = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => row.publicId === "Starter"));
     expect(persisted?.data).toMatchObject({ name: "Starter", priceMinor: 89_000 });
     const catalog = await t.query(api.domain.query, operation("public.catalog")) as Array<{ name: string }>;
-    expect(catalog.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro"]);
+    expect(catalog.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
+    expect(catalog.find((plan) => plan.name === "Enterprise")).toMatchObject({ name: "Enterprise", priceMinor: 500_000 });
   });
 });

@@ -192,7 +192,7 @@ async function upsertSettings(ctx: MutationCtx, organizationId: Id<"organization
   else await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: value });
 }
 
-async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro"; branchPublicId: string; branchName: string; now: number }) {
+async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; branchPublicId: string; branchName: string; now: number }) {
   const existing = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "marketplaceGym").eq("publicId", input.marketplacePublicId))

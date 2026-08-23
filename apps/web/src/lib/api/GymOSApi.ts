@@ -459,7 +459,7 @@ export interface PlatformOverview {
 }
 
 export interface PlatformSaasPlan {
-  name: "Starter" | "Growth" | "Pro";
+  name: "Starter" | "Growth" | "Pro" | "Enterprise";
   priceMinor: number;
   branches: number;
   staff: number;
@@ -863,6 +863,7 @@ export interface GymOSApi {
   updateBrandKit(input: UpdateBrandKitInput): Promise<BrandKit>;
   /** Tenant entitlement/preferences boundary. These are not role permissions. */
   getWorkspaceAccess(): Promise<WorkspaceAccess>;
+  subscribeWorkspaceAccess(onValue: (access: WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getOrganizationEntitlements(): Promise<OrganizationEntitlements>;
   getWorkspaceModulePreferences(): Promise<WorkspaceModulePreferences>;
   getWorkspaceModuleStatus(moduleKey: WorkspaceModuleKey): Promise<WorkspaceModuleStatus>;

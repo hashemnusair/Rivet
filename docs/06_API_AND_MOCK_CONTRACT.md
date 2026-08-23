@@ -88,7 +88,7 @@ submitGymApplication(input: {
   ownerName: string;
   email: string;
   contactNumber: string;
-  plan: "Starter" | "Growth" | "Pro";
+  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
 }): Promise<{
   applicationId: string;
   status: "pending" | "under_review" | "approved" | "rejected";

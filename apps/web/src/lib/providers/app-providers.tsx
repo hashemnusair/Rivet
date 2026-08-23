@@ -156,6 +156,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const convexSessionKey = useRef<string | undefined>(undefined);
   const convexMode = isConvexMode();
   const identity = useRivetIdentity();
+  const workspacePresent = Boolean(session?.workspace);
 
   // UI preferences are local presentation state in both modes. Identity and
   // workspace sessions are deliberately not restored from browser storage in
@@ -224,6 +225,36 @@ function SessionProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => setSessionLoading(false));
   }, [convexMode, identity.email, identity.memberships, identity.platformAdmin, identity.status, identity.userId]);
+
+  // A platform subscription mutation updates the tenant organization and its
+  // entitlement snapshot. Keep the active gym session in sync with that
+  // server-owned projection so plan changes unlock/lock navigation and
+  // feature requests immediately without a full reload. Convex uses its
+  // native query watch; the mock emits the same event after each mutation.
+  useEffect(() => {
+    if (!signedIn || !workspacePresent) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const api = getApi();
+    if (typeof api.subscribeWorkspaceAccess !== "function") return;
+    const handleError = () => {
+      // Preserve the last known session/workspace while a background watch is
+      // unavailable. The existing stale-data notice covers query failures.
+    };
+    void api.subscribeWorkspaceAccess((workspace) => {
+      if (cancelled) return;
+      setSession((current) => current ? { ...current, workspace } : current);
+      queryClient.setQueryData(qk.workspaceAccess, workspace);
+      queryClient.invalidateQueries({ queryKey: qk.settings });
+    }, handleError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(handleError);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [queryClient, session?.organization.id, signedIn, workspacePresent]);
 
   const setBehavior = useCallback((b: Partial<MockBehavior>) => {
     setBehaviorState((prev) => {

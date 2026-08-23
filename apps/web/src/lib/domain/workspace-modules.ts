@@ -20,7 +20,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: [],
     required: true,
     configurable: false,
-    availableOn: ["Starter", "Growth", "Pro"],
+    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/dashboard", "/members", "/reception", "/payments", "/reports", "/settings"],
   },
   {
@@ -31,7 +31,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation"],
     required: false,
     configurable: true,
-    availableOn: ["Starter", "Growth", "Pro"],
+    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/crm", "/memberships"],
   },
   {
@@ -42,7 +42,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation"],
     required: false,
     configurable: true,
-    availableOn: ["Growth", "Pro"],
+    availableOn: ["Growth", "Pro", "Enterprise"],
     routePrefixes: ["/operations", "/inventory", "/equipment"],
   },
   {
@@ -53,7 +53,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation", "operations"],
     required: false,
     configurable: true,
-    availableOn: ["Pro"],
+    availableOn: ["Pro", "Enterprise"],
     routePrefixes: ["/finance"],
   },
   {
@@ -64,7 +64,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["finance"],
     required: false,
     configurable: true,
-    availableOn: ["Pro"],
+    availableOn: ["Pro", "Enterprise"],
     routePrefixes: ["/reports/statements"],
   },
 ] as const;

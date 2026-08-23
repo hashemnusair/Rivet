@@ -29,6 +29,15 @@ async function seeded() {
 }
 
 describe("immutable management-accounting ledger", () => {
+  it("uses the organization plan when a materialized entitlement row is stale", async () => {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      await ctx.db.insert("organizationEntitlements", { organizationId: organization!._id, catalogVersion: 1, subscriptionPlan: "Pro", entitledModules: ["foundation", "revenue", "operations"], source: "subscription_plan", createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    await expect(owner.query(api.domain.query, operation("accounting.accounts.list"))).resolves.toEqual(expect.any(Array));
+  });
+
   it("seeds a code-owned chart and rejects invalid manual journals", async () => {
     const { owner } = await seeded();
     const accounts = await owner.query(api.domain.query, operation("accounting.accounts.list")) as Array<{ id: string; code: string }>;

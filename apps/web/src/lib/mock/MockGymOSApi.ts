@@ -177,6 +177,7 @@ const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
   { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
   { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
 ];
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
@@ -322,6 +323,7 @@ export class MockGymOSApi implements GymOSApi {
   private platformAuditEvents: MockPlatformAuditEvent[] = [];
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
   private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
+  private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
   private platformSupportCases: PlatformSupportCase[];
@@ -728,6 +730,16 @@ export class MockGymOSApi implements GymOSApi {
     return () => { this.platformSnapshotSubscribers.delete(onValue); };
   }
 
+  async subscribeWorkspaceAccess(onValue: (access: T.WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.getWorkspaceAccess());
+      this.workspaceAccessSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.workspaceAccessSubscribers.delete(onValue); };
+  }
+
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === gymId);
@@ -957,7 +969,6 @@ export class MockGymOSApi implements GymOSApi {
         });
         return cloneMarketplaceGym(gym);
       }
-      if (organization && nextPlan === "Enterprise") throw ApiError.of(ERR.VALIDATION, "Enterprise is not a configured workspace subscription plan.", { fieldErrors: { plan: ["Choose Starter, Growth, or Pro"] } });
       if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") throw ApiError.of(ERR.VALIDATION, "Public listing must be a boolean.");
 
       const trialEndsTimestamp = lifecycleTimestamp(input.trialEndsAt, "trialEndsAt");
@@ -999,6 +1010,7 @@ export class MockGymOSApi implements GymOSApi {
       if (PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus)) gym.lastActiveAt = nowISO();
 
       if (organization) {
+        const previousModulePlan = organization.subscriptionPlan;
         organization.status = organizationStatusForPlatform(nextStatus);
         organization.subscriptionPlan = nextPlan as T.Organization["subscriptionPlan"];
         organization.subscriptionStartedAt = gym.subscriptionStartedAt;
@@ -1017,6 +1029,24 @@ export class MockGymOSApi implements GymOSApi {
           source: "subscription_plan",
           updatedAt: organization.updatedAt,
         };
+        // A newly purchased tier is immediately usable. Keep hidden modules
+        // in the stored preference row on downgrades so a later upgrade can
+        // restore prior operator choices while read-time filtering locks them
+        // for the lower tier.
+        if (input.plan !== undefined && previousModulePlan !== modulePlan) {
+          const previousEntitled = entitledModulesForPlan(previousModulePlan);
+          const nextEntitled = entitledModulesForPlan(modulePlan);
+          const newlyEntitled = nextEntitled.filter((module) => !previousEntitled.includes(module));
+          if (newlyEntitled.length > 0) {
+            let enabledModules: T.WorkspaceModuleKey[];
+            try {
+              enabledModules = validateWorkspaceModuleSelection([...this.db.workspaceModulePreferences.enabledModules, ...newlyEntitled], nextEntitled);
+            } catch {
+              enabledModules = defaultWorkspacePreferences(nextEntitled);
+            }
+            this.db.workspaceModulePreferences = { ...this.db.workspaceModulePreferences, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: organization.updatedAt };
+          }
+        }
       }
 
       this.recordPlatformAudit({
@@ -1029,7 +1059,7 @@ export class MockGymOSApi implements GymOSApi {
       });
       return cloneMarketplaceGym(gym);
     });
-    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers()]);
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]);
     return result;
   }
 
@@ -1052,7 +1082,7 @@ export class MockGymOSApi implements GymOSApi {
       });
       return { ...plan };
     });
-    await this.emitPlatformSnapshotSubscribers();
+    await Promise.all([this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]);
     return result;
   }
 
@@ -1340,7 +1370,7 @@ export class MockGymOSApi implements GymOSApi {
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
     this.db.session.activeBranchId = branch;
-    return Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers()]).then(() => undefined);
+    return Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]).then(() => undefined);
   }
 
   private async respond<R>(fn: () => R | Promise<R>): Promise<R> {
@@ -1375,6 +1405,16 @@ export class MockGymOSApi implements GymOSApi {
       for (const onValue of this.platformSnapshotSubscribers.keys()) onValue(snapshot);
     } catch (error) {
       for (const onError of this.platformSnapshotSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private async emitWorkspaceAccessSubscribers(): Promise<void> {
+    if (this.workspaceAccessSubscribers.size === 0) return;
+    try {
+      const access = await this.getWorkspaceAccess();
+      for (const onValue of this.workspaceAccessSubscribers.keys()) onValue(access);
+    } catch (error) {
+      for (const onError of this.workspaceAccessSubscribers.values()) onError?.(error);
     }
   }
 
@@ -5680,8 +5720,8 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  updateWorkspaceModulePreferences(input: T.UpdateWorkspaceModulePreferencesInput): Promise<T.WorkspaceAccess> {
-    return this.respond(() => {
+  async updateWorkspaceModulePreferences(input: T.UpdateWorkspaceModulePreferencesInput): Promise<T.WorkspaceAccess> {
+    const result = await this.respond(() => {
       this.requireOwner();
       const entitled = this.workspaceAccess().entitlements.entitledModules;
       let enabledModules: T.WorkspaceModuleKey[];
@@ -5712,6 +5752,8 @@ export class MockGymOSApi implements GymOSApi {
       }
       return this.workspaceAccess();
     });
+    await this.emitWorkspaceAccessSubscribers();
+    return result;
   }
 
   private workspaceEntitlements(): T.OrganizationEntitlements {

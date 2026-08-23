@@ -142,6 +142,7 @@ default for implementation and authorization wiring:
 | Starter | Foundation and revenue-protection capabilities |
 | Growth | Starter plus daily operations (inventory/suppliers, cleaning/facilities, and equipment/work orders) |
 | Pro | Growth plus the accounting ledger and management financial reporting |
+| Enterprise | Pro plus all five existing workspace modules at the Enterprise JOD 500.000/month tier |
 
 This is a capability default for the current implementation, not a pricing
 table, usage-limit definition, trial/downgrade policy, or final commercial

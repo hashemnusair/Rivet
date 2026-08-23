@@ -8,7 +8,7 @@ const modules = import.meta.glob("./**/*.ts");
 const operation = (name: string, input: Record<string, unknown> = {}) => ({ operation: name, input, correlationId: `cor-workspace-${name}` });
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
 
-async function seeded(plan?: "Starter" | "Growth" | "Pro") {
+async function seeded(plan?: "Starter" | "Growth" | "Pro" | "Enterprise") {
   const t = convexTest(schema, modules);
   await t.run(async (ctx) => {
     const now = Date.now();
@@ -23,8 +23,8 @@ async function seeded(plan?: "Starter" | "Growth" | "Pro") {
 }
 
 describe("server-owned workspace entitlements", () => {
-  it("derives Starter, Growth, and Pro entitlements from the organization plan", async () => {
-    for (const [plan, expected] of [["Starter", ["foundation", "revenue"]], ["Growth", ["foundation", "revenue", "operations"]], ["Pro", ["foundation", "revenue", "operations", "finance", "reporting"]]] as const) {
+  it("derives all four entitlements from the organization plan", async () => {
+    for (const [plan, expected] of [["Starter", ["foundation", "revenue"]], ["Growth", ["foundation", "revenue", "operations"]], ["Pro", ["foundation", "revenue", "operations", "finance", "reporting"]], ["Enterprise", ["foundation", "revenue", "operations", "finance", "reporting"]]] as const) {
       const { owner } = await seeded(plan);
       const access = await owner.query(api.domain.query, operation("workspace.access")) as { entitlements: { subscriptionPlan: string; entitledModules: string[] } };
       expect(access.entitlements).toMatchObject({ subscriptionPlan: plan, entitledModules: expected, source: "subscription_plan" });

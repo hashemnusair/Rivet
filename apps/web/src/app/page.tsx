@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import { Reveal } from "@/components/marketing/reveal";
@@ -21,6 +22,15 @@ import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import {
+  ANNUAL_DISCOUNT_PERCENT,
+  calculatePlanPrice,
+  formatJodMinor,
+  pricingSignupHref,
+  publicPlanFeatures,
+  resolvePublicPricingPlans,
+  type BillingInterval,
+} from "@/lib/public/pricing";
 
 /** Hero entrance order, in ms — one cascade from eyebrow to the stat rail. */
 const HERO_STEP = {
@@ -37,6 +47,8 @@ const HERO_STEP = {
 export default function LandingPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   const marketplaceGyms = useMarketplaceGyms();
+  const pricingPlans = resolvePublicPricingPlans(saasPlans);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   return (
     <div className="marketing-body min-h-screen bg-paper text-ink">
       <ScrollProgress />
@@ -316,20 +328,49 @@ export default function LandingPage() {
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
               eyebrow="Pricing"
-              title="One branch or eight. Same system."
-              description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends."
+              title="One branch or every branch. Same system."
+              description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Choose monthly or save 20% with annual billing."
             />
-            {experienceStatus !== "ready" || saasPlans.length === 0 ? (
-              <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Pricing is being prepared" emptyDescription="RIVET pricing is not available from the live catalog yet." />
+            {experienceStatus === "error" && saasPlans.length === 0 ? (
+              <div className="mt-8">
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Showing launch pricing" emptyDescription="The live catalog is temporarily unavailable. These prices are the approved launch defaults." />
               </div>
-            ) : (
-              <div className="mt-12 grid gap-4 lg:grid-cols-3">
-                {saasPlans.map((plan, index) => (
+            ) : null}
+            <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="eyebrow">Billing cadence</p>
+                <p className="mt-1 text-[12px] text-ink-3">Same workspace features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
+              </div>
+              <div role="tablist" aria-label="Billing interval" className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
+                {(["monthly", "annual"] as const).map((interval) => {
+                  const selected = billingInterval === interval;
+                  return (
+                    <button
+                      key={interval}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls="pricing-plans"
+                      onClick={() => setBillingInterval(interval)}
+                      className={`rounded px-4 py-2 text-[12px] font-medium transition-colors ${selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink"}`}
+                    >
+                      {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 lg:grid-cols-4">
+                {pricingPlans.map((plan, index) => {
+                  const price = calculatePlanPrice(plan, billingInterval);
+                  const features = publicPlanFeatures(plan);
+                  const isEnterprise = plan.name === "Enterprise";
+                  const isNight = plan.tone === "night";
+                  return (
                 <Reveal key={plan.name} delay={index * 90} className="h-full">
                   <div
                     className={`h-full transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1.5 hover:shadow-pop ${
-                      plan.tone === "night"
+                      isNight
                         ? "night-surface rounded-lg bg-night p-6 text-night-ink"
                         : plan.tone === "signal"
                           ? "rounded-lg border-2 border-signal bg-surface p-6 shadow-pop"
@@ -342,37 +383,43 @@ export default function LandingPage() {
                       <span className="rounded-sm bg-signal px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-white">
                         Most popular
                       </span>
+                    ) : isEnterprise ? (
+                      <span className="rounded-sm border border-night-line px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-night-ink-2">
+                        Multi-site
+                      </span>
                     ) : null}
                   </div>
                   <p className="mt-6">
-                    <span className="text-[38px] font-semibold tabular">JD {plan.priceMinor / 1000}</span>
-                    <span className={plan.tone === "night" ? "text-night-ink-3" : "text-ink-3"}> / month</span>
+                    <span className="text-[34px] font-semibold tabular">JD {formatJodMinor(price.effectiveMonthlyMinor)}</span>
+                    <span className={isNight ? "text-night-ink-3" : "text-ink-3"}> / month</span>
                   </p>
-                  <ul className={`mt-7 grid gap-2.5 text-[13px] ${plan.tone === "night" ? "text-night-ink-2" : "text-ink-2"}`}>
-                    {[
-                      `${plan.branches} ${plan.branches === 1 ? "branch" : "branches"}`,
-                      `Up to ${plan.staff} staff accounts`,
-                      `Up to ${plan.members.toLocaleString()} members`,
-                      "Member app and marketplace included",
-                    ].map((line) => (
+                  {billingInterval === "annual" ? (
+                    <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
+                      JD {formatJodMinor(price.annualTotalMinor)} billed annually · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>Save {ANNUAL_DISCOUNT_PERCENT}%</strong>
+                    </div>
+                  ) : (
+                    <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>Billed monthly · cancel before renewal</div>
+                  )}
+                  <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
+                    {features.map((line) => (
                       <li key={line} className="flex items-start gap-2.5">
-                        <Check className={`mt-0.5 size-3.5 shrink-0 ${plan.tone === "night" ? "text-success" : "text-success"}`} />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
                         {line}
                       </li>
                     ))}
                   </ul>
                   <Button
                     asChild
-                    variant={plan.tone === "night" ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
+                    variant={isNight ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
                     className="mt-8 w-full"
                   >
-                    <Link href="/signup">Send gym application</Link>
+                    <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
                   </Button>
                   </div>
                 </Reveal>
-                ))}
-              </div>
-            )}
+                  );
+                })}
+            </div>
           </div>
         </section>
 

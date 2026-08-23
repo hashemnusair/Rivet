@@ -83,6 +83,25 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("exposes realtime workspace entitlement updates through the same transport seam", async () => {
+    const values: unknown[] = [];
+    const stop = vi.fn();
+    const access = { entitlements: { subscriptionPlan: "Growth", entitledModules: ["foundation", "revenue", "operations"] } };
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, args, onValue) => {
+        expect(args).toMatchObject({ operation: "workspace.access", input: {} });
+        onValue(access);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribeWorkspaceAccess((value) => values.push(value));
+    expect(values).toEqual([access]);
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it("normalizes the public Convex projection without reviving non-operational rows", async () => {
     const publicRow = {
       id: "live-gym",
@@ -475,6 +494,19 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000, reason: "Annual pricing review approved." })).resolves.toEqual(plan);
     expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Growth", priceMinor: 159_000 } });
+  });
+
+  it("carries the Enterprise tier through the live adapter boundary", async () => {
+    const enterprise = { name: "Enterprise" as const, priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" as const };
+    const gym = { id: "enterprise-gym", rivetPlan: "Enterprise" as const };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
+
+    await expect(api.updatePlatformGym({ gymId: gym.id, plan: "Enterprise", status: "active", reason: "Enable the Enterprise workspace tier." })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, plan: "Enterprise" } });
+    const catalogApi = new ConvexGymOSApi(transportFor({ mutation: enterprise }, (_kind, args) => { call = args; }));
+    await expect(catalogApi.updatePlatformPlan({ name: enterprise.name, priceMinor: enterprise.priceMinor, branches: enterprise.branches, staff: enterprise.staff, members: enterprise.members, reason: "Publish the Enterprise catalog price." })).resolves.toEqual(enterprise);
+    expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Enterprise", priceMinor: 500_000 } });
   });
 
   it("converts structured Convex errors into stable ApiErrors", async () => {

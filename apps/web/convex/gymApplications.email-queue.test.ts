@@ -26,6 +26,16 @@ async function seedAdmin() {
 }
 
 describe("gym application durable email migration", () => {
+  it("accepts Enterprise applications as a first-class launch plan", async () => {
+    delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
+    process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";
+    const t = await seedAdmin();
+    const submitted = await t.action(api.gymApplications.submit, { gymName: "Enterprise Gym", ownerName: "Enterprise Owner", email: "enterprise-owner@example.test", contactNumber: "+962790000099", plan: "Enterprise" });
+    expect(submitted).toMatchObject({ status: "pending", duplicate: false });
+    const application = await t.run((ctx) => ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", submitted.applicationId)).unique());
+    expect(application?.plan).toBe("Enterprise");
+  });
+
   it("captures applicant and internal notifications once while the worker is sandboxed", async () => {
     delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
     process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";

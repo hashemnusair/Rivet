@@ -28,6 +28,15 @@ async function seeded() {
 const journal = (branchId: string, memo: string, key: string, lines: Array<{ accountId: string; debit: number; credit: number }>) => ({ scope: "branch", branchId, postingDate: "2026-08-10", memo, reason: "Controlled report fixture", idempotencyKey: key, lines: lines.map((line) => ({ accountId: line.accountId, debit: { amount: line.debit, currency: "JOD" }, credit: { amount: line.credit, currency: "JOD" } })) });
 
 describe("management reporting projections", () => {
+  it("uses the organization plan when a materialized entitlement row is stale", async () => {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "reports-org-a")).unique();
+      await ctx.db.insert("organizationEntitlements", { organizationId: organization!._id, catalogVersion: 1, subscriptionPlan: "Pro", entitledModules: ["foundation", "revenue", "operations"], source: "subscription_plan", createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    await expect(owner.query(api.domain.query, operation("reports.income_statement", { fromDate: "2026-08-01", toDate: "2026-08-31" }))).resolves.toMatchObject({ organizationId: "reports-org-a" });
+  });
+
   it("calculates income, balance equation, and cash reconciliation from effective posted facts", async () => {
     const { owner } = await seeded();
     await owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "reports-branch-a", postingDate: "2026-07-31", memo: "Opening equity", reason: "Controlled prior-period fixture", idempotencyKey: "report-opening", lines: [{ accountId: "acct-1100", debit: { amount: 50_000, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-3000", debit: { amount: 0, currency: "JOD" }, credit: { amount: 50_000, currency: "JOD" } }] }));

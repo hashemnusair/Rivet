@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { ManagementStatementsWorkspace } from "./management-statements-workspace";
@@ -13,6 +13,18 @@ vi.mock("next/navigation", () => ({
 afterEach(() => resetApiForTests());
 
 describe("ManagementStatementsWorkspace", () => {
+  it("locks the direct route when a live subscription downgrade removes reporting", async () => {
+    const { api } = await renderWithApp(<ManagementStatementsWorkspace />);
+
+    expect(await screen.findByTestId("management-statements-workspace")).toBeInTheDocument();
+    await act(async () => {
+      await api.updatePlatformGym({ gymId: "forge-fitness", plan: "Starter", reason: "Verify direct reporting route entitlement lock." });
+    });
+
+    expect(await screen.findByText("Management reporting is not included", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByTestId("management-statements-workspace")).not.toBeInTheDocument();
+  });
+
   it("keeps management reporting behind the financial-report permission", async () => {
     await renderWithApp(<ManagementStatementsWorkspace />, { role: "receptionist" });
 

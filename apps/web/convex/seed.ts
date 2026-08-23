@@ -257,6 +257,7 @@ export const seedDemoTenant = internalMutation({
       { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
       { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
       { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+      { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
     ]) await upsertDomain("platformPlan", plan.name, plan);
     for (const [key, nextValue] of [["member:ABD", 2300], ["member:SWF", 1900]] as const) {
       const existing = await ctx.db.query("sequenceCounters").withIndex("by_organization_key", (q) => q.eq("organizationId", organizationId).eq("key", key)).unique();

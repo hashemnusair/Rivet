@@ -5,7 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
 
-const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"));
+const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
 const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"), v.literal("rejected"));
 
@@ -30,7 +30,7 @@ type ApplicationInput = {
   ownerName: string;
   email: string;
   contactNumber: string;
-  plan: "Starter" | "Growth" | "Pro";
+  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
 };
 
 type ApplicationResult = {
@@ -46,7 +46,7 @@ type ReviewResult = {
   gymName: string;
   ownerName: string;
   email: string;
-  plan: "Starter" | "Growth" | "Pro";
+  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
   status: "under_review" | "approved" | "rejected";
   reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
   reviewNotificationError?: string;
@@ -285,7 +285,7 @@ function detailsHtml(values: ApplicationInput): string {
   </table>`;
 }
 
-function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" }, decision: "approved" | "rejected") {
+function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise" }, decision: "approved" | "rejected") {
   const approved = decision === "approved";
   const heading = approved ? "Your RIVET application is approved" : "An update on your RIVET application";
   const message = approved
@@ -369,7 +369,7 @@ export const review = action({
       gymName: string;
       ownerName: string;
       email: string;
-      plan: "Starter" | "Growth" | "Pro";
+      plan: "Starter" | "Growth" | "Pro" | "Enterprise";
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
       reviewNotificationError?: string;

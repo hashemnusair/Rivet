@@ -29,6 +29,7 @@ import { marketingSuppressionReason } from "./marketing";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import {
   buildWorkspaceAccess,
+  defaultWorkspacePreferences,
   entitledModulesForPlan,
   requireWorkspaceModule as requireConfiguredWorkspaceModule,
   resolveWorkspaceEntitlements,
@@ -154,6 +155,7 @@ const DEFAULT_PLATFORM_PLANS: Data[] = [
   { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
   { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
   { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
 ];
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
@@ -372,7 +374,11 @@ function platformSubscriptionStatusForOrganization(status: Organization["status"
 }
 
 function platformPlanFromFacts(gym: Data, organization: Organization | null, entitlement: Doc<"organizationEntitlements"> | null): string | undefined {
-  return optionalString(entitlement?.subscriptionPlan) ?? organization?.subscriptionPlan ?? optionalString(gym.rivetPlan);
+  // The tenant row is the billing authority. Entitlements are a materialized
+  // capability snapshot and the marketplace listing is only a projection. A
+  // stale entitlement/listing must never make the platform show or restore a
+  // plan that is different from the organization actually being operated.
+  return organization?.subscriptionPlan ?? optionalString(entitlement?.subscriptionPlan) ?? optionalString(gym.rivetPlan);
 }
 
 function platformSubscriptionSnapshot(
@@ -394,7 +400,7 @@ function platformSubscriptionSnapshot(
     subscriptionStatusReason: optionalString(gym.subscriptionStatusReason) ?? null,
     lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
     planResolution: {
-      source: entitlementPlan ? "organization_entitlement" : organizationPlan ? "organization" : "marketplace_listing",
+      source: organizationPlan ? "organization" : entitlementPlan ? "organization_entitlement" : "marketplace_listing",
       listingPlan,
       organizationPlan,
       entitlementPlan,
@@ -919,7 +925,7 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
 }
 
 function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
-  return value === "Starter" || value === "Growth" || value === "Pro" ? value : undefined;
+  return value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
 }
 
 async function workspaceEntitlementRecord(ctx: ReadContext, actor: ActorContext) {
@@ -938,13 +944,33 @@ async function workspacePreferencesRecord(ctx: ReadContext, actor: ActorContext)
 
 async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const row = await workspaceEntitlementRecord(ctx, actor);
-  const plan = workspacePlan(actor.organization.subscriptionPlan);
-  const resolved = resolveWorkspaceEntitlements(plan, row ? {
-    subscriptionPlan: row.subscriptionPlan,
-    entitledModules: row.entitledModules,
-    source: row.source,
-    updatedAt: row.updatedAt,
-  } : undefined);
+  const organizationPlan = workspacePlan(actor.organization.subscriptionPlan);
+  const storedPlan = workspacePlan(row?.subscriptionPlan);
+  // Once a tenant has an explicit organization plan, derive the module set
+  // from that plan on every read. This closes the stale-row window between a
+  // platform mutation and its entitlement projection becoming visible to a
+  // live workspace query. The mutation still persists the matching snapshot
+  // for auditability and fast platform projections.
+  const plan = organizationPlan ?? storedPlan;
+  const authoritativeEntitledModules = plan ? entitledModulesForPlan(plan) : undefined;
+  const resolved = resolveWorkspaceEntitlements(
+    plan,
+    organizationPlan
+      ? {
+          subscriptionPlan: organizationPlan,
+          entitledModules: authoritativeEntitledModules,
+          source: "subscription_plan",
+          updatedAt: row?.updatedAt,
+        }
+      : row
+        ? {
+            subscriptionPlan: row.subscriptionPlan,
+            entitledModules: row.entitledModules,
+            source: row.source,
+            updatedAt: row.updatedAt,
+          }
+        : undefined,
+  );
   return {
     organizationId: publicOrganizationId(actor.organization),
     catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
@@ -5291,14 +5317,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     // A provisioned organization is the authoritative source for its plan. A
     // directory row can therefore be repaired by a status/listing save even
     // when an older projection contains a stale plan value.
-    const rawPlan = requestedPlan ?? optionalString(entitlementBefore?.subscriptionPlan) ?? organization?.subscriptionPlan ?? optionalString(current.rivetPlan);
+    // The organization owns the subscription. Existing entitlement/listing
+    // values are repairable projections and must not override an org plan on a
+    // status-only save or a plan change.
+    const rawPlan = requestedPlan ?? organization?.subscriptionPlan ?? optionalString(entitlementBefore?.subscriptionPlan) ?? optionalString(current.rivetPlan);
     if (!rawPlan || !plans.includes(rawPlan as (typeof plans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
     }
     const nextPlan = rawPlan as (typeof plans)[number];
-    if (organization && nextPlan === "Enterprise") {
-      domainError("VALIDATION_ERROR", "Enterprise is not a configured workspace subscription plan.", { correlationId: admin.correlationId, fieldErrors: { plan: ["Choose Starter, Growth, or Pro"] } });
-    }
     const lifecycleDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt"): { iso?: string; timestamp?: number } => {
       if (input[key] === undefined) return {};
       const timestamp = validSubscriptionTimestamp(input[key]);
@@ -5357,6 +5383,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ...(nextStatus === "active" || nextStatus === "trial" ? { lastActiveAt: now } : {}),
     };
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    const previousModulePlan = workspacePlan(organization?.subscriptionPlan);
     let updatedOrganization: Organization | null = organization;
     let updatedEntitlement: Doc<"organizationEntitlements"> | null = entitlementBefore;
     if (organization) {
@@ -5390,6 +5417,29 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
         updatedEntitlement = await ctx.db.get(entitlementId);
       }
+      // Newly purchased modules start enabled so a plan upgrade is immediately
+      // usable. Keep the stored preference row intact on downgrades so an
+      // upgrade can restore the tenant's prior choices; read-time entitlement
+      // filtering still locks those modules while the tenant is below the tier.
+      if (requestedPlan !== undefined && previousModulePlan !== modulePlan) {
+        const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+        if (preferences) {
+          const previousEntitled = entitledModulesForPlan(previousModulePlan);
+          const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+          if (newlyEntitled.length > 0) {
+            const candidate = [...preferences.enabledModules, ...newlyEntitled];
+            let enabledModules: WorkspaceModuleKey[];
+            try {
+              enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+            } catch {
+              enabledModules = defaultWorkspacePreferences(entitledModules);
+            }
+            if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+              await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+            }
+          }
+        }
+      }
     }
     await insertPlatformAudit(ctx, admin, {
       action: "gym.subscription.update",
@@ -5412,7 +5462,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         dedupeKey: `subscription-${requestedStatus}:${gymId}`,
       });
     }
-    return marketplaceView(updated, true);
+    return marketplaceView(platformMarketplaceProjection(updated, updatedOrganization, updatedEntitlement), true);
   }
 
   if (operation === "platform.plan.update") {
@@ -5420,7 +5470,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const name = stringValue(input.name);
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
-    if (!["Starter", "Growth", "Pro"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    if (!["Starter", "Growth", "Pro", "Enterprise"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => stringValue(data(row.data).name) === name);
     const defaultPlan = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === name);
     if (!record && !defaultPlan) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });

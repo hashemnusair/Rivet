@@ -7,7 +7,7 @@
 export const WORKSPACE_MODULE_CATALOG_VERSION = 1;
 
 export type WorkspaceModuleKey = "foundation" | "revenue" | "operations" | "finance" | "reporting";
-export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro";
+export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
 export interface WorkspaceModuleCatalogEntry {
   key: WorkspaceModuleKey;
@@ -30,7 +30,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: [],
     required: true,
     configurable: false,
-    availableOn: ["Starter", "Growth", "Pro"],
+    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/dashboard", "/members", "/reception", "/payments", "/reports", "/settings"],
   },
   {
@@ -41,7 +41,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation"],
     required: false,
     configurable: true,
-    availableOn: ["Starter", "Growth", "Pro"],
+    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/crm", "/memberships"],
   },
   {
@@ -52,7 +52,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation"],
     required: false,
     configurable: true,
-    availableOn: ["Growth", "Pro"],
+    availableOn: ["Growth", "Pro", "Enterprise"],
     routePrefixes: ["/operations", "/inventory", "/equipment"],
   },
   {
@@ -63,7 +63,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation", "operations"],
     required: false,
     configurable: true,
-    availableOn: ["Pro"],
+    availableOn: ["Pro", "Enterprise"],
     routePrefixes: ["/finance"],
   },
   {
@@ -74,7 +74,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["finance"],
     required: false,
     configurable: true,
-    availableOn: ["Pro"],
+    availableOn: ["Pro", "Enterprise"],
     routePrefixes: ["/reports/statements"],
   },
 ] as const;
@@ -110,10 +110,12 @@ export function validateWorkspaceModuleSelection(enabledModules: readonly unknow
 }
 
 /**
- * Server-owned entitlement snapshots. The explicit organizationEntitlements
- * row is authoritative when present; the organization plan is only the
- * compatibility fallback for tenants provisioned before that table existed.
- * Preferences stay separate and can only enable an entitled module.
+ * Server-owned entitlement snapshots. Once an organization has an explicit
+ * subscription plan, that plan is authoritative and the entitlement row is a
+ * materialized projection. This prevents a stale row from granting or
+ * withholding modules during a plan transition. The row remains the
+ * compatibility source for tenants created before the plan field/table
+ * existed. Preferences stay separate and can only enable an entitled module.
  */
 export interface StoredWorkspaceEntitlement {
   subscriptionPlan?: WorkspaceModulePlan;
@@ -149,13 +151,13 @@ export interface WorkspaceModuleRequirementAccess {
 }
 
 export function resolveWorkspaceEntitlements(plan?: WorkspaceModulePlan, stored?: StoredWorkspaceEntitlement): WorkspaceEntitlementState {
-  const candidate = stored?.entitledModules === undefined ? entitledModulesForPlan(plan) : stored.entitledModules;
+  const candidate = plan ? entitledModulesForPlan(plan) : stored?.entitledModules ?? entitledModulesForPlan();
   const candidateSet = new Set(candidate.filter((module): module is WorkspaceModuleKey => typeof module === "string" && CATALOG_KEYS.has(module as WorkspaceModuleKey)));
   return {
     catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
-    subscriptionPlan: stored?.subscriptionPlan ?? plan,
+    subscriptionPlan: plan ?? stored?.subscriptionPlan,
     entitledModules: WORKSPACE_MODULE_CATALOG.filter((entry) => candidateSet.has(entry.key)).map((entry) => entry.key),
-    source: stored?.source ?? (plan ? "subscription_plan" : "legacy_default"),
+    source: plan ? "subscription_plan" : stored?.source ?? "legacy_default",
     updatedAt: stored?.updatedAt,
   };
 }

@@ -448,7 +448,7 @@ export type WorkspaceModuleKey =
   | "finance"
   | "reporting";
 
-export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro";
+export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
 export interface WorkspaceModuleCatalogEntry {
   key: WorkspaceModuleKey;
@@ -501,7 +501,7 @@ export interface Organization {
   id: UUID;
   name: string;
   slug: string;
-  subscriptionPlan?: "Starter" | "Growth" | "Pro";
+  subscriptionPlan?: WorkspaceModulePlan;
   /** Platform subscription state mirrored by the preview adapter. */
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionStartedAt?: ISODateTime;

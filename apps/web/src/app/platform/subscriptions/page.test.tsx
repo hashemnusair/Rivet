@@ -10,7 +10,10 @@ import {
   default as SubscriptionsPage,
   directoryListingAllowed,
   draftFromGym,
+  reconcileSubscriptionRows,
+  subscriptionProjectionMatches,
   validateSubscriptionDraft,
+  workspaceFeatureLabels,
 } from "./page";
 
 const state = vi.hoisted(() => ({
@@ -51,6 +54,24 @@ describe("subscription lifecycle controls", () => {
     setApiForTests(api);
     state.snapshot = await api.getPlatformSnapshot();
     state.gyms = state.snapshot.gyms;
+  });
+
+  it("uses the shared entitlement contract when showing plan consequences", () => {
+    expect(workspaceFeatureLabels("Starter")).toEqual(["Gym foundation", "Revenue protection"]);
+    expect(workspaceFeatureLabels("Growth")).toContain("Daily operations");
+    expect(workspaceFeatureLabels("Growth")).not.toContain("Financial operating system");
+    expect(workspaceFeatureLabels("Pro")).toContain("Management reporting");
+    expect(workspaceFeatureLabels("Enterprise")).toEqual(["Gym foundation", "Revenue protection", "Daily operations", "Financial operating system", "Management reporting"]);
+  });
+
+  it("keeps a committed subscription projection over a stale snapshot", () => {
+    const current = state.gyms[0]!;
+    const committed = { ...current, rivetPlan: "Growth" as const, subscriptionStatusReason: "Plan upgrade approved." };
+    const stale = { ...current, subscriptionStatusReason: "Old snapshot." };
+    expect(subscriptionProjectionMatches(stale, committed)).toBe(false);
+    const reconciled = reconcileSubscriptionRows([stale], [committed]);
+    expect(reconciled[0]).toMatchObject({ rivetPlan: "Growth", subscriptionStatusReason: "Plan upgrade approved." });
+    expect(subscriptionProjectionMatches(reconciled[0]!, committed)).toBe(true);
   });
 
   it("keeps non-operational gyms hidden even when a stale listing flag is true", () => {
@@ -203,6 +224,49 @@ describe("subscription lifecycle controls", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(await api.getPlatformSnapshot()).toEqual(expect.objectContaining({ gyms: expect.arrayContaining([expect.objectContaining({ id: "forge-fitness", subscriptionStatus: "suspended" })]) }));
     expect(screen.getAllByText("Hidden", { selector: "span" }).length).toBeGreaterThan(0);
+  });
+
+  it("persists a plan change in the operator view and shows the unlocked tier features", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
+    await user.click(screen.getByRole("combobox", { name: "RIVET plan" }));
+    await user.click(screen.getByRole("option", { name: /Growth/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Upgrade workspace access." } });
+    expect(screen.getByRole("status")).toHaveTextContent("Daily operations");
+    await user.click(screen.getByRole("button", { name: "Review changes" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Daily operations");
+    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Workspace access:.*Daily operations/)).toBeInTheDocument();
+    expect(screen.getAllByText("Growth", { selector: "td" }).length).toBeGreaterThan(0);
+    await expect(api.getWorkspaceAccess()).resolves.toMatchObject({
+      entitlements: expect.objectContaining({ subscriptionPlan: "Growth", entitledModules: expect.arrayContaining(["operations"]) }),
+    });
+  });
+
+  it("does not revert a successful plan change when the follow-up snapshot is stale", async () => {
+    const staleSnapshot = structuredClone(state.snapshot!);
+    const staleForge = staleSnapshot.gyms.find((gym) => gym.id === "forge-fitness");
+    expect(staleForge).toBeDefined();
+    const snapshotSpy = vi.spyOn(api, "getPlatformSnapshot").mockResolvedValue(staleSnapshot);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getAllByRole("button", { name: "Manage" })[0]!);
+    await user.click(screen.getByRole("combobox", { name: "RIVET plan" }));
+    await user.click(screen.getByRole("option", { name: /Growth/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Reason for this change" }), { target: { value: "Keep stale refresh from hiding upgrade." } });
+    await user.click(screen.getByRole("button", { name: "Review changes" }));
+    await user.click(screen.getByRole("button", { name: "Confirm changes" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Workspace access:.*Daily operations/)).toBeInTheDocument();
+    expect(screen.getAllByText("Growth", { selector: "td" }).length).toBeGreaterThan(0);
+    expect(snapshotSpy).toHaveBeenCalled();
+    snapshotSpy.mockRestore();
   });
 
   it("omits a stale cancellation date when reactivating a cancelled gym", async () => {

@@ -26,13 +26,13 @@ async function seeded() {
 }
 
 describe("daily operations typed contracts", () => {
-  it("uses the server-owned entitlement row before the organization plan fallback", async () => {
+  it("uses the organization plan when a materialized entitlement row is stale", async () => {
     const { owner, t } = await seeded();
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
       await ctx.db.insert("organizationEntitlements", { organizationId: organization!._id, catalogVersion: 1, subscriptionPlan: "Growth", entitledModules: ["foundation", "revenue"], source: "subscription_plan", createdAt: Date.now(), updatedAt: Date.now() });
     });
-    await expectCode(owner.query(api.domain.query, operation("operations.products.list")), "FEATURE_NOT_AVAILABLE");
+    await expect(owner.query(api.domain.query, operation("operations.products.list"))).resolves.toEqual([]);
   });
 
   it("enforces operations entitlement, owner/manager writes, and branch isolation", async () => {

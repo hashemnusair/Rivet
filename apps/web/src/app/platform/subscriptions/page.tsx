@@ -13,7 +13,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,8 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
 import type { PlatformSaasPlan, UpdatePlatformGymInput } from "@/lib/api/GymOSApi";
+import { entitledModulesForPlan } from "@/lib/domain/workspace-modules";
+import type { WorkspaceModuleKey } from "@/lib/domain/types";
 import { useExperience, usePlatformGyms } from "@/lib/providers/experience-provider";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
 import { formatMoney } from "@/lib/utils/money";
@@ -65,6 +67,70 @@ export interface SubscriptionDraft {
 }
 
 export type SubscriptionDraftErrors = Partial<Record<keyof SubscriptionDraft, string>>;
+
+const SUBSCRIPTION_PROJECTION_KEYS = [
+  "rivetPlan",
+  "subscriptionStatus",
+  "isPublic",
+  "trialEndsAt",
+  "subscriptionStartedAt",
+  "currentPeriodEndsAt",
+  "cancelledAt",
+  "subscriptionStatusReason",
+  "lastActiveAt",
+] as const;
+
+type SubscriptionProjectionKey = (typeof SUBSCRIPTION_PROJECTION_KEYS)[number];
+
+/**
+ * A platform mutation returns the authoritative gym row, while a subsequent
+ * snapshot/watch can briefly contain its previous value. Keep the committed
+ * subscription facts visible until the live projection catches up instead of
+ * making a successful plan change appear to have been undone.
+ */
+export function subscriptionProjectionMatches(left: MarketplaceGym, right: MarketplaceGym): boolean {
+  return SUBSCRIPTION_PROJECTION_KEYS.every((key) => {
+    if (key === "isPublic") return (left.isPublic === true) === (right.isPublic === true);
+    return left[key] === right[key];
+  });
+}
+
+function applySubscriptionProjection(source: MarketplaceGym, committed: MarketplaceGym): MarketplaceGym {
+  const projection = Object.fromEntries(SUBSCRIPTION_PROJECTION_KEYS.map((key) => [key, committed[key]])) as Pick<MarketplaceGym, SubscriptionProjectionKey>;
+  return { ...source, ...projection };
+}
+
+/** Merge committed mutation responses over a possibly stale platform snapshot. */
+export function reconcileSubscriptionRows(source: MarketplaceGym[], committed: MarketplaceGym[]): MarketplaceGym[] {
+  const committedById = new Map(committed.map((gym) => [gym.id, gym]));
+  const rows = source.map((gym) => {
+    const update = committedById.get(gym.id);
+    if (!update) return gym;
+    committedById.delete(gym.id);
+    return subscriptionProjectionMatches(gym, update) ? gym : applySubscriptionProjection(gym, update);
+  });
+  // A transient response should not make a just-committed tenant disappear
+  // from the operator directory while its platform projection catches up.
+  return [...rows, ...committedById.values()];
+}
+
+const workspaceModuleLabels: Record<WorkspaceModuleKey, string> = {
+  foundation: "Gym foundation",
+  revenue: "Revenue protection",
+  operations: "Daily operations",
+  finance: "Financial operating system",
+  reporting: "Management reporting",
+};
+
+/** The same plan-to-module contract used by workspace feature gates. */
+export function workspaceFeatureLabels(plan: GymPlan): string[] {
+  return entitledModulesForPlan(plan).map((key) => workspaceModuleLabels[key]);
+}
+
+function workspaceFeatureSummary(plan: GymPlan): string {
+  const labels = workspaceFeatureLabels(plan);
+  return labels.length > 0 ? labels.join(" · ") : "No configured workspace entitlement";
+}
 
 const PLAN_NAMES: GymPlan[] = ["Starter", "Growth", "Pro", "Enterprise"];
 const STATUS_NAMES: SubscriptionStatus[] = ["trial", "active", "overdue", "suspended", "cancelled"];
@@ -176,35 +242,61 @@ export default function SubscriptionsPage() {
   const [selectedGymId, setSelectedGymId] = useState("");
   const [editingGym, setEditingGym] = useState<MarketplaceGym>();
   const [editingPlan, setEditingPlan] = useState<PlatformSaasPlan | null>(null);
+  const [snapshotRefreshError, setSnapshotRefreshError] = useState<string>();
+  const committedGymUpdatesRef = useRef(new Map<string, MarketplaceGym>());
   const invalidate = useInvalidate();
 
-  useEffect(() => setCustomerGyms(sourceGyms), [sourceGyms]);
+  useEffect(() => {
+    const committed = [...committedGymUpdatesRef.current.values()];
+    const reconciled = reconcileSubscriptionRows(sourceGyms, committed);
+    for (const update of committed) {
+      const current = sourceGyms.find((gym) => gym.id === update.id);
+      if (current && subscriptionProjectionMatches(current, update)) committedGymUpdatesRef.current.delete(update.id);
+    }
+    setCustomerGyms(reconciled);
+  }, [sourceGyms]);
   useEffect(() => setPlans(platformSnapshot?.plans ?? []), [platformSnapshot?.plans]);
 
   const selectedGym = customerGyms.find((gym) => gym.id === selectedGymId);
   const trialGyms = customerGyms.filter((gym) => gym.subscriptionStatus === "trial");
-  const pastDueCount = platformSnapshot?.overview?.gymCounts.past_due ?? customerGyms.filter((gym) => gym.subscriptionStatus === "overdue").length;
-  const activeMrr = platformSnapshot?.overview?.activeMrr ?? {
-    amount: customerGyms.filter((gym) => gym.subscriptionStatus === "active").reduce((total, gym) => total + (plans.find((plan) => plan.name === gym.rivetPlan)?.priceMinor ?? 0), 0),
-    currency: "JOD",
+  const activeGyms = customerGyms.filter((gym) => gym.subscriptionStatus === "active");
+  const pastDueCount = customerGyms.filter((gym) => gym.subscriptionStatus === "overdue").length;
+  // Derive these operator-facing counters from the reconciled rows so a stale
+  // overview object cannot hide a just-applied plan/status mutation.
+  const activeMrr = {
+    amount: activeGyms.reduce((total, gym) => total + (plans.find((plan) => plan.name === gym.rivetPlan)?.priceMinor ?? 0), 0),
+    currency: platformSnapshot?.overview?.activeMrr.currency ?? "JOD",
   };
 
   const refreshSnapshot = async () => {
     try {
       const snapshot = await getApi().getPlatformSnapshot();
-      setCustomerGyms(snapshot.gyms);
+      const committed = [...committedGymUpdatesRef.current.values()];
+      const reconciled = reconcileSubscriptionRows(snapshot.gyms, committed);
+      for (const update of committed) {
+        const current = snapshot.gyms.find((gym) => gym.id === update.id);
+        if (current && subscriptionProjectionMatches(current, update)) committedGymUpdatesRef.current.delete(update.id);
+      }
+      setCustomerGyms(reconciled);
       setPlans(snapshot.plans);
-    } catch {
+      setSnapshotRefreshError(undefined);
+    } catch (error) {
       // The mutation response is already rendered locally; retain it if the
-      // follow-up snapshot refresh is temporarily unavailable.
+      // follow-up snapshot refresh is temporarily unavailable, but tell the
+      // operator that the live entitlement confirmation is still pending.
+      setSnapshotRefreshError(error instanceof Error && error.message
+        ? `Saved successfully. Live platform confirmation is temporarily unavailable: ${error.message}`
+        : "Saved successfully. Live platform confirmation is temporarily unavailable; showing the saved response.");
     }
   };
 
   const updateGym = useApiMutation((api, input: UpdatePlatformGymInput) => api.updatePlatformGym(input), {
     onSuccess: async (updated) => {
+      committedGymUpdatesRef.current.set(updated.id, updated);
       setCustomerGyms((current) => current.map((gym) => gym.id === updated.id ? updated : gym));
-      toast.success(`${updated.name} subscription updated and audited.`);
-      await invalidate([qk.platformGymDetail(updated.id)]);
+      const featureSummary = workspaceFeatureSummary(updated.rivetPlan);
+      toast.success(`${updated.name} is now on ${updated.rivetPlan}. Workspace access updated: ${featureSummary}.`);
+      await invalidate([qk.platformGymDetail(updated.id), qk.workspaceAccess]);
       await refreshSnapshot();
       setEditingGym(undefined);
     },
@@ -250,9 +342,10 @@ export default function SubscriptionsPage() {
             <p className="mt-1 max-w-[280px]">Every change requires a reason and is written to the platform audit trail.</p>
           </div>
         </div>
+        {snapshotRefreshError ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-3 py-2.5 text-[11px] text-warning-deep" role="status" aria-live="polite"><span>{snapshotRefreshError}</span><Button variant="ghost" size="sm" onClick={() => void refreshSnapshot()}>Retry confirmation</Button></div> : null}
 
         <section className="mt-7 grid gap-3 sm:grid-cols-3">
-          <Kpi label="Active MRR" value={formatMoney(activeMrr)} detail={`${platformSnapshot?.overview?.gymCounts.active ?? customerGyms.filter((gym) => gym.subscriptionStatus === "active").length} active customer accounts`} icon={<BadgeDollarSign />} />
+          <Kpi label="Active MRR" value={formatMoney(activeMrr)} detail={`${activeGyms.length} active customer accounts`} icon={<BadgeDollarSign />} />
           <Kpi label="Trial pipeline" value={formatMoney({ amount: trialGyms.reduce((total, gym) => total + (plans.find((plan) => plan.name === gym.rivetPlan)?.priceMinor ?? 0), 0), currency: "JOD" })} detail={`${trialGyms.length} trial account${trialGyms.length === 1 ? "" : "s"}`} icon={<Clock3 />} />
           <Kpi label="Past due" value={String(pastDueCount)} detail="Accounts requiring billing follow-up" icon={<CircleAlert />} />
         </section>
@@ -275,13 +368,13 @@ export default function SubscriptionsPage() {
             </Field>
             <Button variant="signal" disabled={!selectedGym || !canManageGym(selectedGym)} onClick={() => selectedGym && openEditor(selectedGym)}><Pencil /> Edit subscription</Button>
           </div>
-          {selectedGym ? <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line pt-3 text-[10.5px] text-ink-3"><span><strong className="text-ink">{selectedGym.rivetPlan}</strong> plan</span><span>{selectedGym.memberCount.toLocaleString()} members · {selectedGym.branchCount} branch{selectedGym.branchCount === 1 ? "" : "es"}</span><span>{selectedGym.isProvisioned === false ? "Cleanup-only record; no provisioned tenant is linked." : selectedGym.subscriptionStatusReason ? `Last reason: ${selectedGym.subscriptionStatusReason}` : "No prior change reason recorded"}</span></div> : null}
+          {selectedGym ? <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line pt-3 text-[10.5px] text-ink-3"><span><strong className="text-ink">{selectedGym.rivetPlan}</strong> plan</span><span>{selectedGym.memberCount.toLocaleString()} members · {selectedGym.branchCount} branch{selectedGym.branchCount === 1 ? "" : "es"}</span><span aria-label={`Workspace access: ${workspaceFeatureSummary(selectedGym.rivetPlan)}`}><strong className="text-ink">Workspace access:</strong> {workspaceFeatureSummary(selectedGym.rivetPlan)}</span><span>{selectedGym.isProvisioned === false ? "Cleanup-only record; no provisioned tenant is linked." : selectedGym.subscriptionStatusReason ? `Last reason: ${selectedGym.subscriptionStatusReason}` : "No prior change reason recorded"}</span></div> : null}
         </section>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_.8fr]">
           <section className="overflow-x-auto border border-line bg-surface" aria-labelledby="current-subscriptions-title">
             <div className="border-b border-line px-5 py-4"><p className="eyebrow">Customer plans</p><h2 id="current-subscriptions-title" className="mt-1 text-[17px] font-semibold">Current subscriptions</h2><p className="mt-1 text-[10.5px] text-ink-3">Suspended and past-due tenants remain visible here for operators, but never as member-facing listings.</p></div>
-            {loading ? <div className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading subscriptions…</div> : customerGyms.length === 0 ? <EmptyState compact title="No gyms found" description="There are no tenant subscriptions in the platform directory." /> : <table className="w-full min-w-[820px] text-start"><thead><tr className="border-b border-line bg-sunken text-start font-mono text-[8px] uppercase tracking-[.1em] text-ink-3"><th className="px-5 py-3 font-medium">Gym</th><th className="px-4 py-3 font-medium">Plan</th><th className="px-4 py-3 font-medium">Persisted directory</th><th className="px-4 py-3 font-medium">External billing</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Actions</th></tr></thead><tbody>{customerGyms.map((gym) => <tr key={gym.id} className="border-b border-line last:border-b-0"><td className="px-5 py-4"><p className="text-[12.5px] font-semibold">{gym.name}</p><p className="mt-1 text-[9.5px] text-ink-3">{gym.branchCount} branch{gym.branchCount > 1 ? "es" : ""} · {gym.memberCount.toLocaleString()} members</p>{gym.isProvisioned === false ? <p className="mt-1 flex items-center gap-1 text-[9.5px] font-medium text-warning-deep"><ShieldAlert className="size-3" aria-hidden />Cleanup-only · no tenant linked</p> : null}</td><td className="px-4 py-4 text-[11.5px]">{gym.rivetPlan}</td><td className="px-4 py-4"><DirectoryBadge gym={gym} /></td><td className="px-4 py-4 text-[11px] text-ink-3">Not configured</td><td className="px-4 py-4"><div className="grid gap-1.5"><StatusBadge status={gym.subscriptionStatus} />{gym.subscriptionStatusReason ? <span className="max-w-[170px] truncate text-[9px] text-ink-3" title={gym.subscriptionStatusReason}>{gym.subscriptionStatusReason}</span> : null}</div></td><td className="px-4 py-4"><div className="flex items-center gap-1">{gym.isProvisioned === false ? <Button variant="secondary" size="sm" disabled title="This directory row has no provisioned tenant to manage." aria-label={`Cleanup-only ${gym.name}`}><ShieldAlert /> Cleanup-only</Button> : <Button variant="secondary" size="sm" onClick={() => openEditor(gym)}><Pencil /> Manage</Button>}<Button asChild variant="ghost" size="icon-sm"><Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name} detail`}><ArrowRight /></Link></Button></div></td></tr>)}</tbody></table>}
+            {loading ? <div className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading subscriptions…</div> : customerGyms.length === 0 ? <EmptyState compact title="No gyms found" description="There are no tenant subscriptions in the platform directory." /> : <table className="w-full min-w-[980px] text-start"><thead><tr className="border-b border-line bg-sunken text-start font-mono text-[8px] uppercase tracking-[.1em] text-ink-3"><th className="px-5 py-3 font-medium">Gym</th><th className="px-4 py-3 font-medium">Plan</th><th className="px-4 py-3 font-medium">Workspace access</th><th className="px-4 py-3 font-medium">Persisted directory</th><th className="px-4 py-3 font-medium">External billing</th><th className="px-4 py-3 font-medium">Status</th><th className="px-4 py-3 font-medium">Actions</th></tr></thead><tbody>{customerGyms.map((gym) => <tr key={gym.id} className="border-b border-line last:border-b-0"><td className="px-5 py-4"><p className="text-[12.5px] font-semibold">{gym.name}</p><p className="mt-1 text-[9.5px] text-ink-3">{gym.branchCount} branch{gym.branchCount > 1 ? "es" : ""} · {gym.memberCount.toLocaleString()} members</p>{gym.isProvisioned === false ? <p className="mt-1 flex items-center gap-1 text-[9.5px] font-medium text-warning-deep"><ShieldAlert className="size-3" aria-hidden />Cleanup-only · no tenant linked</p> : null}</td><td className="px-4 py-4 text-[11.5px]">{gym.rivetPlan}</td><td className="max-w-[230px] px-4 py-4 text-[10px] leading-relaxed text-ink-3">{workspaceFeatureSummary(gym.rivetPlan)}</td><td className="px-4 py-4"><DirectoryBadge gym={gym} /></td><td className="px-4 py-4 text-[11px] text-ink-3">Not configured</td><td className="px-4 py-4"><div className="grid gap-1.5"><StatusBadge status={gym.subscriptionStatus} />{gym.subscriptionStatusReason ? <span className="max-w-[170px] truncate text-[9px] text-ink-3" title={gym.subscriptionStatusReason}>{gym.subscriptionStatusReason}</span> : null}</div></td><td className="px-4 py-4"><div className="flex items-center gap-1">{gym.isProvisioned === false ? <Button variant="secondary" size="sm" disabled title="This directory row has no provisioned tenant to manage." aria-label={`Cleanup-only ${gym.name}`}><ShieldAlert /> Cleanup-only</Button> : <Button variant="secondary" size="sm" onClick={() => openEditor(gym)}><Pencil /> Manage</Button>}<Button asChild variant="ghost" size="icon-sm"><Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name} detail`}><ArrowRight /></Link></Button></div></td></tr>)}</tbody></table>}
           </section>
 
           <section className="border border-line bg-surface p-5" aria-labelledby="plan-catalog-title">
@@ -359,7 +452,7 @@ function SubscriptionDialog({ gym, plans, open, saving, error, onOpenChange, onS
     reason: draft.reason.trim(),
   };
 
-  return <Dialog open={open} onOpenChange={handleOpenChange}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{confirming ? "Confirm subscription change" : `Manage ${gym.name}`}</DialogTitle><DialogDescription>{confirming ? "Review the operational consequences before writing this change to the tenant record." : "Plan and lifecycle changes are audited. A reason is required before the API will accept the update."}</DialogDescription></DialogHeader>{confirming ? <><DialogBody className="grid gap-4"><div className="border border-warning/30 bg-warning-bg p-4" role="status"><p className="flex items-center gap-2 text-[12.5px] font-semibold text-warning-deep"><ShieldAlert className="size-4" aria-hidden />This change affects tenant access</p><ul className="mt-3 grid gap-2 text-[11.5px] leading-relaxed text-warning-deep">{lifecycleConsequences(gym, draft).map((consequence) => <li key={consequence} className="flex gap-2"><span aria-hidden>•</span><span>{consequence}</span></li>)}</ul></div><dl className="grid gap-2 border border-line bg-sunken p-4 text-[11.5px]"><SummaryRow label="Plan" value={`${gym.rivetPlan} → ${draft.plan}`} changed={draft.plan !== gym.rivetPlan} /><SummaryRow label="Status" value={`${statusLabel(gym.subscriptionStatus)} → ${statusLabel(draft.status)}`} changed={draft.status !== gym.subscriptionStatus} /><SummaryRow label="Directory" value={allowed && draft.isPublic ? "Visible to members" : "Hidden from members"} changed={draft.isPublic !== persistedIsPublic(gym)} /><SummaryRow label="Reason" value={draft.reason.trim()} /></dl>{error ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{error.message || "The subscription change could not be saved. No changes were applied."}</p> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setConfirming(false)} disabled={saving}>Back to edit</Button><Button variant={draft.status === "suspended" || draft.status === "cancelled" ? "danger" : "signal"} loading={saving} onClick={() => onSave(payload)}>{saving ? "Saving…" : "Confirm changes"}</Button></DialogFooter></> : <><DialogBody className="grid gap-4"><div className="grid gap-3 sm:grid-cols-2"><Field label="RIVET plan" required error={errors.plan}><Select value={draft.plan} onValueChange={(value) => setField("plan", value as GymPlan)}><SelectTrigger aria-label="RIVET plan" aria-invalid={Boolean(errors.plan)}><SelectValue /></SelectTrigger><SelectContent>{options.map((name) => { const plan = plans.find((item) => item.name === name); return <SelectItem key={name} value={name}>{plan ? `${name} · ${formatMoney({ amount: plan.priceMinor, currency: "JOD" })}/mo` : name}</SelectItem>; })}</SelectContent></Select></Field><Field label="Subscription status" required error={errors.status}><Select value={draft.status} onValueChange={(value) => setStatus(value as SubscriptionStatus)}><SelectTrigger aria-label="Subscription status" aria-invalid={Boolean(errors.status)}><SelectValue /></SelectTrigger><SelectContent>{STATUS_NAMES.map((status) => <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>)}</SelectContent></Select></Field></div><div className="border border-line bg-sunken/60 p-3 text-[10.5px] leading-relaxed text-ink-2"><p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Lifecycle dates are optional unless starting a trial. Enter only dates that are known; existing values are retained by the API when left blank.</p></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Trial ends" error={errors.trialEndsAt} hint={draft.status === "trial" ? "Required for trial status." : "Optional historical lifecycle date."}><Input type="date" dir="ltr" value={draft.trialEndsAt} onChange={(event) => setField("trialEndsAt", event.target.value)} aria-invalid={Boolean(errors.trialEndsAt)} /></Field><Field label="Subscription started" error={errors.subscriptionStartedAt}><Input type="date" dir="ltr" value={draft.subscriptionStartedAt} onChange={(event) => setField("subscriptionStartedAt", event.target.value)} aria-invalid={Boolean(errors.subscriptionStartedAt)} /></Field><Field label="Current period ends" error={errors.currentPeriodEndsAt}><Input type="date" dir="ltr" value={draft.currentPeriodEndsAt} onChange={(event) => setField("currentPeriodEndsAt", event.target.value)} aria-invalid={Boolean(errors.currentPeriodEndsAt)} /></Field><Field label="Cancelled on" error={errors.cancelledAt} hint={draft.status === "cancelled" ? "Leave blank to use the server timestamp." : "Enabled when a cancellation date is known."}><Input type="date" dir="ltr" value={draft.cancelledAt} onChange={(event) => setField("cancelledAt", event.target.value)} aria-invalid={Boolean(errors.cancelledAt)} disabled={draft.status !== "cancelled"} /></Field></div><div className="flex items-start justify-between gap-4 border border-line p-3"><div className="flex gap-2"><span className="mt-0.5 text-ink-3">{allowed && draft.isPublic ? <Eye className="size-4" aria-hidden /> : <EyeOff className="size-4" aria-hidden />}</span><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">{allowed ? "Members can discover this gym and request a trial when enabled." : "Suspended, past-due, and cancelled gyms are always hidden from member discovery."}</p></div></div><Switch checked={allowed && draft.isPublic} disabled={!allowed} onCheckedChange={(checked) => setField("isPublic", checked)} aria-label="Public directory listing" /></div><Field label="Reason for this change" required error={errors.reason} hint="Written to the immutable platform audit trail."><textarea className="min-h-24 w-full resize-y rounded-md border border-line-2 bg-surface px-3 py-2 text-[13.5px] text-ink placeholder:text-ink-4 focus:border-ink aria-[invalid=true]:border-danger aria-[invalid=true]:bg-danger-bg/30" value={draft.reason} onChange={(event) => setField("reason", event.target.value)} placeholder="Explain why this subscription or visibility change is needed." aria-invalid={Boolean(errors.reason)} /></Field>{error ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{error.message || "The subscription change could not be saved. No changes were applied."}</p> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={closeDialog} disabled={saving}>Cancel</Button><Button variant="signal" onClick={submit} disabled={!dirty}>{saving ? "Saving…" : "Review changes"}</Button></DialogFooter></>}</DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={handleOpenChange}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{confirming ? "Confirm subscription change" : `Manage ${gym.name}`}</DialogTitle><DialogDescription>{confirming ? "Review the operational consequences before writing this change to the tenant record." : "Plan and lifecycle changes are audited. A reason is required before the API will accept the update."}</DialogDescription></DialogHeader>{confirming ? <><DialogBody className="grid gap-4"><div className="border border-warning/30 bg-warning-bg p-4" role="status"><p className="flex items-center gap-2 text-[12.5px] font-semibold text-warning-deep"><ShieldAlert className="size-4" aria-hidden />This change affects tenant access</p><ul className="mt-3 grid gap-2 text-[11.5px] leading-relaxed text-warning-deep">{lifecycleConsequences(gym, draft).map((consequence) => <li key={consequence} className="flex gap-2"><span aria-hidden>•</span><span>{consequence}</span></li>)}</ul></div><dl className="grid gap-2 border border-line bg-sunken p-4 text-[11.5px]"><SummaryRow label="Plan" value={`${gym.rivetPlan} → ${draft.plan}`} changed={draft.plan !== gym.rivetPlan} /><SummaryRow label="Workspace access" value={workspaceFeatureSummary(draft.plan)} changed={draft.plan !== gym.rivetPlan} /><SummaryRow label="Status" value={`${statusLabel(gym.subscriptionStatus)} → ${statusLabel(draft.status)}`} changed={draft.status !== gym.subscriptionStatus} /><SummaryRow label="Directory" value={allowed && draft.isPublic ? "Visible to members" : "Hidden from members"} changed={draft.isPublic !== persistedIsPublic(gym)} /><SummaryRow label="Reason" value={draft.reason.trim()} /></dl>{error ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{error.message || "The subscription change could not be saved. No changes were applied."}</p> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setConfirming(false)} disabled={saving}>Back to edit</Button><Button variant={draft.status === "suspended" || draft.status === "cancelled" ? "danger" : "signal"} loading={saving} onClick={() => onSave(payload)}>{saving ? "Saving…" : "Confirm changes"}</Button></DialogFooter></> : <><DialogBody className="grid gap-4"><div className="grid gap-3 sm:grid-cols-2"><Field label="RIVET plan" required error={errors.plan}><Select value={draft.plan} onValueChange={(value) => setField("plan", value as GymPlan)}><SelectTrigger aria-label="RIVET plan" aria-invalid={Boolean(errors.plan)}><SelectValue /></SelectTrigger><SelectContent>{options.map((name) => { const plan = plans.find((item) => item.name === name); return <SelectItem key={name} value={name}>{plan ? `${name} · ${formatMoney({ amount: plan.priceMinor, currency: "JOD" })}/mo` : name}</SelectItem>; })}</SelectContent></Select></Field><Field label="Subscription status" required error={errors.status}><Select value={draft.status} onValueChange={(value) => setStatus(value as SubscriptionStatus)}><SelectTrigger aria-label="Subscription status" aria-invalid={Boolean(errors.status)}><SelectValue /></SelectTrigger><SelectContent>{STATUS_NAMES.map((status) => <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>)}</SelectContent></Select></Field></div><p className="border border-info/30 bg-info-bg px-3 py-2.5 text-[10.5px] leading-relaxed text-info" role="status"><strong>{draft.plan} includes:</strong> {workspaceFeatureSummary(draft.plan)}. Saving the plan refreshes tenant entitlements and workspace feature gates.</p><div className="border border-line bg-sunken/60 p-3 text-[10.5px] leading-relaxed text-ink-2"><p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Lifecycle dates are optional unless starting a trial. Enter only dates that are known; existing values are retained by the API when left blank.</p></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Trial ends" error={errors.trialEndsAt} hint={draft.status === "trial" ? "Required for trial status." : "Optional historical lifecycle date."}><Input type="date" dir="ltr" value={draft.trialEndsAt} onChange={(event) => setField("trialEndsAt", event.target.value)} aria-invalid={Boolean(errors.trialEndsAt)} /></Field><Field label="Subscription started" error={errors.subscriptionStartedAt}><Input type="date" dir="ltr" value={draft.subscriptionStartedAt} onChange={(event) => setField("subscriptionStartedAt", event.target.value)} aria-invalid={Boolean(errors.subscriptionStartedAt)} /></Field><Field label="Current period ends" error={errors.currentPeriodEndsAt}><Input type="date" dir="ltr" value={draft.currentPeriodEndsAt} onChange={(event) => setField("currentPeriodEndsAt", event.target.value)} aria-invalid={Boolean(errors.currentPeriodEndsAt)} /></Field><Field label="Cancelled on" error={errors.cancelledAt} hint={draft.status === "cancelled" ? "Leave blank to use the server timestamp." : "Enabled when a cancellation date is known."}><Input type="date" dir="ltr" value={draft.cancelledAt} onChange={(event) => setField("cancelledAt", event.target.value)} aria-invalid={Boolean(errors.cancelledAt)} disabled={draft.status !== "cancelled"} /></Field></div><div className="flex items-start justify-between gap-4 border border-line p-3"><div className="flex gap-2"><span className="mt-0.5 text-ink-3">{allowed && draft.isPublic ? <Eye className="size-4" aria-hidden /> : <EyeOff className="size-4" aria-hidden />}</span><div><p className="text-[12px] font-medium">Public directory listing</p><p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">{allowed ? "Members can discover this gym and request a trial when enabled." : "Suspended, past-due, and cancelled gyms are always hidden from member discovery."}</p></div></div><Switch checked={allowed && draft.isPublic} disabled={!allowed} onCheckedChange={(checked) => setField("isPublic", checked)} aria-label="Public directory listing" /></div><Field label="Reason for this change" required error={errors.reason} hint="Written to the immutable platform audit trail."><textarea className="min-h-24 w-full resize-y rounded-md border border-line-2 bg-surface px-3 py-2 text-[13.5px] text-ink placeholder:text-ink-4 focus:border-ink aria-[invalid=true]:border-danger aria-[invalid=true]:bg-danger-bg/30" value={draft.reason} onChange={(event) => setField("reason", event.target.value)} placeholder="Explain why this subscription or visibility change is needed." aria-invalid={Boolean(errors.reason)} /></Field>{error ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{error.message || "The subscription change could not be saved. No changes were applied."}</p> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={closeDialog} disabled={saving}>Cancel</Button><Button variant="signal" onClick={submit} disabled={!dirty}>{saving ? "Saving…" : "Review changes"}</Button></DialogFooter></>}</DialogContent></Dialog>;
 }
 
 function SummaryRow({ label, value, changed }: { label: string; value: string; changed?: boolean }) {

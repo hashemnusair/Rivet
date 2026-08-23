@@ -1,5 +1,54 @@
 # GymOS / RIVET current implementation state
 
+## Four-tier catalog and annual pricing — 23 August 2026 (working-tree update)
+
+- RIVET now has one end-to-end four-tier catalog: Starter (JOD 79/month),
+  Growth (JOD 149/month), Pro (JOD 249/month), and Enterprise (JOD 500/month).
+  Enterprise is accepted by organization, application, provisioning, platform
+  admin, entitlement, seed, mock, and public catalog contracts instead of being
+  a UI-only option.
+- The landing pricing section has an accessible monthly/annual switch. Annual
+  prices are derived from the monthly catalog at a 20% discount and show both
+  effective monthly and annual billed totals. The chosen plan/cadence carries
+  into signup; the application remains a non-charging provisioning request and
+  does not claim an external recurring billing integration.
+- Dashboard access follows the implemented module model: Starter includes
+  foundation and revenue; Growth adds operations; Pro adds finance and
+  management reporting; Enterprise includes all five at higher capacity limits.
+  Desktop/mobile navigation, Finance subnavigation, direct route gates, and
+  backend Operations/Accounting/Management Reporting checks use authoritative
+  organization-plan access and cannot be reopened by stale entitlement rows.
+- Local validation passed: frontend and Convex TypeScript checks, zero-warning
+  lint, **122 test files / 656 tests**, the 46-route Production build, focused
+  landing pricing Playwright coverage, and a live-session four-tier entitlement
+  journey. The corrected focused browser journeys pass; a subsequent full-suite
+  rerun lost its preview server and produced cascading connection-refused
+  failures, so it is not claimed as a product pass. No Convex/Vercel Production
+  deploy or Production product-data mutation is claimed by this working-tree
+  update.
+
+## Subscription tier activation repair — 22 August 2026 (working-tree update)
+
+- Platform plan changes now treat the provisioned organization as the billing
+  authority and immediately synchronize its entitlement projection. Newly
+  purchased modules are enabled on upgrade; downgrades are enforced at read
+  time while retaining prior preferences for a later upgrade.
+- Active gym sessions subscribe to workspace-access changes, update the shared
+  query cache, and filter desktop/mobile navigation by both role permission and
+  entitled/enabled module. Admin subscription rows reconcile transiently stale
+  platform snapshots instead of visually reverting a successful save.
+- The subscription editor now states the exact access granted by each tier:
+  Starter provides foundation and revenue, Growth adds operations, and Pro adds
+  finance and management reporting. Mock and Convex implementations share the
+  same behavior and regression coverage.
+- Local validation passed: frontend and Convex TypeScript checks, zero-warning
+  lint, **118 test files / 639 tests**, the 46-route Production build,
+  `git diff --check`, and Playwright (**29 passed / 14 credential-gated staging
+  tests skipped**). The browser journey keeps a gym session open across Pro →
+  Starter → Pro and verifies that premium navigation/routes lock and unlock
+  without reload or logout. No Convex/Vercel Production deploy or Production
+  product-data mutation is claimed by this working-tree update.
+
 ## Platform admin hardening pass — 20 August 2026 (working-tree update)
 
 This additive entry records the platform-operations hardening completed after

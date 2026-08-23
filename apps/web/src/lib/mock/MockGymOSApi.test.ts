@@ -3,6 +3,7 @@ import { ERR, isApiError } from "@/lib/api/errors";
 import { DEMO_IDENTITY } from "@/lib/auth/rivet-identity";
 import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
 import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payment } from "@/lib/domain/types";
+import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
@@ -99,6 +100,12 @@ describe("workspace entitlement and preference boundary", () => {
     expect(cleanupDetail.organization).toEqual({ state: "not_available" });
     expect(cleanupDetail.subscription.status).toEqual({ state: "not_available" });
     expect((await api.listMarketplaceGyms()).map((gym) => gym.id)).toEqual(["forge-fitness"]);
+  });
+
+  it("keeps the four-tier catalog ordered with the Enterprise price", async () => {
+    const plans = (await api.getPlatformSnapshot()).plans;
+    expect(plans.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
+    expect(plans.at(-1)).toMatchObject({ name: "Enterprise", priceMinor: 500_000 });
   });
 });
 
@@ -272,10 +279,38 @@ describe("platform subscription controls", () => {
     expect(restoredSnapshot.overview.activeMrr.amount).toBe(growthBefore.priceMinor);
   });
 
+  it("pushes Starter, Growth, and Pro module access after each platform tier change", async () => {
+    const values: T.WorkspaceAccess[] = [];
+    const unsubscribe = await api.subscribeWorkspaceAccess((access) => values.push(access));
+    const transitions = [
+      { plan: "Starter" as const, entitled: ["foundation", "revenue"], locked: ["operations", "finance", "reporting"] },
+      { plan: "Growth" as const, entitled: ["foundation", "revenue", "operations"], locked: ["finance", "reporting"] },
+      { plan: "Pro" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+      { plan: "Enterprise" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+    ];
+
+    for (const transition of transitions) {
+      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
+      const access = values.at(-1);
+      expect(access?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
+      expect(access?.modules.filter((module) => module.entitled && module.enabled).map((module) => module.key)).toEqual(transition.entitled);
+      for (const moduleKey of transition.locked) {
+        expect(access?.modules.find((module) => module.key === moduleKey)).toMatchObject({ entitled: false, enabled: false, lockedReason: "not_entitled" });
+        await expect(api.getWorkspaceModuleStatus(moduleKey as T.WorkspaceModuleKey)).rejects.toMatchObject({ code: ERR.FEATURE_NOT_AVAILABLE });
+      }
+      const session = await api.getSession();
+      expect(session.workspace?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
+      if (transition.plan === "Starter") {
+        await api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue"] });
+      }
+    }
+    unsubscribe();
+  });
+
   it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start a trial without an end date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." })).rejects.toMatchObject({ code: ERR.VALIDATION });
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", reason: "Attempt an unsupported provisioned plan." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
 
     const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", isPublic: true, reason: "Payment is past due." });
     expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });

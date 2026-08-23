@@ -9,10 +9,11 @@ import {
 } from "./workspace-modules";
 
 describe("workspace module catalog", () => {
-  it("maps Starter, Growth, and Pro from the code-owned catalog", () => {
+  it("maps all four plans from the code-owned catalog", () => {
     expect(entitledModulesForPlan("Starter")).toEqual(["foundation", "revenue"]);
     expect(entitledModulesForPlan("Growth")).toEqual(["foundation", "revenue", "operations"]);
     expect(entitledModulesForPlan("Pro")).toEqual(["foundation", "revenue", "operations", "finance", "reporting"]);
+    expect(entitledModulesForPlan("Enterprise")).toEqual(["foundation", "revenue", "operations", "finance", "reporting"]);
   });
 
   it("keeps legacy tenants fully operational until a subscription plan exists", () => {

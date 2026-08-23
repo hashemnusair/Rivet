@@ -514,6 +514,7 @@ export class ConvexGymOSApi implements GymOSApi {
   getBrandKit(): Promise<T.BrandKit> { return this.query("settings.brand.get"); }
   updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> { return this.mutate("settings.brand.update", input); }
   getWorkspaceAccess(): Promise<T.WorkspaceAccess> { return this.query("workspace.access"); }
+  subscribeWorkspaceAccess(onValue: (access: T.WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("workspace.access", {}, onValue, onError); }
   getOrganizationEntitlements(): Promise<T.OrganizationEntitlements> { return this.query("workspace.entitlements"); }
   getWorkspaceModulePreferences(): Promise<T.WorkspaceModulePreferences> { return this.query("workspace.preferences"); }
   getWorkspaceModuleStatus(moduleKey: T.WorkspaceModuleKey): Promise<T.WorkspaceModuleStatus> { return this.query("workspace.module", { moduleKey }); }

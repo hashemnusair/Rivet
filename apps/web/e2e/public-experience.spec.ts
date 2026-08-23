@@ -135,6 +135,27 @@ test.describe("RIVET member experience", () => {
 });
 
 test.describe("RIVET gym applications", () => {
+  test("shows four tiers, annual savings, and carries pricing selection into the application", async ({ page }) => {
+    await page.goto("/#pricing");
+    const pricing = page.locator("#pricing");
+    await pricing.scrollIntoViewIfNeeded();
+
+    await expect(pricing.getByText("Enterprise", { exact: true })).toBeVisible();
+    await expect(pricing.getByText("JD 500.000", { exact: true })).toBeVisible();
+    await expect(pricing.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
+
+    await pricing.getByRole("tab", { name: /Annual/ }).click();
+    await expect(pricing.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
+    await expect(pricing.getByText("Save 20%", { exact: true }).first()).toBeVisible();
+    await expect(pricing.getByText("JD 63.200", { exact: true })).toBeVisible();
+    await expect(pricing.getByText("JD 758.400 billed annually", { exact: false }).first()).toBeVisible();
+
+    await pricing.getByRole("link", { name: "Send gym application" }).first().click();
+    await expect(page).toHaveURL(/\/signup\?plan=Starter&interval=annual$/);
+    await expect(page.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
+  });
+
   test("stores a gym application and shows the receipt", async ({ page }) => {
     await page.goto("/signup");
 

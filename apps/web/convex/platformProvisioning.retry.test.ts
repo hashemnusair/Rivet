@@ -14,7 +14,7 @@ describe("gym provisioning retry convergence", () => {
     await t.run(async (ctx) => {
       const now = Date.now();
       await ctx.db.insert("users", { publicId: "platform-retry", authSubject: "clerk-platform-retry", email: "platform@retry.example", fullName: "Platform Retry", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
-      await ctx.db.insert("gymApplications", { publicId: applicationId, applicationKey: "owner@retry.example::retry-gym", gymName: "Retry Gym", ownerName: "Retry Owner", email: "owner@retry.example", contactNumber: "+962790000777", plan: "Growth", status: "approved", notificationStatus: "sent", submittedAt: now, updatedAt: now });
+      await ctx.db.insert("gymApplications", { publicId: applicationId, applicationKey: "owner@retry.example::retry-gym", gymName: "Retry Gym", ownerName: "Retry Owner", email: "owner@retry.example", contactNumber: "+962790000777", plan: "Enterprise", status: "approved", notificationStatus: "sent", submittedAt: now, updatedAt: now });
     });
     const platform = t.withIdentity({ subject: "clerk-platform-retry" });
     const correlationId = "cor-provisioning-retry";
@@ -44,6 +44,7 @@ describe("gym provisioning retry convergence", () => {
         roles: organization ? (await ctx.db.query("roleDefinitions").collect()).filter((role) => role.organizationId === organization._id) : [],
         ownerMemberships: organization && owner ? await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", owner._id)).collect() : [],
         application,
+        entitlements: organization ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique() : null,
       };
     });
     expect(state.organizations).toHaveLength(1);
@@ -52,6 +53,8 @@ describe("gym provisioning retry convergence", () => {
     expect(state.settings).toHaveLength(1);
     expect(state.roles).toHaveLength(6);
     expect(state.ownerMemberships).toHaveLength(1);
-    expect(state.application).toMatchObject({ provisioningStatus: "completed", clerkOrganizationId: "org_clerk_retry", clerkInvitationId: "orginv_retry", provisionedOrganizationId: ids.organizationPublicId, provisionedBranchId: ids.branchPublicId });
+    expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise" });
+    expect(state.application).toMatchObject({ plan: "Enterprise", provisioningStatus: "completed", clerkOrganizationId: "org_clerk_retry", clerkInvitationId: "orginv_retry", provisionedOrganizationId: ids.organizationPublicId, provisionedBranchId: ids.branchPublicId });
+    expect(state.entitlements).toMatchObject({ subscriptionPlan: "Enterprise", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] });
   });
 });

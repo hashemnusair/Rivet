@@ -8,10 +8,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils/cn";
-import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { useApp } from "@/lib/providers/app-providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
-import { NAV_SECTIONS } from "./nav-config";
+import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -20,7 +20,6 @@ import { NAV_SECTIONS } from "./nav-config";
  */
 export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const pathname = usePathname();
-  const { canAny } = usePermissions();
   const { session, setBranch } = useApp();
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
@@ -63,7 +62,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
           {/* Nav — same sections and permission filtering as the desktop sidebar */}
           <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Primary navigation">
             {NAV_SECTIONS.map((section) => {
-              const visible = section.items.filter((item) => !item.anyPermission || canAny(item.anyPermission));
+              const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
               if (visible.length === 0) return null;
               return (
                 <div key={section.label} className="mb-4">
