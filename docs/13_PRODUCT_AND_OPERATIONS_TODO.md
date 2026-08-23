@@ -1,9 +1,10 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 23 August 2026 after the exact Production backend deployment and
-aggregate renewal audit. This is the single canonical backlog for confirmed
-bugs, release blockers, missing MVP behavior, production-verification findings,
-deferred work, and closure evidence. It consolidates the former
+Updated 23 August 2026 after the four-tier Production release and
+unavailable-owner login recovery. This is the single canonical backlog for
+confirmed bugs, release blockers, missing MVP behavior,
+production-verification findings, deferred work, and closure evidence. It
+consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
@@ -14,19 +15,19 @@ Historical release sections below remain for traceability. The categories here a
 ### Release blockers
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
-- [x] Pass the exact-commit GitHub Actions run `32391568593` and matching Vercel Production deployment status `ER5WksGThgB9BiBupZNZAxUsig85`.
-- [x] Deploy the current safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The guarded dry run and deploy from `2323dd6` passed schema validation with no deleted indexes; post-deploy health returned `status: ok`.
+- [x] Deploy application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`, including Elias's four-tier subscriptions/live entitlements and unavailable-owner recovery. GitHub Actions run `32639554231` passed and Vercel Production deployment `H3DKcGPaGmr8Nzn28qJ7P6TZW1YD` completed.
+- [x] Deploy the current safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The guarded dry run and deploy from `7e6ae92` passed schema validation with no deleted indexes; post-deploy health returned `status: ok`.
 - [ ] Resolve the Convex above-Free-plan-limit warning before pilot launch so the Production backend is not exposed to service interruption. This release did not purchase a plan or change provider billing.
 
 ### Staging or Production verification
 
 - [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
-- [ ] Complete the signed-in gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The authenticated platform-admin session passed `/platform`, applications, billing, subscriptions, and support without console errors, but correctly redirected gym routes to `/platform`.
+- [ ] Complete the signed-in **active** gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The supplied owner account is valid but belongs to a suspended or cancelled gym; its repaired unavailable-workspace state passed live verification without console errors. Restore that exact test gym only through an authorized, reasoned platform-admin action, or use another active owner.
 - [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. No role-specific staging identities or connected-staging variables were available; no functional staging writes were run.
 
 ### Product decisions
 
-- [ ] Resolve final Starter/Growth/Pro capability packaging and downgrade/read-only policy; the current server mapping remains provisional.
+- [ ] Commercially approve the implemented Starter/Growth/Pro/Enterprise packaging, prices, capacity limits, trials, and downgrade/read-only policy. The four-tier catalog and server-owned capability gates are live, but remain provisional business policy rather than a signed-off launch contract.
 - [ ] Approve membership revenue-recognition, depreciation, chart-of-accounts, inventory valuation, period-close, tax, and opening-balance policies before stronger accounting claims or historical backfill.
 - [ ] Approve WhatsApp/SMS/supplier providers, templates, consent/quiet-hour/retry policy, and accountable owners before any live delivery.
 
@@ -43,6 +44,14 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] Keep `arabic-localisation` unmerged. Decide later whether to use General Translation/`gt-next`, complete RTL review, and perform the final Arabic pass.
 - [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
+
+## Latest direct-main repair — unavailable gym-owner login — 23 August 2026
+
+- [x] Distinguish an owner whose active membership points to a suspended or cancelled organization from a true member-only identity.
+- [x] Prevent that unavailable owner identity from initializing member registration, subscriptions, or member-shell APIs.
+- [x] Replace the same-route **Back to sign-in options** link with a Clerk-backed **Sign out and use another account** recovery action.
+- [x] Deploy and verify the affected Production session: truthful unavailable-workspace copy rendered, no member mutation ran, and no page or console errors remained.
+- [ ] Restore the test gym only after an authorized platform administrator confirms the exact organization and records the operational reason; then complete the active-owner Five Pillars acceptance pass.
 
 ## Latest simplification slice — core CRM pilot — released 17 August 2026
 
@@ -524,10 +533,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
 
-- Status: **Current Vercel and exact Production Convex code are aligned; gym-owner route verification and value-level provider configuration checks remain open**.
-- Evidence: GitHub Actions run `32412787941` passed for current application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f`, Vercel Production `CEFfosE9hcTLkkwNNFBoL8kvCqb7` is `READY`, and the guarded Convex dry run/deploy targeted Production `descriptive-meerkat-589` with no index deletions. Health returned `status: ok`, and the aggregate renewal audit returned zero records. The authenticated platform-admin routes passed; the same account correctly cannot enter a gym workspace.
+- Status: **Current Vercel and exact Production Convex code are aligned; active gym-owner route verification and value-level provider configuration checks remain open**.
+- Evidence: GitHub Actions run `32639554231` passed for current application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`, Vercel Production `H3DKcGPaGmr8Nzn28qJ7P6TZW1YD` is complete, and the guarded Convex dry run/deploy targeted Production `descriptive-meerkat-589` with no index deletions. Health returned `status: ok`. Platform-admin routes passed, and the unavailable owner boundary was verified live without console errors or a member bootstrap.
 - Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
-- Fix/acceptance: complete the gym-owner read-only acceptance pass and the remaining value-free provider/configuration checklist. Never seed Production as a shortcut.
+- Fix/acceptance: complete the active gym-owner read-only acceptance pass after an authorized test-gym restoration or with another active owner, plus the remaining value-free provider/configuration checklist. Never seed Production as a shortcut.
 
 ### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
 

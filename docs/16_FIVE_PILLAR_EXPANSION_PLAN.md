@@ -1,6 +1,6 @@
 # 16 — Five-Pillar Gym Operating System Expansion Plan
 
-Status: **All five slices and the Production backend safety release are deployed; gym-owner acceptance, capacity, product decisions, and credentialed staging remain open**
+Status: **All five slices, four-tier entitlements, and the Production backend safety release are deployed; active gym-owner acceptance, capacity, product decisions, and credentialed staging remain open**
 Last reviewed: **2026-08-23**
 
 ## Purpose
@@ -29,11 +29,11 @@ where this plan does not explicitly extend them.
 
 ## Current release evidence — 23 August 2026
 
-- Current application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f` includes the Five Pillars release and Elias's subsequent platform-admin hardening. GitHub Actions run `32412787941` passed, and Vercel Production is `READY` for the matching deployment (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`). `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
+- Current application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d` includes the Five Pillars release, Elias's four-tier subscription/live-entitlement work, platform-admin hardening, and unavailable-owner login recovery. GitHub Actions run `32639554231` passed, and Vercel Production completed the matching deployment (`H3DKcGPaGmr8Nzn28qJ7P6TZW1YD`). `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
 - The guarded dry run and deploy targeted exact Convex Production deployment `descriptive-meerkat-589`. Schema validation completed, no indexes were deleted, and the current functions were deployed through `pnpm convex:deploy`. Post-deploy `health:check` returned `status: ok`.
 - Renewal recovery is off by default, treats missing legacy values as false, and does not create delivery/events/timeline/staff-task facts while disabled. An authorized settings user can explicitly enable the journey; external WhatsApp/SMS remains sandboxed.
 - The internal aggregate-only `renewalJobs.releaseAudit` returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks in Production, with empty status/type groups and timestamps. No cleanup was required.
-- Authenticated Production platform-admin and Convex sessions were available. Platform overview, applications, billing, subscriptions, and support loaded without page or console errors. A separate gym-owner session is still required because this identity correctly redirects `/operations`, `/finance`, `/reports/statements`, and `/settings` to `/platform`; the isolated staging accounting journey also remains unverified.
+- Authenticated Production platform-admin and Convex sessions were available. Platform overview, applications, billing, subscriptions, and support loaded without page or console errors. The supplied owner account was verified as belonging to a suspended or cancelled gym; RIVET now renders the unavailable-workspace recovery state without member initialization or console errors. An authorized restoration or another active owner is still required for the Five Pillars workspace acceptance pass; the isolated staging accounting journey also remains unverified.
 - Convex warned that the projects are above the Free-plan limits. Resolve capacity or billing before pilot launch to avoid service interruption.
 
 This plan records implementation status and release evidence; it does not close the unresolved commercial, provider, accounting-policy, Arabic, performance, or future-feature decisions below.
