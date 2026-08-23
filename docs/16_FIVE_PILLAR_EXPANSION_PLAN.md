@@ -1,7 +1,7 @@
 # 16 — Five-Pillar Gym Operating System Expansion Plan
 
-Status: **All five implementation slices are locally validated; the exact Production Convex deploy, count-only audit, signed-in Production checks, and credentialed staging journey remain open**
-Last reviewed: **2026-08-20**
+Status: **All five slices and the Production backend safety release are deployed; gym-owner acceptance, capacity, product decisions, and credentialed staging remain open**
+Last reviewed: **2026-08-23**
 
 ## Purpose
 
@@ -27,14 +27,14 @@ status handoff. Existing documents such as the domain model, API contract,
 security guide, workspace-preference plan, and release runbook remain binding
 where this plan does not explicitly extend them.
 
-## Current release evidence — 20 August 2026
+## Current release evidence — 23 August 2026
 
-- The Five Pillars application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is on `main` and `origin/main`; this plan refresh is a subsequent direct-main documentation commit. It includes the five-pillar implementation, renewal safety change, and release evidence; `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
-- GitHub Actions run `32391568593` passed for the exact commit. Vercel Production is `READY` for the matching application deployment (`ER5WksGThgB9BiBupZNZAxUsig85`). The 46-route build includes `/operations`, `/finance`, and `/reports/statements`.
-- The intended Convex Production target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the available deployment context targets Development `fleet-otter-621`; the required guarded dry run passed schema validation with no deleted indexes. Because the target was Development, no Production deploy was run and the renewal safety gate is not confirmed in Production.
+- Current application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f` includes the Five Pillars release and Elias's subsequent platform-admin hardening. GitHub Actions run `32412787941` passed, and Vercel Production is `READY` for the matching deployment (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`). `FRONTEND_HANDOFF.md` is unchanged and `arabic-localisation` remains unmerged.
+- The guarded dry run and deploy targeted exact Convex Production deployment `descriptive-meerkat-589`. Schema validation completed, no indexes were deleted, and the current functions were deployed through `pnpm convex:deploy`. Post-deploy `health:check` returned `status: ok`.
 - Renewal recovery is off by default, treats missing legacy values as false, and does not create delivery/events/timeline/staff-task facts while disabled. An authorized settings user can explicitly enable the journey; external WhatsApp/SMS remains sandboxed.
-- The internal `renewalJobs.releaseAudit` query is aggregate-only and locally tested. It is intended for authenticated read-only release auditing after the Production deploy; it has not been deployed or run against Production in this pass.
-- No authenticated Production GymOS or Convex dashboard session was available. `/operations`, `/finance`, `/reports/statements`, and `/settings` redirected to `/login` without console errors; authenticated route/settings/report checks, Production renewal counts, and the isolated staging accounting journey remain unverified.
+- The internal aggregate-only `renewalJobs.releaseAudit` returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks in Production, with empty status/type groups and timestamps. No cleanup was required.
+- Authenticated Production platform-admin and Convex sessions were available. Platform overview, applications, billing, subscriptions, and support loaded without page or console errors. A separate gym-owner session is still required because this identity correctly redirects `/operations`, `/finance`, `/reports/statements`, and `/settings` to `/platform`; the isolated staging accounting journey also remains unverified.
+- Convex warned that the projects are above the Free-plan limits. Resolve capacity or billing before pilot launch to avoid service interruption.
 
 This plan records implementation status and release evidence; it does not close the unresolved commercial, provider, accounting-policy, Arabic, performance, or future-feature decisions below.
 

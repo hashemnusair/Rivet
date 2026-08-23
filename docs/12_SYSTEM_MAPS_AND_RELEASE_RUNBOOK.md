@@ -1,6 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-20 after the Five Pillars Production closure attempt.
+Last reviewed: 2026-08-23 after the exact Production backend deployment and
+aggregate renewal audit.
 
 ## Purpose
 
@@ -15,20 +16,48 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current release posture
 
-- The application is a release candidate, not a blank scaffold.
-- Main application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea` is deployed to Vercel Production; GitHub Actions run `32391568593` passed and the matching Vercel status is `READY` (`ER5WksGThgB9BiBupZNZAxUsig85`).
-- The intended Convex Production target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the available local deployment context selected by the safe wrapper is Development `fleet-otter-621`; the required guarded dry run targeted Development, passed schema validation, and reported no deleted indexes. The renewal safety gate has not been verified in Production and no deploy was attempted with the wrong context.
-- Local gates pass: frontend and Convex typecheck, zero-warning lint, 557 tests across 109 files, the 46-route production build, 27 Playwright passes with 14 credential-gated skips, and diff checks. Credential-complete staging remains gated on the documented role storage states.
-- No authenticated Production GymOS or Convex dashboard session was available. `/operations`, `/finance`, `/reports/statements`, and `/settings` each redirected to `/login` without browser console errors; authenticated route, authorization, settings, report drill-down, responsive, health, and Production data-audit checks remain pending.
+- The application is a release candidate, not a blank scaffold. Current
+  application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f` includes
+  Elias's platform-admin hardening and the Five Pillars release. GitHub Actions
+  run `32412787941` passed, and Vercel Production is `READY`
+  (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`).
+- The guarded dry run and deploy targeted exact Convex Production deployment
+  `descriptive-meerkat-589`. Schema validation completed, no indexes were
+  deleted, and the current functions—including the default-off renewal gate
+  and aggregate audit—were deployed through `pnpm convex:deploy`.
+- Post-deploy `health:check` returned `status: ok`.
+  `renewalJobs.releaseAudit` returned zero renewal deliveries, delivery events,
+  member-timeline records, and staff call tasks; all groups and timestamps were
+  empty, so no cleanup was required.
+- The authenticated platform-admin session loaded the overview, applications,
+  billing, subscriptions, and support surfaces without page or console errors.
+  It correctly routed gym-only Five Pillars paths back to `/platform`; the
+  signed-in gym-owner workspace, drill-down, authorization, and responsive
+  checks still require a separate gym-owner session.
+- Convex warned that the projects are above the Free-plan limits. Capacity or
+  billing must be resolved before pilot launch to avoid service interruption.
+  Credential-complete staging also remains gated on the documented role
+  storage states.
+- Final local gates passed: both typechecks, zero-warning lint and secret-output
+  audit, 118 test files / 630 tests, the 46-route Production build, 28
+  Playwright passes, and 14 credential-gated staging skips.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
-### Five Pillars Production closure attempt — 20 August 2026
+### Five Pillars Production closure progress — 23 August 2026
 
 - Renewal recovery is explicitly opt-in through `notifications.renewalRecoveryEnabled`. Missing legacy values and explicit false behave as disabled; the scheduler creates no renewal delivery, event, member timeline, or staff call-task facts until an authorized settings user enables the journey.
-- The guarded command `pnpm convex:deploy -- --dry-run --typecheck enable --codegen enable` resolved to Development `fleet-otter-621`, not the intended Production deployment `descriptive-meerkat-589`. Schema validation passed and no indexes would be deleted. The matching deploy command, Production health check, and internal audit query were not run.
-- The internal `renewalJobs.releaseAudit` query is aggregate-only and returns counts, status/type buckets, and timestamps. It remains locally tested but unavailable in Production until the exact Production deployment is completed; no pre-gate Production count is claimed.
-- Chrome had no signed-in Production session. All four requested routes redirected to `/login`; no console errors were observed. Authenticated authorization, loading/error, drill-down, failed-request, and responsive checks remain unverified.
+- The guarded dry run and deploy both targeted Production
+  `descriptive-meerkat-589`, passed schema validation, and reported no deleted
+  indexes. The Development deployment `fleet-otter-621` was not changed.
+- The aggregate-only `renewalJobs.releaseAudit` is deployed. Its Production
+  result was zero across renewal deliveries, events, timelines, and call tasks,
+  with empty groups and timestamps. The post-deploy health query returned
+  `status: ok`.
+- Chrome had authenticated Production RIVET and Convex sessions. Platform-admin
+  routes passed a read-only smoke without console errors. A separate gym-owner
+  session remains necessary because this identity redirects gym routes to the
+  platform console.
 - No staging role identities or connected-staging environment variables were available. No staging writes or cleanup actions were performed.
 - `FRONTEND_HANDOFF.md` remains frozen. The `arabic-localisation` branch remains unmerged. Arabic and performance work are deferred to the final pass.
 
@@ -428,9 +457,9 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A1. Convex Production
 
-- [ ] Confirm the selected deployment is Production, not the linked development deployment.
+- [x] Confirm the selected deployment is Production, not the linked development deployment.
 - [ ] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
-- [ ] Confirm the current safety-gated schema/functions are deployed for commit `1e01163` or later.
+- [x] Confirm the current safety-gated schema/functions are deployed for commit `1e01163` or later. Deployed from `2323dd6` on 23 August 2026.
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.
@@ -439,8 +468,8 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
-- [ ] Do not run `seed:seedDemoTenant`.
-- [ ] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
+- [x] Do not run `seed:seedDemoTenant`.
+- [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
 
 #### A2. Clerk Production
 

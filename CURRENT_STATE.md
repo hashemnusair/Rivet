@@ -1,5 +1,46 @@
 # GymOS / RIVET current implementation state
 
+## Production backend release closure — 23 August 2026
+
+- `main` and `origin/main` were synchronized at
+  `2323dd6841741c9763983a2e3dac43cb5a11f10f` before this documentation
+  update. That head includes Elias's platform-admin hardening in addition to
+  the Five Pillars application and renewal-safety work. GitHub Actions run
+  `32412787941` passed for that application commit, and its Vercel Production
+  deployment is `READY` (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`).
+- The guarded dry run and deploy both targeted exact Convex Production
+  deployment `descriptive-meerkat-589`. Schema validation completed, no
+  indexes were deleted, and the current functions were deployed through
+  `pnpm convex:deploy`; the Development deployment `fleet-otter-621` was not
+  targeted.
+- The post-deploy `health:check` returned `status: ok`. The internal
+  aggregate-only `renewalJobs.releaseAudit` returned zero renewal deliveries,
+  delivery events, member-timeline records, and staff call tasks, with empty
+  status/type groups and no first/last timestamps. No cleanup was required.
+- The authenticated Production platform-admin session loaded `/platform`,
+  `/platform/applications`, `/platform/billing`, `/platform/subscriptions`,
+  and `/platform/support` without page or console errors. The same identity
+  was correctly routed away from `/operations`, `/finance`,
+  `/reports/statements`, and `/settings` to `/platform`; a separate active
+  gym-owner session is still required for the signed-in Five Pillars workspace
+  acceptance pass.
+- Convex reported that the projects are above the Free-plan limits during the
+  Production dry run and deploy. Resolve capacity/billing before pilot launch
+  to avoid service interruption; no plan purchase or provider-setting change
+  was made by this release.
+- Credential-complete isolated-staging journeys remain open because the
+  documented role identities are unavailable. The deployment, health query,
+  and release audit did not create, edit, delete, seed, import, or restore
+  Production product data. Renewal recovery remains default-off, live outbound
+  providers remain disabled, `FRONTEND_HANDOFF.md` remains frozen, and the
+  `arabic-localisation` branch remains unmerged for the final Arabic and
+  measured-performance pass.
+- Final local gates passed on the deployed application code and this handoff:
+  frontend and Convex typechecks, zero-warning lint and secret-output audit,
+  118 test files / 630 tests, the 46-route Production build, 28 Playwright
+  passes with 14 credential-gated staging journeys skipped, and
+  `git diff --check`.
+
 ## Four-tier catalog and annual pricing — 23 August 2026 (working-tree update)
 
 - RIVET now has one end-to-end four-tier catalog: Starter (JOD 79/month),
@@ -48,6 +89,7 @@
   Starter → Pro and verifies that premium navigation/routes lock and unlock
   without reload or logout. No Convex/Vercel Production deploy or Production
   product-data mutation is claimed by this working-tree update.
+
 
 ## Platform admin hardening pass — 20 August 2026 (working-tree update)
 
