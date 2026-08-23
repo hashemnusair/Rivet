@@ -165,7 +165,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         // full-page error or force the operator to reload manually.
         setExperienceRefreshing(true);
       }
-      const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+      const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
       const platformIdentity = identity.status === "ready" && identity.platformAdmin;
       if (memberIdentity || platformIdentity) return;
       return;
@@ -187,7 +187,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceStatus("ready");
     setExperienceReady(true);
     setPreviewSessionReady(true);
-  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // The public pricing catalog is a shared live projection. Subscribing here
   // keeps the landing page and the platform catalog on the same plan records,
@@ -224,7 +224,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
     const platformIdentity = identity.status === "ready" && identity.platformAdmin;
     void getApi().subscribeMarketplaceGyms((gyms) => {
       if (cancelled) return;
@@ -246,7 +246,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       if (!cancelled) setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
     });
     return () => { cancelled = true; unsubscribe?.(); };
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+  }, [convexMode, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider
@@ -254,7 +254,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // the member explicitly opens the QR action so a stale code is never painted
   // as if it were valid.
   useEffect(() => {
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
     if (!convexMode || !memberIdentity) return;
 
     let cancelled = false;
@@ -294,7 +294,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
+  }, [convexMode, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status]);
 
   // Platform operations use one live projection. Convex invalidates this
   // query whenever an application, subscription, invoice, support case, or

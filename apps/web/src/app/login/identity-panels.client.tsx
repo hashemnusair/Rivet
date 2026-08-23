@@ -1,8 +1,8 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
+import { useClerk } from "@clerk/nextjs";
+import { CircleAlert, LogOut } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -34,7 +34,6 @@ export function IdentityPanel() {
       <NotEntitled
         title="Your role could not be loaded"
         body={identity.errorMessage ?? "You are signed in, but RIVET could not read your account's role. Please try signing in again."}
-        primary={{ label: "Back to sign-in options", href: "/login" }}
       />
     );
   }
@@ -46,7 +45,17 @@ export function IdentityPanel() {
   const destination = destinationFor(identity);
   if (destination.area === "platform") return <AdminEntry identity={identity} />;
   if (destination.area === "gym") return <GymEntry identity={identity} />;
+  if (destination.area === "unavailable") return <UnavailableGymEntry />;
   return <MemberEntry identity={identity} />;
+}
+
+function UnavailableGymEntry() {
+  return (
+    <NotEntitled
+      title="Your gym workspace is unavailable"
+      body="This account belongs to a gym that is not currently active. Ask a RIVET platform administrator to restore the gym's subscription, or sign out and use another account."
+    />
+  );
 }
 
 function GymEntry({ identity }: { identity: RivetIdentity }) {
@@ -79,7 +88,6 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
       <NotEntitled
         title="This account is not on a gym team"
         body="Gym staff are added by the gym's owner or manager. Once someone puts your email on the team, this portal opens your workspace automatically."
-        primary={{ label: "Back to sign-in", href: "/login" }}
       />
     );
   }
@@ -89,7 +97,6 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
       <NotEntitled
         title="The workspace could not be opened"
         body="Your gym access was found, but RIVET could not initialize this browser session. Sign out and try again."
-        primary={{ label: "Back to sign-in options", href: "/login" }}
       />
     );
   }
@@ -119,7 +126,6 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
       <NotEntitled
         title="Your member dashboard could not be opened"
         body="Your account is signed in, but RIVET could not initialize this browser session. Sign out and try again."
-        primary={{ label: "Back to sign-in options", href: "/login" }}
       />
     );
   }
@@ -150,7 +156,6 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
       <NotEntitled
         title="This account is not a platform administrator"
         body="The platform console manages every gym on RIVET, so access is granted deliberately in Convex rather than requested here."
-        primary={{ label: "Back to sign-in options", href: "/login" }}
       />
     );
   }
@@ -176,12 +181,29 @@ function AutomaticEntry({ label }: { label: string }) {
 function NotEntitled({
   title,
   body,
-  primary,
 }: {
   title: string;
   body: string;
-  primary: { label: string; href: string };
 }) {
+  const { signOut: signOutClerk } = useClerk();
+  const { signOut } = useApp();
+  const { signOutCustomer, signOutPlatformAdmin } = useExperience();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const recover = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      signOutCustomer();
+      signOutPlatformAdmin();
+      await signOutClerk({ redirectUrl: "/login" });
+    } catch {
+      setSigningOut(false);
+      toast.error("Could not sign out. Please try again.");
+    }
+  };
+
   return (
     <div className="mt-7">
       <div className="rounded-lg border border-warning/30 bg-warning-bg p-4">
@@ -190,8 +212,16 @@ function NotEntitled({
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">{body}</p>
       </div>
-      <Button asChild variant="secondary" className="mt-5 w-full" size="lg">
-        <Link href={primary.href}>{primary.label}</Link>
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-5 w-full"
+        size="lg"
+        loading={signingOut}
+        onClick={() => void recover()}
+      >
+        <LogOut aria-hidden />
+        {signingOut ? "Signing out" : "Sign out and use another account"}
       </Button>
     </div>
   );

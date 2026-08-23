@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-23 after the exact Production backend deployment and
-aggregate renewal audit.
+Last reviewed: 2026-08-23 after the four-tier Production release and
+unavailable-owner login recovery.
 
 ## Purpose
 
@@ -17,10 +17,11 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 ## Current release posture
 
 - The application is a release candidate, not a blank scaffold. Current
-  application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f` includes
-  Elias's platform-admin hardening and the Five Pillars release. GitHub Actions
-  run `32412787941` passed, and Vercel Production is `READY`
-  (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`).
+  application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
+  includes Elias's four-tier subscription/live-entitlement work, the Five
+  Pillars release, and unavailable-owner login recovery. GitHub Actions run
+  `32639554231` passed, and Vercel Production is `READY`
+  (`H3DKcGPaGmr8Nzn28qJ7P6TZW1YD`).
 - The guarded dry run and deploy targeted exact Convex Production deployment
   `descriptive-meerkat-589`. Schema validation completed, no indexes were
   deleted, and the current functions—including the default-off renewal gate
@@ -31,15 +32,17 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   empty, so no cleanup was required.
 - The authenticated platform-admin session loaded the overview, applications,
   billing, subscriptions, and support surfaces without page or console errors.
-  It correctly routed gym-only Five Pillars paths back to `/platform`; the
-  signed-in gym-owner workspace, drill-down, authorization, and responsive
-  checks still require a separate gym-owner session.
+  The affected owner identity was also verified in Production: its gym is
+  suspended or cancelled, so RIVET now renders a truthful unavailable-workspace
+  state and a working sign-out action without invoking member APIs. The full
+  gym-owner workspace, drill-down, authorization, and responsive checks still
+  require an authorized restoration of that test gym or another active owner.
 - Convex warned that the projects are above the Free-plan limits. Capacity or
   billing must be resolved before pilot launch to avoid service interruption.
   Credential-complete staging also remains gated on the documented role
   storage states.
 - Final local gates passed: both typechecks, zero-warning lint and secret-output
-  audit, 118 test files / 630 tests, the 46-route Production build, 28
+  audit, 122 test files / 660 tests, the 46-route Production build, 30
   Playwright passes, and 14 credential-gated staging skips.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
@@ -115,7 +118,7 @@ flowchart TB
 
 Domains provide clean entry points and canonical URLs. They are not authorization boundaries.
 
-## Map 3 — One sign-in, three identity outcomes
+## Map 3 — One sign-in, four identity outcomes
 
 ```mermaid
 flowchart TD
@@ -133,10 +136,13 @@ flowchart TD
 
     STAFF -->|"One gym"| GYM["Gym workspace<br/>assigned role and branches"]
     STAFF -->|"Multiple gyms"| SELECT["Select organization"] --> GYM
-    STAFF -->|"None"| MEMBER["Member experience<br/>customer profile and My Gyms"]
+    STAFF -->|"None"| UNAVAILABLE{"Active gym membership<br/>blocked by tenant lifecycle?"}
+    UNAVAILABLE -->|"Yes"| RECOVER["Workspace unavailable<br/>sign out or admin restores gym"]
+    UNAVAILABLE -->|"No"| MEMBER["Member experience<br/>customer profile and My Gyms"]
 
     PLATFORM -. "cannot use member-only APIs" .-> BLOCKED["Forbidden"]
     GYM -. "cannot use member-only APIs" .-> BLOCKED
+    RECOVER -. "cannot initialize member APIs" .-> BLOCKED
 ```
 
 Production does not use persona switching. Convex identity state determines the workspace.

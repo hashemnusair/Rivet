@@ -76,6 +76,16 @@ async function seed(t: TestConvex<typeof schema>) {
       createdAt: now,
       updatedAt: now,
     });
+    const unavailableOwner = await ctx.db.insert("users", {
+      publicId: "identity-unavailable-owner",
+      authSubject: "clerk-identity-unavailable-owner",
+      email: "unavailable-owner@identity.example",
+      fullName: "Unavailable Owner",
+      platformAdmin: false,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
     await ctx.db.insert("organizationMemberships", {
       organizationId: activeOrganization.organization,
       userId: activeAdmin,
@@ -91,6 +101,19 @@ async function seed(t: TestConvex<typeof schema>) {
       await ctx.db.insert("organizationMemberships", {
         organizationId: organization,
         userId: activeAdmin,
+        role: "owner",
+        branchIds: [branch],
+        branchScope: "all",
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    for (const { key, organization, branch } of organizations) {
+      if (key !== "suspended" && key !== "cancelled") continue;
+      await ctx.db.insert("organizationMemberships", {
+        organizationId: organization,
+        userId: unavailableOwner,
         role: "owner",
         branchIds: [branch],
         branchScope: "all",
@@ -141,6 +164,17 @@ describe("identity routing projection", () => {
     expect(result?.memberships.map((membership) => membership.organizationStatus).sort()).toEqual(["active", "past_due", "trial"]);
     expect(result?.memberships.some((membership) => membership.organizationStatus === "suspended")).toBe(false);
     expect(result?.memberships.some((membership) => membership.organizationStatus === "cancelled")).toBe(false);
+  });
+
+  it("marks gym access unavailable instead of presenting suspended staff as a member", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+
+    await expect(t.withIdentity({ subject: "clerk-identity-unavailable-owner" }).query(api.identity.current, {})).resolves.toMatchObject({
+      gymAccessUnavailable: true,
+      memberships: [],
+      user: { id: "identity-unavailable-owner", platformAdmin: false },
+    });
   });
 
   it("does not advertise role or memberships for a deactivated operator", async () => {

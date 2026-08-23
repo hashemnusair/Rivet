@@ -1,5 +1,38 @@
 # GymOS / RIVET current implementation state
 
+## Four-tier Production release and unavailable-owner recovery — 23 August 2026
+
+- Application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
+  is deployed on Vercel Production (`H3DKcGPaGmr8Nzn28qJ7P6TZW1YD`) and
+  passed GitHub Actions run `32639554231`. This release carries Elias's
+  four-tier subscription and live-entitlement work from `6c43147` together
+  with the owner-login recovery below.
+- The guarded dry run and deploy targeted exact Convex Production deployment
+  `descriptive-meerkat-589`. Schema validation completed, no indexes were
+  deleted, and the post-deploy `health:check` returned `status: ok`. Convex
+  again warned that the project is above the Free-plan limits.
+- Root cause of the failed owner sign-in was an active gym membership whose
+  organization is suspended or cancelled. The identity projection correctly
+  hid that organization from routable workspaces, but the client mistook the
+  empty routable list for a consumer account and called the member-registration
+  mutation. The server rejected that mutation because the account still has a
+  gym membership.
+- Identity projection now distinguishes unavailable gym access from a true
+  member-only identity. It neither initializes member APIs nor exposes the
+  suspended workspace. The login page explains that the gym is inactive and
+  provides a real Clerk sign-out action instead of linking back to the same
+  route.
+- Production browser verification on the affected owner session showed
+  **Your gym workspace is unavailable** and **Sign out and use another
+  account**, with no page or console errors. The account is valid; restoring
+  its gym subscription is a separate reasoned platform-admin mutation and was
+  not performed by this release.
+- Local gates passed: frontend and Convex typechecks, zero-warning lint and
+  secret-output audit, **122 test files / 660 tests**, the 46-route Production
+  build, and Playwright (**30 passed / 14 credential-gated staging tests
+  skipped / 0 failed**). `FRONTEND_HANDOFF.md` remains frozen and Arabic plus
+  measured performance work remain deferred to the final pass.
+
 ## Production backend release closure — 23 August 2026
 
 - `main` and `origin/main` were synchronized at
