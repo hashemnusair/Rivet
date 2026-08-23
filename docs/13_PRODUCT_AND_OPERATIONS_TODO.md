@@ -1,8 +1,13 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 20 August 2026 after the Five Pillars Production closure attempt. This is the single canonical backlog for confirmed bugs, release blockers, missing MVP behavior, production-verification findings, deferred work, and closure evidence. It consolidates the former `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret values, applicant details, and provider credentials out of this file.
+Updated 23 August 2026 after the exact Production backend deployment and
+aggregate renewal audit. This is the single canonical backlog for confirmed
+bugs, release blockers, missing MVP behavior, production-verification findings,
+deferred work, and closure evidence. It consolidates the former
+`docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
+values, applicant details, and provider credentials out of this file.
 
-## Current Five Pillars release index — 20 August 2026
+## Current Five Pillars release index — 23 August 2026
 
 Historical release sections below remain for traceability. The categories here are the canonical active list for this release; do not duplicate these items in a new backlog.
 
@@ -10,12 +15,13 @@ Historical release sections below remain for traceability. The categories here a
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
 - [x] Pass the exact-commit GitHub Actions run `32391568593` and matching Vercel Production deployment status `ER5WksGThgB9BiBupZNZAxUsig85`.
-- [ ] Deploy the safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The guarded dry run resolved to Development `fleet-otter-621`, passed schema validation with no deleted indexes, and was not followed by a deploy because the target was wrong.
+- [x] Deploy the current safety-gated Convex functions to exact Production target `descriptive-meerkat-589`. The guarded dry run and deploy from `2323dd6` passed schema validation with no deleted indexes; post-deploy health returned `status: ok`.
+- [ ] Resolve the Convex above-Free-plan-limit warning before pilot launch so the Production backend is not exposed to service interruption. This release did not purchase a plan or change provider billing.
 
 ### Staging or Production verification
 
-- [ ] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy and record counts/timestamps only. The query is tested locally but is not yet deployed; no pre-gate Production count is claimed.
-- [ ] Use an existing signed-in Production GymOS session for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layout checks. The available Chrome profile redirected all four routes to `/login`; no authenticated check was completed.
+- [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
+- [ ] Complete the signed-in gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The authenticated platform-admin session passed `/platform`, applications, billing, subscriptions, and support without console errors, but correctly redirected gym routes to `/platform`.
 - [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. No role-specific staging identities or connected-staging variables were available; no functional staging writes were run.
 
 ### Product decisions
@@ -518,10 +524,10 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-001 — Production Convex/Clerk/Vercel alignment is not fully verified
 
-- Status: **Frontend alignment is verified for `1e01163`; the renewal-gated Convex Production deployment and authenticated verification remain blocked by missing Production context/session access**.
-- Evidence: GitHub Actions run `32391568593` passed for `1e01163d25cc6f9123001329877a45e33e5670ea`, and Vercel status `ER5WksGThgB9BiBupZNZAxUsig85` is `READY` for that commit. The required guarded Convex dry run targeted Development `fleet-otter-621`, not Production `descriptive-meerkat-589`, and reported no deleted indexes with schema validation complete. No Production deploy was attempted through the wrong context.
+- Status: **Current Vercel and exact Production Convex code are aligned; gym-owner route verification and value-level provider configuration checks remain open**.
+- Evidence: GitHub Actions run `32412787941` passed for current application commit `2323dd6841741c9763983a2e3dac43cb5a11f10f`, Vercel Production `CEFfosE9hcTLkkwNNFBoL8kvCqb7` is `READY`, and the guarded Convex dry run/deploy targeted Production `descriptive-meerkat-589` with no index deletions. Health returned `status: ok`, and the aggregate renewal audit returned zero records. The authenticated platform-admin routes passed; the same account correctly cannot enter a gym workspace.
 - Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
-- Fix/acceptance: obtain the correct Production deployment context, rerun the required dry run and deploy through `pnpm convex:deploy`, run the read-only health/audit checks, and record exact target/commit evidence. Never seed Production as a shortcut.
+- Fix/acceptance: complete the gym-owner read-only acceptance pass and the remaining value-free provider/configuration checklist. Never seed Production as a shortcut.
 
 ### BUG-002 — Authorization coverage is not yet adversarial at every Convex handler boundary
 
