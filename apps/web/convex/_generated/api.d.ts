@@ -32,6 +32,7 @@ import type * as operations from "../operations.js";
 import type * as permissions from "../permissions.js";
 import type * as platformGymDetail from "../platformGymDetail.js";
 import type * as platformOverview from "../platformOverview.js";
+import type * as platformPlanCatalog from "../platformPlanCatalog.js";
 import type * as platformProvisioning from "../platformProvisioning.js";
 import type * as platformProvisioningAction from "../platformProvisioningAction.js";
 import type * as ptJobs from "../ptJobs.js";
@@ -76,6 +77,7 @@ declare const fullApi: ApiFromModules<{
   permissions: typeof permissions;
   platformGymDetail: typeof platformGymDetail;
   platformOverview: typeof platformOverview;
+  platformPlanCatalog: typeof platformPlanCatalog;
   platformProvisioning: typeof platformProvisioning;
   platformProvisioningAction: typeof platformProvisioningAction;
   ptJobs: typeof ptJobs;
