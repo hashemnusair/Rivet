@@ -2,6 +2,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, requirePermission, type ActorContext } from "./security";
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
+import { platformPlanEntitledModules } from "./platformPlanCatalog";
 
 type Account = Doc<"accountingAccounts">;
 type JournalEntry = Doc<"accountingJournalEntries">;
@@ -105,12 +106,13 @@ function requireReporting(ctx: QueryCtx, actor: ActorContext): Promise<void> {
   return (async () => {
     const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
     const preference = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+    const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
     const entitlements = resolveWorkspaceEntitlements(actor.organization.subscriptionPlan, entitlement ? {
       subscriptionPlan: entitlement.subscriptionPlan,
       entitledModules: entitlement.entitledModules,
       source: entitlement.source,
       updatedAt: entitlement.updatedAt,
-    } : undefined);
+    } : undefined, catalogSelection);
     const preferences = resolveWorkspacePreferences(entitlements.entitledModules, preference ? {
       enabledModules: preference.enabledModules,
       updatedAt: preference.updatedAt,

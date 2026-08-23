@@ -72,6 +72,24 @@ describe("Platform gyms directory", () => {
     expect(screen.getByRole("link", { name: "Open Paused Fitness admin details" })).toHaveAttribute("href", "/platform/gyms/paused");
   });
 
+  it("renders a projected logo URL and falls back to initials when one is unavailable", () => {
+    state.query = {
+      data: {
+        gyms: [gym("logo", "active", { name: "Logo Fitness", shortName: "LOGO", logoUrl: "https://cdn.example/logo.png" }), gym("plain", "trial", { name: "Plain Fitness", shortName: "PLAIN" })],
+      },
+      isLoading: false,
+      isError: false,
+      isBackgroundError: false,
+      refetch: vi.fn(),
+    };
+
+    render(<PlatformGymsPage />);
+
+    const logo = screen.getByRole("img", { name: "Logo Fitness logo" });
+    expect(logo.querySelector("img")).toHaveAttribute("src", "https://cdn.example/logo.png");
+    expect(screen.getByRole("img", { name: "Plain Fitness logo" })).toHaveTextContent("PF");
+  });
+
   it("sorts active gyms first, then lifecycle status and name", () => {
     const gyms = [
       gym("cancelled-z", "cancelled", { name: "Zulu Fitness" }),

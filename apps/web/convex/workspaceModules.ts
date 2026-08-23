@@ -81,11 +81,26 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
 
 const CATALOG_KEYS = new Set<WorkspaceModuleKey>(WORKSPACE_MODULE_CATALOG.map((entry) => entry.key));
 
+export function allWorkspaceModuleKeys(): WorkspaceModuleKey[] {
+  return WORKSPACE_MODULE_CATALOG.map((entry) => entry.key);
+}
+
 export function entitledModulesForPlan(plan?: WorkspaceModulePlan): WorkspaceModuleKey[] {
   // Organizations created before the entitlement table existed retain access
   // to all existing/current surfaces until platform billing sets a plan.
   if (!plan) return WORKSPACE_MODULE_CATALOG.map((entry) => entry.key);
   return WORKSPACE_MODULE_CATALOG.filter((entry) => entry.availableOn.includes(plan)).map((entry) => entry.key);
+}
+
+/** Resolve a persisted platform catalog selection with a safe default. */
+export function entitledModulesForPlanSelection(plan: WorkspaceModulePlan, selection?: readonly unknown[]): WorkspaceModuleKey[] {
+  const defaults = entitledModulesForPlan(plan);
+  if (selection === undefined) return defaults;
+  try {
+    return validateWorkspaceModuleSelection(selection, allWorkspaceModuleKeys());
+  } catch {
+    return defaults;
+  }
 }
 
 export function defaultWorkspacePreferences(entitledModules: readonly WorkspaceModuleKey[]): WorkspaceModuleKey[] {
@@ -150,8 +165,14 @@ export interface WorkspaceModuleRequirementAccess {
   enabledModules: readonly WorkspaceModuleKey[];
 }
 
-export function resolveWorkspaceEntitlements(plan?: WorkspaceModulePlan, stored?: StoredWorkspaceEntitlement): WorkspaceEntitlementState {
-  const candidate = plan ? entitledModulesForPlan(plan) : stored?.entitledModules ?? entitledModulesForPlan();
+export function resolveWorkspaceEntitlements(
+  plan?: WorkspaceModulePlan,
+  stored?: StoredWorkspaceEntitlement,
+  catalogSelection?: readonly unknown[],
+): WorkspaceEntitlementState {
+  const candidate = plan
+    ? entitledModulesForPlanSelection(plan, catalogSelection)
+    : stored?.entitledModules ?? entitledModulesForPlan();
   const candidateSet = new Set(candidate.filter((module): module is WorkspaceModuleKey => typeof module === "string" && CATALOG_KEYS.has(module as WorkspaceModuleKey)));
   return {
     catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,

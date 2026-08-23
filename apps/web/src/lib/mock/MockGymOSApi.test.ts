@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { DEMO_IDENTITY } from "@/lib/auth/rivet-identity";
-import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
+import type { PlatformGymDetail, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payment } from "@/lib/domain/types";
 import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
@@ -262,7 +262,7 @@ describe("platform subscription controls", () => {
     const before = await api.getPlatformSnapshot();
     const gym = before.gyms[0]!;
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(true);
-    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." });
+    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", currentPeriodEndsAt: gym.currentPeriodEndsAt, isPublic: false, reason: "Account requested a temporary pause." });
     expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth", isPublic: false });
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
     const branch = gym.branches[0]!;
@@ -276,25 +276,41 @@ describe("platform subscription controls", () => {
     expect(updatedPlan.members).toBe(originalMembers + 100);
   });
 
-  it("persists an admin billing cadence change and derives its period in the mock", async () => {
-    const annual = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", reason: "Approve annual billing for the tenant." });
+  it("persists an admin-selected period boundary with an admin billing cadence change in the mock", async () => {
+    const requestedAnnualEnd = "2027-12-31T23:59:59.999Z";
+    const annual = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", currentPeriodEndsAt: requestedAnnualEnd, reason: "Approve annual billing for the tenant." });
     const annualStart = Date.parse(annual.subscriptionStartedAt!);
     const annualEnd = Date.parse(annual.currentPeriodEndsAt!);
     expect(annual).toMatchObject({ billingInterval: "annual", subscriptionStatus: "active" });
-    expect(annualEnd).toBeGreaterThan(annualStart + 364 * 86_400_000);
-    expect(annualEnd).toBeLessThan(annualStart + 367 * 86_400_000);
+    expect(annualEnd).toBe(Date.parse("2027-12-31T23:59:59.999Z"));
 
-    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", reason: "Move the tenant to monthly billing." });
+    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", currentPeriodEndsAt: "2026-09-30T23:59:59.999Z", reason: "Move the tenant to monthly billing." });
     const monthlyStart = Date.parse(monthly.subscriptionStartedAt!);
     const monthlyEnd = Date.parse(monthly.currentPeriodEndsAt!);
     expect(monthly).toMatchObject({ billingInterval: "monthly", subscriptionStatus: "active" });
     expect(monthlyStart).toBe(annualStart);
-    expect(monthlyEnd).toBeGreaterThan(monthlyStart + 27 * 86_400_000);
-    expect(monthlyEnd).toBeLessThan(monthlyStart + 32 * 86_400_000);
+    expect(monthlyEnd).toBe(Date.parse("2026-09-30T23:59:59.999Z"));
 
     const detail = await api.getPlatformGymDetail("forge-fitness");
     const latestActivity = detail.activity.state === "available" ? detail.activity.value[0] as PlatformSnapshot["auditEvents"][number] & Record<string, unknown> : undefined;
     expect(latestActivity).toMatchObject({ before: { billingInterval: "annual" }, after: { billingInterval: "monthly" } });
+  });
+
+  it("requires a selected end date for material changes but keeps trial end automatic", async () => {
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", reason: "Require an explicit membership boundary." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const suspended = await api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Pause access at the selected membership boundary." });
+    expect(suspended).toMatchObject({ subscriptionStatus: "suspended", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z" });
+    const cancelled = await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Cancel at the selected membership boundary." });
+    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", cancelledAt: expect.any(String) });
+
+    await api.resetDemo();
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Trial end remains server-derived." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const trialInternalApi = api as unknown as { db: MockDb };
+    trialInternalApi.db.organization.status = "trial";
+    trialInternalApi.db.organization.trialEndsAt = undefined;
+    const trial = await api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start the onboarding trial." });
+    expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String) });
+    expect(trial.currentPeriodEndsAt).toBeUndefined();
   });
 
   it("keeps unprovisioned directory rows cleanup-only and out of public/active counts", async () => {
@@ -315,7 +331,7 @@ describe("platform subscription controls", () => {
     const forgeBefore = before.gyms.find((gym) => gym.id === "forge-fitness")!;
     const growthBefore = before.plans.find((plan) => plan.name === "Growth")!;
 
-    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "suspended", plan: "Growth", isPublic: true, reason: "Billing review requires access suspension." });
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "suspended", plan: "Growth", currentPeriodEndsAt: forgeBefore.currentPeriodEndsAt, isPublic: true, reason: "Billing review requires access suspension." });
 
     const suspended = await api.getPlatformGymDetail(forgeBefore.id);
     expect(suspended.controls).toMatchObject({ status: "suspended", plan: "Growth", isPublic: false });
@@ -340,7 +356,7 @@ describe("platform subscription controls", () => {
     const workspace = await api.getWorkspaceAccess();
     expect(workspace.entitlements).toMatchObject({ subscriptionPlan: "Growth", source: "subscription_plan", entitledModules: expect.arrayContaining(["foundation", "operations"]) });
 
-    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "active", plan: "Growth", isPublic: true, reason: "Billing review cleared; restore access." });
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "active", plan: "Growth", currentPeriodEndsAt: forgeBefore.currentPeriodEndsAt, isPublic: true, reason: "Billing review cleared; restore access." });
     const restoredSnapshot = await api.getPlatformSnapshot();
     expect(restoredSnapshot.gyms.find((gym) => gym.id === forgeBefore.id)).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Growth", isPublic: true });
     expect(restoredSnapshot.overview.activeMrr.amount).toBe(growthBefore.priceMinor);
@@ -357,7 +373,7 @@ describe("platform subscription controls", () => {
     ];
 
     for (const transition of transitions) {
-      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
+      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
       const access = values.at(-1);
       expect(access?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
       expect(access?.modules.filter((module) => module.entitled && module.enabled).map((module) => module.key)).toEqual(transition.entitled);
@@ -375,13 +391,11 @@ describe("platform subscription controls", () => {
   });
 
   it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
-    const trial = await api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start the one-month onboarding trial." });
-    expect(trial).toMatchObject({ subscriptionStatus: "trial", subscriptionStartedAt: expect.any(String), trialEndsAt: expect.any(String) });
-    expect(Date.parse(trial.trialEndsAt!) - Date.parse(trial.subscriptionStartedAt!)).toBeGreaterThanOrEqual(28 * 86_400_000);
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Attempt to restart the one-month onboarding trial." })).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." } as Parameters<MockGymOSApi["updatePlatformGym"]>[0])).rejects.toMatchObject({ code: ERR.VALIDATION });
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
 
-    const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", isPublic: true, reason: "Payment is past due." });
+    const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: "Payment is past due." });
     expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
     const snapshot = await api.getPlatformSnapshot();
     expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
@@ -409,8 +423,17 @@ describe("platform subscription controls", () => {
     await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 5_000, reason: "Annual platform catalog review." });
 
     expect(snapshots.at(-1)?.plans.find((item) => item.name === plan.name)).toMatchObject({ priceMinor: plan.priceMinor + 5_000 });
-    expect(snapshots.at(-1)?.auditEvents[0]).toMatchObject({ action: "plan.catalog_update", summary: "Updated Growth plan catalog limits", actorName: expect.any(String) });
+    expect(snapshots.at(-1)?.auditEvents[0]).toMatchObject({ action: "plan.catalog_update", summary: "Updated Growth plan catalog limits and capabilities", actorName: expect.any(String) });
     unsubscribe();
+  });
+
+  it("projects catalog capability toggles to the assigned gym entitlement", async () => {
+    const updated = await api.updatePlatformPlan({ name: "Pro", entitledModules: ["foundation", "revenue"], reason: "Keep finance and reporting behind an approved add-on." });
+    expect(updated.entitledModules).toEqual(["foundation", "revenue"]);
+    const access = await api.getWorkspaceAccess();
+    expect(access.entitlements).toMatchObject({ subscriptionPlan: "Pro", entitledModules: ["foundation", "revenue"] });
+    expect(access.modules.find((module) => module.key === "finance")).toMatchObject({ entitled: false, enabled: false });
+    expect((await api.listPublicSaasPlans()).find((plan) => plan.name === "Pro")).toMatchObject({ entitledModules: ["foundation", "revenue"] });
   });
 
   it("reports initial platform snapshot failures to subscribers instead of claiming ready data", async () => {
@@ -430,7 +453,7 @@ describe("platform subscription controls", () => {
     const gym = (await api.getPlatformSnapshot()).gyms[0]!;
 
     expect(values.at(-1)).toContain(gym.id);
-    await api.updatePlatformGym({ gymId: gym.id, status: "suspended", isPublic: false, reason: "Suspended for marketplace visibility test." });
+    await api.updatePlatformGym({ gymId: gym.id, status: "suspended", currentPeriodEndsAt: gym.currentPeriodEndsAt, isPublic: false, reason: "Suspended for marketplace visibility test." });
 
     expect(values.at(-1)).not.toContain(gym.id);
     unsubscribe();
@@ -503,6 +526,23 @@ describe("gym public profile media", () => {
     });
     expect(replacementDraft).toMatchObject({ status: "draft", logo: { id: replacement.id }, gallery: [] });
     expect(await api.publishGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
+  });
+
+  it("projects the published logo into reactive platform surfaces while keeping public rows scoped", async () => {
+    const snapshotValues: PlatformSnapshot[] = [];
+    const detailValues: PlatformGymDetail[] = [];
+    const stopSnapshot = await api.subscribePlatformSnapshot((snapshot) => snapshotValues.push(snapshot));
+    const stopDetail = await api.subscribePlatformGymDetail("forge-fitness", (detail) => detailValues.push(detail));
+    const profile = await api.getGymPublicProfile();
+    const logo = await api.uploadMediaAsset({ ownerType: "gym_logo", ownerId: profile.organizationId, altText: "Forge admin logo", file: new Blob(["logo"], { type: "image/png" }) });
+    await api.saveGymPublicProfile({ shortName: profile.shortName, taglineEn: profile.taglineEn, descriptionEn: profile.descriptionEn, category: profile.category, audience: profile.audience, amenities: profile.amenities, accentColor: profile.accentColor, logoAssetId: logo.id, galleryAssetIds: [] });
+    await api.publishGymPublicProfile();
+
+    expect(snapshotValues.at(-1)?.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ logoUrl: logo.url });
+    expect(detailValues.at(-1)?.logoUrl).toEqual({ state: "available", value: logo.url });
+    expect((await api.listMarketplaceGyms()).find((gym) => gym.id === "forge-fitness")).not.toHaveProperty("logoUrl");
+    stopSnapshot();
+    stopDetail();
   });
 });
 

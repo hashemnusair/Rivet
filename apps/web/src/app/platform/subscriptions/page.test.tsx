@@ -72,6 +72,32 @@ describe("pricing and entitlement catalog", () => {
     await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_000 })]));
   });
 
+  it("edits canonical workspace capabilities and persists the selected module keys", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Edit Growth plan" }));
+    const operations = screen.getByRole("checkbox", { name: "Daily operations" });
+    expect(operations).toBeChecked();
+    await user.click(operations);
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Pause operations for the starter launch package.");
+    await user.click(screen.getByRole("button", { name: "Save plan" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Growth", entitledModules: ["foundation", "revenue"] })]));
+  });
+
+  it("lets an operator package a non-default module into a lower tier with dependencies", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
+    await user.click(screen.getByRole("checkbox", { name: "Management reporting" }));
+    expect(screen.getByRole("checkbox", { name: "Daily operations" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Financial operating system" })).toBeChecked();
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Package reporting for a pilot Starter customer.");
+    await user.click(screen.getByRole("button", { name: "Save plan" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] })]));
+  });
+
   it("publishes catalog edits to a public plan subscriber", async () => {
     const values: PlatformSaasPlan[][] = [];
     const unsubscribe = await api.subscribePublicSaasPlans((plans) => values.push(plans));

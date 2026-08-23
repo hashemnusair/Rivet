@@ -12,6 +12,7 @@ import {
 } from "./security";
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
 import { inspectLedgerBalance, manualJournalRequestFingerprint, reversalRequestFingerprint, sourcePostingIdempotencyKey } from "./accountingLedger";
+import { platformPlanEntitledModules } from "./platformPlanCatalog";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Account = Doc<"accountingAccounts">;
@@ -184,12 +185,13 @@ function periodBounds(periodId: string): { start: string; end: string } {
 async function requireFinance(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preference = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
   const entitlements = resolveWorkspaceEntitlements(actor.organization.subscriptionPlan, entitlement ? {
     subscriptionPlan: entitlement.subscriptionPlan,
     entitledModules: entitlement.entitledModules,
     source: entitlement.source,
     updatedAt: entitlement.updatedAt,
-  } : undefined);
+  } : undefined, catalogSelection);
   const preferences = resolveWorkspacePreferences(entitlements.entitledModules, preference ? {
     enabledModules: preference.enabledModules,
     updatedAt: preference.updatedAt,

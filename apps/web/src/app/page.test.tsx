@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -58,5 +58,17 @@ describe("landing-page pricing", () => {
     expect(screen.getByText("JD 63.200")).toBeInTheDocument();
     expect(screen.getByText("JD 758.400 billed annually", { exact: false })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Send gym application" })[0]).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
+  });
+
+  it("renders the live catalog module selection on the matching public card", () => {
+    state.saasPlans = [{ name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue"] }];
+    render(<LandingPage />);
+
+    const growthCard = screen.getByText("Growth").closest("div.rounded-lg");
+    expect(growthCard).not.toBeNull();
+    if (!(growthCard instanceof HTMLElement)) throw new Error("Growth pricing card was not rendered as an element.");
+    expect(within(growthCard).getByText("Gym foundation")).toBeInTheDocument();
+    expect(within(growthCard).getByText("Revenue protection")).toBeInTheDocument();
+    expect(within(growthCard).queryByText("Daily operations")).not.toBeInTheDocument();
   });
 });

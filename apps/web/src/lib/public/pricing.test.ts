@@ -53,9 +53,15 @@ describe("public pricing contract", () => {
     expect(pricingSignupHref("Enterprise", "annual")).toBe("/signup?plan=Enterprise&interval=annual");
   });
 
-  it("keeps capability summaries tier-specific", () => {
-    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[0]!)).toContain("Gym foundation and revenue tools");
-    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[2]!)).toContain("Finance and management reporting");
-    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[3]!)).toContain("All workspace modules");
+  it("uses the selected workspace module list for each public card", () => {
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[0]!)).toEqual(expect.arrayContaining(["Gym foundation", "Revenue protection"]));
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[0]!)).not.toContain("Daily operations");
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[2]!)).toEqual(expect.arrayContaining(["Financial operating system", "Management reporting"]));
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[3]!)).toEqual(expect.arrayContaining(["Gym foundation", "Revenue protection", "Daily operations", "Financial operating system", "Management reporting"]));
+  });
+
+  it("sanitizes a live catalog capability selection against tier availability", () => {
+    const resolved = resolvePublicPricingPlans([{ name: "Starter", entitledModules: ["foundation", "operations"] }]);
+    expect(resolved[0]?.entitledModules).toEqual(["foundation", "operations"]);
   });
 });

@@ -30,7 +30,9 @@ import { enqueueOperationalEmail } from "./operationalEmail";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
+  allWorkspaceModuleKeys,
   entitledModulesForPlan,
+  entitledModulesForPlanSelection,
   requireWorkspaceModule as requireConfiguredWorkspaceModule,
   resolveWorkspaceEntitlements,
   resolveWorkspacePreferences,
@@ -44,6 +46,7 @@ import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBran
 import { operationsMutation, operationsQuery } from "./operations";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
+import { platformPlanEntitledModules } from "./platformPlanCatalog";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -152,10 +155,10 @@ const DEFAULT_OPERATIONAL_POLICIES = {
 // launch plans available until an operator has created editable catalog rows.
 // These values are also the defaults used by the application form.
 const DEFAULT_PLATFORM_PLANS: Data[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 ];
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
@@ -352,6 +355,11 @@ function validTimestamp(value: string): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
+function sameCalendarDate(left: number | undefined, right: number | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+}
+
 /**
  * Lifecycle controls accept either a date-only value from the admin form or a
  * complete ISO timestamp. Date.parse normalizes impossible date-only values
@@ -383,10 +391,6 @@ function addCalendarMonths(timestamp: number, months: number): number {
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   target.setUTCDate(Math.min(day, lastDay));
   return target.getTime();
-}
-
-function addBillingInterval(timestamp: number, interval: BillingInterval): number {
-  return addCalendarMonths(timestamp, interval === "annual" ? 12 : 1);
 }
 
 function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
@@ -979,13 +983,13 @@ async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext):
   // live workspace query. The mutation still persists the matching snapshot
   // for auditability and fast platform projections.
   const plan = organizationPlan ?? storedPlan;
-  const authoritativeEntitledModules = plan ? entitledModulesForPlan(plan) : undefined;
+  const catalogSelection = await platformPlanEntitledModules(ctx, plan);
   const resolved = resolveWorkspaceEntitlements(
     plan,
     organizationPlan
       ? {
           subscriptionPlan: organizationPlan,
-          entitledModules: authoritativeEntitledModules,
+          entitledModules: row?.entitledModules,
           source: "subscription_plan",
           updatedAt: row?.updatedAt,
         }
@@ -997,6 +1001,7 @@ async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext):
             updatedAt: row.updatedAt,
           }
         : undefined,
+    catalogSelection,
   );
   return {
     organizationId: publicOrganizationId(actor.organization),
@@ -1852,6 +1857,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
       cancelledAt: optionalString(value.cancelledAt),
       subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
       billingInterval: optionalString(value.billingInterval),
+      logoUrl: optionalString(value.logoUrl),
     } : {}),
     branches: arrayValue(value.branches).map((item) => {
       const branch = data(item);
@@ -1881,6 +1887,7 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
     cancelledAt: undefined,
     subscriptionStatusReason: "Organization is not provisioned.",
     billingInterval: undefined,
+    logoUrl: undefined,
     lastActiveAt: undefined,
   };
   const status = platformSubscriptionStatusForOrganization(organization.status);
@@ -3093,6 +3100,23 @@ async function gymMediaAssetView(ctx: ReadContext, organization: Organization, p
   return { id: asset.publicId, organizationId: publicOrganizationId(organization), ownerType: asset.ownerType, ownerId: asset.ownerPublicId, contentType: asset.contentType, sizeBytes: asset.sizeBytes, altText: asset.altText, visibility: asset.visibility, status: asset.status, url: url ?? undefined, deleteAfter: asset.deleteAfter ? utcIso(asset.deleteAfter) : undefined, createdAt: utcIso(asset.createdAt), updatedAt: utcIso(asset.updatedAt) };
 }
 
+/** Resolve only the canonical, published gym logo for platform surfaces.
+ * Marketplace rows store asset references rather than URLs; the reference
+ * must belong to the same organization, be a public active gym-logo asset,
+ * and resolve through Convex storage before it crosses the admin boundary.
+ * The organization Brand Kit logo is a safe fallback when a public profile has
+ * not selected a separate logo. */
+async function platformGymLogoUrl(ctx: ReadContext, organization: Organization, listingValue: Data): Promise<string | undefined> {
+  const candidateIds = [optionalString(listingValue.logoAssetId), optionalString(organization.brandLogoAssetId)].filter((id, index, ids): id is string => Boolean(id) && ids.indexOf(id) === index);
+  for (const assetId of candidateIds) {
+    const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", assetId)).unique();
+    if (!asset || asset.ownerType !== "gym_logo" || asset.ownerPublicId !== publicOrganizationId(organization) || asset.visibility !== "public" || asset.status !== "active") continue;
+    const url = await ctx.storage.getUrl(asset.storageId);
+    if (url) return url;
+  }
+  return undefined;
+}
+
 async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, source?: Data): Promise<Data> {
   const value = source ?? {};
   const listing = (await recordsOf(ctx, actor, "marketplaceGym"))[0];
@@ -3291,8 +3315,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const entitlement = sameTenantOrganization
         ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", sameTenantOrganization._id)).unique()
         : null;
+      const logoUrl = sameTenantOrganization ? await platformGymLogoUrl(ctx, sameTenantOrganization, listing) : undefined;
       return {
-        view: marketplaceView(platformMarketplaceProjection(listing, sameTenantOrganization, entitlement), true),
+        view: marketplaceView(platformMarketplaceProjection({ ...listing, logoUrl }, sameTenantOrganization, entitlement), true),
         provisioned: Boolean(sameTenantOrganization),
         organizationId: sameTenantOrganization ? String(sameTenantOrganization._id) : undefined,
       };
@@ -3451,6 +3476,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
     const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
     const plan = effectivePlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    const logoUrl = organization ? await platformGymLogoUrl(ctx, organization, gym) : undefined;
     return buildPlatformGymDetail({
       gym: {
         id: gymId,
@@ -3464,6 +3490,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         archivedAt: organization?.archivedAt ?? validSubscriptionTimestamp(gym.archivedAt),
         archiveReason: organization?.archiveReason ?? optionalString(gym.archiveReason),
       },
+      logoUrl,
       organization: organization
         ? {
             id: publicOrganizationId(organization),
@@ -5400,13 +5427,19 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (requestedBillingInterval !== undefined && requestedBillingInterval !== "monthly" && requestedBillingInterval !== "annual") domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
-    // Lifecycle dates are server-owned. The platform may select a status or
-    // plan, but cannot backdate or extend a trial/period through this control.
-    const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.currentPeriodEndsAt, input.cancelledAt];
+    // Trial, subscription-start, and cancellation timestamps remain
+    // server-owned. The current paid period boundary is the one lifecycle
+    // value an admin may select for a material membership change.
+    const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.cancelledAt];
     if (lifecycleInputs.some((value) => value !== undefined)) {
-      domainError("VALIDATION_ERROR", "Trial, subscription start, period end, and cancellation dates are derived automatically.", { correlationId: admin.correlationId });
+      domainError("VALIDATION_ERROR", "Trial, subscription start, and cancellation dates are derived automatically.", { correlationId: admin.correlationId });
     }
-    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
+    const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
+    const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
+    if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) {
+      domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
+    }
+    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
@@ -5421,7 +5454,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const entitlementBefore = organization
       ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
       : null;
-    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || lifecycleInputs.some((value) => value !== undefined));
+    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
     if (!organization) {
       // Directory-only and mismatched rows stay in the platform snapshot for
       // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
@@ -5451,6 +5484,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription status.", { correlationId: admin.correlationId });
     }
     const nextStatus = rawStatus as (typeof statuses)[number];
+    if (nextStatus === "trial" && previousSubscriptionStatus !== "trial") {
+      domainError("VALIDATION_ERROR", "A provisioned gym cannot be moved back into trial; trials start automatically during onboarding.", { correlationId: admin.correlationId });
+    }
     // A provisioned organization is the authoritative source for its plan. A
     // directory row can therefore be repaired by a status/listing save even
     // when an older projection contains a stale plan value.
@@ -5470,18 +5506,33 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const nowMs = Date.now();
     const existingInterval = billingInterval(organization?.billingInterval ?? current.billingInterval);
     const interval = requestedBillingInterval === undefined ? existingInterval : requestedBillingInterval;
-    const intervalChanged = requestedBillingInterval !== undefined && interval !== existingInterval;
+    const materialMembershipChange = (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
+      || (requestedPlan !== undefined && requestedPlan !== organization?.subscriptionPlan)
+      || (requestedBillingInterval !== undefined && interval !== existingInterval);
+    const storedPeriodEndsAt = storedCurrentPeriodEndsAt === undefined ? undefined : validSubscriptionTimestamp(new Date(storedCurrentPeriodEndsAt).toISOString());
+    const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, storedPeriodEndsAt);
+    if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) {
+      domainError("VALIDATION_ERROR", "Trial end is fixed automatically from onboarding; do not provide a paid period end date.", { correlationId: admin.correlationId });
+    }
+    if (materialMembershipChange && nextStatus !== "trial" && requestedPeriodEndsAt === undefined) {
+      domainError("VALIDATION_ERROR", "A membership end date is required for plan, status, or billing cadence changes.", { correlationId: admin.correlationId });
+    }
     const nextSubscriptionStartedAt = storedSubscriptionStartedAt
       ?? ((nextStatus === "trial" || nextStatus === "active") ? nowMs : undefined);
     const nextTrialEndsAt = nextStatus === "trial"
       ? storedTrialEndsAt ?? (nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1))
       : storedTrialEndsAt;
-    const preservedPeriodEnd = !intervalChanged && storedCurrentPeriodEndsAt !== undefined && storedCurrentPeriodEndsAt > nowMs ? storedCurrentPeriodEndsAt : undefined;
-    const nextCurrentPeriodEndsAt = nextStatus === "active"
-      ? preservedPeriodEnd ?? (nextTrialEndsAt ?? nextSubscriptionStartedAt) === undefined
-        ? undefined
-        : addBillingInterval((nextTrialEndsAt ?? nextSubscriptionStartedAt)!, interval)
-      : undefined;
+    if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowMs) {
+      domainError("VALIDATION_ERROR", "A trial must end in the future; its end date is derived from onboarding.", { correlationId: admin.correlationId });
+    }
+    const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : storedPeriodEndsAt;
+    if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && storedSubscriptionStartedAt !== undefined && selectedPeriodEndsAt < storedSubscriptionStartedAt) {
+      domainError("VALIDATION_ERROR", "The membership end date must be on or after the subscription start date.", { correlationId: admin.correlationId });
+    }
+    if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowMs) {
+      domainError("VALIDATION_ERROR", "An active subscription must end in the future.", { correlationId: admin.correlationId });
+    }
+    const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
     const nextCancelledAt = nextStatus === "cancelled" ? nowMs : undefined;
     if (nextStatus === "trial" && nextTrialEndsAt === undefined) {
       domainError("CONFIGURATION_ERROR", "A trial cannot start until its onboarding date is established.", { correlationId: admin.correlationId });
@@ -5524,7 +5575,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       updatedOrganization = await ctx.db.get(organization._id);
       if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
-      const entitledModules = entitledModulesForPlan(modulePlan);
+      const catalog = await platformPlans(ctx);
+      const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
+      const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
       const entitlementUpdatedAt = Date.now();
       const entitlementNeedsSync = !entitlementBefore
         || requestedPlan !== undefined
@@ -5546,7 +5599,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (requestedPlan !== undefined && previousModulePlan !== modulePlan) {
         const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
         if (preferences) {
-          const previousEntitled = entitledModulesForPlan(previousModulePlan);
+          const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
           const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
           if (newlyEntitled.length > 0) {
             const candidate = [...preferences.enabledModules, ...newlyEntitled];
@@ -5607,7 +5660,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (![priceMinor, branches, staff, members].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
-    const updated = { ...current, name, priceMinor, branches, staff, members };
+    const modulePlan = workspacePlan(name);
+    if (!modulePlan) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    const defaultEntitledModules = entitledModulesForPlan(modulePlan);
+    let entitledModules = entitledModulesForPlanSelection(modulePlan, current.entitledModules);
+    if (input.entitledModules !== undefined) {
+      if (!Array.isArray(input.entitledModules)) domainError("VALIDATION_ERROR", "Workspace capabilities must be an array.", { correlationId: admin.correlationId });
+      if (input.entitledModules.some((module: unknown) => typeof module !== "string")) {
+        domainError("VALIDATION_ERROR", "Workspace capabilities must use canonical module keys.", { correlationId: admin.correlationId });
+      }
+      const unsupported = input.entitledModules.filter((module): module is string => typeof module === "string" && !allWorkspaceModuleKeys().includes(module as WorkspaceModuleKey));
+      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { correlationId: admin.correlationId });
+      try {
+        entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
+      } catch (error) {
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { correlationId: admin.correlationId });
+      }
+    }
+    const updated = { ...current, name, priceMinor, branches, staff, members, entitledModules };
     const updatedAt = Date.now();
     const planRecord = record ?? await (async () => {
       const organization = await ctx.db.query("organizations").first();
@@ -5617,6 +5687,36 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     })();
     if (!planRecord) domainError("CONFIGURATION_ERROR", "The platform plan catalog row could not be persisted.", { correlationId: admin.correlationId });
     if (record) await ctx.db.patch(record._id, { data: updated, updatedAt });
+
+    // Catalog capability edits are authoritative for gyms already assigned to
+    // this tier. Materialize the same selection into each tenant entitlement
+    // so navigation, direct-route guards, and server module checks converge
+    // without waiting for a later subscription mutation.
+    const assignedOrganizations = (await ctx.db.query("organizations").collect()).filter((organization) => organization.subscriptionPlan === modulePlan);
+    for (const organization of assignedOrganizations) {
+      const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+      const previousEntitled = entitlement?.entitledModules ?? entitledModulesForPlan(modulePlan);
+      const entitlementUpdatedAt = Date.now();
+      if (entitlement) {
+        await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+      } else {
+        await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+      }
+      const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+      if (preferences) {
+        const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+        const candidate = [...preferences.enabledModules.filter((module) => entitledModules.includes(module)), ...newlyEntitled];
+        let enabledModules: WorkspaceModuleKey[];
+        try {
+          enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+        } catch {
+          enabledModules = defaultWorkspacePreferences(entitledModules);
+        }
+        if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+          await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+        }
+      }
+    }
     await ctx.db.insert("platformAuditEvents", {
       publicId: crypto.randomUUID(),
       actorUserId: admin.user._id,
@@ -5626,10 +5726,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       entityType: "platform_plan",
       entityPublicId: planRecord.publicId,
       entityLabel: name,
-      summary: `Updated ${name} plan catalog limits`,
+      summary: `Updated ${name} plan catalog limits and capabilities`,
       reason,
-      before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members },
-      after: { priceMinor, branches, staff, members },
+      before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members, entitledModules: current.entitledModules ?? defaultEntitledModules },
+      after: { priceMinor, branches, staff, members, entitledModules },
       correlationId: admin.correlationId,
       occurredAt: Date.now(),
     });

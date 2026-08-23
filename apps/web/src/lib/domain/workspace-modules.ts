@@ -71,6 +71,10 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
 
 const CATALOG_KEYS = new Set<WorkspaceModuleKey>(WORKSPACE_MODULE_CATALOG.map((entry) => entry.key));
 
+export function allWorkspaceModuleKeys(): WorkspaceModuleKey[] {
+  return WORKSPACE_MODULE_CATALOG.map((entry) => entry.key);
+}
+
 export function catalogEntry(key: WorkspaceModuleKey): WorkspaceModuleCatalogEntry {
   const entry = WORKSPACE_MODULE_CATALOG.find((catalogEntry) => catalogEntry.key === key);
   if (!entry) throw new Error(`Unknown workspace module: ${key}`);
@@ -87,6 +91,25 @@ export function entitledModulesForPlan(plan?: WorkspaceModulePlan): WorkspaceMod
   return WORKSPACE_MODULE_CATALOG
     .filter((entry) => entry.availableOn.includes(plan))
     .map((entry) => entry.key);
+}
+
+/**
+ * Resolve an operator-configured catalog selection. Missing selections retain
+ * the launch defaults for backwards compatibility with old catalog rows
+ * created before feature toggles existed; persisted selections are still
+ * checked against the canonical key/dependency graph.
+ */
+export function entitledModulesForPlanSelection(plan: WorkspaceModulePlan, selection?: readonly unknown[]): WorkspaceModuleKey[] {
+  const defaults = entitledModulesForPlan(plan);
+  if (selection === undefined) return defaults;
+  try {
+    // The platform catalog is allowed to package any existing workspace
+    // module into any tier. `availableOn` defines launch defaults, not a
+    // permanent ceiling for an audited commercial configuration.
+    return validateWorkspaceModuleSelection(selection, allWorkspaceModuleKeys());
+  } catch {
+    return defaults;
+  }
 }
 
 export function defaultWorkspacePreferences(entitledModules: readonly WorkspaceModuleKey[]): WorkspaceModuleKey[] {

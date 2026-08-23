@@ -38,6 +38,33 @@ describe("server-owned workspace entitlements", () => {
     expect(access.entitlements.subscriptionPlan).toBeUndefined();
   });
 
+  it("uses an explicit platform catalog selection instead of a stale materialized entitlement row", async () => {
+    const { owner, t } = await seeded("Pro");
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "workspace-org")).unique();
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", {
+        organizationId: organization!._id,
+        entityType: "platformPlan",
+        publicId: "Pro",
+        createdAt: now,
+        updatedAt: now,
+        data: { id: "Pro", name: "Pro", entitledModules: ["foundation", "revenue", "operations"] },
+      });
+      await ctx.db.insert("organizationEntitlements", {
+        organizationId: organization!._id,
+        catalogVersion: 1,
+        subscriptionPlan: "Pro",
+        entitledModules: ["foundation", "revenue"],
+        source: "subscription_plan",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const access = await owner.query(api.domain.query, operation("workspace.access")) as { entitlements: { entitledModules: string[] } };
+    expect(access.entitlements.entitledModules).toEqual(["foundation", "revenue", "operations"]);
+  });
+
   it("allows only the owner to change preferences and appends an audit event", async () => {
     const { owner, manager, t } = await seeded("Pro");
     await expectCode(manager.mutation(api.domain.mutate, operation("workspace.preferences.update", { enabledModules: ["foundation", "revenue", "operations"] })), "FORBIDDEN");

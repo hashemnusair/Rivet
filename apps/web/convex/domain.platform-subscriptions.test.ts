@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
+import { Blob as NodeBlob } from "node:buffer";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
 const operation = (name: string, input: Record<string, unknown> = {}) => ({ operation: name, input, correlationId: `cor-test-${name}` });
+const SELECTED_PERIOD_END = "2099-12-31T23:59:59.999Z";
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
 
-async function seed(t: TestConvex<typeof schema>) {
+async function seed(t: TestConvex<typeof schema>, options: { status?: "active" | "trial" } = {}) {
   await t.run(async (ctx) => {
     const now = Date.now();
-    const organization = await ctx.db.insert("organizations", { publicId: "org-sub", name: "Subscription Gym", slug: "subscription-gym", status: "active", subscriptionPlan: "Growth", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+    const organization = await ctx.db.insert("organizations", { publicId: "org-sub", name: "Subscription Gym", slug: "subscription-gym", status: options.status ?? "active", subscriptionPlan: "Growth", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "branch-sub", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const admin = await ctx.db.insert("users", { publicId: "platform", authSubject: "clerk-platform", email: "platform@example.com", fullName: "Platform Admin", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "owner", authSubject: "clerk-owner", email: "owner@example.com", fullName: "Gym Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
@@ -24,14 +26,19 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("exported Convex platform subscription lifecycle", () => {
-  it("requires platform authorization and a reason while deriving trial dates", async () => {
+  it("requires platform authorization and keeps onboarding trial dates automatic", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
     const owner = t.withIdentity({ subject: "clerk-owner" });
     await expectCode(owner.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Test" })), "FORBIDDEN");
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "" })), "VALIDATION_ERROR");
-    const trial = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Starting pilot trial." })) as Record<string, unknown>;
+
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Attempt to restart an onboarding trial." })), "VALIDATION_ERROR");
+    const trialTenant = convexTest(schema, modules);
+    await seed(trialTenant, { status: "trial" });
+    const trialPlatform = trialTenant.withIdentity({ subject: "clerk-platform" });
+    const trial = await trialPlatform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Keep the onboarding trial state." })) as Record<string, unknown>;
     expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String), subscriptionStartedAt: expect.any(String) });
   });
 
@@ -44,23 +51,22 @@ describe("exported Convex platform subscription lifecycle", () => {
       gymId: "subscription-gym",
       status: "active",
       billingInterval: "annual",
+      currentPeriodEndsAt: SELECTED_PERIOD_END,
       reason: "Approve annual billing for the tenant.",
     })) as Record<string, unknown>;
-    const startedAt = Date.parse(String(annual.subscriptionStartedAt));
     const annualPeriodEnd = Date.parse(String(annual.currentPeriodEndsAt));
     expect(annual).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
-    expect(annualPeriodEnd).toBeGreaterThan(startedAt + 364 * 86_400_000);
-    expect(annualPeriodEnd).toBeLessThan(startedAt + 367 * 86_400_000);
+    expect(annualPeriodEnd).toBe(Date.parse(SELECTED_PERIOD_END));
 
     const monthly = await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
       gymId: "subscription-gym",
       billingInterval: "monthly",
+      currentPeriodEndsAt: "2099-11-30T23:59:59.999Z",
       reason: "Move the tenant to monthly billing.",
     })) as Record<string, unknown>;
     const monthlyPeriodEnd = Date.parse(String(monthly.currentPeriodEndsAt));
     expect(monthly).toMatchObject({ subscriptionStatus: "active", billingInterval: "monthly" });
-    expect(monthlyPeriodEnd).toBeGreaterThan(startedAt + 27 * 86_400_000);
-    expect(monthlyPeriodEnd).toBeLessThan(startedAt + 32 * 86_400_000);
+    expect(monthlyPeriodEnd).toBe(Date.parse("2099-11-30T23:59:59.999Z"));
 
     const persisted = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
@@ -77,9 +83,30 @@ describe("exported Convex platform subscription lifecycle", () => {
     });
   });
 
-  it("keeps the directory, tenant lifecycle, and immutable audit reason aligned", async () => {
+  it("requires and persists an admin-selected end date for material changes while keeping trial dates automatic", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Require an explicit membership boundary." })), "VALIDATION_ERROR");
+    const suspended = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Pause access at the selected membership boundary." })) as Record<string, unknown>;
+    expect(suspended).toMatchObject({ subscriptionStatus: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END });
+
+    const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Cancel at the selected membership boundary." })) as Record<string, unknown>;
+    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, cancelledAt: expect.any(String) });
+
+    const trialTest = convexTest(schema, modules);
+    await seed(trialTest, { status: "trial" });
+    const trialPlatform = trialTest.withIdentity({ subject: "clerk-platform" });
+    await expectCode(trialPlatform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Trial end remains server-derived." })), "VALIDATION_ERROR");
+    const trial = await trialPlatform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Start the onboarding trial." })) as Record<string, unknown>;
+    expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String) });
+    expect(trial.currentPeriodEndsAt).toBeUndefined();
+  });
+
+  it("keeps the directory, tenant lifecycle, and immutable audit reason aligned", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { status: "trial" });
     const platform = t.withIdentity({ subject: "clerk-platform" });
     const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
       gymId: "subscription-gym",
@@ -101,11 +128,11 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(persisted.organization).toMatchObject({ status: "trial", subscriptionPlan: "Starter", subscriptionStatusReason: "Approved thirty-day pilot." });
     expect(persisted.organization?.trialEndsAt).toBe(Date.parse(String(updated.trialEndsAt)));
     expect(persisted.entitlement).toMatchObject({ subscriptionPlan: "Starter", source: "subscription_plan", entitledModules: ["foundation", "revenue"] });
-    expect(persisted.audit).toMatchObject({ action: "gym.subscription.update", reason: "Approved thirty-day pilot.", before: { subscriptionStatus: "active", organization: { status: "active", subscriptionPlan: "Growth" }, entitlements: { subscriptionPlan: "Growth" } }, after: { subscriptionStatus: "trial", organization: { status: "trial", subscriptionPlan: "Starter" }, entitlements: { subscriptionPlan: "Starter" } } });
+    expect(persisted.audit).toMatchObject({ action: "gym.subscription.update", reason: "Approved thirty-day pilot.", before: { subscriptionStatus: "active", organization: { status: "trial", subscriptionPlan: "Growth" }, entitlements: { subscriptionPlan: "Growth" } }, after: { subscriptionStatus: "trial", organization: { status: "trial", subscriptionPlan: "Starter" }, entitlements: { subscriptionPlan: "Starter" } } });
 
-    const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", reason: "Customer requested cancellation." })) as Record<string, unknown>;
+    const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Customer requested cancellation." })) as Record<string, unknown>;
     expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });
-    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", reason: "Reconfirmed cancellation state." }));
+    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Reconfirmed cancellation state." }));
     const emails = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "operationalEmailDelivery")).collect()).map((record) => record.data));
     expect(emails.filter((email) => email.kind === "platform_subscription_cancelled")).toHaveLength(1);
     expect(emails).toEqual([expect.objectContaining({ kind: "platform_subscription_cancelled", status: "suppressed", suppressionReason: expect.stringContaining("disabled or the provider is not configured") })]);
@@ -144,6 +171,35 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(snapshot.gyms).toEqual([expect.objectContaining({ id: "subscription-gym", subscriptionStatus: "suspended", isPublic: false, isProvisioned: true })]);
   });
 
+  it("projects only a safe same-tenant gym logo to platform surfaces", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["logo"]) as unknown as Blob));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique();
+      if (!organization || !listing) throw new Error("seed subscription records missing");
+      await ctx.db.insert("mediaAssets", { organizationId: organization._id, publicId: "platform-logo", ownerType: "gym_logo", ownerPublicId: "org-sub", storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: Date.now(), updatedAt: Date.now() });
+      await ctx.db.patch(listing._id, { data: { ...(listing.data as Record<string, unknown>), logoAssetId: "platform-logo" }, updatedAt: Date.now() });
+    });
+
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as { gyms: Array<Record<string, unknown>> };
+    expect(snapshot.gyms[0]?.logoUrl).toEqual(expect.any(String));
+    const detail = await platform.query(api.domain.query, operation("platform.gym.detail", { gymId: "subscription-gym" })) as { logoUrl?: { state: string; value?: string } };
+    expect(detail.logoUrl).toMatchObject({ state: "available", value: expect.any(String) });
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      const logo = organization ? await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "platform-logo")).unique() : null;
+      if (!logo) throw new Error("platform logo missing");
+      await ctx.db.patch(logo._id, { visibility: "private", updatedAt: Date.now() });
+    });
+    const privateSnapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as { gyms: Array<Record<string, unknown>> };
+    expect(privateSnapshot.gyms[0]).not.toHaveProperty("logoUrl");
+    await expect(platform.query(api.domain.query, operation("platform.gym.detail", { gymId: "subscription-gym" }))).resolves.toMatchObject({ logoUrl: { state: "not_configured" } });
+  });
+
   it("uses the organization plan as authority and audits entitlement/listing drift", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
@@ -156,7 +212,7 @@ describe("exported Convex platform subscription lifecycle", () => {
       await ctx.db.patch(listing._id, { data: { ...(listing.data as Record<string, unknown>), rivetPlan: "Starter" }, updatedAt: Date.now() });
     });
 
-    const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Repair lifecycle while preserving the organization plan." })) as Record<string, unknown>;
+    const updated = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Repair lifecycle while preserving the organization plan." })) as Record<string, unknown>;
     expect(updated).toMatchObject({ rivetPlan: "Pro", subscriptionStatus: "suspended", isPublic: false });
     const persisted = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
@@ -192,7 +248,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(staleSnapshot.gyms[0]).not.toHaveProperty("trialEndsAt");
     expect(staleSnapshot.gyms[0]).not.toHaveProperty("subscriptionStartedAt");
     expect(staleSnapshot.gyms[0]).not.toHaveProperty("currentPeriodEndsAt");
-    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", plan: "Starter", reason: "Update plan without importing stale listing dates." }));
+    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", plan: "Starter", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Update plan without importing stale listing dates." }));
     const persisted = await t.run(async (ctx) => ({
       organization: await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique(),
       listing: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique(),
@@ -222,6 +278,7 @@ describe("exported Convex platform subscription lifecycle", () => {
         gymId: "subscription-gym",
         status: "active",
         plan: tier.plan,
+        currentPeriodEndsAt: SELECTED_PERIOD_END,
         isPublic: true,
         reason: `Enable ${tier.plan} workspace tier for the tenant.`,
       }));
@@ -302,6 +359,12 @@ describe("exported Convex platform subscription lifecycle", () => {
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Wrong Name", reason: "Customer requested account closure." })), "VALIDATION_ERROR");
     await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Subscription Gym", reason: "" })), "VALIDATION_ERROR");
 
+    const platformMemberships = await t.run(async (ctx) => {
+      const admin = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "platform")).unique();
+      return admin ? await ctx.db.query("organizationMemberships").withIndex("by_user", (q) => q.eq("userId", admin._id)).collect() : [];
+    });
+    expect(platformMemberships).toHaveLength(0);
+
     const archived = await platform.mutation(api.domain.mutate, operation("platform.gym.archive", { gymId: "subscription-gym", confirmation: "Subscription Gym", reason: "Customer requested account closure." })) as Record<string, unknown>;
     expect(archived).toMatchObject({ id: "subscription-gym", subscriptionStatus: "suspended", isPublic: false, isArchived: true, archiveReason: "Customer requested account closure." });
 
@@ -346,7 +409,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
-    const suspended = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", isPublic: true, reason: "Billing review requires access suspension." })) as Record<string, unknown>;
+    const suspended = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END, isPublic: true, reason: "Billing review requires access suspension." })) as Record<string, unknown>;
     expect(suspended).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
     const persisted = await t.run(async (ctx) => ({
       listing: (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique())?.data,
@@ -396,5 +459,49 @@ describe("exported Convex platform subscription lifecycle", () => {
     const catalog = await t.query(api.domain.query, operation("public.catalog")) as Array<{ name: string }>;
     expect(catalog.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
     expect(catalog.find((plan) => plan.name === "Enterprise")).toMatchObject({ name: "Enterprise", priceMinor: 500_000 });
+  });
+
+  it("persists catalog capability toggles and projects them to gyms already on the tier", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const owner = t.withIdentity({ subject: "clerk-owner" });
+    const updated = await platform.mutation(api.domain.mutate, operation("platform.plan.update", {
+      name: "Growth",
+      entitledModules: ["foundation", "revenue"],
+      reason: "Keep operations behind a reviewed add-on for the initial launch.",
+    })) as Record<string, unknown>;
+    expect(updated).toMatchObject({ name: "Growth", entitledModules: ["foundation", "revenue"] });
+    const catalog = await platform.query(api.domain.query, operation("public.catalog")) as Array<Record<string, unknown>>;
+    expect(catalog.find((plan) => plan.name === "Growth")).toMatchObject({ entitledModules: ["foundation", "revenue"] });
+    await platform.mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      status: "active",
+      plan: "Growth",
+      currentPeriodEndsAt: SELECTED_PERIOD_END,
+      reason: "Apply the reviewed Growth capability package to the assigned gym.",
+    }));
+    const access = await owner.query(api.domain.query, operation("workspace.access")) as { entitlements: { entitledModules: string[] }; modules: Array<{ key: string; entitled: boolean }> };
+    expect(access.entitlements.entitledModules).toEqual(["foundation", "revenue"]);
+    expect(access.modules.find((module) => module.key === "operations")).toMatchObject({ entitled: false });
+    const audit = await t.run(async (ctx) => (await ctx.db.query("platformAuditEvents").collect()).find((event) => event.entityPublicId === "Growth"));
+    expect(audit).toMatchObject({ action: "plan.catalog_update", after: { entitledModules: ["foundation", "revenue"] } });
+  });
+
+  it("allows non-default tier packaging while enforcing module dependencies", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const starter = await platform.mutation(api.domain.mutate, operation("platform.plan.update", {
+      name: "Starter",
+      entitledModules: ["foundation", "operations"],
+      reason: "Package daily operations into the Starter pilot.",
+    })) as Record<string, unknown>;
+    expect(starter).toMatchObject({ name: "Starter", entitledModules: ["foundation", "operations"] });
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.plan.update", {
+      name: "Starter",
+      entitledModules: ["foundation", "reporting"],
+      reason: "Reject reporting without its finance dependency.",
+    })), "VALIDATION_ERROR");
   });
 });

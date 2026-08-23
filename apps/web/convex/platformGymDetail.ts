@@ -21,6 +21,8 @@ export interface PlatformGymDetailSource {
     archivedAt?: number;
     archiveReason?: string;
   };
+  /** Resolved only from an active, public, same-tenant gym logo asset. */
+  logoUrl?: string;
   organization?: {
     id: string;
     name: string;
@@ -127,6 +129,7 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     name: source.gym.name,
     shortName: source.gym.shortName,
     accent: source.gym.accent,
+    logoUrl: organization ? (source.logoUrl ? available(source.logoUrl) : notConfigured()) : notAvailable(),
     controls: {
       status: controlStatus,
       plan: controlPlan,

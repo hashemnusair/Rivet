@@ -109,7 +109,8 @@
   stale entitlement plans cannot override the authoritative organization plan
   for MRR, and unlinked cleanup fixtures fail closed. The fake Marketplace
   Views, payment-provider placeholder, and unrelated marketing migration panel
-  were removed; gym applications have an actionable link.
+  were removed; the former Overview operator-queue panel was also removed in
+  favor of concise KPI counts and direct gym, application, and billing links.
 - The admin gym directory is leaner and active-first. Provisioned gyms appear
   before trial, past-due, suspended, and cancelled rows; unprovisioned/archived
   cleanup records remain available only for audited operator cleanup and do not

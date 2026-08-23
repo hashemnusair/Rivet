@@ -11,6 +11,7 @@ import {
   type ActorContext,
 } from "./security";
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
+import { platformPlanEntitledModules } from "./platformPlanCatalog";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -108,12 +109,13 @@ function assertOneOf<T extends string>(input: unknown, values: readonly T[], lab
 async function requireOperations(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlementRow = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
+  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
   const entitlements = resolveWorkspaceEntitlements(actor.organization.subscriptionPlan, entitlementRow ? {
     subscriptionPlan: entitlementRow.subscriptionPlan,
     entitledModules: entitlementRow.entitledModules,
     source: entitlementRow.source,
     updatedAt: entitlementRow.updatedAt,
-  } : undefined);
+  } : undefined, catalogSelection);
   const resolvedPreferences = resolveWorkspacePreferences(entitlements.entitledModules, preferences ? {
     enabledModules: preferences.enabledModules,
     updatedAt: preferences.updatedAt,

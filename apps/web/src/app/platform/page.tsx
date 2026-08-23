@@ -3,7 +3,6 @@
 import { ArrowRight, Building2, CircleAlert, CreditCard, LifeBuoy, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import type { PlatformOperatorQueueItem } from "@/lib/api/GymOSApi";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { formatMoney } from "@/lib/utils/money";
 
@@ -46,8 +45,7 @@ export default function PlatformOverviewPage() {
           <MiniMetric label="Past-due gym accounts" value={overview ? String(overview.pastDueAccounts) : "—"} warning={Boolean(overview?.pastDueAccounts)} />
         </section>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="border border-line bg-surface p-5 sm:p-6">
+        <section className="mt-5 border border-line bg-surface p-5 sm:p-6">
             <p className="eyebrow">Platform ledger</p>
             <h2 className="mt-2 text-[20px] font-semibold">Billing position</h2>
             <p className="mt-2 max-w-xl text-[11.5px] leading-relaxed text-ink-3">These values are derived from persisted platform invoices. External card charging and payout data remain unavailable until a billing provider is configured.</p>
@@ -63,16 +61,7 @@ export default function PlatformOverviewPage() {
               <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Monthly invoice history</p>
               {overview?.billingHistory.length ? <div className="mt-3 divide-y divide-line">{overview.billingHistory.slice(0, 6).map((month) => <div key={month.month} className="grid grid-cols-[1fr_repeat(3,minmax(0,1fr))] gap-3 py-2.5 text-[10.5px]"><span className="font-medium">{displayMonth(month.month)}</span><span className="text-end text-ink-2">{formatMoney(month.issued)} issued</span><span className="text-end text-success">{formatMoney(month.collected)} paid</span><span className="text-end text-warning">{formatMoney(month.outstanding)} due</span></div>)}</div> : <p className="mt-3 text-[10.5px] text-ink-3">No issued platform invoices are available for a monthly history.</p>}
             </div>
-          </section>
-
-          <section className="night-surface bg-night p-5 text-night-ink sm:p-6">
-            <p className="eyebrow-night">Needs attention</p>
-            <h2 className="mt-2 text-[20px] font-semibold">Operator queue</h2>
-            <div className="mt-6 grid gap-1">
-              {overview?.operatorQueue.length ? overview.operatorQueue.slice(0, 6).map((item) => <Attention key={item.id} item={item} />) : <p className="border-t border-night-line py-5 text-[11.5px] text-night-ink-3">No persisted application, billing, provisioning, or support issues need attention.</p>}
-            </div>
-          </section>
-        </div>
+        </section>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.9fr]">
           <section className="overflow-hidden border border-line bg-surface">
@@ -116,13 +105,6 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow: string;
 
 function Kpi({ icon, label, value, detail, warning = false }: { icon: React.ReactNode; label: string; value: string; detail: string; warning?: boolean }) {
   return <div className="border border-line bg-surface p-5"><div className="flex items-start justify-between"><span className="text-ink-3 [&_svg]:size-4">{icon}</span>{warning ? <CircleAlert className="size-4 text-warning" /> : null}</div><p className="mt-7 font-mono text-[8px] uppercase tracking-[0.12em] text-ink-3">{label}</p><p className="mt-2 text-[28px] font-semibold tracking-tight">{value}</p><p className={warning ? "mt-2 text-[10.5px] text-warning" : "mt-2 text-[10.5px] text-ink-3"}>{detail}</p></div>;
-}
-
-function Attention({ item }: { item: PlatformOperatorQueueItem }) {
-  const href = item.id.startsWith("invoice:")
-    ? `/platform/billing?invoice=${encodeURIComponent(item.id.slice("invoice:".length))}`
-    : item.href;
-  return <Link href={href} className="group flex items-start gap-3 border-t border-night-line px-1 py-4 first:border-t-0"><span className={`mt-1 size-2 shrink-0 rounded-full ${item.severity === "danger" ? "bg-danger" : item.severity === "warning" ? "bg-warning" : "bg-info"}`} /><span className="min-w-0 flex-1"><strong className="block text-[12px] font-medium">{item.title}</strong><span className="mt-1 block text-[10.5px] text-night-ink-3">{item.detail}</span></span><ArrowRight className="mt-1 size-3.5 text-night-ink-3 transition-transform group-hover:translate-x-1" /></Link>;
 }
 
 function Status({ status }: { status: string }) {

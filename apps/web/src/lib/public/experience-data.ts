@@ -49,6 +49,9 @@ export interface MarketplaceGym {
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;
+  /** Platform-only safe URL for the published gym logo. Public marketplace
+   * responses continue to use the scoped `logo` media object instead. */
+  logoUrl?: string;
   /** Platform-only visibility flag; public API responses omit it. */
   isPublic?: boolean;
   /**

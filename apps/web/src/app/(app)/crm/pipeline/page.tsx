@@ -21,6 +21,7 @@ import { ErrorState } from "@/components/ui/states";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
 import { toast } from "sonner";
+import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; label: string; hint: string }> = [
@@ -284,7 +285,7 @@ function LeadListView({ leads }: { leads: LeadSummary[] }) {
 export default function PipelinePage() {
   return (
     <Suspense>
-      <PipelinePageInner />
+      <WorkspaceModuleBoundary moduleKey="revenue"><PipelinePageInner /></WorkspaceModuleBoundary>
     </Suspense>
   );
 }

@@ -18,7 +18,7 @@ describe("ManagementStatementsWorkspace", () => {
 
     expect(await screen.findByTestId("management-statements-workspace")).toBeInTheDocument();
     await act(async () => {
-      await api.updatePlatformGym({ gymId: "forge-fitness", plan: "Starter", reason: "Verify direct reporting route entitlement lock." });
+      await api.updatePlatformGym({ gymId: "forge-fitness", plan: "Starter", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Verify direct reporting route entitlement lock." });
     });
 
     expect(await screen.findByText("Management reporting is not included", { exact: true })).toBeInTheDocument();

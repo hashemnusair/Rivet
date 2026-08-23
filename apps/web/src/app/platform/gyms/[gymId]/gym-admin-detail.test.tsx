@@ -46,6 +46,7 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
     name: "Forge Fitness",
     shortName: "FOR",
     accent: "#15140f",
+    logoUrl: available("https://cdn.example/forge.png"),
     controls: { status: "active", plan: "Growth", isPublic: true, ...overrides },
     organization: organizationState === "available" ? available({ id: "10000000-0000-4000-8000-000000000001", name: "Forge Fitness", status: "active", currency: "JOD", timezone: "Asia/Amman" }) : { state: "not_available" },
     joinedAt: available("2026-01-01T00:00:00.000Z"),
@@ -90,17 +91,39 @@ describe("Gym admin detail subscription controls", () => {
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
   });
 
-  it("renders server-owned lifecycle dates without editable date controls", () => {
+  it("keeps trial dates server-owned while allowing the paid period boundary", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
     expect(screen.queryByLabelText("Trial ends")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Subscription started")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Current period ends")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Cancelled on")).not.toBeInTheDocument();
-    expect(screen.getByText(/Subscription dates are server-owned/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Membership end date")).toHaveValue("2026-02-01");
+    expect(screen.getByText(/Trial starts from onboarding/)).toBeInTheDocument();
     expect(screen.getByText("Trial ends")).toBeInTheDocument();
     expect(screen.getByText("Period ends")).toBeInTheDocument();
     expect(screen.getAllByText("Billing cadence").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not offer a new trial to an established active gym", async () => {
+    const user = userEvent.setup();
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
+
+    expect(screen.queryByRole("option", { name: "Trial" })).not.toBeInTheDocument();
+  });
+
+  it("renders the canonical logo and keeps initials as the missing-logo fallback", () => {
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    const logo = screen.getByRole("img", { name: "Forge Fitness logo" });
+    expect(logo.querySelector("img")).toHaveAttribute("src", "https://cdn.example/forge.png");
+
+    state.query = { data: { ...detail(), logoUrl: { state: "not_configured" } }, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
+    // A fresh render represents the same detail after the server clears the
+    // logo reference; the component must remain identifiable without media.
+    render(<GymAdminDetail gymId="gym-1" />);
+    expect(screen.getAllByRole("img", { name: "Forge Fitness logo" })[1]).toHaveTextContent("FF");
   });
 
   it("keeps an unprovisioned directory row cleanup-only", () => {
@@ -157,7 +180,7 @@ describe("Gym admin detail subscription controls", () => {
     fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Account requested a temporary pause." } });
     fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
 
-    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", status: "suspended", isPublic: false, reason: "Account requested a temporary pause." }));
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", status: "suspended", currentPeriodEndsAt: "2026-02-01T23:59:59.999Z", isPublic: false, reason: "Account requested a temporary pause." }));
   });
 
   it("submits an annual billing cadence change with the audited controls", async () => {
@@ -169,7 +192,7 @@ describe("Gym admin detail subscription controls", () => {
     await user.type(screen.getByPlaceholderText("Required for the immutable platform audit trail"), "Approved annual billing.");
     await user.click(screen.getByRole("button", { name: "Save controls" }));
 
-    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", billingInterval: "annual", reason: "Approved annual billing." }));
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", billingInterval: "annual", currentPeriodEndsAt: "2026-02-01T23:59:59.999Z", reason: "Approved annual billing." }));
   });
 
   it("omits a historical cancellation date when reactivating a cancelled gym", () => {

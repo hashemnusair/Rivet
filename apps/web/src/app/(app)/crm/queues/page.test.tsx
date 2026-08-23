@@ -31,6 +31,10 @@ vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session: { activeBranchId: "branch-1" } }),
 }));
 
+vi.mock("@/lib/hooks/use-api", () => ({
+  useApiQuery: () => ({ data: { modules: [{ key: "revenue", entitled: true, enabled: true }] }, isLoading: false, error: undefined, refetch: vi.fn() }),
+}));
+
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
   useRealtimeApiQuery: (options: { queryKey: unknown }) => {
     state.queryKey = options.queryKey;

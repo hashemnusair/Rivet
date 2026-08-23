@@ -39,6 +39,7 @@ vi.mock("@/lib/hooks/use-debounced", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
+  useApiQuery: () => ({ data: { modules: [{ key: "revenue", entitled: true, enabled: true }] }, isLoading: false, error: undefined, refetch: vi.fn() }),
   useApiMutation: () => {
     state.mutation = vi.fn();
     return { mutate: state.mutation, isPending: false };

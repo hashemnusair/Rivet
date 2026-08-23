@@ -1,4 +1,6 @@
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
+import { entitledModulesForPlanSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
+import type { WorkspaceModuleKey } from "@/lib/domain/types";
 
 /** The two billing cadences shown on public pricing and gym applications. */
 export type BillingInterval = "monthly" | "annual";
@@ -14,6 +16,7 @@ export interface PublicPricingPlan {
   staff: number;
   members: number;
   tone: "paper" | "signal" | "night";
+  entitledModules?: WorkspaceModuleKey[];
 }
 
 /**
@@ -22,10 +25,10 @@ export interface PublicPricingPlan {
  * floating-point formatting in a component.
  */
 export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 ];
 
 const PLAN_NAMES = new Set<PublicPricingPlanName>(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name));
@@ -83,6 +86,7 @@ export function resolvePublicPricingPlans(
       staff: Number.isFinite(live.staff) ? Math.max(0, Math.round(live.staff!)) : fallback.staff,
       members: Number.isFinite(live.members) ? Math.max(0, Math.round(live.members!)) : fallback.members,
       tone: live.tone === "paper" || live.tone === "signal" || live.tone === "night" ? live.tone : fallback.tone,
+      entitledModules: entitledModulesForPlanSelection(fallback.name, live.entitledModules ?? fallback.entitledModules),
     };
   });
 }
@@ -103,15 +107,16 @@ export function pricingSignupHref(plan: PublicPricingPlanName, interval: Billing
 /** Public-facing capability summary kept in step with the workspace tiers. */
 export function publicPlanFeatures(plan: PublicPricingPlan): string[] {
   const common = ["Member app and marketplace listing", "Staff permissions and audit history"];
-  if (plan.name === "Enterprise") {
-    return ["Up to 25 branches", "Up to 250 staff accounts", "Up to 50,000 members", "All workspace modules", "Priority onboarding and support", ...common];
-  }
-  const tierFeatures: Record<Exclude<PublicPricingPlanName, "Enterprise">, string[]> = {
-    Starter: ["1 branch", "Up to 8 staff accounts", "Up to 500 members", "Gym foundation and revenue tools"],
-    Growth: ["Up to 3 branches", "Up to 25 staff accounts", "Up to 2,500 members", "Daily operations workspace"],
-    Pro: ["Up to 8 branches", "Up to 80 staff accounts", "Up to 10,000 members", "Finance and management reporting"],
-  };
-  return [...tierFeatures[plan.name], ...common];
+  const modules = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+  const moduleFeatures = modules.map((key) => WORKSPACE_MODULE_CATALOG.find((entry) => entry.key === key)?.label ?? key);
+  return [
+    `${plan.branches === 1 ? "1 branch" : `Up to ${plan.branches.toLocaleString()} branches`}`,
+    `Up to ${plan.staff.toLocaleString()} staff accounts`,
+    `Up to ${plan.members.toLocaleString()} members`,
+    ...moduleFeatures,
+    ...(plan.name === "Enterprise" ? ["Priority onboarding and support"] : []),
+    ...common,
+  ];
 }
 
 /** Keep the public pricing name aligned with the application API contract. */

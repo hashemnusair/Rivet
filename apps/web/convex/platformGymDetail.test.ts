@@ -55,6 +55,17 @@ describe("platform gym detail projection", () => {
     expect(JSON.stringify(beta)).not.toContain("Alpha");
   });
 
+  it("passes through only the already-validated logo URL and keeps missing media explicit", () => {
+    const withLogo = buildPlatformGymDetail(source({ logoUrl: "https://storage.example/alpha-logo.png" }));
+    expect(withLogo.logoUrl).toEqual({ state: "available", value: "https://storage.example/alpha-logo.png" });
+
+    const withoutLogo = buildPlatformGymDetail(source());
+    expect(withoutLogo.logoUrl).toEqual({ state: "not_configured" });
+
+    const directoryOnly = buildPlatformGymDetail(source({ organization: undefined, logoUrl: "https://storage.example/should-not-leak.png" }));
+    expect(directoryOnly.logoUrl).toEqual({ state: "not_available" });
+  });
+
   it("does not borrow tenant facts when a directory row has no target organization", () => {
     const detail = buildPlatformGymDetail(source({
       gym: { ...source().gym, id: "directory-only", name: "Directory Only" },

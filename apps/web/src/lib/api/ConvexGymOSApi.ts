@@ -106,6 +106,7 @@ function publicMarketplaceRows(value: unknown): MarketplaceGym[] {
       delete publicRow.isArchived;
       delete publicRow.archivedAt;
       delete publicRow.archiveReason;
+      delete publicRow.logoUrl;
       return { ...publicRow, isPublic: typeof publicRow.isPublic === "boolean" ? publicRow.isPublic : true };
     })
     .map((row) => row as unknown as MarketplaceGym);
@@ -169,6 +170,22 @@ export class ConvexGymOSApi implements GymOSApi {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
       const result = await this.transport.mutation(api.domain.mutate, { operation, input: this.input(input), organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() });
+      return result as T;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+
+  /**
+   * Platform mutations are authorized from the authenticated platform-admin
+   * identity, not from a selected gym workspace. Keep the request free of any
+   * tenant/branch context so a stale workspace binding cannot route an
+   * operator action through tenant membership authorization.
+   */
+  private async mutatePlatform<T>(operation: string, input: object = {}): Promise<T> {
+    try {
+      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      const result = await this.transport.mutation(api.domain.mutate, { operation, input: input as Record<string, unknown>, correlationId: correlationId() });
       return result as T;
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
@@ -328,7 +345,7 @@ export class ConvexGymOSApi implements GymOSApi {
     }
   }
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutate("platform.gym.update", input); }
-  async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> { await this.mutate("platform.gym.archive", input); }
+  async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> { await this.mutatePlatform("platform.gym.archive", input); }
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.create", input); }
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.issue", { invoiceId }); }

@@ -49,7 +49,8 @@ import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeB
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
-  entitledModulesForPlan,
+  allWorkspaceModuleKeys,
+  entitledModulesForPlanSelection,
   validateWorkspaceModuleSelection,
   WORKSPACE_MODULE_CATALOG_VERSION,
 } from "@/lib/domain/workspace-modules";
@@ -175,10 +176,10 @@ const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
 ];
 
 const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 ];
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
@@ -250,6 +251,23 @@ function addBillingInterval(timestamp: number, interval: "monthly" | "annual"): 
   return addCalendarMonths(timestamp, interval === "annual" ? 12 : 1);
 }
 
+function validSubscriptionTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim();
+  const datePrefix = normalized.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
+    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
+    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
+  }
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function sameCalendarDate(left: number | undefined, right: number | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+}
+
 function cloneMarketplaceGym(gym: MarketplaceGym): MarketplaceGym {
   return {
     ...gym,
@@ -257,6 +275,15 @@ function cloneMarketplaceGym(gym: MarketplaceGym): MarketplaceGym {
     amenities: [...gym.amenities],
     branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots], trialSchedule: branch.trialSchedule ? { ...branch.trialSchedule } : undefined })),
   };
+}
+
+function safeMockLogoUrl(logo: T.MediaAsset | undefined, organizationId: string): string | undefined {
+  if (!logo || logo.organizationId !== organizationId || logo.ownerType !== "gym_logo" || logo.ownerId !== organizationId || logo.visibility !== "public" || logo.status !== "active") return undefined;
+  return logo.url;
+}
+
+function safeMockGymLogoUrl(gym: MarketplaceGym, organizationId: string): string | undefined {
+  return safeMockLogoUrl(gym.logo, organizationId);
 }
 
 function initialPlatformGyms(organization: MockDb["organization"]): MarketplaceGym[] {
@@ -349,6 +376,7 @@ export class MockGymOSApi implements GymOSApi {
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
   private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
   private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
+  private readonly platformGymDetailSubscribers = new Map<(detail: PlatformGymDetail) => void, { gymId: string; onError?: (error: unknown) => void }>();
   private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
@@ -414,8 +442,20 @@ export class MockGymOSApi implements GymOSApi {
     return gym.id === PROVISIONED_MOCK_GYM_ID;
   }
 
+  private platformGymLogoUrl(gym: MarketplaceGym): string | undefined {
+    const organizationId = this.db.organization.id;
+    return safeMockGymLogoUrl(gym, organizationId)
+      ?? (this.db.brand.logoAssetId ? safeMockLogoUrl(this.mediaAssets.get(this.db.brand.logoAssetId), organizationId) : undefined);
+  }
+
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => publicMarketplaceGyms(this.platformGyms.filter((gym) => this.isProvisionedGym(gym) && !this.archivedGymIds.has(gym.id))));
+    return this.respond(() => publicMarketplaceGyms(this.platformGyms
+      .filter((gym) => this.isProvisionedGym(gym) && !this.archivedGymIds.has(gym.id))
+      .map((gym) => {
+        const cloned = cloneMarketplaceGym(gym);
+        delete cloned.logoUrl;
+        return cloned;
+      })));
   }
 
   async subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -447,17 +487,24 @@ export class MockGymOSApi implements GymOSApi {
       if (!/^#[0-9a-f]{6}$/i.test(input.accentColor)) throw ApiError.of(ERR.VALIDATION, "Accent color must be a six-digit hex color.");
       const nextVersion = this.gymPublicProfile.status === "published" ? this.gymPublicProfile.version + 1 : this.gymPublicProfile.version;
       const referenced = (id: string | undefined) => id ? this.mediaAssets.get(id) : undefined;
-      const logo = referenced(input.logoAssetId);
-      const cover = referenced(input.coverAssetId);
-      const gallery = input.galleryAssetIds.map((id) => referenced(id)).filter((asset): asset is T.MediaAsset => Boolean(asset));
-      for (const asset of [logo, cover, ...gallery].filter((asset): asset is T.MediaAsset => Boolean(asset))) this.mediaAssets.set(asset.id, { ...asset, status: "active", updatedAt: nowISO() });
-      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: nowISO() };
+      const now = nowISO();
+      const activate = (asset: T.MediaAsset | undefined): T.MediaAsset | undefined => {
+        if (!asset) return undefined;
+        const { deleteAfter: _deleteAfter, ...withoutDeletion } = asset;
+        const active: T.MediaAsset = { ...withoutDeletion, status: "active", updatedAt: now };
+        this.mediaAssets.set(active.id, active);
+        return active;
+      };
+      const logo = activate(referenced(input.logoAssetId));
+      const cover = activate(referenced(input.coverAssetId));
+      const gallery = input.galleryAssetIds.map((id) => activate(referenced(id))).filter((asset): asset is T.MediaAsset => Boolean(asset));
+      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: now };
       return { ...this.gymPublicProfile };
     });
   }
 
-  publishGymPublicProfile(): Promise<T.GymPublicProfile> {
-    return this.respond(() => {
+  async publishGymPublicProfile(): Promise<T.GymPublicProfile> {
+    const result = await this.respond(() => {
       this.require("profiles.manage");
       const now = nowISO();
       this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
@@ -467,6 +514,8 @@ export class MockGymOSApi implements GymOSApi {
       if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
       return { ...this.gymPublicProfile };
     });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
   }
 
   unpublishGymPublicProfile(reason: string): Promise<T.GymPublicProfile> {
@@ -711,7 +760,12 @@ export class MockGymOSApi implements GymOSApi {
       // Platform snapshots retain archived rows for audit/history. The admin
       // directory decides whether to hide rows using isArchived; public
       // marketplace reads remain filtered by listMarketplaceGyms().
-      gyms: this.platformGyms.map((gym) => ({ ...cloneMarketplaceGym(gym), isProvisioned: this.isProvisionedGym(gym) })),
+      gyms: this.platformGyms.map((gym) => {
+        const cloned = cloneMarketplaceGym(gym);
+        delete cloned.logoUrl;
+        const logoUrl = this.isProvisionedGym(gym) ? this.platformGymLogoUrl(gym) : undefined;
+        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym) };
+      }),
       bookings: this.trialBookings.map((booking) => ({ ...booking })),
       invoices: this.platformInvoices.map((invoice) => ({ ...invoice })),
       supportCases: this.platformSupportCases.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) })),
@@ -865,12 +919,14 @@ export class MockGymOSApi implements GymOSApi {
       const activeMemberCount = organization ? this.db.members.filter((member) => member.status === "active").length : 0;
       const activeStaffCount = organization ? this.db.users.filter((user) => user.status === "active").length : 0;
       const field = <T,>(value: T | undefined, missing: "not_available" | "not_configured" = "not_available"): PlatformData<T> => value === undefined ? (missing === "not_available" ? notAvailable<T>() : notConfigured<T>()) : available(value);
+      const logoUrl = organization ? this.platformGymLogoUrl(gym) : undefined;
 
       return {
         id: gym.id,
         name: gym.name,
         shortName: gym.shortName,
         accent: gym.accent,
+        logoUrl: organization ? field(logoUrl, "not_configured") : notAvailable(),
         controls: { status: effectiveStatus, plan: effectivePlan, isPublic: Boolean(organization && PUBLIC_SUBSCRIPTION_STATUSES.has(effectiveStatus) && gym.isPublic), isArchived, archivedAt: gym.archivedAt ?? (organization?.archivedAt ? new Date(organization.archivedAt).toISOString() : undefined), archiveReason: gym.archiveReason ?? organization?.archiveReason },
         organization: organization
           ? available({ id: organization.id, name: organization.name, status: organization.status, currency: organization.currency, timezone: organization.timezone })
@@ -908,7 +964,15 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
-    return this.subscribeOnce(() => this.getPlatformGymDetail(gymId), onValue, onError);
+    return (async () => {
+      try {
+        onValue(await this.getPlatformGymDetail(gymId));
+        this.platformGymDetailSubscribers.set(onValue, { gymId, onError });
+      } catch (error) {
+        onError?.(error);
+      }
+      return () => { this.platformGymDetailSubscribers.delete(onValue); };
+    })();
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
@@ -1058,20 +1122,25 @@ export class MockGymOSApi implements GymOSApi {
     const result = await this.respond(() => {
       this.requireReason(input.reason);
       const rawInput = input as UpdatePlatformGymInput & Record<string, unknown>;
-      if (["trialEndsAt", "subscriptionStartedAt", "currentPeriodEndsAt", "cancelledAt"].some((field) => rawInput[field] !== undefined)) {
-        throw ApiError.of(ERR.VALIDATION, "Trial, subscription start, period end, and cancellation dates are derived automatically.");
+      if (["trialEndsAt", "subscriptionStartedAt", "cancelledAt"].some((field) => rawInput[field] !== undefined)) {
+        throw ApiError.of(ERR.VALIDATION, "Trial, subscription start, and cancellation dates are derived automatically.");
       }
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
       if (gym.isArchived || this.db.organization.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be changed through the subscription controls.");
       const organization = this.isProvisionedGym(gym) ? this.db.organization : undefined;
       const nextStatus = input.status ?? (organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus);
+      const persistedStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      if (nextStatus === "trial" && persistedStatus !== "trial") throw ApiError.of(ERR.VALIDATION, "A provisioned gym cannot be moved back into trial; trials start automatically during onboarding.");
       const nextPlan = input.plan ?? this.db.organizationEntitlements.subscriptionPlan ?? organization?.subscriptionPlan ?? gym.rivetPlan;
       if (input.billingInterval !== undefined && input.billingInterval !== "monthly" && input.billingInterval !== "annual") throw ApiError.of(ERR.VALIDATION, "Billing cadence is invalid.");
-      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || input.isPublic !== undefined;
+      const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
+      const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
+      if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "The membership end date must be a valid calendar date.");
+      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
       if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
       if (!organization) {
-        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined) {
+        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
           throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
         }
         gym.isPublic = false;
@@ -1096,14 +1165,24 @@ export class MockGymOSApi implements GymOSApi {
       const nowTimestamp = Date.now();
       const existingBillingInterval = organization?.billingInterval ?? gym.billingInterval ?? "monthly";
       const billingInterval = input.billingInterval ?? existingBillingInterval;
-      const intervalChanged = input.billingInterval !== undefined && billingInterval !== existingBillingInterval;
       const storedSubscriptionStartedAt = organization?.subscriptionStartedAt ? Date.parse(organization.subscriptionStartedAt) : undefined;
       const storedTrialEndsAt = organization?.trialEndsAt ? Date.parse(organization.trialEndsAt) : undefined;
       const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt ? Date.parse(organization.currentPeriodEndsAt) : undefined;
+      const currentStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      const currentPlan = organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
+      const materialMembershipChange = (input.status !== undefined && nextStatus !== currentStatus)
+        || (input.plan !== undefined && input.plan !== currentPlan)
+        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
+      const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
+      if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) throw ApiError.of(ERR.VALIDATION, "Trial end is fixed automatically from onboarding; do not provide a paid period end date.");
+      if (materialMembershipChange && nextStatus !== "trial" && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "A membership end date is required for plan, status, or billing cadence changes.");
       const nextSubscriptionStartedAt = Number.isFinite(storedSubscriptionStartedAt) ? storedSubscriptionStartedAt : PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? nowTimestamp : undefined;
       const nextTrialEndsAt = nextStatus === "trial" ? (Number.isFinite(storedTrialEndsAt) ? storedTrialEndsAt : nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1)) : storedTrialEndsAt;
-      const preservedPeriodEnd = !intervalChanged && Number.isFinite(storedCurrentPeriodEndsAt) && storedCurrentPeriodEndsAt! > nowTimestamp ? storedCurrentPeriodEndsAt : undefined;
-      const nextCurrentPeriodEndsAt = nextStatus === "active" ? (preservedPeriodEnd ?? (nextTrialEndsAt ?? nextSubscriptionStartedAt) === undefined ? undefined : addBillingInterval((nextTrialEndsAt ?? nextSubscriptionStartedAt)!, billingInterval)) : undefined;
+      if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "A trial must end in the future; its end date is derived from onboarding.");
+      const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined;
+      if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && Number.isFinite(storedSubscriptionStartedAt) && selectedPeriodEndsAt < storedSubscriptionStartedAt!) throw ApiError.of(ERR.VALIDATION, "The membership end date must be on or after the subscription start date.");
+      if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "An active subscription must end in the future.");
+      const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
       const nextCancelledAt = nextStatus === "cancelled" ? nowTimestamp : undefined;
       if (nextStatus === "trial" && nextTrialEndsAt === undefined) throw ApiError.of(ERR.CONFIGURATION, "A trial cannot start until its onboarding date is established.");
 
@@ -1134,12 +1213,14 @@ export class MockGymOSApi implements GymOSApi {
         organization.subscriptionStatusReason = gym.subscriptionStatusReason;
         organization.updatedAt = nowISO();
         const modulePlan = nextPlan as T.WorkspaceModulePlan;
+        const catalogPlan = this.platformPlans.find((candidate) => candidate.name === modulePlan);
+        const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
         this.db.organizationEntitlements = {
           ...this.db.organizationEntitlements,
           organizationId: organization.id,
           catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
           subscriptionPlan: modulePlan,
-          entitledModules: entitledModulesForPlan(modulePlan),
+          entitledModules,
           source: "subscription_plan",
           updatedAt: organization.updatedAt,
         };
@@ -1148,8 +1229,8 @@ export class MockGymOSApi implements GymOSApi {
         // restore prior operator choices while read-time filtering locks them
         // for the lower tier.
         if (input.plan !== undefined && previousModulePlan !== modulePlan) {
-          const previousEntitled = entitledModulesForPlan(previousModulePlan);
-          const nextEntitled = entitledModulesForPlan(modulePlan);
+          const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, this.platformPlans.find((candidate) => candidate.name === previousModulePlan)?.entitledModules) : [];
+          const nextEntitled = entitledModules;
           const newlyEntitled = nextEntitled.filter((module) => !previousEntitled.includes(module));
           if (newlyEntitled.length > 0) {
             let enabledModules: T.WorkspaceModuleKey[];
@@ -1222,17 +1303,57 @@ export class MockGymOSApi implements GymOSApi {
       this.requireReason(input.reason);
       const plan = this.platformPlans.find((item) => item.name === input.name);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      const previousEntitled = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+      let entitledModules = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+      if (input.entitledModules !== undefined) {
+        try {
+          entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
+        } catch (error) {
+          throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace capabilities are invalid.");
+        }
+      }
       if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
       if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
       if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
       if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      plan.entitledModules = entitledModules;
+      if (this.db.organization.subscriptionPlan === plan.name) {
+        const previousOrganizationEntitled = this.db.organizationEntitlements.entitledModules;
+        this.db.organizationEntitlements = {
+          ...this.db.organizationEntitlements,
+          catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+          subscriptionPlan: plan.name,
+          entitledModules,
+          source: "subscription_plan",
+          updatedAt: nowISO(),
+        };
+        const newlyEntitled = entitledModules.filter((module) => !previousOrganizationEntitled.includes(module));
+        const candidate = [...this.db.workspaceModulePreferences.enabledModules.filter((module) => entitledModules.includes(module)), ...newlyEntitled];
+        try {
+          this.db.workspaceModulePreferences = {
+            ...this.db.workspaceModulePreferences,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            enabledModules: validateWorkspaceModuleSelection(candidate, entitledModules),
+            updatedAt: nowISO(),
+          };
+        } catch {
+          this.db.workspaceModulePreferences = {
+            ...this.db.workspaceModulePreferences,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            enabledModules: defaultWorkspacePreferences(entitledModules),
+            updatedAt: nowISO(),
+          };
+        }
+      }
       this.recordPlatformAudit({
         action: "plan.catalog_update",
         entityType: "platform_plan",
         entityPublicId: plan.name,
         entityLabel: plan.name,
-        summary: `Updated ${plan.name} plan catalog limits`,
+        summary: `Updated ${plan.name} plan catalog limits and capabilities`,
         reason: input.reason.trim(),
+        before: { entitledModules: previousEntitled.join(",") },
+        after: { entitledModules: entitledModules.join(",") },
       });
       return { ...plan };
     });
@@ -1599,6 +1720,16 @@ export class MockGymOSApi implements GymOSApi {
     } catch (error) {
       for (const onError of this.platformSnapshotSubscribers.values()) onError?.(error);
     }
+  }
+
+  private async emitPlatformGymDetailSubscribers(): Promise<void> {
+    await Promise.all([...this.platformGymDetailSubscribers.entries()].map(async ([onValue, subscription]) => {
+      try {
+        onValue(await this.getPlatformGymDetail(subscription.gymId));
+      } catch (error) {
+        subscription.onError?.(error);
+      }
+    }));
   }
 
   private async emitPublicPlanSubscribers(): Promise<void> {
@@ -5880,8 +6011,8 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> {
-    return this.respond(() => {
+  async updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> {
+    const result = await this.respond(() => {
       this.requireOwner();
       if (!isBrandPaletteKey(input.paletteKey)) throw ApiError.of(ERR.VALIDATION, "Choose a supported Brand Kit palette.");
       const primaryColor = input.primaryColor === undefined || input.primaryColor === "" ? BRAND_PALETTE_PRESETS[input.paletteKey] : normalizeBrandHex(input.primaryColor);
@@ -5903,6 +6034,8 @@ export class MockGymOSApi implements GymOSApi {
       this.audit({ category: "settings", action: "settings.brand.update", entityType: "organization_brand", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: "Tenant Brand Kit updated", before: { paletteKey: before.paletteKey, primaryColor: before.primaryColor, logoAssetId: before.logoAssetId ?? null, version: before.version }, after: { paletteKey: next.paletteKey, primaryColor: next.primaryColor, logoAssetId: next.logoAssetId ?? null, version: next.version } });
       return { ...next, tokens: { ...next.tokens } };
     });
+    await Promise.all([this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
   }
 
   getWorkspaceAccess(): Promise<T.WorkspaceAccess> {
@@ -5973,7 +6106,7 @@ export class MockGymOSApi implements GymOSApi {
       organizationId: this.db.organization.id,
       catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
       subscriptionPlan: plan,
-      entitledModules: entitledModulesForPlan(plan),
+      entitledModules: plan ? entitledModulesForPlanSelection(plan, stored.subscriptionPlan === plan ? stored.entitledModules : this.platformPlans.find((candidate) => candidate.name === plan)?.entitledModules) : stored.entitledModules,
       source: plan ? "subscription_plan" : "legacy_default",
     };
   }

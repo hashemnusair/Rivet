@@ -331,6 +331,9 @@ export interface PlatformGymDetail {
   name: string;
   shortName: string;
   accent: string;
+  /** Safe URL for the published gym logo; unavailable/configured states stay
+   * explicit so the admin surface can fall back to initials. */
+  logoUrl?: PlatformData<string>;
   controls: {
     status: MarketplaceGym["subscriptionStatus"];
     plan: MarketplaceGym["rivetPlan"];
@@ -485,6 +488,8 @@ export interface PlatformSaasPlan {
   staff: number;
   members: number;
   tone: "paper" | "signal" | "night";
+  /** Server-owned workspace modules included in this tier. */
+  entitledModules?: WorkspaceModuleKey[];
 }
 
 export interface SubmitGymApplicationInput {
@@ -621,6 +626,9 @@ export interface UpdatePlatformGymInput {
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
   billingInterval?: BillingInterval;
+  /** The admin-selected paid membership/subscription boundary. Trial ends
+   * remain server-derived from onboarding and are never accepted here. */
+  currentPeriodEndsAt?: string;
   isPublic?: boolean;
   reason: string;
 }
@@ -642,6 +650,7 @@ export interface UpdatePlatformPlanInput {
   branches?: number;
   staff?: number;
   members?: number;
+  entitledModules?: WorkspaceModuleKey[];
   reason: string;
 }
 

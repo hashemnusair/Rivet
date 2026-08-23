@@ -2,11 +2,23 @@ import { expect, test, type Page } from "@playwright/test";
 
 type SubscriptionPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
-async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string) {
+function isoDateFromToday(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string, options: { assertDateRequired?: boolean } = {}) {
   await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
   await page.getByLabel("Gym plan").click();
   await page.getByRole("option", { name: plan, exact: true }).click();
   await page.getByLabel("Reason for this change").fill(reason);
+  if (options.assertDateRequired) {
+    await page.getByLabel("Membership end date").fill("");
+    await expect(page.getByRole("button", { name: "Save controls", exact: true })).toBeDisabled();
+  }
+  await page.getByLabel("Membership end date").fill(isoDateFromToday(45));
+  await expect(page.getByRole("button", { name: "Save controls", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Save controls", exact: true }).click();
   await expect(page.getByText("Gym subscription controls saved and audited.", { exact: true }).last()).toBeVisible();
   await expect(page.getByLabel("Gym plan")).toContainText(plan);
@@ -75,7 +87,7 @@ test.describe("RIVET platform subscription entitlements", () => {
     await page.goto("/platform/gyms/forge-fitness");
     await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
 
-    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.");
+    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertDateRequired: true });
 
     // The platform mutation response is consumed by the active gym session
     // without a logout or page reload. The navigation and route gate must

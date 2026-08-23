@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
@@ -31,6 +32,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
   const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [reason, setReason] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -44,6 +46,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
+    setCurrentPeriodEndsAt(readDateInput(detail.subscription.currentPeriodEndsAt));
     setIsPublic(detail.organization.state === "available" && normalizePublicListing(detail.controls.isPublic, detail.controls.status));
   }, [detail]);
 
@@ -51,6 +54,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     status,
     plan,
     billingInterval,
+    currentPeriodEndsAt,
     isPublic,
   }) : false;
 
@@ -66,7 +70,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
   const update = useApiMutation((api) => {
     if (!organizationAvailable) throw new Error("Subscription controls are unavailable until this gym is provisioned.");
-    return api.updatePlatformGym({ gymId, status, plan, billingInterval, isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
+    return api.updatePlatformGym({ gymId, status, plan, billingInterval, currentPeriodEndsAt: dateInputToIso(currentPeriodEndsAt), isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
   }, {
     onSuccess: async () => {
       editing.current = false;
@@ -103,6 +107,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
+    setCurrentPeriodEndsAt(readDateInput(detail.subscription.currentPeriodEndsAt));
     setIsPublic(detail.organization.state === "available" && detail.controls.isPublic);
     setReason("");
   };
@@ -119,8 +124,11 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     if (!organizationAvailable) return;
     editing.current = true;
     setStatus(next);
+    if (next === "trial") setCurrentPeriodEndsAt("");
     if (!isPublicSubscriptionStatus(next)) setIsPublic(false);
   };
+  const materialSubscriptionChange = detail ? subscriptionMaterialChange(detail, { status, plan, billingInterval }) : false;
+  const requiresPeriodEnd = materialSubscriptionChange && draftStatus !== "trial";
   const saveControls = () => {
     if (!detail || !organizationAvailable || !status || !plan) return;
     update.mutate();
@@ -143,7 +151,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
         <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
           <div className="flex items-center gap-4">
-            <span className="flex size-14 items-center justify-center font-mono text-[11px] font-semibold text-white" style={{ backgroundColor: detail.accent }}>{detail.shortName.slice(0, 3)}</span>
+            <PlatformGymLogo name={detail.name} shortName={detail.shortName} accent={detail.accent} logoUrl={detail.logoUrl?.state === "available" ? detail.logoUrl.value : undefined} className="size-14 text-[11px]" />
             <div>
               <h1 className="text-[27px] font-semibold tracking-tight">{detail.name}</h1>
               <p className="mt-1 text-[11.5px] text-ink-3">Customer since <FieldValue field={detail.joinedAt} render={(value) => value.slice(0, 10)} /></p>
@@ -158,20 +166,21 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">{organizationAvailable ? "Changes update the tenant record, public directory state, and immutable platform audit trail." : "This directory row is retained for audit and cleanup, but is not linked to a provisioned tenant. Subscription changes are unavailable."}</p></div>
-            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim()}><Check />Save controls</Button>
+            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim() || (requiresPeriodEnd && !currentPeriodEndsAt)}><Check />Save controls</Button>
           </div>
           {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so plan, status, lifecycle dates, public visibility, and save actions are disabled. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
           {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
           <fieldset disabled={!organizationAvailable} className="mt-5 min-w-0">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
-              <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="trial">Trial</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
+              <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent>{detail.controls.status === "trial" ? <SelectItem value="trial">Trial</SelectItem> : null}<SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
               <label className="grid gap-1.5 text-[12px] font-medium">Billing cadence<Select value={billingInterval} onValueChange={(value) => edit(setBillingInterval, value as BillingInterval)}><SelectTrigger aria-label="Billing cadence" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="annual">Annual · saves 20%</SelectItem></SelectContent></Select></label>
             </div>
             <div className="mt-4 border border-line bg-sunken/60 px-4 py-3 text-[10.5px] leading-relaxed text-ink-2" role="note">
-              <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Subscription dates are server-owned. Trial starts from onboarding, ends on the fixed trial date, and the current period end is calculated from the selected plan and billing cadence.</p>
-              <p className="mt-2 text-ink-3">Use status changes for access decisions; historical dates remain visible below and are never manually edited here.</p>
+              <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Trial starts from onboarding and ends on its fixed server-derived date. Select the paid membership end date when changing a plan, status, or billing cadence.</p>
+              <p className="mt-2 text-ink-3">Trial end remains automatic and is never editable. Active periods must end in the future; cancellation keeps the selected boundary while its cancellation timestamp is recorded by the server.</p>
             </div>
+            <label className="mt-4 grid gap-1.5 text-[12px] font-medium" htmlFor="current-period-ends">Membership end date<Input id="current-period-ends" type="date" aria-label="Membership end date" value={currentPeriodEndsAt} onChange={(event) => edit(setCurrentPeriodEndsAt, event.target.value)} disabled={!organizationAvailable || draftStatus === "trial"} />{draftStatus === "trial" ? <span className="text-[10.5px] font-normal text-ink-3">Trial end is fixed automatically from onboarding.</span> : requiresPeriodEnd && !currentPeriodEndsAt ? <span className="text-[10.5px] font-normal text-warning">Required for this subscription change.</span> : null}</label>
             <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" disabled={!organizationAvailable} /></label>
             <div className="mt-4 flex items-start justify-between gap-4 border-t border-line pt-4">
               <div>
@@ -294,17 +303,37 @@ export function subscriptionDraftIsDirty(
     status: PlatformGymDetail["controls"]["status"] | undefined;
     plan: PlatformGymDetail["controls"]["plan"] | undefined;
     billingInterval: BillingInterval;
+    currentPeriodEndsAt: string;
     isPublic: boolean;
   },
 ): boolean {
   return draft.status !== detail.controls.status
     || draft.plan !== detail.controls.plan
     || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval)
+    || draft.currentPeriodEndsAt !== readDateInput(detail.subscription.currentPeriodEndsAt)
     || draft.isPublic !== detail.controls.isPublic;
+}
+
+function subscriptionMaterialChange(
+  detail: PlatformGymDetail,
+  draft: Pick<Parameters<typeof subscriptionDraftIsDirty>[1], "status" | "plan" | "billingInterval">,
+): boolean {
+  return draft.status !== detail.controls.status
+    || draft.plan !== detail.controls.plan
+    || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval);
 }
 
 function readBillingInterval(field: PlatformGymDetail["subscription"]["billingInterval"]): BillingInterval {
   return field?.state === "available" ? field.value : "monthly";
+}
+
+function readDateInput(field: PlatformData<string>): string {
+  return field.state === "available" ? field.value.slice(0, 10) : "";
+}
+
+function dateInputToIso(value: string): string | undefined {
+  if (!value) return undefined;
+  return `${value}T23:59:59.999Z`;
 }
 
 function billingIntervalLabel(value: BillingInterval): string {

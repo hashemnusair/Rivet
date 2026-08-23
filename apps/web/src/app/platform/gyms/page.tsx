@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
 import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { Button } from "@/components/ui/button";
+import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -146,9 +147,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
   return (
     <article aria-labelledby={titleId} className="group border border-line bg-surface p-5 transition-all hover:-translate-y-0.5 hover:border-ink hover:shadow-pop">
       <div className="flex items-start justify-between gap-4">
-        <span className="flex size-12 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-white" style={{ backgroundColor: gym.accent }} aria-hidden>
-          {gym.shortName.slice(0, 3)}
-        </span>
+        <PlatformGymLogo name={gym.name} shortName={gym.shortName} accent={gym.accent} logoUrl={gym.logoUrl} />
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
           <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[.1em] ${status.className}`} aria-label={`Subscription status: ${status.label}`}>{status.label}</span>
         </div>

@@ -69,16 +69,9 @@ describe("PlatformOverviewPage", () => {
     expect(screen.queryByText("Marketplace views")).not.toBeInTheDocument();
     expect(screen.queryByText("Historical marketing preference migration")).not.toBeInTheDocument();
     expect(screen.queryByText("Payment provider: Not configured")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Operator queue" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No persisted application, billing, provisioning, or support issues need attention.")).not.toBeInTheDocument();
     const gymLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("href")?.startsWith("/platform/gyms/") === true);
     expect(gymLinks.map((link) => link.getAttribute("href"))).toEqual(["/platform/gyms/tenant-live"]);
-  });
-
-  it("deep-links invoice queue items to their ledger row", () => {
-    state.snapshot = snapshot();
-    state.snapshot.overview.operatorQueue = [{ id: "invoice:INV-42", severity: "danger", title: "Platform invoice needs attention", detail: "Suspended Tenant · JOD 149.000", href: "/platform/billing" }];
-
-    render(<PlatformOverviewPage />);
-
-    expect(screen.getByRole("link", { name: /Platform invoice needs attention/ })).toHaveAttribute("href", "/platform/billing?invoice=INV-42");
   });
 });

@@ -16,8 +16,13 @@ import { TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 
 export default function MembershipsPage() {
+  return <WorkspaceModuleBoundary moduleKey="revenue"><MembershipsWorkspace /></WorkspaceModuleBoundary>;
+}
+
+function MembershipsWorkspace() {
   const { session } = useApp();
   const router = useRouter();
   const [search, setSearch] = useState("");

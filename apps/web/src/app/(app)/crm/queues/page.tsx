@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
+import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 
 type RenewalBucket = "expiring" | "expired";
 
@@ -26,6 +27,10 @@ const BUCKETS: Array<{ value: RenewalBucket; label: string; hint: string }> = [
 ];
 
 export default function QueuesPage() {
+  return <WorkspaceModuleBoundary moduleKey="revenue"><RenewalQueuePage /></WorkspaceModuleBoundary>;
+}
+
+function RenewalQueuePage() {
   const { session } = useApp();
   const [bucket, setBucket] = useState<RenewalBucket>("expiring");
   const [days, setDays] = useState("14");

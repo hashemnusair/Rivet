@@ -128,7 +128,7 @@ describe("ConvexGymOSApi contract boundary", () => {
     };
     const suspendedRow = { ...publicRow, id: "suspended-gym", subscriptionStatus: "suspended" as const };
     const hiddenRow = { ...publicRow, id: "hidden-gym", isPublic: false };
-    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, isProvisioned: false, isArchived: true, archivedAt: "2026-08-20T00:00:00.000Z", archiveReason: "retained" }, suspendedRow, hiddenRow] }));
+    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, logoUrl: "https://cdn.example/logo.png", isProvisioned: false, isArchived: true, archivedAt: "2026-08-20T00:00:00.000Z", archiveReason: "retained" }, suspendedRow, hiddenRow] }));
 
     const gyms = await api.listMarketplaceGyms();
     expect(gyms).toEqual([expect.objectContaining({ id: "live-gym", isPublic: true })]);
@@ -136,13 +136,14 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(gyms[0]).not.toHaveProperty("isArchived");
     expect(gyms[0]).not.toHaveProperty("archivedAt");
     expect(gyms[0]).not.toHaveProperty("archiveReason");
+    expect(gyms[0]).not.toHaveProperty("logoUrl");
   });
 
   it("keeps provisioning metadata on platform snapshots while stripping it from public rows", async () => {
-    const platformSnapshot = { gyms: [{ id: "legacy-gym", isProvisioned: false }], bookings: [], invoices: [], supportCases: [], plans: [], applications: [], auditEvents: [], overview: {} };
+    const platformSnapshot = { gyms: [{ id: "legacy-gym", isProvisioned: false, logoUrl: "https://cdn.example/logo.png" }], bookings: [], invoices: [], supportCases: [], plans: [], applications: [], auditEvents: [], overview: {} };
     const api = new ConvexGymOSApi(transportFor({ query: platformSnapshot }));
 
-    await expect(api.getPlatformSnapshot()).resolves.toMatchObject({ gyms: [{ id: "legacy-gym", isProvisioned: false }] });
+    await expect(api.getPlatformSnapshot()).resolves.toMatchObject({ gyms: [{ id: "legacy-gym", isProvisioned: false, logoUrl: "https://cdn.example/logo.png" }] });
   });
 
   it("applies the same visibility contract to live marketplace updates", async () => {
@@ -507,8 +508,8 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
-    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", isPublic: false } });
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: false } });
   });
 
   it("keeps SaaS catalog edits behind the platform mutation boundary", async () => {
@@ -526,6 +527,8 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.archivePlatformGym({ gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." })).resolves.toBeUndefined();
     expect(calls[0]).toMatchObject({ operation: "platform.gym.archive", input: { gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." } });
+    expect(calls[0]).not.toHaveProperty("organizationId");
+    expect(calls[0]).not.toHaveProperty("activeBranchId");
   });
 
   it("carries the Enterprise tier through the live adapter boundary", async () => {

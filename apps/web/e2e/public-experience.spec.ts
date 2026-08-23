@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+function isoDateFromToday(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus) return;
   const currentUrl = new URL(page.url());
@@ -244,6 +250,7 @@ test.describe("RIVET platform administration", () => {
 
     await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Suspend", exact: true }).click();
+    await page.getByLabel("Membership end date").fill(isoDateFromToday(45));
     await page.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
     await page.getByRole("button", { name: "Save controls", exact: true }).click();
 
