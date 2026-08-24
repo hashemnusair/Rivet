@@ -2217,7 +2217,10 @@ export class MockGymOSApi implements GymOSApi {
       customer: sale.customer,
       amount: { ...sale.total },
       method: sale.method,
-      status: "completed",
+      status: sale.status,
+      refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
       receiptId: sale.receiptId,
       receiptNumber: sale.receiptNumber,
       collectedById: sale.createdById,
@@ -4890,7 +4893,7 @@ export class MockGymOSApi implements GymOSApi {
       if (method === "cash" && !shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before checking out cash sales.");
       const now = nowISO();
       const receiptNumber = this.nextReceiptNumber();
-      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency) })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now };
+      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency) })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), status: "completed", refundedAmount: money(0, this.db.organization.currency), returnedLines: [], method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now, updatedAt: now };
       const receipt: T.Receipt = { id: sale.receiptId, receiptNumber, paymentId: `retail-payment-${sale.id}`, retailSaleId: sale.id, issuedAt: now };
       const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer, amount: money(totalMinor, this.db.organization.currency), method, status: "completed", receiptId: receipt.id, receiptNumber, collectedById: this.actor().id, collectedByName: this.actor().name, shiftId: shift?.id, externalReference, idempotencyKey, occurredAt: now };
       this.db.retailSales.push(sale);
@@ -4908,6 +4911,89 @@ export class MockGymOSApi implements GymOSApi {
       const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
       this.operationsIdempotency.set(`retail_checkout:${idempotencyKey}`, { signature, result: detail });
       return detail;
+    });
+  }
+
+  refundRetailSale(saleId: T.UUID, input: T.RefundRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.refund");
+      const reason = input.reason.trim();
+      if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required for retail refunds.");
+      const signature = JSON.stringify({ saleId, lines: input.lines, reason });
+      const replay = this.operationsIdempotent("retail_refund", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
+      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      if (sale.status === "voided" || sale.status === "refunded") throw ApiError.of(ERR.CONFLICT, "This retail sale can no longer be refunded.");
+      if (!input.lines.length) throw ApiError.of(ERR.VALIDATION, "Choose at least one sold item to refund.");
+      const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
+      const seen = new Set<string>();
+      let refundMinor = 0;
+      for (const line of input.lines) {
+        const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+        if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Refund lines must be unique sold products with positive whole quantities.");
+        seen.add(line.productId);
+        if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) throw ApiError.of(ERR.CONFLICT, `${sold.productName} exceeds the remaining refundable quantity.`);
+        refundMinor += sold.unitPrice.amount * line.quantity;
+      }
+      const now = nowISO();
+      for (const line of input.lines) {
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const product = this.db.products.find((candidate) => candidate.id === line.productId)!;
+        if (!balance) throw ApiError.of(ERR.NOT_FOUND, "Inventory balance not found.");
+        balance.quantityOnHand += line.quantity;
+        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+        balance.lastMovementAt = now;
+        balance.updatedAt = now;
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId: line.productId, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product.defaultUnitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${line.productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        returned.set(line.productId, (returned.get(line.productId) ?? 0) + line.quantity);
+      }
+      sale.returnedLines = [...returned].map(([productId, quantity]) => ({ productId, quantity }));
+      sale.refundedAmount = money((sale.refundedAmount?.amount ?? 0) + refundMinor, sale.total.currency);
+      sale.refundReason = reason;
+      sale.status = sale.refundedAmount.amount >= sale.total.amount ? "refunded" : "partially_refunded";
+      sale.updatedAt = now;
+      this.audit({ category: "payments", action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Refunded JOD ${(refundMinor / 1000).toFixed(3)} from retail sale`, reason, after: { status: sale.status, refunded: sale.refundedAmount.amount }, branchId: sale.branchId });
+      const result = this.getReceiptSync(sale.receiptId) as T.ReceiptDetail & { retailSale: T.RetailSale };
+      this.operationsIdempotency.set(`retail_refund:${input.idempotencyKey}`, { signature, result });
+      return result;
+    });
+  }
+
+  voidRetailSale(saleId: T.UUID, input: T.VoidRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.void");
+      const reason = input.reason.trim();
+      if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required to void a retail sale.");
+      const signature = JSON.stringify({ saleId, reason });
+      const replay = this.operationsIdempotent("retail_void", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
+      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      if (sale.status !== "completed") throw ApiError.of(ERR.CONFLICT, "Only an unadjusted retail sale can be voided.");
+      if (todayISODate(TZ, new Date(sale.createdAt)) !== this.today()) throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Retail sales can only be voided on the same business day. Issue a refund instead.");
+      const now = nowISO();
+      for (const line of sale.lines) {
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const product = this.db.products.find((candidate) => candidate.id === line.productId)!;
+        if (!balance) throw ApiError.of(ERR.NOT_FOUND, "Inventory balance not found.");
+        balance.quantityOnHand += line.quantity;
+        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+        balance.lastMovementAt = now;
+        balance.updatedAt = now;
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId: line.productId, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product.defaultUnitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${line.productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+      }
+      sale.status = "voided";
+      sale.returnedLines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
+      sale.voidReason = reason;
+      sale.voidedAt = now;
+      sale.updatedAt = now;
+      this.audit({ category: "payments", action: "operations.retail_sale.void", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Voided retail sale ${sale.receiptNumber}`, reason, after: { status: "voided" }, branchId: sale.branchId });
+      const result = this.getReceiptSync(sale.receiptId) as T.ReceiptDetail & { retailSale: T.RetailSale };
+      this.operationsIdempotency.set(`retail_void:${input.idempotencyKey}`, { signature, result });
+      return result;
     });
   }
 
@@ -5103,7 +5189,7 @@ export class MockGymOSApi implements GymOSApi {
       const branch = this.db.branches.find((b) => b.id === sale.branchId);
       if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
-      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: "completed", receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
+      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: sale.status, refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined, refundReason: sale.refundReason, voidReason: sale.voidReason, receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
       return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: [] };
     }
     const payment = this.db.payments.find((p) => p.id === receipt.paymentId)!;

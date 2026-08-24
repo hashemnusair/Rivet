@@ -62,6 +62,10 @@ function iso(timestamp: number): string {
   return new Date(timestamp).toISOString();
 }
 
+function businessDate(timestamp: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(timestamp));
+}
+
 function money(minor: number | undefined, currency: string | undefined): Data | undefined {
   return minor === undefined || currency === undefined ? undefined : { amount: minor, currency };
 }
@@ -487,6 +491,12 @@ function retailSaleView(sale: Doc<"retailSales">, organizationId: string, branch
     })),
     subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
     total: { amount: sale.totalMinor, currency: sale.currency },
+    status: sale.status,
+    refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+    returnedLines: sale.returnedLines,
+    refundReason: sale.refundReason,
+    voidReason: sale.voidReason,
+    voidedAt: sale.voidedAt ? iso(sale.voidedAt) : undefined,
     method: sale.method,
     externalReference: sale.externalReference,
     shiftId: sale.shiftId,
@@ -494,6 +504,7 @@ function retailSaleView(sale: Doc<"retailSales">, organizationId: string, branch
     createdById: sale.createdByPublicId,
     createdByName: sale.createdByName,
     createdAt: iso(sale.createdAt),
+    updatedAt: iso(sale.updatedAt),
   };
 }
 
@@ -513,7 +524,10 @@ function retailReceiptDetail(
     customer,
     amount: { amount: sale.totalMinor, currency: sale.currency },
     method: sale.method,
-    status: "completed",
+    status: sale.status,
+    refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+    refundReason: sale.refundReason,
+    voidReason: sale.voidReason,
     receiptId: sale.receiptId,
     receiptNumber: sale.receiptNumber,
     collectedById: sale.createdByPublicId,
@@ -631,6 +645,9 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     subtotalMinor: totalMinor,
     totalMinor,
     currency: actor.organization.currency,
+    status: "completed",
+    refundedMinor: 0,
+    returnedLines: [],
     method,
     externalReference,
     shiftId,
@@ -639,6 +656,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     createdByPublicId: publicUserId(actor.user),
     createdByName: actor.user.fullName,
     createdAt: now,
+    updatedAt: now,
   });
   const receiptData = { id: receipt.id, receiptNumber: receipt.number, paymentId: `retail-payment-${saleId}`, retailSaleId: saleId, issuedAt: iso(now) };
   await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "receipt", publicId: receipt.id, branchId: branch._id, memberPublicId: memberRecord?.publicId, createdAt: now, updatedAt: now, data: { ...receiptData, organizationId: publicOrganizationId(actor.organization) } });
@@ -690,6 +708,129 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   const organization = { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 };
   const result = retailReceiptDetail(storedSale, receiptData, organization, branch, actor);
   await saveIdempotentResult(ctx, actor, "operations.retail.checkout", idempotencyKey, requestHash, result);
+  return result;
+}
+
+async function retailSaleForMutation(ctx: MutationCtx, actor: ActorContext, saleId: string): Promise<{ sale: Doc<"retailSales">; branch: Branch }> {
+  const sale = await ctx.db.query("retailSales").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", saleId)).unique();
+  if (!sale) domainError("NOT_FOUND", "Retail sale not found.", { correlationId: actor.correlationId });
+  const branch = await ctx.db.get(sale.branchId);
+  if (!branch) domainError("NOT_FOUND", "Retail sale branch not found.", { correlationId: actor.correlationId });
+  assertBranchAccess(actor, branch);
+  return { sale, branch };
+}
+
+async function originalRetailReceipt(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">): Promise<Data> {
+  const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "receipt").eq("publicId", sale.receiptId)).unique();
+  if (!row) domainError("NOT_FOUND", "Retail receipt not found.", { correlationId: actor.correlationId });
+  return value(row.data);
+}
+
+async function patchRetailPayment(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">, patch: Data): Promise<void> {
+  const paymentId = `retail-payment-${sale.publicId}`;
+  const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "payment").eq("publicId", paymentId)).unique();
+  if (!row) domainError("NOT_FOUND", "Retail payment fact not found.", { correlationId: actor.correlationId });
+  await ctx.db.patch(row._id, { data: { ...value(row.data), ...patch }, updatedAt: Date.now() });
+}
+
+async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">, branch: Branch, lines: Array<{ productId: string; quantity: number }>, reason: string, idempotencyKey: string, referenceType: "retail_refund" | "retail_void"): Promise<void> {
+  for (const line of lines) {
+    const product = await productByPublicId(ctx, actor, line.productId);
+    await recordMovementInternal(ctx, actor, {
+      branch,
+      product,
+      type: "return",
+      quantity: line.quantity,
+      unitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency) as { amount: number; currency: string } | undefined,
+      reason,
+      referenceType,
+      referenceId: sale.publicId,
+      idempotencyKey: `${idempotencyKey}:${product.publicId}`,
+      financialPostingStatus: "not_posted",
+    });
+  }
+}
+
+async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requirePermission(actor, "payments.refund");
+  const reason = optionalText(input.reason);
+  requireReason(reason, actor.correlationId);
+  const idempotencyKey = optionalText(input.idempotencyKey);
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  const rawLines = Array.isArray(input.lines) ? input.lines : [];
+  const lines = rawLines.map((raw) => ({ productId: optionalText(value(raw).productId) ?? "", quantity: integer(value(raw).quantity, Number.NaN) })).sort((a, b) => a.productId.localeCompare(b.productId));
+  const saleId = optionalText(input.saleId) ?? "";
+  const requestHash = JSON.stringify({ saleId, lines, reason });
+  const replay = await idempotentResult(ctx, actor, "operations.retail.refund", idempotencyKey, requestHash);
+  if (replay) return replay;
+  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
+  if (sale.status === "voided") domainError("CONFLICT", "Voided retail sales cannot be refunded.", { correlationId: actor.correlationId });
+  if (sale.status === "refunded") domainError("CONFLICT", "This retail sale is already fully refunded.", { correlationId: actor.correlationId });
+  if (lines.length === 0 || lines.length > sale.lines.length) domainError("VALIDATION_ERROR", "Choose at least one sold item to refund.", { correlationId: actor.correlationId });
+  const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
+  const seen = new Set<string>();
+  let refundMinor = 0;
+  for (const line of lines) {
+    const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+    if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) domainError("VALIDATION_ERROR", "Refund lines must be unique sold products with positive whole quantities.", { correlationId: actor.correlationId });
+    seen.add(line.productId);
+    if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) domainError("CONFLICT", `${sold.productName} exceeds the remaining refundable quantity.`, { correlationId: actor.correlationId });
+    refundMinor += sold.unitPriceMinor * line.quantity;
+  }
+  const now = Date.now();
+  const refundedMinor = (sale.refundedMinor ?? 0) + refundMinor;
+  const nextReturned = [...returned.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+  for (const line of lines) {
+    const existing = nextReturned.find((candidate) => candidate.productId === line.productId);
+    if (existing) existing.quantity += line.quantity;
+    else nextReturned.push({ ...line });
+  }
+  const status = refundedMinor >= sale.totalMinor ? "refunded" as const : "partially_refunded" as const;
+  await restoreRetailStock(ctx, actor, sale, branch, lines, reason!, idempotencyKey, "retail_refund");
+  await ctx.db.patch(sale._id, { status, refundedMinor, returnedLines: nextReturned, refundReason: reason, updatedAt: now });
+  await patchRetailPayment(ctx, actor, sale, { status, refundedAmount: { amount: refundedMinor, currency: sale.currency }, refundReason: reason });
+
+  const refundReceipt = await allocateRetailReceipt(ctx, actor);
+  const refundPaymentId = `retail-refund-${crypto.randomUUID()}`;
+  const openShift = await openCashShiftForBranch(ctx, actor, branch);
+  const refundReceiptData = { id: refundReceipt.id, receiptNumber: refundReceipt.number, paymentId: refundPaymentId, retailSaleId: sale.publicId, issuedAt: iso(now) };
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "receipt", publicId: refundReceipt.id, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { ...refundReceiptData, organizationId: publicOrganizationId(actor.organization) } });
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "payment", publicId: refundPaymentId, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { id: refundPaymentId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), memberId: sale.memberId, customer: sale.customer, type: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", receiptId: refundReceipt.id, receiptNumber: refundReceipt.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: openShift ? String(value(openShift.data).id) : undefined, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, retailSaleId: sale.publicId, refundReason: reason, occurredAt: iso(now) } });
+  await audit(ctx, actor, { action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.publicId, entityLabel: sale.receiptNumber, summary: `Refunded ${sale.currency} ${(refundMinor / 1000).toFixed(3)} from retail sale ${sale.receiptNumber}`, reason, before: { status: sale.status, refundedMinor: sale.refundedMinor ?? 0 }, after: { status, refundedMinor, returnedLines: nextReturned }, branchId: publicBranchId(branch) });
+  const updated = await ctx.db.get(sale._id);
+  if (!updated) domainError("NOT_FOUND", "Retail sale could not be loaded after refund.", { correlationId: actor.correlationId });
+  const result = retailReceiptDetail(updated, await originalRetailReceipt(ctx, actor, updated), { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 }, branch, actor);
+  await saveIdempotentResult(ctx, actor, "operations.retail.refund", idempotencyKey, requestHash, result);
+  return result;
+}
+
+async function voidRetailSale(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requirePermission(actor, "payments.void");
+  const reason = optionalText(input.reason);
+  requireReason(reason, actor.correlationId);
+  const idempotencyKey = optionalText(input.idempotencyKey);
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  const saleId = optionalText(input.saleId) ?? "";
+  const requestHash = JSON.stringify({ saleId, reason });
+  const replay = await idempotentResult(ctx, actor, "operations.retail.void", idempotencyKey, requestHash);
+  if (replay) return replay;
+  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
+  if (sale.status === "voided") domainError("CONFLICT", "This retail sale is already voided.", { correlationId: actor.correlationId });
+  if ((sale.refundedMinor ?? 0) > 0) domainError("CONFLICT", "A partially refunded retail sale cannot be voided.", { correlationId: actor.correlationId });
+  const timeZone = actor.organization.timezone || "Asia/Amman";
+  if (businessDate(sale.createdAt, timeZone) !== businessDate(Date.now(), timeZone)) domainError("CONFLICT", "Retail sales can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
+  const lines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
+  await restoreRetailStock(ctx, actor, sale, branch, lines, reason!, idempotencyKey, "retail_void");
+  const now = Date.now();
+  await ctx.db.patch(sale._id, { status: "voided", returnedLines: lines, voidReason: reason, voidedAt: now, updatedAt: now });
+  await patchRetailPayment(ctx, actor, sale, { status: "voided", voidReason: reason });
+  await audit(ctx, actor, { action: "operations.retail_sale.void", entityType: "retail_sale", entityId: sale.publicId, entityLabel: sale.receiptNumber, summary: `Voided retail sale ${sale.receiptNumber}`, reason, before: { status: sale.status }, after: { status: "voided", returnedLines: lines }, branchId: publicBranchId(branch) });
+  const updated = await ctx.db.get(sale._id);
+  if (!updated) domainError("NOT_FOUND", "Retail sale could not be loaded after void.", { correlationId: actor.correlationId });
+  const result = retailReceiptDetail(updated, await originalRetailReceipt(ctx, actor, updated), { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 }, branch, actor);
+  await saveIdempotentResult(ctx, actor, "operations.retail.void", idempotencyKey, requestHash, result);
   return result;
 }
 
@@ -1293,6 +1434,8 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.supplier.archive": return await archiveSupplier(ctx, actor, input);
     case "operations.stock_movement.record": return await recordStockMovement(ctx, actor, input);
     case "operations.retail.checkout": return await retailCheckout(ctx, actor, input);
+    case "operations.retail.refund": return await refundRetailSale(ctx, actor, input);
+    case "operations.retail.void": return await voidRetailSale(ctx, actor, input);
     case "operations.low_stock.refresh": return await refreshLowStockAlerts(ctx, actor, input);
     case "operations.low_stock.dismiss": return await dismissLowStockAlert(ctx, actor, input);
     case "operations.purchase_order.create": return await createPurchaseOrder(ctx, actor, input);

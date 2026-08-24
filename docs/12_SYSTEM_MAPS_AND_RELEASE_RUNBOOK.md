@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-23 after the four-tier Production release and
-unavailable-owner login recovery.
+Last reviewed: 2026-08-24 for the subscription and retail release-safety
+candidate.
 
 ## Purpose
 
@@ -15,6 +15,18 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current release posture
+
+- A 24 August release candidate adds a default-off platform-subscription
+  reconciliation gate, aggregate-only Production preview, and reason-gated
+  retail refund/void recovery with stock and accounting reversal facts. It has
+  not yet been deployed. Keep the gate absent during deployment, run
+  `subscriptionReconciliation.preview`, confirm
+  `subscriptionReconciliation.reconcile` reports `enabled: false`, then run
+  `health:check` before any enablement decision.
+- Credential-free Playwright preview journeys are restored to ordinary CI.
+  Local evidence for this candidate is 31 passed, 14 credential-gated staging
+  skips, and zero failures; the paused GT toggle expectation now truthfully
+  preserves only manual RTL coverage until the final localization pass.
 
 - The application is a release candidate, not a blank scaffold. Current
   application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
@@ -414,6 +426,7 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_APPLICATION_RECIPIENTS` | — | — | — | Partner recipient list | — |
 | `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Global kill switch; default `false` | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
+| `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |

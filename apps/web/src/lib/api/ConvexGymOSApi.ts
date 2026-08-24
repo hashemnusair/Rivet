@@ -494,6 +494,8 @@ export class ConvexGymOSApi implements GymOSApi {
   voidPayment(paymentId: T.UUID, input: T.VoidPaymentInput): Promise<T.ReceiptDetail> { return this.mutate("payments.void", { paymentId, ...input }); }
   getReceipt(receiptId: T.UUID): Promise<T.ReceiptDetail> { return this.query("receipts.get", { receiptId }); }
   checkoutRetail(input: T.RetailCheckoutInput): Promise<T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale }> { return this.mutate("operations.retail.checkout", input); }
+  refundRetailSale(saleId: T.UUID, input: T.RefundRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> { return this.mutate("operations.retail.refund", { saleId, ...input }); }
+  voidRetailSale(saleId: T.UUID, input: T.VoidRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> { return this.mutate("operations.retail.void", { saleId, ...input }); }
   openCashShift(input: T.OpenCashShiftInput): Promise<T.CashShift> { return this.mutate("shifts.open", input); }
   async getCurrentCashShift(branchId: T.UUID): Promise<T.CashShift | null> {
     const current = await this.query<{ shift: T.CashShift; totals: T.ShiftTotals } | null>("shifts.current", { branchId });

@@ -1,5 +1,36 @@
 # GymOS / RIVET current implementation state
 
+## Subscription and retail release-safety candidate — 24 August 2026
+
+- The hourly platform-subscription reconciliation is now explicitly disabled
+  unless the Convex deployment sets
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Missing values perform zero
+  writes. The internal `subscriptionReconciliation.preview` query remains
+  read-only and returns only aggregate invoice, past-due, suspension, and
+  boundary counts so an operator can inspect Production impact before enabling
+  the automation. Active subscriptions now prefer their paid-period boundary
+  instead of a stale trial end.
+- Retail receipts now support permission- and reason-gated item refunds and
+  same-business-day voids. Refund quantities cannot exceed the sold/remaining
+  quantity; both paths restore stock with durable return movements, update the
+  original retail payment lifecycle, create the appropriate negative refund
+  accounting fact, and append audit evidence. The receipt UI exposes remaining
+  item quantities, totals, pending/error states, and the current lifecycle.
+- The paused General Translation provider is no longer contradicted by browser
+  coverage: Playwright asserts that the GT locale toggle is absent while still
+  exercising the shell's manual RTL layout. Credential-free preview Playwright
+  is restored as a required GitHub Actions job. The local server port can be
+  overridden with `PLAYWRIGHT_PORT` without reusing an unrelated process.
+- Local evidence: frontend and Convex typechecks, zero-warning lint and
+  secret-output audit, **131 test files / 732 tests**, the 47-route Production
+  build, and Playwright (**31 passed / 14 credential-gated staging journeys
+  skipped / 0 failed**) passed. The UI detector reported no findings.
+- Production has not yet received this candidate. The reconciliation flag must
+  remain absent/default-off during exact-target dry run and deploy; only after
+  deploy should the aggregate preview, disabled mutation response, health
+  check, and authenticated browser paths be verified. Arabic/GT activation and
+  measured performance optimization remain deferred to the final pass.
+
 ## Retail checkout and Operations workflow — 24 August 2026 (working-tree update)
 
 - Operations now has a transactional retail checkout at
@@ -33,9 +64,9 @@
   Vercel deploy is claimed here.
 
 Known scope: payments are manual and no external provider is connected;
-retail refunds/voids are not implemented yet; deleting a product archives it
-rather than physically removing history; and the replenishment quantity still
-requires operator confirmation after the alert projection.
+deleting a product archives it rather than physically removing history; and
+the replenishment quantity still requires operator confirmation after the
+alert projection.
 
 ## Admin interaction, Brand Kit, and translation integration — 24 August 2026 (working-tree update)
 

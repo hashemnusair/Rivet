@@ -4,6 +4,8 @@ const convexBrowserMode =
   process.env.PLAYWRIGHT_CONVEX_SMOKE === "1" ||
   process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW === "1" ||
   process.env.PLAYWRIGHT_STAGING_FULL_SUITE === "1";
+const playwrightPort = process.env.PLAYWRIGHT_PORT ?? "3100";
+const playwrightBaseUrl = `http://localhost:${playwrightPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +18,7 @@ export default defineConfig({
   // time to observe that first navigation instead of passing only on retry.
   expect: { timeout: 15_000 },
   use: {
-    baseURL: "http://localhost:3100",
+    baseURL: playwrightBaseUrl,
     storageState: process.env.PLAYWRIGHT_CLERK_STORAGE_STATE || undefined,
     viewport: { width: 1440, height: 900 },
     locale: "en-US",
@@ -25,8 +27,8 @@ export default defineConfig({
     // Use the lockfile-installed binary directly. This keeps browser tests
     // hermetic when Corepack has a newer pnpm available than the workspace
     // node_modules metadata and avoids an unnecessary registry lookup.
-    command: "./node_modules/.bin/next dev --webpack -p 3100",
-    url: "http://localhost:3100/login",
+    command: `./node_modules/.bin/next dev --webpack -p ${playwrightPort}`,
+    url: `${playwrightBaseUrl}/login`,
     // Browser tests exercise the seeded preview personas. Real local and
     // deployed sessions always go through Clerk before this chooser appears.
     env: {

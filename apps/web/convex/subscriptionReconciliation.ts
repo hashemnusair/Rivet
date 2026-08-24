@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
 
@@ -18,6 +18,62 @@ const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = {
 };
 const SYSTEM_AUDIT_ACTOR_PUBLIC_ID = "system:subscription-reconciliation";
 const SYSTEM_AUDIT_ACTOR_NAME = "RIVET billing automation";
+const RECONCILIATION_ENABLED_ENV = "RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED";
+
+function reconciliationEnabled(): boolean {
+  return process.env[RECONCILIATION_ENABLED_ENV] === "1";
+}
+
+function subscriptionBoundary(organization: Doc<"organizations">): number | undefined {
+  // Once a trial has ended, the paid period boundary is authoritative. This
+  // avoids reconciling an old trial boundary for an active organization.
+  const boundary = organization.status === "trial"
+    ? organization.trialEndsAt
+    : organization.currentPeriodEndsAt ?? organization.trialEndsAt;
+  return boundary !== undefined && Number.isFinite(boundary) ? boundary : undefined;
+}
+
+type ReconciliationDecision = {
+  boundary: number;
+  cycleKey: string;
+  invoiceRow?: Doc<"domainRecords">;
+  shouldCreate: boolean;
+  shouldMarkPastDue: boolean;
+  shouldSuspend: boolean;
+};
+
+async function reconciliationDecision(
+  ctx: Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">,
+  organization: Doc<"organizations">,
+  now: number,
+): Promise<ReconciliationDecision | undefined> {
+  if (!["trial", "active", "past_due"].includes(organization.status)) return undefined;
+  const boundary = subscriptionBoundary(organization);
+  if (boundary === undefined) return undefined;
+  const interval = intervalOf(organization.billingInterval);
+  const cycleKey = `subscription:${publicId(organization)}:${interval}:${boundary}`;
+  const invoiceRows = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice"))
+    .collect();
+  const invoiceRow = invoiceRows.find((row) => {
+    const data = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data as Record<string, unknown> : {};
+    return data.cycleKey === cycleKey;
+  });
+  const invoice = invoiceRow?.data && typeof invoiceRow.data === "object" && !Array.isArray(invoiceRow.data)
+    ? invoiceRow.data as Record<string, unknown>
+    : undefined;
+  const currentStatus = invoice ? String(invoice.status) : undefined;
+  const shouldCreate = !invoiceRow && now >= boundary - INVOICE_LEAD_DAYS * DAY_MS;
+  const shouldMarkPastDue = now >= boundary && (shouldCreate || currentStatus === "draft" || currentStatus === "open");
+  const effectiveStatus = shouldMarkPastDue ? "past_due" : currentStatus;
+  const shouldSuspend = now >= boundary + PAYMENT_GRACE_DAYS * DAY_MS
+    && (shouldCreate || Boolean(invoiceRow))
+    && !["paid", "void"].includes(String(effectiveStatus))
+    && organization.status !== "suspended"
+    && organization.status !== "cancelled";
+  return { boundary, cycleKey, invoiceRow, shouldCreate, shouldMarkPastDue, shouldSuspend };
+}
 
 type SystemAuditInput = {
   action: string;
@@ -134,26 +190,18 @@ async function queuePlatformEmail(ctx: MutationCtx, input: {
 }
 
 async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organizations">, now: number, planPrices: Map<string, number>): Promise<{ invoiceCreated: boolean; markedPastDue: boolean; suspended: boolean }> {
-  if (!["trial", "active", "past_due"].includes(organization.status)) return { invoiceCreated: false, markedPastDue: false, suspended: false };
-  // Keep the original trial boundary available after the status moves to
-  // past_due; payment during grace must still settle that same cycle.
-  const boundary = organization.trialEndsAt ?? organization.currentPeriodEndsAt;
-  if (boundary === undefined || !Number.isFinite(boundary)) return { invoiceCreated: false, markedPastDue: false, suspended: false };
+  const decision = await reconciliationDecision(ctx, organization, now);
+  if (!decision) return { invoiceCreated: false, markedPastDue: false, suspended: false };
+  const { boundary, cycleKey } = decision;
   const interval = intervalOf(organization.billingInterval);
   const periodEnd = addInterval(boundary, interval);
   const orgPublicId = publicId(organization);
-  const cycleKey = `subscription:${orgPublicId}:${interval}:${boundary}`;
   const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
   const listingData = listing && listing.data && typeof listing.data === "object" && !Array.isArray(listing.data) ? listing.data as Record<string, unknown> : {};
-  const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
-  let invoiceRow = invoiceRows.find((row) => {
-    const data = (row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data : {}) as Record<string, unknown>;
-    return data.cycleKey === cycleKey;
-  });
-  const shouldCreate = now >= boundary - INVOICE_LEAD_DAYS * DAY_MS;
+  let invoiceRow = decision.invoiceRow;
   let invoiceCreated = false;
   const recipient = await ownerRecipient(ctx, organization._id);
-  if (shouldCreate && !invoiceRow) {
+  if (decision.shouldCreate && !invoiceRow) {
     const plan = planPrice({ subscriptionPlan: organization.subscriptionPlan }, planPrices);
     const amountMinor = interval === "annual" ? annualPrice(plan) : plan;
     const invoiceId = `INV-${crypto.randomUUID()}`;
@@ -266,8 +314,11 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
  */
 export const reconcile = internalMutation({
   args: { now: v.optional(v.number()) },
-  returns: v.object({ processed: v.number(), invoicesCreated: v.number(), markedPastDue: v.number(), suspended: v.number() }),
+  returns: v.object({ enabled: v.boolean(), processed: v.number(), invoicesCreated: v.number(), markedPastDue: v.number(), suspended: v.number() }),
   handler: async (ctx, args) => {
+    if (!reconciliationEnabled()) {
+      return { enabled: false, processed: 0, invoicesCreated: 0, markedPastDue: 0, suspended: 0 };
+    }
     const now = args.now ?? Date.now();
     const planRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
     const planPrices = new Map<string, number>();
@@ -285,6 +336,55 @@ export const reconcile = internalMutation({
       if (result.markedPastDue) markedPastDue += 1;
       if (result.suspended) suspended += 1;
     }
-    return { processed: organizations.length, invoicesCreated, markedPastDue, suspended };
+    return { enabled: true, processed: organizations.length, invoicesCreated, markedPastDue, suspended };
+  },
+});
+
+/**
+ * Read-only aggregate preview for operators. It intentionally returns counts
+ * and boundary timestamps only: no tenant names, invoice identifiers, or
+ * customer data are exposed through release diagnostics.
+ */
+export const preview = internalQuery({
+  args: { now: v.optional(v.number()) },
+  returns: v.object({
+    enabled: v.boolean(),
+    processed: v.number(),
+    eligible: v.number(),
+    invoicesToCreate: v.number(),
+    invoicesToMarkPastDue: v.number(),
+    organizationsToSuspend: v.number(),
+    earliestBoundary: v.optional(v.number()),
+    latestBoundary: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now();
+    const organizations = await ctx.db.query("organizations").collect();
+    let eligible = 0;
+    let invoicesToCreate = 0;
+    let invoicesToMarkPastDue = 0;
+    let organizationsToSuspend = 0;
+    let earliestBoundary: number | undefined;
+    let latestBoundary: number | undefined;
+    for (const organization of organizations) {
+      const decision = await reconciliationDecision(ctx, organization, now);
+      if (!decision) continue;
+      eligible += 1;
+      if (decision.shouldCreate) invoicesToCreate += 1;
+      if (decision.shouldMarkPastDue) invoicesToMarkPastDue += 1;
+      if (decision.shouldSuspend) organizationsToSuspend += 1;
+      earliestBoundary = earliestBoundary === undefined ? decision.boundary : Math.min(earliestBoundary, decision.boundary);
+      latestBoundary = latestBoundary === undefined ? decision.boundary : Math.max(latestBoundary, decision.boundary);
+    }
+    return {
+      enabled: reconciliationEnabled(),
+      processed: organizations.length,
+      eligible,
+      invoicesToCreate,
+      invoicesToMarkPastDue,
+      organizationsToSuspend,
+      ...(earliestBoundary === undefined ? {} : { earliestBoundary }),
+      ...(latestBoundary === undefined ? {} : { latestBoundary }),
+    };
   },
 });

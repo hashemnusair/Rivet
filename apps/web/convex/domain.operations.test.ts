@@ -94,6 +94,33 @@ describe("daily operations typed contracts", () => {
     expect(inventory[0]?.availableQuantity).toBe(1);
   });
 
+  it("reason-gates retail refunds and voids while restoring stock and emitting reversal facts", async () => {
+    const { owner, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-RETURN", name: "Returnable item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 2_000, currency: "JOD" }, defaultUnitCost: { amount: 800, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 4, idempotencyKey: "return-opening" }));
+    const sale = await owner.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Return Guest", phone: "+962790000088" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "RETURN-CARD", idempotencyKey: "return-sale" })) as { retailSale: { id: string }; receiptId: string };
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "return-refund-invalid" })), "VALIDATION_ERROR");
+    const refunded = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned an unopened item", idempotencyKey: "return-refund" })) as { retailSale: { status: string; refundedAmount: { amount: number }; returnedLines: Array<{ quantity: number }> } };
+    expect(refunded.retailSale).toMatchObject({ status: "partially_refunded", refundedAmount: { amount: 2_000 }, returnedLines: [{ quantity: 1 }] });
+    const replay = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned an unopened item", idempotencyKey: "return-refund" })) as { retailSale: { refundedAmount: { amount: number } } };
+    expect(replay.retailSale.refundedAmount.amount).toBe(2_000);
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.retail.void", { saleId: sale.retailSale.id, reason: "Wrong sale", idempotencyKey: "return-void-blocked" })), "CONFLICT");
+
+    const voidSale = await owner.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Void Guest", phone: "+962790000089" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VOID-CARD", idempotencyKey: "void-sale" })) as { retailSale: { id: string } };
+    const voided = await owner.mutation(api.domain.mutate, operation("operations.retail.void", { saleId: voidSale.retailSale.id, reason: "Duplicate terminal entry", idempotencyKey: "void-sale-action" })) as { retailSale: { status: string; voidReason: string } };
+    expect(voided.retailSale).toMatchObject({ status: "voided", voidReason: "Duplicate terminal entry" });
+    const state = await t.run(async (ctx) => ({
+      balance: await ctx.db.query("inventoryBalances").first(),
+      returns: (await ctx.db.query("stockMovements").collect()).filter((movement) => movement.type === "return"),
+      payments: (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "payment")).collect()).map((row) => row.data),
+      audits: await ctx.db.query("auditEvents").collect(),
+    }));
+    expect(state.balance?.quantityOnHand).toBe(3);
+    expect(state.returns).toHaveLength(2);
+    expect(state.payments).toEqual(expect.arrayContaining([expect.objectContaining({ type: "refund", amount: expect.objectContaining({ amount: -2_000 }), originalPaymentId: expect.stringContaining("retail-payment-") }), expect.objectContaining({ type: "retail_sale", status: "voided" })]));
+    expect(state.audits.map((event) => event.action)).toEqual(expect.arrayContaining(["operations.retail_sale.refund", "operations.retail_sale.void"]));
+  });
+
   it("keeps member checkout branch-scoped and honours disabled payment methods", async () => {
     const { owner, sales, t } = await seeded();
     const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-BRANCH", name: "Branch item", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };

@@ -1633,6 +1633,12 @@ export interface RetailSale {
   lines: RetailSaleLine[];
   subtotal: Money;
   total: Money;
+  status: "completed" | "partially_refunded" | "refunded" | "voided";
+  refundedAmount?: Money;
+  returnedLines?: Array<{ productId: UUID; quantity: number }>;
+  refundReason?: string;
+  voidReason?: string;
+  voidedAt?: ISODateTime;
   method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
   externalReference?: string;
   shiftId?: UUID;
@@ -1640,6 +1646,7 @@ export interface RetailSale {
   createdById: UUID;
   createdByName: string;
   createdAt: ISODateTime;
+  updatedAt: ISODateTime;
 }
 
 /** Receipt payment projection for a retail sale. It is not a member payment. */
@@ -1652,7 +1659,10 @@ export interface RetailPayment {
   customer: RetailSaleCustomer;
   amount: Money;
   method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
-  status: "completed";
+  status: "completed" | "partially_refunded" | "refunded" | "voided";
+  refundedAmount?: Money;
+  refundReason?: string;
+  voidReason?: string;
   receiptId: UUID;
   receiptNumber: string;
   collectedById: UUID;
@@ -1685,6 +1695,17 @@ export interface RetailCheckoutInput {
   lines: Array<{ productId: UUID; quantity: number }>;
   method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
   externalReference?: string;
+  idempotencyKey: string;
+}
+
+export interface RefundRetailSaleInput {
+  lines: Array<{ productId: UUID; quantity: number }>;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface VoidRetailSaleInput {
+  reason: string;
   idempotencyKey: string;
 }
 

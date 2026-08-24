@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
@@ -34,6 +34,49 @@ async function seed(t: TestConvex<typeof schema>, options: { interval: "monthly"
 }
 
 describe("subscription reconciliation lifecycle", () => {
+  const envName = "RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED";
+  const previousValue = process.env[envName];
+
+  beforeEach(() => {
+    process.env[envName] = "1";
+  });
+
+  afterEach(() => {
+    if (previousValue === undefined) delete process.env[envName];
+    else process.env[envName] = previousValue;
+  });
+
+  it("defaults off, reports a read-only aggregate preview, and makes no writes", async () => {
+    delete process.env[envName];
+    const t = convexTest(schema, modules);
+    const boundary = Date.parse("2026-08-31T12:00:00.000Z");
+    await seed(t, { interval: "monthly", status: "trial", boundary });
+
+    const preview = await t.query(internal.subscriptionReconciliation.preview, { now: boundary + 2 * 86_400_000 });
+    expect(preview).toMatchObject({
+      enabled: false,
+      processed: 1,
+      eligible: 1,
+      invoicesToCreate: 1,
+      invoicesToMarkPastDue: 1,
+      organizationsToSuspend: 1,
+      earliestBoundary: boundary,
+      latestBoundary: boundary,
+    });
+    const result = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary + 2 * 86_400_000 });
+    expect(result).toEqual({ enabled: false, processed: 0, invoicesCreated: 0, markedPastDue: 0, suspended: 0 });
+    const state = await t.run(async (ctx) => ({
+      invoices: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect(),
+      organization: await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-reconcile")).unique(),
+      audits: await ctx.db.query("platformAuditEvents").collect(),
+      emails: await ctx.db.query("operationalEmailDeliveries").collect(),
+    }));
+    expect(state.invoices).toHaveLength(0);
+    expect(state.organization?.status).toBe("trial");
+    expect(state.audits).toHaveLength(0);
+    expect(state.emails).toHaveLength(0);
+  });
+
   it("creates one monthly trial invoice at T-3, marks it due, grants grace, then suspends and hides", async () => {
     const t = convexTest(schema, modules);
     const boundary = Date.parse("2026-08-31T12:00:00.000Z");

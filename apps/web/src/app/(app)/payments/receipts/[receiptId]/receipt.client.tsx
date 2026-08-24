@@ -22,7 +22,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
-import type { Payment } from "@/lib/domain/types";
+import type { Payment, RetailSale } from "@/lib/domain/types";
 
 export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receiptId?: string } = {}) {
   const { receiptId: paramReceiptId } = useParams<{ receiptId: string }>();
@@ -53,7 +53,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const detail = query.data!;
   const retailSale = detail.retailSale;
   const { payment, charge } = detail;
-  const paymentRecord: Payment | undefined = "refundedAmount" in payment ? payment : undefined;
+  const paymentRecord: Payment | undefined = payment.type !== "retail_sale" ? payment : undefined;
   const isRetailSale = Boolean(retailSale?.lines?.length);
   const retailCustomer = detail.customer ?? retailSale?.customer;
   const memberSnapshot = detail.member;
@@ -62,6 +62,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const retailTotal = retailSale?.total ?? retailSale?.subtotal;
   const paymentMethodLabel = isRetailSale && payment.method === "card" ? "Visa / card" : PAYMENT_METHOD_LABELS[payment.method];
   const isRefund = payment.type === "refund";
+  const displayedPaymentAmount = isRefund ? { ...payment.amount, amount: Math.abs(payment.amount.amount) } : retailTotal ?? payment.amount;
   const isVoided = payment.status === "voided";
   const canVoid =
     can("payments.void") && !isRetailSale && !isRefund && !isVoided && payment.status === "completed" && payment.occurredAt.slice(0, 10) <= todayISODate() &&
@@ -69,6 +70,10 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
     new Date(payment.occurredAt).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) === todayISODate();
   const refundableMinor = payment.amount.amount - (paymentRecord?.refundedAmount?.amount ?? 0);
   const canRefund = can("payments.refund") && !isRetailSale && !isRefund && !isVoided && refundableMinor > 0;
+  const retailRefundable = retailSale ? retailSale.total.amount - (retailSale.refundedAmount?.amount ?? 0) : 0;
+  const retailSameDay = retailSale ? new Date(retailSale.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) === todayISODate() : false;
+  const canRetailRefund = can("payments.refund") && Boolean(retailSale) && retailSale?.status !== "voided" && retailSale?.status !== "refunded" && retailRefundable > 0;
+  const canRetailVoid = can("payments.void") && retailSale?.status === "completed" && retailSameDay;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -89,9 +94,19 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
               <Undo2 /> Refund…
             </Button>
           ) : null}
+          {canRetailRefund ? (
+            <Button variant="secondary" size="sm" onClick={() => setRefundOpen(true)} data-testid="retail-refund-button">
+              <Undo2 /> Return / refund…
+            </Button>
+          ) : null}
           {canVoid ? (
             <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)}>
               <XOctagon /> Void…
+            </Button>
+          ) : null}
+          {canRetailVoid ? (
+            <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)} data-testid="retail-void-button">
+              <XOctagon /> Void sale…
             </Button>
           ) : null}
           <Button size="sm" onClick={() => window.print()}>
@@ -130,7 +145,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <table className="w-full border-b border-dashed border-line-3 py-3 text-[12px]">
             <tbody>
-              {isRetailSale ? retailSale!.lines.map((line, index) => {
+              {isRetailSale && !isRefund ? retailSale!.lines.map((line, index) => {
                 const lineTotal = line.lineTotal;
                 return (
                   <tr key={`${line.sku}-${index}`}>
@@ -154,7 +169,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                   <td className="pb-2 text-end tabular">−{toMajor(charge.discount).toFixed(3)}</td>
                 </tr>
               ) : null}
-              {isRetailSale ? (
+              {isRetailSale && !isRefund ? (
                 <tr className="border-t border-line-2">
                   <td className="py-2 font-semibold">Sale total</td>
                   <td className="py-2 text-end font-semibold tabular">{retailTotal ? toMajor(retailTotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}</td>
@@ -171,7 +186,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           <div className="space-y-1 border-b border-dashed border-line-3 py-3 text-[12px]">
             <div className="flex justify-between">
               <span>{isRefund ? "Refunded" : "Paid"} ({paymentMethodLabel})</span>
-              <span className="tabular">{toMajor(retailTotal ?? money(Math.abs(payment.amount.amount))).toFixed(3)}</span>
+              <span className="tabular">{toMajor(displayedPaymentAmount).toFixed(3)}</span>
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (
               <div className="flex justify-between font-semibold">
@@ -206,6 +221,12 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                 Refunded so far: <MoneyText money={paymentRecord.refundedAmount} />
               </p>
             ) : null}
+            {retailSale?.refundedAmount && retailSale.refundedAmount.amount > 0 ? (
+              <p className="mt-2 text-[12.5px] text-ink-2">
+                Refunded so far: <MoneyText money={retailSale.refundedAmount} />
+              </p>
+            ) : null}
+            {retailSale?.voidReason ? <p className="mt-2 text-[12px] text-danger">Void reason: {retailSale.voidReason}</p> : null}
             {paymentRecord?.originalPaymentId ? (
               <p className="mt-2 text-[12px] text-ink-3">This refund is linked to the original payment.</p>
             ) : null}
@@ -241,7 +262,16 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         </aside>
       </div>
 
-      <RefundDialog
+      {retailSale ? <RetailRefundDialog
+        sale={retailSale}
+        open={refundOpen}
+        onOpenChange={setRefundOpen}
+        onDone={async () => {
+          setRefundOpen(false);
+          toast.success("Retail refund recorded and stock returned.");
+          await invalidate();
+        }}
+      /> : <RefundDialog
         receiptId={receiptId}
         paymentId={payment.id}
         maxMinor={refundableMinor}
@@ -252,18 +282,94 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           toast.success("Refund issued — linked to the original payment.");
           await invalidate();
         }}
-      />
+      />}
       <VoidDialog
         paymentId={payment.id}
+        retailSaleId={retailSale?.id}
         open={voidOpen}
         onOpenChange={setVoidOpen}
         onDone={async () => {
           setVoidOpen(false);
-          toast.success("Payment voided.");
+          toast.success(retailSale ? "Retail sale voided and stock restored." : "Payment voided.");
           await invalidate();
         }}
       />
     </div>
+  );
+}
+
+function RetailRefundDialog({
+  sale,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  sale: RetailSale;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onDone: () => void;
+}) {
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [reason, setReason] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [error, setError] = useState<string | null>(null);
+  const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
+  const lines = sale.lines.map((line) => ({ ...line, remaining: line.quantity - (returned.get(line.productId) ?? 0) })).filter((line) => line.remaining > 0);
+  const selected = lines.map((line) => ({ productId: line.productId, quantity: quantities[line.productId] ?? 0 })).filter((line) => line.quantity > 0);
+  const refundMinor = selected.reduce((sum, line) => sum + sale.lines.find((candidate) => candidate.productId === line.productId)!.unitPrice.amount * line.quantity, 0);
+
+  const mutation = useApiMutation((api) => api.refundRetailSale(sale.id, { lines: selected, reason, idempotencyKey }), {
+    onSuccess: () => {
+      setQuantities({});
+      setReason("");
+      setIdempotencyKey(crypto.randomUUID());
+      onDone();
+    },
+    onError: (e) => setError(isApiError(e) ? e.message : "Retail refund failed."),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Return and refund items</DialogTitle>
+          <DialogDescription>Select the quantities physically returned. RIVET restores stock and creates an immutable refund fact for accounting.</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-4">
+          <div className="space-y-2" aria-label="Refund quantities">
+            {lines.map((line) => (
+              <div key={line.productId} className="grid grid-cols-[1fr_88px] items-center gap-3 rounded-md border border-line px-3 py-2.5">
+                <div>
+                  <p className="text-[13px] font-medium">{line.productName}</p>
+                  <p className="text-[11.5px] text-ink-3">Up to {line.remaining} · {toMajor(line.unitPrice).toFixed(3)} each</p>
+                </div>
+                <Input
+                  aria-label={`Return quantity for ${line.productName}`}
+                  type="number"
+                  min={0}
+                  max={line.remaining}
+                  step={1}
+                  value={quantities[line.productId] ?? 0}
+                  onChange={(event) => setQuantities((current) => ({ ...current, [line.productId]: Math.min(line.remaining, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
+            <span className="text-ink-2">Refund total</span>
+            <MoneyText money={money(refundMinor)} className="font-semibold" />
+          </div>
+          <Field label="Reason" required>
+            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. Unopened item returned by customer" data-testid="retail-refund-reason" />
+          </Field>
+          {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">Issue refund</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -341,11 +447,13 @@ function RefundDialog({
 
 function VoidDialog({
   paymentId,
+  retailSaleId,
   open,
   onOpenChange,
   onDone,
 }: {
   paymentId: string;
+  retailSaleId?: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
@@ -354,7 +462,7 @@ function VoidDialog({
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
 
-  const mutation = useApiMutation((api) => api.voidPayment(paymentId, { reason, idempotencyKey }), {
+  const mutation = useApiMutation((api) => retailSaleId ? api.voidRetailSale(retailSaleId, { reason, idempotencyKey }) : api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),
     onError: (e) => setError(isApiError(e) ? e.message : "Void failed."),
   });
@@ -363,9 +471,9 @@ function VoidDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Void payment</DialogTitle>
+          <DialogTitle>{retailSaleId ? "Void retail sale" : "Void payment"}</DialogTitle>
           <DialogDescription>
-            Same-day correction: the payment is marked void and fully reversed. Use a refund for anything older.
+            Same-day correction: {retailSaleId ? "the sale is reversed and every item is returned to stock" : "the payment is marked void and fully reversed"}. Use a refund for anything older.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
@@ -380,7 +488,7 @@ function VoidDialog({
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()}>
-            Void payment
+            {retailSaleId ? "Void sale" : "Void payment"}
           </Button>
         </DialogFooter>
       </DialogContent>

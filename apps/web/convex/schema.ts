@@ -346,6 +346,12 @@ export default defineSchema({
     subtotalMinor: v.number(),
     totalMinor: v.number(),
     currency: v.string(),
+    status: v.union(v.literal("completed"), v.literal("partially_refunded"), v.literal("refunded"), v.literal("voided")),
+    refundedMinor: v.optional(v.number()),
+    returnedLines: v.optional(v.array(v.object({ productId: v.string(), quantity: v.number() }))),
+    refundReason: v.optional(v.string()),
+    voidReason: v.optional(v.string()),
+    voidedAt: v.optional(v.number()),
     method: v.union(v.literal("cash"), v.literal("cliq"), v.literal("card")),
     externalReference: v.optional(v.string()),
     shiftId: v.optional(v.string()),
@@ -354,6 +360,7 @@ export default defineSchema({
     createdByPublicId: v.string(),
     createdByName: v.string(),
     createdAt: v.number(),
+    updatedAt: v.number(),
   })
     .index("by_organization", ["organizationId"])
     .index("by_public_id", ["organizationId", "publicId"])
