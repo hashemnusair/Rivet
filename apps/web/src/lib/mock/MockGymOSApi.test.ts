@@ -1811,6 +1811,20 @@ describe("retail checkout", () => {
     await expect(api.getReceipt(memberSale.receiptId)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
   });
 
+  it("restores mock inventory for reason-gated retail refunds and voids", async () => {
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-RETURN", name: "Mock return item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, idempotencyKey: "mock-return-opening" });
+    const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Return Guest", phone: "+962790000081" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "MOCK-RETURN", idempotencyKey: "mock-return-sale" });
+    await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "mock-return-invalid" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned unopened item", idempotencyKey: "mock-return-refund" });
+    expect(refunded.retailSale).toMatchObject({ status: "partially_refunded", refundedAmount: { amount: 2_000 }, returnedLines: [{ quantity: 1 }] });
+    await expect(api.voidRetailSale(sale.retailSale.id, { reason: "Duplicate sale", idempotencyKey: "mock-return-void-blocked" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const voidSale = await api.checkoutRetail({ branchId, guest: { fullName: "Void Guest", phone: "+962790000082" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-VOID", idempotencyKey: "mock-void-sale" });
+    await expect(api.voidRetailSale(voidSale.retailSale.id, { reason: "Duplicate terminal entry", idempotencyKey: "mock-void-action" })).resolves.toMatchObject({ retailSale: { status: "voided" } });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 3 })]);
+  });
+
   it("does not sell an item until a positive retail price is configured", async () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;

@@ -1,18 +1,32 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 23 August 2026 after the four-tier Production release and
-unavailable-owner login recovery. This is the single canonical backlog for
+Updated 24 August 2026 for the subscription and retail release-safety
+candidate. This is the single canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
 production-verification findings, deferred work, and closure evidence. It
 consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current Five Pillars release index — 23 August 2026
+## Current release index — 24 August 2026
 
 Historical release sections below remain for traceability. The categories here are the canonical active list for this release; do not duplicate these items in a new backlog.
 
 ### Release blockers
+
+- [x] Make platform-subscription reconciliation explicitly default-off and add
+  an aggregate-only impact preview. The mutation performs zero writes unless
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`; keep that flag absent through
+  this release.
+- [x] Add reason-gated retail item refunds and same-day voids with bounded
+  quantities, stock returns, payment/refund accounting facts, audit evidence,
+  receipt recovery UI, and idempotent server handling.
+- [x] Restore credential-free Playwright to normal GitHub Actions and align the
+  browser expectation with the intentionally paused GT provider while retaining
+  manual RTL coverage.
+- [ ] Push the candidate to `main`, wait for GitHub Actions and Vercel, deploy
+  Convex only to exact Production `descriptive-meerkat-589`, then record the
+  default-off preview, disabled-mutation, and health results here.
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
 - [x] Deploy application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`, including Elias's four-tier subscriptions/live entitlements and unavailable-owner recovery. GitHub Actions run `32639554231` passed and Vercel Production deployment `H3DKcGPaGmr8Nzn28qJ7P6TZW1YD` completed.
@@ -20,6 +34,10 @@ Historical release sections below remain for traceability. The categories here a
 - [ ] Resolve the Convex above-Free-plan-limit warning before pilot launch so the Production backend is not exposed to service interruption. This release did not purchase a plan or change provider billing.
 
 ### Staging or Production verification
+
+- [ ] After the gated backend deploy, verify platform billing and one retail
+  checkout/receipt/refund-or-void path with an authenticated active Production
+  workspace. Use disposable records only and preserve cleanup evidence.
 
 - [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
 - [ ] Complete the signed-in **active** gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The supplied owner account is valid but belongs to a suspended or cancelled gym; its repaired unavailable-workspace state passed live verification without console errors. Restore that exact test gym only through an authorized, reasoned platform-admin action, or use another active owner.

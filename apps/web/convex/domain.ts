@@ -1732,14 +1732,18 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
     assertBranchAccess(actor, branch);
     if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
     const customer = data(sale.customer);
-    const payment = {
-      id: `retail-payment-${sale.publicId}`,
+    const originalPaymentId = `retail-payment-${sale.publicId}`;
+    const originalPayment = {
+      id: originalPaymentId,
       organizationId: publicOrganizationId(actor.organization),
       branchId: publicBranchId(branch),
       type: "retail_sale",
       amount: { amount: sale.totalMinor, currency: sale.currency },
       method: sale.method,
-      status: "completed",
+      status: sale.status,
+      refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
       customer,
       receiptId: sale.receiptId,
       receiptNumber: sale.receiptNumber,
@@ -1750,6 +1754,10 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       idempotencyKey: sale.idempotencyKey,
       occurredAt: utcIso(sale.createdAt),
     };
+    const retailPayments = (await paymentRecords(ctx, actor)).map((row) => data(row.data));
+    const receiptPaymentId = stringValue(receiptData.paymentId, originalPaymentId);
+    const payment = retailPayments.find((item) => item.id === receiptPaymentId) ?? originalPayment;
+    const relatedPayments = retailPayments.filter((item) => item.id !== payment.id && (item.originalPaymentId === originalPaymentId || item.id === originalPaymentId));
     const retailSale = {
       id: sale.publicId,
       organizationId: publicOrganizationId(actor.organization),
@@ -1760,6 +1768,12 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       lines: sale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency } })),
       subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
       total: { amount: sale.totalMinor, currency: sale.currency },
+      status: sale.status,
+      refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+      returnedLines: sale.returnedLines,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
+      voidedAt: sale.voidedAt ? utcIso(sale.voidedAt) : undefined,
       method: sale.method,
       externalReference: sale.externalReference,
       shiftId: sale.shiftId,
@@ -1767,6 +1781,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       createdById: sale.createdByPublicId,
       createdByName: sale.createdByName,
       createdAt: utcIso(sale.createdAt),
+      updatedAt: utcIso(sale.updatedAt),
     };
     return {
       receipt: receiptData,
@@ -1777,7 +1792,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       customer,
       payment,
       retailSale,
-      relatedPayments: [],
+      relatedPayments,
     };
   }
   const payment = await recordOf(ctx, actor, "payment", stringValue(receiptData.paymentId));
@@ -8050,6 +8065,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.supplier.archive":
     case "operations.stock_movement.record":
     case "operations.retail.checkout":
+    case "operations.retail.refund":
+    case "operations.retail.void":
     case "operations.low_stock.refresh":
     case "operations.low_stock.dismiss":
     case "operations.purchase_order.create":
