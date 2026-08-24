@@ -166,8 +166,13 @@ export const provision = action({
       await ctx.runMutation(internal.platformProvisioning.createWorkspace, { applicationId: prepared.applicationId, clerkOrganizationId, correlationId: prepared.correlationId });
       injectProvisioningFault(secret, "before_invitation");
       const clerkInvitationId = prepared.clerkInvitationId ?? await createOrFindClerkInvitation(secret, { organizationId: clerkOrganizationId, email: prepared.email, applicationId: prepared.applicationId, organizationPublicId: identifiers.organizationPublicId });
-      if (!prepared.clerkInvitationId) await ctx.runMutation(internal.platformProvisioning.rememberClerkInvitation, { applicationId: prepared.applicationId, clerkInvitationId, correlationId: prepared.correlationId });
-      return await ctx.runMutation(internal.platformProvisioning.complete, { applicationId: prepared.applicationId, correlationId: prepared.correlationId });
+      // Finalize the application and persist the invitation in one durable
+      // mutation. The previous two-mutation sequence could create the Clerk
+      // organization, workspace, and invitation successfully, then throw
+      // while recording the invitation. The catch block would consequently
+      // mark a fully usable workspace as failed and emit a false failure
+      // notification. `complete` is idempotent and owns this final write now.
+      return await ctx.runMutation(internal.platformProvisioning.complete, { applicationId: prepared.applicationId, clerkInvitationId, correlationId: prepared.correlationId });
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Gym provisioning could not be completed.";
       await ctx.runMutation(internal.platformProvisioning.fail, { applicationId: prepared.applicationId, message, correlationId: prepared.correlationId });

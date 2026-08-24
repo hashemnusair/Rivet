@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
-import PlatformGymsPage, { sortGymDirectory } from "./page";
+import { sortGymDirectory } from "@/lib/platform/gym-directory";
+import PlatformGymsPage from "./page";
 
 const state = vi.hoisted(() => ({
   query: {
@@ -69,7 +70,21 @@ describe("Platform gyms directory", () => {
     expect(screen.getAllByText("Period ends").length).toBeGreaterThan(0);
     expect(screen.queryByText("Gym revenue")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add gym" })).toHaveAttribute("href", "/platform/applications");
+
+    fireEvent.click(screen.getByRole("button", { name: "All gyms 3" }));
     expect(screen.getByRole("link", { name: "Open Paused Fitness admin details" })).toHaveAttribute("href", "/platform/gyms/paused");
+  });
+
+  it("defaults to active gyms and places the remaining status filters after it", () => {
+    render(<PlatformGymsPage />);
+
+    const filters = screen.getByRole("group", { name: "Filter gym organizations by subscription status" });
+    expect(filters.querySelectorAll("button")).toHaveLength(6);
+    expect(filters.querySelectorAll("button")[0]).toHaveAccessibleName("Active gyms 2");
+    expect(filters.querySelectorAll("button")[0]).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "active Fitness" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hidden Fitness" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Paused Fitness" })).not.toBeInTheDocument();
   });
 
   it("renders a projected logo URL and falls back to initials when one is unavailable", () => {
@@ -85,6 +100,7 @@ describe("Platform gyms directory", () => {
 
     render(<PlatformGymsPage />);
 
+    fireEvent.click(screen.getByRole("button", { name: "All gyms 2" }));
     const logo = screen.getByRole("img", { name: "Logo Fitness logo" });
     expect(logo.querySelector("img")).toHaveAttribute("src", "https://cdn.example/logo.png");
     expect(screen.getByRole("img", { name: "Plain Fitness logo" })).toHaveTextContent("PF");

@@ -27,9 +27,12 @@ describe("gym provisioning retry convergence", () => {
     await platform.mutation(internal.platformProvisioning.begin, { applicationId, correlationId: `${correlationId}-2` });
     await platform.mutation(internal.platformProvisioning.createWorkspace, { applicationId, clerkOrganizationId: "org_clerk_retry", correlationId: `${correlationId}-2` });
     await platform.mutation(internal.platformProvisioning.rememberClerkInvitation, { applicationId, clerkInvitationId: "orginv_retry", correlationId: `${correlationId}-2` });
-    const result = await platform.mutation(internal.platformProvisioning.complete, { applicationId, correlationId: `${correlationId}-2` }) as { organizationId: string; branchId: string };
+    const result = await platform.mutation(internal.platformProvisioning.complete, { applicationId, clerkInvitationId: "orginv_retry", correlationId: `${correlationId}-2` }) as { organizationId: string; branchId: string };
     const replay = await platform.mutation(internal.platformProvisioning.complete, { applicationId, correlationId: `${correlationId}-3` }) as typeof result;
     expect(replay).toEqual(result);
+    // A delayed action catch must not regress a committed completion into a
+    // false failure or create another platform alert.
+    await platform.mutation(internal.platformProvisioning.fail, { applicationId, message: "Late transport failure after completion.", correlationId: `${correlationId}-late-failure` });
 
     const ids = provisioningIdentifiers(applicationId, "Retry Gym");
     const state = await t.run(async (ctx) => {
@@ -44,6 +47,7 @@ describe("gym provisioning retry convergence", () => {
         roles: organization ? (await ctx.db.query("roleDefinitions").collect()).filter((role) => role.organizationId === organization._id) : [],
         ownerMemberships: organization && owner ? await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", owner._id)).collect() : [],
         application,
+        notifications: await ctx.db.query("operationalNotifications").collect(),
         entitlements: organization ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique() : null,
       };
     });
@@ -55,6 +59,7 @@ describe("gym provisioning retry convergence", () => {
     expect(state.ownerMemberships).toHaveLength(1);
     expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise", billingInterval: "monthly", status: "trial", subscriptionStartedAt: expect.any(Number), trialEndsAt: expect.any(Number) });
     expect(state.application).toMatchObject({ plan: "Enterprise", provisioningStatus: "completed", clerkOrganizationId: "org_clerk_retry", clerkInvitationId: "orginv_retry", provisionedOrganizationId: ids.organizationPublicId, provisionedBranchId: ids.branchPublicId });
+    expect(state.notifications).toEqual([expect.objectContaining({ kind: "provisioning_failure", readAt: expect.any(Number), expiresAt: expect.any(Number) })]);
     expect(state.entitlements).toMatchObject({ subscriptionPlan: "Enterprise", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] });
   });
 });

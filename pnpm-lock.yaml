@@ -76,6 +76,9 @@ importers:
       convex:
         specifier: ^1.42.3
         version: 1.42.3(patch_hash=6108d68759d9fe55ced3898f131a0bbf13d448f00d5631ab3a241eaa6d18760e)(@clerk/react@6.12.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+      gt-next:
+        specifier: ^11.1.15
+        version: 11.1.15(@generaltranslation/compiler@1.3.42(supports-color@7.2.0))(next@16.2.12(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.62.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       lucide-react:
         specifier: ^0.525.0
         version: 0.525.0(react@19.2.8)
@@ -113,6 +116,9 @@ importers:
       '@eslint/eslintrc':
         specifier: ^3.3.1
         version: 3.3.6(supports-color@7.2.0)
+      '@generaltranslation/compiler':
+        specifier: ^1.3.42
+        version: 1.3.42(supports-color@7.2.0)
       '@next/eslint-plugin-next':
         specifier: 16.2.12
         version: 16.2.12
@@ -706,6 +712,21 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
+  '@generaltranslation/compiler@1.3.42':
+    resolution: {integrity: sha512-AuKViQjU7gcBWDPM3a+Jh65aZXQNosNiAavg4boVvNPG6jzJvirhpEuzOGeVOuZARcMZLP5pmhmH7um1D0v3yA==}
+    engines: {node: '>=16.0.0'}
+
+  '@generaltranslation/format@0.1.8':
+    resolution: {integrity: sha512-3fuYCdZsphVANyoHbdqNSAvgdhqcsrp3TW+YtoLH71Dxv7XF+xS3Q0SiwCLankOzKIB8aMBtw8FD3OqXzlRjdQ==}
+
+  '@generaltranslation/icu@0.1.2':
+    resolution: {integrity: sha512-2A0txUrZdAWAc42N58/PtoWv7vNB0U1Iyl+nDzf7RSswLHPMsonp7OmPnSraQgkoRSVSlueARVQK4T+zanWsyA==}
+
+  '@generaltranslation/react-core@11.1.15':
+    resolution: {integrity: sha512-wu8K3Dvz88c0fH6ddQuGWUKDVGnVsPhqaNbJE+OgiD/Y4jH558OJk9fVUPOvZtBba3lQTIh8F4ko3sSf2ZI/mw==}
+    peerDependencies:
+      react: '>=18.0.0'
+
   '@hookform/resolvers@5.5.7':
     resolution: {integrity: sha512-CyPCYV8/KlXfEXLWj8HHHhVsR/IZ6Ckm3b/a4fWtO/lRnRK1huqncb8LlAWrmpPRsse5glF5aVuDRMHEr3UGag==}
     peerDependencies:
@@ -1040,6 +1061,10 @@ packages:
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [win32]
+
+  '@noble/hashes@2.3.0':
+    resolution: {integrity: sha512-oN+QwyX7VSHotibwubG3kpzbwKrfnyR6OOO+3Nk/53ADL7FmgHHz4TgrbaYKvvOw09u6QTx0oiH1cNCIOuN0CQ==}
+    engines: {node: '>= 20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -2616,6 +2641,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -2724,6 +2750,9 @@ packages:
   functions-have-names@1.2.3:
     resolution: {integrity: sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ==}
 
+  generaltranslation@9.1.7:
+    resolution: {integrity: sha512-SdaRzD8xL2emVjKcX7/XzjSpjhfWPaVr4dA+HK3eoGDnne4en3mBYAGVMYOIVlFW60QlTYUdjxn3biJ8HetxaA==}
+
   generator-function@2.0.1:
     resolution: {integrity: sha512-SFdFmIJi+ybC0vjlHN0ZGVGHc3lgE0DxPAT0djjVg+kjOnSqclqmj0KQ7ykTOLP6YxoqOvuAODGdcHJn+43q3g==}
     engines: {node: '>= 0.4'}
@@ -2780,6 +2809,26 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gt-i18n@1.0.17:
+    resolution: {integrity: sha512-eV3a6hew3wr06MMzUHjGK122y1Y16m930hWvVgZCfp9fktvhrN6ZNzB04BhOqq0zN/zhnFU2n0FxTWLCxCU5XQ==}
+
+  gt-next@11.1.15:
+    resolution: {integrity: sha512-Gkm/qRV3tdaVQtkq6AJ3gKcW3rnKFVwl9bgJ6D/yJTtfh4iWBydom4Wa2aDLBYCgLv3rXEeRJXZJUHScQsGmYQ==}
+    peerDependencies:
+      '@generaltranslation/compiler': ^1.3.42
+      next: '>=13.0.0 <15.2.1 || >15.2.2'
+      react: '>=16.8.0 <20.0.0'
+      react-dom: '>=16.8.0 <20.0.0'
+    peerDependenciesMeta:
+      '@generaltranslation/compiler':
+        optional: true
+
+  gt-react@11.1.15:
+    resolution: {integrity: sha512-pCt6q60pSeJ8OGMW6CfVdjOy7owfX4gcqH3u+cAGpAwoFnUVjGB3fOrBPp0M0ChHQvWKtRTYbLQ4rQWUemvmKQ==}
+    peerDependencies:
+      react: '>=18.0.0'
+      react-dom: '>=18.0.0'
 
   has-bigints@1.1.0:
     resolution: {integrity: sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg==}
@@ -3773,6 +3822,10 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
+  unplugin@2.3.11:
+    resolution: {integrity: sha512-5uKD0nqiYVzlmCRs01Fhs2BdkEgBS3SAVP6ndrBsuK42iC2+JHyxM05Rm9G8+5mkmRtzMZGY8Ct5+mliZxU/Ww==}
+    engines: {node: '>=18.12.0'}
+
   unrs-resolver@1.12.2:
     resolution: {integrity: sha512-dmlRxBJJayXjqTwC+JtF1HhJmgf3ftQ3YejFcZrf4+KKtJv0qDsK1pjqaaVjG7wJ5NJ6UVP1OqRMQ71Z4C3rxQ==}
 
@@ -3893,6 +3946,9 @@ packages:
   webidl-conversions@7.0.0:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
+
+  webpack-virtual-modules@0.6.2:
+    resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
@@ -4414,6 +4470,31 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
+  '@generaltranslation/compiler@1.3.42(supports-color@7.2.0)':
+    dependencies:
+      '@babel/generator': 7.29.7
+      '@babel/parser': 7.29.7
+      '@babel/traverse': 7.29.7(supports-color@7.2.0)
+      '@babel/types': 7.29.7
+      '@generaltranslation/format': 0.1.8
+      generaltranslation: 9.1.7
+      unplugin: 2.3.11
+    transitivePeerDependencies:
+      - supports-color
+
+  '@generaltranslation/format@0.1.8':
+    dependencies:
+      '@generaltranslation/icu': 0.1.2
+
+  '@generaltranslation/icu@0.1.2': {}
+
+  '@generaltranslation/react-core@11.1.15(react@19.2.8)':
+    dependencies:
+      '@generaltranslation/format': 0.1.8
+      generaltranslation: 9.1.7
+      gt-i18n: 1.0.17
+      react: 19.2.8
+
   '@hookform/resolvers@5.5.7(@standard-schema/spec@1.1.0)(react-hook-form@7.83.0(react@19.2.8))(zod@3.25.76)':
     dependencies:
       '@standard-schema/utils': 0.3.0
@@ -4596,6 +4677,8 @@ snapshots:
 
   '@next/swc-win32-x64-msvc@16.2.12':
     optional: true
+
+  '@noble/hashes@2.3.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -6411,6 +6494,12 @@ snapshots:
 
   functions-have-names@1.2.3: {}
 
+  generaltranslation@9.1.7:
+    dependencies:
+      '@generaltranslation/format': 0.1.8
+      '@generaltranslation/icu': 0.1.2
+      '@noble/hashes': 2.3.0
+
   generator-function@2.0.1: {}
 
   gensync@1.0.0-beta.2: {}
@@ -6467,6 +6556,32 @@ snapshots:
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
+
+  gt-i18n@1.0.17:
+    dependencies:
+      '@generaltranslation/format': 0.1.8
+      generaltranslation: 9.1.7
+
+  gt-next@11.1.15(@generaltranslation/compiler@1.3.42(supports-color@7.2.0))(next@16.2.12(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.62.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+    dependencies:
+      '@generaltranslation/format': 0.1.8
+      '@generaltranslation/react-core': 11.1.15(react@19.2.8)
+      generaltranslation: 9.1.7
+      gt-i18n: 1.0.17
+      gt-react: 11.1.15(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      next: 16.2.12(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.62.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+    optionalDependencies:
+      '@generaltranslation/compiler': 1.3.42(supports-color@7.2.0)
+
+  gt-react@11.1.15(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+    dependencies:
+      '@generaltranslation/react-core': 11.1.15(react@19.2.8)
+      generaltranslation: 9.1.7
+      gt-i18n: 1.0.17
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   has-bigints@1.1.0: {}
 
@@ -7541,6 +7656,13 @@ snapshots:
 
   undici-types@7.18.2: {}
 
+  unplugin@2.3.11:
+    dependencies:
+      '@jridgewell/remapping': 2.3.5
+      acorn: 8.18.0
+      picomatch: 4.0.5
+      webpack-virtual-modules: 0.6.2
+
   unrs-resolver@1.12.2:
     dependencies:
       napi-postinstall: 0.3.4
@@ -7698,6 +7820,8 @@ snapshots:
       xml-name-validator: 5.0.0
 
   webidl-conversions@7.0.0: {}
+
+  webpack-virtual-modules@0.6.2: {}
 
   whatwg-encoding@3.1.1:
     dependencies:

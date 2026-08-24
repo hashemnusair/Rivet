@@ -90,6 +90,15 @@ function managementLocalDate(value: string | number, timezone: string): string {
   return todayISODate(timezone, new Date(value));
 }
 
+function ledgerDate(value: string | undefined, fallback: string): string {
+  const candidate = value?.trim() || fallback;
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? new Date(`${candidate}T00:00:00.000Z`) : undefined;
+  if (!parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) {
+    throw ApiError.of(ERR.VALIDATION, "Posting date must use a real YYYY-MM-DD calendar date.");
+  }
+  return candidate;
+}
+
 const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" | "accountType" | "statementGroup" | "cashflowGroup" | "normalBalance">> = [
   { code: "1100", name: "Cash on hand", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "1110", name: "Card clearing", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
@@ -5458,7 +5467,7 @@ export class MockGymOSApi implements GymOSApi {
       if (lines.length < 2 || debitTotal <= 0 || debitTotal !== creditTotal) throw ApiError.of(ERR.VALIDATION, "Journal debits and credits must be equal and non-zero.");
       const now = nowISO();
       const memo = input.memo.trim() || "Manual journal";
-      const postingDate = input.postingDate ?? this.today();
+      const postingDate = ledgerDate(input.postingDate, this.today());
       const fingerprint = manualJournalRequestFingerprint({ scope, branchId: branch?.id, postingDate, memo, reason: input.reason.trim(), lines: lines.map((line) => ({ accountId: line.accountId, debitMinor: line.debit.amount, creditMinor: line.credit.amount, description: line.description })) });
       const replay = this.accountingEntries.find((entry) => entry.idempotencyKey === key);
       if (replay) {
@@ -5663,12 +5672,13 @@ export class MockGymOSApi implements GymOSApi {
         return this.accountingSourceAttemptView(attempt);
       }
       if (!fact.amount || !Number.isSafeInteger(fact.amount) || !fact.debitCode || !fact.creditCode || fact.amount <= 0) throw ApiError.of(ERR.VALIDATION, "Source has no configured positive accounting amount.");
-      const period = this.accountingPeriodFor(fact.occurredAt.slice(0, 10));
+      const postingDate = managementLocalDate(fact.occurredAt, this.db.organization.timezone);
+      const period = this.accountingPeriodFor(postingDate);
       const debit = this.accountingAccount(`acct-${fact.debitCode}`);
       const credit = this.accountingAccount(`acct-${fact.creditCode}`);
       const now = nowISO();
       const entryId = mockUuid();
-      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate: fact.occurredAt.slice(0, 10), periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount), totalCredit: money(fact.amount), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount), credit: money(0), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0), credit: money(fact.amount), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount), totalCredit: money(fact.amount), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount), credit: money(0), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0), credit: money(fact.amount), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
       this.accountingEntries.unshift(entry);
       const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion: 1, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
       if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion: 1, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
@@ -5712,7 +5722,7 @@ export class MockGymOSApi implements GymOSApi {
       const period = this.accountingPeriods.find((candidate) => candidate.id === periodId);
       if (!period) throw ApiError.of(ERR.NOT_FOUND, "Accounting period not found.");
       if (period.status !== "open") throw ApiError.of(ERR.CONFLICT, "Accounting period is already closed.");
-      const pending = this.accountingSources.some((source) => source.status === "pending" && source.occurredAt.slice(0, 7) === period.id);
+      const pending = this.accountingSources.some((source) => source.status === "pending" && managementLocalDate(source.occurredAt, this.db.organization.timezone).slice(0, 7) === period.id);
       if (pending) throw ApiError.of(ERR.CONFLICT, "Resolve pending source postings before closing the period.");
       period.status = "closed";
       period.closedAt = nowISO();
@@ -6694,6 +6704,26 @@ export class MockGymOSApi implements GymOSApi {
       const issue: T.EquipmentIssue = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, title, description: input.description?.trim() || undefined, severity: input.severity, status: "open", reportedAt: nowISO(), downtimeDays: input.downtimeDays, safetyStatus: input.safetyStatus ?? "unknown", createdById: this.actor().id };
       this.db.equipmentIssues.unshift(issue);
       this.audit({ category: "operations", action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: "Equipment issue reported", branchId: branch.id });
+      return { ...issue };
+    });
+  }
+
+  updateEquipmentIssue(issueId: T.UUID, input: T.UpdateEquipmentIssueInput): Promise<T.EquipmentIssue> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const issue = this.db.equipmentIssues.find((candidate) => candidate.id === issueId && this.branchIsVisible(candidate.branchId));
+      if (!issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found.");
+      const status = input.status ?? issue.status;
+      if (!["open", "in_progress", "resolved", "cancelled"].includes(status)) throw ApiError.of(ERR.VALIDATION, "Equipment issue status is invalid.");
+      const safetyStatus = input.safetyStatus ?? issue.safetyStatus;
+      if (!["unknown", "safe_to_operate", "out_of_service"].includes(safetyStatus)) throw ApiError.of(ERR.VALIDATION, "Equipment safety status is invalid.");
+      if (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Downtime days must be non-negative.");
+      const before = { ...issue };
+      issue.status = status;
+      issue.safetyStatus = safetyStatus;
+      issue.downtimeDays = input.downtimeDays ?? issue.downtimeDays;
+      issue.resolvedAt = status === "resolved" ? issue.resolvedAt ?? nowISO() : undefined;
+      this.audit({ category: "operations", action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: status === "resolved" ? "Equipment issue resolved" : "Equipment issue updated", before, after: { ...issue }, branchId: issue.branchId });
       return { ...issue };
     });
   }

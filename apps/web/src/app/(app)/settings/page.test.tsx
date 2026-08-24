@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { createContext, useContext, useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import { SettingsPageInner } from "./page";
+import { SettingsPageInner } from "@/features/settings/settings-page-inner";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({

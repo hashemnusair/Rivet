@@ -387,6 +387,12 @@ export interface EquipmentIssue {
   createdById: UUID;
 }
 
+export interface UpdateEquipmentIssueInput {
+  status?: EquipmentIssueStatus;
+  safetyStatus?: EquipmentIssue["safetyStatus"];
+  downtimeDays?: number;
+}
+
 export interface EquipmentWorkOrder {
   id: UUID;
   organizationId: UUID;

@@ -50,6 +50,37 @@ describe("immutable management-accounting ledger", () => {
     const replay = await owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "accounting-branch-a", memo: "Balanced journal", reason: "Owner-approved management adjustment", idempotencyKey: "manual-valid", lines: [{ accountId: "acct-1100", debit: { amount: 1_000, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-1200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 1_000, currency: "JOD" } }] })) as { id: string };
     expect(replay.id).toBe(entry.id);
     await expectCode(owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "accounting-branch-a", memo: "Changed memo", reason: "Owner-approved management adjustment", idempotencyKey: "manual-valid", lines: [{ accountId: "acct-1100", debit: { amount: 1_000, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-1200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 1_000, currency: "JOD" } }] })), "CONFLICT");
+    await expectCode(owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "accounting-branch-a", postingDate: "2026-02-30", memo: "Invalid date", reason: "Reject malformed calendar date", idempotencyKey: "manual-invalid-date", lines: [{ accountId: "acct-1100", debit: { amount: 1_000, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-1200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 1_000, currency: "JOD" } }] })), "VALIDATION_ERROR");
+  });
+
+  it("returns the actual poster identity and public account ids in journal detail", async () => {
+    const { owner, manager } = await seeded();
+    const posted = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "accounting-payment-a", idempotencyKey: "detail-poster", reason: "Verified cash collection" })) as { journalEntryId: string };
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: posted.journalEntryId })) as { createdById: string; lines: Array<{ accountId: string }> };
+    expect(detail.createdById).toBe("accounting-manager");
+    expect(detail.lines.map((line) => line.accountId)).toEqual(["acct-1100", "acct-1200"]);
+  });
+
+  it("posts source events into the tenant-local accounting period", async () => {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const payment = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "payment").eq("publicId", "accounting-payment-a")).unique();
+      await ctx.db.patch(organization!._id, { timezone: "Asia/Amman" });
+      await ctx.db.patch(payment!._id, { data: { ...(payment!.data as Record<string, unknown>), occurredAt: "2026-01-31T22:30:00.000Z" } });
+    });
+    const posted = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "accounting-payment-a", idempotencyKey: "local-period", reason: "Local period test" })) as { journalEntryId: string };
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: posted.journalEntryId })) as { postingDate: string; periodId: string };
+    expect(detail).toMatchObject({ postingDate: "2026-02-01", periodId: "2026-02" });
+  });
+
+  it("sorts the journal register by posting date instead of insertion order", async () => {
+    const { owner } = await seeded();
+    const lines = [{ accountId: "acct-1100", debit: { amount: 100, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-1200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 100, currency: "JOD" } }];
+    await owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "accounting-branch-a", postingDate: "2026-08-02", memo: "Earlier journal", reason: "Date ordering test", idempotencyKey: "ordered-earlier", lines }));
+    await owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "accounting-branch-a", postingDate: "2026-08-19", memo: "Later journal", reason: "Date ordering test", idempotencyKey: "ordered-later", lines }));
+    const register = await owner.query(api.domain.query, operation("accounting.journal_entries.list", { branchId: "accounting-branch-a" })) as { items: Array<{ memo: string; postingDate: string }> };
+    expect(register.items.slice(0, 2).map((item) => item.memo)).toEqual(["Later journal", "Earlier journal"]);
   });
 
   it("enforces role, branch, and tenant isolation", async () => {

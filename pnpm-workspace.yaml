@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   esbuild: true
   sharp: true
+  tree-sitter-python: false
   unrs-resolver: true
 patchedDependencies:
   convex@1.42.3: patches/convex@1.42.3.patch

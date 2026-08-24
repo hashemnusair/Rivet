@@ -20,7 +20,7 @@ describe("OperationsCommandCenter", () => {
     expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
     expect(screen.getByText("Inventory & suppliers")).toBeInTheDocument();
     expect((await screen.findAllByText("Creatine monohydrate")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Jordan Sports Supply")).toBeInTheDocument();
+    expect((await screen.findAllByText("Jordan Sports Supply")).length).toBeGreaterThan(0);
     expect(screen.getByText("Low-stock queue")).toBeInTheDocument();
   });
 

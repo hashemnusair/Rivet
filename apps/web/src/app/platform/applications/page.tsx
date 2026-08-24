@@ -56,7 +56,7 @@ export default function PlatformApplicationsPage() {
     setSelectedId(requestedApplicationId);
   }, [requestedApplicationId]);
 
-  const loadApplications = useCallback(async (background = false) => {
+  const loadApplications = useCallback(async (background = false): Promise<PlatformGymApplication[] | undefined> => {
     const requestId = ++loadRequestRef.current;
     const isInitialLoad = !background && initialLoadRef.current;
     if (isInitialLoad) initialLoadRef.current = false;
@@ -71,6 +71,7 @@ export default function PlatformApplicationsPage() {
       if (requestId !== loadRequestRef.current || (isInitialLoad && liveSnapshotRef.current)) return;
       setApplications(rows);
       setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows.find((row) => row.id === requestedApplicationIdRef.current)?.id ?? rows[0]?.id);
+      return rows;
     } catch (cause) {
       if (requestId === loadRequestRef.current && (!isInitialLoad || !liveSnapshotRef.current)) setError(cause instanceof Error ? cause.message : "Applications could not be loaded.");
     } finally {
@@ -197,8 +198,18 @@ export default function PlatformApplicationsPage() {
       // The action records the provider failure on the application before it
       // rejects. Pull that row back immediately so the detail pane shows the
       // actionable reason (and not only the generic action error).
-      await loadApplications(true);
-      setError(message);
+      const refreshed = await loadApplications(true);
+      const authoritative = refreshed?.find((application) => application.id === input.applicationId);
+      if (authoritative?.provisioningStatus === "completed") {
+        // The external provider may have completed while the final response
+        // was interrupted. Trust the durable application row over the action
+        // transport error so a successfully provisioned workspace does not
+        // leave the operator with a false failure banner.
+        setError(undefined);
+        setFeedback(`Workspace created for ${authoritative.gymName}. ${authoritative.email} was invited as the gym owner.`);
+      } else {
+        setError(message);
+      }
     } finally {
       setBusyProvisioning(false);
     }

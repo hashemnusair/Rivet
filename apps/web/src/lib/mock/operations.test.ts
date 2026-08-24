@@ -64,6 +64,18 @@ describe("mock daily operations parity", () => {
     expect(recommendation.rationale.join(" ")).toMatch(/repair cost|replacement estimate|purchase date|useful life/i);
   });
 
+  it("lets a manager move an equipment issue through investigation to resolution", async () => {
+    const manager = await api.switchDemoRole("manager");
+    const issue = (await api.listEquipmentIssues()).at(0)!;
+    const started = await api.updateEquipmentIssue(issue.id, { status: "in_progress" });
+    expect(started.status).toBe("in_progress");
+    const resolved = await api.updateEquipmentIssue(issue.id, { status: "resolved", safetyStatus: "safe_to_operate" });
+    expect(resolved).toMatchObject({ status: "resolved", safetyStatus: "safe_to_operate", resolvedAt: expect.any(String) });
+    expect(manager.permissions).toContain("operations.manage");
+    await api.switchDemoRole("auditor");
+    await expect(api.updateEquipmentIssue(issue.id, { status: "in_progress" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+
   it("approves and receives a seeded mock purchase order idempotently", async () => {
     const branchId = (await api.getSession()).branches[0]!.id;
     const product = (await api.listProducts()).find((item) => item.sku === "SUP-PROTEIN")!;

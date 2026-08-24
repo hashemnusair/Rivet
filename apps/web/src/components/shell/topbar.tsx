@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Beaker, Building2, Check, ChevronDown, ExternalLink, Languages, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
+import { Beaker, Building2, Check, ChevronDown, ExternalLink, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Monogram } from "@/components/ui/misc";
 import { AuthTransition } from "@/components/auth/auth-transition";
+import { GeneralTranslationLocaleToggle } from "@/components/shared/general-translation-locale-toggle";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
@@ -36,7 +37,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
-  const { session, organizations, selectOrganization, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
+  const { session, organizations, selectOrganization, setBranch, setDir, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -149,17 +150,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
       <div className="flex-1" />
 
-      {/* RTL toggle */}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={toggleDir}
-        aria-label={dir === "rtl" ? "Switch to left-to-right" : "Preview right-to-left (Arabic)"}
-        aria-pressed={dir === "rtl"}
-        className={cn(dir === "rtl" && "bg-sunken text-ink")}
-      >
-        <Languages />
-      </Button>
+      {/* General Translation locale switch; direction follows the selected locale. */}
+      <GeneralTranslationLocaleToggle dir={dir} setDir={setDir} />
 
       {session ? <NotificationCenter /> : null}
 
@@ -225,10 +217,10 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             </label>
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
-                <p className="text-[13px] font-medium">RTL preview (Arabic)</p>
-                <p className="text-[12px] text-ink-3">Flip layout direction.</p>
+                <p className="text-[13px] font-medium">Manual RTL layout</p>
+                <p className="text-[12px] text-ink-3">Flip direction without changing the language.</p>
               </div>
-              <Switch checked={dir === "rtl"} onCheckedChange={toggleDir} aria-label="RTL preview" />
+              <Switch checked={dir === "rtl"} onCheckedChange={toggleDir} aria-label="Manual RTL layout" />
             </label>
           </div>
           <div className="border-t border-line px-4 py-3">

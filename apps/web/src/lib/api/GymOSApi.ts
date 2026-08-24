@@ -947,6 +947,7 @@ export interface GymOSApi {
   listEquipmentAssets(query?: { branchId?: UUID; status?: import("@/lib/domain/types").EquipmentAssetStatus }): Promise<import("@/lib/domain/types").EquipmentAsset[]>;
   upsertEquipmentAsset(input: import("@/lib/domain/types").UpsertEquipmentAssetInput): Promise<import("@/lib/domain/types").EquipmentAsset>;
   reportEquipmentIssue(input: { branchId: UUID; assetId: UUID; title: string; description?: string; severity: import("@/lib/domain/types").EquipmentIssueSeverity; downtimeDays?: number; safetyStatus?: import("@/lib/domain/types").EquipmentIssue["safetyStatus"] }): Promise<import("@/lib/domain/types").EquipmentIssue>;
+  updateEquipmentIssue(issueId: UUID, input: import("@/lib/domain/types").UpdateEquipmentIssueInput): Promise<import("@/lib/domain/types").EquipmentIssue>;
   listEquipmentIssues(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentIssueStatus }): Promise<import("@/lib/domain/types").EquipmentIssue[]>;
   upsertEquipmentWorkOrder(input: import("@/lib/domain/types").UpsertEquipmentWorkOrderInput): Promise<import("@/lib/domain/types").EquipmentWorkOrder>;
   listEquipmentWorkOrders(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentWorkOrder["status"] }): Promise<import("@/lib/domain/types").EquipmentWorkOrder[]>;

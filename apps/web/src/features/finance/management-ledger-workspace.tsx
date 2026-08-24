@@ -440,8 +440,12 @@ export function ManagementLedgerWorkspace() {
   const sources = useMemo(() => {
     const period = periodFilter === "all" ? undefined : periods.find((candidate) => candidate.id === periodFilter);
     if (!period) return sourcesQuery.data?.items ?? [];
-    return (sourcesQuery.data?.items ?? []).filter((source) => source.occurredAt.slice(0, 10) >= period.periodStart && source.occurredAt.slice(0, 10) <= period.periodEnd);
-  }, [periodFilter, periods, sourcesQuery.data?.items]);
+    const timezone = session?.organization.timezone ?? "UTC";
+    return (sourcesQuery.data?.items ?? []).filter((source) => {
+      const occurredDate = todayISODate(timezone, new Date(source.occurredAt));
+      return occurredDate >= period.periodStart && occurredDate <= period.periodEnd;
+    });
+  }, [periodFilter, periods, session?.organization.timezone, sourcesQuery.data?.items]);
 
   const dataError = accountsQuery.error ?? periodsQuery.error ?? trialBalanceQuery.error ?? journalsQuery.error ?? sourcesQuery.error;
   const loading = accountsQuery.isLoading || periodsQuery.isLoading || trialBalanceQuery.isLoading || journalsQuery.isLoading || sourcesQuery.isLoading;

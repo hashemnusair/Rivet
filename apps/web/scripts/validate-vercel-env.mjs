@@ -9,6 +9,8 @@ if (!isVercelBuild || isPreviewBuild) process.exit(0);
 const required = [
   "NEXT_PUBLIC_CONVEX_URL",
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "GT_PROJECT_ID",
+  "GT_API_KEY",
 ];
 const missing = required.filter((name) => !process.env[name]?.trim());
 

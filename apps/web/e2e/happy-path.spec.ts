@@ -367,7 +367,11 @@ test.describe("internationalization", () => {
     await page.goto("/members");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-    await page.getByRole("button", { name: /right-to-left/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    const languageToggle = page.getByTestId("gt-locale-toggle");
+    await expect(languageToggle).toHaveAttribute("data-locale", "en");
+    await languageToggle.click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 
     // The table still renders and the sidebar has moved to the right edge.
@@ -378,7 +382,10 @@ test.describe("internationalization", () => {
     expect(box!.x).toBeGreaterThan(viewport.width / 2);
 
     // And back again.
-    await page.getByRole("button", { name: /left-to-right|right-to-left/i }).click();
+    const englishToggle = page.getByTestId("gt-locale-toggle");
+    await expect(englishToggle).toHaveAttribute("data-locale", "ar");
+    await englishToggle.click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   });
 });

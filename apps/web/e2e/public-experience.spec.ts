@@ -264,6 +264,10 @@ test.describe("RIVET platform administration", () => {
     // Convex client holds it in its live query cache.
     await page.getByRole("link", { name: "All gyms", exact: true }).click();
     await expect(page).toHaveURL(/\/platform\/gyms$/);
+    // The directory intentionally defaults to active tenants. Select the
+    // suspended view explicitly so this audit-retained record remains
+    // observable after the subscription mutation.
+    await page.getByRole("button", { name: /^Suspended \d+$/ }).click();
     const suspendedCard = page.locator("article").filter({ hasText: "Forge Fitness Club" });
     await expect(suspendedCard).toBeVisible();
     await expect(suspendedCard.getByLabel("Subscription status: Suspended")).toBeVisible();

@@ -92,7 +92,10 @@ describe("daily operations typed contracts", () => {
     expect(task).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(task.financialSourceId).toBeUndefined();
     const asset = await owner.mutation(api.domain.mutate, operation("operations.equipment_asset.upsert", { branchId: "operations-branch-a", zoneId: zone.id, code: "TREAD-01", name: "Treadmill" })) as { id: string };
-    await owner.mutation(api.domain.mutate, operation("operations.equipment_issue.report", { branchId: "operations-branch-a", assetId: asset.id, title: "Noise", severity: "medium" }));
+    const issue = await owner.mutation(api.domain.mutate, operation("operations.equipment_issue.report", { branchId: "operations-branch-a", assetId: asset.id, title: "Noise", severity: "medium" })) as { id: string; status: string };
+    expect(issue.status).toBe("open");
+    const resolvedIssue = await manager.mutation(api.domain.mutate, operation("operations.equipment_issue.update", { id: issue.id, status: "resolved", safetyStatus: "safe_to_operate" })) as { status: string; safetyStatus: string; resolvedAt?: string };
+    expect(resolvedIssue).toMatchObject({ status: "resolved", safetyStatus: "safe_to_operate", resolvedAt: expect.any(String) });
     const workOrder = await manager.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { branchId: "operations-branch-a", assetId: asset.id, description: "Inspect motor", partsCost: { amount: 100, currency: "JOD" }, financialPostingStatus: "posted", financialSourceId: "forged-work-order-source" })) as { financialPostingStatus: string; financialSourceId?: string };
     expect(workOrder).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(workOrder.financialSourceId).toBeUndefined();

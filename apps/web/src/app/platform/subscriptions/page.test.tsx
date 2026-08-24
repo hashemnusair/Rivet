@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { setApiForTests } from "@/lib/api/client";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
-import SubscriptionsPage, { workspaceFeatureLabels } from "./page";
+import { workspaceFeatureLabels } from "@/lib/platform/workspace-feature-labels";
+import SubscriptionsPage from "./page";
 
 const state = vi.hoisted(() => ({ snapshot: undefined as PlatformSnapshot | undefined }));
 

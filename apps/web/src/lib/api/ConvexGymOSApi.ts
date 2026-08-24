@@ -575,6 +575,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listEquipmentAssets(query: { branchId?: T.UUID; status?: T.EquipmentAssetStatus } = {}): Promise<T.EquipmentAsset[]> { return this.query("operations.equipment_assets.list", query); }
   upsertEquipmentAsset(input: T.UpsertEquipmentAssetInput): Promise<T.EquipmentAsset> { return this.mutate("operations.equipment_asset.upsert", input); }
   reportEquipmentIssue(input: Parameters<GymOSApi["reportEquipmentIssue"]>[0]): Promise<T.EquipmentIssue> { return this.mutate("operations.equipment_issue.report", input); }
+  updateEquipmentIssue(issueId: T.UUID, input: T.UpdateEquipmentIssueInput): Promise<T.EquipmentIssue> { return this.mutate("operations.equipment_issue.update", { id: issueId, ...input }); }
   listEquipmentIssues(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentIssueStatus } = {}): Promise<T.EquipmentIssue[]> { return this.query("operations.equipment_issues.list", query); }
   upsertEquipmentWorkOrder(input: T.UpsertEquipmentWorkOrderInput): Promise<T.EquipmentWorkOrder> { return this.mutate("operations.equipment_work_order.upsert", input); }
   listEquipmentWorkOrders(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentWorkOrder["status"] } = {}): Promise<T.EquipmentWorkOrder[]> { return this.query("operations.equipment_work_orders.list", query); }

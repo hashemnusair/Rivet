@@ -108,6 +108,17 @@ async function applicationById(ctx: QueryCtx | MutationCtx, applicationId: strin
   return application;
 }
 
+/** Retire stale operational failure alerts after a successful retry. */
+async function dismissProvisioningFailureNotifications(ctx: MutationCtx, applicationId: string, now: number): Promise<void> {
+  const platformOperators = (await ctx.db.query("users").collect()).filter((user) => user.platformAdmin && user.status !== "deactivated");
+  await Promise.all(platformOperators.map(async (operator) => {
+    const rows = await ctx.db.query("operationalNotifications").withIndex("by_recipient_created", (q) => q.eq("recipientUserId", operator._id)).collect();
+    await Promise.all(rows
+      .filter((row) => row.kind === "provisioning_failure" && row.dedupeKey.startsWith(`gym-provisioning-failed:${applicationId}:`))
+      .map((row) => ctx.db.patch(row._id, { readAt: now, expiresAt: now })));
+  }));
+}
+
 /** Claims an approved application for one idempotent provisioning attempt. */
 export const begin = internalMutation({
   args: provisionArgs,
@@ -119,6 +130,7 @@ export const begin = internalMutation({
       domainError("VALIDATION_ERROR", "Only approved applications can be provisioned.", { correlationId: args.correlationId });
     }
     if (application.provisioningStatus === "completed" && application.provisionedOrganizationId) {
+      await dismissProvisioningFailureNotifications(ctx, application.publicId, Date.now());
       return { status: "completed" as const, result: organizationResult(application) };
     }
 
@@ -433,6 +445,13 @@ export const fail = internalMutation({
   handler: async (ctx, args) => {
     const admin = await requirePlatformAdmin(ctx, args.correlationId);
     const application = await applicationById(ctx, args.applicationId);
+    // The external Clerk action can lose its response after this mutation has
+    // committed. A late catch must never overwrite a durable completed
+    // application or emit a false failure notification for a usable gym.
+    if (application.provisioningStatus === "completed" && application.provisionedOrganizationId) {
+      await dismissProvisioningFailureNotifications(ctx, application.publicId, Date.now());
+      return undefined;
+    }
     const now = Date.now();
     const message = args.message.slice(0, 500);
     await ctx.db.patch(application._id, { provisioningStatus: "failed", provisioningStartedAt: undefined, provisioningError: message, updatedAt: now });
@@ -463,7 +482,7 @@ export const fail = internalMutation({
 });
 
 export const complete = internalMutation({
-  args: { applicationId: v.string(), correlationId: v.string() },
+  args: { applicationId: v.string(), clerkInvitationId: v.optional(v.string()), correlationId: v.string() },
   returns: v.any(),
   handler: async (ctx, args) => {
     const admin = await requirePlatformAdmin(ctx, args.correlationId);
@@ -474,10 +493,40 @@ export const complete = internalMutation({
     const branch = organization ? await ctx.db.query("branches").withIndex("by_organization_code", (q) => q.eq("organizationId", organization._id).eq("code", "MAIN")).unique() : null;
     if (!organization || !branch) domainError("INTERNAL_ERROR", "Workspace provisioning is incomplete.", { correlationId: args.correlationId });
     const now = Date.now();
-    await ctx.db.patch(application._id, { provisioningStatus: "completed", provisioningStartedAt: undefined, provisioningError: undefined, provisionedAt: now, provisionedOrganizationId: publicOrganizationId(organization), provisionedBranchId: publicBranchId(branch), updatedAt: now });
+    const clerkInvitationId = args.clerkInvitationId ?? application.clerkInvitationId;
+    await ctx.db.patch(application._id, {
+      provisioningStatus: "completed",
+      provisioningStartedAt: undefined,
+      provisioningError: undefined,
+      provisionedAt: now,
+      provisionedOrganizationId: publicOrganizationId(organization),
+      provisionedBranchId: publicBranchId(branch),
+      ...(clerkInvitationId ? { clerkInvitationId } : {}),
+      updatedAt: now,
+    });
+
+    // The workspace mutation already creates the owner membership. Persist
+    // the external invitation id opportunistically in this same finalization
+    // transaction; do not make a successful Clerk invite look like a failed
+    // provisioning run solely because this bookkeeping row is unavailable.
+    if (clerkInvitationId) {
+      const owner = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", application.email)).unique();
+      const membership = owner
+        ? await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", owner._id)).unique()
+        : null;
+      if (membership) {
+        await ctx.db.patch(membership._id, { clerkInvitationId, invitationSentAt: now, invitationLastAttemptAt: now, invitationError: undefined, invitationStatus: "pending", updatedAt: now });
+      }
+    }
+
+    // A retry after an external provider failure can leave a historical
+    // failure notification behind even though this attempt completed. Failure
+    // audit events remain immutable, but the operational alert is no longer
+    // actionable and should not continue to badge the platform console.
+    await dismissProvisioningFailureNotifications(ctx, application.publicId, now);
     const auditRows = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "gym_application").eq("entityPublicId", application.publicId)).collect();
     if (!auditRows.some((row) => row.action === "gym.provisioned")) {
-      await ctx.db.insert("platformAuditEvents", { publicId: crypto.randomUUID(), actorUserId: admin.user._id, actorPublicId: publicUserId(admin.user), actorName: admin.user.fullName, action: "gym.provisioned", entityType: "gym_application", entityPublicId: application.publicId, entityLabel: application.gymName, summary: `Provisioned ${application.gymName} and invited the owner`, after: { organizationId: publicOrganizationId(organization), branchId: publicBranchId(branch), clerkOrganizationId: application.clerkOrganizationId, clerkInvitationId: application.clerkInvitationId }, correlationId: args.correlationId, occurredAt: now });
+      await ctx.db.insert("platformAuditEvents", { publicId: crypto.randomUUID(), actorUserId: admin.user._id, actorPublicId: publicUserId(admin.user), actorName: admin.user.fullName, action: "gym.provisioned", entityType: "gym_application", entityPublicId: application.publicId, entityLabel: application.gymName, summary: `Provisioned ${application.gymName} and invited the owner`, after: { organizationId: publicOrganizationId(organization), branchId: publicBranchId(branch), clerkOrganizationId: application.clerkOrganizationId, clerkInvitationId: clerkInvitationId ?? application.clerkInvitationId }, correlationId: args.correlationId, occurredAt: now });
     }
     const updated = await ctx.db.get(application._id);
     if (!updated) domainError("INTERNAL_ERROR", "The provisioning result could not be read.", { correlationId: args.correlationId });

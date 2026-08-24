@@ -165,6 +165,8 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | browser Clerk key |
 | `CLERK_SECRET_KEY` | server-only Clerk key for invitations |
 | `CLERK_FRONTEND_API_URL` | Clerk JWT issuer configured in Convex |
+| `GT_PROJECT_ID` | General Translation project ID (server-only) |
+| `GT_API_KEY` | General Translation API key (server-only) |
 | `ENTRY_PASS_SIGNING_SECRET` | Convex-only HMAC secret |
 | `RIVET_SITE_URL` | Convex-only origin used for owner invitation links |
 | `RESEND_API_KEY` | Convex-only email delivery secret for gym applications |
@@ -175,9 +177,9 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW` | explicit staging write-flow switch |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | local path to trusted Playwright state |
 
-Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients.
+Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `GT_PROJECT_ID`, or `GT_API_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients or translation configuration.
 
-The repository pins Vercel's application build command to `pnpm build`. Convex schema/function deployment is intentionally separate: run `pnpm convex:deploy` from a trusted operator environment with `CONVEX_DEPLOY_KEY`, then deploy the Next.js application. Do not make Vercel Preview builds depend on a production Convex deploy key.
+The repository pins Vercel's application build command to `pnpm build`. Convex schema/function deployment is intentionally separate: run `pnpm convex:deploy` from a trusted operator environment with `CONVEX_DEPLOY_KEY`, then deploy the Next.js application. Do not make Vercel Preview builds depend on a production Convex deploy key. Production also requires the server-only `GT_PROJECT_ID` and `GT_API_KEY` names for the General Translation integration; see `docs/17_GENERAL_TRANSLATION_INTEGRATION.md` for the provider setup and release step.
 
 `www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The production Clerk instance, DNS records, and first production test user are now configured. The isolated staging Clerk-to-Convex smoke passes, but the deployment remains on release hold until the Vercel Production and Convex environment values are verified against the production Clerk instance and a production-shaped pilot check is completed. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
 

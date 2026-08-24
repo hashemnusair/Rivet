@@ -169,8 +169,27 @@ function iso(timestamp: number): string {
 }
 
 function dateOnly(value: unknown, fallback = new Date().toISOString().slice(0, 10)): string {
-  const candidate = text(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) && Number.isFinite(Date.parse(`${candidate}T00:00:00.000Z`)) ? candidate : fallback;
+  const raw = text(value).trim();
+  if (!raw) return fallback;
+  const candidate = raw.slice(0, 10);
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? new Date(`${candidate}T00:00:00.000Z`) : undefined;
+  if (!parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) {
+    domainError("VALIDATION_ERROR", "Posting date must use a real YYYY-MM-DD calendar date.");
+  }
+  return candidate;
+}
+
+function localDate(timestamp: number, timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp));
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // UTC is a safe fallback for a malformed tenant timezone.
+  }
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function periodBounds(periodId: string): { start: string; end: string } {
@@ -425,11 +444,12 @@ async function sourcePostingAttemptByKey(ctx: ReadContext, actor: ActorContext, 
 
 async function journalLineView(ctx: ReadContext, actor: ActorContext, line: JournalLine): Promise<JsonRecord> {
   const branch = line.branchId ? await branchById(ctx, actor, line.branchId) : undefined;
+  const account = await ctx.db.get(line.accountId);
   return {
     id: line.publicId,
     journalEntryId: String(line.journalEntryId),
     branchId: branch ? publicBranchId(branch) : undefined,
-    accountId: String(line.accountId),
+    accountId: account?.publicId ?? String(line.accountId),
     accountCode: line.accountCode,
     accountName: line.accountName,
     debit: { amount: line.debitMinor, currency: actor.organization.currency },
@@ -443,6 +463,7 @@ async function journalLineView(ctx: ReadContext, actor: ActorContext, line: Jour
 async function journalEntryView(ctx: ReadContext, actor: ActorContext, entry: JournalEntry): Promise<JsonRecord> {
   requireAccountingRecordVisible(actor, entry.branchId);
   const branch = entry.branchId ? await branchById(ctx, actor, entry.branchId) : undefined;
+  const createdBy = await ctx.db.get(entry.createdByUserId);
   const lines = await ctx.db.query("accountingJournalLines").withIndex("by_entry", (q) => q.eq("organizationId", actor.organization._id).eq("journalEntryId", entry._id)).collect();
   return {
     id: entry.publicId,
@@ -462,7 +483,7 @@ async function journalEntryView(ctx: ReadContext, actor: ActorContext, entry: Jo
     idempotencyKey: entry.idempotencyKey,
     reversalOfEntryId: entry.reversalOfEntryPublicId,
     reversedByEntryId: entry.reversedByEntryPublicId,
-    createdById: publicUserId(actor.user),
+    createdById: createdBy ? publicUserId(createdBy) : String(entry.createdByUserId),
     createdAt: iso(entry.createdAt),
     postedAt: iso(entry.postedAt),
     lines: await Promise.all(lines.map((line) => journalLineView(ctx, actor, line))),
@@ -688,6 +709,9 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     const branch = await branchById(ctx, actor, asset.branchId);
     const amount = asset.purchaseCostMinor;
     const sourceCurrency = asset.purchaseCostCurrency ?? currency;
+    const purchaseDate = optionalText(asset.purchaseDate);
+    const purchaseTimestamp = purchaseDate && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ? new Date(`${purchaseDate}T00:00:00.000Z`) : undefined;
+    const occurredAt = purchaseTimestamp && purchaseTimestamp.toISOString().slice(0, 10) === purchaseDate ? purchaseTimestamp.getTime() : asset.createdAt;
     return {
       sourceType,
       sourcePublicId: sourceId,
@@ -695,14 +719,14 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       branchPublicId: publicBranchId(branch),
       amountMinor: amount,
       currency: sourceCurrency,
-      occurredAt: Date.parse(`${dateOnly(asset.purchaseDate)}T00:00:00.000Z`) || asset.createdAt,
+      occurredAt,
       memo: `Equipment acquisition ${asset.code}`,
       policyCode: "equipment-acquisition.v1",
       debitAccountCode: "1500",
       creditAccountCode: "2100",
       details: { assetCode: asset.code, assetName: asset.name },
-      status: sourceCurrency !== currency ? "excluded" : asset.purchaseDate === undefined || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined,
-      reason: sourceCurrency !== currency ? `Equipment acquisition currency does not match organization currency ${currency}.` : asset.purchaseDate === undefined ? "Equipment purchase date is not configured." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined,
+      status: sourceCurrency !== currency ? "excluded" : !purchaseTimestamp || purchaseTimestamp.toISOString().slice(0, 10) !== purchaseDate || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined,
+      reason: sourceCurrency !== currency ? `Equipment acquisition currency does not match organization currency ${currency}.` : !purchaseTimestamp || purchaseTimestamp.toISOString().slice(0, 10) !== purchaseDate ? "Equipment purchase date is not configured as a real calendar date." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined,
     };
   }
 
@@ -826,14 +850,29 @@ async function listJournalEntries(ctx: QueryCtx, actor: ActorContext, input: Jso
   if (period) rows = rows.filter((row) => row.accountingPeriodId === period._id);
   const status = optionalText(input.status);
   if (status) rows = rows.filter((row) => row.status === status);
-  const from = optionalText(input.from);
-  const to = optionalText(input.to);
+  const fromInput = optionalText(input.from);
+  const toInput = optionalText(input.to);
+  const from = fromInput ? dateOnly(fromInput) : undefined;
+  const to = toInput ? dateOnly(toInput) : undefined;
+  if (from && to && from > to) domainError("VALIDATION_ERROR", "Journal from date must be on or before the to date.", { correlationId: actor.correlationId });
   if (from) rows = rows.filter((row) => row.postingDate >= from);
   if (to) rows = rows.filter((row) => row.postingDate <= to);
+  const requestedSort = optionalText(input.sort) ?? "-postingDate";
+  const descending = requestedSort.startsWith("-");
+  const sortKey = (descending ? requestedSort.slice(1) : requestedSort) === "createdAt" ? "createdAt" : (descending ? requestedSort.slice(1) : requestedSort) === "postedAt" ? "postedAt" : "postingDate";
+  rows.sort((left, right) => {
+    const leftValue = sortKey === "postingDate" ? left.postingDate : iso(sortKey === "createdAt" ? left.createdAt : left.postedAt);
+    const rightValue = sortKey === "postingDate" ? right.postingDate : iso(sortKey === "createdAt" ? right.createdAt : right.postedAt);
+    const comparison = leftValue.localeCompare(rightValue);
+    if (comparison !== 0) return descending ? -comparison : comparison;
+    return descending ? right._creationTime - left._creationTime : left._creationTime - right._creationTime;
+  });
   const items: JsonRecord[] = [];
   for (const row of rows) {
     const lines = await ctx.db.query("accountingJournalLines").withIndex("by_entry", (q) => q.eq("organizationId", actor.organization._id).eq("journalEntryId", row._id)).collect();
-    items.push({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: row.branchId ? publicBranchId((await ctx.db.get(row.branchId))!) : undefined, scope: row.scope, currency: row.currency, postingDate: row.postingDate, periodId: (await ctx.db.get(row.accountingPeriodId))?.publicId, status: row.status, memo: row.memo, sourceType: row.sourceType, sourceId: row.sourcePublicId, policyCode: row.policyCode, policyVersion: row.policyVersion, totalDebit: { amount: lines.reduce((sum, line) => sum + line.debitMinor, 0), currency: row.currency }, totalCredit: { amount: lines.reduce((sum, line) => sum + line.creditMinor, 0), currency: row.currency }, lineCount: lines.length, createdAt: iso(row.createdAt), postedAt: iso(row.postedAt) });
+    const rowBranch = row.branchId ? await ctx.db.get(row.branchId) : undefined;
+    if (row.branchId && !rowBranch) continue;
+    items.push({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: rowBranch ? publicBranchId(rowBranch) : undefined, scope: row.scope, currency: row.currency, postingDate: row.postingDate, periodId: (await ctx.db.get(row.accountingPeriodId))?.publicId, status: row.status, memo: row.memo, sourceType: row.sourceType, sourceId: row.sourcePublicId, policyCode: row.policyCode, policyVersion: row.policyVersion, totalDebit: { amount: lines.reduce((sum, line) => sum + line.debitMinor, 0), currency: row.currency }, totalCredit: { amount: lines.reduce((sum, line) => sum + line.creditMinor, 0), currency: row.currency }, lineCount: lines.length, createdAt: iso(row.createdAt), postedAt: iso(row.postedAt) });
   }
   return page(items, input);
 }
@@ -1200,7 +1239,10 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const entryKey = sourcePostingIdempotencyKey({ sourceType, sourcePublicId: sourceId, policyCode: policy.policyCode, policyVersion: policy.version, idempotencyKey });
   const existingEntry = await ctx.db.query("accountingJournalEntries").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", actor.organization._id).eq("idempotencyKey", entryKey)).unique();
   if (existingEntry) return await sourcePostingView(ctx, actor, sourceExisting ?? (await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", sourceType).eq("sourcePublicId", sourceId)).unique())!);
-  const postingDate = dateOnly(new Date(fact.occurredAt).toISOString());
+  // Accounting periods follow the tenant's local business day. Keeping this
+  // aligned with the source queue's local-date projection prevents a late
+  // UTC event from being displayed in one period but posted into the next.
+  const postingDate = localDate(fact.occurredAt, actor.organization.timezone);
   const entry = await insertJournal(ctx, actor, { branch, scope: "branch", postingDate, memo: fact.memo, reason: optionalText(input.reason), sourceType, sourcePublicId: sourceId, policyCode: policy.policyCode, policyVersion: policy.version, idempotencyKey: entryKey, lines: [{ accountId: `acct-${fact.debitAccountCode}`, debit: fact.amountMinor, credit: 0, description: fact.memo }, { accountId: `acct-${fact.creditAccountCode}`, debit: 0, credit: fact.amountMinor, description: fact.memo }] });
   const now = Date.now();
   const sourceIdValue = sourceExisting?._id ?? await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType, sourcePublicId: sourceId, branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
@@ -1233,7 +1275,7 @@ async function reverseEntry(ctx: MutationCtx, actor: ActorContext, input: JsonRe
   if (original.branchId) await branchById(ctx, actor, original.branchId);
   if (original.status !== "posted") domainError("CONFLICT", "Only a posted journal entry can be reversed once.", { correlationId: actor.correlationId });
   const lines = await ctx.db.query("accountingJournalLines").withIndex("by_entry", (q) => q.eq("organizationId", actor.organization._id).eq("journalEntryId", original._id)).collect();
-  const reversal = await insertJournal(ctx, actor, { branch: original.branchId ? (await ctx.db.get(original.branchId))! : undefined, scope: original.scope, postingDate: dateOnly(undefined), memo: `Reversal of ${original.publicId}`, reason, sourceType: original.sourceType, sourcePublicId: original.sourcePublicId, policyCode: original.policyCode, policyVersion: original.policyVersion, requestFingerprint, reversalOfEntryPublicId: original.publicId, idempotencyKey: `reverse:${id}:${idempotencyKey}`, lines: lines.map((line) => ({ accountId: `acct-${line.accountCode}`, debit: line.creditMinor, credit: line.debitMinor, description: `Reversal of ${original.publicId}` })) });
+  const reversal = await insertJournal(ctx, actor, { branch: original.branchId ? (await ctx.db.get(original.branchId))! : undefined, scope: original.scope, postingDate: localDate(Date.now(), actor.organization.timezone), memo: `Reversal of ${original.publicId}`, reason, sourceType: original.sourceType, sourcePublicId: original.sourcePublicId, policyCode: original.policyCode, policyVersion: original.policyVersion, requestFingerprint, reversalOfEntryPublicId: original.publicId, idempotencyKey: `reverse:${id}:${idempotencyKey}`, lines: lines.map((line) => ({ accountId: `acct-${line.accountCode}`, debit: line.creditMinor, credit: line.debitMinor, description: `Reversal of ${original.publicId}` })) });
   await ctx.db.patch(original._id, { status: "reversed", reversedByEntryPublicId: reversal.publicId });
   if (original.sourceType && original.sourcePublicId) {
     const source = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", original.sourceType!).eq("sourcePublicId", original.sourcePublicId!)).unique();
@@ -1261,7 +1303,7 @@ async function closePeriod(ctx: MutationCtx, actor: ActorContext, input: JsonRec
   } else {
     if (period.status !== "open") domainError("CONFLICT", "Accounting period is already closed.", { correlationId: actor.correlationId });
     const pending = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "pending")).collect();
-    if (pending.some((source) => { const day = new Date(source.occurredAt).toISOString().slice(0, 10); return day >= period.periodStart && day <= period.periodEnd; })) domainError("CONFLICT", "Resolve pending source postings before closing the period.", { correlationId: actor.correlationId });
+    if (pending.some((source) => { const day = localDate(source.occurredAt, actor.organization.timezone); return day >= period.periodStart && day <= period.periodEnd; })) domainError("CONFLICT", "Resolve pending source postings before closing the period.", { correlationId: actor.correlationId });
     const now = Date.now();
     await ctx.db.patch(period._id, { status: "closed", closedAt: now, closedByUserId: actor.user._id, closeReason: reason, updatedAt: now });
     await insertAudit(ctx, actor, { action: "accounting.period.close", entityType: "accounting_period", entityId: period.publicId, summary: `Closed accounting period ${period.publicId}`, reason, before: { status: period.status }, after: { status: "closed" } });

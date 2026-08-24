@@ -1,5 +1,31 @@
 # GymOS / RIVET current implementation state
 
+## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
+
+- Gym application provisioning now treats the durable application row as
+  authoritative after external-provider work. Completion is idempotent,
+  invitation bookkeeping is finalized with the workspace, and a delayed
+  provider response cannot regress a completed gym into a false failure or
+  leave an actionable failure alert behind.
+- The admin Gyms directory defaults to Active gyms, keeps the remaining
+  lifecycle filters to the right, and sorts the all-gyms view active-first.
+  Operations now has working inventory, supplier, stock movement, purchase
+  order, facility-task, equipment, issue-resolution, and retry flows, with a
+  typed `updateEquipmentIssue` API across Convex and Mock adapters.
+- Management Ledger fixes cover real calendar-date validation, tenant-local
+  posting periods, local-timezone source filtering/period closure, accurate
+  journal poster identity, and public account/branch identifiers.
+- General Translation is wired through the `gt-next` compiler/provider
+  integration with an English/Arabic locale toggle and environment-name
+  configuration. Secret values are intentionally not recorded in this
+  handoff.
+- Validation: **703/703 unit tests**, app and Convex typechecks, lint, and the
+  secret-output audit passed. The production webpack build had previously
+  passed; the final rebuild was blocked only by sandbox DNS resolution for
+  `fonts.googleapis.com`. The full final Playwright rerun was blocked before
+  launch by desktop execution allowance; focused Operations and suspended-gym
+  E2E journeys passed.
+
 ## Four-tier Production release and unavailable-owner recovery — 23 August 2026
 
 - Application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`

@@ -11,13 +11,12 @@ import { ErrorState } from "@/components/ui/states";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, UpdatePlatformPlanInput } from "@/lib/api/GymOSApi";
-import { entitledModulesForPlan, entitledModulesForPlanSelection, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
+import { entitledModulesForPlanSelection, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
 import type { WorkspaceModuleCatalogEntry, WorkspaceModuleKey } from "@/lib/domain/types";
 import { useExperience } from "@/lib/providers/experience-provider";
+import { workspaceFeatureLabelsForPlan } from "@/lib/platform/workspace-feature-labels";
 import { calculatePlanPrice, formatJodMinor } from "@/lib/public/pricing";
 import { formatMoney } from "@/lib/utils/money";
-
-type GymPlan = PlatformSaasPlan["name"];
 
 type PlanUpdateInput = UpdatePlatformPlanInput & {
   name: PlatformSaasPlan["name"];
@@ -28,26 +27,8 @@ type PlanUpdateInput = UpdatePlatformPlanInput & {
   reason: string;
 };
 
-const workspaceModuleLabels: Record<WorkspaceModuleKey, string> = {
-  foundation: "Gym foundation",
-  revenue: "Revenue protection",
-  operations: "Daily operations",
-  finance: "Financial operating system",
-  reporting: "Management reporting",
-};
-
-/** The shared plan-to-module contract shown in admin and enforced in gyms. */
-export function workspaceFeatureLabels(plan: GymPlan | Pick<PlatformSaasPlan, "name" | "entitledModules">): string[] {
-  const modules = typeof plan === "string" ? entitledModulesForPlan(plan) : selectedWorkspaceModules(plan);
-  return modules.map((key) => workspaceModuleLabels[key]);
-}
-
 function selectedWorkspaceModules(plan: Pick<PlatformSaasPlan, "name" | "entitledModules">): WorkspaceModuleKey[] {
   return entitledModulesForPlanSelection(plan.name, plan.entitledModules);
-}
-
-function workspaceFeatureLabelsForPlan(plan: Pick<PlatformSaasPlan, "name" | "entitledModules">): string[] {
-  return selectedWorkspaceModules(plan).map((key) => workspaceModuleLabels[key]);
 }
 
 export default function SubscriptionsPage() {

@@ -1754,6 +1754,22 @@ describe("seed coverage required by the docs", () => {
 });
 
 describe("management accounting mock contract", () => {
+  it("rejects malformed posting dates before creating a ledger period", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    await expect(api.postManualJournal({
+      branchId: branch.id,
+      scope: "branch",
+      postingDate: "2026-02-30",
+      memo: "Invalid date",
+      reason: "Reject malformed calendar date",
+      idempotencyKey: "mock-accounting-invalid-date",
+      lines: [
+        { accountId: "acct-1100", debit: money(100), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(100) },
+      ],
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
   it("keeps reversal lines immutable and nets the original plus reversal to zero", async () => {
     const branch = (await api.getSession()).branches[0]!;
     const input = {

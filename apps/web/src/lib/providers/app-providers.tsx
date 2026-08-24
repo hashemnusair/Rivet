@@ -46,6 +46,7 @@ interface AppContextValue {
   setBehavior: (b: Partial<MockBehavior>) => void;
   resetDemo: () => Promise<void>;
   dir: "ltr" | "rtl";
+  setDir: (dir: "ltr" | "rtl") => void;
   toggleDir: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
@@ -148,7 +149,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [behavior, setBehaviorState] = useState<MockBehavior>({ ...DEFAULT_BEHAVIOR });
-  const [dir, setDir] = useState<"ltr" | "rtl">("ltr");
+  const [dir, setDirState] = useState<"ltr" | "rtl">("ltr");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState<Session | undefined>(undefined);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -163,10 +164,10 @@ function SessionProvider({ children }: { children: ReactNode }) {
   // Convex mode.
   useEffect(() => {
     const storedDir = window.sessionStorage.getItem(STORAGE_KEYS.dir);
-    if (storedDir === "rtl") {
-      setDir("rtl");
-      document.documentElement.dir = "rtl";
-      document.documentElement.classList.add("rtl-font");
+    if (storedDir === "ltr" || storedDir === "rtl") {
+      setDirState(storedDir);
+      document.documentElement.dir = storedDir;
+      document.documentElement.classList.toggle("rtl-font", storedDir === "rtl");
     }
     const collapsed = window.localStorage.getItem(STORAGE_KEYS.sidebar);
     if (collapsed === "1") setSidebarCollapsed(true);
@@ -345,8 +346,15 @@ function SessionProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: qk.session });
   }, [convexMode, queryClient]);
 
+  const setDir = useCallback((next: "ltr" | "rtl") => {
+    setDirState(next);
+    document.documentElement.dir = next;
+    document.documentElement.classList.toggle("rtl-font", next === "rtl");
+    window.sessionStorage.setItem(STORAGE_KEYS.dir, next);
+  }, []);
+
   const toggleDir = useCallback(() => {
-    setDir((prev) => {
+    setDirState((prev) => {
       const next = prev === "ltr" ? "rtl" : "ltr";
       document.documentElement.dir = next;
       document.documentElement.classList.toggle("rtl-font", next === "rtl");
@@ -379,14 +387,19 @@ function SessionProvider({ children }: { children: ReactNode }) {
       setBehavior,
       resetDemo,
       dir,
+      setDir,
       toggleDir,
       sidebarCollapsed,
       toggleSidebar,
     }),
-    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, dir, toggleDir, sidebarCollapsed, toggleSidebar],
+    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, dir, setDir, toggleDir, sidebarCollapsed, toggleSidebar],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp(): AppContextValue {

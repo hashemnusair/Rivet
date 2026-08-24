@@ -11,14 +11,15 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { formatDateTime } from "@/lib/utils/dates";
+import { sortGymDirectory } from "@/lib/platform/gym-directory";
 
 type GymFilter = "all" | MarketplaceGym["subscriptionStatus"];
 
 const PLATFORM_SNAPSHOT_KEY = ["platform", "snapshot"] as const;
 const EMPTY_GYMS: MarketplaceGym[] = [];
 const STATUS_FILTERS: Array<{ value: GymFilter; label: string }> = [
+  { value: "active", label: "Active gyms" },
   { value: "all", label: "All gyms" },
-  { value: "active", label: "Active" },
   { value: "trial", label: "Trial" },
   { value: "overdue", label: "Past due" },
   { value: "suspended", label: "Suspended" },
@@ -27,7 +28,7 @@ const STATUS_FILTERS: Array<{ value: GymFilter; label: string }> = [
 
 export default function PlatformGymsPage() {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<GymFilter>("all");
+  const [filter, setFilter] = useState<GymFilter>("active");
   const directoryQuery = useRealtimeApiQuery<PlatformSnapshot>({
     queryKey: PLATFORM_SNAPSHOT_KEY,
     query: (api) => api.getPlatformSnapshot(),
@@ -49,11 +50,11 @@ export default function PlatformGymsPage() {
     }, { all: 0, active: 0, trial: 0, overdue: 0, suspended: 0, cancelled: 0 }),
     [directory],
   );
-  const hasFilters = Boolean(normalizedQuery) || filter !== "all";
+  const hasFilters = Boolean(normalizedQuery) || filter !== "active";
   const showingStaleDirectory = directoryQuery.isBackgroundError || directoryQuery.streamState === "fallback";
   const clearFilters = () => {
     setQuery("");
-    setFilter("all");
+    setFilter("active");
   };
 
   if (directoryQuery.isLoading && !directoryQuery.data) {
@@ -193,24 +194,6 @@ function statusPresentation(status: MarketplaceGym["subscriptionStatus"]) {
   if (status === "trial") return { label: "Trial", className: "bg-info-bg text-info" };
   if (status === "overdue") return { label: "Past due", className: "bg-warning-bg text-warning" };
   return { label: status === "cancelled" ? "Cancelled" : "Suspended", className: "bg-danger-bg text-danger" };
-}
-
-const GYM_STATUS_ORDER: Record<MarketplaceGym["subscriptionStatus"], number> = {
-  active: 0,
-  trial: 1,
-  overdue: 2,
-  suspended: 3,
-  cancelled: 4,
-};
-
-/** Keep the directory operationally useful: healthy tenants first, then a
- * stable lifecycle order and alphabetical names within each status. */
-export function sortGymDirectory(gyms: MarketplaceGym[]): MarketplaceGym[] {
-  return [...gyms].sort((left, right) => {
-    const statusOrder = GYM_STATUS_ORDER[left.subscriptionStatus] - GYM_STATUS_ORDER[right.subscriptionStatus];
-    if (statusOrder !== 0) return statusOrder;
-    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.id.localeCompare(right.id);
-  });
 }
 
 function lifecycleDeadline(gym: MarketplaceGym): { label: string; value: string } {

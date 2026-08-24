@@ -7996,6 +7996,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.facility_task.upsert":
     case "operations.equipment_asset.upsert":
     case "operations.equipment_issue.report":
+    case "operations.equipment_issue.update":
     case "operations.equipment_work_order.upsert":
       return await operationsMutation(ctx, actor, operation, input);
     case "accounting.manual_journal.post":

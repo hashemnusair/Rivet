@@ -169,4 +169,23 @@ describe("PlatformApplicationsPage", () => {
     await user.click(screen.getByRole("button", { name: "Refresh status" }));
     await waitFor(() => expect(screen.getByText("Workspace provisioned", { selector: "strong" })).toBeInTheDocument());
   });
+
+  it("does not show a false failure when the action response is lost after completion", async () => {
+    const user = userEvent.setup();
+    const inProgress = application({ status: "approved", provisioningStatus: "failed", provisioningError: "Previous response interrupted." });
+    const completed = application({ status: "approved", provisioningStatus: "completed", provisionedOrganizationId: "org-app-1", provisionedBranchId: "branch-app-1" });
+    let listCalls = 0;
+    state.list.mockImplementation(async () => {
+      listCalls += 1;
+      return [listCalls === 1 ? inProgress : completed];
+    });
+    state.provision.mockRejectedValue(new Error("The action response was interrupted after the workspace was created."));
+
+    render(<PlatformApplicationsPage />);
+    await screen.findByRole("heading", { name: "Northline Strength" });
+    await user.click(screen.getByRole("button", { name: "Retry provisioning" }));
+
+    await waitFor(() => expect(screen.getByText("Workspace provisioned", { selector: "strong" })).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

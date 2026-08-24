@@ -873,6 +873,31 @@ async function reportEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input
   return equipmentIssueView(created, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId);
 }
 
+async function updateEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requireOperationsWrite(actor);
+  const issueId = optionalText(input.id);
+  const issue = issueId ? await ctx.db.query("equipmentIssues").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", issueId)).unique() : null;
+  if (!issue) domainError("NOT_FOUND", "Equipment issue not found.", { correlationId: actor.correlationId });
+  const branch = await ctx.db.get(issue.branchId);
+  assertBranchAccess(actor, branch);
+  const status = input.status === undefined ? issue.status : assertOneOf(input.status, ["open", "in_progress", "resolved", "cancelled"] as const, "Equipment issue status", actor.correlationId);
+  const safetyStatus = input.safetyStatus === undefined ? issue.safetyStatus : assertOneOf(input.safetyStatus, ["unknown", "safe_to_operate", "out_of_service"] as const, "Equipment safety status", actor.correlationId);
+  const downtimeDays = input.downtimeDays === undefined ? issue.downtimeDays : finite(input.downtimeDays, Number.NaN);
+  if (downtimeDays !== undefined && (!Number.isFinite(downtimeDays) || downtimeDays < 0)) domainError("VALIDATION_ERROR", "Downtime days must be non-negative.", { correlationId: actor.correlationId });
+  const issueAsset = await ctx.db.get(issue.assetId);
+  if (!issueAsset) domainError("NOT_FOUND", "Equipment asset not found.", { correlationId: actor.correlationId });
+  const before = equipmentIssueView(issue, publicOrganizationId(actor.organization), publicBranchId(branch), issueAsset.publicId);
+  const resolvedAt = status === "resolved" ? issue.resolvedAt ?? Date.now() : undefined;
+  await ctx.db.patch(issue._id, { status, safetyStatus, downtimeDays, resolvedAt });
+  const updated = await ctx.db.get(issue._id);
+  if (!updated) domainError("NOT_FOUND", "Equipment issue could not be loaded after update.", { correlationId: actor.correlationId });
+  const asset = issueAsset;
+  const after = equipmentIssueView(updated, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId);
+  await audit(ctx, actor, { action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: updated.publicId, entityLabel: updated.title, summary: status === "resolved" ? "Equipment issue resolved" : "Equipment issue updated", before, after, branchId: publicBranchId(branch) });
+  return after;
+}
+
 function workOrderView(order: EquipmentWorkOrder, organizationId: string, branchId: string, assetId: string, issueId?: string): Data {
   return { id: order.publicId, organizationId, branchId, assetId, issueId, status: order.status, description: order.description, assigneeId: order.assigneeId, vendorName: order.vendorName, partsCost: money(order.partsCostMinor, order.costCurrency), laborCost: money(order.laborCostMinor, order.costCurrency), totalCost: money(order.totalCostMinor, order.costCurrency), replacementEstimate: money(order.replacementEstimateMinor, order.costCurrency), financialPostingStatus: order.financialPostingStatus, financialSourceId: order.financialSourceId, openedAt: iso(order.openedAt), completedAt: order.completedAt ? iso(order.completedAt) : undefined, updatedAt: iso(order.updatedAt) };
 }
@@ -1025,6 +1050,7 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.facility_task.upsert": return await upsertFacilityTask(ctx, actor, input);
     case "operations.equipment_asset.upsert": return await upsertEquipmentAsset(ctx, actor, input);
     case "operations.equipment_issue.report": return await reportEquipmentIssue(ctx, actor, input);
+    case "operations.equipment_issue.update": return await updateEquipmentIssue(ctx, actor, input);
     case "operations.equipment_work_order.upsert": return await upsertEquipmentWorkOrder(ctx, actor, input);
     default: domainError("NOT_FOUND", `Unknown operations mutation ${operation}.`, { correlationId: actor.correlationId });
   }
