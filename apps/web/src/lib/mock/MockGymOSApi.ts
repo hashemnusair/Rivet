@@ -84,6 +84,11 @@ import {
 
 const TZ = "Asia/Amman";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
+const MOCK_EQUIPMENT_ASSET_STATUSES: readonly T.EquipmentAssetStatus[] = ["active", "maintenance", "retired", "replaced"];
+const MOCK_EQUIPMENT_ISSUE_SEVERITIES: readonly T.EquipmentIssueSeverity[] = ["low", "medium", "high", "critical"];
+const MOCK_EQUIPMENT_ISSUE_STATUSES: readonly T.EquipmentIssueStatus[] = ["open", "in_progress", "resolved", "cancelled"];
+const MOCK_EQUIPMENT_SAFETY_STATUSES: readonly T.EquipmentIssue["safetyStatus"][] = ["unknown", "safe_to_operate", "out_of_service"];
+const MOCK_EQUIPMENT_WORK_ORDER_STATUSES: readonly T.EquipmentWorkOrder["status"][] = ["draft", "approved", "in_progress", "completed", "cancelled"];
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
 
 /**
@@ -6719,7 +6724,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsRead();
       const search = query.search?.trim().toLowerCase();
-      return this.db.suppliers.filter((supplier) => (query.includeArchived || supplier.status === "active") && (!search || `${supplier.name} ${supplier.contactName ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((supplier) => ({ ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] }));
+      return this.db.suppliers.filter((supplier) => (query.includeArchived || supplier.status === "active") && (this.actor().branchScope === "all" || supplier.branchIds.some((branchId) => this.branchIsVisible(branchId))) && (!search || `${supplier.name} ${supplier.contactName ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((supplier) => ({ ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] }));
     });
   }
 
@@ -7009,14 +7014,21 @@ export class MockGymOSApi implements GymOSApi {
       if (input.zoneId) this.operationsZone(branch.id, input.zoneId);
       const code = input.code.trim().toUpperCase();
       const name = input.name.trim();
-      if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
+      const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
+      const status = input.status ?? existing?.status ?? "active";
+      if (!MOCK_EQUIPMENT_ASSET_STATUSES.includes(status) || !/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || !Number.isSafeInteger(input.purchaseCost.amount) || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
+      if ((input.expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(input.expectedServiceIntervalDays) || input.expectedServiceIntervalDays < 1)) || (input.expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(input.expectedUsefulLifeMonths) || input.expectedUsefulLifeMonths < 1))) throw ApiError.of(ERR.VALIDATION, "Equipment service intervals must be positive whole numbers.");
       // Retired/replaced assets remain in history, but their code can be
       // reused by a new live asset. Maintenance assets still reserve it.
       const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && (asset.status === "active" || asset.status === "maintenance") && asset.id !== input.id);
       if (duplicate) throw ApiError.of(ERR.CONFLICT, "That equipment code is already used in this branch.");
-      const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
       if (input.id && (!existing || !this.branchIsVisible(existing.branchId))) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
       if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.CONFLICT, "Equipment assets cannot be reassigned between branches; use a future transfer workflow.");
+      if (existing && input.status !== undefined && input.status !== existing.status) {
+        const allowed = existing.status === "active" ? ["maintenance", "retired", "replaced"] : existing.status === "maintenance" ? ["active", "retired", "replaced"] : [];
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment asset cannot move from ${existing.status} to ${status}.`);
+      }
+      if (input.status === "active" && existing && this.db.equipmentIssues.some((issue) => issue.assetId === existing.id && !["resolved", "cancelled"].includes(issue.status) && issue.safetyStatus === "out_of_service")) throw ApiError.of(ERR.CONFLICT, "This equipment has an unresolved out-of-service issue. Resolve the issue before marking the asset active.");
       const immutableStatus = existing ? this.immutableAccountingStatus("equipment_acquisition", existing.id) : undefined;
       const purchaseDate = immutableStatus && input.purchaseDate === undefined ? existing?.purchaseDate : input.purchaseDate;
       const purchaseCost = immutableStatus && input.purchaseCost === undefined ? existing?.purchaseCost : input.purchaseCost;
@@ -7028,7 +7040,7 @@ export class MockGymOSApi implements GymOSApi {
         this.rejectImmutableAccountingMutation("This equipment acquisition", immutableStatus);
       }
       const now = nowISO();
-      const asset: T.EquipmentAsset = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, code, name, purchaseDate, purchaseCost, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: input.zoneId, code, name, manufacturer: input.manufacturer?.trim() || undefined, model: input.model?.trim() || undefined, serialNumber: input.serialNumber?.trim() || undefined, purchaseDate: input.purchaseDate, installationDate: input.installationDate, purchaseCost: input.purchaseCost, warrantyEndDate: input.warrantyEndDate, status: input.status ?? "active", expectedServiceIntervalDays: input.expectedServiceIntervalDays, expectedUsefulLifeMonths: input.expectedUsefulLifeMonths, createdAt: now, updatedAt: now };
+      const asset: T.EquipmentAsset = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, code, name, purchaseDate, purchaseCost, status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: input.zoneId, code, name, manufacturer: input.manufacturer?.trim() || undefined, model: input.model?.trim() || undefined, serialNumber: input.serialNumber?.trim() || undefined, purchaseDate: input.purchaseDate, installationDate: input.installationDate, purchaseCost: input.purchaseCost, warrantyEndDate: input.warrantyEndDate, status, expectedServiceIntervalDays: input.expectedServiceIntervalDays, expectedUsefulLifeMonths: input.expectedUsefulLifeMonths, createdAt: now, updatedAt: now };
       if (!existing) this.db.equipmentAssets.unshift(asset);
       this.audit({ category: "operations", action: existing ? "operations.equipment_asset.update" : "operations.equipment_asset.create", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: existing ? "Equipment asset updated" : "Equipment asset created", branchId: branch.id });
       return { ...asset, purchaseCost: asset.purchaseCost ? { ...asset.purchaseCost } : undefined, issueCount: this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id).length };
@@ -7041,10 +7053,18 @@ export class MockGymOSApi implements GymOSApi {
       const branch = this.operationsBranch(input.branchId);
       const asset = this.db.equipmentAssets.find((candidate) => candidate.id === input.assetId && candidate.branchId === branch.id);
       if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      if (["retired", "replaced"].includes(asset.status)) throw ApiError.of(ERR.CONFLICT, "Retired or replaced equipment cannot receive new issues.");
       const title = input.title.trim();
-      if (!title || title.length > 160 || (input.downtimeDays !== undefined && input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Equipment issue fields are invalid.");
-      const issue: T.EquipmentIssue = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, title, description: input.description?.trim() || undefined, severity: input.severity, status: "open", reportedAt: nowISO(), downtimeDays: input.downtimeDays, safetyStatus: input.safetyStatus ?? "unknown", createdById: this.actor().id };
+      const safetyStatus = input.safetyStatus ?? "unknown";
+      if (!MOCK_EQUIPMENT_ISSUE_SEVERITIES.includes(input.severity) || !MOCK_EQUIPMENT_SAFETY_STATUSES.includes(safetyStatus) || !title || title.length > 160 || (input.description !== undefined && input.description.trim().length > 2000) || (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0))) throw ApiError.of(ERR.VALIDATION, "Equipment issue fields are invalid.");
+      const issue: T.EquipmentIssue = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, title, description: input.description?.trim() || undefined, severity: input.severity, status: "open", reportedAt: nowISO(), downtimeDays: input.downtimeDays, safetyStatus, createdById: this.actor().id };
       this.db.equipmentIssues.unshift(issue);
+      if (safetyStatus === "out_of_service" && asset.status === "active") {
+        const beforeAsset = { ...asset };
+        asset.status = "maintenance";
+        asset.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: branch.id });
+      }
       this.audit({ category: "operations", action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: "Equipment issue reported", branchId: branch.id });
       return { ...issue };
     });
@@ -7056,15 +7076,35 @@ export class MockGymOSApi implements GymOSApi {
       const issue = this.db.equipmentIssues.find((candidate) => candidate.id === issueId && this.branchIsVisible(candidate.branchId));
       if (!issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found.");
       const status = input.status ?? issue.status;
-      if (!["open", "in_progress", "resolved", "cancelled"].includes(status)) throw ApiError.of(ERR.VALIDATION, "Equipment issue status is invalid.");
+      if (!MOCK_EQUIPMENT_ISSUE_STATUSES.includes(status)) throw ApiError.of(ERR.VALIDATION, "Equipment issue status is invalid.");
       const safetyStatus = input.safetyStatus ?? issue.safetyStatus;
-      if (!["unknown", "safe_to_operate", "out_of_service"].includes(safetyStatus)) throw ApiError.of(ERR.VALIDATION, "Equipment safety status is invalid.");
+      if (!MOCK_EQUIPMENT_SAFETY_STATUSES.includes(safetyStatus)) throw ApiError.of(ERR.VALIDATION, "Equipment safety status is invalid.");
+      if (status === "resolved" && safetyStatus !== "safe_to_operate") throw ApiError.of(ERR.VALIDATION, "An issue can only be resolved when the equipment is safe to operate.");
+      if (status !== issue.status) {
+        const allowed = issue.status === "open" ? ["in_progress", "resolved", "cancelled"] : issue.status === "in_progress" ? ["resolved", "cancelled"] : [];
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment issue cannot move from ${issue.status} to ${status}.`);
+      }
       if (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Downtime days must be non-negative.");
       const before = { ...issue };
       issue.status = status;
       issue.safetyStatus = safetyStatus;
       issue.downtimeDays = input.downtimeDays ?? issue.downtimeDays;
       issue.resolvedAt = status === "resolved" ? issue.resolvedAt ?? nowISO() : undefined;
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === issue.assetId);
+      if (asset && safetyStatus === "out_of_service" && asset.status === "active") {
+        const beforeAsset = { ...asset };
+        asset.status = "maintenance";
+        asset.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: issue.branchId });
+      } else if (asset && status === "resolved" && safetyStatus === "safe_to_operate" && asset.status === "maintenance") {
+        const remainingIssues = this.db.equipmentIssues.filter((candidate) => candidate.assetId === asset.id && candidate.id !== issue.id);
+        if (!remainingIssues.some((candidate) => !["resolved", "cancelled"].includes(candidate.status))) {
+          const beforeAsset = { ...asset };
+          asset.status = "active";
+          asset.updatedAt = nowISO();
+          this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment returned to active use after all issues were resolved", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: issue.branchId });
+        }
+      }
       this.audit({ category: "operations", action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: status === "resolved" ? "Equipment issue resolved" : "Equipment issue updated", before, after: { ...issue }, branchId: issue.branchId });
       return { ...issue };
     });
@@ -7086,10 +7126,23 @@ export class MockGymOSApi implements GymOSApi {
       if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
       const issue = input.issueId ? this.db.equipmentIssues.find((candidate) => candidate.id === input.issueId && candidate.assetId === asset.id) : undefined;
       if (input.issueId && !issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found for this asset.");
+      const assigneeId = input.assigneeId?.trim() || undefined;
+      if (assigneeId) {
+        const assignee = this.db.users.find((user) => user.id === assigneeId && user.status !== "deactivated" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+        if (!assignee) throw ApiError.of(ERR.NOT_FOUND, "Assignee not found for this branch.");
+      }
+      const description = input.description.trim();
+      if (!description || description.length > 240) throw ApiError.of(ERR.VALIDATION, "Work-order description must be between 1 and 240 characters.");
       const costs = [input.partsCost, input.laborCost, input.replacementEstimate].filter(Boolean) as T.Money[];
-      if (costs.some((cost) => cost.amount < 0 || cost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Work-order costs are invalid.");
+      if (!MOCK_EQUIPMENT_WORK_ORDER_STATUSES.includes(input.status ?? "draft") || costs.some((cost) => cost.amount < 0 || !Number.isSafeInteger(cost.amount) || cost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Work-order fields are invalid.");
       const existing = input.id ? this.db.equipmentWorkOrders.find((order) => order.id === input.id) : undefined;
       if (input.id && (!existing || existing.assetId !== asset.id)) throw ApiError.of(ERR.NOT_FOUND, "Work order not found.");
+      const status = input.status ?? existing?.status ?? "draft";
+      if (existing && input.status !== undefined && input.status !== existing.status && !(
+        (existing.status === "draft" && ["approved", "cancelled"].includes(input.status)) ||
+        (existing.status === "approved" && ["in_progress", "cancelled"].includes(input.status)) ||
+        (existing.status === "in_progress" && ["completed", "cancelled"].includes(input.status))
+      )) throw ApiError.of(ERR.CONFLICT, `A work order cannot move from ${existing.status} to ${input.status}.`);
       const immutableStatus = existing ? this.immutableAccountingStatus("equipment_repair", existing.id) : undefined;
       const issueId = immutableStatus && input.issueId === undefined ? existing?.issueId : issue?.id;
       const partsCost = immutableStatus && input.partsCost === undefined ? existing?.partsCost : input.partsCost;
@@ -7097,7 +7150,7 @@ export class MockGymOSApi implements GymOSApi {
       const totalCost = immutableStatus && input.partsCost === undefined && input.laborCost === undefined
         ? existing?.totalCost
         : input.partsCost || input.laborCost ? money((partsCost?.amount ?? 0) + (laborCost?.amount ?? 0), this.db.organization.currency) : undefined;
-      const status = input.status ?? existing?.status ?? "draft";
+      const replacementEstimate = immutableStatus && input.replacementEstimate === undefined ? existing?.replacementEstimate : input.replacementEstimate;
       const completedAt = immutableStatus && input.status === undefined
         ? existing?.completedAt
         : status === "completed" ? existing?.completedAt ?? nowISO() : undefined;
@@ -7112,12 +7165,14 @@ export class MockGymOSApi implements GymOSApi {
         laborCost?.amount !== existing.laborCost?.amount ||
         laborCost?.currency !== existing.laborCost?.currency ||
         totalCost?.amount !== existing.totalCost?.amount ||
-        totalCost?.currency !== existing.totalCost?.currency
+        totalCost?.currency !== existing.totalCost?.currency ||
+        replacementEstimate?.amount !== existing.replacementEstimate?.amount ||
+        replacementEstimate?.currency !== existing.replacementEstimate?.currency
       )) {
         this.rejectImmutableAccountingMutation("This equipment work order", immutableStatus);
       }
       const now = nowISO();
-      const order: T.EquipmentWorkOrder = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId, status, totalCost, partsCost, laborCost, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, completedAt, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId: issue?.id, status, description: input.description.trim(), assigneeId: input.assigneeId, vendorName: input.vendorName?.trim() || undefined, partsCost: input.partsCost, laborCost: input.laborCost, totalCost, replacementEstimate: input.replacementEstimate, financialPostingStatus: "not_posted", openedAt: now, completedAt: status === "completed" ? now : undefined, updatedAt: now };
+      const order: T.EquipmentWorkOrder = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId, status, description, assigneeId, totalCost, partsCost, laborCost, replacementEstimate, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, completedAt, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId: issue?.id, status, description, assigneeId, vendorName: input.vendorName?.trim() || undefined, partsCost: input.partsCost, laborCost: input.laborCost, totalCost, replacementEstimate, financialPostingStatus: "not_posted", openedAt: now, completedAt: status === "completed" ? now : undefined, updatedAt: now };
       if (!existing) this.db.equipmentWorkOrders.unshift(order);
       this.audit({ category: "operations", action: existing ? "operations.equipment_work_order.update" : "operations.equipment_work_order.create", entityType: "equipment_work_order", entityId: order.id, entityLabel: order.description, summary: existing ? "Equipment work order updated" : "Equipment work order created", branchId: branch.id });
       return { ...order, partsCost: order.partsCost ? { ...order.partsCost } : undefined, laborCost: order.laborCost ? { ...order.laborCost } : undefined, totalCost: order.totalCost ? { ...order.totalCost } : undefined, replacementEstimate: order.replacementEstimate ? { ...order.replacementEstimate } : undefined };
@@ -7138,20 +7193,22 @@ export class MockGymOSApi implements GymOSApi {
       const asset = this.db.equipmentAssets.find((candidate) => candidate.id === assetId && this.branchIsVisible(candidate.branchId));
       if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
       const issues = this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id);
-      const orders = this.db.equipmentWorkOrders.filter((order) => order.assetId === asset.id && order.status !== "cancelled");
-      const repairCostMinor = orders.reduce((sum, order) => sum + (order.totalCost?.amount ?? 0), 0);
-      const replacement = [...orders].reverse().find((order) => order.replacementEstimate);
-      const downtimeDays = issues.reduce((sum, issue) => sum + (issue.downtimeDays ?? 0), 0);
+      const relevantIssues = issues.filter((issue) => issue.status !== "cancelled");
+      const orders = this.db.equipmentWorkOrders.filter((order) => order.assetId === asset.id);
+      const repairOrders = orders.filter((order) => order.status === "completed" && order.financialPostingStatus !== "reversed").sort((left, right) => left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id));
+      const repairCostMinor = repairOrders.reduce((sum, order) => sum + (order.totalCost?.amount ?? 0), 0);
+      const replacement = orders.filter((order) => order.status !== "cancelled" && order.financialPostingStatus !== "reversed" && order.replacementEstimate).sort((left, right) => left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id)).at(-1);
+      const downtimeDays = relevantIssues.reduce((sum, issue) => sum + (issue.downtimeDays ?? 0), 0);
       const ageMonths = asset.purchaseDate ? Math.max(0, Math.floor((Date.now() - Date.parse(asset.purchaseDate)) / (30.44 * 86_400_000))) : undefined;
       const rationale: string[] = [];
       if (!repairCostMinor) rationale.push("No recorded repair cost is available.");
       if (!replacement?.replacementEstimate) rationale.push("No recorded replacement estimate is available.");
       if (!asset.purchaseDate) rationale.push("Purchase date is not recorded, so age cannot be assessed.");
       if (!asset.expectedUsefulLifeMonths) rationale.push("Expected useful life is not recorded.");
-      const safetyIssue = issues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
+      const safetyIssue = relevantIssues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
       let decision: T.EquipmentRecommendation["decision"] = "insufficient_data";
       if (repairCostMinor > 0 && replacement?.replacementEstimate && asset.purchaseDate && asset.expectedUsefulLifeMonths) decision = ageMonths! >= asset.expectedUsefulLifeMonths || repairCostMinor >= replacement.replacementEstimate.amount * 0.6 || safetyIssue ? "replace" : "fix";
-      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: issues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: relevantIssues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
     });
   }
 

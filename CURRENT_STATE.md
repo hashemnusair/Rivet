@@ -1,5 +1,43 @@
 # GymOS / RIVET current implementation state
 
+## Operations branch comparison and equipment restoration — 25 August 2026 (working-tree update)
+
+- The Operations workspace now treats inventory as branch-local data. A
+  concrete branch shows only that branch's available quantity, low-stock
+  state, checkout, and stock-management actions; the **All branches** view is
+  an explicit read-only comparison that totals availability and labels each
+  branch's quantity and alert state. It never silently substitutes the first
+  branch for an all-branches selection.
+- Checkout follows the same branch context as Inventory. Its branch selector
+  is synchronized with the global gym branch selector, valid deep links update
+  the shared selection, and a failed branch change is surfaced instead of
+  leaving the sale on an unselected branch. Mutating inventory and retail
+  checkout remain disabled until a concrete, visible branch is selected.
+- Inventory, Checkout, and Machines are now same-page tabs in one Operations
+  workspace. The branch comparison, compact low-stock summary, centered
+  dialogs, and simplified actions keep the primary operator flow focused on
+  what is available, what can be sold, and what needs attention.
+- The Machines tab restores the equipment register and its persisted repair
+  workflow: machine status, safety issues, issue resolution, work orders,
+  repair-versus-replace guidance, and historical activity. Equipment actions
+  remain branch-scoped and permission-gated. An out-of-service issue moves an
+  active machine into maintenance; resolving it requires an explicit
+  safe-to-operate confirmation and only returns it to active when no unsafe
+  unresolved issue remains. Work orders follow draft → approved → in progress
+  → completed (or cancellation) transitions, and terminal/retired machines
+  cannot receive new issues.
+- Convex and MockGymOSApi implement the same branch filtering, equipment
+  lifecycle, safety, assignee-scope, recommendation, and work-order rules.
+  Validation for this working tree passed: full Vitest coverage (**128 files /
+  743 tests**), app and Convex TypeScript checks, full ESLint and
+  secret-output audit, the production Next build, 9/9 safe Convex CLI tests,
+  and `git diff --check`. A mock-mode in-app browser visual pass (not
+  Playwright) verified the All branches comparison, independent Sweifieh stock
+  with global branch synchronization, Abdoun machine issue/work-order UI, the
+  centered Add machine dialog, and no app console errors. Commit/push and
+  Convex Production deployment remain pending; this section makes no
+  production success claim.
+
 ## Operations simplification and product-master deletion — 24 August 2026
 
 - The gym Operations surface is being reduced to two beginner-friendly,

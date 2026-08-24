@@ -286,7 +286,7 @@ function Cart({ lines, inventory, currency, onQuantity, onRemove }: { lines: Car
 }
 
 export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}) {
-  const { session } = useApp();
+  const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
   const invalidate = useInvalidate();
@@ -295,10 +295,16 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
   const visibleBranchIds = useMemo(() => new Set((visibleBranches ?? []).map((branch) => branch.id)), [visibleBranches]);
   const requestedBranchId = searchParams.get("branchId") ?? undefined;
   const validUrlBranchId = requestedBranchId && visibleBranchIds.has(requestedBranchId) ? requestedBranchId : undefined;
-  const globalBranchId = session?.activeBranchId && visibleBranchIds.has(session.activeBranchId) ? session.activeBranchId : visibleBranches?.[0]?.id;
+  // The topbar's "All branches" scope is intentionally not a checkout scope.
+  // A sale must name the branch whose inventory will be decremented, so never
+  // silently turn an organization-wide scope into the first visible branch.
+  const globalBranchId = session?.activeBranchId && visibleBranchIds.has(session.activeBranchId) ? session.activeBranchId : undefined;
   const [branchId, setBranchId] = useState("");
   const previousGlobalBranchId = useRef<string | undefined>(undefined);
   const previousUrlBranchId = useRef<string | undefined>(undefined);
+  const syncedUrlBranchId = useRef<string | undefined>(undefined);
+  const [branchSelectionError, setBranchSelectionError] = useState<string>();
+  const [branchChanging, setBranchChanging] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const productDebounced = useDebouncedValue(productSearch, 220);
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -343,14 +349,32 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
     // stable even when the Topbar changes the global branch. Without that
     // explicit choice, follow the session's active branch as it changes.
     const shouldSync = validUrlBranchId ? urlChanged : urlChanged || globalChanged;
-    if (shouldSync && nextBranchId && nextBranchId !== branchId) {
-      setBranchId(nextBranchId);
+    if (shouldSync && nextBranchId !== branchId) {
+      setBranchId(nextBranchId ?? "");
       setCart({});
       setMember(null);
     }
+
+    // A valid deep link is an explicit branch choice. Keep it authoritative
+    // for this checkout view, but also move the app-level branch scope so a
+    // return to Inventory, Facilities, or Equipment uses the same branch.
+    // Mark an already-matching global branch as synced so a later topbar
+    // change does not unexpectedly snap the checkout back to the URL branch.
+    if (urlChanged) syncedUrlBranchId.current = undefined;
+    if (validUrlBranchId && globalBranchId === validUrlBranchId) {
+      syncedUrlBranchId.current = validUrlBranchId;
+    } else if (validUrlBranchId && syncedUrlBranchId.current !== validUrlBranchId) {
+      syncedUrlBranchId.current = validUrlBranchId;
+      setBranchSelectionError(undefined);
+      void setBranch(validUrlBranchId).catch((error: unknown) => {
+        syncedUrlBranchId.current = undefined;
+        setBranchSelectionError(error instanceof Error ? error.message : "That branch could not be selected.");
+      });
+    }
+    if (!validUrlBranchId) syncedUrlBranchId.current = undefined;
     previousUrlBranchId.current = validUrlBranchId;
     previousGlobalBranchId.current = globalBranchId;
-  }, [branchId, globalBranchId, validUrlBranchId]);
+  }, [branchId, globalBranchId, setBranch, validUrlBranchId]);
 
   const productsQuery = useApiQuery(
     qk.operations({ checkout: "products", branchId: concreteBranchId }),
@@ -424,8 +448,41 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
     return <StatePanel icon={Boxes} title="Operations is paused" description="An organization owner can enable the operations module from workspace settings." className="mt-4" />;
   }
 
+  const chooseBranch = (nextBranchId: string) => {
+    if (!visibleBranchIds.has(nextBranchId) || nextBranchId === concreteBranchId) return;
+    const previousBranchId = concreteBranchId;
+    setBranchSelectionError(undefined);
+    setBranchId(nextBranchId);
+    setCart({});
+    setMember(null);
+    setBranchChanging(true);
+    void setBranch(nextBranchId)
+      .catch((error: unknown) => {
+        setBranchId(previousBranchId);
+        setBranchSelectionError(error instanceof Error ? error.message : "That branch could not be selected.");
+      })
+      .finally(() => setBranchChanging(false));
+  };
+
+  const branchPicker = session?.branches.length ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor="checkout-branch" className="text-[12px] font-medium text-ink-2">Selling from</label>
+      <Select value={concreteBranchId} onValueChange={chooseBranch} disabled={branchChanging}>
+        <SelectTrigger id="checkout-branch" className="w-56" aria-label="Checkout branch"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+        <SelectContent>{session.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+      </Select>
+      {branchSelectionError ? <p className="basis-full text-[12px] text-danger" role="alert">{branchSelectionError}</p> : null}
+    </div>
+  ) : null;
+
   if (!concreteBranchId) {
-    return <EmptyState title="No branch available" description="Select or configure an active branch before opening checkout." />;
+    return (
+      <div className={cn("mx-auto max-w-6xl space-y-5", embedded && "max-w-none")} data-testid="retail-checkout">
+        {!embedded ? <PageHeader eyebrow="Operations · Sell and stock" title="Checkout" description="Sell stock at the desk. The server records the payment, receipt, and stock movement together." /> : null}
+        {branchPicker}
+        <EmptyState title={session?.branches.length ? "Choose a branch to check out" : "No branch available"} description={session?.branches.length ? "Checkout needs one specific branch so stock and the receipt are recorded correctly." : "Configure an active branch before opening checkout."} />
+      </div>
+    );
   }
 
   const stockFor = (productId: string) => availableFor(productId, inventory);
@@ -463,15 +520,7 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
         actions={<Button asChild variant="secondary" size="sm"><Link href="/operations"><ArrowLeft /> Operations</Link></Button>}
       /> : null}
 
-      {session?.branches.length && session.branches.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="checkout-branch" className="text-[12px] font-medium text-ink-2">Selling from</label>
-          <Select value={concreteBranchId} onValueChange={(value) => { setBranchId(value); setCart({}); setMember(null); }}>
-            <SelectTrigger id="checkout-branch" className="w-56" aria-label="Checkout branch"><SelectValue /></SelectTrigger>
-            <SelectContent>{session.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      ) : null}
+      {session?.branches.length && session.branches.length > 1 ? branchPicker : null}
 
       {queryError ? <QueryErrorState error={queryError} onRetry={() => { void productsQuery.refetch(); void inventoryQuery.refetch(); }} /> : null}
 

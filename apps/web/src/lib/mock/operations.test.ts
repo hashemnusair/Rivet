@@ -76,6 +76,32 @@ describe("mock daily operations parity", () => {
     await expect(api.updateEquipmentIssue(issue.id, { status: "in_progress" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 
+  it("reconciles equipment safety state and keeps supplier lists branch-scoped", async () => {
+    const session = await api.getSession();
+    const branchA = session.branches[0]!;
+    const branchB = session.branches[1]!;
+    const asset = await api.upsertEquipmentAsset({ branchId: branchB.id, code: "SAFE-01", name: "Safety test machine" });
+    const issue = await api.reportEquipmentIssue({ branchId: branchB.id, assetId: asset.id, title: "Emergency stop failed", severity: "critical", safetyStatus: "out_of_service" });
+    expect((await api.listEquipmentAssets({ branchId: branchB.id })).find((candidate) => candidate.id === asset.id)).toMatchObject({ status: "maintenance" });
+    await expect(api.updateEquipmentIssue(issue.id, { status: "resolved" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await api.updateEquipmentIssue(issue.id, { status: "resolved", safetyStatus: "safe_to_operate" });
+    expect((await api.listEquipmentAssets({ branchId: branchB.id })).find((candidate) => candidate.id === asset.id)).toMatchObject({ status: "active" });
+    await expect(api.updateEquipmentIssue(issue.id, { status: "in_progress" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const branchAReceptionist = (await api.listUsers({ role: "receptionist", status: "active", pageSize: 10 })).items.find((user) => user.branchIds.includes(branchA.id));
+    await expect(api.upsertEquipmentWorkOrder({ branchId: branchB.id, assetId: asset.id, assigneeId: branchAReceptionist?.id, description: "Wrong branch assignee" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    const order = await api.upsertEquipmentWorkOrder({ branchId: branchB.id, assetId: asset.id, description: "Replace emergency-stop switch" });
+    await api.upsertEquipmentWorkOrder({ id: order.id, branchId: branchB.id, assetId: asset.id, status: "approved", description: order.description });
+    await api.upsertEquipmentWorkOrder({ id: order.id, branchId: branchB.id, assetId: asset.id, status: "in_progress", description: order.description });
+    const completed = await api.upsertEquipmentWorkOrder({ id: order.id, branchId: branchB.id, assetId: asset.id, status: "completed", description: order.description });
+    expect(completed.status).toBe("completed");
+    await expect(api.upsertEquipmentWorkOrder({ id: order.id, branchId: branchB.id, assetId: asset.id, status: "draft", description: order.description })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const privateSupplier = await api.upsertSupplier({ name: "Second branch supplier", branchIds: [branchB.id] });
+    await api.switchDemoRole("receptionist", branchA.id);
+    expect((await api.listSuppliers()).some((supplier) => supplier.id === privateSupplier.id)).toBe(false);
+  });
+
   it("approves and receives a seeded mock purchase order idempotently", async () => {
     const branchId = (await api.getSession()).branches[0]!.id;
     const product = (await api.listProducts()).find((item) => item.sku === "SUP-PROTEIN")!;

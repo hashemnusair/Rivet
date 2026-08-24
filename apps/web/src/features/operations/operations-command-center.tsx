@@ -5,15 +5,24 @@ import {
   Archive,
   Boxes,
   Check,
+  CheckCircle2,
+  ChevronRight,
+  Cog,
   PackagePlus,
   Pencil,
   Plus,
+  ShieldAlert,
   ShoppingCart,
   Store,
   Trash2,
+  Wrench,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
+  EquipmentAsset,
+  EquipmentIssue,
+  EquipmentRecommendation,
+  EquipmentWorkOrder,
   InventoryBalance,
   LowStockAlert,
   CreatePurchaseOrderInput,
@@ -23,7 +32,10 @@ import type {
   PurchaseOrderSourceType,
   Supplier,
   UpsertProductInput,
+  UpsertEquipmentAssetInput,
+  UpsertEquipmentWorkOrderInput,
   UpsertSupplierInput,
+  UpdateEquipmentIssueInput,
   WorkspaceAccess,
 } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
@@ -31,7 +43,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { fromMajor, money, toMajor } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import { DateText, MoneyText } from "@/components/shared/data-display";
+import { DateText, DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +56,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RetailCheckout } from "./retail-checkout";
 
-type OperationsTab = "inventory" | "checkout";
+type OperationsTab = "inventory" | "checkout" | "equipment";
 
 const CURRENCY_FALLBACK = "JOD";
 
@@ -68,6 +80,21 @@ function statusVariant(status: string): "neutral" | "success" | "warning" | "dan
 function StatusBadge({ status }: { status: string }) {
   return <Badge variant={statusVariant(status)} dot>{status.replaceAll("_", " ")}</Badge>;
 }
+
+const ASSET_STATUS_LABELS: Record<EquipmentAsset["status"], string> = {
+  active: "Active",
+  maintenance: "In maintenance",
+  retired: "Retired",
+  replaced: "Replaced",
+};
+
+const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], string> = {
+  draft: "Draft",
+  approved: "Approved",
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
 
 function FormPanel({ title, description, onCancel, children }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode }) {
   return (
@@ -171,12 +198,130 @@ function PurchaseOrderForm({ currency, products, suppliers, branchId, pending, o
   );
 }
 
+function EquipmentAssetForm({ currency, zones, branchId, asset, activeBlocked = false, pending, onCancel, onSubmit }: { currency: string; zones: Array<{ id: string; name: string }>; branchId?: string; asset?: EquipmentAsset; activeBlocked?: boolean; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertEquipmentAssetInput) => void }) {
+  const [form, setForm] = useState(() => ({
+    code: asset?.code ?? "",
+    name: asset?.name ?? "",
+    manufacturer: asset?.manufacturer ?? "",
+    model: asset?.model ?? "",
+    serialNumber: asset?.serialNumber ?? "",
+    zoneId: asset?.zoneId ?? "",
+    purchaseDate: asset?.purchaseDate ?? "",
+    purchaseCost: asset?.purchaseCost ? String(toMajor(asset.purchaseCost)) : "",
+    warrantyEndDate: asset?.warrantyEndDate ?? "",
+    status: asset?.status ?? "active",
+    serviceInterval: asset?.expectedServiceIntervalDays ? String(asset.expectedServiceIntervalDays) : "",
+    usefulLife: asset?.expectedUsefulLifeMonths ? String(asset.expectedUsefulLifeMonths) : "",
+  }));
+  const editing = Boolean(asset);
+  const statusOptions: EquipmentAsset["status"][] = !asset
+    ? ["active"]
+    : asset.status === "active"
+      ? ["active", "maintenance", "retired", "replaced"]
+      : asset.status === "maintenance"
+        ? ["maintenance", "active", "retired", "replaced"]
+        : [asset.status];
+  return (
+    <FormPanel title={editing ? "Edit machine" : "Add machine"} description="Keep a clear record of each machine, its location, and its current status." onCancel={onCancel}>
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        if (!branchId) return;
+        onSubmit({
+          id: asset?.id,
+          branchId,
+          code: form.code,
+          name: form.name,
+          manufacturer: form.manufacturer || undefined,
+          model: form.model || undefined,
+          serialNumber: form.serialNumber || undefined,
+          zoneId: form.zoneId || undefined,
+          purchaseDate: form.purchaseDate || undefined,
+          purchaseCost: minorValue(form.purchaseCost, currency),
+          warrantyEndDate: form.warrantyEndDate || undefined,
+          status: form.status as EquipmentAsset["status"],
+          expectedServiceIntervalDays: form.serviceInterval ? Number(form.serviceInterval) : undefined,
+          expectedUsefulLifeMonths: form.usefulLife ? Number(form.usefulLife) : undefined,
+        });
+      }}>
+        <Field label="Machine code" hint="A short code staff can recognize" required><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="TREAD-02" required /></Field>
+        <Field label="Machine name" required><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Commercial treadmill" required /></Field>
+        <Field label="Manufacturer"><Input value={form.manufacturer} onChange={(event) => setForm((current) => ({ ...current, manufacturer: event.target.value }))} placeholder="Life Fitness" /></Field>
+        <Field label="Model"><Input value={form.model} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))} placeholder="T5" /></Field>
+        <Field label="Serial number"><Input dir="ltr" value={form.serialNumber} onChange={(event) => setForm((current) => ({ ...current, serialNumber: event.target.value }))} /></Field>
+        <Field label="Location"><Select value={form.zoneId || "none"} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value === "none" ? "" : value }))}><SelectTrigger aria-label="Machine location"><SelectValue placeholder="No location" /></SelectTrigger><SelectContent><SelectItem value="none">No location</SelectItem>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Status" hint={activeBlocked ? "Resolve the out-of-service issue and mark it safe before returning this machine to active use." : editing && (asset?.status === "retired" || asset?.status === "replaced") ? "Retired and replaced machines keep their history and cannot be reactivated." : undefined}><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as EquipmentAsset["status"] }))}><SelectTrigger aria-label="Machine status"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((status) => <SelectItem key={status} value={status} disabled={status === "active" && activeBlocked}>{ASSET_STATUS_LABELS[status]}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Purchase date"><Input type="date" dir="ltr" value={form.purchaseDate} onChange={(event) => setForm((current) => ({ ...current, purchaseDate: event.target.value }))} /></Field>
+        <Field label={`Purchase cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.purchaseCost} onChange={(event) => setForm((current) => ({ ...current, purchaseCost: event.target.value }))} placeholder="0.000" /></Field>
+        <Field label="Warranty ends"><Input type="date" dir="ltr" value={form.warrantyEndDate} onChange={(event) => setForm((current) => ({ ...current, warrantyEndDate: event.target.value }))} /></Field>
+        <Field label="Service interval" hint="Days between planned checks"><Input type="number" min="1" step="1" dir="ltr" value={form.serviceInterval} onChange={(event) => setForm((current) => ({ ...current, serviceInterval: event.target.value }))} placeholder="90" /></Field>
+        <Field label="Expected useful life" hint="Months"><Input type="number" min="1" step="1" dir="ltr" value={form.usefulLife} onChange={(event) => setForm((current) => ({ ...current, usefulLife: event.target.value }))} placeholder="84" /></Field>
+        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><Cog /> {editing ? "Save machine" : "Add machine"}</Button></div>
+      </form>
+    </FormPanel>
+  );
+}
+
+function EquipmentIssueForm({ assets, branchId, pending, onCancel, onSubmit }: { assets: EquipmentAsset[]; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: { branchId: string; assetId: string; title: string; description?: string; severity: EquipmentIssue["severity"]; downtimeDays?: number; safetyStatus: EquipmentIssue["safetyStatus"] }) => void }) {
+  const [form, setForm] = useState(() => ({ assetId: assets[0]?.id ?? "", title: "", description: "", severity: "medium", downtime: "", safety: "unknown" }));
+  return (
+    <FormPanel title="Report machine issue" description="Record what is wrong and whether the machine is safe to use. The issue stays in the machine history until resolved." onCancel={onCancel}>
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        if (!branchId) return;
+        onSubmit({ branchId, assetId: form.assetId, title: form.title, description: form.description || undefined, severity: form.severity as EquipmentIssue["severity"], downtimeDays: form.downtime ? Number(form.downtime) : undefined, safetyStatus: form.safety as EquipmentIssue["safetyStatus"] });
+      }}>
+        <Field label="Machine" required><Select value={form.assetId} onValueChange={(value) => setForm((current) => ({ ...current, assetId: value }))}><SelectTrigger aria-label="Issue machine"><SelectValue placeholder="Choose machine" /></SelectTrigger><SelectContent>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.code} · {asset.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Severity" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value }))}><SelectTrigger aria-label="Issue severity"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
+        <Field label="Safety status" hint="Tell the next staff member what to do" required><Select value={form.safety} onValueChange={(value) => setForm((current) => ({ ...current, safety: value }))}><SelectTrigger aria-label="Equipment safety status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unknown">Needs assessment</SelectItem><SelectItem value="safe_to_operate">Safe to operate</SelectItem><SelectItem value="out_of_service">Take out of service</SelectItem></SelectContent></Select></Field>
+        <Field label="Downtime" hint="Days unavailable"><Input type="number" min="0" step="1" dir="ltr" value={form.downtime} onChange={(event) => setForm((current) => ({ ...current, downtime: event.target.value }))} placeholder="0" /></Field>
+        <Field label="Issue title" className="sm:col-span-2" required><Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Belt slipping under load" required /></Field>
+        <Field label="Description" className="sm:col-span-2"><Textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Add details that help the repair person." /></Field>
+        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId || assets.length === 0}><ShieldAlert /> Report issue</Button></div>
+      </form>
+    </FormPanel>
+  );
+}
+
+function EquipmentWorkOrderForm({ currency, assets, issues, branchId, order, pending, onCancel, onSubmit }: { currency: string; assets: EquipmentAsset[]; issues: EquipmentIssue[]; branchId?: string; order?: EquipmentWorkOrder; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertEquipmentWorkOrderInput) => void }) {
+  const [form, setForm] = useState(() => ({ assetId: order?.assetId ?? assets[0]?.id ?? "", issueId: order?.issueId ?? "", description: order?.description ?? "", vendorName: order?.vendorName ?? "", partsCost: order?.partsCost ? String(toMajor(order.partsCost)) : "", laborCost: order?.laborCost ? String(toMajor(order.laborCost)) : "", replacementEstimate: order?.replacementEstimate ? String(toMajor(order.replacementEstimate)) : "", status: order?.status ?? "draft" }));
+  const assetIssues = issues.filter((issue) => issue.assetId === form.assetId && !["resolved", "cancelled"].includes(issue.status));
+  const editing = Boolean(order);
+  const statusOptions: EquipmentWorkOrder["status"][] = !order
+    ? ["draft"]
+    : order.status === "draft"
+      ? ["draft", "approved", "cancelled"]
+      : order.status === "approved"
+        ? ["approved", "in_progress", "cancelled"]
+        : order.status === "in_progress"
+          ? ["in_progress", "completed", "cancelled"]
+          : [order.status];
+  return (
+    <FormPanel title={editing ? "Edit work order" : "Open work order"} description="Track the repair work, costs, and current status for this machine." onCancel={onCancel}>
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        if (!branchId) return;
+        onSubmit({ id: order?.id, branchId, assetId: form.assetId, issueId: form.issueId || undefined, description: form.description, vendorName: form.vendorName || undefined, partsCost: minorValue(form.partsCost, currency), laborCost: minorValue(form.laborCost, currency), replacementEstimate: minorValue(form.replacementEstimate, currency), status: form.status as EquipmentWorkOrder["status"] });
+      }}>
+        <Field label="Machine" required><Select value={form.assetId} onValueChange={(value) => setForm((current) => ({ ...current, assetId: value, issueId: "" }))}><SelectTrigger aria-label="Work order machine"><SelectValue placeholder="Choose machine" /></SelectTrigger><SelectContent>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.code} · {asset.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Related issue"><Select value={form.issueId || "none"} onValueChange={(value) => setForm((current) => ({ ...current, issueId: value === "none" ? "" : value }))}><SelectTrigger aria-label="Related machine issue"><SelectValue placeholder="No linked issue" /></SelectTrigger><SelectContent><SelectItem value="none">No linked issue</SelectItem>{assetIssues.map((issue) => <SelectItem key={issue.id} value={issue.id}>{issue.title}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Description" className="sm:col-span-2" required><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Inspect belt and motor" required /></Field>
+        <Field label="Vendor"><Input value={form.vendorName} onChange={(event) => setForm((current) => ({ ...current, vendorName: event.target.value }))} placeholder="Service partner" /></Field>
+        <Field label="Status" hint={!editing ? "New work orders start as drafts. Approve one before work begins." : "Use only the next workflow step or cancel this order."}><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as EquipmentWorkOrder["status"] }))}><SelectTrigger aria-label="Work order status"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((status) => <SelectItem key={status} value={status}>{WORK_ORDER_STATUS_LABELS[status]}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label={`Parts cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.partsCost} onChange={(event) => setForm((current) => ({ ...current, partsCost: event.target.value }))} /></Field>
+        <Field label={`Labor cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.laborCost} onChange={(event) => setForm((current) => ({ ...current, laborCost: event.target.value }))} /></Field>
+        <Field label={`Replacement estimate (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.replacementEstimate} onChange={(event) => setForm((current) => ({ ...current, replacementEstimate: event.target.value }))} /></Field>
+        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId || assets.length === 0}><Wrench /> {editing ? "Save work order" : "Open work order"}</Button></div>
+      </form>
+    </FormPanel>
+  );
+}
+
 function SectionHeader({ icon: Icon, title, description, actions }: { icon: typeof Boxes; title: string; description?: string; actions?: React.ReactNode }) {
   return <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5"><div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><Icon className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="font-display text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-0.5 text-[11.5px] text-ink-3">{description}</p> : null}</div></div>{actions}</div>;
 }
 
 function ReadOnlyNotice() {
-  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You have read-only access to inventory. Managers can add items, suppliers, and purchase orders.</div>;
+  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You have read-only access to operations. Managers can add items, suppliers, purchase orders, and machine records.</div>;
 }
 
 type OperationsMutations = {
@@ -187,6 +332,10 @@ type OperationsMutations = {
   purchaseOrder: ReturnType<typeof useApiMutation<unknown, CreatePurchaseOrderInput>>;
   approveOrder: ReturnType<typeof useApiMutation<unknown, { id: string; reason?: string }>>;
   receiveOrder: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; idempotencyKey: string }>>;
+  asset: ReturnType<typeof useApiMutation<unknown, UpsertEquipmentAssetInput>>;
+  issue: ReturnType<typeof useApiMutation<unknown, { branchId: string; assetId: string; title: string; description?: string; severity: EquipmentIssue["severity"]; downtimeDays?: number; safetyStatus: EquipmentIssue["safetyStatus"] }>>;
+  issueUpdate: ReturnType<typeof useApiMutation<unknown, { id: string; input: UpdateEquipmentIssueInput }>>;
+  workOrder: ReturnType<typeof useApiMutation<unknown, UpsertEquipmentWorkOrderInput>>;
 };
 
 function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): OperationsMutations {
@@ -198,7 +347,11 @@ function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): O
   const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order draft created." });
   const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
   const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Purchase order received into stock." });
-  return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder } as OperationsMutations;
+  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Equipment saved." });
+  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Equipment issue reported." });
+  const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Equipment issue updated." });
+  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Work order saved." });
+  return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, asset, issue, issueUpdate, workOrder } as OperationsMutations;
 }
 
 function PurchaseOrderRow({ order, writeEnabled, currency, mutations }: { order: PurchaseOrder; writeEnabled: boolean; currency: string; mutations: OperationsMutations }) {
@@ -215,6 +368,52 @@ function PurchaseOrderListDialog({ open, onOpenChange, orders, writeEnabled, cur
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>Purchase orders</DialogTitle><DialogDescription>Approve a draft to reserve stock, then receive it when it arrives.</DialogDescription></DialogHeader><DialogBody className="max-h-[60vh] overflow-y-auto p-0">{orders.length === 0 ? <EmptyState compact title="No purchase orders" description="Create a draft when a stock alert needs replenishment." className="m-4" /> : <div className="divide-y divide-line">{orders.map((order) => <PurchaseOrderRow key={order.id} order={order} writeEnabled={writeEnabled} currency={currency} mutations={mutations} />)}</div>}</DialogBody><DialogFooter>{writeEnabled ? <Button onClick={onCreate}><Plus /> New purchase order</Button> : null}<Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter></DialogContent></Dialog>;
 }
 
+function EquipmentRecommendationPanel({ asset, recommendation, loading, error }: { asset?: EquipmentAsset; recommendation?: EquipmentRecommendation; loading: boolean; error?: unknown }) {
+  if (!asset) return <div className="flex min-h-40 items-center justify-center p-5 text-center text-[12px] text-ink-3">Select a machine to see its repair history.</div>;
+  if (loading) return <div className="space-y-3 p-5"><Skeleton className="h-5 w-32" /><Skeleton className="h-16 w-full" /><Skeleton className="h-4 w-40" /></div>;
+  if (error) return <div className="p-5 text-[12px] text-danger" role="alert">Machine history could not be loaded. Try again after refreshing.</div>;
+  if (!recommendation) return null;
+  const decisionLabel = recommendation.decision === "fix" ? "Repair looks reasonable" : recommendation.decision === "replace" ? "Replacement may be better" : "More information needed";
+  const decisionTone = recommendation.decision === "fix" ? "success" : recommendation.decision === "replace" ? "danger" : "warning";
+  return <div className="space-y-3 p-5"><div><p className="eyebrow">Repair decision support</p><div className="mt-1 flex flex-wrap items-center gap-2"><Badge variant={decisionTone} dot>{recommendation.decision.replaceAll("_", " ")}</Badge><span className="text-[13px] font-medium">{decisionLabel}</span></div><p className="mt-1 text-[11px] text-ink-3">Based only on recorded issues, costs, age, and useful life. A manager still makes the final decision.</p></div><div className="grid grid-cols-2 gap-3 text-[12px]"><div><p className="eyebrow">Issues</p><p className="mt-1 font-mono text-[17px]" dir="ltr">{recommendation.issueCount}</p></div><div><p className="eyebrow">Downtime</p><p className="mt-1 font-mono text-[17px]" dir="ltr">{recommendation.downtimeDays}d</p></div><div><p className="eyebrow">Repair total</p><p className="mt-1"><MoneyText money={recommendation.repairCost} /></p></div><div><p className="eyebrow">Replacement</p><p className="mt-1"><MoneyText money={recommendation.replacementEstimate} /></p></div></div><ul className="space-y-1 border-t border-line pt-3 text-[11px] text-ink-2">{recommendation.rationale.map((reason) => <li key={reason} className="flex gap-2"><span className="mt-1 size-1.5 shrink-0 rounded-full bg-ink-3" aria-hidden />{reason}</li>)}</ul></div>;
+}
+
+function EquipmentTab({ branchId, currency, writeEnabled, zones, assets, issues, workOrders, loading, error, onRetry, mutations }: { branchId?: string; currency: string; writeEnabled: boolean; zones: Array<{ id: string; name: string }>; assets: EquipmentAsset[]; issues: EquipmentIssue[]; workOrders: EquipmentWorkOrder[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
+  const [assetForm, setAssetForm] = useState<EquipmentAsset | "new" | null>(null);
+  const [issueForm, setIssueForm] = useState(false);
+  const [workOrderForm, setWorkOrderForm] = useState<EquipmentWorkOrder | "new" | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string>();
+  const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
+  const actionAssets = assets.filter((asset) => !["retired", "replaced"].includes(asset.status));
+  const recommendationQuery = useApiQuery(qk.operations({ kind: "equipment-recommendation", assetId: selectedAsset?.id }), (api) => api.getEquipmentRecommendation(selectedAsset!.id), { enabled: Boolean(selectedAsset?.id) });
+
+  useEffect(() => {
+    if (!assets.some((asset) => asset.id === selectedAssetId)) setSelectedAssetId(assets[0]?.id);
+  }, [assets, selectedAssetId]);
+
+  if (!branchId) return <StatePanel icon={Wrench} title="Choose a branch first" description="Equipment belongs to one branch at a time. Choose a branch above to view and update its machines." className="mt-2" />;
+  if (loading) return <LoadingGrid />;
+  if (error) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read machine records for this workspace." />;
+
+  const updateAssetStatus = (asset: EquipmentAsset, status: EquipmentAsset["status"]) => mutations.asset.mutate({ id: asset.id, branchId: asset.branchId, zoneId: asset.zoneId, code: asset.code, name: asset.name, manufacturer: asset.manufacturer, model: asset.model, serialNumber: asset.serialNumber, purchaseDate: asset.purchaseDate, installationDate: asset.installationDate, purchaseCost: asset.purchaseCost, warrantyEndDate: asset.warrantyEndDate, status, expectedServiceIntervalDays: asset.expectedServiceIntervalDays, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths });
+  const updateWorkOrder = (order: EquipmentWorkOrder, status: EquipmentWorkOrder["status"]) => mutations.workOrder.mutate({ id: order.id, branchId: order.branchId, assetId: order.assetId, issueId: order.issueId, status, description: order.description, assigneeId: order.assigneeId, vendorName: order.vendorName, partsCost: order.partsCost, laborCost: order.laborCost, replacementEstimate: order.replacementEstimate });
+  const hasUnsafeOpenIssue = (assetId: string) => issues.some((issue) => issue.assetId === assetId && !["resolved", "cancelled"].includes(issue.status) && issue.safetyStatus === "out_of_service");
+  const openIssues = issues.filter((issue) => !["resolved", "cancelled"].includes(issue.status));
+  const openOrders = workOrders.filter((order) => !["completed", "cancelled"].includes(order.status));
+  return <div className="space-y-4" data-testid="operations-equipment">
+    <div className="grid gap-3 sm:grid-cols-3"><section className="panel p-4"><p className="eyebrow">Machines</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{assets.length}</p><p className="mt-1 text-[11px] text-ink-3">Registered at this branch</p></section><section className={cn("panel p-4", openIssues.length > 0 && "border-warning/50 bg-warning-bg/20")}><p className="eyebrow">Open issues</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{openIssues.length}</p><p className="mt-1 text-[11px] text-ink-3">Resolve after the machine is checked</p></section><section className="panel p-4"><p className="eyebrow">Open work orders</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{openOrders.length}</p><p className="mt-1 text-[11px] text-ink-3">Repairs in progress or awaiting work</p></section></div>
+    {!writeEnabled ? <ReadOnlyNotice /> : null}
+    <section className="panel overflow-hidden"><SectionHeader icon={Wrench} title="Machine register" description="Select a machine to see its status, issue history, and repair decision support." actions={writeEnabled ? <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => setIssueForm(true)} disabled={actionAssets.length === 0}><ShieldAlert /> Report issue</Button><Button size="sm" onClick={() => setAssetForm("new")}><Plus /> Add machine</Button></div> : null} />
+      {assets.length === 0 ? <EmptyState title="No machines registered" description="Add the first machine for this branch to start recording issues and repairs." className="m-4" /> : <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)] lg:divide-x lg:divide-y-0"><div className="divide-y divide-line">{assets.map((asset) => { const unsafeOpenIssue = hasUnsafeOpenIssue(asset.id); const cannotActivate = asset.status === "maintenance" && unsafeOpenIssue; return <div key={asset.id} className={cn("flex items-center gap-3 p-4", selectedAsset?.id === asset.id && "bg-sunken")}><button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-start hover:opacity-80" onClick={() => setSelectedAssetId(asset.id)} aria-pressed={selectedAsset?.id === asset.id}><span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface"><Cog className="size-4 text-ink-2" aria-hidden /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="font-mono text-[12px] font-medium">{asset.code}</span><StatusBadge status={asset.status} /></span><span className="mt-1 block truncate text-[13px]">{asset.name}</span><span className="mt-0.5 block truncate text-[11px] text-ink-3">{asset.manufacturer ?? "Unknown manufacturer"}{asset.model ? ` · ${asset.model}` : ""} · {issues.filter((issue) => issue.assetId === asset.id).length} issue records</span></span><ChevronRight className="size-4 shrink-0 text-ink-3 rtl:rotate-180" aria-hidden /></button>{writeEnabled ? <div className="flex shrink-0 flex-col items-end gap-1"><div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={`Edit ${asset.name}`} onClick={() => setAssetForm(asset)}><Pencil /></Button>{!["retired", "replaced"].includes(asset.status) ? <Button size="xs" variant="secondary" onClick={() => updateAssetStatus(asset, asset.status === "maintenance" ? "active" : "maintenance")} loading={mutations.asset.isPending} disabled={cannotActivate} title={cannotActivate ? "Resolve the out-of-service issue and mark it safe before returning this machine to active use." : undefined}>{asset.status === "maintenance" ? "Mark active" : "Maintenance"}</Button> : null}</div>{cannotActivate ? <span className="max-w-44 text-end text-[10px] leading-snug text-warning-deep" role="status">Resolve the out-of-service issue below before marking active.</span> : null}</div> : null}</div>; })}</div><EquipmentRecommendationPanel asset={selectedAsset} recommendation={recommendationQuery.data} loading={recommendationQuery.isLoading} error={recommendationQuery.error} /></div>}
+    </section>
+    <div className="grid gap-4 lg:grid-cols-2"><section className="panel overflow-hidden"><SectionHeader icon={ShieldAlert} title="Issue history" description="Every report stays here; update the status as the machine is investigated and repaired." />{issues.length === 0 ? <EmptyState compact title="No issue history" description="Reported machine problems will appear here." className="m-4" /> : <div className="divide-y divide-line">{issues.map((issue) => { const asset = assets.find((item) => item.id === issue.assetId); return <div key={issue.id} className="space-y-2 p-4"><div className="flex items-start justify-between gap-2"><div><p className="text-[13px] font-medium">{issue.title}</p><p className="mt-0.5 text-[11px] text-ink-3">{asset?.code ?? "Machine"} · {issue.severity} · {issue.downtimeDays ?? 0} downtime days</p></div><StatusBadge status={issue.status} /></div><p className="text-[11px] text-ink-3"><StatusBadge status={issue.safetyStatus} /> · reported <DateTimeText iso={issue.reportedAt} /></p>{writeEnabled && !["resolved", "cancelled"].includes(issue.status) ? <div className="flex flex-wrap gap-2 pt-1"><Button size="xs" variant="secondary" onClick={() => mutations.issueUpdate.mutate({ id: issue.id, input: issue.status === "open" ? { status: "in_progress" } : { status: "resolved", safetyStatus: "safe_to_operate" } })} loading={mutations.issueUpdate.isPending} title={issue.status === "open" ? undefined : "Resolving confirms this machine is safe to operate."}>{issue.status === "open" ? "Start investigation" : "Resolve issue"}</Button><Button size="xs" variant="ghost" onClick={() => mutations.issueUpdate.mutate({ id: issue.id, input: { status: "cancelled" } })} loading={mutations.issueUpdate.isPending}>Cancel report</Button></div> : null}</div>; })}</div>}</section>
+      <section className="panel overflow-hidden"><SectionHeader icon={Wrench} title="Work orders" description="Approve a repair, start the work, then complete or cancel it. Costs remain visible for management and finance." actions={writeEnabled ? <Button size="sm" onClick={() => setWorkOrderForm("new")} disabled={actionAssets.length === 0}><Plus /> Open work order</Button> : null} />{workOrders.length === 0 ? <EmptyState compact title="No work orders" description="Open one when a machine needs repair or a replacement quote." className="m-4" /> : <div className="divide-y divide-line">{workOrders.map((order) => { const asset = assets.find((item) => item.id === order.assetId); return <div key={order.id} className="space-y-2 p-4"><div className="flex items-start justify-between gap-2"><div><p className="text-[13px] font-medium">{order.description}</p><p className="mt-0.5 text-[11px] text-ink-3">{asset?.code ?? "Machine"}{order.vendorName ? ` · ${order.vendorName}` : ""}</p></div><StatusBadge status={order.status} /></div><p className="text-[11px] text-ink-3">Repair <MoneyText money={order.totalCost} /> · replacement <MoneyText money={order.replacementEstimate} /> · opened <DateTimeText iso={order.openedAt} /></p>{writeEnabled && !["completed", "cancelled"].includes(order.status) ? <div className="flex flex-wrap gap-2 pt-1">{order.status === "draft" ? <Button size="xs" onClick={() => updateWorkOrder(order, "approved")} loading={mutations.workOrder.isPending}><Check /> Approve</Button> : null}{order.status === "approved" ? <Button size="xs" variant="secondary" onClick={() => updateWorkOrder(order, "in_progress")} loading={mutations.workOrder.isPending}><Wrench /> Start work</Button> : null}{order.status === "in_progress" ? <Button size="xs" onClick={() => updateWorkOrder(order, "completed")} loading={mutations.workOrder.isPending}><CheckCircle2 /> Complete</Button> : null}<Button size="xs" variant="ghost" onClick={() => updateWorkOrder(order, "cancelled")} loading={mutations.workOrder.isPending}>Cancel order</Button><Button size="icon" variant="ghost" aria-label={`Edit ${order.description}`} onClick={() => setWorkOrderForm(order)}><Pencil /></Button></div> : null}</div>; })}</div>}</section></div>
+    {assetForm ? <EquipmentAssetForm currency={currency} zones={zones} branchId={branchId} asset={assetForm === "new" ? undefined : assetForm} activeBlocked={assetForm !== "new" && hasUnsafeOpenIssue(assetForm.id)} pending={mutations.asset.isPending} onCancel={() => setAssetForm(null)} onSubmit={(input) => mutations.asset.mutate(input, { onSuccess: () => setAssetForm(null) })} /> : null}
+    {issueForm ? <EquipmentIssueForm assets={actionAssets} branchId={branchId} pending={mutations.issue.isPending} onCancel={() => setIssueForm(false)} onSubmit={(input) => mutations.issue.mutate(input, { onSuccess: () => setIssueForm(false) })} /> : null}
+    {workOrderForm ? <EquipmentWorkOrderForm currency={currency} assets={actionAssets} issues={issues} branchId={branchId} order={workOrderForm === "new" ? undefined : workOrderForm} pending={mutations.workOrder.isPending} onCancel={() => setWorkOrderForm(null)} onSubmit={(input) => mutations.workOrder.mutate(input, { onSuccess: () => setWorkOrderForm(null) })} /> : null}
+  </div>;
+}
+
 function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled, products, suppliers, inventory, alerts, orders, loading, error, onRetry, mutations }: { branchId?: string; branchLabel: string; branches: Array<{ id: string; name: string }>; currency: string; writeEnabled: boolean; products: Product[]; suppliers: Supplier[]; inventory: InventoryBalance[]; alerts: LowStockAlert[]; orders: PurchaseOrder[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
   const [productForm, setProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product>();
@@ -227,9 +426,9 @@ function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled,
   const productName = useMemo(() => new Map(products.map((product) => [product.id, product.name])), [products]);
   const alertProductIds = useMemo(() => new Set(alerts.map((alert) => alert.productId)), [alerts]);
   const inventoryByProduct = useMemo(() => {
-    const map = new Map<string, InventoryBalance>();
+    const map = new Map<string, InventoryBalance[]>();
     inventory.forEach((row) => {
-      if (!branchId || row.branchId === branchId) map.set(row.productId, row);
+      if (!branchId || row.branchId === branchId) map.set(row.productId, [...(map.get(row.productId) ?? []), row]);
     });
     return map;
   }, [branchId, inventory]);
@@ -240,20 +439,17 @@ function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled,
   return (
     <div className="space-y-4" data-testid="operations-inventory">
       <section className="panel overflow-hidden">
-        <SectionHeader icon={Boxes} title="Inventory" description={"Simple stock view for " + branchLabel.toLowerCase() + ". Available is what can be sold right now."} actions={<div className="flex flex-wrap gap-2">{writeEnabled ? <><Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }}><Plus /> Add item</Button><Button size="sm" variant="secondary" onClick={() => setSupplierDialog(true)}><Store /> Suppliers</Button><Button size="sm" variant="secondary" onClick={() => setOrdersDialog(true)} disabled={!branchId}><ShoppingCart /> Purchase orders</Button></> : null}</div>} />
+        <SectionHeader icon={Boxes} title="Inventory" description={branchId ? "Available is what staff can sell at " + branchLabel.toLowerCase() + "." : "Compare available stock across branches. Choose one branch above before editing or selling."} actions={<div className="flex flex-wrap gap-2">{writeEnabled ? <><Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }} disabled={!branchId}><Plus /> Add item</Button><Button size="sm" variant="secondary" onClick={() => setSupplierDialog(true)}><Store /> Suppliers</Button><Button size="sm" variant="secondary" onClick={() => setOrdersDialog(true)} disabled={!branchId}><ShoppingCart /> Purchase orders</Button></> : null}</div>} />
         {!writeEnabled ? <div className="p-4"><ReadOnlyNotice /></div> : null}
-        <div className="overflow-x-auto"><table className="w-full text-start"><caption className="sr-only">Available inventory</caption><thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="px-4 py-2.5 font-medium">Item</th><th className="px-4 py-2.5 text-end font-medium">Available</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 text-end font-medium">Selling price</th><th className="px-4 py-2.5 text-end font-medium">Actions</th></tr></thead><tbody className="divide-y divide-line">{products.length === 0 ? <tr><td colSpan={5}><EmptyState compact title="No stock items yet" description="Add an item to start tracking what is available." className="m-4" /></td></tr> : products.map((product) => { const row = inventoryByProduct.get(product.id); const available = row?.availableQuantity ?? 0; const low = available <= product.reorderPoint; const needsReplenishment = alertProductIds.has(product.id); return <tr key={product.id} className="text-[12.5px]"><td className="px-4 py-3"><span className="font-medium">{product.name}</span><span className="block text-[11px] text-ink-3">{product.sku} · {product.unit}</span></td><td className={cn("px-4 py-3 text-end font-mono", needsReplenishment ? "text-warning-deep" : "text-ink")} dir="ltr">{available}</td><td className="px-4 py-3">{needsReplenishment ? <Badge variant="warning" dot>{low ? "Low stock" : "Replenish soon"}</Badge> : <Badge variant="success" dot>Available</Badge>}</td><td className="px-4 py-3 text-end font-mono" dir="ltr">{product.retailPrice ? <MoneyText money={product.retailPrice} /> : <span className="text-ink-3">Not set</span>}</td><td className="px-4 py-3 text-end"><div className="flex justify-end gap-1">{writeEnabled ? <><Button size="icon" variant="ghost" aria-label={"Edit " + product.name} onClick={() => { setEditingProduct(product); setProductForm(true); }}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={"Delete " + product.name} onClick={() => setDeleteTarget({ type: "product", id: product.id, label: product.name })}><Trash2 /></Button></> : null}</div></td></tr>; })}</tbody></table></div>
-      </section>
-
-      <section className="panel overflow-hidden">
-        <SectionHeader icon={AlertTriangle} title="Running low" description="Items at or below the alert level. Replenish them before they sell out." />
-        {alerts.length === 0 ? <EmptyState compact title="Nothing is running low" description="This list updates after stock changes and threshold updates." className="m-4" /> : <div className="divide-y divide-line">{alerts.map((alert) => <div key={alert.id} className="p-4"><p className="font-medium text-ink">{productName.get(alert.productId) ?? alert.productId}</p><p className="mt-1 text-[12px] text-ink-3">Available <span className="font-mono" dir="ltr">{alert.availableQuantity}</span> · alert at <span className="font-mono" dir="ltr">{alert.reorderPoint}</span></p></div>)}</div>}
+        {!branchId && writeEnabled ? <div className="border-b border-line bg-warning-bg/40 px-4 py-2.5 text-[12px] text-warning-deep" role="status">Select a branch above to add items, change quantities, create purchase orders, or check out.</div> : null}
+        <div className="overflow-x-auto"><table className="w-full text-start"><caption className="sr-only">Available inventory</caption><thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="px-4 py-2.5 font-medium">Item</th><th className="px-4 py-2.5 text-end font-medium">Available</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 text-end font-medium">Selling price</th><th className="px-4 py-2.5 text-end font-medium">Actions</th></tr></thead><tbody className="divide-y divide-line">{products.length === 0 ? <tr><td colSpan={5}><EmptyState compact title="No stock items yet" description="Add an item to start tracking what is available." className="m-4" /></td></tr> : products.map((product) => { const rows = inventoryByProduct.get(product.id) ?? []; const productAlerts = alerts.filter((alert) => alert.productId === product.id); const selectedRow = rows.find((row) => row.branchId === branchId); const available = selectedRow?.availableQuantity ?? 0; const totalAvailable = rows.reduce((sum, row) => sum + row.availableQuantity, 0); const low = selectedRow ? available <= product.reorderPoint : rows.some((row) => row.availableQuantity <= product.reorderPoint); const needsReplenishment = alertProductIds.has(product.id); const alertBranches = [...new Set(productAlerts.map((alert) => branches.find((branch) => branch.id === alert.branchId)?.name ?? alert.branchId))].join(", "); return <tr key={product.id} className="text-[12.5px]"><td className="px-4 py-3"><span className="font-medium">{product.name}</span><span className="block text-[11px] text-ink-3">{product.sku} · {product.unit}</span></td><td className={cn("px-4 py-3 text-end font-mono", needsReplenishment ? "text-warning-deep" : "text-ink")} dir="ltr">{branchId ? available : <><span>Total {totalAvailable}</span>{rows.length > 0 ? <span className="mt-1 block text-[10px] font-sans text-ink-3">{rows.map((row) => `${branches.find((branch) => branch.id === row.branchId)?.name ?? row.branchId}: ${row.availableQuantity}`).join(" · ")}</span> : null}</>}</td><td className="px-4 py-3">{needsReplenishment ? <Badge variant="warning" dot>{branchId ? (low ? "Low stock" : "Replenish soon") : `${low ? "Low stock" : "Replenish soon"} · ${alertBranches}`}</Badge> : <Badge variant="success" dot>Available</Badge>}</td><td className="px-4 py-3 text-end font-mono" dir="ltr">{product.retailPrice ? <MoneyText money={product.retailPrice} /> : <span className="text-ink-3">Not set</span>}</td><td className="px-4 py-3 text-end"><div className="flex justify-end gap-1">{writeEnabled ? <><Button size="icon" variant="ghost" aria-label={"Edit " + product.name} onClick={() => { setEditingProduct(product); setProductForm(true); }} disabled={!branchId}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={"Delete " + product.name} onClick={() => setDeleteTarget({ type: "product", id: product.id, label: product.name })}><Trash2 /></Button></> : null}</div></td></tr>; })}</tbody></table></div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunken/30 px-4 py-2.5 text-[11.5px]" role="status"><AlertTriangle className={cn("size-3.5", alerts.length > 0 ? "text-warning-deep" : "text-ink-3")} aria-hidden />{alerts.length > 0 ? <span><strong>{alerts.length}</strong> low-stock {alerts.length === 1 ? "alert" : "alerts"}{branchId ? " at this branch" : " across visible branches"}.</span> : <span>No low-stock alerts for this scope.</span>}{alerts.length > 0 ? <span className="text-ink-3">{alerts.slice(0, 3).map((alert) => `${productName.get(alert.productId) ?? "Item"} · ${branches.find((branch) => branch.id === alert.branchId)?.name ?? alert.branchId} (${alert.availableQuantity})`).join(" · ")}{alerts.length > 3 ? " · …" : ""}</span> : null}</div>
       </section>
 
       <SupplierManagementDialog open={supplierDialog} onOpenChange={setSupplierDialog} suppliers={suppliers} branches={branches} writeEnabled={writeEnabled} onAdd={() => { setSupplierDialog(false); setEditingSupplier(undefined); setSupplierForm(true); }} onEdit={(supplier) => { setSupplierDialog(false); setEditingSupplier(supplier); setSupplierForm(true); }} onArchive={(supplier) => { setSupplierDialog(false); setDeleteTarget({ type: "supplier", id: supplier.id, label: supplier.name }); }} />
       <PurchaseOrderListDialog open={ordersDialog} onOpenChange={setOrdersDialog} orders={orders} writeEnabled={writeEnabled} currency={currency} mutations={mutations} onCreate={() => { setOrdersDialog(false); setOrderForm(true); }} />
 
-      {productForm ? <ProductForm key={editingProduct?.id ?? "new-product"} currency={currency} branchId={branchId} product={editingProduct} availableQuantity={editingProduct ? inventoryByProduct.get(editingProduct.id)?.availableQuantity : undefined} pending={mutations.product.isPending} onCancel={closeProductForm} onRequestDelete={editingProduct ? () => { const productToDelete = editingProduct; closeProductForm(); setDeleteTarget({ type: "product", id: productToDelete.id, label: productToDelete.name }); } : undefined} onSubmit={(input) => mutations.product.mutate(input, { onSuccess: closeProductForm })} /> : null}
+      {productForm ? <ProductForm key={editingProduct?.id ?? "new-product"} currency={currency} branchId={branchId} product={editingProduct} availableQuantity={editingProduct ? inventoryByProduct.get(editingProduct.id)?.[0]?.availableQuantity : undefined} pending={mutations.product.isPending} onCancel={closeProductForm} onRequestDelete={editingProduct ? () => { const productToDelete = editingProduct; closeProductForm(); setDeleteTarget({ type: "product", id: productToDelete.id, label: productToDelete.name }); } : undefined} onSubmit={(input) => mutations.product.mutate(input, { onSuccess: closeProductForm })} /> : null}
       {supplierForm ? <SupplierForm key={editingSupplier?.id ?? "new-supplier"} defaultBranchId={branchId} branches={branches} supplier={editingSupplier} pending={mutations.supplier.isPending} onCancel={closeSupplierForm} onSubmit={(input) => mutations.supplier.mutate(input, { onSuccess: closeSupplierForm })} /> : null}
       {orderForm ? <PurchaseOrderForm currency={currency} products={products} suppliers={suppliers} branchId={branchId} pending={mutations.purchaseOrder.isPending} onCancel={() => setOrderForm(false)} onSubmit={(input) => mutations.purchaseOrder.mutate(input, { onSuccess: () => setOrderForm(false) })} /> : null}
       <DeleteDialog kind={deleteTarget?.type} label={deleteTarget?.label ?? "item"} open={Boolean(deleteTarget)} pending={mutations.deleteProduct.isPending || mutations.archiveSupplier.isPending} onOpenChange={(open) => { if (!open) setDeleteTarget(undefined); }} onConfirm={(reason, confirmation) => { if (!deleteTarget) return; const onSuccess = () => setDeleteTarget(undefined); if (deleteTarget.type === "product") mutations.deleteProduct.mutate({ productId: deleteTarget.id, reason, confirmation: confirmation ?? "" }, { onSuccess }); else mutations.archiveSupplier.mutate({ id: deleteTarget.id, reason }, { onSuccess }); }} />
@@ -266,12 +462,12 @@ function LoadingGrid() {
 }
 
 export function OperationsCommandCenter() {
-  const { session } = useApp();
+  const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const [tab, setTab] = useState<OperationsTab>("inventory");
-  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
-  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : "No branch selected";
+  const branchId = session?.activeBranchId;
+  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : "All branches";
   const currency = session?.organization.currency ?? CURRENCY_FALLBACK;
   const writeEnabled = can("operations.manage");
   const canCheckout = can("payments.collect");
@@ -284,6 +480,10 @@ export function OperationsCommandCenter() {
   const inventoryQuery = useApiQuery(qk.operations({ kind: "inventory", branchId }), (api) => api.listInventory({ branchId }), { enabled: ready });
   const alertQuery = useApiQuery(qk.operations({ kind: "alerts", branchId }), (api) => api.listLowStockAlerts({ branchId }), { enabled: ready });
   const ordersQuery = useApiQuery(qk.operations({ kind: "purchase-orders", branchId }), (api) => api.listPurchaseOrders({ branchId }), { enabled: ready });
+  const zonesQuery = useApiQuery(qk.operations({ kind: "equipment-zones", branchId }), (api) => api.listZones({ branchId, includeArchived: false }), { enabled: ready && Boolean(branchId) });
+  const assetsQuery = useApiQuery(qk.operations({ kind: "equipment-assets", branchId }), (api) => api.listEquipmentAssets({ branchId }), { enabled: ready && Boolean(branchId) });
+  const issuesQuery = useApiQuery(qk.operations({ kind: "equipment-issues", branchId }), (api) => api.listEquipmentIssues({ branchId }), { enabled: ready && Boolean(branchId) });
+  const workOrdersQuery = useApiQuery(qk.operations({ kind: "equipment-work-orders", branchId }), (api) => api.listEquipmentWorkOrders({ branchId }), { enabled: ready && Boolean(branchId) });
   const mutations = useOperationsMutations(invalidate);
 
   if (!can("members.read")) return <ForbiddenState description="Daily operations are limited to gym team members with operational read access." />;
@@ -293,12 +493,19 @@ export function OperationsCommandCenter() {
   if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Operations is paused" description="An organization owner can enable the operations module from workspace settings." className="mt-4" />;
 
   const inventoryError = productQuery.error ?? supplierQuery.error ?? inventoryQuery.error ?? alertQuery.error ?? ordersQuery.error;
+  const equipmentError = zonesQuery.error ?? assetsQuery.error ?? issuesQuery.error ?? workOrdersQuery.error;
   const retryInventory = () => { void Promise.all([productQuery.refetch(), supplierQuery.refetch(), inventoryQuery.refetch(), alertQuery.refetch(), ordersQuery.refetch()]); };
+  const retryEquipment = () => { void Promise.all([zonesQuery.refetch(), assetsQuery.refetch(), issuesQuery.refetch(), workOrdersQuery.refetch()]); };
   const inventoryLoading = [productQuery, supplierQuery, inventoryQuery, alertQuery, ordersQuery].some((query) => query.isLoading);
+  const equipmentLoading = Boolean(branchId) && [zonesQuery, assetsQuery, issuesQuery, workOrdersQuery].some((query) => query.isLoading);
   const products = productQuery.data ?? [];
   const suppliers = supplierQuery.data ?? [];
   const inventory = inventoryQuery.data ?? [];
   const alerts = alertQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
-  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Inventory and checkout" description={"See what is available at " + branchLabel.toLowerCase() + ", sell it, and replenish it when stock runs low."} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><span className="size-1.5 rounded-full bg-success" aria-hidden />{branchLabel}</div>} />{inventoryError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some inventory data could not refresh. <button type="button" className="font-medium underline" onClick={retryInventory}>Retry</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList aria-label="Operations workspace" className="inline-flex w-fit rounded-lg border border-line bg-surface p-1"><TabsTrigger value="inventory" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Boxes className="size-3.5" /> Inventory</TabsTrigger>{canCheckout ? <TabsTrigger value="checkout" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ShoppingCart className="size-3.5" /> Checkout</TabsTrigger> : null}</TabsList><TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={session?.branches ?? []} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} /></TabsContent>{canCheckout ? <TabsContent value="checkout"><RetailCheckout embedded /></TabsContent> : null}</Tabs></div>;
+  const assets = assetsQuery.data ?? [];
+  const issues = issuesQuery.data ?? [];
+  const workOrders = workOrdersQuery.data ?? [];
+  const branches = session?.branches ?? [];
+  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Inventory, checkout, and machines" description={branchId ? `Manage stock and equipment at ${branchLabel.toLowerCase()}. Each branch keeps its own balances.` : "Compare stock across branches. Select a branch before making changes."} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><label htmlFor="operations-branch" className="sr-only">Operations branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value); }}><SelectTrigger id="operations-branch" aria-label="Operations branch" className="h-8 min-w-44 border-0 bg-transparent px-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>} />{inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some operational data could not refresh. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>Retry</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList aria-label="Operations workspace" className="inline-flex w-fit rounded-lg border border-line bg-surface p-1"><TabsTrigger value="inventory" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Boxes className="size-3.5" /> Inventory</TabsTrigger>{canCheckout ? <TabsTrigger value="checkout" disabled={!branchId} className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ShoppingCart className="size-3.5" /> Checkout</TabsTrigger> : null}<TabsTrigger value="equipment" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Wrench className="size-3.5" /> Equipment</TabsTrigger></TabsList><TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} /></TabsContent>{canCheckout ? <TabsContent value="checkout">{branchId ? <RetailCheckout embedded /> : <StatePanel icon={ShoppingCart} title="Choose a branch first" description="Checkout uses the selected branch’s independent inventory. Choose a branch above to begin a sale." className="mt-2" />}</TabsContent> : null}<TabsContent value="equipment"><EquipmentTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} zones={zonesQuery.data ?? []} assets={assets} issues={issues} workOrders={workOrders} loading={equipmentLoading} error={equipmentError} onRetry={retryEquipment} mutations={mutations} /></TabsContent></Tabs></div>;
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import type { Product } from "@/lib/domain/types";
@@ -16,6 +16,9 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/operations/checkout",
   useSearchParams: () => checkoutSearchParams,
 }));
+
+HTMLElement.prototype.scrollIntoView = vi.fn();
+HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
 
 afterEach(() => {
   routerMock.push.mockReset();
@@ -37,10 +40,15 @@ const product = (overrides: Partial<Product> = {}): Product => ({
   ...overrides,
 });
 
-function BranchChanger({ branchId }: { branchId: string }) {
+function BranchChanger({ branchId }: { branchId: string | undefined }) {
   const { setBranch } = useApp();
   useEffect(() => { void setBranch(branchId); }, [branchId, setBranch]);
   return null;
+}
+
+function GlobalBranchProbe() {
+  const { session } = useApp();
+  return <span data-testid="global-branch">{session?.activeBranchId ?? "all"}</span>;
 }
 
 describe("retail checkout", () => {
@@ -66,6 +74,44 @@ describe("retail checkout", () => {
     await screen.findByText("Protein bar");
     expect(await screen.findByRole("button", { name: `Add another ${productToSell.name}` })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Checkout branch" })).toHaveTextContent(session.branches[0]!.name);
+  });
+
+  it("does not silently use the first branch when the app is scoped to all branches", async () => {
+    await renderWithApp(<RetailCheckout />, { role: "owner" });
+
+    expect(await screen.findByRole("combobox", { name: "Checkout branch" })).toHaveTextContent("Choose a branch");
+    expect(screen.getByText("Choose a branch to check out")).toBeInTheDocument();
+    expect(screen.queryByText("Choose items")).not.toBeInTheDocument();
+  });
+
+  it("synchronizes a checkout branch choice with the global app branch", async () => {
+    const probe = new MockGymOSApi();
+    const session = await probe.getSession();
+    const nextBranch = session.branches[1]!;
+    const user = userEvent.setup();
+
+    await renderWithApp(<><GlobalBranchProbe /><RetailCheckout /></>, { role: "owner" });
+
+    fireEvent.keyDown(await screen.findByRole("combobox", { name: "Checkout branch" }), { key: "ArrowDown" });
+    await user.click(await screen.findByRole("option", { name: nextBranch.name }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("global-branch")).toHaveTextContent(nextBranch.id);
+      expect(screen.getByRole("combobox", { name: "Checkout branch" })).toHaveTextContent(nextBranch.name);
+    });
+    expect(await screen.findByText("Choose items")).toBeInTheDocument();
+  });
+
+  it("syncs a valid branch deep link to the global app branch", async () => {
+    const probe = new MockGymOSApi();
+    const session = await probe.getSession();
+    const deepLinkBranch = session.branches[1]!;
+    checkoutSearchParams = new URLSearchParams({ branchId: deepLinkBranch.id });
+
+    await renderWithApp(<><GlobalBranchProbe /><RetailCheckout /></>, { role: "owner" });
+
+    await waitFor(() => expect(screen.getByTestId("global-branch")).toHaveTextContent(deepLinkBranch.id));
+    expect(screen.getByRole("combobox", { name: "Checkout branch" })).toHaveTextContent(deepLinkBranch.name);
   });
 
   it("offers member lookup and guest checkout without asking for a fake member", async () => {

@@ -260,10 +260,14 @@ describe("daily operations typed contracts", () => {
     expect(task).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(task.financialSourceId).toBeUndefined();
     const asset = await owner.mutation(api.domain.mutate, operation("operations.equipment_asset.upsert", { branchId: "operations-branch-a", zoneId: zone.id, code: "TREAD-01", name: "Treadmill" })) as { id: string };
-    const issue = await owner.mutation(api.domain.mutate, operation("operations.equipment_issue.report", { branchId: "operations-branch-a", assetId: asset.id, title: "Noise", severity: "medium" })) as { id: string; status: string };
+    const issue = await owner.mutation(api.domain.mutate, operation("operations.equipment_issue.report", { branchId: "operations-branch-a", assetId: asset.id, title: "Noise", severity: "medium", safetyStatus: "out_of_service" })) as { id: string; status: string };
     expect(issue.status).toBe("open");
+    expect(await owner.query(api.domain.query, operation("operations.equipment_assets.list", { branchId: "operations-branch-a" }))).toEqual(expect.arrayContaining([expect.objectContaining({ id: asset.id, status: "maintenance" })]));
+    await expectCode(manager.mutation(api.domain.mutate, operation("operations.equipment_issue.update", { id: issue.id, status: "resolved" })), "VALIDATION_ERROR");
     const resolvedIssue = await manager.mutation(api.domain.mutate, operation("operations.equipment_issue.update", { id: issue.id, status: "resolved", safetyStatus: "safe_to_operate" })) as { status: string; safetyStatus: string; resolvedAt?: string };
     expect(resolvedIssue).toMatchObject({ status: "resolved", safetyStatus: "safe_to_operate", resolvedAt: expect.any(String) });
+    expect(await owner.query(api.domain.query, operation("operations.equipment_assets.list", { branchId: "operations-branch-a" }))).toEqual(expect.arrayContaining([expect.objectContaining({ id: asset.id, status: "active" })]));
+    await expectCode(manager.mutation(api.domain.mutate, operation("operations.equipment_issue.update", { id: issue.id, status: "in_progress" })), "CONFLICT");
     const workOrder = await manager.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { branchId: "operations-branch-a", assetId: asset.id, description: "Inspect motor", partsCost: { amount: 100, currency: "JOD" }, financialPostingStatus: "posted", financialSourceId: "forged-work-order-source" })) as { financialPostingStatus: string; financialSourceId?: string };
     expect(workOrder).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(workOrder.financialSourceId).toBeUndefined();
@@ -315,6 +319,19 @@ describe("daily operations typed contracts", () => {
     const adjustment = await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: 1, reason: "Cycle count correction", idempotencyKey: "adjustment-with-reason" })) as { reason?: string };
     expect(adjustment.reason).toBe("Cycle count correction");
     await expect(owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: -1, reason: "Reverse cycle count correction", idempotencyKey: "adjustment-negative" }))).resolves.toMatchObject({ quantityDelta: -1, quantity: 1 });
+  });
+
+  it("keeps equipment assignees and work-order transitions branch-safe", async () => {
+    const { owner } = await seeded();
+    const asset = await owner.mutation(api.domain.mutate, operation("operations.equipment_asset.upsert", { branchId: "operations-branch-b", code: "SECOND-01", name: "Second branch machine" })) as { id: string };
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { branchId: "operations-branch-b", assetId: asset.id, assigneeId: "operations-manager", description: "Wrong branch assignee" })), "VALIDATION_ERROR");
+    const order = await owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { branchId: "operations-branch-b", assetId: asset.id, description: "Replace emergency-stop switch" })) as { id: string; status: string; description: string };
+    expect(order.status).toBe("draft");
+    await owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: order.id, branchId: "operations-branch-b", assetId: asset.id, status: "approved", description: order.description }));
+    await owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: order.id, branchId: "operations-branch-b", assetId: asset.id, status: "in_progress", description: order.description }));
+    const completed = await owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: order.id, branchId: "operations-branch-b", assetId: asset.id, status: "completed", description: order.description })) as { status: string };
+    expect(completed.status).toBe("completed");
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: order.id, branchId: "operations-branch-b", assetId: asset.id, status: "draft", description: order.description })), "CONFLICT");
   });
 
   it("permanently deletes a product, releases its SKU, and keeps history readable", async () => {

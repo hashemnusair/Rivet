@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-24 for the subscription, retail, provider-removal, and
-Operations simplification update.
+Last reviewed: 2026-08-25 for the subscription, retail, provider-removal, and
+Operations branch/equipment working-tree update.
 
 ## Purpose
 
@@ -69,6 +69,47 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   build. No Playwright journey was run for this pass.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
+
+### Operations branch comparison and equipment restoration — 25 August 2026 (working-tree update)
+
+- Inventory balances are independent per branch. A concrete branch selection
+  scopes available stock, low-stock alerts, checkout, purchase-order work,
+  and stock adjustments to that branch. **All branches** is an explicit
+  read-only comparison that totals stock while retaining branch-by-branch
+  quantities and alert labels; it must never fall back to the first branch.
+- Checkout uses the same branch context as Inventory. The in-page branch
+  selector synchronizes with the global gym selector, valid `branchId` deep
+  links update the shared context, and invalid or failed changes are visible
+  to the operator. Inventory mutations and retail checkout require a concrete
+  accessible branch, preventing accidental sales against an ambiguous
+  all-branches view.
+- The operator surface is a single same-page tab set: **Inventory**,
+  **Checkout**, and **Machines**. Inventory remains the primary stock view;
+  Checkout is the retail sale flow; Machines is the equipment repair and
+  safety workflow restored to the main Operations workspace. Dialog-based
+  create/edit/report actions remain centered and preserve the underlying tab.
+- Machines/equipment rules are enforced in both Convex and MockGymOSApi:
+  out-of-service issues move an active asset into maintenance; resolving an
+  issue requires `safe_to_operate`; a machine returns to active only when no
+  unsafe unresolved issue remains; retired/replaced assets cannot receive new
+  issues; assignees must be in the visible branch; and work orders follow
+  draft → approved → in-progress → completed, with cancellation available at
+  the permitted stages. Recommendations use completed, non-reversed repair
+  evidence and ignore cancelled work.
+- Working-tree validation passed: full Vitest coverage (**128 files / 743
+  tests**), app and Convex TypeScript checks, full ESLint and secret-output
+  audit, the production Next build, 9/9 safe Convex CLI tests, and
+  `git diff --check`. A mock-mode in-app browser visual pass (not Playwright)
+  verified the All branches comparison, independent Sweifieh stock with
+  global branch synchronization, Abdoun machine issue/work-order UI, the
+  centered Add machine dialog, and no app console errors. Commit/push and
+  Convex Production deployment remain pending the parent release review; this
+  section makes no production success claim.
+
+The 24 August simplification note below remains the product-policy baseline
+for the reduced stock and checkout model; this follow-up restores the Machines
+tab and makes branch scope explicit without reviving the removed tutorial or
+delivery-time operator fields.
 
 ### Operations simplification and deletion policy — 24 August 2026
 
