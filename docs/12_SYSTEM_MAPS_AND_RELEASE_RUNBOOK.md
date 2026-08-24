@@ -23,10 +23,10 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   `subscriptionReconciliation.preview`, confirm
   `subscriptionReconciliation.reconcile` reports `enabled: false`, then run
   `health:check` before any enablement decision.
-- Credential-free Playwright preview journeys are restored to ordinary CI.
-  Local evidence for this candidate is 31 passed, 14 credential-gated staging
-  skips, and zero failures; the paused GT toggle expectation now truthfully
-  preserves only manual RTL coverage until the final localization pass.
+- Browser and staging journeys remain local-only; GitHub Actions runs the
+  static quality gate, production build, and credential-gated Convex codegen.
+  Local browser evidence remains available through the documented opt-in
+  commands and is not a production deployment gate.
 
 - The application is a release candidate, not a blank scaffold. Current
   application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
