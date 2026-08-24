@@ -1,7 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 24 August 2026 for the subscription and retail release-safety
-candidate. This is the single canonical backlog for
+Updated 24 August 2026 for the subscription, retail, and translation deployment
+release. This is the single canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
 production-verification findings, deferred work, and closure evidence. It
 consolidates the former
@@ -23,9 +23,15 @@ Historical release sections below remain for traceability. The categories here a
   receipt recovery UI, and idempotent server handling.
 - [x] Retain the native manual RTL coverage in local browser checks; production
   builds and deployment do not depend on a translation service.
-- [ ] Push the candidate to `main`, wait for GitHub Actions and Vercel, deploy
-  Convex only to exact Production `descriptive-meerkat-589`, then record the
-  default-off preview, disabled-mutation, and health results here.
+- [x] Push the release to `main`, wait for GitHub Actions and Vercel, and deploy
+  Convex only to exact Production `descriptive-meerkat-589`. Backend release
+  `e7f8121` passed the dry run and deploy with no deleted indexes. The preview
+  returned 5 processed subscriptions, 1 eligible boundary, and zero invoice,
+  past-due, or suspension actions. Reconciliation remained disabled with zero
+  writes, and health returned `status: ok`.
+- [x] Remove the paid translation service from the production build and keep
+  routine web deployments independent of translation credentials. Native
+  Arabic fields, IBM Plex Sans Arabic, and manual RTL layout remain available.
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
 - [x] Deploy application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`, including Elias's four-tier subscriptions/live entitlements and unavailable-owner recovery. GitHub Actions run `32639554231` passed and Vercel Production deployment `H3DKcGPaGmr8Nzn28qJ7P6TZW1YD` completed.
@@ -36,7 +42,9 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] After the gated backend deploy, verify platform billing and one retail
   checkout/receipt/refund-or-void path with an authenticated active Production
-  workspace. Use disposable records only and preserve cleanup evidence.
+  workspace. Use disposable records only and preserve cleanup evidence. The
+  available Chrome sessions had expired; both routes reached the sign-in screen
+  without console errors, so authenticated acceptance is still open.
 
 - [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
 - [ ] Complete the signed-in **active** gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The supplied owner account is valid but belongs to a suspended or cancelled gym; its repaired unavailable-workspace state passed live verification without console errors. Restore that exact test gym only through an authorized, reasoned platform-admin action, or use another active owner.
@@ -56,6 +64,9 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] Complete credentialed staging bodies and cleanup evidence for the registered journeys listed under TODO-012, plus realistic-volume/concurrency proof under TODO-007.
 - [ ] Close the remaining deployed read-only Production verification items in the issue sections below without mutating real gym data.
+- [ ] Upgrade the pinned GitHub Actions that still target Node.js 20. Current
+  runners force `actions/checkout@v4`, `actions/setup-node@v4`, and
+  `pnpm/action-setup@v4` onto Node.js 24 and emit a deprecation warning.
 
 ### Final Arabic and optimization pass
 
