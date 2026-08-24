@@ -72,12 +72,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
           <div className="h-full w-1/2 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-ink" />
         </div>
-        <style jsx>{`
-          @keyframes loading-bar {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(300%); }
-          }
-        `}</style>
       </div>
     );
   }

@@ -83,16 +83,18 @@ function StatusBadge({ status }: { status: string }) {
 
 function FormPanel({ title, description, onCancel, children }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-line-2 bg-sunken/30 p-4" aria-label={title}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-display text-[14px] font-semibold text-ink">{title}</h3>
-          {description ? <p className="mt-1 text-[12px] text-ink-3">{description}</p> : null}
-        </div>
-        <Button type="button" size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
-      <div className="mt-4">{children}</div>
-    </section>
+    <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
+        </DialogHeader>
+        <DialogBody>{children}</DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

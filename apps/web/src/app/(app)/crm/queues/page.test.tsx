@@ -43,7 +43,7 @@ vi.mock("@/lib/hooks/use-realtime-api", () => ({
 }));
 
 vi.mock("@/features/crm/contact-work-panel", () => ({
-  LogContactForm: () => <div data-testid="log-contact-form" />,
+  LogContactDialog: () => <button type="button" data-testid="log-contact-dialog">Log contact</button>,
 }));
 
 describe("follow-up workspace layout", () => {
@@ -90,5 +90,6 @@ describe("follow-up workspace layout", () => {
     await user.click(row);
     expect(row).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("follow-up-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("log-contact-dialog")).toBeInTheDocument();
   });
 });

@@ -1,5 +1,36 @@
 # GymOS / RIVET current implementation state
 
+## Admin interaction, Brand Kit, and translation integration — 24 August 2026 (working-tree update)
+
+- Platform gym archive and subscription updates now use a platform-scoped
+  mutation boundary, so a stale selected gym workspace cannot make an admin
+  archive fail with a tenant-membership error. Convex authorization coverage
+  includes archiving a foreign gym without tenant membership.
+- Selected gym dashboard creation workflows now open centered, accessible
+  dialogs: Operations supplier, stock, movement, purchase-order, facility,
+  equipment, and issue forms; CRM contact/trial workflows; member creation;
+  and PT booking. Successful submissions close the dialog and preserve the
+  underlying route context.
+- Brand Kit save now persists the palette, derived tokens, logo asset, and
+  alt text through the server and immediately updates the settings cache and
+  authenticated gym shell. Logo lifecycle, owner authorization, and reload
+  behavior are covered end to end.
+- Production Vercel builds now run the current `gtx-cli` translation step with
+  `--publish` before Next.js Webpack, making the English-to-Arabic catalog
+  available through General Translation. The inline `styled-jsx` loading
+  animation that caused a reload crash after Brand Kit changes was moved to
+  global CSS.
+- Validation: **710/710 unit tests**, frontend and Convex typechecks,
+  zero-warning lint and secret-output audit, the 46-route Webpack build,
+  focused Operations and suspended-gym E2E journeys, and Brand Kit
+  save/reload browser verification passed.
+
+This is a local working-tree update only. No commit, GitHub push, Convex
+deploy, or Vercel deploy has been performed. Vercel Production still needs the
+server-side `GT_PROJECT_ID` and `GT_API_KEY` environment variable names plus a
+redeploy; the Convex deployment must also be updated for the platform archive
+authorization fix. Secret values are intentionally not recorded here.
+
 ## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
 
 - Gym application provisioning now treats the durable application row as

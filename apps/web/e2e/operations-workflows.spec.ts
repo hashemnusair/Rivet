@@ -8,15 +8,21 @@ test.describe("daily operations workflows", () => {
     await page.goto("/operations");
     await expect(page.getByTestId("operations-command-center")).toBeVisible();
 
+    await page.getByRole("button", { name: /Add supplier/i }).click();
+    const supplierDialog = page.getByRole("dialog", { name: "Add supplier" });
+    await expect(supplierDialog).toBeVisible();
+    await expect(supplierDialog.getByLabel(/Supplier name/)).toBeFocused();
+    await supplierDialog.getByRole("button", { name: "Cancel" }).click();
+
     await page.getByRole("button", { name: /Record movement/i }).click();
-    const movement = page.getByRole("region", { name: "Record stock movement" });
+    const movement = page.getByRole("dialog", { name: "Record stock movement" });
     await movement.getByLabel("Quantity").fill("1");
     await movement.getByRole("button", { name: /Record movement/i }).click();
     await expect(page.getByText(/Recent stock movements/i)).toBeVisible();
 
     await page.getByRole("tab", { name: /Facilities/i }).click();
     await page.getByRole("button", { name: /Request task/i }).click();
-    const taskForm = page.getByRole("region", { name: "Request facility task" });
+    const taskForm = page.getByRole("dialog", { name: "Request facility task" });
     await taskForm.getByPlaceholder("Restock bathroom supplies").fill("Verify operations test task");
     await taskForm.getByRole("button", { name: /Create task/i }).click();
     const taskRow = page.getByText("Verify operations test task").locator("xpath=ancestor::div[contains(@class, 'flex-col')][1]");

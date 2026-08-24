@@ -8,6 +8,7 @@ import { z } from "zod";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { ContactOutcome, LeadStage } from "@/lib/domain/types";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -157,5 +158,56 @@ export function LogContactForm({
         Log contact
       </Button>
     </form>
+  );
+}
+
+/**
+ * Open the contact workflow in a centered dialog so queue/detail pages keep
+ * their context visible and the form never pushes the work surface downward.
+ * The form remains exported separately for callers that intentionally need an
+ * embedded workflow.
+ */
+export function LogContactDialog({
+  subject,
+  leadId,
+  memberId,
+  currentStage,
+  onLogged,
+}: {
+  subject: "lead" | "member";
+  leadId?: string;
+  memberId?: string;
+  currentStage?: LeadStage;
+  onLogged?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = subject === "lead" ? "lead" : "member";
+
+  return (
+    <>
+      <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        Log contact
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Log contact</DialogTitle>
+            <DialogDescription>Record this {label} interaction and decide what should happen next.</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <LogContactForm
+              subject={subject}
+              leadId={leadId}
+              memberId={memberId}
+              currentStage={currentStage}
+              onLogged={() => {
+                setOpen(false);
+                onLogged?.();
+              }}
+            />
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

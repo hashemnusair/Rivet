@@ -1,4 +1,12 @@
 {
   "defaultLocale": "en",
-  "locales": ["ar"]
+  "locales": ["ar"],
+  "publish": true,
+  "files": {
+    "gt": {
+      "parsingFlags": {
+        "enableAutoJsxInjection": true
+      }
+    }
+  }
 }

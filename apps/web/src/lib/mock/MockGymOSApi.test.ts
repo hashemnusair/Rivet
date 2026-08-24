@@ -66,6 +66,24 @@ describe("session and role switching", () => {
   });
 });
 
+describe("Brand Kit persistence", () => {
+  it("applies palette and logo updates to settings and the authenticated session", async () => {
+    const session = await api.getSession();
+    const logo = await api.uploadMediaAsset({
+      ownerType: "gym_logo",
+      ownerId: session.organization.id,
+      altText: "Forge workspace logo",
+      file: new Blob(["logo"], { type: "image/png" }),
+    });
+
+    await api.updateBrandKit({ paletteKey: "gold", primaryColor: "#B88A2B", logoAssetId: logo.id });
+
+    await expect(api.getBrandKit()).resolves.toMatchObject({ paletteKey: "gold", primaryColor: "#b88a2b", logoAssetId: logo.id, logoAltText: "Forge workspace logo", version: 1 });
+    await expect(api.getSession()).resolves.toMatchObject({ organization: { brand: { paletteKey: "gold", primaryColor: "#b88a2b", logoAssetId: logo.id, logoAltText: "Forge workspace logo" } } });
+    expect((await api.listAuditEvents({ category: "settings", pageSize: 20 })).items.some((event) => event.action === "settings.brand.update")).toBe(true);
+  });
+});
+
 describe("workspace entitlement and preference boundary", () => {
   it("keeps entitlement state separate from permissions and audits owner preferences", async () => {
     const access = await api.getWorkspaceAccess();

@@ -523,12 +523,17 @@ describe("ConvexGymOSApi contract boundary", () => {
 
   it("routes archive-only gym removal with exact confirmation and reason", async () => {
     const calls: Array<Record<string, unknown>> = [];
-    const api = new ConvexGymOSApi(transportFor({ mutation: undefined }, (_kind, args) => calls.push(args)));
+    const api = new ConvexGymOSApi(transportFor({ query: session, mutation: undefined }, (_kind, args) => calls.push(args)));
+
+    // Simulate an operator who opened a gym workspace before returning to the
+    // platform console. Archive must remain tenant-independent in that case.
+    await api.selectOrganization(session.organization.id);
 
     await expect(api.archivePlatformGym({ gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." })).resolves.toBeUndefined();
-    expect(calls[0]).toMatchObject({ operation: "platform.gym.archive", input: { gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." } });
-    expect(calls[0]).not.toHaveProperty("organizationId");
-    expect(calls[0]).not.toHaveProperty("activeBranchId");
+    const archiveCall = calls.find((call) => call.operation === "platform.gym.archive");
+    expect(archiveCall).toMatchObject({ operation: "platform.gym.archive", input: { gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." } });
+    expect(archiveCall).not.toHaveProperty("organizationId");
+    expect(archiveCall).not.toHaveProperty("activeBranchId");
   });
 
   it("carries the Enterprise tier through the live adapter boundary", async () => {

@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
-import { LogContactForm } from "@/features/crm/contact-work-panel";
+import { LogContactDialog } from "@/features/crm/contact-work-panel";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
@@ -41,6 +41,7 @@ export default function LeadDetailPageClient() {
   const [trialNote, setTrialNote] = useState("");
   const [trialDate, setTrialDate] = useState(() => addDays(todayISODate(), 1));
   const [trialTime, setTrialTime] = useState("18:00");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const leadQuery = useRealtimeApiQuery({
     queryKey: qk.lead(leadId),
@@ -90,6 +91,7 @@ export default function LeadDetailPageClient() {
     {
       onSuccess: async () => {
         toast.success("Trial scheduled and confirmed.");
+        setScheduleOpen(false);
         await invalidate();
       },
       onError: (error) => toast.error(isApiError(error) ? error.message : "Could not schedule this trial."),
@@ -173,14 +175,25 @@ export default function LeadDetailPageClient() {
                 )}
               </>
             ) : (
-              <div className="mt-3 space-y-3">
+              <div className="mt-3">
                 <p className="text-[12.5px] text-ink-2">Schedule the trial first. The member can choose any time inside the gym&apos;s saved trial window.</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
-                  <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
-                </div>
-                {settingsQuery.isLoading ? <p className="text-[11.5px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[11.5px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[11.5px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
-                <Button className="w-full" disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button>
+                <Button className="mt-4 w-full" onClick={() => setScheduleOpen(true)}><CalendarClock /> Schedule trial</Button>
+                <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Schedule trial</DialogTitle>
+                      <DialogDescription>Choose a date and time inside the gym&apos;s saved trial window.</DialogDescription>
+                    </DialogHeader>
+                    <DialogBody className="space-y-4">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
+                        <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
+                      </div>
+                      {settingsQuery.isLoading ? <p className="text-[11.5px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[11.5px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[11.5px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
+                    </DialogBody>
+                    <DialogFooter><Button variant="secondary" onClick={() => setScheduleOpen(false)}>Cancel</Button><Button disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button></DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
           </section>
@@ -206,8 +219,13 @@ export default function LeadDetailPageClient() {
 
           {!saleDone ? (
             <section className="panel p-4">
-              <h2 className="mb-3 font-display text-[14px] font-semibold">Follow-up note</h2>
-              <LogContactForm subject="lead" leadId={lead.id} currentStage={lead.stage} />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-[14px] font-semibold">Follow-up note</h2>
+                  <p className="mt-1 text-[11.5px] text-ink-3">Keep the lead timeline concise while you log the interaction.</p>
+                </div>
+                <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} />
+              </div>
             </section>
           ) : null}
 

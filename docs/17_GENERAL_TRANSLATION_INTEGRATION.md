@@ -10,7 +10,8 @@ workflows.
 ## What is wired
 
 - `apps/web/gt.config.json` declares `en` as the default locale and `ar` as the
-  supported target locale.
+  supported target locale, enables the same automatic JSX parsing for the CLI,
+  and publishes the generated catalog to GT's CDN.
 - `apps/web/next.config.mjs` applies `withGTConfig`, which reads the server-only
   `GT_PROJECT_ID` and `GT_API_KEY` environment variables.
 - `@generaltranslation/compiler` is enabled through `withGTConfig`'s Babel
@@ -27,8 +28,10 @@ workflows.
   and keeps `<html dir>` aligned after a locale change. An explicitly stored
   manual direction remains authoritative on first mount.
 - Production Vercel builds fail closed when either GT environment variable is
-  missing. The values are never included in source, examples, logs, or browser
-  variables.
+  missing. Once those names are configured, the build runs `gtx-cli translate
+  --publish` before Next.js, so new static JSX strings are uploaded and the
+  server-side `GTProvider` can load the Arabic catalog. The values are never
+  included in source, examples, logs, or browser variables.
 
 The provider and locale switch establish the runtime translation boundary. In
 the webpack build path, GT's compiler automatically injects translation
@@ -61,14 +64,38 @@ the credentials are configured, run the app's normal typecheck/test/build
 gates (`pnpm typecheck`, `pnpm test`, and `pnpm build` from the repository
 root). The build command uses the GT webpack compiler; do not replace it with a
 Turbopack build if automatic JSX injection is required.
-For production translation catalogs, run `npx gt translate` in the release/CI
-environment before the Next.js build once the project content has been marked
-with GT components. Do not run that command with credentials in an agent
-transcript.
+
+For production translation catalogs, the Vercel Production build now runs
+`gtx-cli translate --publish` automatically before `next build`. This is the
+required release step for the default CDN delivery mode. A local build skips
+the network translation step by default; set `RIVET_TRANSLATE_BUILD=1` only in
+an environment where the production GT variables are already available. Do
+not run that command with credentials in an agent transcript.
+
+## Vercel configuration
+
+In Vercel Project Settings → Environment Variables, add these exact names to
+the **Production** scope, then redeploy. Vercel exposes Production variables to
+both the build and the running Next.js server, which is required because the
+catalog is published during the build and loaded at request time:
+
+- `GT_PROJECT_ID` — the General Translation project ID.
+- `GT_API_KEY` — a General Translation **production** API key.
+- `NEXT_PUBLIC_CONVEX_URL` — the production Convex deployment URL.
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — the production Clerk publishable key.
+- `NEXT_PUBLIC_DATA_MODE=convex` — selects the live Convex adapter.
+
+The repository's Vercel root directory is `apps/web`, and its build command is
+`pnpm build`. Preview deployments intentionally skip translation generation
+and use the deterministic mock experience; add GT variables to Preview only if
+you deliberately change that deployment policy. After changing any Vercel
+variable, trigger a new deployment because Next.js embeds build-time
+configuration into the server bundle.
 
 ## Official references
 
 - [gt-next migration/setup](https://generaltranslation.com/en-US/docs/next/guides/migration)
+- [GT JSX production generation](https://generaltranslation.com/en-US/docs/cli/reference/formats/gt-jsx-files)
 - [gt.config.json configuration](https://generaltranslation.com/en-US/docs/next/config)
 - [The `<T>` component](https://generaltranslation.com/en-US/docs/next/guides/t)
 - [Variable components and sensitive values](https://generaltranslation.com/docs/next/guides/variables)

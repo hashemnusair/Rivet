@@ -344,7 +344,13 @@ export class ConvexGymOSApi implements GymOSApi {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }
   }
-  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutate("platform.gym.update", input); }
+  /**
+   * Platform subscription controls are scoped to the authenticated platform
+   * operator, not to whichever gym workspace was last selected in the app.
+   * Keeping this on the platform boundary also prevents a stale tenant/branch
+   * selection from routing an admin save through member authorization.
+   */
+  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutatePlatform("platform.gym.update", input); }
   async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> { await this.mutatePlatform("platform.gym.archive", input); }
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.create", input); }

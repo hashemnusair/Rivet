@@ -15,6 +15,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -109,7 +110,11 @@ export default function NewMemberPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <Dialog open onOpenChange={(open) => { if (!open) router.push("/members"); }}>
+      <DialogContent className="max-w-3xl p-0">
+        <DialogTitle className="sr-only">Add member</DialogTitle>
+        <DialogDescription className="sr-only">Create a member profile for this gym.</DialogDescription>
+        <div className="space-y-5 p-5">
       <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: "New member" }]} />
       <PageHeader
         eyebrow="Operations"
@@ -305,7 +310,9 @@ export default function NewMemberPage() {
           </Button>
         </div>
       </form>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

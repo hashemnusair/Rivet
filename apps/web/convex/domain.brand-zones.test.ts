@@ -43,6 +43,7 @@ describe("tenant Brand Kit", () => {
     await expectCode(ownerA.mutation(api.domain.mutate, operation("settings.brand.update", { paletteKey: "gold", primaryColor: "not-a-color" })), "VALIDATION_ERROR");
     const updated = await ownerA.mutation(api.domain.mutate, operation("settings.brand.update", { paletteKey: "gold", primaryColor: "#B88A2B" })) as { paletteKey: string; primaryColor: string; version: number; tokens: { primary: string } };
     expect(updated).toMatchObject({ paletteKey: "gold", primaryColor: "#b88a2b", version: 1, tokens: { primary: "#b88a2b" } });
+    await expect(ownerA.query(api.domain.query, operation("session"))).resolves.toMatchObject({ organization: { brand: { paletteKey: "gold", primaryColor: "#b88a2b", version: 1 } } });
     const midTone = await ownerA.mutation(api.domain.mutate, operation("settings.brand.update", { paletteKey: "gold", primaryColor: "#777777" })) as { primaryColor: string; tokens: { primaryForeground: string } };
     expect(midTone).toMatchObject({ primaryColor: "#777777", tokens: { primaryForeground: "#000000" } });
   });

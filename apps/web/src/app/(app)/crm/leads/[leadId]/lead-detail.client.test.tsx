@@ -57,6 +57,24 @@ function renderLead(api: MockGymOSApi) {
 }
 
 describe("CRM lead workflow language and transitions", () => {
+  it("opens trial scheduling in a centered dialog", async () => {
+    const api = new MockGymOSApi();
+    window.sessionStorage.setItem("rivet.demo.persona", "owner");
+    const session = await api.getSession();
+    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    window.sessionStorage.setItem("rivet.demo.branch", branchId);
+    const lead = await api.createLead({ fullName: "Dialog Trial Lead", phone: "+962790000098", branchId, source: "walk_in" });
+    navigation.leadId = lead.id;
+    renderLead(api);
+
+    await screen.findByRole("heading", { name: "Dialog Trial Lead" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Schedule trial" }));
+
+    expect(screen.getByRole("dialog", { name: "Schedule trial" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
   it("exposes separate no-show and cancelled trial outcomes", async () => {
     const api = new MockGymOSApi();
     const leadId = await prepareLead(api);

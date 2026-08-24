@@ -4,7 +4,16 @@ import gtConfig from "../../../gt.config.json";
 
 describe("General Translation configuration", () => {
   it("keeps English as the source locale and Arabic as the target locale", () => {
-    expect(gtConfig).toEqual({ defaultLocale: "en", locales: ["ar"] });
+    expect(gtConfig).toMatchObject({
+      defaultLocale: "en",
+      locales: ["ar"],
+      publish: true,
+      files: {
+        gt: {
+          parsingFlags: { enableAutoJsxInjection: true },
+        },
+      },
+    });
   });
 
   it("documents only server-side GT credential names", () => {

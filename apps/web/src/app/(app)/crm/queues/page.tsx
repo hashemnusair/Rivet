@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
-import { LogContactForm } from "@/features/crm/contact-work-panel";
+import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 
 type RenewalBucket = "expiring" | "expired";
@@ -143,7 +143,7 @@ function RenewalQueuePage() {
 
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="eyebrow">{bucket === "expiring" ? "Expiring membership" : "Expired membership"}</p><h3 className="truncate font-display text-[16px] font-semibold">{selectedItem.member.fullName}</h3><p className="font-mono text-[11.5px] text-ink-3" dir="ltr">{selectedItem.member.phone}</p></div><button type="button" onClick={() => setSelectedId(undefined)} aria-label="Close follow-up panel" className="rounded-sm p-1 text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header>
-        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><p className="eyebrow mb-2.5">Log contact</p><LogContactForm subject="member" memberId={selectedItem.member.id} compact onLogged={() => setSelectedId(undefined)} /></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>Open member record</Link></Button></div></div>
+        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="flex items-center justify-between gap-3 border-t border-line pt-3.5"><div><p className="eyebrow">Contact history</p><p className="mt-1 text-[11px] text-ink-3">Log the call without leaving this queue.</p></div><LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} /></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>Open member record</Link></Button></div></div>
         </aside> : null}
       </div>
     </div>

@@ -42,6 +42,24 @@ describe("OperationsCommandCenter", () => {
     expect(await screen.findByText("completed")).toBeInTheDocument();
   });
 
+  it("opens add and record workflows in centered accessible dialogs", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+
+    await user.click(await screen.findByRole("button", { name: /Add supplier/ }));
+    const supplierDialog = screen.getByRole("dialog", { name: "Add supplier" });
+    expect(supplierDialog).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Add supplier" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Supplier name/ })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Add supplier" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Record movement/ }));
+    expect(screen.getByRole("dialog", { name: "Record stock movement" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Record stock movement" })).not.toBeInTheDocument();
+  });
+
   it("keeps operational mutations hidden from an auditor while preserving read access", async () => {
     await renderWithApp(<OperationsCommandCenter />, { role: "auditor" });
 

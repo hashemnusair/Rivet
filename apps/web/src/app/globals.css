@@ -175,6 +175,22 @@
 }
 
 @layer base {
+  :root {
+    /* The neutral fallback is used outside an authenticated gym shell. The
+       TenantBrandProvider overrides these variables for the active workspace. */
+    --tenant-brand-primary: var(--color-ink);
+    --tenant-brand-primary-hover: #33312a;
+    --tenant-brand-primary-foreground: var(--color-paper);
+    --tenant-brand-primary-soft: var(--color-sunken);
+    --tenant-brand-primary-soft-foreground: var(--color-ink);
+    --tenant-brand-focus: var(--color-ink);
+  }
+
+  @keyframes loading-bar {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -250,7 +266,7 @@
 
   /* Focus ring — one consistent treatment */
   :focus-visible {
-    outline: 2px solid var(--color-ink);
+    outline: 2px solid var(--tenant-brand-focus);
     outline-offset: 2px;
     border-radius: var(--radius-xs);
   }
