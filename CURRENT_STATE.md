@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## Subscription and retail release-safety candidate — 24 August 2026
+## Subscription, retail, and translation deployment release, 24 August 2026
 
 - The hourly platform-subscription reconciliation is now explicitly disabled
   unless the Convex deployment sets
@@ -16,22 +16,44 @@
   original retail payment lifecycle, create the appropriate negative refund
   accounting fact, and append audit evidence. The receipt UI exposes remaining
   item quantities, totals, pending/error states, and the current lifecycle.
-- The paused General Translation provider is no longer contradicted by browser
-  coverage: Playwright asserts that the GT locale toggle is absent while still
-  exercising the shell's manual RTL layout. Credential-free preview Playwright
-  is restored as a required GitHub Actions job. The local server port can be
-  overridden with `PLAYWRIGHT_PORT` without reusing an unrelated process.
+- Elias re-enabled the General Translation provider, compiler, document
+  synchronizer, and English/Arabic switch in `40c88a5`, then merged the
+  release-safety work. The first combined Vercel deployment failed because
+  routine builds attempted to republish the full catalog after the GT account
+  reached its monthly allowance. `ca7831a712888cbd282d4c0cba15a8c22e1a6bde`
+  keeps the runtime integration but makes catalog publication an explicit
+  `RIVET_TRANSLATE_BUILD=1` localization release action. Routine web deploys
+  no longer spend translation quota. Catalog completion and Arabic QA remain
+  deferred to the final localization pass.
 - Local evidence: frontend and Convex typechecks, zero-warning lint and
   secret-output audit, **131 test files / 732 tests**, the 47-route Production
   build, and Playwright (**31 passed / 14 credential-gated staging journeys
-  skipped / 0 failed**) passed. The UI detector reported no findings.
-- Production has not yet received this candidate. The reconciliation flag must
-  remain absent/default-off during exact-target dry run and deploy; only after
-  deploy should the aggregate preview, disabled mutation response, health
-  check, and authenticated browser paths be verified. Arabic/GT activation and
-  measured performance optimization remain deferred to the final pass.
+  skipped / 0 failed**) passed. Browser coverage includes the live GT locale
+  switch, direction synchronization, and the separate manual RTL control. The
+  local server port can be overridden with `PLAYWRIGHT_PORT`.
+- Backend commit `e7f8121337a30a02da56f61264c63bdc68efee5e` was deployed
+  through the guarded wrapper to exact Convex Production
+  `descriptive-meerkat-589`. The dry run and deploy validated the schema,
+  deleted no indexes, and added only the retail-sale indexes. The reconciliation
+  flag is absent. Production preview returned 5 processed subscriptions, 1
+  eligible boundary, and zero invoices to create, invoices to mark past due, or
+  organizations to suspend. The mutation returned `enabled: false` and zero
+  writes; `health:check` returned `status: ok`.
+- GitHub Actions [run 32744664588](https://github.com/hashemnusair/Rivet/actions/runs/32744664588)
+  passed for `ca7831a`, and Vercel Production deployment
+  [4z8ReyCXCZnEHhuLAymFV44NV974](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/4z8ReyCXCZnEHhuLAymFV44NV974)
+  completed. The public, platform, and gym custom domains returned HTTP 200.
+  Per current repository policy, Playwright remains a local release gate rather
+  than a GitHub Actions job.
+- The available Chrome sessions had expired. Platform billing and retail
+  checkout both rendered the Production sign-in route without console errors,
+  but authenticated acceptance was not claimed and no Production sale was
+  created. Remaining launch holds are the Convex capacity warning, an active
+  safe owner/admin acceptance session, credential-complete staging, and the
+  recorded product-policy decisions. Measured performance and final Arabic
+  work stay last.
 
-## Retail checkout and Operations workflow — 24 August 2026 (working-tree update)
+## Retail checkout and Operations workflow, released 24 August 2026
 
 - Operations now has a transactional retail checkout at
   `/operations/checkout`. A sale validates the branch, member or guest,
@@ -59,16 +81,16 @@
   across those 10 days so staff can replenish before stock reaches its safety
   floor.
 - Validation passed: app and Convex TypeScript checks, **176 relevant tests**,
-  targeted ESLint, `git diff --check`, and the production build. This remains a
-  local working-tree update only; no commit, GitHub push, Convex deploy, or
-  Vercel deploy is claimed here.
+  targeted ESLint, `git diff --check`, and the production build. The checkout
+  shipped in `40b9bc9`; refund/void recovery and its Production backend deploy
+  shipped in `e7f8121`.
 
 Known scope: payments are manual and no external provider is connected;
 deleting a product archives it rather than physically removing history; and
 the replenishment quantity still requires operator confirmation after the
 alert projection.
 
-## Admin interaction, Brand Kit, and translation integration — 24 August 2026 (working-tree update)
+## Admin interaction, Brand Kit, and translation integration, released 24 August 2026
 
 - Platform gym archive and subscription updates now use a platform-scoped
   mutation boundary, so a stale selected gym workspace cannot make an admin
@@ -85,22 +107,22 @@ alert projection.
   behavior are covered end to end.
 - General Translation is active in the production path: the GT provider,
   English↔Arabic locale switch, document direction synchronizer, Babel compiler
-  wrapper, and `gtx-cli translate --publish` step are enabled. Vercel
-  Production must provide the server-only `GT_PROJECT_ID` and `GT_API_KEY`
-  values; preview and ordinary local builds retain the guarded no-network path.
-  The inline `styled-jsx` loading animation that caused a reload crash after
-  Brand Kit changes was moved to global CSS.
+  wrapper, and explicit `gtx-cli translate --publish` command are enabled.
+  Routine Vercel builds do not invoke catalog publication; the final
+  localization release must opt in with `RIVET_TRANSLATE_BUILD=1`. Vercel
+  Production provides the server-only GT variable names for the runtime. The
+  inline `styled-jsx` loading animation that caused a reload crash after Brand
+  Kit changes was moved to global CSS.
 - Validation: **710/710 unit tests**, frontend and Convex typechecks,
   zero-warning lint and secret-output audit, the 46-route Webpack build,
   focused Operations and suspended-gym E2E journeys, and Brand Kit
   save/reload browser verification passed.
 
-This is a local working-tree update only. No commit, GitHub push, Convex
-deploy, or Vercel deploy has been performed by this pass. After the change is
-merged, Vercel Production should be redeployed with the existing GT variable
-names so the catalog publish step and runtime provider are exercised. The
-Convex deployment must still be updated for the platform archive authorization
-fix. Secret values are intentionally not recorded here.
+These changes are now on `main`. Convex Production received the platform and
+retail backend changes through the guarded `e7f8121` deploy. Vercel Production
+received the combined runtime through `ca7831a`; catalog publication and final
+Arabic acceptance remain separate. Secret values are intentionally not
+recorded here.
 
 ## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
 

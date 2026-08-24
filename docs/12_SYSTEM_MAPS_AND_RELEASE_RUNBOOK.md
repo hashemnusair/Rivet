@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-24 for the subscription and retail release-safety
-candidate.
+Last reviewed: 2026-08-24 for the subscription, retail, and translation
+deployment release.
 
 ## Purpose
 
@@ -16,24 +16,34 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current release posture
 
-- A 24 August release candidate adds a default-off platform-subscription
-  reconciliation gate, aggregate-only Production preview, and reason-gated
-  retail refund/void recovery with stock and accounting reversal facts. It has
-  not yet been deployed. Keep the gate absent during deployment, run
-  `subscriptionReconciliation.preview`, confirm
-  `subscriptionReconciliation.reconcile` reports `enabled: false`, then run
-  `health:check` before any enablement decision.
-- Browser and staging journeys remain local-only; GitHub Actions runs the
-  static quality gate, production build, and credential-gated Convex codegen.
-  Local browser evidence remains available through the documented opt-in
-  commands and is not a production deployment gate.
+- Application commit `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` contains the
+  default-off platform-subscription reconciliation, aggregate impact preview,
+  retail refund/void recovery, Elias's active GT runtime integration, and the
+  translation-deployment fix. GitHub Actions run `32744664588` passed, Vercel
+  Production deployment `4z8ReyCXCZnEHhuLAymFV44NV974` completed, and the
+  public, platform, and gym domains returned HTTP 200.
+- The guarded dry run and deploy targeted exact Convex Production
+  `descriptive-meerkat-589` from backend release `e7f8121`. Schema validation
+  passed, no indexes were deleted, and only retail-sale indexes were added.
+  `subscriptionReconciliation.preview` returned 5 processed rows, 1 eligible
+  boundary, and zero invoice, past-due, or suspension actions. The mutation
+  returned `enabled: false` with zero writes, and `health:check` returned
+  `status: ok`. Keep `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` absent until a
+  separately approved enablement decision.
+- Routine Vercel builds do not publish a GT catalog. The failed deployment for
+  `27854d2` proved that tying publication to every web build consumes plan quota
+  and can block unrelated releases. The runtime provider and locale switch
+  remain active, while `RIVET_TRANSLATE_BUILD=1` is reserved for the final,
+  explicitly monitored localization release.
+- Browser and staging journeys remain local-only under the current CI policy.
+  The final local run passed 31 journeys, skipped 14 credential-gated staging
+  bodies, and had zero failures. The available Production Chrome sessions had
+  expired, so billing and checkout reached sign-in without console errors but
+  authenticated acceptance remains open.
 
-- The application is a release candidate, not a blank scaffold. Current
-  application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
-  includes Elias's four-tier subscription/live-entitlement work, the Five
-  Pillars release, and unavailable-owner login recovery. GitHub Actions run
-  `32639554231` passed, and Vercel Production is `READY`
-  (`H3DKcGPaGmr8Nzn28qJ7P6TZW1YD`).
+- The application is a release candidate, not a blank scaffold. The current
+  release also retains Elias's four-tier subscription/live-entitlement work,
+  the Five Pillars release, and unavailable-owner login recovery.
 - The guarded dry run and deploy targeted exact Convex Production deployment
   `descriptive-meerkat-589`. Schema validation completed, no indexes were
   deleted, and the current functions—including the default-off renewal gate
@@ -54,7 +64,7 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   Credential-complete staging also remains gated on the documented role
   storage states.
 - Final local gates passed: both typechecks, zero-warning lint and secret-output
-  audit, 122 test files / 660 tests, the 46-route Production build, 30
+  audit, 131 test files / 732 tests, the 47-route Production build, 31
   Playwright passes, and 14 credential-gated staging skips.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.

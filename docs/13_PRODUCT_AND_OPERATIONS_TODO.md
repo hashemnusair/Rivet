@@ -1,7 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 24 August 2026 for the subscription and retail release-safety
-candidate. This is the single canonical backlog for
+Updated 24 August 2026 for the subscription, retail, and translation deployment
+release. This is the single canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
 production-verification findings, deferred work, and closure evidence. It
 consolidates the former
@@ -21,12 +21,24 @@ Historical release sections below remain for traceability. The categories here a
 - [x] Add reason-gated retail item refunds and same-day voids with bounded
   quantities, stock returns, payment/refund accounting facts, audit evidence,
   receipt recovery UI, and idempotent server handling.
-- [x] Restore credential-free Playwright to normal GitHub Actions and align the
-  browser expectation with the intentionally paused GT provider while retaining
-  manual RTL coverage.
-- [ ] Push the candidate to `main`, wait for GitHub Actions and Vercel, deploy
-  Convex only to exact Production `descriptive-meerkat-589`, then record the
-  default-off preview, disabled-mutation, and health results here.
+- [x] Align Playwright with Elias's active GT provider and verify both locale
+  direction changes and the independent manual RTL layout control. Under the
+  current repository policy, Playwright remains local-only. The final run
+  passed 31 journeys, skipped 14 credential-gated staging bodies, and had zero
+  failures.
+- [x] Push the release to `main`, wait for GitHub Actions and Vercel, and deploy
+  Convex only to exact Production `descriptive-meerkat-589`. Backend release
+  `e7f8121` passed the dry run and deploy with no deleted indexes. The preview
+  returned 5 processed subscriptions, 1 eligible boundary, and zero invoice,
+  past-due, or suspension actions. Reconciliation remained disabled with zero
+  writes, and health returned `status: ok`.
+- [x] Repair the GT-caused Vercel failure without disabling Elias's runtime
+  integration. Routine deployments now skip catalog publication unless an
+  explicit localization release sets `RIVET_TRANSLATE_BUILD=1`. Application
+  commit `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` passed GitHub Actions
+  [32744664588](https://github.com/hashemnusair/Rivet/actions/runs/32744664588)
+  and Vercel Production
+  [4z8ReyCXCZnEHhuLAymFV44NV974](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/4z8ReyCXCZnEHhuLAymFV44NV974).
 
 - [x] Land the Five Pillars implementation, explicit renewal opt-in gate, and release evidence on `main` in application/release commit `1e01163d25cc6f9123001329877a45e33e5670ea`.
 - [x] Deploy application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`, including Elias's four-tier subscriptions/live entitlements and unavailable-owner recovery. GitHub Actions run `32639554231` passed and Vercel Production deployment `H3DKcGPaGmr8Nzn28qJ7P6TZW1YD` completed.
@@ -37,7 +49,9 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] After the gated backend deploy, verify platform billing and one retail
   checkout/receipt/refund-or-void path with an authenticated active Production
-  workspace. Use disposable records only and preserve cleanup evidence.
+  workspace. Use disposable records only and preserve cleanup evidence. The
+  available Chrome sessions had expired; both routes reached the sign-in screen
+  without console errors, so authenticated acceptance is still open.
 
 - [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
 - [ ] Complete the signed-in **active** gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The supplied owner account is valid but belongs to a suspended or cancelled gym; its repaired unavailable-workspace state passed live verification without console errors. Restore that exact test gym only through an authorized, reasoned platform-admin action, or use another active owner.
@@ -57,10 +71,16 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] Complete credentialed staging bodies and cleanup evidence for the registered journeys listed under TODO-012, plus realistic-volume/concurrency proof under TODO-007.
 - [ ] Close the remaining deployed read-only Production verification items in the issue sections below without mutating real gym data.
+- [ ] Upgrade the pinned GitHub Actions that still target Node.js 20. Current
+  runners force `actions/checkout@v4`, `actions/setup-node@v4`, and
+  `pnpm/action-setup@v4` onto Node.js 24 and emit a deprecation warning.
 
 ### Final Arabic and optimization pass
 
-- [ ] Keep `arabic-localisation` unmerged. Decide later whether to use General Translation/`gt-next`, complete RTL review, and perform the final Arabic pass.
+- [ ] Keep `arabic-localisation` unmerged. The `gt-next` runtime is integrated,
+  but catalog publication, GT plan capacity, dynamic/private-value review,
+  translation QA, and complete responsive RTL acceptance remain for the final
+  Arabic pass.
 - [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
 
 ## Latest direct-main repair — unavailable gym-owner login — 23 August 2026
