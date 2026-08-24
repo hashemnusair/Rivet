@@ -22,6 +22,7 @@ import type {
   Payment,
   PaymentMethod,
   Receipt,
+  RetailSale,
   RoleDefinition,
   RoleKey,
   StaffUser,
@@ -137,6 +138,7 @@ export interface MockDb {
   charges: Charge[];
   payments: Payment[];
   receipts: Receipt[];
+  retailSales: RetailSale[];
   shifts: CashShift[];
   checkIns: CheckInSummary[];
   leads: LeadRecord[];

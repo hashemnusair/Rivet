@@ -103,6 +103,13 @@ export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   { policyCode: "payment-bank-transfer.v1", sourceType: "payment", version: 1, debitAccountCode: "1120", creditAccountCode: "1200", recognition: "immediate" },
   { policyCode: "payment-cliq.v1", sourceType: "payment", version: 1, debitAccountCode: "1120", creditAccountCode: "1200", recognition: "immediate" },
   { policyCode: "payment-other.v1", sourceType: "payment", version: 1, debitAccountCode: "1100", creditAccountCode: "1200", recognition: "immediate" },
+  // Retail sales settle directly into cash/clearing and recognise revenue at
+  // checkout. They deliberately remain sourceType=payment so existing
+  // collection reports include them without conflating them with a member
+  // charge.
+  { policyCode: "retail-sale-cash.v1", sourceType: "payment", version: 1, debitAccountCode: "1100", creditAccountCode: "4100", recognition: "immediate" },
+  { policyCode: "retail-sale-card.v1", sourceType: "payment", version: 1, debitAccountCode: "1110", creditAccountCode: "4100", recognition: "immediate" },
+  { policyCode: "retail-sale-cliq.v1", sourceType: "payment", version: 1, debitAccountCode: "1120", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "refund-cash.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1100", recognition: "immediate" },
   { policyCode: "refund-card.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1110", recognition: "immediate" },
   { policyCode: "refund-bank-transfer.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1120", recognition: "immediate" },
@@ -549,15 +556,16 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     const occurredAt = Date.parse(text(value.occurredAt)) || record.createdAt;
     const sourceCurrency = amount.currency ?? currency;
     const invalidCurrency = sourceCurrency !== currency;
-    const invalidType = sourcePaymentType !== expectedType || (sourceType === "payment" && sourceStatus === "voided") || (sourceType === "void" && sourceStatus !== "voided");
+    const retailSale = sourceType === "payment" && sourcePaymentType === "retail_sale";
+    const invalidType = (sourceType === "payment" ? !["payment", "retail_sale"].includes(sourcePaymentType) : sourcePaymentType !== expectedType) || (sourceType === "payment" && sourceStatus === "voided") || (sourceType === "void" && sourceStatus !== "voided");
     const normalizedAmount = amount.amount === undefined ? undefined : sourceType === "refund" ? Math.abs(amount.amount) : amount.amount;
     const invalidAmount = normalizedAmount === undefined || normalizedAmount <= 0;
     const debit = sourceType === "payment" ? paymentAccount(method) : "1200";
-    const credit = sourceType === "payment" ? "1200" : paymentAccount(method);
+    const credit = sourceType === "payment" ? retailSale ? "4100" : "1200" : paymentAccount(method);
     // Policy codes are code-owned and use a stable hyphenated namespace.
     // Keep the source fact's method mapping explicit so a payment cannot
     // silently fall through to an unconfigured policy because of punctuation.
-    const policyCode = `${sourceType}-${method}.v1`;
+    const policyCode = retailSale ? `retail-sale-${method}.v1` : `${sourceType}-${method}.v1`;
     return {
       sourceType,
       sourcePublicId: sourceId,
@@ -565,11 +573,11 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       amountMinor: normalizedAmount,
       currency: sourceCurrency,
       occurredAt,
-      memo: `${sourceType === "payment" ? "Payment" : sourceType === "refund" ? "Refund" : "Void"} ${sourceId}`,
+      memo: `${retailSale ? "Retail sale" : sourceType === "payment" ? "Payment" : sourceType === "refund" ? "Refund" : "Void"} ${sourceId}`,
       policyCode,
       debitAccountCode: debit,
       creditAccountCode: credit,
-      details: { method, sourcePaymentType, sourceStatus },
+      details: { method, sourcePaymentType, sourceStatus, saleType: retailSale ? "retail" : "membership" },
       status: invalidCurrency ? "excluded" : invalidType || invalidAmount ? "unconfigured" : undefined,
       reason: invalidCurrency ? `Source currency ${sourceCurrency} does not match organization currency ${currency}.` : invalidType ? "The source fact does not match the requested accounting source type or lifecycle status." : invalidAmount ? "The source fact has no positive amount." : undefined,
     };
@@ -984,7 +992,7 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
       const value = objectValue(record.data);
       const paymentType = text(value.type, "payment");
       const paymentStatus = text(value.status).toLowerCase();
-      const sourceType: AccountingSourceType | undefined = paymentType === "refund" ? "refund" : paymentType === "payment" && ["voided", "void"].includes(paymentStatus) ? "void" : paymentType === "payment" ? "payment" : undefined;
+      const sourceType: AccountingSourceType | undefined = paymentType === "refund" ? "refund" : ["payment", "retail_sale"].includes(paymentType) && ["voided", "void"].includes(paymentStatus) ? "void" : ["payment", "retail_sale"].includes(paymentType) ? "payment" : undefined;
       if (sourceType) add(sourceType, record.publicId, await sourceRecordBranchId(ctx, actor, record));
     }
   }

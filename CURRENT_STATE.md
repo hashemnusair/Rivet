@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## Retail checkout and Operations workflow — 24 August 2026 (working-tree update)
+
+- Operations now has a transactional retail checkout at
+  `/operations/checkout`. A sale validates the branch, member or guest,
+  product price, available stock, payment method, and idempotency key before
+  atomically creating the sale, receipt, payment projection, stock movement,
+  inventory decrement, and audit record. Member sales retain the member
+  context and timeline link; guest sales ask only for a name and phone number.
+- Checkout supports manually recorded Cash, CliQ, and Visa/card payments. A
+  printable receipt shows the customer, items, totals, method, and reference;
+  Cash uses the existing shift workflow and CliQ/card require an operator
+  reference. The checkout and catalog are protected by Operations entitlement,
+  workspace/module state, branch access, and the appropriate read/collect
+  permissions.
+- Retail sales now flow through transaction lists, cash shifts, daily
+  reconciliation, dashboard revenue, and accounting with method-specific
+  ledger accounts. Products have a separate retail price from supplier cost.
+  “Delete item” is an audited soft archive: it removes an item from new sales
+  while preserving historical movements, receipts, and ledger evidence.
+- Operations terminology and layout now separate the three useful jobs:
+  **Sell and stock** (checkout and balances), **Replenish** (needs-replenishment
+  alerts, suppliers, and purchase orders), and **Keep the gym ready**
+  (facilities and equipment). Product fields explain “Alert me at,” “Refill to,”
+  and “Delivery time”; the product delivery time drives projected low-stock
+  alerts. A delivery time of 10 days means the system projects expected use
+  across those 10 days so staff can replenish before stock reaches its safety
+  floor.
+- Validation passed: app and Convex TypeScript checks, **176 relevant tests**,
+  targeted ESLint, `git diff --check`, and the production build. This remains a
+  local working-tree update only; no commit, GitHub push, Convex deploy, or
+  Vercel deploy is claimed here.
+
+Known scope: payments are manual and no external provider is connected;
+retail refunds/voids are not implemented yet; deleting a product archives it
+rather than physically removing history; and the replenishment quantity still
+requires operator confirmation after the alert projection.
+
 ## Admin interaction, Brand Kit, and translation integration — 24 August 2026 (working-tree update)
 
 - Platform gym archive and subscription updates now use a platform-scoped

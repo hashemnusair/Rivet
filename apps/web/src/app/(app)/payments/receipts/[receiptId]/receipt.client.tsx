@@ -22,6 +22,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
+import type { Payment } from "@/lib/domain/types";
 
 export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receiptId?: string } = {}) {
   const { receiptId: paramReceiptId } = useParams<{ receiptId: string }>();
@@ -50,15 +51,24 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   }
 
   const detail = query.data!;
+  const retailSale = detail.retailSale;
   const { payment, charge } = detail;
+  const paymentRecord: Payment | undefined = "refundedAmount" in payment ? payment : undefined;
+  const isRetailSale = Boolean(retailSale?.lines?.length);
+  const retailCustomer = detail.customer ?? retailSale?.customer;
+  const memberSnapshot = detail.member;
+  const customerName = retailCustomer?.fullName ?? memberSnapshot?.fullName ?? "Guest customer";
+  const customerReference = retailCustomer?.memberNumber ?? retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? "Retail sale";
+  const retailTotal = retailSale?.total ?? retailSale?.subtotal;
+  const paymentMethodLabel = isRetailSale && payment.method === "card" ? "Visa / card" : PAYMENT_METHOD_LABELS[payment.method];
   const isRefund = payment.type === "refund";
   const isVoided = payment.status === "voided";
   const canVoid =
-    can("payments.void") && !isRefund && !isVoided && payment.status === "completed" && payment.occurredAt.slice(0, 10) <= todayISODate() &&
+    can("payments.void") && !isRetailSale && !isRefund && !isVoided && payment.status === "completed" && payment.occurredAt.slice(0, 10) <= todayISODate() &&
     // void is same-day only — the API enforces; the UI reflects it
     new Date(payment.occurredAt).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) === todayISODate();
-  const refundableMinor = payment.amount.amount - (payment.refundedAmount?.amount ?? 0);
-  const canRefund = can("payments.refund") && !isRefund && !isVoided && refundableMinor > 0;
+  const refundableMinor = payment.amount.amount - (paymentRecord?.refundedAmount?.amount ?? 0);
+  const canRefund = can("payments.refund") && !isRetailSale && !isRefund && !isVoided && refundableMinor > 0;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -69,6 +79,11 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           </Link>
         </Button>
         <div className="flex items-center gap-2">
+          {isRetailSale ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/operations/checkout">New sale</Link>
+            </Button>
+          ) : null}
           {canRefund ? (
             <Button variant="secondary" size="sm" onClick={() => setRefundOpen(true)} data-testid="refund-button">
               <Undo2 /> Refund…
@@ -104,30 +119,47 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             </div>
             <div className="text-end">
               <p className="text-ink-3">{formatDateTime(detail.receipt.issuedAt)}</p>
-              <p className="mt-0.5 uppercase">{isRefund ? "REFUND" : "PAYMENT"}</p>
+            <p className="mt-0.5 uppercase">{isRefund ? "REFUND" : isRetailSale ? "RETAIL SALE" : "PAYMENT"}</p>
             </div>
           </div>
 
           <div className="border-b border-dashed border-line-3 py-3">
-            <p className="text-[13px] font-semibold">{detail.member.fullName}</p>
-            <p className="text-[11px] text-ink-2">{detail.member.memberNumber}</p>
+            <p className="text-[13px] font-semibold">{customerName}</p>
+            <p className="text-[11px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? "Guest sale"}</p>
           </div>
 
           <table className="w-full border-b border-dashed border-line-3 py-3 text-[12px]">
             <tbody>
-              <tr>
-                <td className="py-2 pe-2 align-top">{charge?.description ?? (isRefund ? "Refund" : "Payment")}</td>
-                <td className="py-2 text-end align-top tabular">
-                  {charge ? toMajor(charge.subtotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}
-                </td>
-              </tr>
+              {isRetailSale ? retailSale!.lines.map((line, index) => {
+                const lineTotal = line.lineTotal;
+                return (
+                  <tr key={`${line.sku}-${index}`}>
+                    <td className="py-2 pe-2 align-top">{line.productName} × {line.quantity}</td>
+                    <td className="py-2 text-end align-top tabular">
+                      {toMajor(lineTotal).toFixed(3)}
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td className="py-2 pe-2 align-top">{charge?.description ?? (isRefund ? "Refund" : "Payment")}</td>
+                  <td className="py-2 text-end align-top tabular">
+                    {charge ? toMajor(charge.subtotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}
+                  </td>
+                </tr>
+              )}
               {charge && charge.discount.amount > 0 ? (
                 <tr>
                   <td className="pb-2 text-ink-2">Discount{charge.status ? "" : ""}</td>
                   <td className="pb-2 text-end tabular">−{toMajor(charge.discount).toFixed(3)}</td>
                 </tr>
               ) : null}
-              {charge ? (
+              {isRetailSale ? (
+                <tr className="border-t border-line-2">
+                  <td className="py-2 font-semibold">Sale total</td>
+                  <td className="py-2 text-end font-semibold tabular">{retailTotal ? toMajor(retailTotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}</td>
+                </tr>
+              ) : charge ? (
                 <tr className="border-t border-line-2">
                   <td className="py-2 font-semibold">Charge total</td>
                   <td className="py-2 text-end font-semibold tabular">{toMajor(charge.total).toFixed(3)}</td>
@@ -138,8 +170,8 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <div className="space-y-1 border-b border-dashed border-line-3 py-3 text-[12px]">
             <div className="flex justify-between">
-              <span>{isRefund ? "Refunded" : "Paid"} ({PAYMENT_METHOD_LABELS[payment.method]})</span>
-              <span className="tabular">{toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}</span>
+              <span>{isRefund ? "Refunded" : "Paid"} ({paymentMethodLabel})</span>
+              <span className="tabular">{toMajor(retailTotal ?? money(Math.abs(payment.amount.amount))).toFixed(3)}</span>
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (
               <div className="flex justify-between font-semibold">
@@ -152,14 +184,14 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           <div className="space-y-0.5 py-3 text-[11px] text-ink-2">
             <p>Served by: {payment.collectedByName}</p>
             {payment.externalReference ? <p>Reference: {payment.externalReference}</p> : null}
-            {isRefund && payment.refundReason ? <p>Reason: {payment.refundReason}</p> : null}
-            {isVoided ? <p className="font-semibold text-danger">VOIDED — {payment.voidReason}</p> : null}
+            {isRefund && paymentRecord?.refundReason ? <p>Reason: {paymentRecord.refundReason}</p> : null}
+            {isVoided ? <p className="font-semibold text-danger">VOIDED — {paymentRecord?.voidReason}</p> : null}
             {payment.status === "refunded" && !isRefund ? <p className="font-semibold">This payment was refunded.</p> : null}
           </div>
 
           <div className="border-t border-dashed border-line-3 pt-3 text-center">
             <p className="text-[10.5px] leading-relaxed text-ink-2">{detail.organization.receiptFooter}</p>
-            <p className="mt-3 font-mono text-[13px] tracking-[0.3em]">{detail.member.memberNumber}</p>
+            <p className="mt-3 font-mono text-[13px] tracking-[0.3em]">{customerReference}</p>
             <p className="mt-1 text-[9.5px] text-ink-3">JOD · amounts in Jordanian Dinar</p>
           </div>
         </div>
@@ -169,17 +201,17 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           <section className="panel p-4">
             <h3 className="eyebrow mb-2.5">Status</h3>
             <TransactionStatusChip status={payment.status} />
-            {payment.refundedAmount && payment.refundedAmount.amount > 0 ? (
+            {paymentRecord?.refundedAmount && paymentRecord.refundedAmount.amount > 0 ? (
               <p className="mt-2 text-[12.5px] text-ink-2">
-                Refunded so far: <MoneyText money={payment.refundedAmount} />
+                Refunded so far: <MoneyText money={paymentRecord.refundedAmount} />
               </p>
             ) : null}
-            {payment.originalPaymentId ? (
+            {paymentRecord?.originalPaymentId ? (
               <p className="mt-2 text-[12px] text-ink-3">This refund is linked to the original payment.</p>
             ) : null}
           </section>
 
-          {detail.relatedPayments.length > 0 ? (
+          {detail.relatedPayments?.length > 0 ? (
             <section className="panel p-4">
               <h3 className="eyebrow mb-2.5">Linked records</h3>
               <ul className="space-y-2">

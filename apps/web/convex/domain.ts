@@ -1709,10 +1709,13 @@ async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, val
   const branchesById = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
   return values.map((value) => {
     const member = membersById.get(stringValue(value.memberId));
+    const customer = value.customer && typeof value.customer === "object" ? data(value.customer) : undefined;
+    const customerName = optionalString(customer?.fullName);
+    const customerNumber = optionalString(customer?.memberNumber);
     return {
       ...value,
-      memberName: member ? stringValue(member.fullName) : "—",
-      memberNumber: member ? stringValue(member.memberNumber) : "—",
+      memberName: customerName ?? (member ? stringValue(member.fullName) : "—"),
+      memberNumber: customerNumber ?? (customer?.kind === "guest" ? "Guest" : member ? stringValue(member.memberNumber) : "—"),
       branchName: branchesById.get(stringValue(value.branchId)) ?? "—",
     };
   });
@@ -1721,6 +1724,62 @@ async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, val
 async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: string): Promise<Data> {
   const receipt = await recordOf(ctx, actor, "receipt", receiptId);
   const receiptData = data(receipt.data);
+  const retailSaleId = optionalString(receiptData.retailSaleId);
+  if (retailSaleId) {
+    const sale = await ctx.db.query("retailSales").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", retailSaleId)).unique();
+    if (!sale) domainError("NOT_FOUND", "Retail sale not found.", { correlationId: actor.correlationId });
+    const branch = await ctx.db.get(sale.branchId);
+    assertBranchAccess(actor, branch);
+    if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
+    const customer = data(sale.customer);
+    const payment = {
+      id: `retail-payment-${sale.publicId}`,
+      organizationId: publicOrganizationId(actor.organization),
+      branchId: publicBranchId(branch),
+      type: "retail_sale",
+      amount: { amount: sale.totalMinor, currency: sale.currency },
+      method: sale.method,
+      status: "completed",
+      customer,
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      collectedById: sale.createdByPublicId,
+      collectedByName: sale.createdByName,
+      shiftId: sale.shiftId,
+      externalReference: sale.externalReference,
+      idempotencyKey: sale.idempotencyKey,
+      occurredAt: utcIso(sale.createdAt),
+    };
+    const retailSale = {
+      id: sale.publicId,
+      organizationId: publicOrganizationId(actor.organization),
+      branchId: publicBranchId(branch),
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      customer,
+      lines: sale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency } })),
+      subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
+      total: { amount: sale.totalMinor, currency: sale.currency },
+      method: sale.method,
+      externalReference: sale.externalReference,
+      shiftId: sale.shiftId,
+      idempotencyKey: sale.idempotencyKey,
+      createdById: sale.createdByPublicId,
+      createdByName: sale.createdByName,
+      createdAt: utcIso(sale.createdAt),
+    };
+    return {
+      receipt: receiptData,
+      receiptId: sale.receiptId,
+      organization: { name: actor.organization.name, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
+      branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
+      member: customer.kind === "member" ? { fullName: stringValue(customer.fullName), memberNumber: stringValue(customer.memberNumber, "Member") } : undefined,
+      customer,
+      payment,
+      retailSale,
+      relatedPayments: [],
+    };
+  }
   const payment = await recordOf(ctx, actor, "payment", stringValue(receiptData.paymentId));
   const paymentData = data(payment.data);
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(paymentData.branchId));
@@ -1740,6 +1799,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       phone: branch?.phone ?? "",
     },
     member: { fullName: stringValue(data(member.data).fullName), memberNumber: stringValue(data(member.data).memberNumber) },
+    customer: { kind: "member", fullName: stringValue(data(member.data).fullName), phone: optionalString(data(member.data).phone), memberId: stringValue(paymentData.memberId), memberNumber: stringValue(data(member.data).memberNumber) },
     payment: paymentData,
     charge: charge ? data(charge.data) : undefined,
     relatedPayments: related,
@@ -4342,22 +4402,24 @@ async function auditPaymentCollection(ctx: MutationCtx, actor: ActorContext, pay
 
 async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): Promise<Data> {
   const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.shiftId === shift.id && payment.status !== "voided");
-  const total = (method: string, type = "payment") => payments.filter((payment) => payment.method === method && payment.type === type).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
+  const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
+  const total = (method: string, type?: string) => payments.filter((payment) => payment.method === method && (type ? payment.type === type : isCollection(payment))).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
   const discounts = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter((charge) => payments.some((payment) => payment.chargeId === charge.id)).reduce((sum, charge) => sum + amountOf(charge.discount), 0);
-  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter((payment) => payment.type === "payment").length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency) };
+  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter(isCollection).length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency) };
 }
 
 async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branchId: string, date: string): Promise<Data> {
   const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && payment.status !== "voided" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
+  const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
   const methods = ["cash", "card", "bank_transfer", "cliq", "other"];
   const totalsByMethod = methods.map((method) => {
     const rows = payments.filter((payment) => payment.method === method);
-    const collected = rows.filter((payment) => payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0);
+    const collected = rows.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0);
     const refunded = rows.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
     return { method, payments: money(collected, actor.organization.currency), refunds: money(refunded, actor.organization.currency), net: signedMoney(collected - refunded, actor.organization.currency), count: rows.length };
   }).filter((item) => item.count > 0);
   const shifts = (await recordsOf(ctx, actor, "shift")).map((record) => data(record.data)).filter((shift) => shift.branchId === branchId && businessDate(stringValue(shift.openedAt), actor.organization.timezone || TZ_FALLBACK) === date);
-  return { branchId, date, totalsByMethod, totalCollected: money(payments.filter((payment) => payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
+  return { branchId, date, totalsByMethod, totalCollected: money(payments.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
 }
 
 function parseCsv(value: string): string[][] {
@@ -7987,6 +8049,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.supplier.upsert":
     case "operations.supplier.archive":
     case "operations.stock_movement.record":
+    case "operations.retail.checkout":
     case "operations.low_stock.refresh":
     case "operations.low_stock.dismiss":
     case "operations.purchase_order.create":
@@ -8058,12 +8121,12 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !memberships.some((other) => other.previousMembershipId === membership.id)).length;
   const checkinsToday = checkins.filter((checkin) => checkin.decision !== "blocked" && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length;
   const branchRows = await accessibleBranches(ctx, actor);
-  const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
+  const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && ["payment", "retail_sale"].includes(stringValue(payment.type))).reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
   const funnelStages = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
   const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => lead.stage === stage).length }));
   const organizationMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
-  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && payment.type === "payment" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
+  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && ["payment", "retail_sale"].includes(stringValue(payment.type)) && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
   const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));

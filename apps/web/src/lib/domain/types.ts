@@ -125,6 +125,8 @@ export interface Product {
   targetLevel: number;
   supplierLeadTimeDays: number;
   preferredSupplierId?: UUID;
+  /** Customer-facing price used by retail checkout. Supplier cost is separate. */
+  retailPrice?: Money;
   defaultUnitCost?: Money;
   status: OperationsRecordStatus;
   createdAt: ISODateTime;
@@ -141,6 +143,8 @@ export interface UpsertProductInput {
   targetLevel: number;
   supplierLeadTimeDays: number;
   preferredSupplierId?: UUID;
+  /** Customer-facing price used by retail checkout. Omit to keep the item unsellable. */
+  retailPrice?: Money;
   defaultUnitCost?: Money;
   status?: OperationsRecordStatus;
 }
@@ -1556,7 +1560,7 @@ export interface Charge {
   createdAt: ISODateTime;
 }
 
-export type TransactionType = "payment" | "refund" | "void";
+export type TransactionType = "payment" | "refund" | "void" | "retail_sale";
 export type TransactionStatus = "completed" | "voided" | "refunded" | "partially_refunded";
 
 export interface Payment {
@@ -1583,27 +1587,105 @@ export interface Payment {
   occurredAt: ISODateTime;
 }
 
-export interface TransactionSummary extends Payment {
+export interface TransactionSummaryBase {
   memberName: string;
   memberNumber: string;
   branchName: string;
+  /** Guest retail transactions carry a customer snapshot instead of memberId. */
+  customer?: RetailSaleCustomer;
 }
+
+export type TransactionSummary = (Payment | RetailPayment) & TransactionSummaryBase;
 
 export interface Receipt {
   id: UUID;
   receiptNumber: string;
   paymentId: UUID;
+  /** Set for a retail receipt; paymentId remains the receipt source identifier for compatibility. */
+  retailSaleId?: UUID;
   issuedAt: ISODateTime;
+}
+
+export interface RetailSaleLine {
+  productId: UUID;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: Money;
+  lineTotal: Money;
+}
+
+export interface RetailSaleCustomer {
+  kind: "member" | "guest";
+  fullName: string;
+  phone?: string;
+  memberId?: UUID;
+  memberNumber?: string;
+}
+
+export interface RetailSale {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  receiptId: UUID;
+  receiptNumber: string;
+  customer: RetailSaleCustomer;
+  lines: RetailSaleLine[];
+  subtotal: Money;
+  total: Money;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  externalReference?: string;
+  shiftId?: UUID;
+  idempotencyKey: string;
+  createdById: UUID;
+  createdByName: string;
+  createdAt: ISODateTime;
+}
+
+/** Receipt payment projection for a retail sale. It is not a member payment. */
+export interface RetailPayment {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  type: "retail_sale";
+  /** Stable customer snapshot; guests never receive a synthetic memberId. */
+  customer: RetailSaleCustomer;
+  amount: Money;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  status: "completed";
+  receiptId: UUID;
+  receiptNumber: string;
+  collectedById: UUID;
+  collectedByName: string;
+  shiftId?: UUID;
+  externalReference?: string;
+  idempotencyKey: string;
+  occurredAt: ISODateTime;
 }
 
 export interface ReceiptDetail {
   receipt: Receipt;
+  /** Convenience projection used by retail checkout responses; legacy callers use receipt.id. */
+  receiptId?: UUID;
   organization: { name: string; receiptFooter: string; taxRatePercent: number };
   branch: { name: string; code: string; address: string; phone: string };
-  member: { fullName: string; memberNumber: string };
-  payment: Payment;
+  /** Legacy member projection. Retail guest receipts expose customer instead. */
+  member?: { fullName: string; memberNumber: string };
+  payment: Payment | RetailPayment;
   charge?: Charge;
+  retailSale?: RetailSale;
+  customer?: RetailSaleCustomer;
   relatedPayments: Payment[]; // refunds/voids linked to this payment
+}
+
+export interface RetailCheckoutInput {
+  branchId: UUID;
+  memberId?: UUID;
+  guest?: { fullName: string; phone: string };
+  lines: Array<{ productId: UUID; quantity: number }>;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  externalReference?: string;
+  idempotencyKey: string;
 }
 
 export interface CreatePaymentInput {

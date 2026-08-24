@@ -1894,8 +1894,8 @@ export function buildSeed(now: Date = new Date()): MockDb {
     updatedAt: iso(daysAgo(now, 30)),
   };
   const products: Product[] = [
-    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, targetLevel: 80, supplierLeadTimeDays: 5, preferredSupplierId: OPS_IDS.supplier, defaultUnitCost: money(650, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
-    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, targetLevel: 60, supplierLeadTimeDays: 3, defaultUnitCost: money(450, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, targetLevel: 80, supplierLeadTimeDays: 5, preferredSupplierId: OPS_IDS.supplier, retailPrice: money(1_500, "JOD"), defaultUnitCost: money(650, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, targetLevel: 60, supplierLeadTimeDays: 3, retailPrice: money(1_000, "JOD"), defaultUnitCost: money(450, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
   ];
   const suppliers: Supplier[] = [{ id: OPS_IDS.supplier, organizationId: ORG_ID, name: "Jordan Sports Supply", contactName: "Maya Haddad", email: "orders@jss.example", phone: "+962 79 700 1000", terms: "Net 15", leadTimeDays: 5, branchIds: [BRANCH_ABD, BRANCH_SWF], preferredProductIds: [OPS_IDS.creatine, OPS_IDS.protein], status: "active", createdAt: iso(daysAgo(now, 60)), updatedAt: iso(daysAgo(now, 7)) }];
   const inventoryBalances: InventoryBalance[] = [
@@ -2001,6 +2001,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     charges,
     payments,
     receipts,
+    retailSales: [],
     shifts,
     checkIns: checkIns.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
     leads,

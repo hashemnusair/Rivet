@@ -245,6 +245,10 @@ export default defineSchema({
     targetLevel: v.number(),
     supplierLeadTimeDays: v.number(),
     preferredSupplierId: v.optional(v.string()),
+    // Customer-facing price. Supplier/defaultUnitCost is procurement cost and
+    // must never be used as the checkout price.
+    retailPriceMinor: v.optional(v.number()),
+    retailPriceCurrency: v.optional(v.string()),
     defaultUnitCostMinor: v.optional(v.number()),
     defaultUnitCostCurrency: v.optional(v.string()),
     status: operationsRecordStatus,
@@ -311,6 +315,49 @@ export default defineSchema({
     .index("by_organization", ["organizationId"])
     .index("by_branch_product_occurred", ["organizationId", "branchId", "productId", "occurredAt"])
     .index("by_product_occurred", ["organizationId", "productId", "occurredAt"])
+    .index("by_idempotency", ["organizationId", "idempotencyKey"]),
+
+  // Retail sales are kept separate from membership payments. The line and
+  // customer snapshots make a printed receipt explainable even if a product
+  // is later archived or a guest never becomes a member.
+  retailSales: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    receiptId: v.string(),
+    receiptNumber: v.string(),
+    memberId: v.optional(v.string()),
+    customer: v.object({
+      kind: v.union(v.literal("member"), v.literal("guest")),
+      fullName: v.string(),
+      phone: v.optional(v.string()),
+      memberId: v.optional(v.string()),
+      memberNumber: v.optional(v.string()),
+    }),
+    lines: v.array(v.object({
+      productId: v.string(),
+      sku: v.string(),
+      productName: v.string(),
+      quantity: v.number(),
+      unitPriceMinor: v.number(),
+      lineTotalMinor: v.number(),
+      currency: v.string(),
+    })),
+    subtotalMinor: v.number(),
+    totalMinor: v.number(),
+    currency: v.string(),
+    method: v.union(v.literal("cash"), v.literal("cliq"), v.literal("card")),
+    externalReference: v.optional(v.string()),
+    shiftId: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    createdByUserId: v.id("users"),
+    createdByPublicId: v.string(),
+    createdByName: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"])
+    .index("by_receipt", ["organizationId", "receiptId"])
     .index("by_idempotency", ["organizationId", "idempotencyKey"]),
 
   inventoryAlerts: defineTable({

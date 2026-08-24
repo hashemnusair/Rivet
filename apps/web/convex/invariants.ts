@@ -196,15 +196,16 @@ export function dashboardRevenueSummary(
     .map(({ payment }) => payment);
   const currentMonth = input.today.slice(0, 7);
   const previousMonth = addCalendarDays(`${currentMonth}-01`, -1).slice(0, 7);
+  const isCollection = (type: string) => type === "payment" || type === "retail_sale";
   const totalForMonth = (month: string) => dated
-    .filter(({ date, payment }) => date.slice(0, 7) === month && payment.type === "payment")
+    .filter(({ date, payment }) => date.slice(0, 7) === month && isCollection(payment.type))
     .reduce((sum, { payment }) => sum + payment.amount, 0);
   const totalOn = (date: string, type: "payment" | "refund") => dated
-    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && (type === "payment" ? isCollection(payment.type) : payment.type === type))
     .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
   const rangeDated = rangePayments.map((payment) => ({ payment, date: businessDate(payment.occurredAt, input.timezone) }));
   const rangeTotalOn = (date: string, type: "payment" | "refund") => rangeDated
-    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && (type === "payment" ? isCollection(payment.type) : payment.type === type))
     .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
 
   return {

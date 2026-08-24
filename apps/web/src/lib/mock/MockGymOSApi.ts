@@ -1654,6 +1654,7 @@ export class MockGymOSApi implements GymOSApi {
     this.db = buildSeed();
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
+    this.operationsIdempotency.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.archivedGymIds.clear();
@@ -2207,9 +2208,34 @@ export class MockGymOSApi implements GymOSApi {
     };
   }
 
-  private toTransaction(p: T.Payment): T.TransactionSummary {
-    const member = this.db.members.find((m) => m.id === p.memberId);
+  private retailPaymentProjection(sale: T.RetailSale): T.RetailPayment {
+    return {
+      id: `retail-payment-${sale.id}`,
+      organizationId: sale.organizationId,
+      branchId: sale.branchId,
+      type: "retail_sale",
+      customer: sale.customer,
+      amount: { ...sale.total },
+      method: sale.method,
+      status: "completed",
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      collectedById: sale.createdById,
+      collectedByName: sale.createdByName,
+      shiftId: sale.shiftId,
+      externalReference: sale.externalReference,
+      idempotencyKey: sale.idempotencyKey,
+      occurredAt: sale.createdAt,
+    };
+  }
+
+  private toTransaction(p: T.Payment | T.RetailPayment): T.TransactionSummary {
+    const memberId = "memberId" in p ? p.memberId : p.customer.kind === "member" ? p.customer.memberId : undefined;
+    const member = memberId ? this.db.members.find((m) => m.id === memberId) : undefined;
     const branch = this.db.branches.find((b) => b.id === p.branchId);
+    if ("customer" in p) {
+      return { ...p, memberName: p.customer.fullName, memberNumber: p.customer.memberNumber ?? (p.customer.kind === "guest" ? "Guest" : "—"), branchName: branch?.name ?? "—" };
+    }
     return { ...p, memberName: member?.fullName ?? "—", memberNumber: member?.memberNumber ?? "—", branchName: branch?.name ?? "—" };
   }
 
@@ -2302,7 +2328,7 @@ export class MockGymOSApi implements GymOSApi {
       const inBranch = <X extends { branchId?: T.UUID; homeBranchId?: T.UUID }>(x: X) =>
         !branchId || x.branchId === branchId || x.homeBranchId === branchId;
 
-      const validPayments = this.db.payments.filter((p) => p.status !== "voided" && inBranch(p));
+      const validPayments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((p) => p.status !== "voided" && inBranch(p));
       const dayOf = (isoStr: string) => todayISODate(TZ, new Date(isoStr));
       const revenueOn = (date: string) =>
         validPayments.filter((p) => dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
@@ -2348,7 +2374,7 @@ export class MockGymOSApi implements GymOSApi {
       const revenueSeries: T.RevenuePoint[] = [];
       for (let d = 29; d >= 0; d--) {
         const date = addDays(today, -d);
-        const collected = validPayments.filter((p) => p.type === "payment" && dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
+        const collected = validPayments.filter((p) => (p.type === "payment" || p.type === "retail_sale") && dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
         const refunds = validPayments.filter((p) => p.type === "refund" && dayOf(p.occurredAt) === date).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
         revenueSeries.push({ date, collected, refunds });
       }
@@ -2388,7 +2414,7 @@ export class MockGymOSApi implements GymOSApi {
         .filter((u) => u.role === "salesperson" && u.status === "active")
         .map((u) => {
           const collected = validPayments
-            .filter((p) => p.collectedById === u.id && p.type === "payment" && dayOf(p.occurredAt) >= monthStart)
+            .filter((p) => p.collectedById === u.id && (p.type === "payment" || p.type === "retail_sale") && dayOf(p.occurredAt) >= monthStart)
             .reduce((s, p) => s + p.amount.amount, 0);
           const sold = this.db.memberships.filter((m) => m.soldById === u.id && dayOf(m.createdAt) >= monthStart);
           return {
@@ -2438,7 +2464,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private branchRevenue(branchId: T.UUID, from: string, to: string): number {
-    return this.db.payments
+    return [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))]
       .filter((p) => {
         if (p.branchId !== branchId || p.status === "voided") return false;
         const d = todayISODate(TZ, new Date(p.occurredAt));
@@ -4809,13 +4835,89 @@ export class MockGymOSApi implements GymOSApi {
     return { payment, receipt, timelineEventId: event.id };
   }
 
+  checkoutRetail(input: T.RetailCheckoutInput): Promise<T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.collect");
+      const branch = this.operationsBranch(input.branchId);
+      const method = input.method;
+      if (!["cash", "cliq", "card"].includes(method)) throw ApiError.of(ERR.VALIDATION, "Retail payment method is invalid.");
+      const configuredMethod = this.db.paymentMethods.find((candidate) => candidate.key === method);
+      if (configuredMethod && !configuredMethod.enabled) throw ApiError.of(ERR.VALIDATION, "This payment method is disabled for the gym.");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const guest = input.guest ? { fullName: input.guest.fullName.trim(), phone: input.guest.phone.trim() } : undefined;
+      if ((input.memberId && guest) || (!input.memberId && !guest)) throw ApiError.of(ERR.VALIDATION, "Choose an existing member or enter guest details, not both.");
+      const linesInput = [...input.lines].map((line) => ({ productId: line.productId, quantity: line.quantity })).sort((a, b) => a.productId.localeCompare(b.productId));
+      const externalReference = input.externalReference?.trim() || undefined;
+      const signature = JSON.stringify({ branchId: branch.id, memberId: input.memberId, guest, lines: linesInput, method, externalReference });
+      const replay = this.operationsIdempotent("retail_checkout", idempotencyKey, signature) as T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      if (method !== "cash" && !externalReference) throw ApiError.of(ERR.VALIDATION, "An external reference is required for CliQ and Visa/card payments.");
+      if (guest && (!guest.fullName || guest.fullName.length > 120 || !guest.phone || guest.phone.length > 40)) throw ApiError.of(ERR.VALIDATION, "Guest name and phone are required.");
+      if (linesInput.length === 0 || linesInput.length > 100) throw ApiError.of(ERR.VALIDATION, "A checkout must contain 1 to 100 product lines.");
+      const seen = new Set<string>();
+      const lines: Array<{ product: T.Product; quantity: number; balance: T.InventoryBalance; unitPriceMinor: number; lineTotalMinor: number }> = [];
+      let totalMinor = 0;
+      for (const lineInput of linesInput) {
+        if (seen.has(lineInput.productId)) throw ApiError.of(ERR.VALIDATION, "A checkout cannot repeat a product line.");
+        seen.add(lineInput.productId);
+        if (!Number.isSafeInteger(lineInput.quantity) || lineInput.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Product quantities must be positive whole numbers.");
+        const product = this.db.products.find((candidate) => candidate.id === lineInput.productId);
+        if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+        if (product.status !== "active") throw ApiError.of(ERR.CONFLICT, "Archived products cannot be sold.");
+        if (!product.retailPrice || product.retailPrice.amount <= 0 || product.retailPrice.currency !== this.db.organization.currency || !Number.isSafeInteger(product.retailPrice.amount)) throw ApiError.of(ERR.CONFLICT, `Set a retail price for ${product.name} before selling it.`);
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+        const available = (balance?.quantityOnHand ?? 0) - (balance?.committedQuantity ?? 0);
+        if (!balance || available < lineInput.quantity) throw ApiError.of(ERR.CONFLICT, `${product.name} has only ${available} available.`);
+        const lineTotalMinor = product.retailPrice.amount * lineInput.quantity;
+        if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) throw ApiError.of(ERR.VALIDATION, "Checkout total is too large.");
+        totalMinor += lineTotalMinor;
+        lines.push({ product, quantity: lineInput.quantity, balance, unitPriceMinor: product.retailPrice.amount, lineTotalMinor });
+      }
+      if (totalMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Checkout total must be greater than zero.");
+      let customer: T.RetailSaleCustomer;
+      let member: MemberRecord | undefined;
+      if (input.memberId) {
+        member = this.db.members.find((candidate) => candidate.id === input.memberId);
+        if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        if (member.homeBranchId !== branch.id) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        customer = { kind: "member", fullName: member.fullName, phone: member.phone, memberId: member.id, memberNumber: member.memberNumber };
+      } else {
+        customer = { kind: "guest", fullName: guest!.fullName, phone: guest!.phone };
+      }
+      const shift = method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open") : undefined;
+      if (method === "cash" && !shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before checking out cash sales.");
+      const now = nowISO();
+      const receiptNumber = this.nextReceiptNumber();
+      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency) })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now };
+      const receipt: T.Receipt = { id: sale.receiptId, receiptNumber, paymentId: `retail-payment-${sale.id}`, retailSaleId: sale.id, issuedAt: now };
+      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer, amount: money(totalMinor, this.db.organization.currency), method, status: "completed", receiptId: receipt.id, receiptNumber, collectedById: this.actor().id, collectedByName: this.actor().name, shiftId: shift?.id, externalReference, idempotencyKey, occurredAt: now };
+      this.db.retailSales.push(sale);
+      this.db.receipts.push(receipt);
+      for (const line of lines) {
+        line.balance.quantityOnHand -= line.quantity;
+        line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
+        line.balance.lastMovementAt = now;
+        line.balance.updatedAt = now;
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.product.defaultUnitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        this.db.stockMovements.unshift(movement);
+      }
+      if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
+      this.audit({ category: "operations", action: "operations.retail_sale.create", entityType: "retail_sale", entityId: sale.id, entityLabel: receiptNumber, summary: `Retail sale ${receiptNumber} · ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: branch.id });
+      const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
+      this.operationsIdempotency.set(`retail_checkout:${idempotencyKey}`, { signature, result: detail });
+      return detail;
+    });
+  }
+
   listTransactions(query: TransactionListQuery): Promise<T.Page<T.TransactionSummary>> {
     return this.respond(() => {
       this.require("reports.financial.read");
       const branchId = this.branchScopedBranchId(query.branchId);
-      let items = this.db.payments.map((p) => this.toTransaction(p));
+      let items = [...this.db.payments.map((p) => this.toTransaction(p)), ...this.db.retailSales.map((sale) => this.toTransaction(this.retailPaymentProjection(sale)))];
       if (branchId) items = items.filter((p) => p.branchId === branchId);
-      if (query.memberId) items = items.filter((p) => p.memberId === query.memberId);
+      if (query.memberId) items = items.filter((p) => ("memberId" in p ? p.memberId : p.customer?.memberId) === query.memberId);
       if (query.method) items = items.filter((p) => p.method === query.method);
       if (query.type) items = items.filter((p) => p.type === query.type);
       const txFrom = query.from;
@@ -4995,6 +5097,15 @@ export class MockGymOSApi implements GymOSApi {
   private getReceiptSync(receiptId: T.UUID): T.ReceiptDetail {
     const receipt = this.db.receipts.find((r) => r.id === receiptId);
     if (!receipt) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+    if (receipt.retailSaleId) {
+      const sale = this.db.retailSales.find((candidate) => candidate.id === receipt.retailSaleId);
+      if (!sale) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      const branch = this.db.branches.find((b) => b.id === sale.branchId);
+      if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: "completed", receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
+      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: [] };
+    }
     const payment = this.db.payments.find((p) => p.id === receipt.paymentId)!;
     const branch = this.db.branches.find((b) => b.id === payment.branchId)!;
     const member = this.db.members.find((m) => m.id === payment.memberId)!;
@@ -5009,6 +5120,7 @@ export class MockGymOSApi implements GymOSApi {
       },
       branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
       member: { fullName: member.fullName, memberNumber: member.memberNumber },
+      customer: { kind: "member", fullName: member.fullName, phone: member.phone, memberId: member.id, memberNumber: member.memberNumber },
       payment,
       charge,
       relatedPayments: related,
@@ -5060,19 +5172,20 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private shiftTotals(shift: T.CashShift): T.ShiftTotals {
-    const inShift = this.db.payments.filter((p) => p.shiftId === shift.id && p.status !== "voided");
-    const sum = (fn: (p: T.Payment) => boolean) => inShift.filter(fn).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
+    const inShift: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((p) => p.shiftId === shift.id && p.status !== "voided");
+    const isCollection = (p: T.Payment | T.RetailPayment) => p.type === "payment" || p.type === "retail_sale";
+    const sum = (fn: (p: T.Payment | T.RetailPayment) => boolean) => inShift.filter(fn).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
     return {
-      cashPayments: money(sum((p) => p.method === "cash" && p.type === "payment")),
-      cashRefunds: money(sum((p) => p.method === "cash" && p.type === "refund")),
-      cardPayments: money(sum((p) => p.method === "card" && p.type === "payment")),
-      transferPayments: money(sum((p) => (p.method === "bank_transfer" || p.method === "cliq") && p.type === "payment")),
-      otherPayments: money(sum((p) => p.method === "other" && p.type === "payment")),
-      paymentCount: inShift.filter((p) => p.type === "payment").length,
+      cashPayments: money(sum((p) => p.method === "cash" && isCollection(p)), this.db.organization.currency),
+      cashRefunds: money(sum((p) => p.method === "cash" && p.type === "refund"), this.db.organization.currency),
+      cardPayments: money(sum((p) => p.method === "card" && isCollection(p)), this.db.organization.currency),
+      transferPayments: money(sum((p) => (p.method === "bank_transfer" || p.method === "cliq") && isCollection(p)), this.db.organization.currency),
+      otherPayments: money(sum((p) => p.method === "other" && isCollection(p)), this.db.organization.currency),
+      paymentCount: inShift.filter(isCollection).length,
       refundCount: inShift.filter((p) => p.type === "refund").length,
       discountsTotal: money(
         inShift
-          .map((p) => this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0)
+          .map((p) => ("chargeId" in p ? this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0 : 0))
           .reduce((s, d) => s + d, 0),
       ),
     };
@@ -5149,27 +5262,28 @@ export class MockGymOSApi implements GymOSApi {
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> {
     return this.respond(() => {
       this.require("reports.financial.read");
-      const dayPayments = this.db.payments.filter(
+      const dayPayments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter(
         (p) => p.branchId === query.branchId && p.status !== "voided" && todayISODate(TZ, new Date(p.occurredAt)) === query.date,
       );
+      const isCollection = (p: T.Payment | T.RetailPayment) => p.type === "payment" || p.type === "retail_sale";
       const methods: T.PaymentMethodKey[] = ["cash", "card", "bank_transfer", "cliq", "other"];
       const totalsByMethod = methods
         .map((method) => {
           const ofMethod = dayPayments.filter((p) => p.method === method);
-          const paymentsSum = ofMethod.filter((p) => p.type === "payment").reduce((s, p) => s + p.amount.amount, 0);
+          const paymentsSum = ofMethod.filter(isCollection).reduce((s, p) => s + p.amount.amount, 0);
           const refundsSum = ofMethod.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0);
           return {
             method,
-            payments: money(paymentsSum),
-            refunds: money(refundsSum),
-            net: money(paymentsSum - refundsSum),
+            payments: money(paymentsSum, this.db.organization.currency),
+            refunds: money(refundsSum, this.db.organization.currency),
+            net: money(paymentsSum - refundsSum, this.db.organization.currency),
             count: ofMethod.length,
           };
         })
         .filter((row) => row.count > 0);
       const discountsTotal = dayPayments
-        .filter((p) => p.type === "payment")
-        .map((p) => this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0)
+        .filter(isCollection)
+        .map((p) => ("chargeId" in p ? this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0 : 0))
         .reduce((s, d) => s + d, 0);
       const shifts = this.db.shifts.filter(
         (s) => s.branchId === query.branchId && todayISODate(TZ, new Date(s.openedAt)) === query.date,
@@ -5178,9 +5292,9 @@ export class MockGymOSApi implements GymOSApi {
         branchId: query.branchId,
         date: query.date,
         totalsByMethod,
-        totalCollected: money(dayPayments.filter((p) => p.type === "payment").reduce((s, p) => s + p.amount.amount, 0)),
-        totalRefunded: money(dayPayments.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0)),
-        discountsTotal: money(discountsTotal),
+        totalCollected: money(dayPayments.filter(isCollection).reduce((s, p) => s + p.amount.amount, 0), this.db.organization.currency),
+        totalRefunded: money(dayPayments.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0), this.db.organization.currency),
+        discountsTotal: money(discountsTotal, this.db.organization.currency),
         shifts,
         totalVariance: money(shifts.reduce((s, sh) => s + (sh.variance?.amount ?? 0), 0)),
       };
@@ -5515,6 +5629,7 @@ export class MockGymOSApi implements GymOSApi {
         const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
         add(sourceType, payment.id, payment.branchId);
       }
+      for (const sale of this.db.retailSales) add("payment", `retail-payment-${sale.id}`, sale.branchId);
       for (const membership of this.db.memberships) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
       for (const order of this.db.purchaseOrders) add("purchase_order_receipt", order.id, order.branchId);
       for (const movement of this.db.stockMovements) add("stock_movement", movement.id, movement.branchId);
@@ -5539,7 +5654,7 @@ export class MockGymOSApi implements GymOSApi {
           continue;
         }
         const now = nowISO();
-        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
+        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
         let row: T.AccountingSourcePosting;
         if (existing) {
           const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
@@ -5563,14 +5678,16 @@ export class MockGymOSApi implements GymOSApi {
   private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): { amount?: number; currency?: string; branchId?: T.UUID; occurredAt: string; debitCode?: string; creditCode?: string; policyCode?: string; reason?: string; status?: T.AccountingSourceStatus; details?: Record<string, unknown> } {
     const accountForMethod = (method: T.PaymentMethodKey) => method === "card" ? "1110" : method === "bank_transfer" || method === "cliq" ? "1120" : "1100";
     if (["payment", "refund", "void"].includes(sourceType)) {
-      const payment = this.db.payments.find((candidate) => candidate.id === sourceId);
+      const retailSale = this.db.retailSales.find((sale) => `retail-payment-${sale.id}` === sourceId);
+      const payment: T.Payment | T.RetailPayment | undefined = this.db.payments.find((candidate) => candidate.id === sourceId) ?? (retailSale ? this.retailPaymentProjection(retailSale) : undefined);
       if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Payment source not found.");
-      const valid = sourceType === "payment" ? payment.type === "payment" && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : payment.type === "payment" && payment.status === "voided";
+      const isRetail = payment.type === "retail_sale";
+      const valid = sourceType === "payment" ? (payment.type === "payment" || isRetail) && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : payment.type === "payment" && payment.status === "voided";
       const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : "1200";
-      const creditCode = sourceType === "payment" ? "1200" : accountForMethod(payment.method);
+      const creditCode = sourceType === "payment" ? (isRetail ? "4100" : "1200") : accountForMethod(payment.method);
       const normalizedAmount = sourceType === "refund" ? Math.abs(payment.amount.amount) : payment.amount.amount;
       const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
-      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${sourceType}-${payment.method}.v1`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method } };
+      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: isRetail ? `retail-sale-${payment.method}.v1` : `${sourceType}-${payment.method}.v1`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method, saleType: isRetail ? "retail" : "membership" } };
     }
     if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
       const membership = this.db.memberships.find((candidate) => candidate.id === sourceId);
@@ -5665,9 +5782,11 @@ export class MockGymOSApi implements GymOSApi {
       const branch = this.accountingBranch(fact.branchId);
       if (fact.status) {
         const now = nowISO();
-        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
-        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: fact.amount === undefined ? undefined : money(fact.amount), currency: fact.currency ?? this.db.organization.currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        const factCurrency = fact.currency ?? this.db.organization.currency;
+        const factMoney = fact.amount === undefined ? undefined : money(fact.amount, factCurrency);
+        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
         this.accountingSourceAttempts.set(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey), attempt);
         return this.accountingSourceAttemptView(attempt);
       }
@@ -5678,10 +5797,10 @@ export class MockGymOSApi implements GymOSApi {
       const credit = this.accountingAccount(`acct-${fact.creditCode}`);
       const now = nowISO();
       const entryId = mockUuid();
-      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount), totalCredit: money(fact.amount), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount), credit: money(0), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0), credit: money(fact.amount), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount, this.db.organization.currency), totalCredit: money(fact.amount, this.db.organization.currency), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount, this.db.organization.currency), credit: money(0, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0, this.db.organization.currency), credit: money(fact.amount, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
       this.accountingEntries.unshift(entry);
-      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion: 1, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion: 1, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion: 1, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion: 1, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
       this.audit({ category: "accounting", action: "accounting.source.post", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Posted ${input.sourceType} source`, reason: input.reason, branchId: branch?.id });
       return row;
     });
@@ -6341,7 +6460,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsRead();
       const search = query.search?.trim().toLowerCase();
-      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined }));
+      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined }));
     });
   }
 
@@ -6352,6 +6471,7 @@ export class MockGymOSApi implements GymOSApi {
       const name = input.name.trim();
       if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(sku) || !name || name.length > 120) throw ApiError.of(ERR.VALIDATION, "Product SKU and name are invalid.");
       if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0 || !Number.isSafeInteger(input.targetLevel) || input.targetLevel < input.reorderPoint || !Number.isSafeInteger(input.supplierLeadTimeDays) || input.supplierLeadTimeDays < 0) throw ApiError.of(ERR.VALIDATION, "Product stock thresholds are invalid.");
+      if (input.retailPrice && (input.retailPrice.amount < 0 || !Number.isSafeInteger(input.retailPrice.amount) || input.retailPrice.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product retail price is invalid.");
       if (input.defaultUnitCost && (input.defaultUnitCost.amount < 0 || input.defaultUnitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product cost is invalid.");
       const duplicate = this.db.products.find((product) => product.sku === sku && product.id !== input.id);
       if (duplicate) throw ApiError.of(ERR.CONFLICT, "That SKU is already used by another product.");
@@ -6359,10 +6479,10 @@ export class MockGymOSApi implements GymOSApi {
       const now = nowISO();
       const existing = input.id ? this.db.products.find((product) => product.id === input.id) : undefined;
       if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
-      const product: T.Product = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, targetLevel: input.targetLevel, supplierLeadTimeDays: input.supplierLeadTimeDays, preferredSupplierId: input.preferredSupplierId, defaultUnitCost: input.defaultUnitCost, status: input.status ?? "active", createdAt: now, updatedAt: now };
+      const product: T.Product = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, retailPrice: input.retailPrice, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, targetLevel: input.targetLevel, supplierLeadTimeDays: input.supplierLeadTimeDays, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, defaultUnitCost: input.defaultUnitCost, status: input.status ?? "active", createdAt: now, updatedAt: now };
       if (!existing) this.db.products.push(product);
       this.audit({ category: "operations", action: existing ? "operations.product.update" : "operations.product.create", entityType: "product", entityId: product.id, entityLabel: product.name, summary: existing ? "Product updated" : "Product created" });
-      return { ...product, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined };
+      return { ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined };
     });
   }
 

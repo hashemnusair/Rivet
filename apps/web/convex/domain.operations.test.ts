@@ -18,14 +18,108 @@ async function seeded() {
     const owner = await ctx.db.insert("users", { publicId: "operations-owner", authSubject: "clerk-operations-owner", email: "owner@operations.example", fullName: "Operations Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const manager = await ctx.db.insert("users", { publicId: "operations-manager", authSubject: "clerk-operations-manager", email: "manager@operations.example", fullName: "Operations Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const sales = await ctx.db.insert("users", { publicId: "operations-sales", authSubject: "clerk-operations-sales", email: "sales@operations.example", fullName: "Operations Sales", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    const trainer = await ctx.db.insert("users", { publicId: "operations-trainer", authSubject: "clerk-operations-trainer", email: "trainer@operations.example", fullName: "Operations Trainer", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branchA, branchB], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: manager, role: "manager", branchIds: [branchA], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: sales, role: "sales", branchIds: [branchA], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+    await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: trainer, role: "trainer", branchIds: [branchA], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
   });
-  return { t, owner: t.withIdentity({ subject: "clerk-operations-owner" }), manager: t.withIdentity({ subject: "clerk-operations-manager" }), sales: t.withIdentity({ subject: "clerk-operations-sales" }) };
+  return { t, owner: t.withIdentity({ subject: "clerk-operations-owner" }), manager: t.withIdentity({ subject: "clerk-operations-manager" }), sales: t.withIdentity({ subject: "clerk-operations-sales" }), trainer: t.withIdentity({ subject: "clerk-operations-trainer" }) };
 }
 
 describe("daily operations typed contracts", () => {
+  it("checks out retail stock atomically for members and guests", async () => {
+    const { owner, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-01", name: "Protein drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 2_000, currency: "JOD" }, defaultUnitCost: { amount: 800, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 3, idempotencyKey: "retail-opening" }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "operations-branch-a")).unique();
+      const user = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "operations-sales")).unique();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "member", publicId: "retail-member", branchId: branch!._id, memberPublicId: "retail-member", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "retail-member", fullName: "Retail Member", memberNumber: "M-100", phone: "+962790000000", homeBranchId: "operations-branch-a" } });
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "shift", publicId: "retail-shift", branchId: branch!._id, createdAt: Date.now(), updatedAt: Date.now(), data: { id: "retail-shift", branchId: "operations-branch-a", status: "open", openedById: user!.publicId } });
+    });
+    const memberSale = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", memberId: "retail-member", lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "retail-member-sale" })) as { receiptId: string; retailSale: { customer: { kind: string }; total: { amount: number } } };
+    expect(memberSale).toMatchObject({ receiptId: expect.any(String), retailSale: { customer: { kind: "member" }, total: { amount: 2_000 } } });
+    const replay = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", memberId: "retail-member", lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "retail-member-sale" })) as { receiptId: string };
+    expect(replay.receiptId).toBe(memberSale.receiptId);
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", memberId: "retail-member", lines: [{ productId: product.id, quantity: 2 }], method: "cash", idempotencyKey: "retail-member-sale" })), "CONFLICT");
+    const timeline = await sales.query(api.domain.query, operation("members.timeline", { memberId: "retail-member" })) as { items: Array<{ type: string; meta?: { receiptId?: string } }> };
+    expect(timeline.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "payment_collected", meta: expect.objectContaining({ receiptId: memberSale.receiptId }) })]));
+    const guestSale = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest Buyer", phone: "+962790000001" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-1", idempotencyKey: "retail-guest-sale" })) as { receiptId: string; customer?: { kind: string } };
+    const guestReceipt = await sales.query(api.domain.query, operation("receipts.get", { receiptId: guestSale.receiptId })) as { member?: unknown; customer: { kind: string; fullName: string }; retailSale: { lines: Array<{ quantity: number }> } };
+    expect(guestReceipt).toMatchObject({ customer: { kind: "guest", fullName: "Guest Buyer" }, retailSale: { lines: [{ quantity: 1 }] } });
+    expect(guestReceipt.member).toBeUndefined();
+    const today = new Date().toISOString().slice(0, 10);
+    const shift = await owner.query(api.domain.query, operation("shifts.current", { branchId: "operations-branch-a" })) as { totals: { cashPayments: { amount: number }; paymentCount: number } };
+    expect(shift.totals).toMatchObject({ cashPayments: { amount: 2_000 }, paymentCount: 1 });
+    const reconciliation = await owner.query(api.domain.query, operation("reconciliation.daily", { branchId: "operations-branch-a", date: today })) as { totalCollected: { amount: number }; totalsByMethod: Array<{ method: string; payments: { amount: number } }> };
+    expect(reconciliation.totalCollected.amount).toBe(4_000);
+    expect(reconciliation.totalsByMethod).toEqual(expect.arrayContaining([expect.objectContaining({ method: "cash", payments: expect.objectContaining({ amount: 2_000 }) }), expect.objectContaining({ method: "card", payments: expect.objectContaining({ amount: 2_000 }) })]));
+    const transactions = await owner.query(api.domain.query, operation("transactions.list", { branchId: "operations-branch-a", type: "retail_sale" })) as { items: Array<{ type: string; customer?: { kind: string } }> };
+    expect(transactions.items).toHaveLength(2);
+    expect(transactions.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "retail_sale", customer: expect.objectContaining({ kind: "guest" }) })]));
+    const dashboard = await owner.query(api.domain.query, operation("dashboard", { branchId: "operations-branch-a", from: today, to: today })) as { kpis: { revenueToday: { amount: number } }; branchRevenue: Array<{ collected: { amount: number } }> };
+    expect(dashboard.kpis.revenueToday).toMatchObject({ amount: 4_000 });
+    expect(dashboard.branchRevenue[0]?.collected).toMatchObject({ amount: 4_000 });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      await ctx.db.patch(organization!._id, { subscriptionPlan: "Pro", updatedAt: Date.now() });
+    });
+    const refreshed = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["payment"] })) as { items: Array<{ sourceId: string; status: string; policyCode?: string }> };
+    const retailSource = refreshed.items.find((item) => item.policyCode === "retail-sale-card.v1");
+    expect(retailSource).toMatchObject({ status: "pending", policyCode: "retail-sale-card.v1" });
+    const posted = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: retailSource!.sourceId, idempotencyKey: "retail-accounting-post" })) as { status: string; journalEntryId?: string };
+    expect(posted).toMatchObject({ status: "posted", journalEntryId: expect.any(String) });
+    const inventory = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(inventory[0]?.availableQuantity).toBe(1);
+    const movements = await t.run(async (ctx) => ctx.db.query("stockMovements").withIndex("by_organization").collect());
+    expect(movements.filter((movement) => movement.type === "sale")).toHaveLength(2);
+  });
+
+  it("rejects missing prices, missing references, insufficient stock, and missing cash shifts before mutation", async () => {
+    const { owner, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2 })) as { id: string };
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-2", idempotencyKey: "retail-unpriced" })), "CONFLICT");
+    await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { id: product.id, sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } }));
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "retail-opening-2" }));
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "retail-no-shift" })), "NO_OPEN_SHIFT");
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", idempotencyKey: "retail-no-ref" })), "VALIDATION_ERROR");
+    const secondProduct = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-03", name: "Second drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_500, currency: "JOD" } })) as { id: string };
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }, { productId: secondProduct.id, quantity: 1 }], method: "card", externalReference: "VISA-3", idempotencyKey: "retail-later-line-stock" })), "CONFLICT");
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-4", idempotencyKey: "retail-overstock" })), "CONFLICT");
+    const before = await t.run(async (ctx) => ({ sales: (await ctx.db.query("stockMovements").withIndex("by_organization").collect()).filter((movement) => movement.type === "sale").length, receipts: (await ctx.db.query("domainRecords").withIndex("by_entity_type").collect()).filter((record) => record.entityType === "receipt").length }));
+    expect(before).toEqual({ sales: 0, receipts: 0 });
+    const inventory = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(inventory[0]?.availableQuantity).toBe(1);
+  });
+
+  it("keeps member checkout branch-scoped and honours disabled payment methods", async () => {
+    const { owner, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-BRANCH", name: "Branch item", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 2, idempotencyKey: "retail-branch-opening" }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "operations-branch-b")).unique();
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "member", publicId: "branch-b-member", branchId: branch!._id, memberPublicId: "branch-b-member", createdAt: now, updatedAt: now, data: { id: "branch-b-member", fullName: "Branch B Member", memberNumber: "M-B", phone: "+962790000099", homeBranchId: "operations-branch-b" } });
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { paymentMethods: [{ key: "cash", enabled: true }, { key: "card", enabled: false }, { key: "cliq", enabled: true }] } });
+    });
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", memberId: "branch-b-member", lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "retail-branch-member" })), "NOT_FOUND");
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Disabled card guest", phone: "+962790000098" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-DISABLED", idempotencyKey: "retail-disabled-card" })), "VALIDATION_ERROR");
+    const inventory = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(inventory[0]?.availableQuantity).toBe(2);
+  });
+
+  it("allows front-desk collection but denies checkout without payments.collect", async () => {
+    const { owner, sales, trainer } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-04", name: "Front desk item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "retail-opening-4" }));
+    const input = { branchId: "operations-branch-a", guest: { fullName: "Front Desk Guest", phone: "+962790000005" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-5", idempotencyKey: "retail-front-desk" };
+    await expectCode(trainer.mutation(api.domain.mutate, operation("operations.retail.checkout", input)), "FORBIDDEN");
+    await expect(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", input))).resolves.toMatchObject({ retailSale: { customer: { kind: "guest" } } });
+  });
+
   it("uses the organization plan when a materialized entitlement row is stale", async () => {
     const { owner, t } = await seeded();
     await t.run(async (ctx) => {

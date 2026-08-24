@@ -76,6 +76,7 @@ import type {
   PaymentStatus,
   ReconciliationReport,
   ReceiptDetail,
+  RetailCheckoutInput,
   RefundPaymentInput,
   RenewalQueueItem,
   RenewMembershipInput,
@@ -852,6 +853,7 @@ export interface GymOSApi {
   refundPayment(paymentId: UUID, input: RefundPaymentInput): Promise<ReceiptDetail>;
   voidPayment(paymentId: UUID, input: VoidPaymentInput): Promise<ReceiptDetail>;
   getReceipt(receiptId: UUID): Promise<ReceiptDetail>;
+  checkoutRetail(input: RetailCheckoutInput): Promise<ReceiptDetail & { receiptId: UUID; retailSale: import("@/lib/domain/types").RetailSale }>;
   openCashShift(input: OpenCashShiftInput): Promise<CashShift>;
   getCurrentCashShift(branchId: UUID): Promise<CashShift | null>;
   getCurrentShiftTotals(branchId: UUID): Promise<{ shift: CashShift; totals: import("@/lib/domain/types").ShiftTotals } | null>;

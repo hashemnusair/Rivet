@@ -150,7 +150,9 @@ export default function TransactionsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.items.map((p) => (
+              {data.items.map((p) => {
+                const memberId = "memberId" in p ? p.memberId : p.customer?.memberId;
+                return (
                 <TableRow key={p.id}>
                   <TableCell>
                     <Link href={receiptHref(p.receiptId)} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">
@@ -161,9 +163,13 @@ export default function TransactionsPage() {
                     <DateTimeText iso={p.occurredAt} />
                   </TableCell>
                   <TableCell>
-                    <Link href={`/members/${p.memberId}`} className="text-[13px] font-medium hover:underline underline-offset-2">
-                      {p.memberName}
-                    </Link>
+                    {memberId ? (
+                      <Link href={`/members/${memberId}`} className="text-[13px] font-medium hover:underline underline-offset-2">
+                        {p.memberName}
+                      </Link>
+                    ) : (
+                      <span className="text-[13px] font-medium">{p.memberName}</span>
+                    )}
                     <span className="block font-mono text-[11px] text-ink-3">{p.memberNumber}</span>
                   </TableCell>
                   <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
@@ -177,7 +183,8 @@ export default function TransactionsPage() {
                   <TableCell className="text-[12.5px] text-ink-2">{p.collectedByName}</TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{p.branchName.split("— ")[1] ?? p.branchName}</TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}

@@ -132,6 +132,25 @@ function requireOperationsWrite(actor: ActorContext): void {
   if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an organization owner or manager can change daily operations records.", { correlationId: actor.correlationId });
 }
 
+/**
+ * Payment settings are optional in older tenants. When a settings record is
+ * present, however, checkout must honour an explicitly disabled method in the
+ * same way as membership collection does. A missing method remains enabled
+ * for backwards compatibility with pre-settings tenants.
+ */
+async function requireRetailPaymentMethodEnabled(ctx: ReadContext, actor: ActorContext, method: string): Promise<void> {
+  const settings = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "settings").eq("publicId", "settings"))
+    .unique();
+  const configured = Array.isArray(value(settings?.data).paymentMethods)
+    ? value(settings?.data).paymentMethods.map((item: unknown) => value(item)).find((item: Data) => item.key === method)
+    : undefined;
+  if (configured && configured.enabled === false) {
+    domainError("VALIDATION_ERROR", "This payment method is disabled for the gym.", { correlationId: actor.correlationId, fieldErrors: { method: ["Disabled"] } });
+  }
+}
+
 async function branchByPublicId(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<Branch> {
   const branch = id
     ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", id)).unique()
@@ -243,6 +262,7 @@ function productView(product: Product, organizationId: string): Data {
     targetLevel: product.targetLevel,
     supplierLeadTimeDays: product.supplierLeadTimeDays,
     preferredSupplierId: product.preferredSupplierId,
+    retailPrice: money(product.retailPriceMinor, product.retailPriceCurrency),
     defaultUnitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency),
     status: product.status,
     createdAt: iso(product.createdAt),
@@ -305,6 +325,7 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (!name || name.length > 120) domainError("VALIDATION_ERROR", "Product name must be between 1 and 120 characters.", { correlationId: actor.correlationId });
   if (!Number.isSafeInteger(reorderPoint) || reorderPoint < 0 || !Number.isSafeInteger(targetLevel) || targetLevel < reorderPoint || !Number.isSafeInteger(supplierLeadTimeDays) || supplierLeadTimeDays < 0 || supplierLeadTimeDays > 365) domainError("VALIDATION_ERROR", "Reorder, target, and lead-time values are invalid.", { correlationId: actor.correlationId });
   const cost = requireNonNegativeMoney(input.defaultUnitCost, actor.organization.currency, "Default unit cost", actor.correlationId);
+  const retailPrice = requireNonNegativeMoney(input.retailPrice, actor.organization.currency, "Retail price", actor.correlationId);
   const preferredSupplierId = optionalText(input.preferredSupplierId);
   let supplier: Supplier | undefined;
   if (preferredSupplierId) supplier = await supplierByPublicId(ctx, actor, preferredSupplierId);
@@ -314,7 +335,7 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That SKU is already used by another product.", { correlationId: actor.correlationId });
   const status = input.status === "archived" ? "archived" as const : "active" as const;
   const now = Date.now();
-  const fields = { sku, name, description: optionalText(input.description), unit, reorderPoint, targetLevel, supplierLeadTimeDays, preferredSupplierId: supplier?.publicId, defaultUnitCostMinor: cost?.amount, defaultUnitCostCurrency: cost?.currency, status: existing ? input.status ? status : existing.status : status, updatedAt: now };
+  const fields = { sku, name, description: optionalText(input.description), unit, reorderPoint, targetLevel, supplierLeadTimeDays, preferredSupplierId: supplier?.publicId, retailPriceMinor: retailPrice?.amount, retailPriceCurrency: retailPrice?.currency, defaultUnitCostMinor: cost?.amount, defaultUnitCostCurrency: cost?.currency, status: existing ? input.status ? status : existing.status : status, updatedAt: now };
   if (existing) {
     const before = productView(existing, publicOrganizationId(actor.organization));
     await ctx.db.patch(existing._id, fields);
@@ -446,6 +467,236 @@ async function recordStockMovement(ctx: MutationCtx, actor: ActorContext, input:
   const idempotencyKey = optionalText(input.idempotencyKey);
   if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
   return await recordMovementInternal(ctx, actor, { branch, product, type, quantity, unitCost, reason, referenceType: optionalText(input.referenceType), referenceId: optionalText(input.referenceId), idempotencyKey, financialPostingStatus: "not_posted" });
+}
+
+function retailSaleView(sale: Doc<"retailSales">, organizationId: string, branchId: string): Data {
+  return {
+    id: sale.publicId,
+    organizationId,
+    branchId,
+    receiptId: sale.receiptId,
+    receiptNumber: sale.receiptNumber,
+    customer: sale.customer,
+    lines: sale.lines.map((line) => ({
+      productId: line.productId,
+      sku: line.sku,
+      productName: line.productName,
+      quantity: line.quantity,
+      unitPrice: { amount: line.unitPriceMinor, currency: line.currency },
+      lineTotal: { amount: line.lineTotalMinor, currency: line.currency },
+    })),
+    subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
+    total: { amount: sale.totalMinor, currency: sale.currency },
+    method: sale.method,
+    externalReference: sale.externalReference,
+    shiftId: sale.shiftId,
+    idempotencyKey: sale.idempotencyKey,
+    createdById: sale.createdByPublicId,
+    createdByName: sale.createdByName,
+    createdAt: iso(sale.createdAt),
+  };
+}
+
+function retailReceiptDetail(
+  sale: Doc<"retailSales">,
+  receipt: Data,
+  organization: Data,
+  branch: Branch,
+  actor: ActorContext,
+): Data {
+  const customer = value(sale.customer);
+  const payment = {
+    id: `retail-payment-${sale.publicId}`,
+    organizationId: publicOrganizationId(actor.organization),
+    branchId: publicBranchId(branch),
+    type: "retail_sale",
+    customer,
+    amount: { amount: sale.totalMinor, currency: sale.currency },
+    method: sale.method,
+    status: "completed",
+    receiptId: sale.receiptId,
+    receiptNumber: sale.receiptNumber,
+    collectedById: sale.createdByPublicId,
+    collectedByName: sale.createdByName,
+    shiftId: sale.shiftId,
+    externalReference: sale.externalReference,
+    idempotencyKey: sale.idempotencyKey,
+    occurredAt: iso(sale.createdAt),
+  };
+  return {
+    receipt,
+    receiptId: sale.receiptId,
+    organization: { name: actor.organization.name, receiptFooter: text(organization.receiptFooter), taxRatePercent: finite(organization.taxRatePercent) },
+    branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
+    member: customer.kind === "member" ? { fullName: text(customer.fullName), memberNumber: text(customer.memberNumber, "Member") } : undefined,
+    customer,
+    payment,
+    retailSale: retailSaleView(sale, publicOrganizationId(actor.organization), publicBranchId(branch)),
+    relatedPayments: [],
+  };
+}
+
+async function openCashShiftForBranch(ctx: ReadContext, actor: ActorContext, branch: Branch): Promise<Doc<"domainRecords"> | null> {
+  const shifts = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "shift")).collect();
+  return shifts.find((shift) => shift.branchId === branch._id && value(shift.data).status === "open") ?? null;
+}
+
+async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requirePermission(actor, "payments.collect");
+
+  const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
+  const method = assertOneOf(input.method, ["cash", "cliq", "card"] as const, "Retail payment method", actor.correlationId);
+  const idempotencyKey = optionalText(input.idempotencyKey);
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  const rawGuest = value(input.guest);
+  const guest = input.guest === undefined ? undefined : { fullName: text(rawGuest.fullName).trim(), phone: text(rawGuest.phone).trim() };
+  const memberId = optionalText(input.memberId);
+  if ((memberId && guest) || (!memberId && !guest)) domainError("VALIDATION_ERROR", "Choose an existing member or enter guest details, not both.", { correlationId: actor.correlationId });
+  const rawLines = Array.isArray(input.lines) ? input.lines : [];
+  const normalizedLines = rawLines.map((raw) => ({ productId: optionalText(value(raw).productId) ?? "", quantity: integer(value(raw).quantity, Number.NaN) })).sort((left, right) => left.productId.localeCompare(right.productId));
+  const externalReference = optionalText(input.externalReference);
+  const requestHash = JSON.stringify({ branchId: publicBranchId(branch), memberId, guest, lines: normalizedLines, method, externalReference });
+  const replay = await idempotentResult(ctx, actor, "operations.retail.checkout", idempotencyKey, requestHash);
+  if (replay) return replay;
+  await requireRetailPaymentMethodEnabled(ctx, actor, method);
+  if (method !== "cash" && !externalReference) domainError("VALIDATION_ERROR", "An external reference is required for CliQ and Visa/card payments.", { correlationId: actor.correlationId, fieldErrors: { externalReference: ["Required for this payment method"] } });
+  if (guest && (!guest.fullName || guest.fullName.length > 120 || !guest.phone || guest.phone.length > 40)) domainError("VALIDATION_ERROR", "Guest name and phone are required.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Required"], phone: ["Required"] } });
+  if (normalizedLines.length === 0 || normalizedLines.length > 100) domainError("VALIDATION_ERROR", "A checkout must contain 1 to 100 product lines.", { correlationId: actor.correlationId });
+  const seen = new Set<string>();
+  const lines: Array<{ product: Product; quantity: number; balance: InventoryBalance; unitPriceMinor: number; lineTotalMinor: number }> = [];
+  let totalMinor = 0;
+  for (const raw of normalizedLines) {
+    if (!raw.productId || seen.has(raw.productId)) domainError("VALIDATION_ERROR", "A checkout cannot repeat a product line.", { correlationId: actor.correlationId });
+    seen.add(raw.productId);
+    if (!Number.isSafeInteger(raw.quantity) || raw.quantity <= 0) domainError("VALIDATION_ERROR", "Product quantities must be positive whole numbers.", { correlationId: actor.correlationId });
+    const product = await productByPublicId(ctx, actor, raw.productId);
+    if (product.status !== "active") domainError("CONFLICT", "Archived products cannot be sold.", { correlationId: actor.correlationId });
+    if (product.retailPriceMinor === undefined || product.retailPriceMinor <= 0 || product.retailPriceCurrency !== actor.organization.currency) domainError("CONFLICT", `Set a positive retail price for ${product.name} before selling it.`, { correlationId: actor.correlationId, details: { productId: product.publicId } });
+    // Read balances during prevalidation. Creating a missing zero balance here
+    // would be a mutation before the rest of the cart had passed validation,
+    // which would violate the all-or-nothing checkout contract on a later-line
+    // failure.
+    const balance = await balanceRow(ctx, actor.organization._id, branch._id, product._id);
+    const available = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
+    if (!balance || available < raw.quantity) domainError("CONFLICT", `${product.name} has only ${available} available.`, { correlationId: actor.correlationId, details: { productId: product.publicId, availableQuantity: available, requestedQuantity: raw.quantity } });
+    const lineTotalMinor = product.retailPriceMinor * raw.quantity;
+    if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) domainError("VALIDATION_ERROR", "Checkout total is too large.", { correlationId: actor.correlationId });
+    totalMinor += lineTotalMinor;
+    lines.push({ product, quantity: raw.quantity, balance, unitPriceMinor: product.retailPriceMinor, lineTotalMinor });
+  }
+  if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) domainError("VALIDATION_ERROR", "Checkout total must be greater than zero.", { correlationId: actor.correlationId });
+
+  let memberRecord: Doc<"domainRecords"> | null = null;
+  let customer: {
+    kind: "member" | "guest";
+    fullName: string;
+    phone?: string;
+    memberId?: string;
+    memberNumber?: string;
+  };
+  if (memberId) {
+    memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
+    if (!memberRecord) domainError("NOT_FOUND", "Member not found.", { correlationId: actor.correlationId });
+    // A sale must be attributed to the member's home/record branch. Do not
+    // disclose a member that belongs to another branch to a scoped actor (or
+    // accidentally sell a branch-B member from branch A).
+    if (memberRecord.branchId && memberRecord.branchId !== branch._id) domainError("NOT_FOUND", "Member not found.", { correlationId: actor.correlationId });
+    const memberData = value(memberRecord.data);
+    const memberHomeBranchId = optionalText(memberData.homeBranchId);
+    if (memberHomeBranchId && memberHomeBranchId !== publicBranchId(branch)) domainError("NOT_FOUND", "Member not found.", { correlationId: actor.correlationId });
+    customer = { kind: "member", fullName: text(memberData.fullName, "Member"), phone: optionalText(memberData.phone), memberId: memberRecord.publicId, memberNumber: optionalText(memberData.memberNumber) };
+  } else {
+    customer = { kind: "guest", fullName: guest!.fullName, phone: guest!.phone };
+  }
+
+  let shiftId: string | undefined;
+  if (method === "cash") {
+    const shift = await openCashShiftForBranch(ctx, actor, branch);
+    if (!shift) domainError("NO_OPEN_SHIFT", "Open a cash shift before checking out cash sales.", { correlationId: actor.correlationId });
+    shiftId = String(value(shift.data).id);
+  }
+  const now = Date.now();
+  const receipt = await allocateRetailReceipt(ctx, actor);
+  const saleId = `retail-sale-${crypto.randomUUID()}`;
+  const sale = await ctx.db.insert("retailSales", {
+    organizationId: actor.organization._id,
+    publicId: saleId,
+    branchId: branch._id,
+    receiptId: receipt.id,
+    receiptNumber: receipt.number,
+    memberId: memberRecord?.publicId,
+    customer,
+    lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.publicId, sku: product.sku, productName: product.name, quantity, unitPriceMinor, lineTotalMinor, currency: actor.organization.currency })),
+    subtotalMinor: totalMinor,
+    totalMinor,
+    currency: actor.organization.currency,
+    method,
+    externalReference,
+    shiftId,
+    idempotencyKey,
+    createdByUserId: actor.user._id,
+    createdByPublicId: publicUserId(actor.user),
+    createdByName: actor.user.fullName,
+    createdAt: now,
+  });
+  const receiptData = { id: receipt.id, receiptNumber: receipt.number, paymentId: `retail-payment-${saleId}`, retailSaleId: saleId, issuedAt: iso(now) };
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "receipt", publicId: receipt.id, branchId: branch._id, memberPublicId: memberRecord?.publicId, createdAt: now, updatedAt: now, data: { ...receiptData, organizationId: publicOrganizationId(actor.organization) } });
+  // Keep retail collections in the existing payment projection so shifts,
+  // reconciliation, dashboards, transaction lists, and accounting all see a
+  // durable payment fact without pretending a guest is a member.
+  await ctx.db.insert("domainRecords", {
+    organizationId: actor.organization._id,
+    entityType: "payment",
+    publicId: receiptData.paymentId,
+    branchId: branch._id,
+    memberPublicId: memberRecord?.publicId,
+    createdAt: now,
+    updatedAt: now,
+    data: {
+      id: receiptData.paymentId,
+      organizationId: publicOrganizationId(actor.organization),
+      branchId: publicBranchId(branch),
+      memberId: memberRecord?.publicId,
+      customer,
+      type: "retail_sale",
+      amount: { amount: totalMinor, currency: actor.organization.currency },
+      method,
+      status: "completed",
+      receiptId: receipt.id,
+      receiptNumber: receipt.number,
+      collectedById: publicUserId(actor.user),
+      collectedByName: actor.user.fullName,
+      shiftId,
+      externalReference,
+      idempotencyKey,
+      retailSaleId: saleId,
+      occurredAt: iso(now),
+    },
+  });
+  for (const line of lines) {
+    const movementId = `movement-${crypto.randomUUID()}`;
+    const delta = -line.quantity;
+    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.product.defaultUnitCostMinor, unitCostCurrency: line.product.defaultUnitCostCurrency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+    await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, lastMovementAt: now, updatedAt: now });
+  }
+  if (memberRecord) {
+    const timelineId = `timeline-${crypto.randomUUID()}`;
+    await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "timeline", publicId: timelineId, branchId: branch._id, memberPublicId: memberRecord.publicId, createdAt: now, updatedAt: now, data: { id: timelineId, organizationId: publicOrganizationId(actor.organization), memberId: memberRecord.publicId, branchId: publicBranchId(branch), type: "payment_collected", title: `Retail sale — ${actor.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: iso(now), meta: { receiptNumber: receipt.number, receiptId: receipt.id, retailSaleId: saleId, saleType: "retail" } } });
+  }
+  await audit(ctx, actor, { action: "operations.retail_sale.create", entityType: "retail_sale", entityId: saleId, entityLabel: receipt.number, summary: `Retail sale ${receipt.number} · ${actor.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: publicBranchId(branch) });
+  const storedSale = await ctx.db.get(sale);
+  if (!storedSale) domainError("NOT_FOUND", "Retail sale could not be loaded after checkout.", { correlationId: actor.correlationId });
+  const organization = { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 };
+  const result = retailReceiptDetail(storedSale, receiptData, organization, branch, actor);
+  await saveIdempotentResult(ctx, actor, "operations.retail.checkout", idempotencyKey, requestHash, result);
+  return result;
+}
+
+async function allocateRetailReceipt(ctx: MutationCtx, actor: ActorContext): Promise<{ id: string; number: string }> {
+  const current = actor.organization.nextReceiptNumber ?? 1001;
+  await ctx.db.patch(actor.organization._id, { nextReceiptNumber: current + 1, updatedAt: Date.now() });
+  return { id: `receipt-${crypto.randomUUID()}`, number: `${actor.organization.receiptPrefix ?? "RV"}-${String(current).padStart(6, "0")}` };
 }
 
 async function listInventory(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
@@ -1041,6 +1292,7 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.supplier.upsert": return await upsertSupplier(ctx, actor, input);
     case "operations.supplier.archive": return await archiveSupplier(ctx, actor, input);
     case "operations.stock_movement.record": return await recordStockMovement(ctx, actor, input);
+    case "operations.retail.checkout": return await retailCheckout(ctx, actor, input);
     case "operations.low_stock.refresh": return await refreshLowStockAlerts(ctx, actor, input);
     case "operations.low_stock.dismiss": return await dismissLowStockAlert(ctx, actor, input);
     case "operations.purchase_order.create": return await createPurchaseOrder(ctx, actor, input);

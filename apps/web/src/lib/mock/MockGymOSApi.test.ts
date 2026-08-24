@@ -801,7 +801,7 @@ describe("collecting a payment", () => {
 
     expect(receipt.payment.amount.amount).toBe(owed);
     expect(receipt.receipt.receiptNumber).toMatch(/^R-\d+$/);
-    expect(receipt.member.memberNumber).toBe(member.memberNumber);
+    expect(receipt.member?.memberNumber).toBe(member.memberNumber);
 
     const after = await api.getMember(member.id);
     expect(after.outstanding.amount).toBe(0);
@@ -1198,7 +1198,7 @@ describe("refunds and voids", () => {
 
     expect(refund.payment.type).toBe("refund");
     expect(refund.payment.amount.amount).toBe(-owed);
-    expect(refund.payment.originalPaymentId).toBe(receipt.payment.id);
+    expect("originalPaymentId" in refund.payment ? refund.payment.originalPaymentId : undefined).toBe(receipt.payment.id);
     // A refund never edits the original receipt; it issues a new numbered one.
     expect(refund.payment.receiptNumber).not.toBe(receipt.payment.receiptNumber);
 
@@ -1771,6 +1771,95 @@ describe("seed coverage required by the docs", () => {
   });
 });
 
+describe("retail checkout", () => {
+  it("supports front-desk member and guest sales with idempotent stock decrements", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-RETAIL", name: "Mock retail item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, idempotencyKey: "mock-retail-opening" });
+    const member = await freshMemberForSale();
+    const reconciliationBefore = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
+    await api.switchDemoRole("receptionist");
+    const memberSale = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
+    const replay = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
+    expect(replay.receiptId).toBe(memberSale.receiptId);
+    await expect(api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const guestSale = await api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000003" }, lines: [{ productId: product.id, quantity: 1 }], method: "cliq", externalReference: "CLIQ-MOCK-1", idempotencyKey: "mock-retail-guest" });
+    const guestReceipt = await api.getReceipt(guestSale.receiptId);
+    expect(guestReceipt).toMatchObject({ customer: { kind: "guest", fullName: "Mock Guest" }, retailSale: { lines: [{ quantity: 1 }] } });
+    expect(guestReceipt.member).toBeUndefined();
+    await expect(api.getReceipt(memberSale.receiptId)).resolves.toMatchObject({ customer: { kind: "member", memberId: member.id }, retailSale: { receiptId: memberSale.receiptId } });
+    const memberTimeline = await api.listMemberTimeline(member.id);
+    expect(memberTimeline.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "payment_collected", meta: expect.objectContaining({ receiptId: memberSale.receiptId }) })]));
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1 })]);
+    await api.switchDemoRole("owner");
+    const shift = await api.getCurrentShiftTotals(branchId);
+    expect(shift?.totals).toMatchObject({ cashPayments: { amount: expect.any(Number) }, paymentCount: expect.any(Number) });
+    expect(shift?.totals.cashPayments.amount).toBeGreaterThanOrEqual(2_000);
+    const reconciliation = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
+    const beforeByMethod = new Map(reconciliationBefore.totalsByMethod.map((row) => [row.method, row.payments.amount]));
+    expect(reconciliation.totalsByMethod).toEqual(expect.arrayContaining([expect.objectContaining({ method: "card", payments: expect.objectContaining({ amount: (beforeByMethod.get("card") ?? 0) + 2_000 }) }), expect.objectContaining({ method: "cliq", payments: expect.objectContaining({ amount: (beforeByMethod.get("cliq") ?? 0) + 2_000 }) })]));
+    const transactions = await api.listTransactions({ branchId, type: "retail_sale", pageSize: 20 });
+    expect(transactions.items).toHaveLength(2);
+    expect(transactions.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "retail_sale", customer: expect.objectContaining({ kind: "guest" }) })]));
+    const otherBranch = ownerSession.branches[1]!.id;
+    const internals = api as unknown as { db: MockDb };
+    const otherBranchReceptionist = internals.db.users.find((user) => user.role === "receptionist" && user.branchIds.includes(otherBranch) && user.status === "active");
+    if (!otherBranchReceptionist) throw new Error("seed should contain a receptionist for the second branch");
+    internals.db.session.userId = otherBranchReceptionist.id;
+    internals.db.session.activeBranchId = otherBranch;
+    await expect(api.getReceipt(memberSale.receiptId)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+
+  it("does not sell an item until a positive retail price is configured", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-UNPRICED", name: "Mock unpriced item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2 });
+    const laterProduct = await api.upsertProduct({ sku: "MOCK-LATER", name: "Mock later line", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_500, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-unpriced-opening" });
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-2", idempotencyKey: "mock-unpriced-sale" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await api.switchDemoRole("owner");
+    await api.upsertProduct({ id: product.id, sku: "MOCK-UNPRICED", name: "Mock now priced item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    await api.switchDemoRole("receptionist");
+    const internals = api as unknown as { db: MockDb };
+    internals.db.shifts.filter((shift) => shift.branchId === branchId).forEach((shift) => { shift.status = "closed"; });
+    const retailSalesBefore = internals.db.retailSales.length;
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-no-shift" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    expect(internals.db.retailSales).toHaveLength(retailSalesBefore);
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }, { productId: laterProduct.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-3", idempotencyKey: "mock-later-line-stock" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1 })]);
+    expect(internals.db.retailSales).toHaveLength(retailSalesBefore);
+  });
+
+  it("allows front-desk collection but denies checkout without payments.collect", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-AUTH", name: "Mock auth item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-auth-opening" });
+    const input = { branchId, guest: { fullName: "Front Desk Guest", phone: "+962790000005" }, lines: [{ productId: product.id, quantity: 1 }], method: "card" as const, externalReference: "VISA-MOCK-4", idempotencyKey: "mock-auth-sale" };
+    await api.switchDemoRole("trainer");
+    await expect(api.checkoutRetail(input)).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail(input)).resolves.toMatchObject({ retailSale: { customer: { kind: "guest" } } });
+  });
+
+  it("enforces branch member visibility and configured payment methods", async () => {
+    const ownerSession = await api.getSession();
+    const branchA = ownerSession.branches[0]!.id;
+    const branchB = ownerSession.branches[1]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-BRANCH-AUTH", name: "Branch scoped item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId: branchA, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-branch-auth-opening" });
+    const branchBMember = await api.createMember({ fullName: "Branch B Member", phone: "+962 79 900 0999", homeBranchId: branchB, preferredLanguage: "en" });
+    const settings = await api.getOrganizationSettings();
+    await api.updatePaymentMethods(settings.paymentMethods.map((method) => method.key === "card" ? { ...method, enabled: false } : method));
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail({ branchId: branchA, memberId: branchBMember.member.id, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-branch-member" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    await expect(api.checkoutRetail({ branchId: branchA, guest: { fullName: "Disabled card guest", phone: "+962 79 900 0998" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-DISABLED", idempotencyKey: "mock-disabled-card" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.listInventory({ branchId: branchA, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 2 })]);
+  });
+});
+
 describe("management accounting mock contract", () => {
   it("rejects malformed posting dates before creating a ledger period", async () => {
     const branch = (await api.getSession()).branches[0]!;
@@ -1842,6 +1931,22 @@ describe("management accounting mock contract", () => {
 
     const replay = await api.refreshAccountingSourceQueue({ sourceTypes: [...sourceTypes] });
     expect(replay).toMatchObject({ scanned: first.scanned, created: 0, updated: 0 });
+  });
+
+  it("projects retail collections into clearing and revenue accounting", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-ACCOUNTING-RETAIL", name: "Accounting retail item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-accounting-retail-opening" });
+    await api.switchDemoRole("receptionist");
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Accounting guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-ACCOUNTING", idempotencyKey: "mock-accounting-retail-sale" });
+    await api.switchDemoRole("owner");
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const source = refreshed.items.find((item) => item.sourceId === sale.payment.id);
+    expect(source).toMatchObject({ sourceType: "payment", status: "pending", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v1", details: { saleType: "retail" } });
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: sale.payment.id, idempotencyKey: "mock-accounting-retail-post" });
+    expect(posted).toMatchObject({ status: "posted", amount: money(2_000, "JOD") });
+    const journal = await api.getAccountingJournalEntry(posted.journalEntryId!);
+    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1110", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "4100", credit: money(2_000, "JOD") })]));
   });
 
   it("replays an unconfigured source decision by key while a new key retries after source repair", async () => {
