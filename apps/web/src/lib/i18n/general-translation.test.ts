@@ -24,4 +24,15 @@ describe("General Translation configuration", () => {
     expect(envExample).not.toContain("NEXT_PUBLIC_GT_");
     expect(envExample).not.toContain("GT_DEV_API_KEY");
   });
+
+  it("keeps GT outside the normal Vercel build while the integration is paused", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: { build: string } };
+    const envValidator = readFileSync("scripts/validate-vercel-env.mjs", "utf8");
+    const nextConfig = readFileSync("next.config.mjs", "utf8");
+
+    expect(packageJson.scripts.build).not.toContain("translate:production");
+    expect(envValidator).not.toContain('"GT_PROJECT_ID"');
+    expect(envValidator).not.toContain('"GT_API_KEY"');
+    expect(nextConfig).toContain("TEMPORARY GT PAUSE");
+  });
 });

@@ -9,9 +9,11 @@ if (!isVercelBuild || isPreviewBuild) process.exit(0);
 const required = [
   "NEXT_PUBLIC_CONVEX_URL",
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-  "GT_PROJECT_ID",
-  "GT_API_KEY",
 ];
+
+// TEMPORARILY DISABLED: General Translation remains available in the source
+// tree, but GT credentials are intentionally not part of the Vercel release
+// gate while the deployment path is stabilized.
 const missing = required.filter((name) => !process.env[name]?.trim());
 
 if (process.env.NEXT_PUBLIC_DATA_MODE !== "convex") {

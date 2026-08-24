@@ -15,9 +15,10 @@
   alt text through the server and immediately updates the settings cache and
   authenticated gym shell. Logo lifecycle, owner authorization, and reload
   behavior are covered end to end.
-- Production Vercel builds now run the current `gtx-cli` translation step with
-  `--publish` before Next.js Webpack, making the English-to-Arabic catalog
-  available through General Translation. The inline `styled-jsx` loading
+- General Translation remains preserved in the source tree, but its provider,
+  locale switch, compiler wrapper, and `gtx-cli` publish step are temporarily
+  commented out/paused so the normal Vercel build does not require GT
+  credentials or a translation-network call. The inline `styled-jsx` loading
   animation that caused a reload crash after Brand Kit changes was moved to
   global CSS.
 - Validation: **710/710 unit tests**, frontend and Convex typechecks,
@@ -26,10 +27,10 @@
   save/reload browser verification passed.
 
 This is a local working-tree update only. No commit, GitHub push, Convex
-deploy, or Vercel deploy has been performed. Vercel Production still needs the
-server-side `GT_PROJECT_ID` and `GT_API_KEY` environment variable names plus a
-redeploy; the Convex deployment must also be updated for the platform archive
-authorization fix. Secret values are intentionally not recorded here.
+deploy, or Vercel deploy has been performed. Vercel Production no longer needs
+the server-side GT variable names while this integration is paused; the Convex
+deployment must still be updated for the platform archive authorization fix.
+Secret values are intentionally not recorded here.
 
 ## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
 

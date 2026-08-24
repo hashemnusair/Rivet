@@ -1,5 +1,12 @@
 # General Translation integration
 
+> Temporary deployment pause (24 August 2026): the GT provider/compiler hooks
+> and translation publish command are intentionally commented out of the
+> normal Vercel path so deployments work without GT credentials or a network
+> translation call. The package, config, components, and tests remain in place
+> for a later re-enable. `pnpm build` currently validates the normal Convex and
+> Clerk variables and builds Next.js directly.
+
 RIVET now has an additive `gt-next` integration for English (`en`) source
 content and Arabic (`ar`) translations. The integration deliberately keeps the
 existing app URL structure, authentication middleware, manual RTL preview, and
@@ -12,29 +19,26 @@ workflows.
 - `apps/web/gt.config.json` declares `en` as the default locale and `ar` as the
   supported target locale, enables the same automatic JSX parsing for the CLI,
   and publishes the generated catalog to GT's CDN.
-- `apps/web/next.config.mjs` applies `withGTConfig`, which reads the server-only
-  `GT_PROJECT_ID` and `GT_API_KEY` environment variables.
-- `@generaltranslation/compiler` is enabled through `withGTConfig`'s Babel
-  compiler option. The app's `dev` and `build` scripts explicitly use
-  `--webpack`, which is required for GT's automatic JSX injection; Next 16's
-  default Turbopack path does not run that compiler.
-- `apps/web/src/app/layout.tsx` mounts `GTProvider` above the existing Clerk,
-  Convex, identity, and app providers.
-- The authenticated Topbar exposes an English↔Arabic locale switch backed by
-  GT's `useLocale`/`useSetLocale` hooks. The existing `AppProviders` direction
-  state is updated to the selected locale direction, while the separate demo
-  control remains available for manual RTL layout checks.
-- A small document synchronizer updates `<html lang>` for the active GT locale
-  and keeps `<html dir>` aligned after a locale change. An explicitly stored
-  manual direction remains authoritative on first mount.
-- Production Vercel builds fail closed when either GT environment variable is
-  missing. Once those names are configured, the build runs `gtx-cli translate
-  --publish` before Next.js, so new static JSX strings are uploaded and the
-  server-side `GTProvider` can load the Arabic catalog. The values are never
-  included in source, examples, logs, or browser variables.
+- `apps/web/next.config.mjs` retains the `withGTConfig` setup as commented code;
+  it is not active during the temporary deployment pause.
+- `@generaltranslation/compiler` remains installed and configured for the
+  later re-enable, but is not invoked by the current Vercel build.
+- `apps/web/src/app/layout.tsx` retains the `GTProvider` boundary and document
+  synchronizer as commented code; the current runtime uses the normal Clerk,
+  Convex, identity, and app providers without GT.
+- The authenticated Topbar retains an English↔Arabic locale switch backed by
+  GT's `useLocale`/`useSetLocale` hooks as commented code for the later
+  re-enable. The existing manual RTL demo control remains available.
+- A small document synchronizer that updates `<html lang>` and `<html dir>` is
+  also retained as commented code; it is not mounted while GT is paused.
+- Production Vercel builds no longer require either GT environment variable
+  while the integration is paused. The previous `gtx-cli translate --publish`
+  release step is retained in `scripts/translate-production.mjs` but exits with
+  an explicit pause message, and `pnpm build` does not call it. The values are
+  never included in source, examples, logs, or browser variables.
 
-The provider and locale switch establish the runtime translation boundary. In
-the webpack build path, GT's compiler automatically injects translation
+When re-enabled, the provider and locale switch establish the runtime
+translation boundary. In the webpack build path, GT's compiler automatically injects translation
 components around static JSX text, so existing screens do not need a mass
 manual wrapper pass. This was verified against the generated webpack server
 bundle: static shell text is emitted through GT's injected translation helper.
@@ -58,39 +62,33 @@ GT_PROJECT_ID=
 GT_API_KEY=
 ```
 
-Use a development API key for local development and a production API key for a
-production build, following General Translation's environment guidance. After
-the credentials are configured, run the app's normal typecheck/test/build
-gates (`pnpm typecheck`, `pnpm test`, and `pnpm build` from the repository
-root). The build command uses the GT webpack compiler; do not replace it with a
-Turbopack build if automatic JSX injection is required.
+When the integration is re-enabled, use a development API key for local
+development and a production API key for a production build, following General
+Translation's environment guidance. During the pause, GT credentials are
+optional and the normal typecheck/test/build gates can run without them.
 
-For production translation catalogs, the Vercel Production build now runs
-`gtx-cli translate --publish` automatically before `next build`. This is the
-required release step for the default CDN delivery mode. A local build skips
-the network translation step by default; set `RIVET_TRANSLATE_BUILD=1` only in
-an environment where the production GT variables are already available. Do
-not run that command with credentials in an agent transcript.
+Translation catalog publishing is paused. To re-enable it later, restore the
+commented GT config/provider lines, remove the temporary pause in
+`scripts/translate-production.mjs`, add the GT variables to Vercel Production,
+and explicitly add `pnpm translate:production` back to the build script after
+reviewing the release workflow. Do not run that command with credentials in an
+agent transcript.
 
 ## Vercel configuration
 
-In Vercel Project Settings → Environment Variables, add these exact names to
-the **Production** scope, then redeploy. Vercel exposes Production variables to
-both the build and the running Next.js server, which is required because the
-catalog is published during the build and loaded at request time:
+When the integration is re-enabled, add the GT names to the **Production**
+scope. They are not required during the current pause. The normal production
+variables remain:
 
-- `GT_PROJECT_ID` — the General Translation project ID.
-- `GT_API_KEY` — a General Translation **production** API key.
 - `NEXT_PUBLIC_CONVEX_URL` — the production Convex deployment URL.
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — the production Clerk publishable key.
 - `NEXT_PUBLIC_DATA_MODE=convex` — selects the live Convex adapter.
 
 The repository's Vercel root directory is `apps/web`, and its build command is
-`pnpm build`. Preview deployments intentionally skip translation generation
-and use the deterministic mock experience; add GT variables to Preview only if
-you deliberately change that deployment policy. After changing any Vercel
-variable, trigger a new deployment because Next.js embeds build-time
-configuration into the server bundle.
+`pnpm build`. The current build does not invoke translation generation and does
+not require GT variables. After changing any Vercel variable, trigger a new
+deployment because Next.js embeds build-time configuration into the server
+bundle.
 
 ## Official references
 
