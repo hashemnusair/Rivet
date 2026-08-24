@@ -23,8 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Monogram } from "@/components/ui/misc";
 import { AuthTransition } from "@/components/auth/auth-transition";
-// TEMPORARILY DISABLED: retain the locale toggle for the later GT re-enable.
-// import { GeneralTranslationLocaleToggle } from "@/components/shared/general-translation-locale-toggle";
+import { GeneralTranslationLocaleToggle } from "@/components/shared/general-translation-locale-toggle";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
@@ -38,7 +37,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
-  const { session, organizations, selectOrganization, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
+  const { session, organizations, selectOrganization, setBranch, setDir, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -151,7 +150,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
       <div className="flex-1" />
 
-      {/* TEMPORARILY DISABLED: General Translation locale switch. */}
+      {/* General Translation locale switch; direction follows the selected locale. */}
+      <GeneralTranslationLocaleToggle dir={dir} setDir={setDir} />
 
       {session ? <NotificationCenter /> : null}
 

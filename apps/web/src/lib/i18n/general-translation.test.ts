@@ -25,14 +25,19 @@ describe("General Translation configuration", () => {
     expect(envExample).not.toContain("GT_DEV_API_KEY");
   });
 
-  it("keeps GT outside the normal Vercel build while the integration is paused", () => {
+  it("keeps GT in the production build and requires its server credentials", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: { build: string } };
     const envValidator = readFileSync("scripts/validate-vercel-env.mjs", "utf8");
     const nextConfig = readFileSync("next.config.mjs", "utf8");
+    const translationRelease = readFileSync("scripts/translate-production.mjs", "utf8");
 
-    expect(packageJson.scripts.build).not.toContain("translate:production");
-    expect(envValidator).not.toContain('"GT_PROJECT_ID"');
-    expect(envValidator).not.toContain('"GT_API_KEY"');
-    expect(nextConfig).toContain("TEMPORARY GT PAUSE");
+    expect(packageJson.scripts.build).toContain("pnpm translate:production");
+    expect(envValidator).toContain('"GT_PROJECT_ID"');
+    expect(envValidator).toContain('"GT_API_KEY"');
+    expect(nextConfig).toContain("withGTConfig");
+    expect(nextConfig).toContain("enableAutoJsxInjection: true");
+    expect(translationRelease).toContain('"--publish"');
+    expect(translationRelease).toContain("RIVET_TRANSLATE_BUILD");
+    expect(translationRelease).not.toContain("TRANSLATION_RELEASE_PAUSED");
   });
 });

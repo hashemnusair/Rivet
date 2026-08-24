@@ -52,22 +52,24 @@ requires operator confirmation after the alert projection.
   alt text through the server and immediately updates the settings cache and
   authenticated gym shell. Logo lifecycle, owner authorization, and reload
   behavior are covered end to end.
-- General Translation remains preserved in the source tree, but its provider,
-  locale switch, compiler wrapper, and `gtx-cli` publish step are temporarily
-  commented out/paused so the normal Vercel build does not require GT
-  credentials or a translation-network call. The inline `styled-jsx` loading
-  animation that caused a reload crash after Brand Kit changes was moved to
-  global CSS.
+- General Translation is active in the production path: the GT provider,
+  English↔Arabic locale switch, document direction synchronizer, Babel compiler
+  wrapper, and `gtx-cli translate --publish` step are enabled. Vercel
+  Production must provide the server-only `GT_PROJECT_ID` and `GT_API_KEY`
+  values; preview and ordinary local builds retain the guarded no-network path.
+  The inline `styled-jsx` loading animation that caused a reload crash after
+  Brand Kit changes was moved to global CSS.
 - Validation: **710/710 unit tests**, frontend and Convex typechecks,
   zero-warning lint and secret-output audit, the 46-route Webpack build,
   focused Operations and suspended-gym E2E journeys, and Brand Kit
   save/reload browser verification passed.
 
 This is a local working-tree update only. No commit, GitHub push, Convex
-deploy, or Vercel deploy has been performed. Vercel Production no longer needs
-the server-side GT variable names while this integration is paused; the Convex
-deployment must still be updated for the platform archive authorization fix.
-Secret values are intentionally not recorded here.
+deploy, or Vercel deploy has been performed by this pass. After the change is
+merged, Vercel Production should be redeployed with the existing GT variable
+names so the catalog publish step and runtime provider are exercised. The
+Convex deployment must still be updated for the platform archive authorization
+fix. Secret values are intentionally not recorded here.
 
 ## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
 

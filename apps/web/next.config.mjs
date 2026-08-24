@@ -1,15 +1,12 @@
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-/*
- * TEMPORARILY DISABLED: General Translation is paused while the Vercel
- * deployment path is stabilized. Keep this integration code commented rather
- * than deleting it so the compiler can be re-enabled once GT credentials and
- * the translation release workflow are ready.
- *
- * import { createRequire } from "module";
- * const require = createRequire(import.meta.url);
- * const { withGTConfig } = require("gt-next/config");
- */
+import { createRequire } from "module";
+
+// gt-next's ESM config entry currently resolves its package-version helper via
+// CommonJS `require`. Loading that entry through Node's standard bridge keeps
+// this existing ESM Next config compatible with the published package.
+const require = createRequire(import.meta.url);
+const { withGTConfig } = require("gt-next/config");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,20 +25,27 @@ const nextConfig = {
   outputFileTracingRoot: join(__dirname, "../.."),
 };
 
-// TEMPORARILY DISABLED: preserve the GT compiler configuration for later.
-// /** @type {import('gt-next/config').withGTConfigProps} */
-// const gtConfig = {
-//   experimentalCompilerOptions: {
-//     type: "babel",
-//     enableAutoJsxInjection: true,
-//   },
-// };
-//
-// if (process.env.NEXT_DIST_DIR === ".next-playwright") {
-//   gtConfig.runtimeUrl = null;
-// }
-//
-// export default withGTConfig(nextConfig, gtConfig);
+// Keep GT configuration at the app root (`gt.config.json`). The plugin reads
+// GT_PROJECT_ID and GT_API_KEY from the server environment; neither is
+// embedded in this file or exposed to browser code. Browser builds use the
+// Babel auto-injection compiler, but disable remote translation calls for the
+// deterministic local preview runtime.
+/** @type {import('gt-next/config').withGTConfigProps} */
+const gtConfig = {
+  // GT auto-wraps translatable JSX at build time through its webpack compiler.
+  // Next 16's default Turbopack path intentionally skips this experimental
+  // compiler, so production builds use the explicit webpack script below.
+  experimentalCompilerOptions: {
+    type: "babel",
+    enableAutoJsxInjection: true,
+  },
+};
 
-// TEMPORARY GT PAUSE: use the plain Next config so Vercel needs no GT values.
-export default nextConfig;
+// Playwright's isolated build must stay deterministic and must not attempt
+// remote translation calls. Keep this runtime override for local preview
+// tooling without affecting Vercel Production.
+if (process.env.NEXT_DIST_DIR === ".next-playwright") {
+  gtConfig.runtimeUrl = null;
+}
+
+export default withGTConfig(nextConfig, gtConfig);

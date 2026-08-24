@@ -13,7 +13,7 @@
     "convex:codegen": "convex codegen --typecheck enable",
     "convex:typecheck": "tsc --noEmit -p convex/tsconfig.json",
     "translate:production": "node scripts/translate-production.mjs",
-    "build": "node scripts/validate-vercel-env.mjs && next build --webpack",
+    "build": "node scripts/validate-vercel-env.mjs && pnpm translate:production && next build --webpack",
     "start": "next start -p 3000",
     "lint": "node scripts/audit-secret-output.mjs && eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",

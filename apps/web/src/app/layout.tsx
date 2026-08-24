@@ -1,15 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-// TEMPORARILY DISABLED: re-enable GTProvider when the translation release
-// workflow and Vercel GT credentials are ready. The integration is retained.
-// import { GTProvider } from "gt-next";
+import { GTProvider } from "gt-next";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
 import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
 import { AppProviders } from "@/lib/providers/app-providers";
 import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
-// TEMPORARILY DISABLED: keep the document synchronizer for later GT re-enable.
-// import { GeneralTranslationDocumentState } from "@/components/shared/general-translation-document-state";
+import { GeneralTranslationDocumentState } from "@/components/shared/general-translation-document-state";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -93,12 +90,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" dir="ltr" data-scroll-behavior="smooth" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
-        {/* TEMPORARILY DISABLED: <GTProvider> */}
+        <GTProvider>
           <ClerkProvider>
             <ConvexClientProvider>
               <RivetIdentityProvider>
                 <AppProviders>
-                  {/* TEMPORARILY DISABLED: <GeneralTranslationDocumentState /> */}
+                  <GeneralTranslationDocumentState />
                   <ExperienceProvider>
                     {children}
                   </ExperienceProvider>
@@ -118,7 +115,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </RivetIdentityProvider>
             </ConvexClientProvider>
           </ClerkProvider>
-        {/* TEMPORARILY DISABLED: </GTProvider> */}
+        </GTProvider>
       </body>
     </html>
   );
