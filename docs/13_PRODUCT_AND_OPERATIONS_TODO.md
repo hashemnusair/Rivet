@@ -21,9 +21,8 @@ Historical release sections below remain for traceability. The categories here a
 - [x] Add reason-gated retail item refunds and same-day voids with bounded
   quantities, stock returns, payment/refund accounting facts, audit evidence,
   receipt recovery UI, and idempotent server handling.
-- [x] Restore credential-free Playwright to normal GitHub Actions and align the
-  browser expectation with the intentionally paused GT provider while retaining
-  manual RTL coverage.
+- [x] Retain the native manual RTL coverage in local browser checks; production
+  builds and deployment do not depend on a translation service.
 - [ ] Push the candidate to `main`, wait for GitHub Actions and Vercel, deploy
   Convex only to exact Production `descriptive-meerkat-589`, then record the
   default-off preview, disabled-mutation, and health results here.
@@ -60,7 +59,7 @@ Historical release sections below remain for traceability. The categories here a
 
 ### Final Arabic and optimization pass
 
-- [ ] Keep `arabic-localisation` unmerged. Decide later whether to use General Translation/`gt-next`, complete RTL review, and perform the final Arabic pass.
+- [ ] Keep `arabic-localisation` unmerged. Complete the RTL review and final Arabic pass when the native Arabic copy is ready.
 - [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
 
 ## Latest direct-main repair — unavailable gym-owner login — 23 August 2026

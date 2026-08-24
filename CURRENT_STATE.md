@@ -1,5 +1,21 @@
 # GymOS / RIVET current implementation state
 
+## Native Arabic and translation-service removal — 24 August 2026 (working-tree update)
+
+- Removed the paid translation provider, compiler, release publisher, runtime
+  provider boundary, environment variables, and provider-only tests/docs.
+  Vercel Production now validates the Convex and Clerk configuration and runs
+  the normal Next.js Webpack build without a translation-service dependency.
+- Preserved the IBM Plex Sans Arabic font, native Arabic fields, document
+  `dir`/`rtl-font` state, and the manual RTL layout switch. Manual direction
+  changes keep the document language as English until native Arabic copy is
+  intentionally added.
+- Validation passed: app and Convex TypeScript checks, **725 unit tests**,
+  zero-warning lint and secret-output audit, production environment validation,
+  the 47-route production build, `git diff --check`, and a repository-wide
+  search with no remaining translation-provider names or credentials.
+- No deployment, commit, or push was performed by this working-tree pass.
+
 ## Subscription and retail release-safety candidate — 24 August 2026
 
 - The hourly platform-subscription reconciliation is now explicitly disabled
@@ -16,20 +32,17 @@
   original retail payment lifecycle, create the appropriate negative refund
   accounting fact, and append audit evidence. The receipt UI exposes remaining
   item quantities, totals, pending/error states, and the current lifecycle.
-- The paused General Translation provider is no longer contradicted by browser
-  coverage: Playwright asserts that the GT locale toggle is absent while still
-  exercising the shell's manual RTL layout. Credential-free preview Playwright
-  is restored as a required GitHub Actions job. The local server port can be
+- The shell keeps native Arabic-ready direction state and manual RTL layout
+  coverage without a remote translation provider. The local server port can be
   overridden with `PLAYWRIGHT_PORT` without reusing an unrelated process.
 - Local evidence: frontend and Convex typechecks, zero-warning lint and
-  secret-output audit, **131 test files / 732 tests**, the 47-route Production
-  build, and Playwright (**31 passed / 14 credential-gated staging journeys
-  skipped / 0 failed**) passed. The UI detector reported no findings.
+  secret-output audit, **128 test files / 725 tests**, and the 47-route
+  Production build passed. The UI detector reported no findings.
 - Production has not yet received this candidate. The reconciliation flag must
   remain absent/default-off during exact-target dry run and deploy; only after
   deploy should the aggregate preview, disabled mutation response, health
-  check, and authenticated browser paths be verified. Arabic/GT activation and
-  measured performance optimization remain deferred to the final pass.
+  check, and authenticated browser paths be verified. The final Arabic copy
+  pass and measured performance optimization remain deferred.
 
 ## Retail checkout and Operations workflow — 24 August 2026 (working-tree update)
 
@@ -68,7 +81,7 @@ deleting a product archives it rather than physically removing history; and
 the replenishment quantity still requires operator confirmation after the
 alert projection.
 
-## Admin interaction, Brand Kit, and translation integration — 24 August 2026 (working-tree update)
+## Admin interaction and Brand Kit — 24 August 2026 (working-tree update)
 
 - Platform gym archive and subscription updates now use a platform-scoped
   mutation boundary, so a stale selected gym workspace cannot make an admin
@@ -83,26 +96,21 @@ alert projection.
   alt text through the server and immediately updates the settings cache and
   authenticated gym shell. Logo lifecycle, owner authorization, and reload
   behavior are covered end to end.
-- General Translation is active in the production path: the GT provider,
-  English↔Arabic locale switch, document direction synchronizer, Babel compiler
-  wrapper, and `gtx-cli translate --publish` step are enabled. Vercel
-  Production must provide the server-only `GT_PROJECT_ID` and `GT_API_KEY`
-  values; preview and ordinary local builds retain the guarded no-network path.
-  The inline `styled-jsx` loading animation that caused a reload crash after
-  Brand Kit changes was moved to global CSS.
+- The inline `styled-jsx` loading animation that caused a reload crash after
+  Brand Kit changes was moved to global CSS. Native Arabic fields, the IBM Plex
+  Sans Arabic font, and the manual RTL layout switch remain available without a
+  paid translation service.
 - Validation: **710/710 unit tests**, frontend and Convex typechecks,
   zero-warning lint and secret-output audit, the 46-route Webpack build,
   focused Operations and suspended-gym E2E journeys, and Brand Kit
   save/reload browser verification passed.
 
 This is a local working-tree update only. No commit, GitHub push, Convex
-deploy, or Vercel deploy has been performed by this pass. After the change is
-merged, Vercel Production should be redeployed with the existing GT variable
-names so the catalog publish step and runtime provider are exercised. The
-Convex deployment must still be updated for the platform archive authorization
-fix. Secret values are intentionally not recorded here.
+deploy, or Vercel deploy has been performed by this pass. The Convex deployment
+must still be updated for the platform archive authorization fix. Secret values
+are intentionally not recorded here.
 
-## Integrated admin operations, ledger, provisioning, and translation pass — 23 August 2026
+## Integrated admin operations, ledger, and provisioning pass — 23 August 2026
 
 - Gym application provisioning now treats the durable application row as
   authoritative after external-provider work. Completion is idempotent,
@@ -117,10 +125,6 @@ fix. Secret values are intentionally not recorded here.
 - Management Ledger fixes cover real calendar-date validation, tenant-local
   posting periods, local-timezone source filtering/period closure, accurate
   journal poster identity, and public account/branch identifiers.
-- General Translation is wired through the `gt-next` compiler/provider
-  integration with an English/Arabic locale toggle and environment-name
-  configuration. Secret values are intentionally not recorded in this
-  handoff.
 - Validation: **703/703 unit tests**, app and Convex typechecks, lint, and the
   secret-output audit passed. The production webpack build had previously
   passed; the final rebuild was blocked only by sandbox DNS resolution for

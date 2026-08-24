@@ -362,13 +362,12 @@ test.describe("sensitive actions are audited", () => {
 });
 
 test.describe("internationalization", () => {
-  test("keeps the paused translation integration out while preserving RTL layout coverage", async ({ page }) => {
+  test("supports the native manual RTL layout without changing the language", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/members");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
-    await expect(page.getByTestId("gt-locale-toggle")).toHaveCount(0);
     await page.getByRole("button", { name: "Demo controls" }).click();
     const directionToggle = page.getByRole("switch", { name: "Manual RTL layout" });
     await directionToggle.click();
