@@ -25,7 +25,7 @@ describe("General Translation configuration", () => {
     expect(envExample).not.toContain("GT_DEV_API_KEY");
   });
 
-  it("keeps GT in the production build and requires its server credentials", () => {
+  it("keeps the GT runtime configured but makes catalog publication explicit", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: { build: string } };
     const envValidator = readFileSync("scripts/validate-vercel-env.mjs", "utf8");
     const nextConfig = readFileSync("next.config.mjs", "utf8");
@@ -37,7 +37,8 @@ describe("General Translation configuration", () => {
     expect(nextConfig).toContain("withGTConfig");
     expect(nextConfig).toContain("enableAutoJsxInjection: true");
     expect(translationRelease).toContain('"--publish"');
-    expect(translationRelease).toContain("RIVET_TRANSLATE_BUILD");
+    expect(translationRelease).toContain('process.env.RIVET_TRANSLATE_BUILD === "1"');
+    expect(translationRelease).not.toContain("isVercelProduction");
     expect(translationRelease).not.toContain("TRANSLATION_RELEASE_PAUSED");
   });
 });

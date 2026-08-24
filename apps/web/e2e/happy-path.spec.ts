@@ -362,13 +362,25 @@ test.describe("sensitive actions are audited", () => {
 });
 
 test.describe("internationalization", () => {
-  test("keeps the paused translation integration out while preserving RTL layout coverage", async ({ page }) => {
+  test("switches the GT locale and preserves manual RTL layout coverage", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/members");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
-    await expect(page.getByTestId("gt-locale-toggle")).toHaveCount(0);
+    const localeToggle = page.getByTestId("gt-locale-toggle");
+    await expect(localeToggle).toBeVisible();
+    await expect(localeToggle).toHaveAttribute("data-locale", "en");
+    await localeToggle.click();
+    await expect(localeToggle).toHaveAttribute("data-locale", "ar");
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+    await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+
+    await localeToggle.click();
+    await expect(localeToggle).toHaveAttribute("data-locale", "en");
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+
     await page.getByRole("button", { name: "Demo controls" }).click();
     const directionToggle = page.getByRole("switch", { name: "Manual RTL layout" });
     await directionToggle.click();

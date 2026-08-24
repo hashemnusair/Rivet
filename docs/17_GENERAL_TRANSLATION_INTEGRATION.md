@@ -28,10 +28,10 @@ workflows.
   and keeps `<html dir>` aligned after a locale change. An explicitly stored
   manual direction remains authoritative on first mount.
 - Production Vercel builds fail closed when either GT environment variable is
-  missing. Once those names are configured, the build runs `gtx-cli translate
-  --publish` before Next.js, so new static JSX strings are uploaded and the
-  server-side `GTProvider` can load the Arabic catalog. The values are never
-  included in source, examples, logs, or browser variables.
+  missing because the server-side `GTProvider` needs them at runtime. Catalog
+  publication is separate from routine web deployment and runs only when a
+  localization release explicitly sets `RIVET_TRANSLATE_BUILD=1`. The values
+  are never included in source, examples, logs, or browser variables.
 
 The provider and locale switch establish the runtime translation boundary. In
 the webpack build path, GT's compiler automatically injects translation
@@ -65,18 +65,19 @@ gates (`pnpm typecheck`, `pnpm test`, and `pnpm build` from the repository
 root). The build command uses the GT webpack compiler; do not replace it with a
 Turbopack build if automatic JSX injection is required.
 
-For production translation catalogs, the Vercel Production build runs
-`gtx-cli translate --publish` automatically before `next build`. This is the
-required release step for the default CDN delivery mode. A local build skips
-the network translation step by default; set `RIVET_TRANSLATE_BUILD=1` only in
-an environment where the production GT variables are already available. Do
-not run that command with credentials in an agent transcript.
+For production translation catalogs, run the existing build command with
+`RIVET_TRANSLATE_BUILD=1` from a trusted localization-release environment. The
+script invokes `gtx-cli translate --publish` before `next build`, which updates
+the default CDN catalog. Ordinary local and Vercel builds skip that network
+step. This separation prevents every code deployment from consuming GT quota
+or failing when the translation plan cannot accept a new catalog. Do not run
+the publication command with credentials in an agent transcript.
 
 ## Vercel configuration
 
 - Add these exact names to the **Production** scope. Vercel exposes Production
-  variables to both the build and the running Next.js server, which is required
-  because the catalog is published during the build and loaded at request time:
+  variables to both the build and the running Next.js server. A separate
+  localization release uses the same scoped values to publish its catalog:
 
 - `GT_PROJECT_ID` — the General Translation project ID.
 - `GT_API_KEY` — a General Translation **production** API key.
@@ -85,10 +86,11 @@ not run that command with credentials in an agent transcript.
 - `NEXT_PUBLIC_DATA_MODE=convex` — selects the live Convex adapter.
 
 The repository's Vercel root directory is `apps/web`, and its build command is
-`pnpm build`. Preview deployments intentionally skip translation generation
-and use the deterministic mock experience; add GT variables to Preview only if
-you deliberately change that deployment policy. After changing any Vercel
-variable, trigger a new deployment because Next.js embeds build-time
+`pnpm build`. Routine Production and Preview deployments skip translation
+publication unless `RIVET_TRANSLATE_BUILD=1` is deliberately set for that
+release. Preview continues to use the deterministic mock experience; add GT
+variables there only if you deliberately change that policy. After changing a
+Vercel variable, trigger a new deployment because Next.js embeds build-time
 configuration into the server bundle.
 
 ## Official references

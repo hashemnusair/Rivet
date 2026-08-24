@@ -1,16 +1,12 @@
 import { spawnSync } from "node:child_process";
 
-const isVercelProduction =
-  (process.env.VERCEL === "1" || process.env.VERCEL === "true") &&
-  process.env.VERCEL_ENV === "production";
-
-// Translation generation is a production release step. Preview deployments
-// intentionally use the deterministic mock experience and local builds should
-// remain usable without production GT credentials. Developers can opt in to a
-// local production-style translation run with RIVET_TRANSLATE_BUILD=1.
+// Publishing a translation catalog is an explicit localization release step,
+// not part of every web deployment. This keeps ordinary Vercel releases from
+// consuming translation quota or failing when the catalog has not changed.
+// Run it only from a trusted environment with the production GT credentials.
 const explicitlyEnabled = process.env.RIVET_TRANSLATE_BUILD === "1";
-if (!isVercelProduction && !explicitlyEnabled) {
-  console.log("Skipping production translation generation outside a production release.");
+if (!explicitlyEnabled) {
+  console.log("Skipping translation publication; set RIVET_TRANSLATE_BUILD=1 for a localization release.");
   process.exit(0);
 }
 
