@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-24 for the subscription, retail, and translation
-deployment release.
+Last reviewed: 2026-08-24 for the subscription, retail, and provider-removal
+release.
 
 ## Purpose
 
@@ -16,12 +16,18 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current release posture
 
-- Application commit `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` contains the
+- Current `main` is `fe86322251f5429c4f27162a0c99229ae3506a23`. It contains the
   default-off platform-subscription reconciliation, aggregate impact preview,
-  retail refund/void recovery, Elias's active GT runtime integration, and the
-  translation-deployment fix. GitHub Actions run `32744664588` passed, Vercel
-  Production deployment `4z8ReyCXCZnEHhuLAymFV44NV974` completed, and the
-  public, platform, and gym domains returned HTTP 200.
+  retail refund/void recovery, and the final paid-translation-provider removal.
+  The earlier Production deployment at
+  `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` remains valid historical evidence
+  for the subscription and retail release only; it predates this removal and
+  must not be treated as verification of the current provider-free build.
+- The provider-removal commit is not yet verified in Vercel Production. The
+  normal Vercel build now validates the Convex/Clerk configuration and runs
+  Next.js without a paid translation runtime, compiler, catalog publisher, or
+  `RIVET_TRANSLATE_BUILD` switch. Native Arabic fields, IBM Plex Sans Arabic,
+  and the manual RTL layout remain available.
 - The guarded dry run and deploy targeted exact Convex Production
   `descriptive-meerkat-589` from backend release `e7f8121`. Schema validation
   passed, no indexes were deleted, and only retail-sale indexes were added.
@@ -30,16 +36,11 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   returned `enabled: false` with zero writes, and `health:check` returned
   `status: ok`. Keep `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` absent until a
   separately approved enablement decision.
-- Routine Vercel builds do not publish a GT catalog. The failed deployment for
-  `27854d2` proved that tying publication to every web build consumes plan quota
-  and can block unrelated releases. The runtime provider and locale switch
-  remain active, while `RIVET_TRANSLATE_BUILD=1` is reserved for the final,
-  explicitly monitored localization release.
 - Browser and staging journeys remain local-only under the current CI policy.
-  The final local run passed 31 journeys, skipped 14 credential-gated staging
-  bodies, and had zero failures. The available Production Chrome sessions had
-  expired, so billing and checkout reached sign-in without console errors but
-  authenticated acceptance remains open.
+  The 31-journey / 14-credential-gated-skip result belongs to the prior
+  release-closure evidence; no browser journey was run for this provider-removal
+  pass. Available Production Chrome sessions had expired, so authenticated
+  acceptance remains open.
 
 - The application is a release candidate, not a blank scaffold. The current
   release also retains Elias's four-tier subscription/live-entitlement work,
@@ -63,9 +64,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   billing must be resolved before pilot launch to avoid service interruption.
   Credential-complete staging also remains gated on the documented role
   storage states.
-- Final local gates passed: both typechecks, zero-warning lint and secret-output
-  audit, 131 test files / 732 tests, the 47-route Production build, 31
-  Playwright passes, and 14 credential-gated staging skips.
+- Provider-removal local gates passed: both typechecks, zero-warning lint and
+  secret-output audit, 128 test files / 725 tests, and the 47-route Production
+  build. No Playwright journey was run for this pass.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
 
