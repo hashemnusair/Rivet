@@ -1,5 +1,29 @@
 # GymOS / RIVET current implementation state
 
+## Operations simplification and product-master deletion — 24 August 2026
+
+- The gym Operations surface is being reduced to two beginner-friendly,
+  same-page tabs: **Inventory** and **Checkout**. Inventory prioritizes what is
+  available now, with add-item, centered supplier and purchase-order
+  dialogs, and low-stock alerts that explain when replenishment is becoming
+  urgent. The tutorial and the separate facilities/equipment command-center
+  presentation are removed from this primary flow; their historical records
+  remain intact in the backend.
+- Product-master deletion is now a distinct, audited permanent action. It
+  removes the mutable product identity so a replacement can reuse the SKU,
+  while tombstone and snapshot evidence keeps stock movements, retail receipts,
+  purchase history, refunds/voids, and audit records understandable. Open
+  purchase-order or otherwise unsafe references remain guarded rather than
+  creating dangling operational records.
+- “Archive” remains the truthful action for gyms and other records whose
+  financial, audit, or operational history must remain intact. Archived zones
+  and equipment can reuse identifiers where the active-record constraints allow
+  it; historical issue and work-order evidence is retained.
+- Validation is clean: 733 Vitest tests, app and Convex TypeScript checks, full
+  ESLint, the secret-output audit, safe Convex CLI tests, and the Next production
+  build all pass. No Playwright suite was run. Deployment and Production-data
+  verification are not claimed in this entry.
+
 ## Native Arabic and translation-service removal — 24 August 2026 (working-tree update)
 
 - Removed the paid translation provider, compiler, release publisher, runtime

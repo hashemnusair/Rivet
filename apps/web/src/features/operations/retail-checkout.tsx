@@ -285,7 +285,7 @@ function Cart({ lines, inventory, currency, onQuantity, onRemove }: { lines: Car
   );
 }
 
-export function RetailCheckout() {
+export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}) {
   const { session } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
@@ -391,7 +391,7 @@ export function RetailCheckout() {
   }
 
   if (workspaceQuery.isLoading) {
-    return <div className="space-y-4"><PageHeader eyebrow="Operations · Sell and stock" title="Checkout" description="Loading workspace access…" /><Skeleton className="h-48 w-full" /></div>;
+    return <div className="space-y-4">{embedded ? null : <PageHeader eyebrow="Operations · Sell and stock" title="Checkout" description="Loading workspace access…" />}<Skeleton className="h-48 w-full" /></div>;
   }
 
   if (workspaceQuery.isError || !workspace) {
@@ -437,13 +437,13 @@ export function RetailCheckout() {
 
   const queryError = productsQuery.error ?? inventoryQuery.error;
   return (
-    <div className="mx-auto max-w-6xl space-y-5" data-testid="retail-checkout">
-      <PageHeader
+    <div className={cn("mx-auto max-w-6xl space-y-5", embedded && "max-w-none")} data-testid="retail-checkout">
+      {!embedded ? <PageHeader
         eyebrow="Operations · Sell and stock"
         title="Checkout"
         description="Sell stock at the desk. The server records the payment, receipt, and stock movement together."
         actions={<Button asChild variant="secondary" size="sm"><Link href="/operations"><ArrowLeft /> Operations</Link></Button>}
-      />
+      /> : null}
 
       {session?.branches.length && session.branches.length > 1 ? (
         <div className="flex flex-wrap items-center gap-2">

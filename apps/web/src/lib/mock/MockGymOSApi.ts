@@ -4903,7 +4903,7 @@ export class MockGymOSApi implements GymOSApi {
         line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
         line.balance.lastMovementAt = now;
         line.balance.updatedAt = now;
-        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.product.defaultUnitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.product.defaultUnitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
         this.db.stockMovements.unshift(movement);
       }
       if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
@@ -4939,14 +4939,25 @@ export class MockGymOSApi implements GymOSApi {
       }
       const now = nowISO();
       for (const line of input.lines) {
-        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
-        const product = this.db.products.find((candidate) => candidate.id === line.productId)!;
-        if (!balance) throw ApiError.of(ERR.NOT_FOUND, "Inventory balance not found.");
-        balance.quantityOnHand += line.quantity;
-        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
-        balance.lastMovementAt = now;
-        balance.updatedAt = now;
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId: line.productId, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product.defaultUnitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${line.productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
+        // Resolve the original identity first. If its SKU was reused, a
+        // refund must not put stock into the replacement catalog row.
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId) ?? (sold ? this.db.products.find((candidate) => candidate.sku === sold.sku) : undefined);
+        if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
+        const productId = product?.id ?? tombstone?.productId ?? line.productId;
+        if (!balance && product) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: now };
+          this.db.inventoryBalances.push(balance);
+        }
+        if (balance) {
+          balance.quantityOnHand += line.quantity;
+          balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          balance.lastMovementAt = now;
+          balance.updatedAt = now;
+        }
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product?.defaultUnitCost ?? tombstone?.defaultUnitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
         returned.set(line.productId, (returned.get(line.productId) ?? 0) + line.quantity);
       }
       sale.returnedLines = [...returned].map(([productId, quantity]) => ({ productId, quantity }));
@@ -4976,14 +4987,22 @@ export class MockGymOSApi implements GymOSApi {
       if (todayISODate(TZ, new Date(sale.createdAt)) !== this.today()) throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Retail sales can only be voided on the same business day. Issue a refund instead.");
       const now = nowISO();
       for (const line of sale.lines) {
-        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
-        const product = this.db.products.find((candidate) => candidate.id === line.productId)!;
-        if (!balance) throw ApiError.of(ERR.NOT_FOUND, "Inventory balance not found.");
-        balance.quantityOnHand += line.quantity;
-        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
-        balance.lastMovementAt = now;
-        balance.updatedAt = now;
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId: line.productId, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product.defaultUnitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${line.productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId) ?? this.db.products.find((candidate) => candidate.sku === line.sku);
+        if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
+        const productId = product?.id ?? tombstone?.productId ?? line.productId;
+        if (!balance && product) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: now };
+          this.db.inventoryBalances.push(balance);
+        }
+        if (balance) {
+          balance.quantityOnHand += line.quantity;
+          balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          balance.lastMovementAt = now;
+          balance.updatedAt = now;
+        }
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product?.defaultUnitCost ?? tombstone?.defaultUnitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
       }
       sale.status = "voided";
       sale.returnedLines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
@@ -6511,7 +6530,9 @@ export class MockGymOSApi implements GymOSApi {
       if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
       if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A zone cannot be moved between branches.");
       if (existing && !this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
-      const duplicate = this.db.zones.find((zone) => zone.branchId === branch.id && zone.code === code && zone.id !== existing?.id);
+      // Archived zones remain in history, but their code can be reused by a
+      // new active zone. Only a live zone reserves the branch code.
+      const duplicate = this.db.zones.find((zone) => zone.branchId === branch.id && zone.code === code && zone.status === "active" && zone.id !== existing?.id);
       if (duplicate) throw ApiError.of("CONFLICT", "That zone code is already used in this branch.");
       const now = nowISO();
       if (existing) {
@@ -6559,7 +6580,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0 || !Number.isSafeInteger(input.targetLevel) || input.targetLevel < input.reorderPoint || !Number.isSafeInteger(input.supplierLeadTimeDays) || input.supplierLeadTimeDays < 0) throw ApiError.of(ERR.VALIDATION, "Product stock thresholds are invalid.");
       if (input.retailPrice && (input.retailPrice.amount < 0 || !Number.isSafeInteger(input.retailPrice.amount) || input.retailPrice.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product retail price is invalid.");
       if (input.defaultUnitCost && (input.defaultUnitCost.amount < 0 || input.defaultUnitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product cost is invalid.");
-      const duplicate = this.db.products.find((product) => product.sku === sku && product.id !== input.id);
+      const duplicate = this.db.products.find((product) => product.status !== "archived" && product.sku === sku && product.id !== input.id);
       if (duplicate) throw ApiError.of(ERR.CONFLICT, "That SKU is already used by another product.");
       if (input.preferredSupplierId && !this.db.suppliers.some((supplier) => supplier.id === input.preferredSupplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
       const now = nowISO();
@@ -6582,6 +6603,40 @@ export class MockGymOSApi implements GymOSApi {
       product.updatedAt = nowISO();
       this.audit({ category: "operations", action: "operations.product.archive", entityType: "product", entityId: product.id, entityLabel: product.name, summary: "Product archived", reason });
       return { ...product };
+    });
+  }
+
+  deleteProduct(input: T.DeleteProductInput): Promise<T.DeleteProductResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const confirmation = input.confirmation.trim().toLowerCase();
+      if (!confirmation) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+      const existingTombstone = this.db.productTombstones.find((candidate) => candidate.productId === input.productId);
+      if (existingTombstone) {
+        if (confirmation !== existingTombstone.sku.toLowerCase() && confirmation !== existingTombstone.name.toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+        return { deleted: true, productId: existingTombstone.productId, sku: existingTombstone.sku, name: existingTombstone.name, deletedAt: existingTombstone.deletedAt };
+      }
+      const product = this.db.products.find((candidate) => candidate.id === input.productId);
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      if (confirmation !== product.sku.toLowerCase() && confirmation !== product.name.toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+      const balances = this.db.inventoryBalances.filter((candidate) => candidate.productId === product.id);
+      if (this.actor().branchScope !== "all" && balances.some((balance) => !this.branchIsVisible(balance.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product has inventory in a branch outside your access.");
+      if (balances.some((balance) => balance.committedQuantity > 0)) throw ApiError.of(ERR.CONFLICT, "This product has inventory committed to an open purchase order. Receive or cancel that order first.");
+      const dependentOrders = this.db.purchaseOrders.filter((order) => order.lines.some((line) => line.productId === product.id && line.receivedQuantity < line.orderedQuantity));
+      if (this.actor().branchScope !== "all" && dependentOrders.some((order) => !this.branchIsVisible(order.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product is used by a purchase order in a branch outside your access.");
+      const openOrder = dependentOrders.find((order) => order.status === "draft" || order.status === "approved" || order.status === "partially_received");
+      if (openOrder) throw ApiError.of(ERR.CONFLICT, "This product is on an open purchase order. Receive or cancel that order before deleting the item.");
+      const deletedAt = nowISO();
+      const tombstone: T.ProductTombstone = { id: mockUuid(), organizationId: this.db.organization.id, productId: product.id, sku: product.sku, name: product.name, description: product.description, unit: product.unit, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined, deletedAt, deletedById: this.actor().id, reason: input.reason.trim() };
+      this.db.productTombstones.push(tombstone);
+      this.db.inventoryBalances = this.db.inventoryBalances.filter((balance) => balance.productId !== product.id);
+      this.db.lowStockAlerts = this.db.lowStockAlerts.filter((alert) => alert.productId !== product.id);
+      this.db.suppliers.forEach((supplier) => { supplier.preferredProductIds = supplier.preferredProductIds.filter((id) => id !== product.id); });
+      this.db.products = this.db.products.filter((candidate) => candidate.id !== product.id);
+      this.db.stockMovements = this.db.stockMovements.map((movement) => movement.productId === product.id ? { ...movement, productSku: product.sku, productName: product.name, productUnit: product.unit } : movement);
+      this.audit({ category: "operations", action: "operations.product.delete", entityType: "product", entityId: product.id, entityLabel: product.name, summary: "Product permanently deleted; historical records retained", reason: input.reason.trim(), before: { sku: product.sku, name: product.name, status: product.status }, after: { deleted: "true", sku: product.sku, name: product.name, historicalRecordsRetained: "true" } });
+      return { deleted: true, productId: tombstone.productId, sku: tombstone.sku, name: tombstone.name, deletedAt: tombstone.deletedAt };
     });
   }
 
@@ -6627,7 +6682,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsRead();
       const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
-      if (input.productId && !this.db.products.some((product) => product.id === input.productId)) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      if (input.productId && !this.db.products.some((product) => product.id === input.productId) && !this.db.productTombstones.some((product) => product.productId === input.productId)) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
       return this.db.inventoryBalances.filter((balance) => branchIds.includes(balance.branchId) && (!input.productId || balance.productId === input.productId)).map((balance) => ({ ...balance, availableQuantity: balance.quantityOnHand - balance.committedQuantity, lastMovementAt: balance.lastMovementAt }));
     });
   }
@@ -6653,7 +6708,7 @@ export class MockGymOSApi implements GymOSApi {
       balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
       balance.lastMovementAt = nowISO();
       balance.updatedAt = nowISO();
-      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
+      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
       this.db.stockMovements.unshift(movement);
       this.operationsIdempotency.set(`stock_movement:${input.idempotencyKey}`, { signature, result: movement });
       this.audit({ category: "operations", action: "operations.stock_movement.create", entityType: "stock_movement", entityId: movement.id, entityLabel: `${product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason, branchId: branch.id });
@@ -6666,7 +6721,11 @@ export class MockGymOSApi implements GymOSApi {
       this.requireOperationsRead();
       const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
       const rows = this.db.stockMovements.filter((movement) => (!branchId || movement.branchId === branchId) && (!query.productId || movement.productId === query.productId) && this.branchIsVisible(movement.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-      return paginate(rows.map((row) => ({ ...row, unitCost: row.unitCost ? { ...row.unitCost } : undefined })), { page: query.page, pageSize: query.pageSize });
+      return paginate(rows.map((row) => {
+        const product = this.db.products.find((candidate) => candidate.id === row.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === row.productId);
+        return { ...row, productSku: row.productSku ?? product?.sku ?? tombstone?.sku, productName: row.productName ?? product?.name ?? tombstone?.name, productUnit: row.productUnit ?? product?.unit ?? tombstone?.unit, unitCost: row.unitCost ? { ...row.unitCost } : undefined };
+      }), { page: query.page, pageSize: query.pageSize });
     });
   }
 
@@ -6876,7 +6935,9 @@ export class MockGymOSApi implements GymOSApi {
       const code = input.code.trim().toUpperCase();
       const name = input.name.trim();
       if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
-      const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && asset.id !== input.id);
+      // Retired/replaced assets remain in history, but their code can be
+      // reused by a new live asset. Maintenance assets still reserve it.
+      const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && (asset.status === "active" || asset.status === "maintenance") && asset.id !== input.id);
       if (duplicate) throw ApiError.of(ERR.CONFLICT, "That equipment code is already used in this branch.");
       const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
       if (input.id && (!existing || !this.branchIsVisible(existing.branchId))) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");

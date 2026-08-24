@@ -7923,7 +7923,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         assertBranchAccess(actor, await ctx.db.get(existing.branchId));
         if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A zone cannot be moved between branches.", { correlationId: actor.correlationId });
       }
-      const duplicate = await ctx.db.query("zones").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).unique();
+      // Archived zones remain in history, but their human-facing code can be
+      // reused by a new live zone. Query all historical matches and reserve
+      // only the active code; using `.unique()` here made an archived code
+      // look permanently occupied.
+      const duplicate = (await ctx.db.query("zones").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).collect()).find((candidate) => candidate.status === "active");
       if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That zone code is already used in this branch.", { correlationId: actor.correlationId });
       const status = input.status === "archived" ? "archived" as const : "active" as const;
       const now = Date.now();
@@ -8060,6 +8064,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return undefined;
     }
     case "operations.product.upsert":
+    case "operations.product.delete":
     case "operations.product.archive":
     case "operations.supplier.upsert":
     case "operations.supplier.archive":

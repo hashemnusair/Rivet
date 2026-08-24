@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Trash2, Users } from "lucide-react";
+import { Archive, ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -199,23 +199,23 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             <h2 className="mt-1 text-[16px] font-semibold">Remove gym access</h2>
             <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archive this gym to remove workspace access and public discovery. Financial records, subscription facts, and the platform audit trail are retained.</p>
           </div>
-          <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Trash2 />Delete gym</Button>
+          <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Archive />Archive gym</Button>
         </section>
 
         <Dialog open={deleteOpen} onOpenChange={(open) => { if (!archive.isPending) setDeleteOpen(open); }}>
           <DialogHeader>
-            <DialogTitle>Delete {detail.name}?</DialogTitle>
-            <DialogDescription>This archives the gym from RIVET. Access and public discovery are removed, while financial and audit history is retained.</DialogDescription>
+            <DialogTitle>Archive {detail.name}?</DialogTitle>
+            <DialogDescription>This removes the gym from active RIVET workspaces and public discovery. Financial, subscription, and audit history are retained for compliance and future review.</DialogDescription>
           </DialogHeader>
           <DialogBody className="grid gap-4">
             <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for deletion<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for archiving<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
             {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[10.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
             {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
-            <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Trash2 />Delete gym</Button>
+            <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
           </DialogFooter>
         </Dialog>
 

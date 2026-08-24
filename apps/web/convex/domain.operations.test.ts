@@ -28,6 +28,30 @@ async function seeded() {
 }
 
 describe("daily operations typed contracts", () => {
+  it("reuses archived zone and retired equipment codes without deleting history", async () => {
+    const { owner, t } = await seeded();
+
+    const archivedZone = await owner.mutation(api.domain.mutate, operation("zones.upsert", { branchId: "operations-branch-a", code: "REUSE-01", name: "Old training zone", kind: "weights" })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("zones.archive", { id: archivedZone.id }));
+    const liveZone = await owner.mutation(api.domain.mutate, operation("zones.upsert", { branchId: "operations-branch-a", code: "REUSE-01", name: "New training zone", kind: "cardio" })) as { id: string; status: string };
+    expect(liveZone).toMatchObject({ status: "active" });
+    expect(liveZone.id).not.toBe(archivedZone.id);
+
+    const retiredAsset = await owner.mutation(api.domain.mutate, operation("operations.equipment_asset.upsert", { branchId: "operations-branch-a", code: "ASSET-REUSE", name: "Retired treadmill", status: "retired" })) as { id: string };
+    const liveAsset = await owner.mutation(api.domain.mutate, operation("operations.equipment_asset.upsert", { branchId: "operations-branch-a", code: "ASSET-REUSE", name: "Replacement treadmill" })) as { id: string; status: string };
+    expect(liveAsset).toMatchObject({ status: "active" });
+    expect(liveAsset.id).not.toBe(retiredAsset.id);
+
+    const historical = await t.run(async (ctx) => ({
+      zones: await ctx.db.query("zones").withIndex("by_organization").collect(),
+      assets: await ctx.db.query("equipmentAssets").withIndex("by_organization").collect(),
+    }));
+    expect(historical.zones.filter((zone) => zone.code === "REUSE-01")).toHaveLength(2);
+    expect(historical.zones.map((zone) => zone.status)).toEqual(expect.arrayContaining(["archived", "active"]));
+    expect(historical.assets.filter((asset) => asset.code === "ASSET-REUSE")).toHaveLength(2);
+    expect(historical.assets.map((asset) => asset.status)).toEqual(expect.arrayContaining(["retired", "active"]));
+  });
+
   it("checks out retail stock atomically for members and guests", async () => {
     const { owner, sales, t } = await seeded();
     const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-01", name: "Protein drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 2_000, currency: "JOD" }, defaultUnitCost: { amount: 800, currency: "JOD" } })) as { id: string };
@@ -267,5 +291,49 @@ describe("daily operations typed contracts", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: 1, idempotencyKey: "adjustment-without-reason" })), "VALIDATION_ERROR");
     const adjustment = await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: 1, reason: "Cycle count correction", idempotencyKey: "adjustment-with-reason" })) as { reason?: string };
     expect(adjustment.reason).toBe("Cycle count correction");
+  });
+
+  it("permanently deletes a product, releases its SKU, and keeps history readable", async () => {
+    const { owner, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Disposable stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Delete supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 2, idempotencyKey: "delete-me-receive" }));
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Created only for deletion coverage", confirmation: "delete-me" })), "FORBIDDEN");
+    const deleted = await owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "No longer sold by this gym", confirmation: "delete-me" })) as { deleted: boolean; productId: string; sku: string };
+    expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "DELETE-ME" });
+    const replay = await owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Retry delete", confirmation: "delete-me" })) as { deleted: boolean; productId: string };
+    expect(replay).toMatchObject({ deleted: true, productId: product.id });
+    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Replacement stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string; sku: string };
+    expect(replacement).toMatchObject({ sku: "DELETE-ME" });
+    expect(replacement.id).not.toBe(product.id);
+    const suppliers = await owner.query(api.domain.query, operation("operations.suppliers.list")) as Array<{ id: string; preferredProductIds: string[] }>;
+    expect(suppliers).toEqual(expect.arrayContaining([expect.objectContaining({ id: supplier.id })]));
+    expect(suppliers.find((row) => row.id === supplier.id)?.preferredProductIds ?? []).not.toContain(product.id);
+    const movements = await owner.query(api.domain.query, operation("operations.stock_movements.list")) as { items: Array<{ productId: string; productSku?: string; productName?: string }> };
+    expect(movements.items).toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.id, productSku: "DELETE-ME", productName: "Disposable stock" })]));
+    const audits = await t.run(async (ctx) => ctx.db.query("auditEvents").withIndex("by_organization_occurred").collect());
+    expect(audits.some((event) => event.action === "operations.product.delete" && event.entityPublicId === product.id)).toBe(true);
+  });
+
+  it("blocks permanent deletion while an open purchase order still references the product", async () => {
+    const { owner } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-OPEN-PO", name: "Open PO stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Open PO supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "operations-branch-a", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 4, unitCost: { amount: 100, currency: "JOD" } }] }));
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Cannot fulfil this order", confirmation: "DELETE-OPEN-PO" })), "CONFLICT");
+  });
+
+  it("keeps retail refunds working from the deleted product snapshot", async () => {
+    const { owner } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Refundable deleted stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "delete-refund-receive" }));
+    const sale = await owner.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Deleted item guest", phone: "+962790000011" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "DELETE-REFUND-CARD", idempotencyKey: "delete-refund-sale" })) as { retailSale: { id: string } };
+    await owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Retiring this retail item", confirmation: "DELETE-REFUND" }));
+    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Replacement retail stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    expect(replacement.id).not.toBe(product.id);
+    const refunded = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned the retired item", idempotencyKey: "delete-refund-action" })) as { retailSale: { status: string } };
+    expect(refunded.retailSale.status).toBe("refunded");
+    const remaining = await owner.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a" })) as Array<{ productId: string }>;
+    expect(remaining.some((row) => row.productId === product.id || row.productId === replacement.id)).toBe(false);
   });
 });

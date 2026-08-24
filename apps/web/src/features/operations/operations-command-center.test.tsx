@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => undefined, replace: () => undefined, back: () => undefined }),
+  useRouter: () => router,
   usePathname: () => "/operations",
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -14,105 +16,99 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 afterEach(() => resetApiForTests());
 
 describe("OperationsCommandCenter", () => {
-  it("loads the branch-aware operations tabs through the API boundary", async () => {
+  it("starts on a simple inventory tab and hides the old tutorial and extra workflows", async () => {
     await renderWithApp(<OperationsCommandCenter />);
 
     expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
-    expect(screen.getByText("Sell & stock")).toBeInTheDocument();
-    expect((await screen.findAllByText("Creatine monohydrate")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("Jordan Sports Supply")).length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "Needs replenishment" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open checkout" })).toHaveAttribute("href", "/operations/checkout");
-    expect(screen.getByRole("link", { name: "Checkout" })).toHaveAttribute("href", "/operations/checkout");
-    const sellLinks = screen.getAllByRole("link", { name: "Sell" });
-    expect(sellLinks.length).toBeGreaterThan(0);
-    expect(sellLinks.some((link) => link.getAttribute("href")?.includes("branchId=") && link.getAttribute("href")?.includes("productId=") )).toBe(true);
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Checkout/ })).toHaveAttribute("aria-selected", "false");
+    expect(await screen.findByRole("heading", { name: "Inventory" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Low-stock alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Available" })).toBeInTheDocument();
+    expect(screen.queryByText(/How Operations works/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Facilities/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Equipment/ })).not.toBeInTheDocument();
   });
 
-  it("lets a manager create and complete a zone-linked facility task", async () => {
+  it("flips to checkout in place and returns to inventory without route navigation", async () => {
     const user = userEvent.setup();
-    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await renderWithApp(<OperationsCommandCenter />);
 
-    await user.click(await screen.findByRole("tab", { name: /Facilities/ }));
-    await user.click(await screen.findByRole("button", { name: /Request task/ }));
-    await user.type(screen.getByPlaceholderText("Restock bathroom supplies"), "Restock towels");
-    await user.click(screen.getByRole("button", { name: /Create task/ }));
+    await user.click(await screen.findByRole("tab", { name: /Checkout/ }));
+    expect(await screen.findByTestId("retail-checkout")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: /Checkout/ })).toHaveAttribute("aria-selected", "true");
 
-    await waitFor(async () => {
-      const tasks = await api.listFacilityTasks();
-      expect(tasks.some((task) => task.title === "Restock towels")).toBe(true);
-    });
-    expect(await screen.findByText("Restock towels")).toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: /Complete/ })[0]!);
-    expect(await screen.findByText("completed")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Inventory/ }));
+    expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("shows checkout to front-desk collectors without exposing catalog management", async () => {
-    await renderWithApp(<OperationsCommandCenter />, { role: "receptionist" });
-
-    expect(await screen.findByRole("link", { name: "Open checkout" })).toHaveAttribute("href", "/operations/checkout");
-    expect(screen.getByRole("link", { name: "Checkout" })).toHaveAttribute("href", "/operations/checkout");
-    const sellLinks = screen.getAllByRole("link", { name: "Sell" });
-    expect(sellLinks.length).toBeGreaterThan(0);
-    expect(sellLinks.every((link) => link.getAttribute("href")?.includes("branchId=") && link.getAttribute("href")?.includes("productId=") )).toBe(true);
-    expect(screen.getByText(/read-only access to operations/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Record movement/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Delete Creatine monohydrate/ })).not.toBeInTheDocument();
-  });
-
-  it("opens add and record workflows in centered accessible dialogs", async () => {
+  it("opens item, supplier, and purchase-order workflows in centered dialogs", async () => {
     const user = userEvent.setup();
     await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
 
-    await user.click(await screen.findByRole("button", { name: /Add supplier/ }));
-    const supplierDialog = screen.getByRole("dialog", { name: "Add supplier" });
-    expect(supplierDialog).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Add supplier" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /^Suppliers$/ }));
+    expect(screen.getByRole("dialog", { name: "Suppliers" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Add supplier$/ }));
+    expect(screen.getByRole("dialog", { name: "Add supplier" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Suppliers" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /Supplier name/ })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog", { name: "Add supplier" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Record movement/ }));
-    expect(screen.getByRole("dialog", { name: "Record stock movement" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog", { name: "Record stock movement" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /Add item/ }));
+    await user.click(screen.getByRole("button", { name: /^Add item$/ }));
     expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: /Selling price/ })).toBeInTheDocument();
-    expect(screen.getByText(/Days from ordering until stock arrives/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog", { name: "Add stock item" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Purchase orders/ }));
+    expect(screen.getByRole("dialog", { name: "Purchase orders" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /New purchase order/ }));
+    expect(screen.getByRole("dialog", { name: "Create purchase order" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Purchase orders" })).not.toBeInTheDocument();
   });
 
-  it("explains and confirms the audited delete item action", async () => {
+  it("requires the item name before permanently deleting a product", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    const deleteProduct = vi.spyOn(api, "deleteProduct");
 
     await user.click(await screen.findByRole("button", { name: "Edit Creatine monohydrate" }));
-    expect(screen.getByRole("button", { name: "Delete item" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Delete item" }));
-    const dialog = screen.getByRole("dialog", { name: "Delete Creatine monohydrate?" });
-    expect(dialog).toHaveTextContent("hides the item from future sales");
-    expect(dialog).toHaveTextContent("stock movements, receipts, and audit history stay available");
-    const reason = screen.getByRole("textbox", { name: "Reason" });
-    await user.type(reason, "No longer sold");
-    await user.click(screen.getByRole("button", { name: "Delete item" }));
+    await user.click(screen.getByRole("button", { name: /Delete item permanently/ }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Creatine monohydrate permanently?" });
+    expect(dialog).toHaveTextContent("frees its SKU for reuse");
+    expect(dialog).toHaveTextContent("read-only records");
+    const deleteButton = screen.getByRole("button", { name: "Delete permanently" });
+    expect(deleteButton).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: /Type Creatine monohydrate to confirm/ }), "Creatine monohydrate");
+    expect(deleteButton).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "Reason" }), "No longer sold");
+    expect(deleteButton).toBeEnabled();
 
-    await waitFor(async () => {
-      const products = await api.listProducts({ includeArchived: true });
-      expect(products.find((product) => product.name === "Creatine monohydrate")?.status).toBe("archived");
-    });
+    await user.click(deleteButton);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete Creatine monohydrate permanently?" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Edit Creatine monohydrate" })).not.toBeInTheDocument());
+    expect(deleteProduct).toHaveBeenCalledWith(expect.objectContaining({ productId: expect.any(String), confirmation: "Creatine monohydrate", reason: "No longer sold" }));
+    expect((await api.listProducts()).some((product) => product.name === "Creatine monohydrate")).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
   });
 
-  it("keeps operational mutations hidden from an auditor while preserving read access", async () => {
-    await renderWithApp(<OperationsCommandCenter />, { role: "auditor" });
+  it("keeps inventory readable while hiding management actions for reception", async () => {
+    await renderWithApp(<OperationsCommandCenter />, { role: "receptionist" });
 
-    expect(await screen.findByText(/read-only access to operations/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Register asset/ })).not.toBeInTheDocument();
-    await userEvent.setup().click(await screen.findByRole("tab", { name: /Equipment/ }));
-    await screen.findByText("Machine register");
-    expect(screen.queryByRole("button", { name: /Report issue/ })).not.toBeInTheDocument();
+    expect(await screen.findByText(/read-only access to inventory/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Add item$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Add supplier$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Purchase order/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Checkout/ })).toBeInTheDocument();
+  });
+
+  it("retains the purchase order list and its status context", async () => {
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: /Purchase orders/ }));
+    expect(await screen.findByRole("heading", { name: "Purchase orders" })).toBeInTheDocument();
+    expect(screen.getByText(/Approve an order to reserve stock/)).toBeInTheDocument();
   });
 });

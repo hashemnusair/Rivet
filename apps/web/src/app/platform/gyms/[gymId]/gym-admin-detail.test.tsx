@@ -213,12 +213,13 @@ describe("Gym admin detail subscription controls", () => {
   it("requires an exact gym name and reason before archiving", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Delete gym" })[0]!);
-    const confirm = () => screen.getAllByRole("button", { name: "Delete gym" })[1]!;
+    expect(screen.queryByRole("button", { name: "Delete gym" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Archive gym" })[0]!);
+    const confirm = () => screen.getAllByRole("button", { name: "Archive gym" })[1]!;
     expect(confirm()).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge" } });
-    fireEvent.change(screen.getByLabelText("Reason for deletion"), { target: { value: "Customer requested account closure." } });
+    fireEvent.change(screen.getByLabelText("Reason for archiving"), { target: { value: "Customer requested account closure." } });
     expect(confirm()).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });

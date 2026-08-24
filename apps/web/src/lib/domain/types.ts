@@ -149,6 +149,41 @@ export interface UpsertProductInput {
   status?: OperationsRecordStatus;
 }
 
+/**
+ * A permanent product-master deletion only removes the mutable catalog row.
+ * The backend keeps this identity snapshot so stock history, purchase orders,
+ * and retail-sale refunds remain explainable after the SKU is reused.
+ */
+export interface ProductTombstone {
+  id: UUID;
+  organizationId: UUID;
+  productId: UUID;
+  sku: string;
+  name: string;
+  unit: ProductUnit;
+  description?: string;
+  retailPrice?: Money;
+  defaultUnitCost?: Money;
+  deletedAt: ISODateTime;
+  deletedById: UUID;
+  reason: string;
+}
+
+export interface DeleteProductInput {
+  productId: UUID;
+  reason: string;
+  /** Required typed confirmation; the server accepts the SKU or name. */
+  confirmation: string;
+}
+
+export interface DeleteProductResult {
+  deleted: true;
+  productId: UUID;
+  sku: string;
+  name: string;
+  deletedAt: ISODateTime;
+}
+
 export interface Supplier {
   id: UUID;
   organizationId: UUID;
@@ -197,6 +232,10 @@ export interface StockMovement {
   organizationId: UUID;
   branchId: UUID;
   productId: UUID;
+  /** Snapshot fallback used when the product master is permanently deleted. */
+  productSku?: string;
+  productName?: string;
+  productUnit?: ProductUnit;
   type: StockMovementType;
   quantityDelta: number;
   quantity: number;

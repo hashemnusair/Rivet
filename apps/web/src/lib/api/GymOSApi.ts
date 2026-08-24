@@ -42,6 +42,8 @@ import type {
   CreatePlanInput,
   CreateTaskInput,
   DashboardData,
+  DeleteProductInput,
+  DeleteProductResult,
   DuplicateMatch,
   ExtendMembershipInput,
   FreezeMembershipInput,
@@ -932,6 +934,7 @@ export interface GymOSApi {
   // Daily operations (Growth+ workspace module)
   listProducts(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Product[]>;
   upsertProduct(input: import("@/lib/domain/types").UpsertProductInput): Promise<import("@/lib/domain/types").Product>;
+  deleteProduct(input: DeleteProductInput): Promise<DeleteProductResult>;
   archiveProduct(productId: UUID, reason: string): Promise<import("@/lib/domain/types").Product>;
   listSuppliers(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Supplier[]>;
   upsertSupplier(input: import("@/lib/domain/types").UpsertSupplierInput): Promise<import("@/lib/domain/types").Supplier>;

@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-24 for the subscription, retail, and provider-removal
-release.
+Last reviewed: 2026-08-24 for the subscription, retail, provider-removal, and
+Operations release update.
 
 ## Purpose
 
@@ -69,6 +69,30 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   build. No Playwright journey was run for this pass.
 - Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
+
+### Operations simplification and deletion policy — 24 August 2026
+
+- The primary Operations surface is intentionally small: an Inventory tab for
+  available stock, add-item, centered supplier/purchase-order dialogs, and
+  projected low-stock alerts; and a same-page Checkout tab for retail sales.
+  The tutorial and the old multi-panel command-center presentation are not part
+  of this primary operator flow. Their historical records remain intact in the
+  backend.
+- Product master deletion is the exception to the general archive policy. It is
+  an audited permanent master-row action with safety guards and historical
+  tombstone/snapshot evidence, so a deleted SKU can be reused without orphaning
+  movements, receipts, refunds/voids, purchase history, or audit facts. It must
+  not be implemented as a UI-only removal or as deletion of immutable financial
+  history.
+- Gym, supplier, member, zone, equipment, and other records with dependent
+  financial or operational history use clearly labelled archive/deactivate
+  actions. Archived zone and equipment identifiers may be reused only when
+  active-record uniqueness permits it; historical issue/work-order evidence is
+  retained.
+- Local validation passed with 733 Vitest tests, app and Convex TypeScript,
+  full ESLint, the secret-output audit, safe Convex CLI tests, and the Next
+  production build. No Playwright suite was run. Deployment and Production-data
+  verification remain separate release steps.
 
 ### Five Pillars Production closure progress — 23 August 2026
 

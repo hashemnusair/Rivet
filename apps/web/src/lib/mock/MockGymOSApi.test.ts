@@ -84,6 +84,31 @@ describe("Brand Kit persistence", () => {
   });
 });
 
+describe("operations identifier lifecycle", () => {
+  it("reuses archived zone and retired equipment codes without deleting history", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+
+    const archivedZone = await api.upsertZone({ branchId, code: "REUSE-01", name: "Old training zone", kind: "weights" });
+    await api.archiveZone(archivedZone.id);
+    const liveZone = await api.upsertZone({ branchId, code: "REUSE-01", name: "New training zone", kind: "cardio" });
+    expect(liveZone).toMatchObject({ status: "active", code: "REUSE-01" });
+    expect(liveZone.id).not.toBe(archivedZone.id);
+
+    const retiredAsset = await api.upsertEquipmentAsset({ branchId, code: "ASSET-REUSE", name: "Retired treadmill", status: "retired" });
+    const liveAsset = await api.upsertEquipmentAsset({ branchId, code: "ASSET-REUSE", name: "Replacement treadmill" });
+    expect(liveAsset).toMatchObject({ status: "active", code: "ASSET-REUSE" });
+    expect(liveAsset.id).not.toBe(retiredAsset.id);
+
+    const zones = await api.listZones({ branchId, includeArchived: true });
+    expect(zones.filter((zone) => zone.code === "REUSE-01")).toHaveLength(2);
+    expect(zones.map((zone) => zone.status)).toEqual(expect.arrayContaining(["archived", "active"]));
+    const assets = await api.listEquipmentAssets({ branchId });
+    expect(assets.filter((asset) => asset.code === "ASSET-REUSE")).toHaveLength(2);
+    expect(assets.map((asset) => asset.status)).toEqual(expect.arrayContaining(["retired", "active"]));
+  });
+});
+
 describe("workspace entitlement and preference boundary", () => {
   it("keeps entitlement state separate from permissions and audits owner preferences", async () => {
     const access = await api.getWorkspaceAccess();
@@ -2053,5 +2078,49 @@ describe("management accounting mock contract", () => {
 
     await api.switchDemoRole("owner");
     expect((await api.listAccountingSourcePostings()).items.map((source) => source.sourceId)).toContain("mock-consolidated-source-fact");
+  });
+
+  it("permanently deletes a product, releases its SKU, and preserves movement history", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Disposable mock stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const supplier = await api.upsertSupplier({ name: "Mock delete supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-delete-receive" });
+    await api.switchDemoRole("receptionist");
+    await expect(api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
+    const deleted = await api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" });
+    expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "MOCK-DELETE" });
+    await expect(api.deleteProduct({ productId: product.id, reason: "Retry", confirmation: "mock-delete" })).resolves.toMatchObject({ deleted: true, productId: product.id });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Replacement mock stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    expect(replacement.id).not.toBe(product.id);
+    expect((await api.listSuppliers()).find((row) => row.id === supplier.id)?.preferredProductIds).not.toContain(product.id);
+    const movements = await api.listStockMovements({ productId: product.id });
+    expect(movements.items).toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.id, productSku: "MOCK-DELETE", productName: "Disposable mock stock" })]));
+    expect((await api.listProducts()).some((row) => row.id === product.id)).toBe(false);
+  });
+
+  it("blocks permanent deletion while a purchase order is still open", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-OPEN-PO", name: "Mock open PO stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const supplier = await api.upsertSupplier({ name: "Mock open PO supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
+    await api.createPurchaseOrder({ branchId: branch.id, supplierId: supplier.id, lines: [{ productId: product.id, quantity: 3, unitCost: money(100) }] });
+    await expect(api.deleteProduct({ productId: product.id, reason: "Open order", confirmation: "MOCK-OPEN-PO" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("refunds a deleted product from its snapshot without recreating a balance", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Mock refundable retired stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2, retailPrice: money(1_000) });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-delete-refund-receive" });
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Deleted mock guest", phone: "+962790000012" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-DELETE-REFUND", idempotencyKey: "mock-delete-refund-sale" });
+    await api.deleteProduct({ productId: product.id, reason: "Retiring this item", confirmation: "MOCK-DELETE-REFUND" });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Replacement mock retail stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    expect(replacement.id).not.toBe(product.id);
+    await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned retired item", idempotencyKey: "mock-delete-refund-action" })).resolves.toMatchObject({ retailSale: { status: "refunded" } });
+    const internals = api as unknown as { db: MockDb };
+    expect(internals.db.inventoryBalances.some((balance) => balance.productId === product.id || balance.productId === replacement.id)).toBe(false);
+    expect(internals.db.stockMovements.some((movement) => movement.productId === product.id && movement.type === "return" && movement.productName === "Mock refundable retired stock")).toBe(true);
   });
 });

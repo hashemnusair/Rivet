@@ -17,6 +17,7 @@ type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Branch = Doc<"branches">;
 type Product = Doc<"products">;
+type ProductTombstone = Doc<"productTombstones">;
 type Supplier = Doc<"suppliers">;
 type InventoryBalance = Doc<"inventoryBalances">;
 type StockMovement = Doc<"stockMovements">;
@@ -187,6 +188,20 @@ async function productByPublicId(ctx: ReadContext, actor: ActorContext, id: stri
   return product;
 }
 
+async function productTombstoneByPublicId(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<ProductTombstone | null> {
+  if (!id) return null;
+  // The index is intentionally non-unique: a product can be deleted, its SKU
+  // reused, and that replacement can later be deleted too. Public IDs remain
+  // unique per deletion, but do not rely on Convex `.unique()` for a mutable
+  // historical table.
+  return (await ctx.db.query("productTombstones").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("productPublicId", id)).collect())[0] ?? null;
+}
+
+async function productTombstoneMap(ctx: ReadContext, actor: ActorContext): Promise<Map<string, ProductTombstone>> {
+  const rows = await ctx.db.query("productTombstones").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  return new Map(rows.map((row) => [row.originalProductId, row]));
+}
+
 function supplierVisibleToActor(actor: ActorContext, supplier: Supplier): boolean {
   return actor.branchScope === "all" || supplier.branchIds.some((branchId) => actor.branchIds.includes(branchId));
 }
@@ -278,8 +293,10 @@ function supplierView(supplier: Supplier, organizationId: string, branches: Map<
   return { id: supplier.publicId, organizationId, name: supplier.name, contactName: supplier.contactName, email: supplier.email, phone: supplier.phone, terms: supplier.terms, leadTimeDays: supplier.leadTimeDays, branchIds: supplier.branchIds.filter((branchId) => !visibleBranchIds || visibleBranchIds.has(String(branchId))).map((branchId) => branches.get(String(branchId))).filter(Boolean), preferredProductIds: supplier.preferredProductIds, status: supplier.status, createdAt: iso(supplier.createdAt), updatedAt: iso(supplier.updatedAt) };
 }
 
-function movementView(movement: StockMovement, organizationId: string, branches: Map<string, string>, products: Map<string, string>, createdById = String(movement.createdByUserId)): Data {
-  return { id: movement.publicId, organizationId, branchId: branches.get(String(movement.branchId)) ?? String(movement.branchId), productId: products.get(String(movement.productId)) ?? String(movement.productId), type: movement.type, quantityDelta: movement.quantityDelta, quantity: movement.quantity, unitCost: money(movement.unitCostMinor, movement.unitCostCurrency), reason: movement.reason, referenceType: movement.referenceType, referenceId: movement.referenceId, idempotencyKey: movement.idempotencyKey, financialPostingStatus: movement.financialPostingStatus, financialSourceId: movement.financialSourceId, occurredAt: iso(movement.occurredAt), createdAt: iso(movement.createdAt), createdById };
+function movementView(movement: StockMovement, organizationId: string, branches: Map<string, string>, products: Map<string, string>, tombstones: Map<string, ProductTombstone> = new Map(), createdById = String(movement.createdByUserId)): Data {
+  const tombstone = tombstones.get(String(movement.productId));
+  const productId = products.get(String(movement.productId)) ?? tombstone?.productPublicId ?? String(movement.productId);
+  return { id: movement.publicId, organizationId, branchId: branches.get(String(movement.branchId)) ?? String(movement.branchId), productId, productSku: movement.productSku ?? tombstone?.sku, productName: movement.productName ?? tombstone?.name, productUnit: movement.productUnit ?? tombstone?.unit, type: movement.type, quantityDelta: movement.quantityDelta, quantity: movement.quantity, unitCost: money(movement.unitCostMinor, movement.unitCostCurrency), reason: movement.reason, referenceType: movement.referenceType, referenceId: movement.referenceId, idempotencyKey: movement.idempotencyKey, financialPostingStatus: movement.financialPostingStatus, financialSourceId: movement.financialSourceId, occurredAt: iso(movement.occurredAt), createdAt: iso(movement.createdAt), createdById };
 }
 
 async function balanceRow(ctx: ReadContext, organizationId: Id<"organizations">, branchId: Id<"branches">, productId: Id<"products">): Promise<InventoryBalance | null> {
@@ -335,8 +352,13 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (preferredSupplierId) supplier = await supplierByPublicId(ctx, actor, preferredSupplierId);
   const inputId = optionalText(input.id);
   const existing = inputId ? await productByPublicId(ctx, actor, inputId) : null;
-  const duplicate = await ctx.db.query("products").withIndex("by_organization_sku", (q) => q.eq("organizationId", actor.organization._id).eq("sku", sku)).unique();
-  if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That SKU is already used by another product.", { correlationId: actor.correlationId });
+  // Archived rows remain as history and may share an SKU with a replacement.
+  // `.unique()` cannot be used once that is allowed because the index will
+  // legitimately contain more than one historical row.
+  const duplicate = (await ctx.db.query("products").withIndex("by_organization_sku", (q) => q.eq("organizationId", actor.organization._id).eq("sku", sku)).collect()).find((candidate) => candidate.status !== "archived");
+  // Archived catalog rows no longer reserve an SKU. Their history remains
+  // readable, while a replacement item can use the same human-facing code.
+  if (duplicate && duplicate.status !== "archived" && duplicate._id !== existing?._id) domainError("CONFLICT", "That SKU is already used by another product.", { correlationId: actor.correlationId });
   const status = input.status === "archived" ? "archived" as const : "active" as const;
   const now = Date.now();
   const fields = { sku, name, description: optionalText(input.description), unit, reorderPoint, targetLevel, supplierLeadTimeDays, preferredSupplierId: supplier?.publicId, retailPriceMinor: retailPrice?.amount, retailPriceCurrency: retailPrice?.currency, defaultUnitCostMinor: cost?.amount, defaultUnitCostCurrency: cost?.currency, status: existing ? input.status ? status : existing.status : status, updatedAt: now };
@@ -367,6 +389,88 @@ async function archiveProduct(ctx: MutationCtx, actor: ActorContext, input: Data
   if (!updated) domainError("NOT_FOUND", "Product could not be loaded after archive.", { correlationId: actor.correlationId });
   await audit(ctx, actor, { action: "operations.product.archive", entityType: "product", entityId: product.publicId, entityLabel: product.name, summary: "Product archived", reason: text(input.reason), before: productView(product, publicOrganizationId(actor.organization)), after: productView(updated, publicOrganizationId(actor.organization)) });
   return productView(updated, publicOrganizationId(actor.organization));
+}
+
+function deletedProductResult(tombstone: ProductTombstone): Data {
+  return { deleted: true, productId: tombstone.productPublicId, sku: tombstone.sku, name: tombstone.name, deletedAt: iso(tombstone.deletedAt) };
+}
+
+async function deleteProduct(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requireOperationsWrite(actor);
+  const reason = text(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const productPublicId = optionalText(input.productId) ?? optionalText(input.id);
+  const confirmation = optionalText(input.confirmation);
+  if (!confirmation) domainError("VALIDATION_ERROR", "Type the exact SKU or product name to confirm permanent deletion.", { correlationId: actor.correlationId });
+  const alreadyDeleted = await productTombstoneByPublicId(ctx, actor, productPublicId);
+  // Retrying a completed delete is safe and deterministic. This also avoids a
+  // confusing NOT_FOUND after the UI retries a successful request.
+  if (alreadyDeleted) {
+    const normalizedConfirmation = confirmation.toLowerCase();
+    if (normalizedConfirmation !== alreadyDeleted.sku.toLowerCase() && normalizedConfirmation !== alreadyDeleted.name.toLowerCase()) domainError("VALIDATION_ERROR", "Type the exact SKU or product name to confirm permanent deletion.", { correlationId: actor.correlationId });
+    return deletedProductResult(alreadyDeleted);
+  }
+  const product = productPublicId
+    ? await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", productPublicId)).unique()
+    : null;
+  if (!product) domainError("NOT_FOUND", "Product not found.", { correlationId: actor.correlationId });
+  if (confirmation.toLowerCase() !== product.sku.toLowerCase() && confirmation.toLowerCase() !== product.name.toLowerCase()) domainError("VALIDATION_ERROR", "Type the exact SKU or product name to confirm permanent deletion.", { correlationId: actor.correlationId });
+
+  const balances = await ctx.db.query("inventoryBalances").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const productBalances = balances.filter((row) => row.productId === product._id);
+  if (actor.branchScope !== "all" && productBalances.some((row) => !actor.branchIds.includes(row.branchId))) {
+    domainError("FORBIDDEN", "This product has inventory in a branch outside your access.", { correlationId: actor.correlationId });
+  }
+  if (productBalances.some((row) => row.committedQuantity > 0)) {
+    domainError("CONFLICT", "This product has inventory committed to an open purchase order. Receive or cancel that order first.", { correlationId: actor.correlationId });
+  }
+
+  const orders = await ctx.db.query("purchaseOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const dependentOrders = orders.filter((order) => order.lines.some((line) => line.productId === product._id && line.receivedQuantity < line.orderedQuantity));
+  if (actor.branchScope !== "all" && dependentOrders.some((order) => !actor.branchIds.includes(order.branchId))) {
+    domainError("FORBIDDEN", "This product is used by a purchase order in a branch outside your access.", { correlationId: actor.correlationId });
+  }
+  const openDependentOrder = dependentOrders.find((order) => order.status === "draft" || order.status === "approved" || order.status === "partially_received");
+  if (openDependentOrder) {
+    domainError("CONFLICT", "This product is on an open purchase order. Receive or cancel that order before deleting the item.", { correlationId: actor.correlationId, details: { purchaseOrderId: openDependentOrder.publicId } });
+  }
+
+  const now = Date.now();
+  const before = productView(product, publicOrganizationId(actor.organization));
+  const tombstoneId = await ctx.db.insert("productTombstones", {
+    organizationId: actor.organization._id,
+    productPublicId: product.publicId,
+    originalProductId: String(product._id),
+    sku: product.sku,
+    name: product.name,
+    description: product.description,
+    unit: product.unit,
+    retailPriceMinor: product.retailPriceMinor,
+    retailPriceCurrency: product.retailPriceCurrency,
+    defaultUnitCostMinor: product.defaultUnitCostMinor,
+    defaultUnitCostCurrency: product.defaultUnitCostCurrency,
+    deletedAt: now,
+    deletedByUserId: actor.user._id,
+    reason,
+  });
+
+  // These rows are mutable projections. Historical movements, receipts,
+  // retail sales, purchase orders, and audit events are intentionally kept.
+  for (const row of balances.filter((candidate) => candidate.productId === product._id)) await ctx.db.delete(row._id);
+  const alerts = await ctx.db.query("inventoryAlerts").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  for (const alert of alerts.filter((candidate) => candidate.productId === product._id)) await ctx.db.delete(alert._id);
+  const suppliers = await ctx.db.query("suppliers").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  for (const supplier of suppliers) {
+    if (supplier.preferredProductIds.includes(product.publicId)) {
+      await ctx.db.patch(supplier._id, { preferredProductIds: supplier.preferredProductIds.filter((id) => id !== product.publicId), updatedAt: now });
+    }
+  }
+  const tombstone = await ctx.db.get(tombstoneId);
+  if (!tombstone) domainError("NOT_FOUND", "Deleted product snapshot could not be loaded.", { correlationId: actor.correlationId });
+  await audit(ctx, actor, { action: "operations.product.delete", entityType: "product", entityId: product.publicId, entityLabel: product.name, summary: "Product permanently deleted; historical records retained", reason, before, after: { ...deletedProductResult(tombstone), historicalRecordsRetained: true } });
+  await ctx.db.delete(product._id);
+  return deletedProductResult(tombstone);
 }
 
 async function listSuppliers(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
@@ -448,9 +552,9 @@ async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, inp
   if (nextQuantity < 0) domainError("CONFLICT", "Stock movement would make inventory negative.", { correlationId: actor.correlationId, details: { productId: input.product.publicId, branchId: publicBranchId(input.branch), quantityOnHand: balance.quantityOnHand, requestedDelta: delta } });
   const now = Date.now();
   const publicId = `movement-${crypto.randomUUID()}`;
-  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: input.branch._id, productId: input.product._id, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCostMinor: input.unitCost?.amount, unitCostCurrency: input.unitCost?.currency, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: input.branch._id, productId: input.product._id, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCostMinor: input.unitCost?.amount, unitCostCurrency: input.unitCost?.currency, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
   await ctx.db.patch(balance._id, { quantityOnHand: nextQuantity, lastMovementAt: now, updatedAt: now });
-  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(input.branch), productId: input.product.publicId, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(input.branch), productId: input.product.publicId, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
   await saveIdempotentResult(ctx, actor, "operations.stock_movement", input.idempotencyKey, requestHash, view);
   await audit(ctx, actor, { action: "operations.stock_movement.create", entityType: "stock_movement", entityId: publicId, entityLabel: `${input.product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason: input.reason, after: { productId: input.product.publicId, quantityDelta: delta, financialPostingStatus: input.financialPostingStatus }, branchId: publicBranchId(input.branch) });
   return view;
@@ -695,7 +799,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   for (const line of lines) {
     const movementId = `movement-${crypto.randomUUID()}`;
     const delta = -line.quantity;
-    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.product.defaultUnitCostMinor, unitCostCurrency: line.product.defaultUnitCostCurrency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.product.defaultUnitCostMinor, unitCostCurrency: line.product.defaultUnitCostCurrency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
     await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, lastMovementAt: now, updatedAt: now });
   }
   if (memberRecord) {
@@ -733,21 +837,50 @@ async function patchRetailPayment(ctx: MutationCtx, actor: ActorContext, sale: D
   await ctx.db.patch(row._id, { data: { ...value(row.data), ...patch }, updatedAt: Date.now() });
 }
 
+async function recordDeletedProductReturn(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  tombstone: ProductTombstone,
+  branch: Branch,
+  quantity: number,
+  reason: string,
+  referenceId: string,
+  idempotencyKey: string,
+  referenceType: "retail_refund" | "retail_void",
+): Promise<void> {
+  const productId = tombstone.originalProductId as Id<"products">;
+  const requestHash = JSON.stringify({ branchId: publicBranchId(branch), productId: tombstone.productPublicId, type: "return", quantity, reason, referenceType, referenceId });
+  const replay = await idempotentResult(ctx, actor, "operations.stock_movement", idempotencyKey, requestHash);
+  if (replay) return;
+  const now = Date.now();
+  const publicId = `movement-${crypto.randomUUID()}`;
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: branch._id, productId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return", quantityDelta: quantity, quantity, unitCostMinor: tombstone.defaultUnitCostMinor, unitCostCurrency: tombstone.defaultUnitCostCurrency, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: tombstone.productPublicId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return" as const, quantityDelta: quantity, quantity, unitCost: money(tombstone.defaultUnitCostMinor, tombstone.defaultUnitCostCurrency), reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted" as const, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  await saveIdempotentResult(ctx, actor, "operations.stock_movement", idempotencyKey, requestHash, view);
+  await audit(ctx, actor, { action: "operations.stock_movement.create", entityType: "stock_movement", entityId: publicId, entityLabel: `${tombstone.sku} · return`, summary: "Recorded return for a deleted product", reason, after: { productId: tombstone.productPublicId, quantityDelta: quantity, financialPostingStatus: "not_posted" }, branchId: publicBranchId(branch) });
+}
+
 async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">, branch: Branch, lines: Array<{ productId: string; quantity: number }>, reason: string, idempotencyKey: string, referenceType: "retail_refund" | "retail_void"): Promise<void> {
   for (const line of lines) {
-    const product = await productByPublicId(ctx, actor, line.productId);
-    await recordMovementInternal(ctx, actor, {
-      branch,
-      product,
-      type: "return",
-      quantity: line.quantity,
-      unitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency) as { amount: number; currency: string } | undefined,
-      reason,
-      referenceType,
-      referenceId: sale.publicId,
-      idempotencyKey: `${idempotencyKey}:${product.publicId}`,
-      financialPostingStatus: "not_posted",
-    });
+    const product = await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", line.productId)).unique();
+    if (product) {
+      await recordMovementInternal(ctx, actor, {
+        branch,
+        product,
+        type: "return",
+        quantity: line.quantity,
+        unitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency) as { amount: number; currency: string } | undefined,
+        reason,
+        referenceType,
+        referenceId: sale.publicId,
+        idempotencyKey: `${idempotencyKey}:${product.publicId}`,
+        financialPostingStatus: "not_posted",
+      });
+      continue;
+    }
+    const tombstone = await productTombstoneByPublicId(ctx, actor, line.productId);
+    if (!tombstone) domainError("NOT_FOUND", "The product identity for this sale is no longer available.", { correlationId: actor.correlationId });
+    await recordDeletedProductReturn(ctx, actor, tombstone, branch, line.quantity, reason, sale.publicId, `${idempotencyKey}:${tombstone.productPublicId}`, referenceType);
   }
 }
 
@@ -845,29 +978,39 @@ async function listInventory(ctx: QueryCtx, actor: ActorContext, input: Data): P
   await requireOperations(ctx, actor);
   const requestedBranch = optionalText(input.branchId);
   const branches = requestedBranch ? [await branchByPublicId(ctx, actor, requestedBranch)] : await visibleBranches(ctx, actor);
-  const product = input.productId ? await productByPublicId(ctx, actor, optionalText(input.productId)) : undefined;
-  const rows = (await Promise.all(branches.map((branch) => ctx.db.query("inventoryBalances").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat().filter((row) => !product || row.productId === product._id);
+  const requestedProductId = optionalText(input.productId);
+  const product = requestedProductId ? await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedProductId)).unique() : undefined;
+  const tombstone = requestedProductId ? await productTombstoneByPublicId(ctx, actor, requestedProductId) : null;
+  if (requestedProductId && !product && !tombstone) domainError("NOT_FOUND", "Product not found.", { correlationId: actor.correlationId });
+  const internalProductId = product?._id ?? (tombstone?.originalProductId as Id<"products"> | undefined);
+  const rows = (await Promise.all(branches.map((branch) => ctx.db.query("inventoryBalances").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat().filter((row) => !internalProductId || row.productId === internalProductId);
   const branchMap = await branchPublicMap(ctx, actor);
   const productMap = await productPublicMap(ctx, actor);
-  return rows.sort((left, right) => String(left.productId).localeCompare(String(right.productId))).map((row) => ({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: branchMap.get(String(row.branchId)) ?? String(row.branchId), productId: productMap.get(String(row.productId)) ?? String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, availableQuantity: row.quantityOnHand - row.committedQuantity, lastMovementAt: row.lastMovementAt ? iso(row.lastMovementAt) : undefined, updatedAt: iso(row.updatedAt) }));
+  const tombstones = await productTombstoneMap(ctx, actor);
+  return rows.sort((left, right) => String(left.productId).localeCompare(String(right.productId))).map((row) => ({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: branchMap.get(String(row.branchId)) ?? String(row.branchId), productId: productMap.get(String(row.productId)) ?? tombstones.get(String(row.productId))?.productPublicId ?? String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, availableQuantity: row.quantityOnHand - row.committedQuantity, lastMovementAt: row.lastMovementAt ? iso(row.lastMovementAt) : undefined, updatedAt: iso(row.updatedAt) }));
 }
 
 async function listStockMovements(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {
   requirePermission(actor, "members.read");
   await requireOperations(ctx, actor);
   const branch = input.branchId ? await branchByPublicId(ctx, actor, optionalText(input.branchId)) : undefined;
-  const product = input.productId ? await productByPublicId(ctx, actor, optionalText(input.productId)) : undefined;
+  const requestedProductId = optionalText(input.productId);
+  const product = requestedProductId ? await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedProductId)).unique() : undefined;
+  const tombstone = requestedProductId ? await productTombstoneByPublicId(ctx, actor, requestedProductId) : null;
+  if (requestedProductId && !product && !tombstone) domainError("NOT_FOUND", "Product not found.", { correlationId: actor.correlationId });
+  const internalProductId = product?._id ?? (tombstone?.originalProductId as Id<"products"> | undefined);
   let rows = branch
     ? await ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()
     : await ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
-  rows = rows.filter((row) => (!branch || row.branchId === branch._id) && (!product || row.productId === product._id) && (actor.branchScope === "all" || actor.branchIds.includes(row.branchId))).sort((left, right) => right.occurredAt - left.occurredAt);
+  rows = rows.filter((row) => (!branch || row.branchId === branch._id) && (!internalProductId || row.productId === internalProductId) && (actor.branchScope === "all" || actor.branchIds.includes(row.branchId))).sort((left, right) => right.occurredAt - left.occurredAt);
   const page = Math.max(1, integer(input.page, 1));
   const pageSize = Math.min(100, Math.max(1, integer(input.pageSize, 20)));
   const branchMap = await branchPublicMap(ctx, actor);
   const productMap = await productPublicMap(ctx, actor);
+  const tombstones = await productTombstoneMap(ctx, actor);
   const users = await Promise.all([...new Set(rows.map((row) => String(row.createdByUserId)))].map(async (id) => await ctx.db.get(id as Id<"users">)));
   const userMap = new Map(users.filter((user): user is Doc<"users"> => Boolean(user)).map((user) => [String(user._id), publicUserId(user)]));
-  return { items: rows.slice((page - 1) * pageSize, page * pageSize).map((row) => movementView(row, publicOrganizationId(actor.organization), branchMap, productMap, userMap.get(String(row.createdByUserId)))), page, pageSize, totalItems: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) };
+  return { items: rows.slice((page - 1) * pageSize, page * pageSize).map((row) => movementView(row, publicOrganizationId(actor.organization), branchMap, productMap, tombstones, userMap.get(String(row.createdByUserId)))), page, pageSize, totalItems: rows.length, totalPages: Math.max(1, Math.ceil(rows.length / pageSize)) };
 }
 
 async function lowStockSnapshots(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data[]> {
@@ -945,7 +1088,12 @@ async function purchaseOrderViewResolved(ctx: ReadContext, actor: ActorContext, 
   assertBranchAccess(actor, branch);
   if (!supplier || supplier.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
   const products = await Promise.all(order.lines.map((line) => ctx.db.get(line.productId)));
+  const tombstones = await productTombstoneMap(ctx, actor);
   const productMap = new Map(products.filter((product): product is Product => Boolean(product)).map((product) => [String(product._id), product.publicId]));
+  for (const line of order.lines) {
+    const tombstone = tombstones.get(String(line.productId));
+    if (tombstone) productMap.set(String(line.productId), tombstone.productPublicId);
+  }
   const approvedBy = order.approvedByUserId ? await ctx.db.get(order.approvedByUserId) : undefined;
   return purchaseOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), supplier.publicId, productMap, approvedBy ? publicUserId(approvedBy) : undefined);
 }
@@ -1194,7 +1342,10 @@ async function upsertEquipmentAsset(ctx: MutationCtx, actor: ActorContext, input
   const inputId = optionalText(input.id);
   const existing = inputId ? await assetByPublicId(ctx, actor, inputId) : null;
   if (existing && existing.branchId !== branch._id) domainError("CONFLICT", "Equipment assets cannot be reassigned between branches; use a future transfer workflow.", { correlationId: actor.correlationId });
-  const duplicate = await ctx.db.query("equipmentAssets").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).unique();
+  // Retired/replaced assets remain available for maintenance and accounting
+  // history, but their branch code should be reusable by a new live asset.
+  // Only active/maintenance assets reserve a code.
+  const duplicate = (await ctx.db.query("equipmentAssets").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).collect()).find((candidate) => candidate.status === "active" || candidate.status === "maintenance");
   if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That equipment code is already used in this branch.", { correlationId: actor.correlationId });
   const immutableStatus = existing ? await immutableAccountingStatus(ctx, actor, "equipment_acquisition", existing.publicId) : undefined;
   const purchaseDate = immutableStatus && input.purchaseDate === undefined ? existing?.purchaseDate : optionalText(input.purchaseDate);
@@ -1429,6 +1580,7 @@ export async function operationsQuery(ctx: QueryCtx, actor: ActorContext, operat
 export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
   switch (operation) {
     case "operations.product.upsert": return await upsertProduct(ctx, actor, input);
+    case "operations.product.delete": return await deleteProduct(ctx, actor, input);
     case "operations.product.archive": return await archiveProduct(ctx, actor, input);
     case "operations.supplier.upsert": return await upsertSupplier(ctx, actor, input);
     case "operations.supplier.archive": return await archiveSupplier(ctx, actor, input);

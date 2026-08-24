@@ -259,6 +259,29 @@ export default defineSchema({
     .index("by_organization_sku", ["organizationId", "sku"])
     .index("by_public_id", ["organizationId", "publicId"]),
 
+  // Permanent product-master deletion removes only the mutable catalog row.
+  // This identity snapshot keeps old stock movements, purchase orders, and
+  // retail-sale returns explainable while allowing the SKU to be reused.
+  productTombstones: defineTable({
+    organizationId: v.id("organizations"),
+    productPublicId: v.string(),
+    originalProductId: v.string(),
+    sku: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    unit: productUnit,
+    retailPriceMinor: v.optional(v.number()),
+    retailPriceCurrency: v.optional(v.string()),
+    defaultUnitCostMinor: v.optional(v.number()),
+    defaultUnitCostCurrency: v.optional(v.string()),
+    deletedAt: v.number(),
+    deletedByUserId: v.id("users"),
+    reason: v.string(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_public_id", ["organizationId", "productPublicId"])
+    .index("by_organization_sku", ["organizationId", "sku"]),
+
   suppliers: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),
@@ -297,6 +320,11 @@ export default defineSchema({
     publicId: v.string(),
     branchId: v.id("branches"),
     productId: v.id("products"),
+    // Product identity is snapshotted on every new movement so the audit
+    // trail stays readable after the catalog row is permanently removed.
+    productSku: v.optional(v.string()),
+    productName: v.optional(v.string()),
+    productUnit: v.optional(productUnit),
     type: stockMovementType,
     quantityDelta: v.number(),
     quantity: v.number(),

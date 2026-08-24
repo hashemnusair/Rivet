@@ -1,41 +1,27 @@
 "use client";
 
-import Link from "next/link";
 import {
-  Archive,
   AlertTriangle,
+  Archive,
   Boxes,
   Check,
-  CheckCircle2,
-  ChevronRight,
-  ClipboardCheck,
-  Cog,
   PackagePlus,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
-  ShieldAlert,
   ShoppingCart,
   Store,
-  Pencil,
-  Wrench,
+  Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type {
-  EquipmentAsset,
-  EquipmentIssue,
-  EquipmentRecommendation,
-  EquipmentWorkOrder,
-  FacilityTask,
   InventoryBalance,
   LowStockAlert,
+  DeleteProductInput,
   Product,
   PurchaseOrder,
-  StockMovementType,
   Supplier,
-  UpsertEquipmentAssetInput,
-  UpsertEquipmentWorkOrderInput,
-  UpsertFacilityTaskInput,
   UpsertProductInput,
   UpsertSupplierInput,
   WorkspaceAccess,
@@ -45,25 +31,25 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { fromMajor, money, toMajor } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import { DateText, DateTimeText, MoneyText } from "@/components/shared/data-display";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { DateText, MoneyText } from "@/components/shared/data-display";
+import { PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmptyState, ErrorState, ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
+import { EmptyState, ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { hasSellableRetailPrice } from "./retail-checkout";
+import { RetailCheckout } from "./retail-checkout";
 
-type OperationsTab = "inventory" | "facilities" | "equipment";
+type OperationsTab = "inventory" | "checkout";
 
 const CURRENCY_FALLBACK = "JOD";
 
 function newKey(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return prefix + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 }
 
 function minorValue(value: string, currency: string): ReturnType<typeof money> | undefined {
@@ -73,9 +59,9 @@ function minorValue(value: string, currency: string): ReturnType<typeof money> |
 }
 
 function statusVariant(status: string): "neutral" | "success" | "warning" | "danger" {
-  if (["completed", "received", "resolved", "active", "safe_to_operate"].includes(status)) return "success";
-  if (["approved", "in_progress", "partially_received", "maintenance", "blocked"].includes(status)) return "warning";
-  if (["critical", "out_of_service", "cancelled", "retired", "replaced"].includes(status)) return "danger";
+  if (["completed", "received", "active"].includes(status)) return "success";
+  if (["approved", "partially_received", "blocked"].includes(status)) return "warning";
+  if (["cancelled", "archived"].includes(status)) return "danger";
   return "neutral";
 }
 
@@ -100,17 +86,42 @@ function FormPanel({ title, description, onCancel, children }: { title: string; 
   );
 }
 
-function ArchiveDialog({ kind = "supplier", label, open, pending, onOpenChange, onConfirm }: { kind?: "product" | "supplier"; label: string; open: boolean; pending: boolean; onOpenChange: (open: boolean) => void; onConfirm: (reason: string) => void }) {
+function DeleteDialog({ kind = "supplier", label, open, pending, onOpenChange, onConfirm }: { kind?: "product" | "supplier"; label: string; open: boolean; pending: boolean; onOpenChange: (open: boolean) => void; onConfirm: (reason: string, confirmation?: string) => void }) {
   const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const isProduct = kind === "product";
-  return <Dialog open={open} onOpenChange={(next) => { if (!next) setReason(""); onOpenChange(next); }}><DialogContent><DialogHeader><DialogTitle>{isProduct ? `Delete ${label}?` : `Archive ${label}?`}</DialogTitle><DialogDescription>{isProduct ? "This hides the item from future sales. Existing sales, stock movements, receipts, and audit history stay available." : "Historical movements and orders stay intact. The record will no longer be available for new operations."}</DialogDescription></DialogHeader><DialogBody><Field label="Reason" required><Textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold or created in error" : "No longer used or created in error"} /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button><Button variant="danger" loading={pending} disabled={reason.trim().length < 3} onClick={() => onConfirm(reason.trim())}><Archive /> {isProduct ? "Delete item" : "Archive"}</Button></DialogFooter></DialogContent></Dialog>;
+  const confirmed = !isProduct || confirmation.trim().toLowerCase() === label.trim().toLowerCase();
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) { setReason(""); setConfirmation(""); } onOpenChange(next); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isProduct ? "Delete " + label + " permanently?" : "Archive " + label + "?"}</DialogTitle>
+          <DialogDescription>
+            {isProduct
+              ? "This permanently removes the item and frees its SKU for reuse. Existing receipts, stock movements, purchase orders, and audit history remain available as read-only records. This cannot be undone."
+              : "Historical movements and orders stay intact. The supplier will no longer be available for new operations."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-3">
+          {isProduct ? <Field label={"Type " + label + " to confirm"} required><Input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={label} /></Field> : null}
+          <Field label="Reason" required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold or created in error" : "No longer used or created in error"} /></Field>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+          <Button variant="danger" loading={pending} disabled={!confirmed || reason.trim().length < 3} onClick={() => onConfirm(reason.trim(), confirmation.trim() || undefined)}>
+            {isProduct ? <Trash2 /> : <Archive />} {isProduct ? "Delete permanently" : "Archive"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function ProductForm({ currency, suppliers, product, pending, onCancel, onSubmit, onRequestDelete }: { currency: string; suppliers: Supplier[]; product?: Product; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertProductInput) => void; onRequestDelete?: () => void }) {
   const [form, setForm] = useState(() => ({ sku: product?.sku ?? "", name: product?.name ?? "", unit: product?.unit ?? "each", reorderPoint: product ? String(product.reorderPoint) : "", targetLevel: product ? String(product.targetLevel) : "", leadTime: product ? String(product.supplierLeadTimeDays) : "", supplierId: product?.preferredSupplierId ?? "", cost: product?.defaultUnitCost ? String(toMajor(product.defaultUnitCost)) : "", retailPrice: product?.retailPrice ? String(toMajor(product.retailPrice)) : "" }));
   const editing = Boolean(product);
   return (
-    <FormPanel title={editing ? "Edit stock item" : "Add stock item"} description="Set the safety floor, refill target, and delivery time used by replenishment warnings." onCancel={onCancel}>
+    <FormPanel title={editing ? "Edit stock item" : "Add stock item"} description="Set the safety floor, refill target, delivery time, and selling price for this item." onCancel={onCancel}>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit({ id: product?.id, sku: form.sku, name: form.name, unit: form.unit as UpsertProductInput["unit"], reorderPoint: Number(form.reorderPoint), targetLevel: Number(form.targetLevel), supplierLeadTimeDays: Number(form.leadTime), preferredSupplierId: form.supplierId || undefined, defaultUnitCost: minorValue(form.cost, currency), retailPrice: minorValue(form.retailPrice, currency) }); }}>
         <Field label="SKU" required><Input value={form.sku} onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value.toUpperCase() }))} placeholder="SUP-CREATINE" required /></Field>
         <Field label="Name" required><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Creatine" required /></Field>
@@ -119,9 +130,9 @@ function ProductForm({ currency, suppliers, product, pending, onCancel, onSubmit
         <Field label="Alert me at" hint="Available units; the safety floor" required><Input type="number" min="0" step="1" value={form.reorderPoint} onChange={(event) => setForm((current) => ({ ...current, reorderPoint: event.target.value }))} required /></Field>
         <Field label="Refill to" hint="Desired stock after delivery" required><Input type="number" min="0" step="1" value={form.targetLevel} onChange={(event) => setForm((current) => ({ ...current, targetLevel: event.target.value }))} required /></Field>
         <Field label="Delivery time" hint="Days from ordering until stock arrives; enables projection warnings" required><Input type="number" min="0" step="1" value={form.leadTime} onChange={(event) => setForm((current) => ({ ...current, leadTime: event.target.value }))} required /></Field>
-        <Field label={`Supplier unit cost (${currency})`} hint="Your purchase cost; separate from the selling price"><Input type="number" min="0" step="0.001" dir="ltr" value={form.cost} onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))} placeholder="0.000" /></Field>
-        <Field label={`Selling price (${currency})`} hint="Charged at checkout; leave blank if this is not sold to members"><Input type="number" min="0" step="0.001" dir="ltr" value={form.retailPrice} onChange={(event) => setForm((current) => ({ ...current, retailPrice: event.target.value }))} placeholder="0.000" /></Field>
-        <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">{editing && onRequestDelete ? <Button type="button" variant="danger" onClick={onRequestDelete} disabled={pending}><Archive /> Delete item</Button> : <span /> }<Button type="submit" loading={pending}><PackagePlus /> {editing ? "Save changes" : "Save item"}</Button></div>
+        <Field label={"Supplier unit cost (" + currency + ")"} hint="Your purchase cost; separate from the selling price"><Input type="number" min="0" step="0.001" dir="ltr" value={form.cost} onChange={(event) => setForm((current) => ({ ...current, cost: event.target.value }))} placeholder="0.000" /></Field>
+        <Field label={"Selling price (" + currency + ")"} hint="Charged at checkout; leave blank if this is not sold to members"><Input type="number" min="0" step="0.001" dir="ltr" value={form.retailPrice} onChange={(event) => setForm((current) => ({ ...current, retailPrice: event.target.value }))} placeholder="0.000" /></Field>
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2">{editing && onRequestDelete ? <Button type="button" variant="danger" onClick={onRequestDelete} disabled={pending}><Trash2 /> Delete item permanently</Button> : <span /> }<Button type="submit" loading={pending}><PackagePlus /> {editing ? "Save changes" : "Save item"}</Button></div>
       </form>
     </FormPanel>
   );
@@ -138,25 +149,9 @@ function SupplierForm({ defaultBranchId, branches, supplier, pending, onCancel, 
         <Field label="Email"><Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="orders@example.com" /></Field>
         <Field label="Phone"><Input dir="ltr" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="+962 …" /></Field>
         <Field label="Terms"><Input value={form.terms} onChange={(event) => setForm((current) => ({ ...current, terms: event.target.value }))} placeholder="Net 15" /></Field>
-        <Field label="Default delivery time" hint="Optional supplier reference; product delivery time drives alerts"><Input type="number" min="0" step="1" value={form.leadTime} onChange={(event) => setForm((current) => ({ ...current, leadTime: event.target.value }))} /></Field>
+        <Field label="Default delivery time" hint="Optional supplier reference; each product can override it"><Input type="number" min="0" step="1" value={form.leadTime} onChange={(event) => setForm((current) => ({ ...current, leadTime: event.target.value }))} /></Field>
         <div className="sm:col-span-2"><p className="mb-1.5 text-[13px] font-medium text-ink-2">Branches</p><div className="flex flex-wrap gap-2">{branches.map((branch) => <label key={branch.id} className="inline-flex items-center gap-2 rounded-md border border-line-2 px-2.5 py-2 text-[12px]"><input type="checkbox" checked={form.branchIds.includes(branch.id)} onChange={(event) => setForm((current) => ({ ...current, branchIds: event.target.checked ? [...current.branchIds, branch.id] : current.branchIds.filter((id) => id !== branch.id) }))} />{branch.name}</label>)}</div></div>
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="submit" loading={pending}><Store /> {editing ? "Save changes" : "Save supplier"}</Button></div>
-      </form>
-    </FormPanel>
-  );
-}
-
-function MovementForm({ currency, products, branchId, pending, onCancel, onSubmit }: { currency: string; products: Product[]; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: { branchId: string; productId: string; type: StockMovementType; quantity: number; unitCost?: ReturnType<typeof money>; reason?: string; idempotencyKey: string }) => void }) {
-  const [form, setForm] = useState<{ productId: string; type: StockMovementType; quantity: string; unitCost: string; reason: string }>({ productId: products[0]?.id ?? "", type: "receive", quantity: "", unitCost: "", reason: "" });
-  return (
-    <FormPanel title="Record stock movement" description="Every movement is idempotent and leaves an audit trail." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!branchId) return; onSubmit({ branchId, productId: form.productId, type: form.type, quantity: Number(form.quantity), unitCost: minorValue(form.unitCost, currency), reason: form.reason || undefined, idempotencyKey: newKey("stock") }); }}>
-        <Field label="Product" required><Select value={form.productId} onValueChange={(value) => setForm((current) => ({ ...current, productId: value }))}><SelectTrigger aria-label="Stock movement product"><SelectValue placeholder="Choose product" /></SelectTrigger><SelectContent>{products.filter((product) => product.status === "active").map((product) => <SelectItem key={product.id} value={product.id}>{product.name} · {product.sku}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Movement" required><Select value={form.type} onValueChange={(value) => setForm((current) => ({ ...current, type: value as StockMovementType }))}><SelectTrigger aria-label="Stock movement type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="receive">Receive</SelectItem><SelectItem value="sale">Sale</SelectItem><SelectItem value="consumption">Consumption</SelectItem><SelectItem value="adjustment">Adjustment</SelectItem><SelectItem value="return">Return</SelectItem><SelectItem value="waste">Waste</SelectItem></SelectContent></Select></Field>
-        <Field label="Quantity" hint="Adjustments may be negative" required><Input type="number" step="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required /></Field>
-        <Field label={`Unit cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.unitCost} onChange={(event) => setForm((current) => ({ ...current, unitCost: event.target.value }))} /></Field>
-        <Field label="Reason" className="sm:col-span-2"><Textarea value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Opening stock, damaged unit, sale…" /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><PackagePlus /> Record movement</Button></div>
       </form>
     </FormPanel>
   );
@@ -170,7 +165,7 @@ function PurchaseOrderForm({ currency, products, suppliers, branchId, pending, o
         <Field label="Supplier" required><Select value={form.supplierId} onValueChange={(value) => setForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger aria-label="Purchase order supplier"><SelectValue placeholder="Choose supplier" /></SelectTrigger><SelectContent>{suppliers.filter((supplier) => supplier.status === "active").map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Product" required><Select value={form.productId} onValueChange={(value) => setForm((current) => ({ ...current, productId: value }))}><SelectTrigger aria-label="Purchase order product"><SelectValue placeholder="Choose product" /></SelectTrigger><SelectContent>{products.filter((product) => product.status === "active").map((product) => <SelectItem key={product.id} value={product.id}>{product.name} · {product.sku}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Quantity" required><Input type="number" min="1" step="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required /></Field>
-        <Field label={`Unit cost (${currency})`} required><Input type="number" min="0" step="0.001" dir="ltr" value={form.unitCost} onChange={(event) => setForm((current) => ({ ...current, unitCost: event.target.value }))} required /></Field>
+        <Field label={"Unit cost (" + currency + ")"} required><Input type="number" min="0" step="0.001" dir="ltr" value={form.unitCost} onChange={(event) => setForm((current) => ({ ...current, unitCost: event.target.value }))} required /></Field>
         <Field label="Notes" className="sm:col-span-2"><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Delivery instructions or internal context" /></Field>
         <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><ShoppingCart /> Save draft</Button></div>
       </form>
@@ -178,75 +173,97 @@ function PurchaseOrderForm({ currency, products, suppliers, branchId, pending, o
   );
 }
 
-function FacilityTaskForm({ zones, branchId, pending, onCancel, onSubmit }: { zones: Array<{ id: string; name: string }>; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertFacilityTaskInput) => void }) {
-  const [form, setForm] = useState({ zoneId: zones[0]?.id ?? "", kind: "cleaning", severity: "medium", title: "", notes: "", occupancy: "" });
-  return (
-    <FormPanel title="Request facility task" description="Link the task to a physical zone so the next operator knows where to act." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!branchId) return; onSubmit({ branchId, zoneId: form.zoneId, kind: form.kind as UpsertFacilityTaskInput["kind"], severity: form.severity as UpsertFacilityTaskInput["severity"], title: form.title, notes: form.notes || undefined, trafficContext: form.occupancy ? { occupancyPercent: Number(form.occupancy), capturedAt: new Date().toISOString() } : undefined }); }}>
-        <Field label="Zone" required><Select value={form.zoneId} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value }))}><SelectTrigger aria-label="Facility task zone"><SelectValue placeholder="Choose zone" /></SelectTrigger><SelectContent>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Task kind" required><Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value }))}><SelectTrigger aria-label="Facility task kind"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cleaning">Cleaning</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="incident">Incident</SelectItem></SelectContent></Select></Field>
-        <Field label="Severity" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value }))}><SelectTrigger aria-label="Facility task severity"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
-        <Field label="Current occupancy" hint="Optional percentage from the operator"><Input type="number" min="0" max="100" step="1" dir="ltr" value={form.occupancy} onChange={(event) => setForm((current) => ({ ...current, occupancy: event.target.value }))} placeholder="72" /></Field>
-        <Field label="Title" className="sm:col-span-2" required><Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Restock bathroom supplies" required /></Field>
-        <Field label="Notes" className="sm:col-span-2"><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="What needs attention?" /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId || zones.length === 0}><ClipboardCheck /> Create task</Button></div>
-      </form>
-    </FormPanel>
-  );
+function SectionHeader({ icon: Icon, title, description, actions }: { icon: typeof Boxes; title: string; description?: string; actions?: React.ReactNode }) {
+  return <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5"><div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><Icon className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="font-display text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-0.5 text-[11.5px] text-ink-3">{description}</p> : null}</div></div>{actions}</div>;
 }
 
-function EquipmentAssetForm({ currency, zones, branchId, pending, onCancel, onSubmit }: { currency: string; zones: Array<{ id: string; name: string }>; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertEquipmentAssetInput) => void }) {
-  const [form, setForm] = useState({ code: "", name: "", manufacturer: "", model: "", zoneId: "", purchaseDate: "", purchaseCost: "", usefulLife: "" });
-  return (
-    <FormPanel title="Register equipment" description="Give every machine a durable code for issue history and fix-vs-replace decisions." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!branchId) return; onSubmit({ branchId, code: form.code, name: form.name, manufacturer: form.manufacturer || undefined, model: form.model || undefined, zoneId: form.zoneId || undefined, purchaseDate: form.purchaseDate || undefined, purchaseCost: minorValue(form.purchaseCost, currency), expectedUsefulLifeMonths: form.usefulLife ? Number(form.usefulLife) : undefined }); }}>
-        <Field label="Asset code" required><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="TREAD-02" required /></Field>
-        <Field label="Name" required><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Commercial treadmill" required /></Field>
-        <Field label="Manufacturer"><Input value={form.manufacturer} onChange={(event) => setForm((current) => ({ ...current, manufacturer: event.target.value }))} /></Field>
-        <Field label="Model"><Input value={form.model} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))} /></Field>
-        <Field label="Zone"><Select value={form.zoneId || "none"} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value === "none" ? "" : value }))}><SelectTrigger aria-label="Equipment zone"><SelectValue placeholder="No zone" /></SelectTrigger><SelectContent><SelectItem value="none">No zone</SelectItem>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Purchase date"><Input type="date" dir="ltr" value={form.purchaseDate} onChange={(event) => setForm((current) => ({ ...current, purchaseDate: event.target.value }))} /></Field>
-        <Field label={`Purchase cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.purchaseCost} onChange={(event) => setForm((current) => ({ ...current, purchaseCost: event.target.value }))} /></Field>
-        <Field label="Useful life" hint="Months"><Input type="number" min="1" step="1" dir="ltr" value={form.usefulLife} onChange={(event) => setForm((current) => ({ ...current, usefulLife: event.target.value }))} /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><Cog /> Register asset</Button></div>
-      </form>
-    </FormPanel>
-  );
+function ReadOnlyNotice() {
+  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You have read-only access to inventory. Managers can add items, suppliers, and purchase orders.</div>;
 }
 
-function IssueForm({ assets, branchId, pending, onCancel, onSubmit }: { assets: EquipmentAsset[]; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: { branchId: string; assetId: string; title: string; description?: string; severity: "low" | "medium" | "high" | "critical"; downtimeDays?: number; safetyStatus: "unknown" | "safe_to_operate" | "out_of_service" }) => void }) {
-  const [form, setForm] = useState({ assetId: assets[0]?.id ?? "", title: "", description: "", severity: "medium", downtime: "", safety: "unknown" });
-  return (
-    <FormPanel title="Report equipment issue" description="Safety status is visible to every operator and feeds the recommendation record." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!branchId) return; onSubmit({ branchId, assetId: form.assetId, title: form.title, description: form.description || undefined, severity: form.severity as "low", downtimeDays: form.downtime ? Number(form.downtime) : undefined, safetyStatus: form.safety as "unknown" }); }}>
-        <Field label="Asset" required><Select value={form.assetId} onValueChange={(value) => setForm((current) => ({ ...current, assetId: value }))}><SelectTrigger aria-label="Issue asset"><SelectValue placeholder="Choose asset" /></SelectTrigger><SelectContent>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.code} · {asset.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Severity" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value }))}><SelectTrigger aria-label="Issue severity"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
-        <Field label="Safety status" required><Select value={form.safety} onValueChange={(value) => setForm((current) => ({ ...current, safety: value }))}><SelectTrigger aria-label="Equipment safety status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unknown">Unknown</SelectItem><SelectItem value="safe_to_operate">Safe to operate</SelectItem><SelectItem value="out_of_service">Out of service</SelectItem></SelectContent></Select></Field>
-        <Field label="Downtime" hint="Days"><Input type="number" min="0" step="1" dir="ltr" value={form.downtime} onChange={(event) => setForm((current) => ({ ...current, downtime: event.target.value }))} /></Field>
-        <Field label="Issue title" className="sm:col-span-2" required><Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Belt slipping under load" required /></Field>
-        <Field label="Description" className="sm:col-span-2"><Textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId || assets.length === 0}><ShieldAlert /> Report issue</Button></div>
-      </form>
-    </FormPanel>
-  );
+type OperationsMutations = {
+  product: ReturnType<typeof useApiMutation<unknown, UpsertProductInput>>;
+  deleteProduct: ReturnType<typeof useApiMutation<unknown, DeleteProductInput>>;
+  supplier: ReturnType<typeof useApiMutation<unknown, UpsertSupplierInput>>;
+  archiveSupplier: ReturnType<typeof useApiMutation<unknown, { id: string; reason: string }>>;
+  purchaseOrder: ReturnType<typeof useApiMutation<unknown, { branchId: string; supplierId: string; lines: Array<{ productId: string; quantity: number; unitCost: ReturnType<typeof money> }>; notes?: string }>>;
+  approveOrder: ReturnType<typeof useApiMutation<unknown, { id: string; reason?: string }>>;
+  receiveOrder: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; idempotencyKey: string }>>;
+  notifySupplier: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; reason: string; onResult: (message: string) => void }>>;
+  refreshAlerts: ReturnType<typeof useApiMutation<unknown, { branchId?: string }>>;
+};
+
+function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): OperationsMutations {
+  const options = { onSuccess: async () => { await invalidate([qk.operations()]); } };
+  const product = useApiMutation((api, input: UpsertProductInput) => api.upsertProduct(input), { ...options, successMessage: "Stock item saved." });
+  const deleteProduct = useApiMutation((api, input: DeleteProductInput) => api.deleteProduct(input), { ...options, successMessage: "Stock item permanently deleted." });
+  const supplier = useApiMutation((api, input: UpsertSupplierInput) => api.upsertSupplier(input), { ...options, successMessage: "Supplier saved." });
+  const archiveSupplier = useApiMutation((api, input: { id: string; reason: string }) => api.archiveSupplier(input.id, input.reason), { ...options, successMessage: "Supplier archived." });
+  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order draft created." });
+  const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
+  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Purchase order received into stock." });
+  const notifySupplier = useApiMutation((api, input: { purchaseOrderId: string; reason: string; onResult: (message: string) => void }) => api.notifyPurchaseOrderSupplier({ purchaseOrderId: input.purchaseOrderId, reason: input.reason }), { onSuccess: async (result, input) => { input.onResult(result.detail); await invalidate([qk.operations()]); }, successMessage: "Notification preview recorded." });
+  const refreshAlerts = useApiMutation((api, input: { branchId?: string }) => api.refreshLowStockAlerts(input), { ...options, successMessage: "Low-stock alerts refreshed." });
+  return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, notifySupplier, refreshAlerts } as OperationsMutations;
 }
 
-function WorkOrderForm({ currency, assets, issues, branchId, pending, onCancel, onSubmit }: { currency: string; assets: EquipmentAsset[]; issues: EquipmentIssue[]; branchId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertEquipmentWorkOrderInput) => void }) {
-  const [form, setForm] = useState({ assetId: assets[0]?.id ?? "", issueId: "", description: "", vendorName: "", partsCost: "", laborCost: "", replacementEstimate: "" });
-  const assetIssues = issues.filter((issue) => issue.assetId === form.assetId && issue.status !== "resolved");
+function PurchaseOrderRow({ order, writeEnabled, currency, mutations }: { order: PurchaseOrder; writeEnabled: boolean; currency: string; mutations: OperationsMutations }) {
+  const [reason, setReason] = useState("");
+  const [notifyResult, setNotifyResult] = useState<string>();
+  return <div className="space-y-2 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{order.supplierName}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{order.lines.map((line) => line.productName + " × " + line.orderedQuantity).join(", ")}</p></div><div className="text-end"><StatusBadge status={order.status} /><p className="mt-1"><MoneyText money={order.total} /></p></div></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-2"><Input aria-label={"Reason for approving " + order.supplierName} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Approval / notification reason" className="max-w-xs" />{order.status === "draft" ? <Button size="xs" onClick={() => mutations.approveOrder.mutate({ id: order.id, reason: reason.trim() || undefined })} loading={mutations.approveOrder.isPending}><Check /> Approve</Button> : null}{["approved", "partially_received"].includes(order.status) ? <Button size="xs" variant="secondary" onClick={() => mutations.receiveOrder.mutate({ purchaseOrderId: order.id, idempotencyKey: newKey("receive") })} loading={mutations.receiveOrder.isPending}><PackagePlus /> Receive</Button> : null}<Button size="xs" variant="secondary" disabled={!reason.trim()} onClick={() => mutations.notifySupplier.mutate({ purchaseOrderId: order.id, reason: reason.trim(), onResult: setNotifyResult })} loading={mutations.notifySupplier.isPending}><Send /> Notify supplier</Button></div> : null}{notifyResult ? <p className="text-[11.5px] text-warning-deep" role="status">{notifyResult}</p> : null}<p className="text-[11px] text-ink-3">Created <DateText iso={order.createdAt} /> · {currency}</p></div>;
+}
+
+function SupplierManagementDialog({ open, onOpenChange, suppliers, branches, writeEnabled, onAdd, onEdit, onArchive }: { open: boolean; onOpenChange: (open: boolean) => void; suppliers: Supplier[]; branches: Array<{ id: string; name: string }>; writeEnabled: boolean; onAdd: () => void; onEdit: (supplier: Supplier) => void; onArchive: (supplier: Supplier) => void }) {
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>Suppliers</DialogTitle><DialogDescription>Manage the contacts used when you replenish stock.</DialogDescription></DialogHeader><DialogBody className="max-h-[60vh] overflow-y-auto p-0">{suppliers.length === 0 ? <EmptyState compact title="No suppliers" description="Add the suppliers you use for stock replenishment." className="m-4" /> : <div className="divide-y divide-line">{suppliers.map((supplier) => <div key={supplier.id} className="flex items-center gap-3 p-4"><div className="flex size-8 items-center justify-center rounded-md bg-sunken"><Store className="size-4 text-ink-2" aria-hidden /></div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{supplier.name}</p><p className="mt-0.5 truncate text-[11.5px] text-ink-3">{supplier.contactName ?? "No contact"} · {supplier.email ?? supplier.phone ?? "No contact channel"}</p><div className="mt-1 flex flex-wrap gap-1">{supplier.branchIds.map((id) => <Badge key={id} variant="neutral">{branches.find((branch) => branch.id === id)?.name ?? id}</Badge>)}</div></div><StatusBadge status={supplier.status} />{writeEnabled ? <div className="flex shrink-0 gap-1"><Button size="icon" variant="ghost" aria-label={"Edit " + supplier.name} onClick={() => onEdit(supplier)}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={"Archive " + supplier.name} onClick={() => onArchive(supplier)}><Archive /></Button></div> : null}</div>)}</div>}</DialogBody><DialogFooter>{writeEnabled ? <Button onClick={onAdd}><Plus /> Add supplier</Button> : null}<Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function PurchaseOrderListDialog({ open, onOpenChange, orders, writeEnabled, currency, mutations, onCreate }: { open: boolean; onOpenChange: (open: boolean) => void; orders: PurchaseOrder[]; writeEnabled: boolean; currency: string; mutations: OperationsMutations; onCreate: () => void }) {
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>Purchase orders</DialogTitle><DialogDescription>Approve an order to reserve stock, then receive it when the delivery arrives.</DialogDescription></DialogHeader><DialogBody className="max-h-[60vh] overflow-y-auto p-0">{orders.length === 0 ? <EmptyState compact title="No purchase orders" description="Create a draft when a stock alert needs replenishment." className="m-4" /> : <div className="divide-y divide-line">{orders.map((order) => <PurchaseOrderRow key={order.id} order={order} writeEnabled={writeEnabled} currency={currency} mutations={mutations} />)}</div>}</DialogBody><DialogFooter>{writeEnabled ? <Button onClick={onCreate}><Plus /> New purchase order</Button> : null}<Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled, products, suppliers, inventory, alerts, orders, loading, error, onRetry, mutations }: { branchId?: string; branchLabel: string; branches: Array<{ id: string; name: string }>; currency: string; writeEnabled: boolean; products: Product[]; suppliers: Supplier[]; inventory: InventoryBalance[]; alerts: LowStockAlert[]; orders: PurchaseOrder[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
+  const [productForm, setProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product>();
+  const [supplierForm, setSupplierForm] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier>();
+  const [orderForm, setOrderForm] = useState(false);
+  const [supplierDialog, setSupplierDialog] = useState(false);
+  const [ordersDialog, setOrdersDialog] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "product" | "supplier"; id: string; label: string }>();
+  const productName = useMemo(() => new Map(products.map((product) => [product.id, product.name])), [products]);
+  const alertProductIds = useMemo(() => new Set(alerts.map((alert) => alert.productId)), [alerts]);
+  const inventoryByProduct = useMemo(() => {
+    const map = new Map<string, InventoryBalance>();
+    inventory.forEach((row) => {
+      if (!branchId || row.branchId === branchId) map.set(row.productId, row);
+    });
+    return map;
+  }, [branchId, inventory]);
+  if (loading) return <LoadingGrid />;
+  if (error) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read inventory for this workspace." />;
+  const closeProductForm = () => { setProductForm(false); setEditingProduct(undefined); };
+  const closeSupplierForm = () => { setSupplierForm(false); setEditingSupplier(undefined); };
   return (
-    <FormPanel title="Open work order" description="Record repair and replacement estimates so the system can compare them against issue history." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (!branchId) return; onSubmit({ branchId, assetId: form.assetId, issueId: form.issueId || undefined, description: form.description, vendorName: form.vendorName || undefined, partsCost: minorValue(form.partsCost, currency), laborCost: minorValue(form.laborCost, currency), replacementEstimate: minorValue(form.replacementEstimate, currency), status: "draft" }); }}>
-        <Field label="Asset" required><Select value={form.assetId} onValueChange={(value) => setForm((current) => ({ ...current, assetId: value, issueId: "" }))}><SelectTrigger aria-label="Work order asset"><SelectValue placeholder="Choose asset" /></SelectTrigger><SelectContent>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.code} · {asset.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Related issue"><Select value={form.issueId || "none"} onValueChange={(value) => setForm((current) => ({ ...current, issueId: value === "none" ? "" : value }))}><SelectTrigger aria-label="Related equipment issue"><SelectValue placeholder="No linked issue" /></SelectTrigger><SelectContent><SelectItem value="none">No linked issue</SelectItem>{assetIssues.map((issue) => <SelectItem key={issue.id} value={issue.id}>{issue.title}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Description" className="sm:col-span-2" required><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Inspect belt and motor" required /></Field>
-        <Field label="Vendor"><Input value={form.vendorName} onChange={(event) => setForm((current) => ({ ...current, vendorName: event.target.value }))} placeholder="Service partner" /></Field>
-        <Field label={`Replacement estimate (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.replacementEstimate} onChange={(event) => setForm((current) => ({ ...current, replacementEstimate: event.target.value }))} /></Field>
-        <Field label={`Parts cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.partsCost} onChange={(event) => setForm((current) => ({ ...current, partsCost: event.target.value }))} /></Field>
-        <Field label={`Labor cost (${currency})`}><Input type="number" min="0" step="0.001" dir="ltr" value={form.laborCost} onChange={(event) => setForm((current) => ({ ...current, laborCost: event.target.value }))} /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId || assets.length === 0}><Wrench /> Open work order</Button></div>
-      </form>
-    </FormPanel>
+    <div className="space-y-4" data-testid="operations-inventory">
+      <section className="panel overflow-hidden">
+        <SectionHeader icon={Boxes} title="Inventory" description={"Simple stock view for " + branchLabel.toLowerCase() + ". Available is what can be sold right now."} actions={<div className="flex flex-wrap gap-2">{writeEnabled ? <><Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }}><Plus /> Add item</Button><Button size="sm" variant="secondary" onClick={() => setSupplierDialog(true)}><Store /> Suppliers</Button><Button size="sm" variant="secondary" onClick={() => setOrdersDialog(true)} disabled={!branchId}><ShoppingCart /> Purchase orders</Button></> : null}</div>} />
+        {!writeEnabled ? <div className="p-4"><ReadOnlyNotice /></div> : null}
+        <div className="overflow-x-auto"><table className="w-full text-start"><caption className="sr-only">Available inventory</caption><thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="px-4 py-2.5 font-medium">Item</th><th className="px-4 py-2.5 text-end font-medium">Available</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 text-end font-medium">Actions</th></tr></thead><tbody className="divide-y divide-line">{products.length === 0 ? <tr><td colSpan={4}><EmptyState compact title="No stock items yet" description="Add an item to start tracking what is available." className="m-4" /></td></tr> : products.map((product) => { const row = inventoryByProduct.get(product.id); const available = row?.availableQuantity ?? 0; const low = available <= product.reorderPoint; const needsReplenishment = alertProductIds.has(product.id); return <tr key={product.id} className="text-[12.5px]"><td className="px-4 py-3"><span className="font-medium">{product.name}</span><span className="block text-[11px] text-ink-3">{product.sku} · {product.supplierLeadTimeDays}d delivery</span></td><td className={cn("px-4 py-3 text-end font-mono", needsReplenishment ? "text-warning-deep" : "text-ink")} dir="ltr">{available}</td><td className="px-4 py-3">{needsReplenishment ? <Badge variant="warning" dot>{low ? "Low stock" : "Replenish soon"}</Badge> : <Badge variant="success" dot>Available</Badge>}</td><td className="px-4 py-3 text-end"><div className="flex justify-end gap-1">{writeEnabled ? <><Button size="icon" variant="ghost" aria-label={"Edit " + product.name} onClick={() => { setEditingProduct(product); setProductForm(true); }}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={"Delete " + product.name} onClick={() => setDeleteTarget({ type: "product", id: product.id, label: product.name })}><Trash2 /></Button></> : null}</div></td></tr>; })}</tbody></table></div>
+      </section>
+
+      <section className="panel overflow-hidden">
+        <SectionHeader icon={AlertTriangle} title="Low-stock alerts" description="Items at or below their safety floor, or projected to fall below it before delivery arrives." actions={<Button size="sm" variant="secondary" onClick={() => mutations.refreshAlerts.mutate({ branchId })} loading={mutations.refreshAlerts.isPending}><RefreshCw /> Refresh alerts</Button>} />
+        {alerts.length === 0 ? <EmptyState compact title="No low-stock alerts" description="Alerts refresh after stock changes and threshold updates." className="m-4" /> : <div className="divide-y divide-line">{alerts.map((alert) => <div key={alert.id} className="p-4"><p className="font-medium text-ink">{productName.get(alert.productId) ?? alert.productId}</p><p className="mt-1 text-[12px] text-ink-3">Available <span className="font-mono" dir="ltr">{alert.availableQuantity}</span> · alert at <span className="font-mono" dir="ltr">{alert.reorderPoint}</span> · projected at delivery <span className="font-mono" dir="ltr">{alert.projectedQuantityAtLeadTime.toFixed(1)}</span></p></div>)}</div>}
+      </section>
+
+      <SupplierManagementDialog open={supplierDialog} onOpenChange={setSupplierDialog} suppliers={suppliers} branches={branches} writeEnabled={writeEnabled} onAdd={() => { setSupplierDialog(false); setEditingSupplier(undefined); setSupplierForm(true); }} onEdit={(supplier) => { setSupplierDialog(false); setEditingSupplier(supplier); setSupplierForm(true); }} onArchive={(supplier) => { setSupplierDialog(false); setDeleteTarget({ type: "supplier", id: supplier.id, label: supplier.name }); }} />
+      <PurchaseOrderListDialog open={ordersDialog} onOpenChange={setOrdersDialog} orders={orders} writeEnabled={writeEnabled} currency={currency} mutations={mutations} onCreate={() => { setOrdersDialog(false); setOrderForm(true); }} />
+
+      {productForm ? <ProductForm key={editingProduct?.id ?? "new-product"} currency={currency} suppliers={suppliers} product={editingProduct} pending={mutations.product.isPending} onCancel={closeProductForm} onRequestDelete={editingProduct ? () => { const productToDelete = editingProduct; closeProductForm(); setDeleteTarget({ type: "product", id: productToDelete.id, label: productToDelete.name }); } : undefined} onSubmit={(input) => mutations.product.mutate(input, { onSuccess: closeProductForm })} /> : null}
+      {supplierForm ? <SupplierForm key={editingSupplier?.id ?? "new-supplier"} defaultBranchId={branchId} branches={branches} supplier={editingSupplier} pending={mutations.supplier.isPending} onCancel={closeSupplierForm} onSubmit={(input) => mutations.supplier.mutate(input, { onSuccess: closeSupplierForm })} /> : null}
+      {orderForm ? <PurchaseOrderForm currency={currency} products={products} suppliers={suppliers} branchId={branchId} pending={mutations.purchaseOrder.isPending} onCancel={() => setOrderForm(false)} onSubmit={(input) => mutations.purchaseOrder.mutate(input, { onSuccess: () => setOrderForm(false) })} /> : null}
+      <DeleteDialog kind={deleteTarget?.type} label={deleteTarget?.label ?? "item"} open={Boolean(deleteTarget)} pending={mutations.deleteProduct.isPending || mutations.archiveSupplier.isPending} onOpenChange={(open) => { if (!open) setDeleteTarget(undefined); }} onConfirm={(reason, confirmation) => { if (!deleteTarget) return; const onSuccess = () => setDeleteTarget(undefined); if (deleteTarget.type === "product") mutations.deleteProduct.mutate({ productId: deleteTarget.id, reason, confirmation: confirmation ?? "" }, { onSuccess }); else mutations.archiveSupplier.mutate({ id: deleteTarget.id, reason }, { onSuccess }); }} />
+    </div>
   );
 }
 
@@ -254,156 +271,13 @@ function LoadingGrid() {
   return <div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>;
 }
 
-function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled, canCheckout, products, suppliers, inventory, alerts, orders, movements, loading, error, onRetry, mutations }: { branchId?: string; branchLabel: string; branches: Array<{ id: string; name: string }>; currency: string; writeEnabled: boolean; canCheckout: boolean; products: Product[]; suppliers: Supplier[]; inventory: InventoryBalance[]; alerts: LowStockAlert[]; orders: PurchaseOrder[]; movements: import("@/lib/domain/types").StockMovement[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
-  const [productForm, setProductForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product>();
-  const [supplierForm, setSupplierForm] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier>();
-  const [movementForm, setMovementForm] = useState(false);
-  const [orderForm, setOrderForm] = useState(false);
-  const [alertReasons, setAlertReasons] = useState<Record<string, string>>({});
-  const [archiveTarget, setArchiveTarget] = useState<{ type: "product" | "supplier"; id: string; label: string }>();
-  const productName = useMemo(() => new Map(products.map((product) => [product.id, product.name])), [products]);
-  if (loading) return <LoadingGrid />;
-  if (error) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read daily operations for this workspace." />;
-  return (
-    <div className="space-y-4" data-testid="operations-inventory">
-      <section className="panel overflow-hidden" aria-labelledby="operations-guide-title">
-        <div className="border-b border-line px-4 py-3.5">
-          <p className="eyebrow">How Operations works</p>
-          <h2 id="operations-guide-title" className="mt-1 font-display text-[15px] font-semibold">Three daily workflows, one audit trail</h2>
-          <p className="mt-1 max-w-3xl text-[12px] text-ink-3">Sell what is in stock, replenish before delivery time runs out, and keep the physical gym ready. Inventory movements, receipts, facility tasks, and equipment work remain traceable for managers.</p>
-        </div>
-        <div className="grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <div className="p-4"><div className="flex items-center gap-2 text-[13px] font-medium"><ShoppingCart className="size-4 text-ink-2" aria-hidden />Sell &amp; stock</div><p className="mt-1 text-[11.5px] text-ink-3">Run checkout and watch available units change. Every sale creates a receipt and an immutable stock movement.</p>{canCheckout ? <Button asChild size="xs" className="mt-3"><Link href="/operations/checkout">Open checkout</Link></Button> : <p className="mt-3 text-[11px] text-ink-3">Checkout is available to front-desk collectors.</p>}</div>
-          <div className="p-4"><div className="flex items-center gap-2 text-[13px] font-medium"><PackagePlus className="size-4 text-ink-2" aria-hidden />Replenish</div><p className="mt-1 text-[11.5px] text-ink-3">Needs replenishment uses delivery time and sales velocity to warn before stock reaches its safety floor. Suppliers and purchase orders handle the refill.</p><p className="mt-2 text-[11px] text-ink-3">Example: 10 days delivery, 25 available, and 3 sold per day projects about −5 at arrival, so the alert appears today.</p></div>
-          <div className="p-4"><div className="flex items-center gap-2 text-[13px] font-medium"><ClipboardCheck className="size-4 text-ink-2" aria-hidden />Keep the gym ready</div><p className="mt-1 text-[11.5px] text-ink-3">Facilities track cleaning and incidents; Equipment tracks durable assets, safety issues, and work orders separately.</p></div>
-        </div>
-      </section>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <section className="panel p-4"><Stat label="Catalog items" value={products.length} context={`${branchLabel} scope`} /></section>
-        <section className={cn("panel p-4", alerts.length > 0 && "border-warning/50 bg-warning-bg/20")}><Stat label="Needs replenishment" value={alerts.length} tone={alerts.length > 0 ? "warning" : "default"} context={alerts.length > 0 ? "Review before delivery time runs out" : "No open alerts"} /></section>
-        <section className="panel p-4"><Stat label="Open purchase orders" value={orders.length} context="Drafts, approvals, and open receipts" /></section>
-      </div>
-
-      {!writeEnabled ? <ReadOnlyNotice /> : null}
-      {productForm ? <ProductForm key={editingProduct?.id ?? "new-product"} currency={currency} suppliers={suppliers} product={editingProduct} pending={mutations.product.isPending} onCancel={() => { setProductForm(false); setEditingProduct(undefined); }} onRequestDelete={editingProduct ? () => { const productToDelete = editingProduct; setProductForm(false); setEditingProduct(undefined); setArchiveTarget({ type: "product", id: productToDelete.id, label: productToDelete.name }); } : undefined} onSubmit={(input) => mutations.product.mutate(input, { onSuccess: () => { setProductForm(false); setEditingProduct(undefined); } })} /> : null}
-      {supplierForm ? <SupplierForm key={editingSupplier?.id ?? "new-supplier"} defaultBranchId={branchId} branches={branches} supplier={editingSupplier} pending={mutations.supplier.isPending} onCancel={() => { setSupplierForm(false); setEditingSupplier(undefined); }} onSubmit={(input) => mutations.supplier.mutate(input, { onSuccess: () => { setSupplierForm(false); setEditingSupplier(undefined); } })} /> : null}
-      {movementForm ? <MovementForm currency={currency} products={products} branchId={branchId} pending={mutations.movement.isPending} onCancel={() => setMovementForm(false)} onSubmit={(input) => mutations.movement.mutate(input, { onSuccess: () => setMovementForm(false) })} /> : null}
-      {orderForm ? <PurchaseOrderForm currency={currency} products={products} suppliers={suppliers} branchId={branchId} pending={mutations.purchaseOrder.isPending} onCancel={() => setOrderForm(false)} onSubmit={(input) => mutations.purchaseOrder.mutate(input, { onSuccess: () => setOrderForm(false) })} /> : null}
-      <ArchiveDialog kind={archiveTarget?.type} label={archiveTarget?.label ?? "item"} open={Boolean(archiveTarget)} pending={mutations.archiveProduct.isPending || mutations.archiveSupplier.isPending} onOpenChange={(open) => { if (!open) setArchiveTarget(undefined); }} onConfirm={(reason) => { if (!archiveTarget) return; const onSuccess = () => setArchiveTarget(undefined); if (archiveTarget.type === "product") mutations.archiveProduct.mutate({ id: archiveTarget.id, reason }, { onSuccess }); else mutations.archiveSupplier.mutate({ id: archiveTarget.id, reason }, { onSuccess }); }} />
-
-      <section className="panel overflow-hidden">
-        <SectionHeader icon={AlertTriangle} title="Needs replenishment" description="Projected availability includes delivery time and recent usage. Alert me at is the safety floor; Refill to is the desired stock after delivery." actions={<div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => mutations.refreshAlerts.mutate({ branchId })} loading={mutations.refreshAlerts.isPending}><RefreshCw /> Refresh</Button>{writeEnabled ? <Button size="sm" onClick={() => setOrderForm(true)} disabled={!branchId || products.length === 0 || suppliers.length === 0}><ShoppingCart /> New PO</Button> : null}</div>} />
-        {alerts.length === 0 ? <EmptyState compact title="No items need replenishment" description="Alerts recalculate after stock movements or threshold changes." className="m-4" /> : <div className="divide-y divide-line">{alerts.map((alert) => <div key={alert.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="font-medium text-ink">{productName.get(alert.productId) ?? alert.productId}</p><p className="mt-1 text-[12px] text-ink-3">Available <span className="font-mono" dir="ltr">{alert.availableQuantity}</span> · alert at <span className="font-mono" dir="ltr">{alert.reorderPoint}</span> · projected at delivery <span className="font-mono" dir="ltr">{alert.projectedQuantityAtLeadTime.toFixed(1)}</span></p></div>{writeEnabled ? <div className="flex w-full gap-2 sm:w-auto"><Input aria-label={`Reason for dismissing ${productName.get(alert.productId) ?? "alert"}`} value={alertReasons[alert.id] ?? ""} onChange={(event) => setAlertReasons((current) => ({ ...current, [alert.id]: event.target.value }))} placeholder="Reason to dismiss" className="min-w-0 sm:w-44" /><Button size="sm" variant="secondary" disabled={!alertReasons[alert.id]?.trim()} loading={mutations.dismissAlert.isPending} onClick={() => mutations.dismissAlert.mutate({ alertId: alert.id, reason: alertReasons[alert.id]!.trim(), branchId })}>Dismiss</Button></div> : null}</div>)}</div>}
-      </section>
-
-      <section className="panel overflow-hidden"><SectionHeader icon={Boxes} title="Available stock" description="On-hand, committed, and available stock by branch. Sell opens checkout; it never changes stock in the browser." actions={<div className="flex flex-wrap gap-2">{canCheckout ? <Button size="sm" asChild><Link href="/operations/checkout"><ShoppingCart /> Checkout</Link></Button> : null}{writeEnabled ? <Button size="sm" variant="secondary" onClick={() => setMovementForm(true)} disabled={!branchId || products.length === 0}><PackagePlus /> Record movement</Button> : null}</div>} /><div className="overflow-x-auto"><table className="w-full text-start"><thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="px-4 py-2.5 font-medium">Item</th><th className="px-4 py-2.5 text-end font-medium">On hand</th><th className="px-4 py-2.5 text-end font-medium">Committed</th><th className="px-4 py-2.5 text-end font-medium">Available</th><th className="px-4 py-2.5 font-medium">Updated</th><th className="px-4 py-2.5 text-end font-medium">Action</th></tr></thead><tbody className="divide-y divide-line">{inventory.length === 0 ? <tr><td colSpan={6}><EmptyState compact title="No inventory balances" description="Record a receive or adjustment to start tracking stock." className="m-4" /></td></tr> : inventory.map((row) => { const product = products.find((item) => item.id === row.productId); const sellBranchId = row.branchId || branchId; const sellable = Boolean(sellBranchId && product?.status === "active" && product && hasSellableRetailPrice(product, currency) && row.availableQuantity > 0); return <tr key={row.id} className="text-[12.5px]"><td className="px-4 py-3"><span className="font-medium">{productName.get(row.productId) ?? row.productId}</span><span className="block text-[11px] text-ink-3">{row.branchId}</span></td><td className="px-4 py-3 text-end font-mono" dir="ltr">{row.quantityOnHand}</td><td className="px-4 py-3 text-end font-mono" dir="ltr">{row.committedQuantity}</td><td className={cn("px-4 py-3 text-end font-mono", row.availableQuantity <= 0 ? "text-danger" : "text-ink")} dir="ltr">{row.availableQuantity}</td><td className="px-4 py-3 text-ink-3"><DateTimeText iso={row.updatedAt} /></td><td className="px-4 py-3 text-end">{sellable ? <Button size="xs" variant="secondary" asChild><Link href={`/operations/checkout?branchId=${encodeURIComponent(sellBranchId!)}&productId=${encodeURIComponent(row.productId)}`}>Sell</Link></Button> : <span className="text-[11px] text-ink-3">Unavailable</span>}</td></tr>; })}</tbody></table></div></section>
-
-      <section className="panel overflow-hidden"><SectionHeader icon={RefreshCw} title="Recent stock movements" description="Immutable movement history for this branch scope." />{movements.length === 0 ? <EmptyState compact title="No stock movements recorded" description="Receiving, sales, consumption, and adjustments will appear here." className="m-4" /> : <div className="divide-y divide-line">{movements.slice(0, 12).map((movement) => <div key={movement.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-[12px]"><span className={cn("flex size-7 items-center justify-center rounded-md font-mono", movement.quantityDelta >= 0 ? "bg-success-bg text-success-deep" : "bg-danger-bg text-danger")} aria-label={movement.quantityDelta >= 0 ? "Stock increase" : "Stock decrease"}>{movement.quantityDelta >= 0 ? "+" : "−"}</span><div className="min-w-0 flex-1"><p className="font-medium">{productName.get(movement.productId) ?? movement.productId} · {movement.type.replaceAll("_", " ")}</p><p className="mt-0.5 text-[11px] text-ink-3">{movement.reason ?? "No reason recorded"} · {movement.branchId}</p></div><span className="font-mono tabular" dir="ltr">{movement.quantityDelta > 0 ? "+" : ""}{movement.quantityDelta}</span><DateTimeText iso={movement.occurredAt} /></div>)}</div>}</section>
-
-      <div className="grid gap-4 lg:grid-cols-2"><section className="panel overflow-hidden"><SectionHeader icon={Store} title="Supplier directory" description="Contacts and branch coverage for replenishment orders." actions={writeEnabled ? <Button size="sm" onClick={() => { setEditingSupplier(undefined); setSupplierForm(true); }}><Plus /> Add supplier</Button> : null} />{suppliers.length === 0 ? <EmptyState compact title="No suppliers" description="Add the suppliers you use for stock replenishment." className="m-4" /> : <div className="divide-y divide-line">{suppliers.map((supplier) => <div key={supplier.id} className="flex items-center gap-3 p-4"><div className="flex size-8 items-center justify-center rounded-md bg-sunken"><Store className="size-4 text-ink-2" aria-hidden /></div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{supplier.name}</p><p className="mt-0.5 truncate text-[11.5px] text-ink-3">{supplier.contactName ?? "No contact"} · {supplier.email ?? supplier.phone ?? "No contact channel"}</p><div className="mt-1 flex flex-wrap gap-1">{supplier.branchIds.map((id) => <Badge key={id} variant="neutral">{branches.find((branch) => branch.id === id)?.name ?? id}</Badge>)}</div></div><StatusBadge status={supplier.status} />{writeEnabled ? <div className="flex shrink-0 gap-1"><Button size="icon" variant="ghost" aria-label={`Edit ${supplier.name}`} onClick={() => { setEditingSupplier(supplier); setSupplierForm(true); }}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Archive ${supplier.name}`} onClick={() => setArchiveTarget({ type: "supplier", id: supplier.id, label: supplier.name })}><Archive /></Button></div> : null}</div>)}</div>}</section><section className="panel overflow-hidden"><SectionHeader icon={ShoppingCart} title="Open purchase orders" description="Approval commits stock; receiving adds it to available inventory." />{orders.length === 0 ? <EmptyState compact title="No open purchase orders" description="Create a draft when a stock alert needs replenishment." className="m-4" /> : <div className="divide-y divide-line">{orders.map((order) => <PurchaseOrderRow key={order.id} order={order} writeEnabled={writeEnabled} currency={currency} mutations={mutations} />)}</div>}</section></div>
-
-      <section className="panel overflow-hidden"><SectionHeader icon={PackagePlus} title="Catalog items" description="Catalog items define what can be stocked and sold. Delete item archives it from future checkout while historical movements remain available." actions={writeEnabled ? <Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }}><Plus /> Add item</Button> : null} />{products.length === 0 ? <EmptyState compact title="No active catalog items" description="Add an item to start tracking inventory." className="m-4" /> : <div className="divide-y divide-line">{products.map((product) => <div key={product.id} className="flex flex-wrap items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-[13px] font-medium">{product.name}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{product.sku} · alert at {product.reorderPoint} · refill to {product.targetLevel} · {product.supplierLeadTimeDays}d delivery</p><p className="mt-1 text-[11px] text-ink-3">Supplier cost <MoneyText money={product.defaultUnitCost} /> · selling price {product.retailPrice ? <MoneyText money={product.retailPrice} /> : "Not set"}</p></div>{product.preferredSupplierId ? <Badge variant="neutral">{suppliers.find((supplier) => supplier.id === product.preferredSupplierId)?.name ?? "Preferred supplier"}</Badge> : null}<StatusBadge status={product.status} /><div className="flex shrink-0 gap-1">{canCheckout && Boolean(branchId) && product.status === "active" && hasSellableRetailPrice(product, currency) ? <Button size="xs" variant="secondary" asChild><Link href={`/operations/checkout?branchId=${encodeURIComponent(branchId!)}&productId=${encodeURIComponent(product.id)}`}>Sell</Link></Button> : null}{writeEnabled ? <><Button size="icon" variant="ghost" aria-label={`Edit ${product.name}`} onClick={() => { setEditingProduct(product); setProductForm(true); }}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${product.name}`} onClick={() => setArchiveTarget({ type: "product", id: product.id, label: product.name })}><Archive /></Button></> : null}</div></div>)}</div>}</section>
-    </div>
-  );
-}
-
-function PurchaseOrderRow({ order, writeEnabled, currency, mutations }: { order: PurchaseOrder; writeEnabled: boolean; currency: string; mutations: OperationsMutations }) {
-  const [reason, setReason] = useState("");
-  const [notifyResult, setNotifyResult] = useState<string>();
-  return <div className="space-y-2 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{order.supplierName}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{order.lines.map((line) => `${line.productName} × ${line.orderedQuantity}`).join(", ")}</p></div><div className="text-end"><StatusBadge status={order.status} /><p className="mt-1"><MoneyText money={order.total} /></p></div></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-2"><Input aria-label={`Reason for approving ${order.supplierName}`} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Approval / notification reason" className="max-w-xs" />{order.status === "draft" ? <Button size="xs" onClick={() => mutations.approveOrder.mutate({ id: order.id, reason: reason.trim() || undefined })} loading={mutations.approveOrder.isPending}><Check /> Approve</Button> : null}{["approved", "partially_received"].includes(order.status) ? <Button size="xs" variant="secondary" onClick={() => mutations.receiveOrder.mutate({ purchaseOrderId: order.id, idempotencyKey: newKey("receive") })} loading={mutations.receiveOrder.isPending}><PackagePlus /> Receive</Button> : null}<Button size="xs" variant="secondary" disabled={!reason.trim()} onClick={() => mutations.notifySupplier.mutate({ purchaseOrderId: order.id, reason: reason.trim(), onResult: setNotifyResult })} loading={mutations.notifySupplier.isPending}><Send /> Notify supplier</Button></div> : null}{notifyResult ? <p className="text-[11.5px] text-warning-deep" role="status">{notifyResult}</p> : null}<p className="text-[11px] text-ink-3">Created <DateText iso={order.createdAt} /> · {currency}</p></div>;
-}
-
-function FacilitiesTab({ branchId, writeEnabled, zones, tasks, loading, error, onRetry, mutations }: { branchId?: string; writeEnabled: boolean; zones: Array<{ id: string; name: string }>; tasks: FacilityTask[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
-  const [taskForm, setTaskForm] = useState(false);
-  if (loading) return <LoadingGrid />;
-  if (error) return <QueryErrorState error={error} onRetry={onRetry} />;
-  const openTasks = tasks.filter((task) => !["completed", "cancelled"].includes(task.status));
-  const updateTask = (task: FacilityTask, status: FacilityTask["status"]) => mutations.facility.mutate({ id: task.id, branchId: task.branchId, zoneId: task.zoneId, kind: task.kind, severity: task.severity, status, title: task.title, notes: task.notes, trafficContext: task.trafficContext, suppliesCost: task.suppliesCost });
-  return <div className="space-y-4" data-testid="operations-facilities"><div className="grid gap-3 sm:grid-cols-3"><section className="panel p-4"><Stat label="Open tasks" value={openTasks.length} tone={openTasks.length > 0 ? "warning" : "default"} context="Cleaning, inspection, incident" /></section><section className="panel p-4"><Stat label="High priority" value={openTasks.filter((task) => ["high", "critical"].includes(task.severity)).length} tone="danger" context="Needs manager attention" /></section><section className="panel p-4"><Stat label="Zones linked" value={new Set(tasks.map((task) => task.zoneId)).size} context="Tasks with physical location" /></section></div>{!writeEnabled ? <ReadOnlyNotice /> : null}{taskForm ? <FacilityTaskForm zones={zones} branchId={branchId} pending={mutations.facility.isPending} onCancel={() => setTaskForm(false)} onSubmit={(input) => mutations.facility.mutate(input, { onSuccess: () => setTaskForm(false) })} /> : null}<section className="panel overflow-hidden"><SectionHeader icon={ClipboardCheck} title="Facility queue" description="Move each task from open to in progress, blocked, or completed." actions={writeEnabled ? <Button size="sm" onClick={() => setTaskForm(true)} disabled={!branchId || zones.length === 0}><Plus /> Request task</Button> : null} />{zones.length === 0 ? <EmptyState title="Add a zone before assigning tasks" description="Facility records need a real branch zone. Configure zones in Settings first." className="m-4" /> : tasks.length === 0 ? <EmptyState title="No facility tasks" description="Create a cleaning, inspection, or incident task when the floor needs attention." className="m-4" /> : <div className="divide-y divide-line">{tasks.map((task) => <div key={task.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 gap-3"><span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md", task.severity === "critical" ? "bg-danger-bg text-danger" : "bg-sunken text-ink-2")}><ClipboardCheck className="size-4" aria-hidden /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-[13px] font-medium">{task.title}</p><StatusBadge status={task.status} /><Badge variant={statusVariant(task.severity)}>{task.severity}</Badge></div><p className="mt-1 text-[11.5px] text-ink-3">{task.zoneName} · {task.kind}{task.trafficContext?.occupancyPercent !== undefined ? ` · ${task.trafficContext.occupancyPercent}% occupied when reported` : ""}</p>{task.notes ? <p className="mt-1 text-[12px] text-ink-2">{task.notes}</p> : null}<p className="mt-1 text-[11px] text-ink-3">Updated <DateTimeText iso={task.updatedAt} />{task.suppliesCost ? <span> · supplies <MoneyText money={task.suppliesCost} /></span> : null}</p></div></div>{writeEnabled && !["completed", "cancelled"].includes(task.status) ? <div className="flex flex-wrap justify-end gap-2">{task.status === "open" || task.status === "blocked" ? <Button size="xs" variant="secondary" onClick={() => updateTask(task, "in_progress")} loading={mutations.facility.isPending}><RefreshCw /> {task.status === "blocked" ? "Resume" : "Start"}</Button> : null}{task.status === "open" || task.status === "in_progress" || task.status === "blocked" ? <Button size="xs" onClick={() => updateTask(task, "completed")} loading={mutations.facility.isPending}><CheckCircle2 /> Complete</Button> : null}</div> : null}</div>)}</div>}</section></div>;
-}
-
-function EquipmentTab({ branchId, currency, writeEnabled, zones, assets, issues, workOrders, loading, error, onRetry, mutations }: { branchId?: string; currency: string; writeEnabled: boolean; zones: Array<{ id: string; name: string }>; assets: EquipmentAsset[]; issues: EquipmentIssue[]; workOrders: EquipmentWorkOrder[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations }) {
-  const [assetForm, setAssetForm] = useState(false);
-  const [issueForm, setIssueForm] = useState(false);
-  const [workOrderForm, setWorkOrderForm] = useState(false);
-  const [selectedAssetId, setSelectedAssetId] = useState<string>();
-  const actionAssets = assets.filter((asset) => !branchId || asset.branchId === branchId);
-  const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
-  const recommendationQuery = useApiQuery(qk.operations({ kind: "equipment-recommendation", assetId: selectedAsset?.id }), (api) => api.getEquipmentRecommendation(selectedAsset!.id), { enabled: Boolean(selectedAsset?.id) });
-  if (loading) return <LoadingGrid />;
-  if (error) return <QueryErrorState error={error} onRetry={onRetry} />;
-  const updateAssetStatus = (asset: EquipmentAsset, status: EquipmentAsset["status"]) => mutations.asset.mutate({ id: asset.id, branchId: asset.branchId, zoneId: asset.zoneId, code: asset.code, name: asset.name, manufacturer: asset.manufacturer, model: asset.model, serialNumber: asset.serialNumber, purchaseDate: asset.purchaseDate, installationDate: asset.installationDate, purchaseCost: asset.purchaseCost, warrantyEndDate: asset.warrantyEndDate, status, expectedServiceIntervalDays: asset.expectedServiceIntervalDays, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths });
-  const updateWorkOrder = (order: EquipmentWorkOrder, status: EquipmentWorkOrder["status"]) => mutations.workOrder.mutate({ id: order.id, branchId: order.branchId, assetId: order.assetId, issueId: order.issueId, status, description: order.description, assigneeId: order.assigneeId, vendorName: order.vendorName, partsCost: order.partsCost, laborCost: order.laborCost, replacementEstimate: order.replacementEstimate });
-  return <div className="space-y-4" data-testid="operations-equipment"><div className="grid gap-3 sm:grid-cols-3"><section className="panel p-4"><Stat label="Equipment assets" value={assets.length} context="Coded branch inventory" /></section><section className="panel p-4"><Stat label="Open issues" value={issues.filter((issue) => !["resolved", "cancelled"].includes(issue.status)).length} tone="warning" context="Safety and downtime queue" /></section><section className="panel p-4"><Stat label="Work orders" value={workOrders.filter((order) => !["completed", "cancelled"].includes(order.status)).length} context="Repair and replacement work" /></section></div>{!writeEnabled ? <ReadOnlyNotice /> : null}{assetForm ? <EquipmentAssetForm currency={currency} zones={zones} branchId={branchId} pending={mutations.asset.isPending} onCancel={() => setAssetForm(false)} onSubmit={(input) => mutations.asset.mutate(input, { onSuccess: () => setAssetForm(false) })} /> : null}{issueForm ? <IssueForm assets={actionAssets} branchId={branchId} pending={mutations.issue.isPending} onCancel={() => setIssueForm(false)} onSubmit={(input) => mutations.issue.mutate(input, { onSuccess: () => setIssueForm(false) })} /> : null}{workOrderForm ? <WorkOrderForm currency={currency} assets={actionAssets} issues={issues} branchId={branchId} pending={mutations.workOrder.isPending} onCancel={() => setWorkOrderForm(false)} onSubmit={(input) => mutations.workOrder.mutate(input, { onSuccess: () => setWorkOrderForm(false) })} /> : null}<section className="panel overflow-hidden"><SectionHeader icon={Cog} title="Machine register" description="Select an asset to inspect its recorded fix-vs-replace evidence." actions={<div className="flex gap-2">{writeEnabled ? <><Button size="sm" variant="secondary" onClick={() => setIssueForm(true)} disabled={!branchId || actionAssets.length === 0}><ShieldAlert /> Report issue</Button><Button size="sm" onClick={() => setAssetForm(true)} disabled={!branchId}><Plus /> Register asset</Button></> : null}</div>} />{assets.length === 0 ? <EmptyState title="No equipment registered" description="Register a machine with a durable code before reporting issues." className="m-4" /> : <div className="grid gap-0 divide-y divide-line lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)] lg:divide-x lg:divide-y-0"> <div className="divide-y divide-line">{assets.map((asset) => <div key={asset.id} className={cn("flex items-center gap-3 p-4", selectedAsset?.id === asset.id && "bg-sunken")}><button type="button" onClick={() => setSelectedAssetId(asset.id)} className="flex min-w-0 flex-1 items-center gap-3 text-start transition-colors hover:bg-sunken/50" aria-pressed={selectedAsset?.id === asset.id}><span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface"><Wrench className="size-4 text-ink-2" aria-hidden /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="font-mono text-[12px] font-medium">{asset.code}</span><StatusBadge status={asset.status} /></span><span className="mt-1 block truncate text-[13px]">{asset.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">{asset.manufacturer ?? "Unknown maker"}{asset.model ? ` · ${asset.model}` : ""} · {issues.filter((issue) => issue.assetId === asset.id).length} issues</span></span><ChevronRight className="size-4 shrink-0 text-ink-3 rtl:rotate-180" aria-hidden /></button>{writeEnabled && !["retired", "replaced"].includes(asset.status) ? <Button size="xs" variant="secondary" onClick={() => updateAssetStatus(asset, asset.status === "maintenance" ? "active" : "maintenance")} loading={mutations.asset.isPending}>{asset.status === "maintenance" ? "Mark active" : "Mark maintenance"}</Button> : null}</div>)}</div><RecommendationPanel asset={selectedAsset} recommendation={recommendationQuery.data} loading={recommendationQuery.isLoading} error={recommendationQuery.error} /></div>}</section><div className="grid gap-4 lg:grid-cols-2"><section className="panel overflow-hidden"><SectionHeader icon={ShieldAlert} title="Issue history" description="Resolve issues once the equipment is safe and the work is documented." />{issues.length === 0 ? <EmptyState compact title="No reported issues" description="A clean issue history is still recorded evidence." className="m-4" /> : <div className="divide-y divide-line">{issues.map((issue) => { const asset = assets.find((item) => item.id === issue.assetId); return <div key={issue.id} className="space-y-1.5 p-4"><div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{issue.title}</p><StatusBadge status={issue.safetyStatus} /></div><p className="text-[11.5px] text-ink-3">{asset?.code ?? issue.assetId} · {issue.severity} · {issue.downtimeDays ?? 0} downtime days</p><p className="text-[11px] text-ink-3"><DateTimeText iso={issue.reportedAt} /> · <StatusBadge status={issue.status} /></p>{writeEnabled && !["resolved", "cancelled"].includes(issue.status) ? <div className="flex flex-wrap gap-2 pt-1"><Button size="xs" variant="secondary" onClick={() => mutations.issueUpdate.mutate({ id: issue.id, input: { status: issue.status === "open" ? "in_progress" : "resolved", safetyStatus: issue.status === "in_progress" ? "safe_to_operate" : issue.safetyStatus } })} loading={mutations.issueUpdate.isPending}>{issue.status === "open" ? "Start investigation" : "Resolve issue"}</Button></div> : null}</div>; })}</div>}</section><section className="panel overflow-hidden"><SectionHeader icon={Wrench} title="Work orders" description="Move each order through approval, work, and completion; costs remain management records until posted by finance." actions={writeEnabled ? <Button size="sm" onClick={() => setWorkOrderForm(true)} disabled={!branchId || actionAssets.length === 0}><Plus /> Open order</Button> : null} />{workOrders.length === 0 ? <EmptyState compact title="No work orders" description="Open one when a machine needs a repair quote or replacement estimate." className="m-4" /> : <div className="divide-y divide-line">{workOrders.map((order) => { const asset = assets.find((item) => item.id === order.assetId); return <div key={order.id} className="space-y-1.5 p-4"><div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{order.description}</p><StatusBadge status={order.status} /></div><p className="text-[11.5px] text-ink-3">{asset?.code ?? order.assetId}{order.vendorName ? ` · ${order.vendorName}` : ""}</p><p className="text-[11px] text-ink-3">Repair <MoneyText money={order.totalCost} /> · replace <MoneyText money={order.replacementEstimate} /> · finance <StatusBadge status={order.financialPostingStatus} /></p>{writeEnabled && !["completed", "cancelled"].includes(order.status) ? <div className="flex flex-wrap gap-2 pt-1">{order.status === "draft" ? <Button size="xs" onClick={() => updateWorkOrder(order, "approved")} loading={mutations.workOrder.isPending}><Check /> Approve</Button> : null}{["approved", "draft"].includes(order.status) ? <Button size="xs" variant="secondary" onClick={() => updateWorkOrder(order, "in_progress")} loading={mutations.workOrder.isPending}><Wrench /> Start work</Button> : null}{order.status === "in_progress" ? <Button size="xs" onClick={() => updateWorkOrder(order, "completed")} loading={mutations.workOrder.isPending}><CheckCircle2 /> Complete</Button> : null}</div> : null}</div>; })}</div>}</section></div></div>;
-}
-
-function RecommendationPanel({ asset, recommendation, loading, error }: { asset?: EquipmentAsset; recommendation?: EquipmentRecommendation; loading: boolean; error?: unknown }) {
-  if (!asset) return <div className="flex min-h-48 items-center justify-center p-6 text-center text-[12.5px] text-ink-3">Select a machine to inspect its recommendation.</div>;
-  if (loading) return <div className="space-y-3 p-5"><Skeleton className="h-5 w-32" /><Skeleton className="h-20 w-full" /><Skeleton className="h-4 w-48" /></div>;
-  if (error) return <div className="p-5"><ErrorState title="Recommendation unavailable" description="The recorded evidence could not be loaded." /></div>;
-  if (!recommendation) return null;
-  const title = recommendation.decision === "fix" ? "Fix is supported" : recommendation.decision === "replace" ? "Replacement is supported" : "More evidence needed";
-  const tone = recommendation.decision === "replace" ? "danger" : recommendation.decision === "fix" ? "success" : "warning";
-  return <div className="space-y-4 p-5"><div><p className="eyebrow">Recorded recommendation</p><div className="mt-2 flex items-center gap-2"><Badge variant={tone} dot>{recommendation.decision.replaceAll("_", " ")}</Badge><span className="text-[13px] font-medium">{title}</span></div><p className="mt-2 text-[11.5px] text-ink-3">Confidence: {recommendation.confidence.replaceAll("_", " ")}. This is decision support, not an automatic purchase approval.</p></div><div className="grid grid-cols-2 gap-3"><div><p className="eyebrow">Issues</p><p className="mt-1 font-mono text-[18px]" dir="ltr">{recommendation.issueCount}</p></div><div><p className="eyebrow">Downtime</p><p className="mt-1 font-mono text-[18px]" dir="ltr">{recommendation.downtimeDays}d</p></div><div><p className="eyebrow">Repair total</p><p className="mt-1"><MoneyText money={recommendation.repairCost} /></p></div><div><p className="eyebrow">Replacement</p><p className="mt-1"><MoneyText money={recommendation.replacementEstimate} /></p></div></div><ul className="space-y-1.5 border-t border-line pt-3 text-[11.5px] text-ink-2">{recommendation.rationale.map((reason) => <li key={reason} className="flex gap-2"><span className="mt-1 size-1.5 shrink-0 rounded-full bg-ink-3" aria-hidden />{reason}</li>)}</ul></div>;
-}
-
-function SectionHeader({ icon: Icon, title, description, actions }: { icon: typeof Boxes; title: string; description?: string; actions?: React.ReactNode }) {
-  return <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5"><div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><Icon className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="font-display text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-0.5 text-[11.5px] text-ink-3">{description}</p> : null}</div></div>{actions}</div>;
-}
-
-function ReadOnlyNotice() {
-  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You have read-only access to operations. Owners and managers can create, approve, receive, and complete records.</div>;
-}
-
-type OperationsMutations = {
-  product: ReturnType<typeof useApiMutation<unknown, UpsertProductInput>>;
-  archiveProduct: ReturnType<typeof useApiMutation<unknown, { id: string; reason: string }>>;
-  supplier: ReturnType<typeof useApiMutation<unknown, UpsertSupplierInput>>;
-  archiveSupplier: ReturnType<typeof useApiMutation<unknown, { id: string; reason: string }>>;
-  movement: ReturnType<typeof useApiMutation<unknown, { branchId: string; productId: string; type: "receive" | "sale" | "consumption" | "adjustment" | "return" | "transfer_in" | "transfer_out" | "waste"; quantity: number; unitCost?: ReturnType<typeof money>; reason?: string; idempotencyKey: string }>>;
-  purchaseOrder: ReturnType<typeof useApiMutation<unknown, { branchId: string; supplierId: string; lines: Array<{ productId: string; quantity: number; unitCost: ReturnType<typeof money> }>; notes?: string }>>;
-  approveOrder: ReturnType<typeof useApiMutation<unknown, { id: string; reason?: string }>>;
-  receiveOrder: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; idempotencyKey: string }>>;
-  notifySupplier: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; reason: string; onResult: (message: string) => void }>>;
-  refreshAlerts: ReturnType<typeof useApiMutation<unknown, { branchId?: string }>>;
-  dismissAlert: ReturnType<typeof useApiMutation<unknown, { alertId: string; reason: string; branchId?: string }>>;
-  facility: ReturnType<typeof useApiMutation<unknown, UpsertFacilityTaskInput>>;
-  asset: ReturnType<typeof useApiMutation<unknown, UpsertEquipmentAssetInput>>;
-  issue: ReturnType<typeof useApiMutation<unknown, { branchId: string; assetId: string; title: string; description?: string; severity: "low" | "medium" | "high" | "critical"; downtimeDays?: number; safetyStatus: "unknown" | "safe_to_operate" | "out_of_service" }>>;
-  issueUpdate: ReturnType<typeof useApiMutation<unknown, { id: string; input: import("@/lib/domain/types").UpdateEquipmentIssueInput }>>;
-  workOrder: ReturnType<typeof useApiMutation<unknown, UpsertEquipmentWorkOrderInput>>;
-};
-
-function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): OperationsMutations {
-  const options = { onSuccess: async () => { await invalidate([qk.operations()]); } };
-  const product = useApiMutation((api, input: UpsertProductInput) => api.upsertProduct(input), { ...options, successMessage: "Stock item saved." });
-  const archiveProduct = useApiMutation((api, input: { id: string; reason: string }) => api.archiveProduct(input.id, input.reason), { ...options, successMessage: "Stock item archived." });
-  const supplier = useApiMutation((api, input: UpsertSupplierInput) => api.upsertSupplier(input), { ...options, successMessage: "Supplier saved." });
-  const archiveSupplier = useApiMutation((api, input: { id: string; reason: string }) => api.archiveSupplier(input.id, input.reason), { ...options, successMessage: "Supplier archived." });
-  const movement = useApiMutation((api, input: Parameters<typeof api.recordStockMovement>[0]) => api.recordStockMovement(input), { ...options, successMessage: "Stock movement recorded." });
-  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order draft created." });
-  const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
-  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Purchase order received into stock." });
-  const notifySupplier = useApiMutation((api, input: { purchaseOrderId: string; reason: string; onResult: (message: string) => void }) => api.notifyPurchaseOrderSupplier({ purchaseOrderId: input.purchaseOrderId, reason: input.reason }), { onSuccess: async (result, input) => { input.onResult(result.detail); await invalidate([qk.operations()]); }, successMessage: "Notification preview recorded." });
-  const refreshAlerts = useApiMutation((api, input: { branchId?: string }) => api.refreshLowStockAlerts(input), { ...options, successMessage: "Replenishment alerts refreshed." });
-  const dismissAlert = useApiMutation((api, input: { alertId: string; reason: string; branchId?: string }) => api.dismissLowStockAlert({ alertId: input.alertId, reason: input.reason }), { ...options, successMessage: "Alert dismissed." });
-  const facility = useApiMutation((api, input: UpsertFacilityTaskInput) => api.upsertFacilityTask(input), { ...options, successMessage: "Facility task saved." });
-  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Equipment asset saved." });
-  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Equipment issue reported." });
-  const issueUpdate = useApiMutation((api, input: { id: string; input: import("@/lib/domain/types").UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Equipment issue updated." });
-  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Work order opened." });
-  return { product, archiveProduct, supplier, archiveSupplier, movement, purchaseOrder, approveOrder, receiveOrder, notifySupplier, refreshAlerts, dismissAlert, facility, asset, issue, issueUpdate, workOrder } as OperationsMutations;
-}
-
 export function OperationsCommandCenter() {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const [tab, setTab] = useState<OperationsTab>("inventory");
-  const branchId = session?.activeBranchId;
-  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : "All visible branches";
+  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
+  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : "No branch selected";
   const currency = session?.organization.currency ?? CURRENCY_FALLBACK;
   const writeEnabled = can("operations.manage");
   const canCheckout = can("payments.collect");
@@ -414,42 +288,23 @@ export function OperationsCommandCenter() {
   const productQuery = useApiQuery(qk.operations({ kind: "products" }), (api) => api.listProducts(), { enabled: ready });
   const supplierQuery = useApiQuery(qk.operations({ kind: "suppliers" }), (api) => api.listSuppliers(), { enabled: ready });
   const inventoryQuery = useApiQuery(qk.operations({ kind: "inventory", branchId }), (api) => api.listInventory({ branchId }), { enabled: ready });
-  const movementQuery = useApiQuery(qk.operations({ kind: "movements", branchId }), (api) => api.listStockMovements({ branchId, page: 1, pageSize: 50 }), { enabled: ready });
   const alertQuery = useApiQuery(qk.operations({ kind: "alerts", branchId }), (api) => api.listLowStockAlerts({ branchId }), { enabled: ready });
   const ordersQuery = useApiQuery(qk.operations({ kind: "purchase-orders", branchId }), (api) => api.listPurchaseOrders({ branchId }), { enabled: ready });
-  const actionBranchId = branchId ?? session?.branches[0]?.id;
-  const zonesQuery = useApiQuery(qk.operations({ kind: "zones", branchId: actionBranchId }), (api) => api.listZones({ branchId: actionBranchId, includeArchived: false }), { enabled: ready });
-  const facilityQuery = useApiQuery(qk.operations({ kind: "facility", branchId }), (api) => api.listFacilityTasks({ branchId }), { enabled: ready });
-  const assetQuery = useApiQuery(qk.operations({ kind: "assets", branchId }), (api) => api.listEquipmentAssets({ branchId }), { enabled: ready });
-  const issueQuery = useApiQuery(qk.operations({ kind: "issues", branchId }), (api) => api.listEquipmentIssues({ branchId }), { enabled: ready });
-  const workOrderQuery = useApiQuery(qk.operations({ kind: "work-orders", branchId }), (api) => api.listEquipmentWorkOrders({ branchId }), { enabled: ready });
   const mutations = useOperationsMutations(invalidate);
 
   if (!can("members.read")) return <ForbiddenState description="Daily operations are limited to gym team members with operational read access." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader eyebrow="Operations" title="Daily operations" description="Inventory, facilities, and equipment in one branch-aware command center." /><LoadingGrid /></div>;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader eyebrow="Operations" title="Inventory and checkout" description="A simple place to see stock, sell items, and replenish what is running low." /><LoadingGrid /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => workspaceQuery.refetch()} />;
-  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Operations is not included" description="The Growth workspace module adds inventory, facilities, equipment, and supplier workflows." className="mt-4" />;
+  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Operations is not included" description="The Growth workspace module adds inventory checkout and supplier workflows." className="mt-4" />;
   if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Operations is paused" description="An organization owner can enable the operations module from workspace settings." className="mt-4" />;
-  const inventoryError = productQuery.error ?? supplierQuery.error ?? inventoryQuery.error ?? movementQuery.error ?? alertQuery.error ?? ordersQuery.error;
-  const facilitiesError = zonesQuery.error ?? facilityQuery.error;
-  const equipmentError = zonesQuery.error ?? assetQuery.error ?? issueQuery.error ?? workOrderQuery.error;
-  const retryAll = () => { void Promise.all([productQuery.refetch(), supplierQuery.refetch(), inventoryQuery.refetch(), movementQuery.refetch(), alertQuery.refetch(), ordersQuery.refetch(), zonesQuery.refetch(), facilityQuery.refetch(), assetQuery.refetch(), issueQuery.refetch(), workOrderQuery.refetch()]); };
-  const retryInventory = () => { void Promise.all([productQuery.refetch(), supplierQuery.refetch(), inventoryQuery.refetch(), movementQuery.refetch(), alertQuery.refetch(), ordersQuery.refetch()]); };
-  const retryFacilities = () => { void Promise.all([zonesQuery.refetch(), facilityQuery.refetch()]); };
-  const retryEquipment = () => { void Promise.all([zonesQuery.refetch(), assetQuery.refetch(), issueQuery.refetch(), workOrderQuery.refetch()]); };
-  const inventoryLoading = [productQuery, supplierQuery, inventoryQuery, movementQuery, alertQuery, ordersQuery].some((query) => query.isLoading);
-  const facilitiesLoading = [zonesQuery, facilityQuery].some((query) => query.isLoading);
-  const equipmentLoading = [zonesQuery, assetQuery, issueQuery, workOrderQuery].some((query) => query.isLoading);
+
+  const inventoryError = productQuery.error ?? supplierQuery.error ?? inventoryQuery.error ?? alertQuery.error ?? ordersQuery.error;
+  const retryInventory = () => { void Promise.all([productQuery.refetch(), supplierQuery.refetch(), inventoryQuery.refetch(), alertQuery.refetch(), ordersQuery.refetch()]); };
+  const inventoryLoading = [productQuery, supplierQuery, inventoryQuery, alertQuery, ordersQuery].some((query) => query.isLoading);
   const products = productQuery.data ?? [];
   const suppliers = supplierQuery.data ?? [];
   const inventory = inventoryQuery.data ?? [];
-  const movements = movementQuery.data?.items ?? [];
   const alerts = alertQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
-  const zones = zonesQuery.data ?? [];
-  const tasks = facilityQuery.data ?? [];
-  const assets = assetQuery.data ?? [];
-  const issues = issueQuery.data ?? [];
-  const workOrders = workOrderQuery.data ?? [];
-  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Daily operations" description={`Keep ${branchLabel.toLowerCase()} ready: sell, replenish, and maintain the physical gym with traceable records.`} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><span className="size-1.5 rounded-full bg-success" aria-hidden />{branchLabel}</div>} />{inventoryError || facilitiesError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some operational panels could not refresh. Each panel has its own retry action. <button type="button" className="font-medium underline" onClick={retryAll}>Retry all</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList className="max-w-full overflow-x-auto"><TabsTrigger value="inventory"><Boxes className="size-3.5" /> Sell &amp; stock</TabsTrigger><TabsTrigger value="facilities"><ClipboardCheck className="size-3.5" /> Facilities</TabsTrigger><TabsTrigger value="equipment"><Wrench className="size-3.5" /> Equipment</TabsTrigger></TabsList><TabsContent value="inventory"><InventoryTab branchId={actionBranchId} branchLabel={branchLabel} branches={session?.branches ?? []} currency={currency} writeEnabled={writeEnabled} canCheckout={canCheckout} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} movements={movements} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} /></TabsContent><TabsContent value="facilities"><FacilitiesTab branchId={actionBranchId} writeEnabled={writeEnabled} zones={zones} tasks={tasks} loading={facilitiesLoading} error={facilitiesError} onRetry={retryFacilities} mutations={mutations} /></TabsContent><TabsContent value="equipment"><EquipmentTab branchId={actionBranchId} currency={currency} writeEnabled={writeEnabled} zones={zones} assets={assets} issues={issues} workOrders={workOrders} loading={equipmentLoading} error={equipmentError} onRetry={retryEquipment} mutations={mutations} /></TabsContent></Tabs></div>;
+  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Inventory and checkout" description={"See what is available at " + branchLabel.toLowerCase() + ", sell it, and replenish it when stock runs low."} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><span className="size-1.5 rounded-full bg-success" aria-hidden />{branchLabel}</div>} />{inventoryError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some inventory data could not refresh. <button type="button" className="font-medium underline" onClick={retryInventory}>Retry</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList aria-label="Operations workspace" className="inline-flex w-fit rounded-lg border border-line bg-surface p-1"><TabsTrigger value="inventory" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Boxes className="size-3.5" /> Inventory</TabsTrigger>{canCheckout ? <TabsTrigger value="checkout" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ShoppingCart className="size-3.5" /> Checkout</TabsTrigger> : null}</TabsList><TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={session?.branches ?? []} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} /></TabsContent>{canCheckout ? <TabsContent value="checkout"><RetailCheckout embedded /></TabsContent> : null}</Tabs></div>;
 }

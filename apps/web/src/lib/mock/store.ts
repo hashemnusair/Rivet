@@ -38,6 +38,7 @@ import type {
   InventoryBalance,
   LowStockAlert,
   Product,
+  ProductTombstone,
   PurchaseOrder,
   StockMovement,
   Supplier,
@@ -115,6 +116,7 @@ export interface MockDb {
   branches: Branch[];
   zones: Zone[];
   products: Product[];
+  productTombstones: ProductTombstone[];
   suppliers: Supplier[];
   inventoryBalances: InventoryBalance[];
   stockMovements: StockMovement[];

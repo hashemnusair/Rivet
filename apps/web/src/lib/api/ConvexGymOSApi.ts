@@ -564,6 +564,7 @@ export class ConvexGymOSApi implements GymOSApi {
   archiveZone(zoneId: T.UUID): Promise<T.Zone> { return this.mutate("zones.archive", { id: zoneId }); }
   listProducts(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Product[]> { return this.query("operations.products.list", query); }
   upsertProduct(input: T.UpsertProductInput): Promise<T.Product> { return this.mutate("operations.product.upsert", input); }
+  deleteProduct(input: T.DeleteProductInput): Promise<T.DeleteProductResult> { return this.mutate("operations.product.delete", input); }
   archiveProduct(productId: T.UUID, reason: string): Promise<T.Product> { return this.mutate("operations.product.archive", { id: productId, reason }); }
   listSuppliers(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Supplier[]> { return this.query("operations.suppliers.list", query); }
   upsertSupplier(input: T.UpsertSupplierInput): Promise<T.Supplier> { return this.mutate("operations.supplier.upsert", input); }

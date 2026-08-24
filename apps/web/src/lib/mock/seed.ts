@@ -1938,6 +1938,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     branches,
     zones: [operationsZone],
     products,
+    productTombstones: [],
     suppliers,
     inventoryBalances,
     stockMovements,
