@@ -70,8 +70,8 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 flowchart LR
     GH["GitHub main"] --> CI["GitHub Actions"]
     GH --> V["Vercel production"]
-    CI --> MOCK["Mock preview tests"]
-    CI --> STAGE["Development Clerk + Convex staging"]
+    CI --> STATIC["Static checks + production build"]
+    CI --> CODEGEN["Convex codegen (credential-gated)"]
     V --> WEB["Next.js application"]
     WEB --> CLERK["Clerk production identity"]
     WEB --> CONVEX["Convex production data/functions"]
@@ -416,11 +416,11 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
-| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Baseline staging session JSON secret |
-| `PLAYWRIGHT_CLERK_STORAGE_OWNER`, `PLAYWRIGHT_CLERK_STORAGE_MANAGER`, `PLAYWRIGHT_CLERK_STORAGE_SALESPERSON`, `PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST`, `PLAYWRIGHT_CLERK_STORAGE_TRAINER`, `PLAYWRIGHT_CLERK_STORAGE_MEMBER` | External file paths | — | Never | — | Role-specific staging session JSON secrets |
-| `PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE` | Safe staging inbox template containing `{runId}` | — | Never | — | Required only for staff-invitation journey |
-| `PLAYWRIGHT_STAGING_PT_TRAINER_NAME` | Published staging trainer display name | — | Never | — | Required only for PT journey |
-| `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Required for write journeys |
+| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |
+| `PLAYWRIGHT_CLERK_STORAGE_OWNER`, `PLAYWRIGHT_CLERK_STORAGE_MANAGER`, `PLAYWRIGHT_CLERK_STORAGE_SALESPERSON`, `PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST`, `PLAYWRIGHT_CLERK_STORAGE_TRAINER`, `PLAYWRIGHT_CLERK_STORAGE_MEMBER` | External file paths | — | Never | — | Local-only role-specific staging sessions |
+| `PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE` | Safe staging inbox template containing `{runId}` | — | Never | — | Local-only staff-invitation journey |
+| `PLAYWRIGHT_STAGING_PT_TRAINER_NAME` | Published staging trainer display name | — | Never | — | Local-only PT journey |
+| `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Local-only write journeys |
 
 ### Environment rules
 
@@ -508,13 +508,9 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A5. GitHub
 
-- [ ] Keep every Actions credential tied to the isolated staging environment: Convex URL/key, Clerk keys, baseline and role-specific Clerk storage states, Production URL comparison guard, safe invitation template, and PT trainer name.
-- [ ] Confirm the owner, manager, salesperson, receptionist, trainer, and member storage states belong to the same disposable staging gym and have the roles their names claim.
-- [ ] Confirm the staging member has one active membership with usable PT credit, and the named published trainer has branch availability in the next 30 days.
-- [ ] Confirm the published staging gym has at least one trial time in the next 21 days and the finance branch has card and cash recording enabled with no receptionist shift already open.
-- [ ] Never replace the staging `CONVEX_DEPLOY_KEY` with a production key.
+- [ ] Keep the optional `CONVEX_DEPLOY_KEY` tied to the isolated deployment used for generated-code verification; never use a Production key in GitHub Actions.
 - [ ] Confirm the latest ordinary `main` workflow is green.
-- [ ] After release verification, protect `main` with pull requests and required static/browser checks.
+- [ ] After release verification, protect `main` with pull requests and required static/codegen checks.
 
 #### Operator completion report
 
@@ -566,17 +562,14 @@ After Phase A is reported complete, the release agent should:
 8. Open public signup, member discovery, gym login, and platform login without submitting data.
 9. Report mismatches before mutating staging or production.
 
-### Phase C — Current-head staging verification
+### Phase C — Current-head CI verification
 
-Run the manual `GymOS CI` workflow on current `main` in three passes:
+The `GymOS CI` workflow on current `main` runs the static quality gate on pushes, pull requests, and manual dispatch:
 
-1. `run_operational_flow=false`: authenticated Clerk → Convex read smoke.
-2. `run_operational_flow=true`: disposable member → membership → card payment → check-in → timeline/audit → cleanup.
-3. `run_functional_staging=true`: branch-scoped staff authorization, public trial → CRM → accepted offer → conversion, PT credit reservation/realtime trainer visibility/cancellation, and card/cash partial payments → non-zero shift variance → manager approval.
+1. Frozen dependency installation, web and Convex typechecks, lint, unit/component tests, and the production build.
+2. Credential-gated Convex code generation and generated-file verification when `CONVEX_DEPLOY_KEY` is configured; otherwise an explicit skip notice is reported.
 
-The third pass requires separate role storage states for owner, manager, salesperson, receptionist, trainer, and member. It also requires a safe invitation email template containing `{runId}` and the exact display name of the published staging trainer represented by the trainer session. Each journey attaches a cleanup ledger. Disposable members and invitations are archived/deactivated; immutable payment, shift, PT-booking, timeline, and audit facts are preserved.
-
-Stop if the authenticated smoke uses Production credentials or if the operational flow targets anything other than the isolated staging deployment.
+No browser journeys, staging writes, or Clerk session secrets are used by GitHub Actions. If an isolated staging journey is needed, run the local commands in `README.md` with disposable Development Clerk/Convex data and the required cleanup.
 
 ### Phase D — Supervised production onboarding
 
@@ -606,7 +599,7 @@ Evidence recorded 10 August 2026: steps 1–10, 12–14, 16–18, and subscripti
 
 ### Phase E — Repository governance and documentation
 
-1. Protect `main` with pull requests, current branches, and required static/browser checks.
+1. Protect `main` with pull requests, current branches, and required static/codegen checks.
 2. Update verification counts and dates in the README, `CURRENT_STATE.md`, and completion plan.
 3. Record the selected Production Convex deployment path and rollback owner.
 4. Record the production onboarding outcome without secrets or unnecessary personal data.
@@ -642,11 +635,9 @@ bundle Clerk/Convex classification, production Convex public health, and public
 route loading. Report every mismatch and stop before mutations if environments
 appear crossed.
 
-If Phase B is clean, run the manual GitHub GymOS CI workflow on current main:
-first the authenticated staging smoke with run_operational_flow=false, then the
-isolated staging write flow with run_operational_flow=true. Confirm that both
-use only Development Clerk and the isolated staging Convex deployment. Wait for
-completion and report exact run URLs/results.
+If Phase B is clean, run the manual GitHub GymOS CI workflow on current main and
+wait for the static checks, production build, and credential-gated Convex codegen
+check to complete. Do not expect browser journeys or staging writes from CI.
 
 Then prepare the supervised Production onboarding checklist from Phase D. Do
 not submit an application, provision a tenant, send invitations, or clean up

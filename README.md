@@ -78,13 +78,13 @@ pnpm build
 
 `pnpm test:e2e` runs seeded preview journeys. The trusted Clerk-to-Convex smoke is opt-in and requires `PLAYWRIGHT_CONVEX_SMOKE=1` plus a storage-state file outside Git.
 
-The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
+The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite or GitHub Actions/Vercel production builds. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
 
 ```bash
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
 ```
 
-The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the five CI secrets are configured; manual GitHub Actions run `31257271522` passed all jobs on `main`.
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026. Browser and staging journeys remain local-only; GitHub Actions runs static checks, the production build, and credential-gated Convex code generation.
 
 The full operational write check is separate and explicitly mutating: it creates one disposable member in the isolated staging deployment, verifies member → membership → card payment → check-in → timeline/audit, and archives that member in cleanup. Run it only when you intend to exercise staging writes:
 
@@ -92,7 +92,7 @@ The full operational write check is separate and explicitly mutating: it creates
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
 ```
 
-The same check is available as the optional `run_operational_flow` input on a manually dispatched `GymOS CI` workflow. It is never part of push, pull-request, or ordinary preview runs.
+This mutating check is local-only and is never part of push, pull-request, manual GitHub Actions, or Vercel production builds.
 
 ## Convex deployment, seed, and rollback
 
@@ -197,9 +197,9 @@ Outbound automation delivery is sandbox/log based until an approved provider is 
 
 ## CI
 
-`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, Playwright preview journeys, Convex code generation, and a manually dispatched trusted Clerk-to-Convex smoke. Codegen reports an explicit notice when its deploy key is unavailable. The manually dispatched smoke fails with the exact missing secret instead of silently skipping. Secrets remain unavailable to forked pull requests.
+`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, and credential-gated Convex code generation. Codegen reports an explicit notice when its deploy key is unavailable. Browser and staging journeys are not run by GitHub Actions or Vercel; they remain available only through the local commands above.
 
-After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/browser checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment after merge. Application deployment remains separate from Convex data migrations.
+After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/codegen checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment after merge. Application deployment remains separate from Convex data migrations.
 
 ## Product boundaries
 
