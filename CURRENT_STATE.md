@@ -36,8 +36,13 @@
   it; historical issue and work-order evidence is retained.
 - Validation is clean: 738 Vitest tests, app and Convex TypeScript checks, full
   ESLint, the secret-output audit, safe Convex CLI tests, and the Next production
-  build all pass. No Playwright suite was run. Credentialed Convex codegen,
-  deployment, and Production-data verification remain release checks.
+  build all pass. No Playwright suite was run. GitHub static CI, credentialed
+  Convex codegen, and Vercel Production passed for `3f6b787`.
+- Convex Production `descriptive-meerkat-589` was explicitly selected for the
+  matching `3f6b787` backend. The guarded dry run and deploy reported no index
+  deletions and completed schema validation; the three product-tombstone
+  history indexes were added. The read-only `health:check` returned `status:
+  ok`. No seed, import, restore, or tenant-data workflow was run.
 
 ## Native Arabic and translation-service removal — 24 August 2026 (working-tree update)
 

@@ -107,8 +107,13 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   retained.
 - Local validation passed with 738 Vitest tests, app and Convex TypeScript,
   full ESLint, the secret-output audit, safe Convex CLI tests, and the Next
-  production build. No Playwright suite was run. Credentialed Convex codegen,
-  deployment, and Production-data verification remain separate release steps.
+  production build. No Playwright suite was run. GitHub static CI, credentialed
+  Convex codegen, and Vercel Production passed for `3f6b787`.
+- Convex Production `descriptive-meerkat-589` received the matching backend
+  through the guarded dry-run/deploy flow. Schema validation passed, no indexes
+  were deleted, the three product-tombstone indexes were added, and the
+  read-only `health:check` returned `status: ok`. No seed/import/restore or
+  tenant-data workflow was executed.
 
 ### Five Pillars Production closure progress — 23 August 2026
 
