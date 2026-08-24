@@ -19,13 +19,13 @@ describe("mock daily operations parity", () => {
     await api.switchDemoRole("owner");
     await api.updateRolePermissions("manager", { permissions: ["operations.manage", "accounting.post"] });
     await api.switchDemoRole("manager");
-    await expect(api.upsertProduct({ sku: "WRITE-ONLY", name: "Write-only stock", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })).resolves.toBeDefined();
+    await expect(api.upsertProduct({ sku: "WRITE-ONLY", name: "Write-only stock", unit: "each", reorderPoint: 1 })).resolves.toBeDefined();
     await expect(api.refreshAccountingSourceQueue()).resolves.toBeDefined();
 
     await api.switchDemoRole("owner");
     await api.updateRolePermissions("manager", { permissions: managerPermissions.filter((permission) => permission !== "operations.manage") });
     await api.switchDemoRole("manager");
-    await expect(api.upsertProduct({ sku: "NO-OPERATIONS", name: "Blocked stock", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await expect(api.upsertProduct({ sku: "NO-OPERATIONS", name: "Blocked stock", unit: "each", reorderPoint: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
 
     await api.switchDemoRole("owner");
     await api.updateRolePermissions("manager", { permissions: managerPermissions.filter((permission) => permission !== "accounting.post") });
@@ -34,7 +34,7 @@ describe("mock daily operations parity", () => {
 
     await api.switchDemoRole("auditor");
     await expect(api.listAccountingAccounts()).resolves.toBeDefined();
-    await expect(api.upsertProduct({ sku: "AUDITOR", name: "Blocked stock", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await expect(api.upsertProduct({ sku: "AUDITOR", name: "Blocked stock", unit: "each", reorderPoint: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
     await expect(api.refreshAccountingSourceQueue()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 
@@ -88,6 +88,29 @@ describe("mock daily operations parity", () => {
     expect(replay.lines[0]?.receivedQuantity).toBe(1);
   });
 
+  it("sets product availability through an audited stock adjustment and supports private purchases", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-AVAILABILITY", name: "Availability item", unit: "each", reorderPoint: 2, branchId, availableQuantity: 7 });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 7 })]);
+    const before = await api.listStockMovements({ branchId, productId: product.id });
+    expect(before.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "adjustment", quantityDelta: 7, referenceType: "product_stock_edit" })]));
+
+    const same = await api.upsertProduct({ id: product.id, sku: product.sku, name: product.name, unit: product.unit, reorderPoint: 2, branchId, availableQuantity: 7 });
+    expect(same.id).toBe(product.id);
+    await api.recordStockMovement({ branchId, productId: product.id, type: "sale", quantity: 5, idempotencyKey: "mock-availability-sale" });
+    await api.upsertProduct({ id: product.id, sku: product.sku, name: product.name, unit: product.unit, reorderPoint: 2, branchId, availableQuantity: 7 });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 7 })]);
+    const after = await api.listStockMovements({ branchId, productId: product.id });
+    expect(after.items.filter((movement) => movement.referenceType === "product_stock_edit")).toHaveLength(2);
+
+    const privateOrder = await api.createPurchaseOrder({ branchId, sourceType: "private", lines: [{ productId: product.id, quantity: 2, unitCost: { amount: 500, currency: "JOD" } }] });
+    expect(privateOrder).toMatchObject({ sourceType: "private", supplierName: "Private purchase" });
+    await api.approvePurchaseOrder(privateOrder.id);
+    const received = await api.receivePurchaseOrder({ purchaseOrderId: privateOrder.id, idempotencyKey: "mock-private-po-receive" });
+    expect(received.status).toBe("received");
+  });
+
   it("protects posted source facts, rejects asset branch reassignment, and requires adjustment reasons", async () => {
     const session = await api.getSession();
     const branchA = session.branches[0]!;
@@ -113,5 +136,6 @@ describe("mock daily operations parity", () => {
     const product = (await api.listProducts()).find((item) => item.sku === "SUP-CREATINE")!;
     await expect(api.recordStockMovement({ branchId: branchA.id, productId: product.id, type: "adjustment", quantity: 1, idempotencyKey: "mock-adjustment-without-reason" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.recordStockMovement({ branchId: branchA.id, productId: product.id, type: "adjustment", quantity: 1, reason: "Cycle count correction", idempotencyKey: "mock-adjustment-with-reason" })).resolves.toMatchObject({ reason: "Cycle count correction" });
+    await expect(api.recordStockMovement({ branchId: branchA.id, productId: product.id, type: "adjustment", quantity: -1, reason: "Reverse cycle count correction", idempotencyKey: "mock-adjustment-negative" })).resolves.toMatchObject({ quantityDelta: -1, quantity: 1 });
   });
 });

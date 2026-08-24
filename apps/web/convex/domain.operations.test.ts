@@ -54,7 +54,7 @@ describe("daily operations typed contracts", () => {
 
   it("checks out retail stock atomically for members and guests", async () => {
     const { owner, sales, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-01", name: "Protein drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 2_000, currency: "JOD" }, defaultUnitCost: { amount: 800, currency: "JOD" } })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-01", name: "Protein drink", unit: "each", reorderPoint: 1, retailPrice: { amount: 2_000, currency: "JOD" } })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 3, idempotencyKey: "retail-opening" }));
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
@@ -103,13 +103,13 @@ describe("daily operations typed contracts", () => {
 
   it("rejects missing prices, missing references, insufficient stock, and missing cash shifts before mutation", async () => {
     const { owner, sales, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1 })) as { id: string };
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-2", idempotencyKey: "retail-unpriced" })), "CONFLICT");
-    await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { id: product.id, sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } }));
+    await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { id: product.id, sku: "RETAIL-02", name: "Unpriced drink", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_000, currency: "JOD" } }));
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "retail-opening-2" }));
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "retail-no-shift" })), "NO_OPEN_SHIFT");
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", idempotencyKey: "retail-no-ref" })), "VALIDATION_ERROR");
-    const secondProduct = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-03", name: "Second drink", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_500, currency: "JOD" } })) as { id: string };
+    const secondProduct = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-03", name: "Second drink", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_500, currency: "JOD" } })) as { id: string };
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 1 }, { productId: secondProduct.id, quantity: 1 }], method: "card", externalReference: "VISA-3", idempotencyKey: "retail-later-line-stock" })), "CONFLICT");
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Guest", phone: "+962790000002" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-4", idempotencyKey: "retail-overstock" })), "CONFLICT");
     const before = await t.run(async (ctx) => ({ sales: (await ctx.db.query("stockMovements").withIndex("by_organization").collect()).filter((movement) => movement.type === "sale").length, receipts: (await ctx.db.query("domainRecords").withIndex("by_entity_type").collect()).filter((record) => record.entityType === "receipt").length }));
@@ -120,12 +120,14 @@ describe("daily operations typed contracts", () => {
 
   it("reason-gates retail refunds and voids while restoring stock and emitting reversal facts", async () => {
     const { owner, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-RETURN", name: "Returnable item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 2_000, currency: "JOD" }, defaultUnitCost: { amount: 800, currency: "JOD" } })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-RETURN", name: "Returnable item", unit: "each", reorderPoint: 1, retailPrice: { amount: 2_000, currency: "JOD" } })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 4, idempotencyKey: "return-opening" }));
     const sale = await owner.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Return Guest", phone: "+962790000088" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "RETURN-CARD", idempotencyKey: "return-sale" })) as { retailSale: { id: string }; receiptId: string };
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "return-refund-invalid" })), "VALIDATION_ERROR");
-    const refunded = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned an unopened item", idempotencyKey: "return-refund" })) as { retailSale: { status: string; refundedAmount: { amount: number }; returnedLines: Array<{ quantity: number }> } };
+    const refunded = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned an unopened item", idempotencyKey: "return-refund" })) as { receiptId: string; payment: { id: string; type: string; amount: { amount: number }; receiptId: string }; retailSale: { status: string; refundedAmount: { amount: number }; returnedLines: Array<{ quantity: number }> } };
     expect(refunded.retailSale).toMatchObject({ status: "partially_refunded", refundedAmount: { amount: 2_000 }, returnedLines: [{ quantity: 1 }] });
+    expect(refunded.receiptId).not.toBe(sale.receiptId);
+    expect(refunded.payment).toMatchObject({ type: "refund", amount: { amount: -2_000 }, receiptId: refunded.receiptId });
     const replay = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned an unopened item", idempotencyKey: "return-refund" })) as { retailSale: { refundedAmount: { amount: number } } };
     expect(replay.retailSale.refundedAmount.amount).toBe(2_000);
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.retail.void", { saleId: sale.retailSale.id, reason: "Wrong sale", idempotencyKey: "return-void-blocked" })), "CONFLICT");
@@ -147,7 +149,7 @@ describe("daily operations typed contracts", () => {
 
   it("keeps member checkout branch-scoped and honours disabled payment methods", async () => {
     const { owner, sales, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-BRANCH", name: "Branch item", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-BRANCH", name: "Branch item", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 2, idempotencyKey: "retail-branch-opening" }));
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
@@ -164,7 +166,7 @@ describe("daily operations typed contracts", () => {
 
   it("allows front-desk collection but denies checkout without payments.collect", async () => {
     const { owner, sales, trainer } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-04", name: "Front desk item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "RETAIL-04", name: "Front desk item", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "retail-opening-4" }));
     const input = { branchId: "operations-branch-a", guest: { fullName: "Front Desk Guest", phone: "+962790000005" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-5", idempotencyKey: "retail-front-desk" };
     await expectCode(trainer.mutation(api.domain.mutate, operation("operations.retail.checkout", input)), "FORBIDDEN");
@@ -182,8 +184,8 @@ describe("daily operations typed contracts", () => {
 
   it("enforces operations entitlement, owner/manager writes, and branch isolation", async () => {
     const { owner, manager, sales, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-CREATINE", name: "Creatine", unit: "serving", reorderPoint: 5, targetLevel: 20, supplierLeadTimeDays: 5 })) as { id: string };
-    await expectCode(sales.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-OTHER", name: "Other", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })), "FORBIDDEN");
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-CREATINE", name: "Creatine", unit: "serving", reorderPoint: 5 })) as { id: string };
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-OTHER", name: "Other", unit: "each", reorderPoint: 1 })), "FORBIDDEN");
     await expectCode(manager.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-b", productId: product.id, type: "receive", quantity: 5, idempotencyKey: "branch-b-movement" })), "FORBIDDEN");
     const outOfScopeSupplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Second branch supplier", branchIds: ["operations-branch-b"], preferredProductIds: [product.id] })) as { id: string };
     const managerSuppliers = await manager.query(api.domain.query, operation("operations.suppliers.list")) as Array<{ id: string }>;
@@ -192,7 +194,7 @@ describe("daily operations typed contracts", () => {
     await t.run(async (ctx) => {
       const now = Date.now();
       const foreignOrg = await ctx.db.insert("organizations", { publicId: "operations-org-b", name: "Operations B", slug: "operations-b", status: "active", subscriptionPlan: "Growth", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
-      await ctx.db.insert("products", { organizationId: foreignOrg, publicId: "foreign-product", sku: "FOREIGN", name: "Foreign stock", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("products", { organizationId: foreignOrg, publicId: "foreign-product", sku: "FOREIGN", name: "Foreign stock", unit: "each", reorderPoint: 1, status: "active", createdAt: now, updatedAt: now });
     });
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: "foreign-product", type: "receive", quantity: 1, idempotencyKey: "foreign-product-movement" })), "NOT_FOUND");
     const branchA = await manager.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a" })) as unknown[];
@@ -201,22 +203,43 @@ describe("daily operations typed contracts", () => {
 
   it("keeps stock movements idempotent and projects low stock", async () => {
     const { owner, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-CREATINE", name: "Creatine", unit: "serving", reorderPoint: 5, targetLevel: 20, supplierLeadTimeDays: 5 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-CREATINE", name: "Creatine", unit: "serving", reorderPoint: 5 })) as { id: string };
     const received = await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 10, idempotencyKey: "movement-1", financialPostingStatus: "posted", financialSourceId: "forged-finance-source" })) as { id: string; quantityDelta: number; financialPostingStatus: string; financialSourceId?: string };
     expect(received).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(received.financialSourceId).toBeUndefined();
     const replay = await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 10, idempotencyKey: "movement-1" })) as { id: string };
     expect(replay.id).toBe(received.id);
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "sale", quantity: 8, idempotencyKey: "movement-2" }));
-    const alerts = await owner.query(api.domain.query, operation("operations.low_stock.list", { branchId: "operations-branch-a" })) as Array<{ productId: string; availableQuantity: number; projectedQuantityAtLeadTime: number }>;
-    expect(alerts).toEqual([expect.objectContaining({ productId: product.id, availableQuantity: 2, projectedQuantityAtLeadTime: expect.closeTo(2 - (8 / 30) * 5, 8) })]);
+    const alerts = await owner.query(api.domain.query, operation("operations.low_stock.list", { branchId: "operations-branch-a" })) as Array<{ productId: string; availableQuantity: number; reorderPoint: number }>;
+    expect(alerts).toEqual([expect.objectContaining({ productId: product.id, availableQuantity: 2, reorderPoint: 5 })]);
     const movements = await t.run(async (ctx) => ctx.db.query("stockMovements").collect());
     expect(movements).toHaveLength(2);
   });
 
+  it("sets product availability with an audited adjustment and allows private purchase sources", async () => {
+    const { owner, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "AVAILABILITY-01", name: "Availability item", unit: "each", reorderPoint: 2, branchId: "operations-branch-a", availableQuantity: 7 })) as { id: string };
+    const initial = await owner.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(initial[0]?.availableQuantity).toBe(7);
+    const same = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { id: product.id, sku: "AVAILABILITY-01", name: "Availability item", unit: "each", reorderPoint: 2, branchId: "operations-branch-a", availableQuantity: 7 })) as { id: string };
+    expect(same.id).toBe(product.id);
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "sale", quantity: 5, idempotencyKey: "availability-sale" }));
+    await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { id: product.id, sku: "AVAILABILITY-01", name: "Availability item", unit: "each", reorderPoint: 2, branchId: "operations-branch-a", availableQuantity: 7 }));
+    const restored = await owner.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(restored[0]?.availableQuantity).toBe(7);
+    const movements = await t.run(async (ctx) => ctx.db.query("stockMovements").withIndex("by_organization").collect());
+    expect(movements.filter((movement) => movement.referenceType === "product_stock_edit")).toHaveLength(2);
+
+    const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "operations-branch-a", sourceType: "private", lines: [{ productId: product.id, quantity: 2, unitCost: { amount: 500, currency: "JOD" } }] })) as { id: string; sourceType: string; supplierName: string };
+    expect(order).toMatchObject({ sourceType: "private", supplierName: "Private purchase" });
+    await owner.mutation(api.domain.mutate, operation("operations.purchase_order.approve", { id: order.id }));
+    const received = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.receive", { purchaseOrderId: order.id, idempotencyKey: "private-po-receive" })) as { status: string };
+    expect(received.status).toBe("received");
+  });
+
   it("approves and partially receives a purchase order without double receiving", async () => {
     const { owner, manager } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-PROTEIN", name: "Protein", unit: "each", reorderPoint: 5, targetLevel: 20, supplierLeadTimeDays: 3 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-PROTEIN", name: "Protein", unit: "each", reorderPoint: 5 })) as { id: string };
     const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
     const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "operations-branch-a", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 5, unitCost: { amount: 100, currency: "JOD" } }] })) as { id: string; status: string; lines: Array<{ productId: string }> };
     expect(order.lines[0]?.productId).toBe(product.id);
@@ -287,15 +310,16 @@ describe("daily operations typed contracts", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: workOrder.id, branchId: "operations-branch-a", assetId: asset.id, status: "completed", description: "Change posted repair", partsCost: { amount: 900, currency: "JOD" } })), "CONFLICT");
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { id: workOrder.id, branchId: "operations-branch-a", assetId: asset.id, status: "in_progress", description: "Reopen posted repair" })), "CONFLICT");
 
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "ADJUST-01", name: "Adjustment product", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "ADJUST-01", name: "Adjustment product", unit: "each", reorderPoint: 1 })) as { id: string };
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: 1, idempotencyKey: "adjustment-without-reason" })), "VALIDATION_ERROR");
     const adjustment = await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: 1, reason: "Cycle count correction", idempotencyKey: "adjustment-with-reason" })) as { reason?: string };
     expect(adjustment.reason).toBe("Cycle count correction");
+    await expect(owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "adjustment", quantity: -1, reason: "Reverse cycle count correction", idempotencyKey: "adjustment-negative" }))).resolves.toMatchObject({ quantityDelta: -1, quantity: 1 });
   });
 
   it("permanently deletes a product, releases its SKU, and keeps history readable", async () => {
     const { owner, sales, t } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Disposable stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Disposable stock", unit: "each", reorderPoint: 1 })) as { id: string };
     const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Delete supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 2, idempotencyKey: "delete-me-receive" }));
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Created only for deletion coverage", confirmation: "delete-me" })), "FORBIDDEN");
@@ -303,7 +327,7 @@ describe("daily operations typed contracts", () => {
     expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "DELETE-ME" });
     const replay = await owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Retry delete", confirmation: "delete-me" })) as { deleted: boolean; productId: string };
     expect(replay).toMatchObject({ deleted: true, productId: product.id });
-    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Replacement stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string; sku: string };
+    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-ME", name: "Replacement stock", unit: "each", reorderPoint: 1 })) as { id: string; sku: string };
     expect(replacement).toMatchObject({ sku: "DELETE-ME" });
     expect(replacement.id).not.toBe(product.id);
     const suppliers = await owner.query(api.domain.query, operation("operations.suppliers.list")) as Array<{ id: string; preferredProductIds: string[] }>;
@@ -317,7 +341,7 @@ describe("daily operations typed contracts", () => {
 
   it("blocks permanent deletion while an open purchase order still references the product", async () => {
     const { owner } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-OPEN-PO", name: "Open PO stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-OPEN-PO", name: "Open PO stock", unit: "each", reorderPoint: 1 })) as { id: string };
     const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Open PO supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "operations-branch-a", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 4, unitCost: { amount: 100, currency: "JOD" } }] }));
     await expectCode(owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Cannot fulfil this order", confirmation: "DELETE-OPEN-PO" })), "CONFLICT");
@@ -325,11 +349,11 @@ describe("daily operations typed contracts", () => {
 
   it("keeps retail refunds working from the deleted product snapshot", async () => {
     const { owner } = await seeded();
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Refundable deleted stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Refundable deleted stock", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_000, currency: "JOD" } })) as { id: string };
     await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 1, idempotencyKey: "delete-refund-receive" }));
     const sale = await owner.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Deleted item guest", phone: "+962790000011" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "DELETE-REFUND-CARD", idempotencyKey: "delete-refund-sale" })) as { retailSale: { id: string } };
     await owner.mutation(api.domain.mutate, operation("operations.product.delete", { productId: product.id, reason: "Retiring this retail item", confirmation: "DELETE-REFUND" }));
-    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Replacement retail stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 })) as { id: string };
+    const replacement = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELETE-REFUND", name: "Replacement retail stock", unit: "each", reorderPoint: 1 })) as { id: string };
     expect(replacement.id).not.toBe(product.id);
     const refunded = await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned the retired item", idempotencyKey: "delete-refund-action" })) as { retailSale: { status: string } };
     expect(refunded.retailSale.status).toBe("refunded");

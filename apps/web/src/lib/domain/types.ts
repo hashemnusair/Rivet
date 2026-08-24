@@ -122,12 +122,9 @@ export interface Product {
   description?: string;
   unit: ProductUnit;
   reorderPoint: number;
-  targetLevel: number;
-  supplierLeadTimeDays: number;
   preferredSupplierId?: UUID;
   /** Customer-facing price used by retail checkout. Supplier cost is separate. */
   retailPrice?: Money;
-  defaultUnitCost?: Money;
   status: OperationsRecordStatus;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -135,17 +132,18 @@ export interface Product {
 
 export interface UpsertProductInput {
   id?: UUID;
+  /** Branch whose available quantity should be set through an audited adjustment. */
+  branchId?: UUID;
+  /** Current available stock for the selected branch. */
+  availableQuantity?: number;
   sku: string;
   name: string;
   description?: string;
   unit: ProductUnit;
   reorderPoint: number;
-  targetLevel: number;
-  supplierLeadTimeDays: number;
   preferredSupplierId?: UUID;
   /** Customer-facing price used by retail checkout. Omit to keep the item unsellable. */
   retailPrice?: Money;
-  defaultUnitCost?: Money;
   status?: OperationsRecordStatus;
 }
 
@@ -163,7 +161,6 @@ export interface ProductTombstone {
   unit: ProductUnit;
   description?: string;
   retailPrice?: Money;
-  defaultUnitCost?: Money;
   deletedAt: ISODateTime;
   deletedById: UUID;
   reason: string;
@@ -192,7 +189,6 @@ export interface Supplier {
   email?: string;
   phone?: string;
   terms?: string;
-  leadTimeDays?: number;
   branchIds: UUID[];
   preferredProductIds: UUID[];
   status: OperationsRecordStatus;
@@ -207,7 +203,6 @@ export interface UpsertSupplierInput {
   email?: string;
   phone?: string;
   terms?: string;
-  leadTimeDays?: number;
   branchIds: UUID[];
   preferredProductIds?: UUID[];
   status?: OperationsRecordStatus;
@@ -259,11 +254,7 @@ export interface LowStockAlert {
   quantityOnHand: number;
   committedQuantity: number;
   availableQuantity: number;
-  recentDailyVelocity: number;
-  supplierLeadTimeDays: number;
-  projectedQuantityAtLeadTime: number;
   reorderPoint: number;
-  targetLevel: number;
   status: "open" | "dismissed";
   dismissedAt?: ISODateTime;
   dismissedReason?: string;
@@ -271,6 +262,7 @@ export interface LowStockAlert {
 }
 
 export type PurchaseOrderStatus = "draft" | "approved" | "partially_received" | "received" | "cancelled";
+export type PurchaseOrderSourceType = "supplier" | "private";
 
 export interface PurchaseOrderLine {
   productId: UUID;
@@ -286,7 +278,8 @@ export interface PurchaseOrder {
   id: UUID;
   organizationId: UUID;
   branchId: UUID;
-  supplierId: UUID;
+  sourceType: PurchaseOrderSourceType;
+  supplierId?: UUID;
   supplierName: string;
   lines: PurchaseOrderLine[];
   status: PurchaseOrderStatus;
@@ -303,7 +296,9 @@ export interface PurchaseOrder {
 
 export interface CreatePurchaseOrderInput {
   branchId: UUID;
-  supplierId: UUID;
+  /** Use `supplier` for a known supplier or `private` for an undisclosed source. */
+  sourceType?: PurchaseOrderSourceType;
+  supplierId?: UUID;
   lines: Array<{ productId: UUID; quantity: number; unitCost: Money }>;
   supplierInvoiceReference?: string;
   notes?: string;

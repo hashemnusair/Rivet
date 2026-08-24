@@ -1800,7 +1800,7 @@ describe("retail checkout", () => {
   it("supports front-desk member and guest sales with idempotent stock decrements", async () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;
-    const product = await api.upsertProduct({ sku: "MOCK-RETAIL", name: "Mock retail item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(2_000, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-RETAIL", name: "Mock retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
     await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, idempotencyKey: "mock-retail-opening" });
     const member = await freshMemberForSale();
     const reconciliationBefore = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
@@ -1838,12 +1838,21 @@ describe("retail checkout", () => {
 
   it("restores mock inventory for reason-gated retail refunds and voids", async () => {
     const branchId = (await api.getSession()).branches[0]!.id;
-    const product = await api.upsertProduct({ sku: "MOCK-RETURN", name: "Mock return item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(2_000, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-RETURN", name: "Mock return item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
     await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, idempotencyKey: "mock-return-opening" });
     const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Return Guest", phone: "+962790000081" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "MOCK-RETURN", idempotencyKey: "mock-return-sale" });
     await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "mock-return-invalid" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned unopened item", idempotencyKey: "mock-return-refund" });
     expect(refunded.retailSale).toMatchObject({ status: "partially_refunded", refundedAmount: { amount: 2_000 }, returnedLines: [{ quantity: 1 }] });
+    const internals = api as unknown as { db: MockDb };
+    const refundPayment = internals.db.payments.find((payment) => payment.type === "refund" && "retailSaleId" in payment && payment.retailSaleId === sale.retailSale.id);
+    expect(refundPayment).toMatchObject({ amount: { amount: -2_000 }, originalPaymentId: `retail-payment-${sale.retailSale.id}`, refundReason: "Customer returned unopened item" });
+    expect(refundPayment?.receiptId).toBeTruthy();
+    await expect(api.getReceipt(refundPayment!.receiptId)).resolves.toMatchObject({ payment: { type: "refund", amount: { amount: -2_000 } }, retailSale: { status: "partially_refunded" } });
+    const originalReceipt = await api.getReceipt(sale.receiptId);
+    expect(originalReceipt.relatedPayments).toEqual(expect.arrayContaining([expect.objectContaining({ id: refundPayment!.id, type: "refund", amount: expect.objectContaining({ amount: -2_000 }) })]));
+    const refundTransactions = await api.listTransactions({ type: "refund", pageSize: 20 });
+    expect(refundTransactions.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: refundPayment!.id, amount: expect.objectContaining({ amount: -2_000 }) })]));
     await expect(api.voidRetailSale(sale.retailSale.id, { reason: "Duplicate sale", idempotencyKey: "mock-return-void-blocked" })).rejects.toMatchObject({ code: ERR.CONFLICT });
     const voidSale = await api.checkoutRetail({ branchId, guest: { fullName: "Void Guest", phone: "+962790000082" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-VOID", idempotencyKey: "mock-void-sale" });
     await expect(api.voidRetailSale(voidSale.retailSale.id, { reason: "Duplicate terminal entry", idempotencyKey: "mock-void-action" })).resolves.toMatchObject({ retailSale: { status: "voided" } });
@@ -1853,13 +1862,13 @@ describe("retail checkout", () => {
   it("does not sell an item until a positive retail price is configured", async () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;
-    const product = await api.upsertProduct({ sku: "MOCK-UNPRICED", name: "Mock unpriced item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2 });
-    const laterProduct = await api.upsertProduct({ sku: "MOCK-LATER", name: "Mock later line", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_500, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-UNPRICED", name: "Mock unpriced item", unit: "each", reorderPoint: 1 });
+    const laterProduct = await api.upsertProduct({ sku: "MOCK-LATER", name: "Mock later line", unit: "each", reorderPoint: 1, retailPrice: money(1_500, "JOD") });
     await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-unpriced-opening" });
     await api.switchDemoRole("receptionist");
     await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-2", idempotencyKey: "mock-unpriced-sale" })).rejects.toMatchObject({ code: ERR.CONFLICT });
     await api.switchDemoRole("owner");
-    await api.upsertProduct({ id: product.id, sku: "MOCK-UNPRICED", name: "Mock now priced item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    await api.upsertProduct({ id: product.id, sku: "MOCK-UNPRICED", name: "Mock now priced item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
     await api.switchDemoRole("receptionist");
     const internals = api as unknown as { db: MockDb };
     internals.db.shifts.filter((shift) => shift.branchId === branchId).forEach((shift) => { shift.status = "closed"; });
@@ -1874,7 +1883,7 @@ describe("retail checkout", () => {
   it("allows front-desk collection but denies checkout without payments.collect", async () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;
-    const product = await api.upsertProduct({ sku: "MOCK-AUTH", name: "Mock auth item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-AUTH", name: "Mock auth item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
     await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-auth-opening" });
     const input = { branchId, guest: { fullName: "Front Desk Guest", phone: "+962790000005" }, lines: [{ productId: product.id, quantity: 1 }], method: "card" as const, externalReference: "VISA-MOCK-4", idempotencyKey: "mock-auth-sale" };
     await api.switchDemoRole("trainer");
@@ -1887,7 +1896,7 @@ describe("retail checkout", () => {
     const ownerSession = await api.getSession();
     const branchA = ownerSession.branches[0]!.id;
     const branchB = ownerSession.branches[1]!.id;
-    const product = await api.upsertProduct({ sku: "MOCK-BRANCH-AUTH", name: "Branch scoped item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2, retailPrice: money(1_000, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-BRANCH-AUTH", name: "Branch scoped item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
     await api.recordStockMovement({ branchId: branchA, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-branch-auth-opening" });
     const branchBMember = await api.createMember({ fullName: "Branch B Member", phone: "+962 79 900 0999", homeBranchId: branchB, preferredLanguage: "en" });
     const settings = await api.getOrganizationSettings();
@@ -1974,7 +1983,7 @@ describe("management accounting mock contract", () => {
 
   it("projects retail collections into clearing and revenue accounting", async () => {
     const branch = (await api.getSession()).branches[0]!;
-    const product = await api.upsertProduct({ sku: "MOCK-ACCOUNTING-RETAIL", name: "Accounting retail item", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 1, retailPrice: money(2_000, "JOD") });
+    const product = await api.upsertProduct({ sku: "MOCK-ACCOUNTING-RETAIL", name: "Accounting retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
     await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-accounting-retail-opening" });
     await api.switchDemoRole("receptionist");
     const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Accounting guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-ACCOUNTING", idempotencyKey: "mock-accounting-retail-sale" });
@@ -2083,7 +2092,7 @@ describe("management accounting mock contract", () => {
   it("permanently deletes a product, releases its SKU, and preserves movement history", async () => {
     const session = await api.getSession();
     const branch = session.branches[0]!;
-    const product = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Disposable mock stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Disposable mock stock", unit: "each", reorderPoint: 1 });
     const supplier = await api.upsertSupplier({ name: "Mock delete supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
     await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-delete-receive" });
     await api.switchDemoRole("receptionist");
@@ -2092,7 +2101,7 @@ describe("management accounting mock contract", () => {
     const deleted = await api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" });
     expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "MOCK-DELETE" });
     await expect(api.deleteProduct({ productId: product.id, reason: "Retry", confirmation: "mock-delete" })).resolves.toMatchObject({ deleted: true, productId: product.id });
-    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Replacement mock stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Replacement mock stock", unit: "each", reorderPoint: 1 });
     expect(replacement.id).not.toBe(product.id);
     expect((await api.listSuppliers()).find((row) => row.id === supplier.id)?.preferredProductIds).not.toContain(product.id);
     const movements = await api.listStockMovements({ productId: product.id });
@@ -2103,7 +2112,7 @@ describe("management accounting mock contract", () => {
   it("blocks permanent deletion while a purchase order is still open", async () => {
     const session = await api.getSession();
     const branch = session.branches[0]!;
-    const product = await api.upsertProduct({ sku: "MOCK-OPEN-PO", name: "Mock open PO stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const product = await api.upsertProduct({ sku: "MOCK-OPEN-PO", name: "Mock open PO stock", unit: "each", reorderPoint: 1 });
     const supplier = await api.upsertSupplier({ name: "Mock open PO supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
     await api.createPurchaseOrder({ branchId: branch.id, supplierId: supplier.id, lines: [{ productId: product.id, quantity: 3, unitCost: money(100) }] });
     await expect(api.deleteProduct({ productId: product.id, reason: "Open order", confirmation: "MOCK-OPEN-PO" })).rejects.toMatchObject({ code: ERR.CONFLICT });
@@ -2112,11 +2121,11 @@ describe("management accounting mock contract", () => {
   it("refunds a deleted product from its snapshot without recreating a balance", async () => {
     const session = await api.getSession();
     const branch = session.branches[0]!;
-    const product = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Mock refundable retired stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2, retailPrice: money(1_000) });
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Mock refundable retired stock", unit: "each", reorderPoint: 1, retailPrice: money(1_000) });
     await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-delete-refund-receive" });
     const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Deleted mock guest", phone: "+962790000012" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-DELETE-REFUND", idempotencyKey: "mock-delete-refund-sale" });
     await api.deleteProduct({ productId: product.id, reason: "Retiring this item", confirmation: "MOCK-DELETE-REFUND" });
-    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Replacement mock retail stock", unit: "each", reorderPoint: 1, targetLevel: 3, supplierLeadTimeDays: 2 });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Replacement mock retail stock", unit: "each", reorderPoint: 1 });
     expect(replacement.id).not.toBe(product.id);
     await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned retired item", idempotencyKey: "mock-delete-refund-action" })).resolves.toMatchObject({ retailSale: { status: "refunded" } });
     const internals = api as unknown as { db: MockDb };

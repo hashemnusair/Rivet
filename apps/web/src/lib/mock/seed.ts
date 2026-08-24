@@ -1894,10 +1894,10 @@ export function buildSeed(now: Date = new Date()): MockDb {
     updatedAt: iso(daysAgo(now, 30)),
   };
   const products: Product[] = [
-    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, targetLevel: 80, supplierLeadTimeDays: 5, preferredSupplierId: OPS_IDS.supplier, retailPrice: money(1_500, "JOD"), defaultUnitCost: money(650, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
-    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, targetLevel: 60, supplierLeadTimeDays: 3, retailPrice: money(1_000, "JOD"), defaultUnitCost: money(450, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, preferredSupplierId: OPS_IDS.supplier, retailPrice: money(1_500, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, retailPrice: money(1_000, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
   ];
-  const suppliers: Supplier[] = [{ id: OPS_IDS.supplier, organizationId: ORG_ID, name: "Jordan Sports Supply", contactName: "Maya Haddad", email: "orders@jss.example", phone: "+962 79 700 1000", terms: "Net 15", leadTimeDays: 5, branchIds: [BRANCH_ABD, BRANCH_SWF], preferredProductIds: [OPS_IDS.creatine, OPS_IDS.protein], status: "active", createdAt: iso(daysAgo(now, 60)), updatedAt: iso(daysAgo(now, 7)) }];
+  const suppliers: Supplier[] = [{ id: OPS_IDS.supplier, organizationId: ORG_ID, name: "Jordan Sports Supply", contactName: "Maya Haddad", email: "orders@jss.example", phone: "+962 79 700 1000", terms: "Net 15", branchIds: [BRANCH_ABD, BRANCH_SWF], preferredProductIds: [OPS_IDS.creatine, OPS_IDS.protein], status: "active", createdAt: iso(daysAgo(now, 60)), updatedAt: iso(daysAgo(now, 7)) }];
   const inventoryBalances: InventoryBalance[] = [
     { id: seedUuid(78), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, quantityOnHand: 16, committedQuantity: 0, availableQuantity: 16, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
     { id: seedUuid(79), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.protein, quantityOnHand: 42, committedQuantity: 0, availableQuantity: 42, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },

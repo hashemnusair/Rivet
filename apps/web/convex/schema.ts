@@ -242,15 +242,18 @@ export default defineSchema({
     description: v.optional(v.string()),
     unit: productUnit,
     reorderPoint: v.number(),
-    targetLevel: v.number(),
-    supplierLeadTimeDays: v.number(),
-    preferredSupplierId: v.optional(v.string()),
-    // Customer-facing price. Supplier/defaultUnitCost is procurement cost and
-    // must never be used as the checkout price.
-    retailPriceMinor: v.optional(v.number()),
-    retailPriceCurrency: v.optional(v.string()),
+    // Deprecated migration-only fields. New writes never populate these;
+    // keeping optional validators lets existing production documents pass
+    // schema validation while normal product edits remove them gradually.
+    targetLevel: v.optional(v.number()),
+    supplierLeadTimeDays: v.optional(v.number()),
     defaultUnitCostMinor: v.optional(v.number()),
     defaultUnitCostCurrency: v.optional(v.string()),
+    preferredSupplierId: v.optional(v.string()),
+    // Customer-facing price used by checkout. Purchase-order line costs are
+    // stored on the order itself and are never copied into the product master.
+    retailPriceMinor: v.optional(v.number()),
+    retailPriceCurrency: v.optional(v.string()),
     status: operationsRecordStatus,
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -270,10 +273,12 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     unit: productUnit,
-    retailPriceMinor: v.optional(v.number()),
-    retailPriceCurrency: v.optional(v.string()),
+    // Deprecated migration-only fields retained for old tombstones. They are
+    // never exposed or written by the active API.
     defaultUnitCostMinor: v.optional(v.number()),
     defaultUnitCostCurrency: v.optional(v.string()),
+    retailPriceMinor: v.optional(v.number()),
+    retailPriceCurrency: v.optional(v.string()),
     deletedAt: v.number(),
     deletedByUserId: v.id("users"),
     reason: v.string(),
@@ -290,6 +295,8 @@ export default defineSchema({
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
     terms: v.optional(v.string()),
+    // Deprecated migration-only field; supplier delivery time is no longer a
+    // supported setting and is never exposed or written by the active API.
     leadTimeDays: v.optional(v.number()),
     branchIds: v.array(v.id("branches")),
     preferredProductIds: v.array(v.string()),
@@ -413,7 +420,8 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     publicId: v.string(),
     branchId: v.id("branches"),
-    supplierId: v.id("suppliers"),
+    sourceType: v.optional(v.union(v.literal("supplier"), v.literal("private"))),
+    supplierId: v.optional(v.id("suppliers")),
     supplierName: v.string(),
     lines: v.array(v.object({
       productId: v.id("products"),

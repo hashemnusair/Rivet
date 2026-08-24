@@ -149,7 +149,7 @@ describe("immutable management-accounting ledger", () => {
     const pendingDiscount = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-pending", idempotencyKey: "membership-pending-1" })) as { status: string };
     expect(pendingDiscount.status).toBe("unconfigured");
 
-    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEDGER-PROTEIN", name: "Ledger Protein", unit: "each", reorderPoint: 1, targetLevel: 5, supplierLeadTimeDays: 2 })) as { id: string };
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEDGER-PROTEIN", name: "Ledger Protein", unit: "each", reorderPoint: 1 })) as { id: string };
     const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Ledger Supplier", branchIds: ["accounting-branch-a"], preferredProductIds: [product.id] })) as { id: string };
     const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "accounting-branch-a", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 5, unitCost: { amount: 100, currency: "JOD" } }] })) as { id: string };
     await manager.mutation(api.domain.mutate, operation("operations.purchase_order.approve", { id: order.id }));

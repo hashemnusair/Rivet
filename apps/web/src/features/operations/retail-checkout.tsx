@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { qk } from "@/lib/api/keys";
-import type { InventoryBalance, MemberSummary, Money, Product, ReceiptDetail, RetailCheckoutInput, RetailSale, WorkspaceAccess } from "@/lib/domain/types";
+import type { InventoryBalance, MemberSummary, Money, OrganizationSettings, Product, ReceiptDetail, RetailCheckoutInput, RetailSale, WorkspaceAccess } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -313,9 +313,27 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
   const preselectedProductId = searchParams.get("productId");
   const concreteBranchId = visibleBranchIds.has(branchId) ? branchId : validUrlBranchId ?? globalBranchId ?? "";
   const workspaceQuery = useApiQuery(qk.workspaceAccess, (api) => api.getWorkspaceAccess(), { enabled: Boolean(session) });
+  const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings(), { enabled: Boolean(session) });
   const workspace = workspaceQuery.data as WorkspaceAccess | undefined;
+  const settings = settingsQuery.data as OrganizationSettings | undefined;
+  const configuredPaymentMethods = settings?.paymentMethods;
+  const enabledPaymentMethods = useMemo<Set<CheckoutPaymentMethod>>(() => {
+    // Older snapshots may not expose payment configuration. In that case the
+    // server remains authoritative and the checkout keeps all three choices.
+    if (!configuredPaymentMethods?.length) return new Set(["cash", "cliq", "card"]);
+    return new Set(configuredPaymentMethods.filter((configured) => configured.enabled).map((configured) => configured.key).filter((key): key is CheckoutPaymentMethod => key === "cash" || key === "cliq" || key === "card"));
+  }, [configuredPaymentMethods]);
+  const paymentMethodEnabled = (candidate: CheckoutPaymentMethod) => enabledPaymentMethods.has(candidate);
   const operationsModule = workspace?.modules.find((entry) => entry.key === "operations");
   const operationsReady = Boolean(operationsModule?.entitled && operationsModule.enabled);
+
+  useEffect(() => {
+    if (!enabledPaymentMethods.has(method)) {
+      const fallback = (["cash", "cliq", "card"] as const).find((candidate) => enabledPaymentMethods.has(candidate));
+      if (fallback) setMethod(fallback);
+      setReference("");
+    }
+  }, [enabledPaymentMethods, method]);
 
   useEffect(() => {
     const urlChanged = validUrlBranchId !== previousUrlBranchId.current;
@@ -430,7 +448,7 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
       ...(mode === "member" ? { memberId: member!.id } : { guest: { fullName: guest.fullName.trim(), phone: guest.phone.trim() } }),
       lines: cartLines.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
       method,
-      externalReference: reference.trim() || undefined,
+      ...(reference.trim() ? { externalReference: reference.trim() } : {}),
       idempotencyKey: idempotencyKey.current,
     });
   };
@@ -478,7 +496,8 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
             <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Payment method">
               {(["cash", "cliq", "card"] as const).map((value) => {
                 const label = value === "cash" ? "Cash" : value === "cliq" ? "CliQ" : "Visa / card";
-                return <label key={value} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2.5 text-[13px]", method === value ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}><input type="radio" name="checkout-payment-method" value={value} checked={method === value} onChange={() => setMethod(value)} className="accent-[var(--tenant-brand-primary)]" />{label}</label>;
+                const enabled = paymentMethodEnabled(value);
+                return <label key={value} className={cn("flex items-center gap-2 rounded-md border px-3 py-2.5 text-[13px]", enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50", method === value ? "border-ink bg-sunken/60" : enabled ? "border-line-2 hover:border-line-3" : "border-line-2")}><input type="radio" name="checkout-payment-method" value={value} checked={method === value} disabled={!enabled} onChange={() => { if (enabled) { setMethod(value); if (value === "cash") setReference(""); } }} className="accent-[var(--tenant-brand-primary)]" />{label}{!enabled ? <span className="ms-auto text-[11px] text-ink-3">Disabled</span> : null}</label>;
               })}
             </div>
             {method === "cliq" || method === "card" ? <Field className="mt-3" label={`${method === "cliq" ? "CliQ" : "Visa / card"} reference`} required hint="Record the receipt or transaction reference; no payment provider is connected."><Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Reference number" dir="ltr" required /></Field> : <p className="mt-3 text-[12px] text-ink-3">Cash sales are recorded against the open cash shift. <Link href="/payments/shifts" className="font-medium underline underline-offset-2">Open or review shift</Link>.</p>}

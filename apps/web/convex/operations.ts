@@ -278,11 +278,8 @@ function productView(product: Product, organizationId: string): Data {
     description: product.description,
     unit: product.unit,
     reorderPoint: product.reorderPoint,
-    targetLevel: product.targetLevel,
-    supplierLeadTimeDays: product.supplierLeadTimeDays,
     preferredSupplierId: product.preferredSupplierId,
     retailPrice: money(product.retailPriceMinor, product.retailPriceCurrency),
-    defaultUnitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency),
     status: product.status,
     createdAt: iso(product.createdAt),
     updatedAt: iso(product.updatedAt),
@@ -290,7 +287,7 @@ function productView(product: Product, organizationId: string): Data {
 }
 
 function supplierView(supplier: Supplier, organizationId: string, branches: Map<string, string>, visibleBranchIds?: Set<string>): Data {
-  return { id: supplier.publicId, organizationId, name: supplier.name, contactName: supplier.contactName, email: supplier.email, phone: supplier.phone, terms: supplier.terms, leadTimeDays: supplier.leadTimeDays, branchIds: supplier.branchIds.filter((branchId) => !visibleBranchIds || visibleBranchIds.has(String(branchId))).map((branchId) => branches.get(String(branchId))).filter(Boolean), preferredProductIds: supplier.preferredProductIds, status: supplier.status, createdAt: iso(supplier.createdAt), updatedAt: iso(supplier.updatedAt) };
+  return { id: supplier.publicId, organizationId, name: supplier.name, contactName: supplier.contactName, email: supplier.email, phone: supplier.phone, terms: supplier.terms, branchIds: supplier.branchIds.filter((branchId) => !visibleBranchIds || visibleBranchIds.has(String(branchId))).map((branchId) => branches.get(String(branchId))).filter(Boolean), preferredProductIds: supplier.preferredProductIds, status: supplier.status, createdAt: iso(supplier.createdAt), updatedAt: iso(supplier.updatedAt) };
 }
 
 function movementView(movement: StockMovement, organizationId: string, branches: Map<string, string>, products: Map<string, string>, tombstones: Map<string, ProductTombstone> = new Map(), createdById = String(movement.createdByUserId)): Data {
@@ -311,6 +308,40 @@ async function ensureBalance(ctx: MutationCtx, actor: ActorContext, branchId: Id
   const created = await ctx.db.get(id);
   if (!created) domainError("NOT_FOUND", "Inventory balance could not be created.", { correlationId: actor.correlationId });
   return created;
+}
+
+/**
+ * Set the selected branch's available quantity through the same immutable
+ * movement path used by receiving and checkout. This keeps stock changes
+ * auditable and makes the product form safe to retry.
+ */
+async function setAvailableQuantity(ctx: MutationCtx, actor: ActorContext, branch: Branch, product: Product, requestedAvailable: number): Promise<void> {
+  if (product.status !== "active") domainError("CONFLICT", "Archived products cannot have their stock changed.", { correlationId: actor.correlationId });
+  const balance = await balanceRow(ctx, actor.organization._id, branch._id, product._id);
+  const currentAvailable = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
+  const delta = requestedAvailable - currentAvailable;
+  if (delta === 0) return;
+  if (!Number.isSafeInteger(delta) || !Number.isSafeInteger((balance?.quantityOnHand ?? 0) + delta + (balance?.committedQuantity ?? 0))) {
+    domainError("VALIDATION_ERROR", "Available stock is outside the supported range.", { correlationId: actor.correlationId });
+  }
+  // Include the pre-change balance state in the request identity. A key based
+  // only on the requested quantity would replay an old adjustment if stock
+  // later changed and an operator set the product back to that quantity.
+  const balanceVersion = balance
+    ? `${balance.quantityOnHand}:${balance.committedQuantity}:${balance.updatedAt}:${balance.lastMovementAt ?? ""}`
+    : "empty";
+  await recordMovementInternal(ctx, actor, {
+    branch,
+    product,
+    type: "adjustment",
+    quantity: Math.abs(delta),
+    quantityDelta: delta,
+    reason: "Product stock availability updated",
+    referenceType: "product_stock_edit",
+    referenceId: product.publicId,
+    idempotencyKey: `product-stock-edit:${product.publicId}:${branch.publicId}:${balanceVersion}:${requestedAvailable}`,
+    financialPostingStatus: "not_posted",
+  });
 }
 
 async function branchPublicMap(ctx: ReadContext, actor: ActorContext): Promise<Map<string, string>> {
@@ -340,18 +371,23 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   const name = text(input.name).trim();
   const unit = assertOneOf(input.unit, PRODUCT_UNITS, "Product unit", actor.correlationId);
   const reorderPoint = integer(input.reorderPoint, Number.NaN);
-  const targetLevel = integer(input.targetLevel, Number.NaN);
-  const supplierLeadTimeDays = integer(input.supplierLeadTimeDays, Number.NaN);
   if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(sku)) domainError("VALIDATION_ERROR", "SKU must be 1–32 uppercase letters, numbers, underscores, or hyphens.", { correlationId: actor.correlationId });
   if (!name || name.length > 120) domainError("VALIDATION_ERROR", "Product name must be between 1 and 120 characters.", { correlationId: actor.correlationId });
-  if (!Number.isSafeInteger(reorderPoint) || reorderPoint < 0 || !Number.isSafeInteger(targetLevel) || targetLevel < reorderPoint || !Number.isSafeInteger(supplierLeadTimeDays) || supplierLeadTimeDays < 0 || supplierLeadTimeDays > 365) domainError("VALIDATION_ERROR", "Reorder, target, and lead-time values are invalid.", { correlationId: actor.correlationId });
-  const cost = requireNonNegativeMoney(input.defaultUnitCost, actor.organization.currency, "Default unit cost", actor.correlationId);
+  if (!Number.isSafeInteger(reorderPoint) || reorderPoint < 0) domainError("VALIDATION_ERROR", "The reorder point must be a non-negative whole number.", { correlationId: actor.correlationId });
   const retailPrice = requireNonNegativeMoney(input.retailPrice, actor.organization.currency, "Retail price", actor.correlationId);
   const preferredSupplierId = optionalText(input.preferredSupplierId);
   let supplier: Supplier | undefined;
   if (preferredSupplierId) supplier = await supplierByPublicId(ctx, actor, preferredSupplierId);
   const inputId = optionalText(input.id);
   const existing = inputId ? await productByPublicId(ctx, actor, inputId) : null;
+  const requestedAvailability = input.availableQuantity === undefined ? undefined : integer(input.availableQuantity, Number.NaN);
+  if (requestedAvailability !== undefined && (!Number.isSafeInteger(requestedAvailability) || requestedAvailability < 0)) {
+    domainError("VALIDATION_ERROR", "Available stock must be a non-negative whole number.", { correlationId: actor.correlationId });
+  }
+  const adjustmentBranch = input.branchId === undefined ? undefined : await branchByPublicId(ctx, actor, optionalText(input.branchId));
+  if (requestedAvailability !== undefined && !adjustmentBranch) {
+    domainError("VALIDATION_ERROR", "Select a branch when setting available stock.", { correlationId: actor.correlationId });
+  }
   // Archived rows remain as history and may share an SKU with a replacement.
   // `.unique()` cannot be used once that is allowed because the index will
   // legitimately contain more than one historical row.
@@ -361,13 +397,23 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (duplicate && duplicate.status !== "archived" && duplicate._id !== existing?._id) domainError("CONFLICT", "That SKU is already used by another product.", { correlationId: actor.correlationId });
   const status = input.status === "archived" ? "archived" as const : "active" as const;
   const now = Date.now();
-  const fields = { sku, name, description: optionalText(input.description), unit, reorderPoint, targetLevel, supplierLeadTimeDays, preferredSupplierId: supplier?.publicId, retailPriceMinor: retailPrice?.amount, retailPriceCurrency: retailPrice?.currency, defaultUnitCostMinor: cost?.amount, defaultUnitCostCurrency: cost?.currency, status: existing ? input.status ? status : existing.status : status, updatedAt: now };
+  const fields = { sku, name, description: optionalText(input.description), unit, reorderPoint, preferredSupplierId: supplier?.publicId, retailPriceMinor: retailPrice?.amount, retailPriceCurrency: retailPrice?.currency, status: existing ? input.status ? status : existing.status : status, updatedAt: now };
   if (existing) {
     const before = productView(existing, publicOrganizationId(actor.organization));
-    await ctx.db.patch(existing._id, fields);
+    // Clear removed catalog settings as part of ordinary edits. The schema
+    // retains optional legacy validators only so old production documents can
+    // be read during this gradual cleanup.
+    await ctx.db.patch(existing._id, {
+      ...fields,
+      targetLevel: undefined,
+      supplierLeadTimeDays: undefined,
+      defaultUnitCostMinor: undefined,
+      defaultUnitCostCurrency: undefined,
+    });
     const updated = await ctx.db.get(existing._id);
     if (!updated) domainError("NOT_FOUND", "Product could not be loaded after update.", { correlationId: actor.correlationId });
     await audit(ctx, actor, { action: "operations.product.update", entityType: "product", entityId: updated.publicId, entityLabel: updated.name, summary: "Product updated", before, after: productView(updated, publicOrganizationId(actor.organization)) });
+    if (requestedAvailability !== undefined && adjustmentBranch) await setAvailableQuantity(ctx, actor, adjustmentBranch, updated, requestedAvailability);
     return productView(updated, publicOrganizationId(actor.organization));
   }
   const publicId = `product-${crypto.randomUUID()}`;
@@ -375,6 +421,7 @@ async function upsertProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   const created = await ctx.db.get(id);
   if (!created) domainError("NOT_FOUND", "Product could not be created.", { correlationId: actor.correlationId });
   await audit(ctx, actor, { action: "operations.product.create", entityType: "product", entityId: created.publicId, entityLabel: created.name, summary: "Product created", after: productView(created, publicOrganizationId(actor.organization)) });
+  if (requestedAvailability !== undefined && adjustmentBranch) await setAvailableQuantity(ctx, actor, adjustmentBranch, created, requestedAvailability);
   return productView(created, publicOrganizationId(actor.organization));
 }
 
@@ -448,8 +495,6 @@ async function deleteProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
     unit: product.unit,
     retailPriceMinor: product.retailPriceMinor,
     retailPriceCurrency: product.retailPriceCurrency,
-    defaultUnitCostMinor: product.defaultUnitCostMinor,
-    defaultUnitCostCurrency: product.defaultUnitCostCurrency,
     deletedAt: now,
     deletedByUserId: actor.user._id,
     reason,
@@ -496,18 +541,16 @@ async function upsertSupplier(ctx: MutationCtx, actor: ActorContext, input: Data
   const branches = await Promise.all(branchIds.map((id) => branchByPublicId(ctx, actor, id)));
   const preferredProductIds = [...new Set((Array.isArray(input.preferredProductIds) ? input.preferredProductIds : []).map(String))];
   const products = await Promise.all(preferredProductIds.map((id) => productByPublicId(ctx, actor, id)));
-  const leadTimeDays = input.leadTimeDays === undefined ? undefined : integer(input.leadTimeDays, Number.NaN);
-  if (leadTimeDays !== undefined && (!Number.isSafeInteger(leadTimeDays) || leadTimeDays < 0 || leadTimeDays > 365)) domainError("VALIDATION_ERROR", "Supplier lead time must be between 0 and 365 days.", { correlationId: actor.correlationId });
   const inputId = optionalText(input.id);
   const existing = inputId ? await supplierByPublicId(ctx, actor, inputId) : null;
   const status = input.status === "archived" ? "archived" as const : "active" as const;
   const now = Date.now();
-  const fields = { name, contactName: optionalText(input.contactName), email: optionalText(input.email)?.toLowerCase(), phone: optionalText(input.phone), terms: optionalText(input.terms), leadTimeDays, branchIds: branches.map((branch) => branch._id), preferredProductIds: products.map((product) => product.publicId), status: existing ? input.status ? status : existing.status : status, updatedAt: now };
+  const fields = { name, contactName: optionalText(input.contactName), email: optionalText(input.email)?.toLowerCase(), phone: optionalText(input.phone), terms: optionalText(input.terms), branchIds: branches.map((branch) => branch._id), preferredProductIds: products.map((product) => product.publicId), status: existing ? input.status ? status : existing.status : status, updatedAt: now };
   const branchMap = await branchPublicMap(ctx, actor);
   const visibleBranchIds = actor.branchScope === "all" ? undefined : new Set(actor.branchIds.map(String));
   if (existing) {
     const before = supplierView(existing, publicOrganizationId(actor.organization), branchMap, visibleBranchIds);
-    await ctx.db.patch(existing._id, fields);
+    await ctx.db.patch(existing._id, { ...fields, leadTimeDays: undefined });
     const updated = await ctx.db.get(existing._id);
     if (!updated) domainError("NOT_FOUND", "Supplier could not be loaded after update.", { correlationId: actor.correlationId });
     await audit(ctx, actor, { action: "operations.supplier.update", entityType: "supplier", entityId: updated.publicId, entityLabel: updated.name, summary: "Supplier updated", before, after: supplierView(updated, publicOrganizationId(actor.organization), branchMap, visibleBranchIds) });
@@ -542,11 +585,12 @@ function movementDelta(type: typeof STOCK_TYPES[number], quantity: number): numb
   return -quantity;
 }
 
-async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, input: { branch: Branch; product: Product; type: typeof STOCK_TYPES[number]; quantity: number; unitCost?: { amount: number; currency: string }; reason?: string; referenceType?: string; referenceId?: string; idempotencyKey: string; financialPostingStatus: "not_posted" | "pending" | "posted" | "failed"; financialSourceId?: string }): Promise<Data> {
-  const requestHash = JSON.stringify({ branchId: publicBranchId(input.branch), productId: input.product.publicId, type: input.type, quantity: input.quantity, unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId });
+async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, input: { branch: Branch; product: Product; type: typeof STOCK_TYPES[number]; quantity: number; quantityDelta?: number; unitCost?: { amount: number; currency: string }; reason?: string; referenceType?: string; referenceId?: string; idempotencyKey: string; financialPostingStatus: "not_posted" | "pending" | "posted" | "failed"; financialSourceId?: string }): Promise<Data> {
+  const requestHash = JSON.stringify({ branchId: publicBranchId(input.branch), productId: input.product.publicId, type: input.type, quantity: input.quantity, quantityDelta: input.quantityDelta, unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId });
   const existing = await idempotentResult(ctx, actor, "operations.stock_movement", input.idempotencyKey, requestHash);
   if (existing) return existing;
-  const delta = movementDelta(input.type, input.quantity);
+  const delta = input.type === "adjustment" && input.quantityDelta !== undefined ? input.quantityDelta : movementDelta(input.type, input.quantity);
+  if (!Number.isSafeInteger(delta) || delta === 0) domainError("VALIDATION_ERROR", "Stock adjustment must change inventory by a non-zero whole number.", { correlationId: actor.correlationId });
   const balance = await ensureBalance(ctx, actor, input.branch._id, input.product._id);
   const nextQuantity = balance.quantityOnHand + delta;
   if (nextQuantity < 0) domainError("CONFLICT", "Stock movement would make inventory negative.", { correlationId: actor.correlationId, details: { productId: input.product.publicId, branchId: publicBranchId(input.branch), quantityOnHand: balance.quantityOnHand, requestedDelta: delta } });
@@ -620,30 +664,34 @@ function retailReceiptDetail(
   actor: ActorContext,
 ): Data {
   const customer = value(sale.customer);
+  const receiptId = text(receipt.id, sale.receiptId);
+  const receiptNumber = text(receipt.receiptNumber, sale.receiptNumber);
+  const paymentId = text(receipt.paymentId, `retail-payment-${sale.publicId}`);
+  const adjustment = receipt.kind === "refund" || receipt.kind === "void";
   const payment = {
-    id: `retail-payment-${sale.publicId}`,
+    id: paymentId,
     organizationId: publicOrganizationId(actor.organization),
     branchId: publicBranchId(branch),
-    type: "retail_sale",
+    type: adjustment ? receipt.kind : "retail_sale",
     customer,
-    amount: { amount: sale.totalMinor, currency: sale.currency },
-    method: sale.method,
-    status: sale.status,
+    amount: receipt.amount ?? { amount: sale.totalMinor, currency: sale.currency },
+    method: receipt.method ?? sale.method,
+    status: receipt.status ?? sale.status,
     refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
     refundReason: sale.refundReason,
     voidReason: sale.voidReason,
-    receiptId: sale.receiptId,
-    receiptNumber: sale.receiptNumber,
+    receiptId,
+    receiptNumber,
     collectedById: sale.createdByPublicId,
     collectedByName: sale.createdByName,
     shiftId: sale.shiftId,
-    externalReference: sale.externalReference,
-    idempotencyKey: sale.idempotencyKey,
+    externalReference: receipt.externalReference ?? sale.externalReference,
+    idempotencyKey: receipt.idempotencyKey ?? sale.idempotencyKey,
     occurredAt: iso(sale.createdAt),
   };
   return {
     receipt,
-    receiptId: sale.receiptId,
+    receiptId,
     organization: { name: actor.organization.name, receiptFooter: text(organization.receiptFooter), taxRatePercent: finite(organization.taxRatePercent) },
     branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
     member: customer.kind === "member" ? { fullName: text(customer.fullName), memberNumber: text(customer.memberNumber, "Member") } : undefined,
@@ -799,7 +847,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   for (const line of lines) {
     const movementId = `movement-${crypto.randomUUID()}`;
     const delta = -line.quantity;
-    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.product.defaultUnitCostMinor, unitCostCurrency: line.product.defaultUnitCostCurrency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
     await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, lastMovementAt: now, updatedAt: now });
   }
   if (memberRecord) {
@@ -854,8 +902,8 @@ async function recordDeletedProductReturn(
   if (replay) return;
   const now = Date.now();
   const publicId = `movement-${crypto.randomUUID()}`;
-  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: branch._id, productId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return", quantityDelta: quantity, quantity, unitCostMinor: tombstone.defaultUnitCostMinor, unitCostCurrency: tombstone.defaultUnitCostCurrency, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
-  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: tombstone.productPublicId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return" as const, quantityDelta: quantity, quantity, unitCost: money(tombstone.defaultUnitCostMinor, tombstone.defaultUnitCostCurrency), reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted" as const, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: branch._id, productId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return", quantityDelta: quantity, quantity, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: tombstone.productPublicId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return" as const, quantityDelta: quantity, quantity, unitCost: undefined, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted" as const, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
   await saveIdempotentResult(ctx, actor, "operations.stock_movement", idempotencyKey, requestHash, view);
   await audit(ctx, actor, { action: "operations.stock_movement.create", entityType: "stock_movement", entityId: publicId, entityLabel: `${tombstone.sku} · return`, summary: "Recorded return for a deleted product", reason, after: { productId: tombstone.productPublicId, quantityDelta: quantity, financialPostingStatus: "not_posted" }, branchId: publicBranchId(branch) });
 }
@@ -869,7 +917,6 @@ async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: D
         product,
         type: "return",
         quantity: line.quantity,
-        unitCost: money(product.defaultUnitCostMinor, product.defaultUnitCostCurrency) as { amount: number; currency: string } | undefined,
         reason,
         referenceType,
         referenceId: sale.publicId,
@@ -927,13 +974,13 @@ async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Da
   const refundReceipt = await allocateRetailReceipt(ctx, actor);
   const refundPaymentId = `retail-refund-${crypto.randomUUID()}`;
   const openShift = await openCashShiftForBranch(ctx, actor, branch);
-  const refundReceiptData = { id: refundReceipt.id, receiptNumber: refundReceipt.number, paymentId: refundPaymentId, retailSaleId: sale.publicId, issuedAt: iso(now) };
+  const refundReceiptData = { id: refundReceipt.id, receiptNumber: refundReceipt.number, paymentId: refundPaymentId, retailSaleId: sale.publicId, issuedAt: iso(now), kind: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", customer: sale.customer, externalReference: sale.externalReference, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, refundReason: reason };
   await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "receipt", publicId: refundReceipt.id, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { ...refundReceiptData, organizationId: publicOrganizationId(actor.organization) } });
   await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "payment", publicId: refundPaymentId, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { id: refundPaymentId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), memberId: sale.memberId, customer: sale.customer, type: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", receiptId: refundReceipt.id, receiptNumber: refundReceipt.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: openShift ? String(value(openShift.data).id) : undefined, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, retailSaleId: sale.publicId, refundReason: reason, occurredAt: iso(now) } });
   await audit(ctx, actor, { action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.publicId, entityLabel: sale.receiptNumber, summary: `Refunded ${sale.currency} ${(refundMinor / 1000).toFixed(3)} from retail sale ${sale.receiptNumber}`, reason, before: { status: sale.status, refundedMinor: sale.refundedMinor ?? 0 }, after: { status, refundedMinor, returnedLines: nextReturned }, branchId: publicBranchId(branch) });
   const updated = await ctx.db.get(sale._id);
   if (!updated) domainError("NOT_FOUND", "Retail sale could not be loaded after refund.", { correlationId: actor.correlationId });
-  const result = retailReceiptDetail(updated, await originalRetailReceipt(ctx, actor, updated), { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 }, branch, actor);
+  const result = retailReceiptDetail(updated, refundReceiptData, { receiptFooter: actor.organization.receiptFooter ?? "Thank you.", taxRatePercent: actor.organization.taxRatePercent ?? 0 }, branch, actor);
   await saveIdempotentResult(ctx, actor, "operations.retail.refund", idempotencyKey, requestHash, result);
   return result;
 }
@@ -1018,22 +1065,17 @@ async function lowStockSnapshots(ctx: ReadContext, actor: ActorContext, input: D
   const branches = requestedBranch ? [await branchByPublicId(ctx, actor, requestedBranch)] : await visibleBranches(ctx, actor);
   const products = (await ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((product) => product.status === "active");
   const now = Date.now();
-  const from = now - 30 * 86_400_000;
   const snapshots: Data[] = [];
   for (const branch of branches) {
-    const movements = await ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
     for (const product of products) {
       const balance = await balanceRow(ctx, actor.organization._id, branch._id, product._id);
       const quantityOnHand = balance?.quantityOnHand ?? 0;
       const committedQuantity = balance?.committedQuantity ?? 0;
       const availableQuantity = quantityOnHand - committedQuantity;
-      const outbound = movements.filter((movement) => movement.branchId === branch._id && movement.productId === product._id && movement.occurredAt >= from && movement.quantityDelta < 0).reduce((sum, movement) => sum + Math.abs(movement.quantityDelta), 0);
-      const recentDailyVelocity = outbound / 30;
-      const projectedQuantityAtLeadTime = availableQuantity - recentDailyVelocity * product.supplierLeadTimeDays;
-      if (availableQuantity > product.reorderPoint && projectedQuantityAtLeadTime > product.reorderPoint) continue;
+      if (availableQuantity > product.reorderPoint) continue;
       const publicId = `alert-${publicBranchId(branch)}-${product.publicId}`;
       const existing = await ctx.db.query("inventoryAlerts").withIndex("by_branch_product", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("productId", product._id)).unique();
-      snapshots.push({ id: existing?.publicId ?? publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: product.publicId, quantityOnHand, committedQuantity, availableQuantity, recentDailyVelocity, supplierLeadTimeDays: product.supplierLeadTimeDays, projectedQuantityAtLeadTime, reorderPoint: product.reorderPoint, targetLevel: product.targetLevel, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt ? iso(existing.dismissedAt) : undefined, dismissedReason: existing?.dismissedReason, updatedAt: iso(existing?.updatedAt ?? now) });
+      snapshots.push({ id: existing?.publicId ?? publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: product.publicId, quantityOnHand, committedQuantity, availableQuantity, reorderPoint: product.reorderPoint, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt ? iso(existing.dismissedAt) : undefined, dismissedReason: existing?.dismissedReason, updatedAt: iso(existing?.updatedAt ?? now) });
     }
   }
   return snapshots;
@@ -1078,15 +1120,16 @@ async function dismissLowStockAlert(ctx: MutationCtx, actor: ActorContext, input
   return snapshots.find((item) => item.id === alert.publicId) ?? { id: alert.publicId, status: "dismissed", dismissedAt: iso(now), dismissedReason: reason };
 }
 
-function purchaseOrderView(order: PurchaseOrder, organizationId: string, branchId: string, supplierId: string, products = new Map<string, string>(), approvedById?: string): Data {
-  return { id: order.publicId, organizationId, branchId, supplierId, supplierName: order.supplierName, lines: order.lines.map((line) => ({ productId: products.get(String(line.productId)) ?? String(line.productId), sku: line.sku, productName: line.productName, orderedQuantity: line.orderedQuantity, receivedQuantity: line.receivedQuantity, unitCost: { amount: line.unitCostMinor, currency: line.unitCostCurrency }, lineTotal: { amount: line.lineTotalMinor, currency: line.unitCostCurrency } })), status: order.status, currency: order.currency, total: { amount: order.totalMinor, currency: order.currency }, supplierInvoiceReference: order.supplierInvoiceReference, notes: order.notes, approvedAt: order.approvedAt ? iso(order.approvedAt) : undefined, approvedById: approvedById ?? (order.approvedByUserId ? String(order.approvedByUserId) : undefined), receivedAt: order.receivedAt ? iso(order.receivedAt) : undefined, createdAt: iso(order.createdAt), updatedAt: iso(order.updatedAt) };
+function purchaseOrderView(order: PurchaseOrder, organizationId: string, branchId: string, supplierId: string | undefined, products = new Map<string, string>(), approvedById?: string): Data {
+  const sourceType = order.sourceType ?? (supplierId ? "supplier" : "private");
+  return { id: order.publicId, organizationId, branchId, sourceType, supplierId, supplierName: sourceType === "private" ? "Private purchase" : order.supplierName, lines: order.lines.map((line) => ({ productId: products.get(String(line.productId)) ?? String(line.productId), sku: line.sku, productName: line.productName, orderedQuantity: line.orderedQuantity, receivedQuantity: line.receivedQuantity, unitCost: { amount: line.unitCostMinor, currency: line.unitCostCurrency }, lineTotal: { amount: line.lineTotalMinor, currency: line.unitCostCurrency } })), status: order.status, currency: order.currency, total: { amount: order.totalMinor, currency: order.currency }, supplierInvoiceReference: order.supplierInvoiceReference, notes: order.notes, approvedAt: order.approvedAt ? iso(order.approvedAt) : undefined, approvedById: approvedById ?? (order.approvedByUserId ? String(order.approvedByUserId) : undefined), receivedAt: order.receivedAt ? iso(order.receivedAt) : undefined, createdAt: iso(order.createdAt), updatedAt: iso(order.updatedAt) };
 }
 
 async function purchaseOrderViewResolved(ctx: ReadContext, actor: ActorContext, order: PurchaseOrder): Promise<Data> {
   const branch = await ctx.db.get(order.branchId);
-  const supplier = await ctx.db.get(order.supplierId);
   assertBranchAccess(actor, branch);
-  if (!supplier || supplier.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
+  const supplier = order.supplierId ? await ctx.db.get(order.supplierId) : null;
+  if (order.supplierId && (!supplier || supplier.organizationId !== actor.organization._id)) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
   const products = await Promise.all(order.lines.map((line) => ctx.db.get(line.productId)));
   const tombstones = await productTombstoneMap(ctx, actor);
   const productMap = new Map(products.filter((product): product is Product => Boolean(product)).map((product) => [String(product._id), product.publicId]));
@@ -1095,7 +1138,7 @@ async function purchaseOrderViewResolved(ctx: ReadContext, actor: ActorContext, 
     if (tombstone) productMap.set(String(line.productId), tombstone.productPublicId);
   }
   const approvedBy = order.approvedByUserId ? await ctx.db.get(order.approvedByUserId) : undefined;
-  return purchaseOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), supplier.publicId, productMap, approvedBy ? publicUserId(approvedBy) : undefined);
+  return purchaseOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), supplier?.publicId, productMap, approvedBy ? publicUserId(approvedBy) : undefined);
 }
 
 async function listPurchaseOrders(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
@@ -1113,9 +1156,11 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   await requireOperations(ctx, actor);
   requireOperationsWrite(actor);
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
-  const supplier = await supplierByPublicId(ctx, actor, optionalText(input.supplierId));
-  if (supplier.status !== "active") domainError("CONFLICT", "Archived suppliers cannot receive purchase orders.", { correlationId: actor.correlationId });
-  if (supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch._id)) domainError("VALIDATION_ERROR", "Supplier is not configured for this branch.", { correlationId: actor.correlationId });
+  const requestedSource = optionalText(input.sourceType) ?? (optionalText(input.supplierId) ? "supplier" : "private");
+  if (requestedSource !== "supplier" && requestedSource !== "private") domainError("VALIDATION_ERROR", "Purchase source is invalid.", { correlationId: actor.correlationId });
+  const supplier = requestedSource === "supplier" ? await supplierByPublicId(ctx, actor, optionalText(input.supplierId)) : null;
+  if (supplier && supplier.status !== "active") domainError("CONFLICT", "Archived suppliers cannot receive purchase orders.", { correlationId: actor.correlationId });
+  if (supplier && supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch._id)) domainError("VALIDATION_ERROR", "Supplier is not configured for this branch.", { correlationId: actor.correlationId });
   const rawLines = Array.isArray(input.lines) ? input.lines : [];
   if (rawLines.length === 0 || rawLines.length > 100) domainError("VALIDATION_ERROR", "A purchase order must contain 1 to 100 product lines.", { correlationId: actor.correlationId });
   const seen = new Set<string>();
@@ -1135,11 +1180,12 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   const totalMinor = lines.reduce((sum, line) => sum + line.lineTotalMinor, 0);
   const now = Date.now();
   const publicId = `po-${crypto.randomUUID()}`;
-  const id = await ctx.db.insert("purchaseOrders", { organizationId: actor.organization._id, publicId, branchId: branch._id, supplierId: supplier._id, supplierName: supplier.name, lines, status: "draft", currency, totalMinor, supplierInvoiceReference: optionalText(input.supplierInvoiceReference), notes: optionalText(input.notes), createdAt: now, updatedAt: now });
+  const supplierName = supplier?.name ?? "Private purchase";
+  const id = await ctx.db.insert("purchaseOrders", { organizationId: actor.organization._id, publicId, branchId: branch._id, sourceType: requestedSource, supplierId: supplier?._id, supplierName, lines, status: "draft", currency, totalMinor, supplierInvoiceReference: optionalText(input.supplierInvoiceReference), notes: optionalText(input.notes), createdAt: now, updatedAt: now });
   const created = await ctx.db.get(id);
   if (!created) domainError("NOT_FOUND", "Purchase order could not be created.", { correlationId: actor.correlationId });
   const createdView = await purchaseOrderViewResolved(ctx, actor, created);
-  await audit(ctx, actor, { action: "operations.purchase_order.create", entityType: "purchase_order", entityId: created.publicId, entityLabel: `${supplier.name} · ${created.publicId}`, summary: "Purchase order created", branchId: publicBranchId(branch), after: createdView });
+  await audit(ctx, actor, { action: "operations.purchase_order.create", entityType: "purchase_order", entityId: created.publicId, entityLabel: `${supplierName} · ${created.publicId}`, summary: requestedSource === "private" ? "Private purchase order created" : "Purchase order created", branchId: publicBranchId(branch), after: createdView });
   return createdView;
 }
 
@@ -1223,7 +1269,7 @@ async function notifyPurchaseOrderSupplier(ctx: MutationCtx, actor: ActorContext
   const branch = await ctx.db.get(order.branchId);
   assertBranchAccess(actor, branch);
   const channel = input.channel === "supplier_sms" ? "supplier_sms" : "supplier_email";
-  const result = { purchaseOrderId: order.publicId, status: "not_configured" as const, channel, detail: "No supplier provider is configured; no external notification was sent.", attemptedAt: iso(Date.now()) };
+  const result = { purchaseOrderId: order.publicId, status: "not_configured" as const, channel, detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: iso(Date.now()) };
   await audit(ctx, actor, { action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.publicId, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason, after: result, branchId: publicBranchId(branch) });
   return result;
 }

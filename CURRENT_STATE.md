@@ -4,11 +4,26 @@
 
 - The gym Operations surface is being reduced to two beginner-friendly,
   same-page tabs: **Inventory** and **Checkout**. Inventory prioritizes what is
-  available now, with add-item, centered supplier and purchase-order
-  dialogs, and low-stock alerts that explain when replenishment is becoming
-  urgent. The tutorial and the separate facilities/equipment command-center
-  presentation are removed from this primary flow; their historical records
-  remain intact in the backend.
+  available now, with add-item, centered supplier and purchase-order dialogs,
+  and a simple low-stock alert when available stock is at or below its
+  threshold. The tutorial and the separate facilities/equipment
+  command-center presentation are removed from this primary flow; their
+  historical records remain intact in the backend.
+- The product editor has one canonical set of fields: SKU, name, unit,
+  current availability for the selected branch, low-stock threshold, and
+  selling price. Saving availability is an audited stock adjustment, not a
+  silent balance overwrite. Refill targets, delivery/lead-time forecasting,
+  and product default supplier cost are no longer part of the operator model.
+- A purchase order may use a saved supplier or the explicit
+  **Private / bought elsewhere** source. Actual unit cost on a purchase-order
+  line remains the recorded purchase cost; no WhatsApp or other supplier
+  provider is integrated, so the gym can keep procurement communication
+  outside RIVET until it supplies its own provider configuration.
+- Checkout remains the atomic retail-sale path for a member or guest: it
+  validates branch stock and payment details, creates the sale/receipt and
+  stock movement together, and supports Cash, CliQ, and Visa/card. Cash does
+  not require an external reference; CliQ/card do. Mock refund/void behavior
+  follows the same stock-restoration rules as the live path.
 - Product-master deletion is now a distinct, audited permanent action. It
   removes the mutable product identity so a replacement can reuse the SKU,
   while tombstone and snapshot evidence keeps stock movements, retail receipts,
@@ -19,10 +34,10 @@
   financial, audit, or operational history must remain intact. Archived zones
   and equipment can reuse identifiers where the active-record constraints allow
   it; historical issue and work-order evidence is retained.
-- Validation is clean: 733 Vitest tests, app and Convex TypeScript checks, full
+- Validation is clean: 738 Vitest tests, app and Convex TypeScript checks, full
   ESLint, the secret-output audit, safe Convex CLI tests, and the Next production
-  build all pass. No Playwright suite was run. Deployment and Production-data
-  verification are not claimed in this entry.
+  build all pass. No Playwright suite was run. Credentialed Convex codegen,
+  deployment, and Production-data verification remain release checks.
 
 ## Native Arabic and translation-service removal — 24 August 2026 (working-tree update)
 
@@ -99,26 +114,25 @@
   permissions.
 - Retail sales now flow through transaction lists, cash shifts, daily
   reconciliation, dashboard revenue, and accounting with method-specific
-  ledger accounts. Products have a separate retail price from supplier cost.
-  “Delete item” is an audited soft archive: it removes an item from new sales
-  while preserving historical movements, receipts, and ledger evidence.
-- Operations terminology and layout now separate the three useful jobs:
-  **Sell and stock** (checkout and balances), **Replenish** (needs-replenishment
-  alerts, suppliers, and purchase orders), and **Keep the gym ready**
-  (facilities and equipment). Product fields explain “Alert me at,” “Refill to,”
-  and “Delivery time”; the product delivery time drives projected low-stock
-  alerts. A delivery time of 10 days means the system projects expected use
-  across those 10 days so staff can replenish before stock reaches its safety
-  floor.
+  ledger accounts. Products expose a selling price, while purchase-order lines
+  retain the actual recorded purchase cost. “Delete item” is an audited
+  permanent product-master deletion with historical tombstone/snapshot
+  evidence; immutable movements, receipts, and ledger facts remain intact.
+- Operations terminology and layout now keep the useful primary jobs together:
+  **Inventory** (available stock, low-stock alerts, suppliers, and purchase
+  orders) and **Checkout** (retail sales). The product editor uses only SKU,
+  name, unit, current availability, low-stock threshold, and selling price;
+  alerts are based on available stock reaching the threshold, without a
+  delivery-time projection.
 - Validation passed: app and Convex TypeScript checks, **176 relevant tests**,
   targeted ESLint, `git diff --check`, and the production build. The checkout
   shipped in `40b9bc9`; refund/void recovery and its Production backend deploy
   shipped in `e7f8121`.
 
 Known scope: payments are manual and no external provider is connected;
-deleting a product archives it rather than physically removing history; and
-the replenishment quantity still requires operator confirmation after the
-alert projection.
+purchase orders record either a saved supplier or a private/elsewhere source;
+and supplier communication, including WhatsApp, remains outside the product
+until a gym configures an approved provider.
 
 ## Admin interaction, Brand Kit, and native Arabic layout, released 24 August 2026
 

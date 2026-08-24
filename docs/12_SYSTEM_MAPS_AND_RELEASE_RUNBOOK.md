@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
 Last reviewed: 2026-08-24 for the subscription, retail, provider-removal, and
-Operations release update.
+Operations simplification update.
 
 ## Purpose
 
@@ -73,11 +73,27 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 ### Operations simplification and deletion policy — 24 August 2026
 
 - The primary Operations surface is intentionally small: an Inventory tab for
-  available stock, add-item, centered supplier/purchase-order dialogs, and
-  projected low-stock alerts; and a same-page Checkout tab for retail sales.
+  available stock, add-item, centered supplier/purchase-order dialogs, and a
+  low-stock alert when available is at or below the configured threshold; and
+  a same-page Checkout tab for retail sales.
   The tutorial and the old multi-panel command-center presentation are not part
   of this primary operator flow. Their historical records remain intact in the
   backend.
+- The canonical product fields are SKU, name, unit, current availability for
+  the selected branch, low-stock threshold, and selling price. Availability
+  changes are audited stock adjustments. Refill targets, delivery/lead-time
+  forecasting, and product default supplier cost are intentionally absent from
+  the simplified operator workflow.
+- A purchase order requires either a saved supplier or the explicit
+  **Private / bought elsewhere** source. The unit cost on each order line is
+  retained as the actual recorded purchase cost. There is no WhatsApp or
+  supplier-provider integration in this release; gyms can keep that
+  communication outside RIVET until they configure an approved provider.
+- Checkout remains the atomic retail-sale workflow for members and guests. It
+  records the sale, receipt, payment method, and stock movement together;
+  supports Cash, CliQ, and Visa/card; clears external-reference requirements
+  for Cash; and keeps mock refund/void stock restoration aligned with the live
+  contract.
 - Product master deletion is the exception to the general archive policy. It is
   an audited permanent master-row action with safety guards and historical
   tombstone/snapshot evidence, so a deleted SKU can be reused without orphaning
@@ -89,10 +105,10 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   actions. Archived zone and equipment identifiers may be reused only when
   active-record uniqueness permits it; historical issue/work-order evidence is
   retained.
-- Local validation passed with 733 Vitest tests, app and Convex TypeScript,
+- Local validation passed with 738 Vitest tests, app and Convex TypeScript,
   full ESLint, the secret-output audit, safe Convex CLI tests, and the Next
-  production build. No Playwright suite was run. Deployment and Production-data
-  verification remain separate release steps.
+  production build. No Playwright suite was run. Credentialed Convex codegen,
+  deployment, and Production-data verification remain separate release steps.
 
 ### Five Pillars Production closure progress — 23 August 2026
 

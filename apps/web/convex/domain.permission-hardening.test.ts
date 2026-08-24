@@ -52,7 +52,7 @@ describe("permission catalog compatibility and write boundaries", () => {
     });
     const session = await manager.query(api.domain.query, operation("session")) as { permissions: string[] };
     expect(session.permissions).toEqual(expect.arrayContaining(["operations.manage", "accounting.post"]));
-    const product = await manager.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEGACY", name: "Legacy stock", unit: "each", reorderPoint: 1, targetLevel: 2, supplierLeadTimeDays: 1 })) as { id: string };
+    const product = await manager.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEGACY", name: "Legacy stock", unit: "each", reorderPoint: 1 })) as { id: string };
     expect(product.id).toBeTruthy();
     await expect(manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh"))).resolves.toMatchObject({ scanned: 0 });
   });

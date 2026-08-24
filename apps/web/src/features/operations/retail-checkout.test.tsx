@@ -30,8 +30,6 @@ const product = (overrides: Partial<Product> = {}): Product => ({
   name: "Protein bar",
   unit: "each",
   reorderPoint: 2,
-  targetLevel: 10,
-  supplierLeadTimeDays: 3,
   retailPrice: { amount: 1_000, currency: "JOD" },
   status: "active",
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -47,7 +45,7 @@ function BranchChanger({ branchId }: { branchId: string }) {
 
 describe("retail checkout", () => {
   it("uses the configured customer-facing price, not supplier cost", () => {
-    const sellable = product({ defaultUnitCost: { amount: 400, currency: "JOD" } });
+    const sellable = product();
     expect(retailPriceOf(sellable)).toEqual({ amount: 1_000, currency: "JOD" });
     expect(checkoutAmount([{ product: sellable, quantity: 3 }])).toEqual({ amount: 3_000, currency: "JOD" });
     expect(retailPriceOf(product({ retailPrice: undefined }))).toBeUndefined();
@@ -105,6 +103,25 @@ describe("retail checkout", () => {
     expect(screen.getByRole("textbox", { name: /cliq reference/i })).toBeRequired();
     await user.click(screen.getByTestId("complete-retail-sale"));
     expect(await screen.findByRole("alert")).toHaveTextContent(/reference number is required/i);
+  });
+
+  it("clears a non-cash reference when the operator switches back to cash", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<RetailCheckout />, { role: "receptionist" });
+    const checkoutSpy = vi.spyOn(api, "checkoutRetail");
+    await screen.findByText("Protein bar");
+    await user.click(screen.getByRole("button", { name: /guest/i }));
+    await user.type(screen.getByRole("textbox", { name: "Guest name" }), "Cash buyer");
+    await user.type(screen.getByRole("textbox", { name: "Phone number" }), "0790000000");
+    await user.click(screen.getByRole("button", { name: /add protein bar/i }));
+    await user.click(screen.getByLabelText("CliQ"));
+    const reference = screen.getByRole("textbox", { name: /cliq reference/i });
+    await user.type(reference, "CLIQ-WAS-HERE");
+    await user.click(screen.getByLabelText("Cash"));
+    expect(screen.queryByRole("textbox", { name: /cliq reference/i })).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("complete-retail-sale"));
+    await waitFor(() => expect(checkoutSpy).toHaveBeenCalledWith(expect.objectContaining({ method: "cash", lines: [{ productId: expect.any(String), quantity: 1 }] })));
+    expect(checkoutSpy.mock.calls[0]?.[0]).not.toHaveProperty("externalReference");
   });
 
   it("submits a member sale and navigates to its receipt immediately", async () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -15,6 +15,13 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 
 afterEach(() => resetApiForTests());
 
+beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
+});
+
 describe("OperationsCommandCenter", () => {
   it("starts on a simple inventory tab and hides the old tutorial and extra workflows", async () => {
     await renderWithApp(<OperationsCommandCenter />);
@@ -24,8 +31,10 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Checkout/ })).toHaveAttribute("aria-selected", "false");
     expect(await screen.findByRole("heading", { name: "Inventory" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Low-stock alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Running low" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Available" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Selling price" })).toBeInTheDocument();
+    expect(screen.queryByText(/Refill to|Delivery time|Supplier unit cost|Preferred supplier|projected at delivery/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/How Operations works/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Facilities/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Equipment/ })).not.toBeInTheDocument();
@@ -60,6 +69,8 @@ describe("OperationsCommandCenter", () => {
     await user.click(screen.getByRole("button", { name: /^Add item$/ }));
     expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: /Selling price/ })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Available quantity" })).toHaveValue(0);
+    expect(screen.queryByText(/Refill to|Delivery time|Supplier unit cost|Preferred supplier/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: /Purchase orders/ }));
@@ -94,6 +105,26 @@ describe("OperationsCommandCenter", () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  it("edits the selected branch availability through the product save", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    const upsertProduct = vi.spyOn(api, "upsertProduct");
+
+    await user.click(await screen.findByRole("button", { name: "Edit Creatine monohydrate" }));
+    expect(screen.getByRole("dialog", { name: "Edit stock item" })).toBeInTheDocument();
+    const available = screen.getByRole("spinbutton", { name: "Available quantity" });
+    expect(available).toHaveValue(16);
+    await user.clear(available);
+    await user.type(available, "24");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ branchId: expect.any(String), availableQuantity: 24 })));
+    const submitted = upsertProduct.mock.calls.at(-1)?.[0];
+    expect(submitted).not.toHaveProperty("targetLevel");
+    expect(submitted).not.toHaveProperty("supplierLeadTimeDays");
+    expect(submitted).not.toHaveProperty("defaultUnitCost");
+  });
+
   it("keeps inventory readable while hiding management actions for reception", async () => {
     await renderWithApp(<OperationsCommandCenter />, { role: "receptionist" });
 
@@ -109,6 +140,23 @@ describe("OperationsCommandCenter", () => {
 
     await userEvent.setup().click(await screen.findByRole("button", { name: /Purchase orders/ }));
     expect(await screen.findByRole("heading", { name: "Purchase orders" })).toBeInTheDocument();
-    expect(screen.getByText(/Approve an order to reserve stock/)).toBeInTheDocument();
+    expect(screen.getByText(/Approve a draft to reserve stock/)).toBeInTheDocument();
+  });
+
+  it("allows a private purchase source without requiring a supplier", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    const createPurchaseOrder = vi.spyOn(api, "createPurchaseOrder");
+
+    await user.click(await screen.findByRole("button", { name: /Purchase orders/ }));
+    await user.click(screen.getByRole("button", { name: /New purchase order/ }));
+    await user.click(screen.getByRole("combobox", { name: "Purchase order source" }));
+    await user.click(await screen.findByRole("option", { name: /Private \/ bought elsewhere/ }));
+    expect(screen.getByRole("status")).toHaveTextContent(/source name will not be recorded/i);
+    await user.type(screen.getByRole("spinbutton", { name: "Quantity" }), "5");
+    await user.type(screen.getByRole("spinbutton", { name: /Unit cost/ }), "2.500");
+    await user.click(screen.getByRole("button", { name: /Save draft/ }));
+
+    await waitFor(() => expect(createPurchaseOrder).toHaveBeenCalledWith(expect.objectContaining({ sourceType: "private", supplierId: undefined })));
   });
 });

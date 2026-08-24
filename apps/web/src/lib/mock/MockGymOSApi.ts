@@ -86,6 +86,19 @@ const TZ = "Asia/Amman";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
 
+/**
+ * Retail refunds are payment facts, but a guest has no member id. Keep the
+ * customer and sale links on the mock payment projection so receipt and
+ * transaction views can represent the same shape as Convex without inventing
+ * a member record. The public Payment type remains the legacy membership
+ * payment contract, so callers only see these extra fields when the payment
+ * is a retail adjustment.
+ */
+type MockRetailAdjustmentPayment = T.Payment & {
+  customer: T.RetailSaleCustomer;
+  retailSaleId: T.UUID;
+};
+
 function managementLocalDate(value: string | number, timezone: string): string {
   return todayISODate(timezone, new Date(value));
 }
@@ -4903,7 +4916,7 @@ export class MockGymOSApi implements GymOSApi {
         line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
         line.balance.lastMovementAt = now;
         line.balance.updatedAt = now;
-        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.product.defaultUnitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
         this.db.stockMovements.unshift(movement);
       }
       if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
@@ -4957,7 +4970,7 @@ export class MockGymOSApi implements GymOSApi {
           balance.lastMovementAt = now;
           balance.updatedAt = now;
         }
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product?.defaultUnitCost ?? tombstone?.defaultUnitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
         returned.set(line.productId, (returned.get(line.productId) ?? 0) + line.quantity);
       }
       sale.returnedLines = [...returned].map(([productId, quantity]) => ({ productId, quantity }));
@@ -4965,7 +4978,40 @@ export class MockGymOSApi implements GymOSApi {
       sale.refundReason = reason;
       sale.status = sale.refundedAmount.amount >= sale.total.amount ? "refunded" : "partially_refunded";
       sale.updatedAt = now;
-      this.audit({ category: "payments", action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Refunded JOD ${(refundMinor / 1000).toFixed(3)} from retail sale`, reason, after: { status: sale.status, refunded: sale.refundedAmount.amount }, branchId: sale.branchId });
+
+      // Keep the refund as its own immutable payment and receipt fact. The
+      // original retail sale is updated only with its lifecycle projection;
+      // this is what lets transactions, reconciliation, and receipt history
+      // show the negative amount without fabricating a member for guests.
+      const refundPaymentId = mockUuid();
+      const refundReceipt: T.Receipt = { id: mockUuid(), receiptNumber: this.nextReceiptNumber(), paymentId: refundPaymentId, retailSaleId: sale.id, issuedAt: now };
+      const refundPayment: MockRetailAdjustmentPayment = {
+        id: refundPaymentId,
+        organizationId: sale.organizationId,
+        branchId: sale.branchId,
+        memberId: sale.customer.memberId ?? "",
+        type: "refund",
+        customer: sale.customer,
+        retailSaleId: sale.id,
+        amount: money(-refundMinor, sale.total.currency),
+        method: sale.method,
+        status: "completed",
+        receiptId: refundReceipt.id,
+        receiptNumber: refundReceipt.receiptNumber,
+        collectedById: this.actor().id,
+        collectedByName: this.actor().name,
+        shiftId: this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open")?.id,
+        idempotencyKey: input.idempotencyKey,
+        originalPaymentId: `retail-payment-${sale.id}`,
+        refundReason: reason,
+        occurredAt: now,
+      };
+      this.db.payments.push(refundPayment);
+      this.db.receipts.push(refundReceipt);
+      if (sale.customer.kind === "member" && sale.customer.memberId) {
+        this.activity({ memberId: sale.customer.memberId, type: "payment_refunded", title: `Retail sale refunded — ${sale.total.currency} ${(refundMinor / 1000).toFixed(3)}`, body: reason, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber: refundReceipt.receiptNumber, receiptId: refundReceipt.id, retailSaleId: sale.id, saleType: "retail" } });
+      }
+      this.audit({ category: "payments", action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Refunded ${sale.total.currency} ${(refundMinor / 1000).toFixed(3)} from retail sale`, reason, before: { status: "completed", refunded: (sale.refundedAmount.amount - refundMinor) }, after: { status: sale.status, refunded: sale.refundedAmount.amount, refundReceiptId: refundReceipt.id, refundPaymentId }, branchId: sale.branchId });
       const result = this.getReceiptSync(sale.receiptId) as T.ReceiptDetail & { retailSale: T.RetailSale };
       this.operationsIdempotency.set(`retail_refund:${input.idempotencyKey}`, { signature, result });
       return result;
@@ -5002,7 +5048,7 @@ export class MockGymOSApi implements GymOSApi {
           balance.lastMovementAt = now;
           balance.updatedAt = now;
         }
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: product?.defaultUnitCost ?? tombstone?.defaultUnitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
       }
       sale.status = "voided";
       sale.returnedLines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
@@ -5208,8 +5254,20 @@ export class MockGymOSApi implements GymOSApi {
       const branch = this.db.branches.find((b) => b.id === sale.branchId);
       if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+      const receiptPayment = this.db.payments.find((candidate) => candidate.id === receipt.paymentId);
+      const retailAdjustment = receiptPayment && receiptPayment.type === "refund" && "retailSaleId" in receiptPayment
+        ? receiptPayment as MockRetailAdjustmentPayment
+        : undefined;
+      if (retailAdjustment?.retailSaleId === sale.id) {
+        // A refund receipt points back to the sale so the printed document can
+        // retain the item lines, while its payment is the negative adjustment
+        // fact. The original retail payment remains linked for audit history.
+        const originalPayment = this.retailPaymentProjection(sale) as unknown as T.Payment;
+        return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment: retailAdjustment, retailSale: sale, relatedPayments: [originalPayment] };
+      }
       const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: sale.status, refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined, refundReason: sale.refundReason, voidReason: sale.voidReason, receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
-      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: [] };
+      const relatedRefunds = this.db.payments.filter((candidate) => candidate.type === "refund" && candidate.originalPaymentId === payment.id);
+      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: relatedRefunds };
     }
     const payment = this.db.payments.find((p) => p.id === receipt.paymentId)!;
     const branch = this.db.branches.find((b) => b.id === payment.branchId)!;
@@ -6567,29 +6625,46 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsRead();
       const search = query.search?.trim().toLowerCase();
-      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined }));
+      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined }));
     });
   }
 
   upsertProduct(input: T.UpsertProductInput): Promise<T.Product> {
-    return this.respond(() => {
+    return this.respond(async () => {
       this.requireOperationsWrite();
       const sku = input.sku.trim().toUpperCase();
       const name = input.name.trim();
       if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(sku) || !name || name.length > 120) throw ApiError.of(ERR.VALIDATION, "Product SKU and name are invalid.");
-      if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0 || !Number.isSafeInteger(input.targetLevel) || input.targetLevel < input.reorderPoint || !Number.isSafeInteger(input.supplierLeadTimeDays) || input.supplierLeadTimeDays < 0) throw ApiError.of(ERR.VALIDATION, "Product stock thresholds are invalid.");
+      if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0) throw ApiError.of(ERR.VALIDATION, "The reorder point must be a non-negative whole number.");
+      if (input.availableQuantity !== undefined && (!Number.isSafeInteger(input.availableQuantity) || input.availableQuantity < 0)) throw ApiError.of(ERR.VALIDATION, "Available stock must be a non-negative whole number.");
+      if (input.availableQuantity !== undefined && !input.branchId) throw ApiError.of(ERR.VALIDATION, "Select a branch when setting available stock.");
       if (input.retailPrice && (input.retailPrice.amount < 0 || !Number.isSafeInteger(input.retailPrice.amount) || input.retailPrice.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product retail price is invalid.");
-      if (input.defaultUnitCost && (input.defaultUnitCost.amount < 0 || input.defaultUnitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product cost is invalid.");
       const duplicate = this.db.products.find((product) => product.status !== "archived" && product.sku === sku && product.id !== input.id);
       if (duplicate) throw ApiError.of(ERR.CONFLICT, "That SKU is already used by another product.");
       if (input.preferredSupplierId && !this.db.suppliers.some((supplier) => supplier.id === input.preferredSupplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
       const now = nowISO();
       const existing = input.id ? this.db.products.find((product) => product.id === input.id) : undefined;
       if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
-      const product: T.Product = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, retailPrice: input.retailPrice, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, targetLevel: input.targetLevel, supplierLeadTimeDays: input.supplierLeadTimeDays, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, defaultUnitCost: input.defaultUnitCost, status: input.status ?? "active", createdAt: now, updatedAt: now };
+      const product: T.Product = existing ? Object.assign(existing, { id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, status: input.status ?? "active", createdAt: now, updatedAt: now };
       if (!existing) this.db.products.push(product);
       this.audit({ category: "operations", action: existing ? "operations.product.update" : "operations.product.create", entityType: "product", entityId: product.id, entityLabel: product.name, summary: existing ? "Product updated" : "Product created" });
-      return { ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined };
+      if (input.availableQuantity !== undefined && input.branchId) {
+        if (product.status !== "active") throw ApiError.of(ERR.CONFLICT, "Archived products cannot have their stock changed.");
+        const branch = this.operationsBranch(input.branchId);
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+        const currentAvailable = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
+        const delta = input.availableQuantity - currentAvailable;
+        if (delta !== 0) {
+          // Bind the idempotency key to the pre-change balance. This permits a
+          // later legitimate return to the same quantity after stock changed,
+          // while an immediate retry remains a no-op because its delta is 0.
+          const balanceVersion = balance
+            ? `${balance.quantityOnHand}:${balance.committedQuantity}:${balance.updatedAt}:${balance.lastMovementAt ?? ""}`
+            : "empty";
+          await this.recordStockMovement({ branchId: branch.id, productId: product.id, type: "adjustment", quantity: delta, reason: "Product stock availability updated", referenceType: "product_stock_edit", referenceId: product.id, idempotencyKey: `product-stock-edit:${product.id}:${branch.id}:${balanceVersion}:${input.availableQuantity}` });
+        }
+      }
+      return { ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined };
     });
   }
 
@@ -6628,7 +6703,7 @@ export class MockGymOSApi implements GymOSApi {
       const openOrder = dependentOrders.find((order) => order.status === "draft" || order.status === "approved" || order.status === "partially_received");
       if (openOrder) throw ApiError.of(ERR.CONFLICT, "This product is on an open purchase order. Receive or cancel that order before deleting the item.");
       const deletedAt = nowISO();
-      const tombstone: T.ProductTombstone = { id: mockUuid(), organizationId: this.db.organization.id, productId: product.id, sku: product.sku, name: product.name, description: product.description, unit: product.unit, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, defaultUnitCost: product.defaultUnitCost ? { ...product.defaultUnitCost } : undefined, deletedAt, deletedById: this.actor().id, reason: input.reason.trim() };
+      const tombstone: T.ProductTombstone = { id: mockUuid(), organizationId: this.db.organization.id, productId: product.id, sku: product.sku, name: product.name, description: product.description, unit: product.unit, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, deletedAt, deletedById: this.actor().id, reason: input.reason.trim() };
       this.db.productTombstones.push(tombstone);
       this.db.inventoryBalances = this.db.inventoryBalances.filter((balance) => balance.productId !== product.id);
       this.db.lowStockAlerts = this.db.lowStockAlerts.filter((alert) => alert.productId !== product.id);
@@ -6658,7 +6733,7 @@ export class MockGymOSApi implements GymOSApi {
       const existing = input.id ? this.db.suppliers.find((supplier) => supplier.id === input.id) : undefined;
       if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
       const now = nowISO();
-      const supplier: T.Supplier = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, name, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, leadTimeDays: input.leadTimeDays, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", createdAt: now, updatedAt: now };
+      const supplier: T.Supplier = existing ? Object.assign(existing, { id: existing.id, organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", createdAt: now, updatedAt: now };
       if (!existing) this.db.suppliers.push(supplier);
       this.audit({ category: "operations", action: existing ? "operations.supplier.update" : "operations.supplier.create", entityType: "supplier", entityId: supplier.id, entityLabel: supplier.name, summary: existing ? "Supplier updated" : "Supplier created" });
       return { ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] };
@@ -6737,14 +6812,11 @@ export class MockGymOSApi implements GymOSApi {
         const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branchId && candidate.productId === product.id);
         const quantityOnHand = balance?.quantityOnHand ?? 0;
         const committedQuantity = balance?.committedQuantity ?? 0;
-        const outbound = this.db.stockMovements.filter((movement) => movement.branchId === branchId && movement.productId === product.id && movement.quantityDelta < 0).filter((movement) => Date.parse(movement.occurredAt) >= Date.now() - 30 * 86_400_000).reduce((sum, movement) => sum + Math.abs(movement.quantityDelta), 0);
-        const recentDailyVelocity = outbound / 30;
         const availableQuantity = quantityOnHand - committedQuantity;
-        const projectedQuantityAtLeadTime = availableQuantity - recentDailyVelocity * product.supplierLeadTimeDays;
-        if (availableQuantity > product.reorderPoint && projectedQuantityAtLeadTime > product.reorderPoint) continue;
+        if (availableQuantity > product.reorderPoint) continue;
         const existing = this.db.lowStockAlerts.find((alert) => alert.branchId === branchId && alert.productId === product.id);
         if (!input.includeDismissed && existing?.status === "dismissed") continue;
-        alerts.push({ id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, branchId, productId: product.id, quantityOnHand, committedQuantity, availableQuantity, recentDailyVelocity, supplierLeadTimeDays: product.supplierLeadTimeDays, projectedQuantityAtLeadTime, reorderPoint: product.reorderPoint, targetLevel: product.targetLevel, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt, dismissedReason: existing?.dismissedReason, updatedAt: existing?.updatedAt ?? nowISO() });
+        alerts.push({ id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, branchId, productId: product.id, quantityOnHand, committedQuantity, availableQuantity, reorderPoint: product.reorderPoint, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt, dismissedReason: existing?.dismissedReason, updatedAt: existing?.updatedAt ?? nowISO() });
       }
     }
     return alerts;
@@ -6783,8 +6855,10 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsWrite();
       const branch = this.operationsBranch(input.branchId);
-      const supplier = this.db.suppliers.find((candidate) => candidate.id === input.supplierId && candidate.status === "active");
-      if (!supplier || (supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch.id))) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found for this branch.");
+      const sourceType = input.sourceType ?? (input.supplierId ? "supplier" : "private");
+      if (sourceType !== "supplier" && sourceType !== "private") throw ApiError.of(ERR.VALIDATION, "Purchase source is invalid.");
+      const supplier = sourceType === "supplier" ? this.db.suppliers.find((candidate) => candidate.id === input.supplierId && candidate.status === "active") : undefined;
+      if (sourceType === "supplier" && (!supplier || (supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch.id)))) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found for this branch.");
       if (!input.lines.length) throw ApiError.of(ERR.VALIDATION, "A purchase order must contain at least one line.");
       const seen = new Set<T.UUID>();
       const lines: T.PurchaseOrderLine[] = input.lines.map((raw) => {
@@ -6794,9 +6868,10 @@ export class MockGymOSApi implements GymOSApi {
         if (!Number.isSafeInteger(raw.quantity) || raw.quantity <= 0 || raw.unitCost.currency !== this.db.organization.currency || raw.unitCost.amount < 0) throw ApiError.of(ERR.VALIDATION, "Purchase line is invalid.");
         return { productId: product.id, sku: product.sku, productName: product.name, orderedQuantity: raw.quantity, receivedQuantity: 0, unitCost: { ...raw.unitCost }, lineTotal: { amount: raw.quantity * raw.unitCost.amount, currency: raw.unitCost.currency } };
       });
-      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, supplierId: supplier.id, supplierName: supplier.name, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
+      const supplierName = supplier?.name ?? "Private purchase";
+      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, sourceType, supplierId: supplier?.id, supplierName, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
       this.db.purchaseOrders.unshift(order);
-      this.audit({ category: "operations", action: "operations.purchase_order.create", entityType: "purchase_order", entityId: order.id, entityLabel: supplier.name, summary: "Purchase order created", branchId: branch.id });
+      this.audit({ category: "operations", action: "operations.purchase_order.create", entityType: "purchase_order", entityId: order.id, entityLabel: supplierName, summary: sourceType === "private" ? "Private purchase order created" : "Purchase order created", branchId: branch.id });
       return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
     });
   }
@@ -6868,7 +6943,7 @@ export class MockGymOSApi implements GymOSApi {
       this.requireReason(input.reason);
       const order = this.db.purchaseOrders.find((candidate) => candidate.id === input.purchaseOrderId);
       if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
-      const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
+      const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
       this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
       return result;
     });
