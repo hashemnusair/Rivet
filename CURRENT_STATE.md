@@ -1,5 +1,7 @@
 # GymOS / RIVET current implementation state
 
+Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification.
+
 ## Production-readiness implementation slices — 25 August 2026 (working-tree update)
 
 The current local working tree includes the implemented P0/P1 slices from the
