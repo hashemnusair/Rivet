@@ -247,6 +247,31 @@ describe("IdentityPanel", () => {
     dispatchSpy.mockRestore();
   });
 
+  it("reconciles an eligible pending staff invitation from the generic account portal", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-pending-generic",
+      email: "pending-generic@rivetjo.com",
+      fullName: "Pending Generic Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: true,
+      invitationClaimEligible: true,
+      memberships: [],
+    };
+    state.claimInvitation.mockResolvedValue({ claimed: false });
+
+    render(<IdentityPanel audience="account" />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(state.claimInvitation).toHaveBeenCalledOnce();
+    expect(screen.getByText("Your gym invitation could not be verified")).toBeVisible();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.replace).not.toHaveBeenCalled();
+  });
+
   it("stays on an explicit staff-access error when invitation verification fails", async () => {
     state.identity = {
       status: "ready",

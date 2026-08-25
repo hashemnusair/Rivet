@@ -69,7 +69,9 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   const destination = destinationFor(identity);
   if (destination.area === "platform") return <AdminEntry identity={identity} />;
   if (destination.area === "gym") return <GymEntry identity={identity} />;
-  if (destination.area === "unavailable") return <UnavailableGymEntry />;
+  if (destination.area === "unavailable") {
+    return identity.invitationClaimEligible ? <StaffInvitationRecovery /> : <UnavailableGymEntry />;
+  }
   if (destination.area === "organization-selection") return <OrganizationSelection identity={identity} />;
   return <MemberEntry identity={identity} />;
 }

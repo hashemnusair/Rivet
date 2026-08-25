@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as accessMaintenance from "../accessMaintenance.js";
 import type * as accounting from "../accounting.js";
 import type * as accountingLedger from "../accountingLedger.js";
 import type * as automations from "../automations.js";
@@ -54,6 +55,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accessMaintenance: typeof accessMaintenance;
   accounting: typeof accounting;
   accountingLedger: typeof accountingLedger;
   automations: typeof automations;
