@@ -1,4 +1,4 @@
-const CLERK_ORIGINS = "https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com";
+const CLERK_ORIGINS = "https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://clerk.rivetjo.com https://challenges.cloudflare.com";
 const CONVEX_ORIGINS = "https://*.convex.cloud https://*.convex.site wss://*.convex.cloud";
 
 /**

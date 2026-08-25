@@ -12,7 +12,14 @@ describe("security headers", () => {
 
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("https://*.clerk.com");
+    expect(csp).toContain("https://clerk.rivetjo.com");
     expect(csp).toContain("https://*.convex.cloud");
+    for (const directive of ["script-src", "connect-src", "frame-src", "form-action"]) {
+      expect(csp).toContain(`${directive} `);
+      expect(csp).toMatch(new RegExp(`${directive}[^;]*https://clerk\\.rivetjo\\.com`));
+    }
+    expect(csp).not.toContain("https://*.rivetjo.com");
+    expect(csp).not.toContain("https://evil.clerk.rivetjo.com");
     expect(headerValue(headers, "X-Content-Type-Options")).toBe("nosniff");
     expect(headerValue(headers, "X-Frame-Options")).toBe("DENY");
     expect(headerValue(headers, "Referrer-Policy")).toBe("strict-origin-when-cross-origin");
