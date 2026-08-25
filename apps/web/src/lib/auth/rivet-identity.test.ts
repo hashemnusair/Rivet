@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { DEMO_IDENTITY, destinationFor, type RivetIdentity } from "./rivet-identity";
+import { describe, expect, it, vi } from "vitest";
+import { DEMO_IDENTITY, destinationFor, ensureCurrentUserWithInvitationRecovery, isInvitationBootstrapError, type RivetIdentity } from "./rivet-identity";
 
 const baseIdentity: RivetIdentity = {
   status: "ready",
@@ -77,5 +77,53 @@ describe("destinationFor", () => {
 
   it("does not misclassify a gym account with unavailable access as a member", () => {
     expect(destinationFor({ ...baseIdentity, gymAccessUnavailable: true })).toEqual({ area: "unavailable", href: "/login" });
+  });
+
+  it("never chooses the first workspace when multiple memberships are available", () => {
+    expect(destinationFor({
+      ...baseIdentity,
+      memberships: [
+        { organizationId: "org-b", organizationName: "B Gym", organizationSlug: "b", role: "owner", branches: [] },
+        { organizationId: "org-a", organizationName: "A Gym", organizationSlug: "a", role: "manager", branches: [] },
+      ],
+    })).toEqual({ area: "organization-selection", href: "/login?reason=organization-selection" });
+  });
+});
+
+describe("invitation bootstrap recovery", () => {
+  it("retries account synchronization after a verified claim without a reload", async () => {
+    const ensureCurrentUser = vi.fn()
+      .mockRejectedValueOnce(new Error("INVITATION_NOT_ACCEPTED"))
+      .mockResolvedValueOnce(undefined);
+    const claimInvitation = vi.fn().mockResolvedValue({ claimed: true });
+
+    await ensureCurrentUserWithInvitationRecovery({ ensureCurrentUser, claimInvitation });
+
+    expect(claimInvitation).toHaveBeenCalledTimes(1);
+    expect(ensureCurrentUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry or claim for unrelated synchronization failures", async () => {
+    const ensureCurrentUser = vi.fn().mockRejectedValue(new Error("CONFIGURATION_ERROR"));
+    const claimInvitation = vi.fn();
+
+    await expect(ensureCurrentUserWithInvitationRecovery({ ensureCurrentUser, claimInvitation })).rejects.toThrow("CONFIGURATION_ERROR");
+    expect(claimInvitation).not.toHaveBeenCalled();
+    expect(ensureCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays closed when the provider cannot prove the invitation", async () => {
+    const ensureCurrentUser = vi.fn().mockRejectedValue(new Error("INVITATION_NOT_ACCEPTED"));
+    const claimInvitation = vi.fn().mockResolvedValue({ claimed: false });
+
+    await expect(ensureCurrentUserWithInvitationRecovery({ ensureCurrentUser, claimInvitation })).rejects.toThrow("INVITATION_NOT_ACCEPTED");
+    expect(ensureCurrentUser).toHaveBeenCalledTimes(1);
+    expect(claimInvitation).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes Convex invitation errors without treating all failures as recoverable", () => {
+    expect(isInvitationBootstrapError({ data: { code: "INVITATION_NOT_ACCEPTED" } })).toBe(true);
+    expect(isInvitationBootstrapError(new Error("This workspace invitation has not been accepted."))).toBe(true);
+    expect(isInvitationBootstrapError(new Error("FORBIDDEN"))).toBe(false);
   });
 });

@@ -44,6 +44,7 @@ export default function GymApplicationPage() {
   const [result, setResult] = useState<SubmitGymApplicationResult>();
   const [hydrated, setHydrated] = useState(false);
   const querySelectionApplied = useRef(false);
+  const applicationRequestKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (querySelectionApplied.current) return;
@@ -59,6 +60,8 @@ export default function GymApplicationPage() {
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const website = formData.get("website");
     const nextErrors: FormErrors = {};
     if (ownerName.trim().length < 2) nextErrors.ownerName = "Enter the owner name.";
     if (gymName.trim().length < 2) nextErrors.gymName = "Enter the gym name.";
@@ -80,7 +83,10 @@ export default function GymApplicationPage() {
         contactNumber: contactNumber.trim(),
         plan: plan as PlatformSaasPlan["name"],
         billingInterval,
+        idempotencyKey: applicationRequestKeyRef.current ?? (applicationRequestKeyRef.current = crypto.randomUUID()),
+        ...(typeof website === "string" && website.trim() ? { website: website.trim() } : {}),
       });
+      applicationRequestKeyRef.current = undefined;
       setResult(submitted);
     } catch (error) {
       setFormError(isApiError(error) ? error.message : "We could not send your application. Please try again.");
@@ -107,6 +113,10 @@ export default function GymApplicationPage() {
               </div>
 
               <form onSubmit={submit} data-billing-interval={billingInterval} className="grid gap-5 border border-ink bg-surface p-6 shadow-pop sm:p-9 lg:grid-cols-[1fr_0.9fr] lg:p-12">
+                <label htmlFor="application-website" className="absolute -start-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
+                  Website
+                  <input id="application-website" name="website" type="text" tabIndex={-1} autoComplete="off" />
+                </label>
                 <section>
                   <p className="eyebrow">Your details</p>
                   <h2 className="mt-2 text-[21px] font-semibold">Who should we contact?</h2>

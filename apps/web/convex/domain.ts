@@ -47,6 +47,8 @@ import { operationsMutation, operationsQuery } from "./operations";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
+import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
+import { automationAttentionHref } from "./automations";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -1251,7 +1253,17 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
     selected = branches.find((branch) => publicBranchId(branch) === activeBranchId);
     if (!selected) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
   } else if (actor.branchScope === "selected") {
-    selected = branches[0];
+    // A selected-branch actor may only receive an implicit branch when their
+    // membership has exactly one active branch. With multiple branches there
+    // is no safe default: the client must preserve an explicit branch choice
+    // (or ask the user to choose one) before any branch-scoped work can run.
+    if (branches.length === 1) selected = branches[0];
+    else if (branches.length > 1) {
+      domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a branch before continuing.", {
+        correlationId: actor.correlationId,
+        details: { branchCount: branches.length },
+      });
+    }
   }
   return {
     user: { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email },
@@ -1668,6 +1680,18 @@ async function userByPublicId(ctx: ReadContext, organizationId: Id<"organization
   return membership?.active ? user : null;
 }
 
+/**
+ * Staff access is organization-local. A person's Convex user row is the
+ * global identity shared by every gym, so a local membership deactivation
+ * must not overwrite `users.status` and revoke access to other gyms.
+ */
+function organizationUserStatus(user: User, membership: Doc<"organizationMemberships">): "active" | "invited" | "deactivated" {
+  if (!membership.active || membership.invitationStatus === "revoked") return "deactivated";
+  if (membership.invitationStatus === "pending" || user.status === "invited") return "invited";
+  if (user.status === "deactivated") return "deactivated";
+  return "active";
+}
+
 async function toTask(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const owner = await userByPublicId(ctx, actor.organization._id, stringValue(value.ownerId));
   const subjectRecord = value.leadId
@@ -1765,7 +1789,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       receiptId: sale.receiptId,
       receiptNumber: sale.receiptNumber,
       customer,
-      lines: sale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency } })),
+      lines: sale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency }, unitCost: line.unitCostMinor === undefined || line.unitCostCurrency === undefined ? undefined : { amount: line.unitCostMinor, currency: line.unitCostCurrency } })),
       subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
       total: { amount: sale.totalMinor, currency: sale.currency },
       status: sale.status,
@@ -1835,7 +1859,7 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     .withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id))
     .order("desc")
     .collect();
-  if (actor.branchScope === "selected") rows = rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+  if (actor.branchScope === "selected") rows = rows.filter((row) => (!row.branchId && !row.destinationBranchId) || actor.branchIds.includes(row.branchId!) || actor.branchIds.includes(row.destinationBranchId!));
   const category = optionalString(input.category);
   const actorId = optionalString(input.actorId);
   const entityId = optionalString(input.entityId);
@@ -1847,7 +1871,7 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     (!category || row.category === category) &&
     (!actorId || row.actorPublicId === actorId) &&
     (!entityId || row.entityPublicId === entityId) &&
-    (!branch || row.branchId === branch._id) &&
+    (!branch || row.branchId === branch._id || row.destinationBranchId === branch._id) &&
     (!from || row.occurredAt >= new Date(from).getTime()) &&
     (!to || row.occurredAt <= new Date(`${to}T23:59:59.999Z`).getTime()) &&
     matchesSearch([row.summary, row.entityLabel, row.actorName, row.action], optionalString(input.search)),
@@ -1856,6 +1880,7 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     id: row.publicId,
     organizationId: publicOrganizationId(actor.organization),
     branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined,
+    destinationBranchId: row.destinationBranchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.destinationBranchId) : undefined,
     actorId: row.actorPublicId,
     actorName: row.actorName,
     actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole),
@@ -2016,6 +2041,12 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     reviewedBy: application.reviewedBy,
     reviewNotes: application.reviewNotes,
     provisioningStatus: application.provisioningStatus ?? "not_started",
+    provisioningCheckpoint: application.provisioningCheckpoint,
+    provisioningOutcome: application.provisioningOutcome,
+    provisioningAttemptCount: application.provisioningAttemptCount,
+    provisioningLastCorrelationId: application.provisioningLastCorrelationId,
+    provisioningProviderStatus: application.provisioningProviderStatus,
+    provisioningProviderCode: application.provisioningProviderCode,
     provisioningStartedAt: application.provisioningStartedAt ? utcIso(application.provisioningStartedAt) : undefined,
     provisioningError: application.provisioningError,
     provisionedAt: application.provisionedAt ? utcIso(application.provisionedAt) : undefined,
@@ -2023,6 +2054,7 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     provisionedBranchId: application.provisionedBranchId,
     clerkOrganizationId: application.clerkOrganizationId,
     clerkInvitationId: application.clerkInvitationId,
+    clerkInvitationStatus: application.clerkInvitationStatus,
   };
 }
 
@@ -2361,8 +2393,8 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     const balanceMinor = charges.map((row) => data(row.data)).filter((item) => item.memberId === memberId).reduce((sum, item) => sum + collectibleOutstandingValue(item, todayIn(timezone)), 0);
     const marketplaceValue = data(marketplace?.data);
     const [logo, cover] = await Promise.all([
-      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.logoAssetId)),
-      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.coverAssetId)),
+      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.logoAssetId), "gym_logo"),
+      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.coverAssetId), "gym_cover"),
     ]);
     const branch = membershipRecord.branchId ? await ctx.db.get(membershipRecord.branchId) : null;
     const directoryBranch = arrayValue(marketplaceValue.branches).map(data).find((item) => item.internalBranchId === membership.homeBranchId || item.internalBranchId === (branch ? publicBranchId(branch) : undefined));
@@ -2583,14 +2615,49 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
   }
   const storageOrganization = targetOrganization;
+  const idempotencyKey = optionalString(input.idempotencyKey)?.trim();
+  if (idempotencyKey && (idempotencyKey.length < 8 || idempotencyKey.length > 200)) {
+    domainError("VALIDATION_ERROR", "The trial request could not be processed.");
+  }
+  const preferredDate = stringValue(input.preferredDate);
+  const preferredTime = stringValue(input.preferredTime);
+  const requestHash = await privacyFingerprint({
+    scope: "customer.trial.create",
+    userId: publicUserId(user),
+    gymId: stringValue(input.gymId),
+    branchId: stringValue(input.branchId),
+    preferredDate,
+    preferredTime,
+    goal: stringValue(input.goal),
+  });
+  const idempotencyScope = `customer.trial.create:${await privacyFingerprint(publicUserId(user))}`;
+  if (idempotencyKey) {
+    // Read all matching rows instead of calling unique(). Older deployments
+    // may contain more than one expired record from before this guard existed.
+    // Remove stale records before inserting the replacement so retries remain
+    // deterministic and the index cannot accumulate ambiguous state.
+    const existingRequests = await ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", idempotencyScope).eq("key", idempotencyKey)).collect();
+    const existingRequest = existingRequests.find((row) => row.expiresAt > Date.now());
+    if (existingRequest) {
+      if (existingRequest.requestHash !== requestHash) domainError("CONFLICT", "This trial request has already been used.");
+      const bookingId = stringValue(data(existingRequest.result).bookingId);
+      const booking = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique();
+      if (!booking) domainError("CONFIGURATION_ERROR", "The trial request could not be recovered.");
+      // Clean up any stale duplicate rows while retaining the active replay.
+      await Promise.all(existingRequests.filter((row) => row._id !== existingRequest._id && row.expiresAt <= Date.now()).map((row) => ctx.db.delete(row._id)));
+      return data(booking.data);
+    }
+    if (existingRequests.length > 0) {
+      // Replace expired retry state transactionally before the new insert.
+      await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
+    }
+  }
   const directoryBranch = arrayValue(gym.branches).map(data).find((candidate) => candidate.id === input.branchId);
   const actualBranchId = optionalString(directoryBranch?.internalBranchId) ?? stringValue(input.branchId);
   const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique();
   if (!branch || !branch.active || branch.status === "inactive") {
     domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
   }
-  const preferredDate = stringValue(input.preferredDate);
-  const preferredTime = stringValue(input.preferredTime);
   const weekday = validatedWeekdayForDate(preferredDate);
   if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
@@ -2608,6 +2675,12 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     return booking.customerUserId === publicUserId(user) && booking.gymId === stringValue(input.gymId) && ["requested", "confirmed"].includes(stringValue(booking.status));
   });
   if (existingOpenRequest) domainError("CONFLICT", "You already have an open trial request with this gym.");
+  await enforcePublicRateLimit(ctx, {
+    scope: "customer.trial.create",
+    fingerprint: await privacyFingerprint(publicUserId(user)),
+    maxRequests: 10,
+    windowMs: 24 * 60 * 60 * 1000,
+  });
   const profile = await saveCustomerProfile(ctx, user, input);
   const ownership = customerProfileOwnership(publicUserId(user), profile.id);
   const bookingId = newPublicId();
@@ -2656,6 +2729,16 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     recipientEmail: profile.email,
     dedupeKey: `trial-request-confirmation:${bookingId}`,
   });
+  if (idempotencyKey) {
+    await ctx.db.insert("publicRequestIdempotency", {
+      scope: idempotencyScope,
+      key: idempotencyKey,
+      requestHash,
+      result: { bookingId },
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 365 * 86_400_000,
+    });
+  }
   return { ...base, ...(leadId ? { leadId } : {}) };
 }
 
@@ -2949,7 +3032,9 @@ async function ptTrainerView(ctx: ReadContext, organization: Organization, value
       .query("mediaAssets")
       .withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", value.photoAssetId!))
       .unique();
-    if (asset && asset.status === "active" && asset.visibility === "public") photoUrl = (await ctx.storage.getUrl(asset.storageId)) ?? undefined;
+    if (asset && asset.ownerType === "trainer_photo" && asset.ownerPublicId === value.publicId && asset.status === "active" && asset.visibility === "public") {
+      photoUrl = (await ctx.storage.getUrl(asset.storageId)) ?? undefined;
+    }
   }
   return {
     id: value.publicId,
@@ -3051,6 +3136,29 @@ async function ptPackageOrderView(ctx: ReadContext, organization: Organization, 
     createdAt: utcIso(value.createdAt),
     updatedAt: utcIso(value.updatedAt),
   };
+}
+
+/**
+ * Resolve the tenant/member/branch facts that authorize an existing PT order.
+ * Idempotency records are intentionally not authorization records: a caller
+ * may know a key from another branch, so every replay must prove access to the
+ * order and its branch before the immutable view is returned. This helper
+ * deliberately does not require an active branch; an already-created order
+ * remains replayable after a safe branch lifecycle change, while new writes
+ * still call assertBranchAccess before mutating anything.
+ */
+async function ptPackageOrderScope(ctx: ReadContext, actor: ActorContext, order: Doc<"ptPackageOrders">): Promise<{ membership: DomainRecord; member: DomainRecord; charge: DomainRecord; branch: Branch }> {
+  if (order.organizationId !== actor.organization._id) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  const membership = await recordOf(ctx, actor, "membership", order.membershipPublicId);
+  const membershipValue = data(membership.data);
+  if (stringValue(membershipValue.memberId) !== order.memberPublicId) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  const member = await recordOf(ctx, actor, "member", order.memberPublicId);
+  const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membershipValue.homeBranchId));
+  if (!branch || branch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "PT package order branch not found.", { correlationId: actor.correlationId });
+  if (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  const charge = await recordOf(ctx, actor, "charge", order.chargePublicId);
+  if (charge.branchId !== branch._id || optionalString(data(charge.data).memberId) !== order.memberPublicId) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  return { membership, member, charge, branch };
 }
 
 function ptPackageLadderIsValid(packages: Array<{ sessionCount: number; totalPriceMinor: number }>): boolean {
@@ -3167,11 +3275,30 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
   };
 }
 
-async function gymMediaAssetView(ctx: ReadContext, organization: Organization, publicId: string | undefined): Promise<Data | undefined> {
+type PublicGymMediaOwnerType = "gym_logo" | "gym_cover" | "gym_gallery";
+
+async function gymMediaAssetView(
+  ctx: ReadContext,
+  organization: Organization,
+  publicId: string | undefined,
+  expectedOwnerType: PublicGymMediaOwnerType,
+): Promise<Data | undefined> {
   if (!publicId) return undefined;
   const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", publicId)).unique();
-  if (!asset || asset.status !== "active") return undefined;
+  // A profile reference is not sufficient proof that an asset is safe to
+  // expose. Require every public invariant at the projection boundary:
+  // same tenant, canonical owner type/id, public visibility, active status,
+  // and a live storage URL. This keeps stale profile snapshots and accidental
+  // private/foreign references from crossing into public/customer responses.
+  if (
+    !asset
+    || asset.ownerType !== expectedOwnerType
+    || asset.ownerPublicId !== publicOrganizationId(organization)
+    || asset.visibility !== "public"
+    || asset.status !== "active"
+  ) return undefined;
   const url = await ctx.storage.getUrl(asset.storageId);
+  if (!url) return undefined;
   return { id: asset.publicId, organizationId: publicOrganizationId(organization), ownerType: asset.ownerType, ownerId: asset.ownerPublicId, contentType: asset.contentType, sizeBytes: asset.sizeBytes, altText: asset.altText, visibility: asset.visibility, status: asset.status, url: url ?? undefined, deleteAfter: asset.deleteAfter ? utcIso(asset.deleteAfter) : undefined, createdAt: utcIso(asset.createdAt), updatedAt: utcIso(asset.updatedAt) };
 }
 
@@ -3199,9 +3326,9 @@ async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, sourc
   const [trainers, packages, logo, cover, gallery] = await Promise.all([
     ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
-    gymMediaAssetView(ctx, actor.organization, optionalString(value.logoAssetId)),
-    gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId)),
-    Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id)))),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.logoAssetId), "gym_logo"),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId), "gym_cover"),
+    Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id), "gym_gallery"))),
   ]);
   return {
     organizationId: publicOrganizationId(actor.organization),
@@ -3289,9 +3416,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
         ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
         ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique(),
-        gymMediaAssetView(ctx, organization, optionalString(listingValue.logoAssetId)),
-        gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId)),
-        Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id)))),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.logoAssetId), "gym_logo"),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId), "gym_cover"),
+        Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id), "gym_gallery"))),
       ]);
       const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active");
       const activePrices = activePlans.map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
@@ -3434,6 +3561,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         updatedAt: stringValue(application.updatedAt),
         provisioningStatus: optionalString(application.provisioningStatus),
         provisioningError: optionalString(application.provisioningError),
+        provisioningOutcome: optionalString(application.provisioningOutcome),
       })),
       invoices: invoices.map((invoice) => ({
         id: stringValue(invoice.id),
@@ -4123,10 +4251,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "approvals.list": {
       requirePermission(actor, "audit.read");
       let rows = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
-      if (actor.branchScope === "selected") rows = rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+      if (actor.branchScope === "selected") rows = rows.filter((row) => (!row.branchId && !row.destinationBranchId) || actor.branchIds.includes(row.branchId!) || actor.branchIds.includes(row.destinationBranchId!));
       const reviews = await recordsOf(ctx, actor, "approvalReview");
       const reviewedIds = new Set(reviews.map((review) => optionalString(data(review.data).auditEventId)).filter(Boolean));
-      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
+      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, destinationBranchId: row.destinationBranchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.destinationBranchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
     }
     case "users.list": {
       if (!hasPermission(actor, "users.manage") && !hasPermission(actor, "crm.assign")) requirePermission(actor, "users.manage");
@@ -4135,7 +4263,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       for (const user of users) {
         const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
         if (!membership) continue;
-        const row: Data = { id: publicUserId(user), organizationId: orgId, name: user.fullName, email: user.email, phone: user.phone ?? "", role: frontendRole(membership.role), branchScope: membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected"), branchIds: await Promise.all(membership.branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: user.status ?? (membership.invitationStatus === "pending" ? "invited" : "active"), invitedAt: membership.invitedAt ? utcIso(membership.invitedAt) : undefined };
+        const row: Data = { id: publicUserId(user), organizationId: orgId, name: user.fullName, email: user.email, phone: user.phone ?? "", role: frontendRole(membership.role), branchScope: membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected"), branchIds: await Promise.all(membership.branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: organizationUserStatus(user, membership), invitedAt: membership.invitedAt ? utcIso(membership.invitedAt) : undefined };
         output.push(row);
       }
       const filtered = output.filter((user) => (!input.role || user.role === input.role) && (!input.status || user.status === input.status) && matchesSearch([user.name, user.email, user.phone], optionalString(input.search)));
@@ -4856,7 +4984,7 @@ async function executeAutomationCandidate(
         kind: "automation_attention",
         title: stringValue(rule.name, "Automation requires attention"),
         body: candidate.subjectName,
-        href: memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/automations",
+        href: automationAttentionHref(memberId, leadId),
         dedupeKey: `automation-notification:${executionId}`,
       });
       actionResults.push({ key, status: "completed" });
@@ -6492,14 +6620,20 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (branches.some((branch) => staffMembership.branchScope !== "all" && !staffMembership.branchIds.includes(branch!._id))) domainError("FORBIDDEN", "Trainer profile cannot include a branch outside the staff member's access.", { correlationId: actor.correlationId });
       const status = stringValue(input.status, "draft");
       if (!(["draft", "published", "archived"] as string[]).includes(status)) domainError("VALIDATION_ERROR", "Trainer profile status is invalid.", { correlationId: actor.correlationId });
-      const photoAssetId = optionalString(input.photoAssetId);
-      if (status === "published" && photoAssetId && !stringValue(input.photoAlt).trim()) domainError("VALIDATION_ERROR", "Published trainer photos require alt text.", { correlationId: actor.correlationId, fieldErrors: { photoAlt: ["Required for published photos"] } });
       const existingById = input.id ? await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(input.id))).unique() : null;
       const existingByUser = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
       const existing = existingById ?? existingByUser;
+      // Editing without selecting a replacement must not silently unlink the
+      // current photo. New uploads remain pending until this mutation links
+      // them to the canonical trainer public id.
+      const photoAssetId = optionalString(input.photoAssetId) ?? existing?.photoAssetId;
+      if (status === "published" && photoAssetId && !stringValue(input.photoAlt).trim() && !existing?.photoAlt?.trim()) domainError("VALIDATION_ERROR", "Published trainer photos require alt text.", { correlationId: actor.correlationId, fieldErrors: { photoAlt: ["Required for published photos"] } });
+      let photoAsset: Doc<"mediaAssets"> | null = null;
       if (photoAssetId) {
         const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", photoAssetId)).unique();
-        if (!asset || asset.ownerType !== "trainer_photo" || asset.ownerPublicId !== (existing?.publicId ?? stringValue(input.id))) domainError("NOT_FOUND", "Trainer photo not found.", { correlationId: actor.correlationId });
+        const expectedOwnerPublicId = existing?.publicId ?? optionalString(input.id);
+        if (!asset || !expectedOwnerPublicId || asset.ownerType !== "trainer_photo" || asset.ownerPublicId !== expectedOwnerPublicId || asset.visibility !== "public" || !["pending", "active"].includes(asset.status)) domainError("NOT_FOUND", "Trainer photo not found.", { correlationId: actor.correlationId });
+        photoAsset = asset;
       }
       if (existingById && existingByUser && existingById._id !== existingByUser._id) domainError("CONFLICT", "This trainer account already has a profile.", { correlationId: actor.correlationId });
       if (existing && status === "archived") {
@@ -6516,7 +6650,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         languages: arrayValue(input.languages).map(String).filter((item): item is "en" | "ar" => item === "en" || item === "ar"),
         branchIds: branches.map((branch) => branch!._id),
         photoAssetId,
-        photoAlt: optionalString(input.photoAlt),
+        photoAlt: optionalString(input.photoAlt) ?? existing?.photoAlt,
         status: status as "draft" | "published" | "archived",
         updatedAt: now,
       };
@@ -6535,6 +6669,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         profile = (await ctx.db.get(id))!;
         await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.create", entityType: "pt_trainer", entityId: profile.publicId, entityLabel: displayName, summary: "Created trainer profile", after: { status, branchCount: branches.length } });
       }
+      // An upload alone is never publicly projectable. Linking it to the
+      // authorized trainer profile is the atomic activation boundary.
+      if (photoAsset?.status === "pending") await ctx.db.patch(photoAsset._id, { status: "active", deleteAfter: undefined, updatedAt: now });
       return await ptTrainerView(ctx, actor.organization, profile);
     }
     case "pt.package.upsert": {
@@ -6639,21 +6776,28 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
       if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
+      // Prove the requested member and membership branch before consulting a
+      // known idempotency key. A key from another branch must never turn into
+      // an order projection for a selected-branch actor.
+      const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
+      const membership = data(membershipRecord.data);
+      await recordOf(ctx, actor, "member", stringValue(membership.memberId));
+      const membershipBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
+      if (!membershipBranch || membershipBranch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Membership branch not found.", { correlationId: actor.correlationId });
+      if (actor.branchScope === "selected" && !actor.branchIds.includes(membershipBranch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
       const idempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.request").eq("key", idempotencyKey)).unique();
       if (idempotency) {
         if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: actor.correlationId });
         const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(idempotency.result).orderId))).unique();
         if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+        await ptPackageOrderScope(ctx, actor, order);
         return await ptPackageOrderView(ctx, actor.organization, order);
       }
-      const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
-      const membership = data(membershipRecord.data);
       const status = statusOfMembership(membership, todayIn(actor.organization.timezone || TZ_FALLBACK));
       if (!["active", "expiring"].includes(status)) domainError("MEMBERSHIP_NOT_ACTIVE", "An active, unfrozen membership is required to request a PT package.", { correlationId: actor.correlationId });
       const ptPackage = await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.packageId))).unique();
       if (!ptPackage || ptPackage.status !== "active") domainError("NOT_FOUND", "PT package not found.", { correlationId: actor.correlationId });
-      const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
-      if (!branch) domainError("NOT_FOUND", "Membership branch not found.", { correlationId: actor.correlationId });
+      const branch = membershipBranch;
       assertBranchAccess(actor, branch);
       if (ptPackage.branchAccess === "selected" && !ptPackage.branchIds.includes(branch._id)) domainError("NOT_FOUND", "This PT package is not available at the membership branch.", { correlationId: actor.correlationId });
       const issueDate = todayIn(actor.organization.timezone || TZ_FALLBACK);
@@ -6690,17 +6834,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
       if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ orderId, reason: stringValue(input.reason).trim() });
+      // Resolve and authorize the target order before looking up the key. A
+      // known cancellation key must not bypass organization/member/branch
+      // scope checks for a selected-branch actor.
+      const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", orderId)).unique();
+      if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+      const orderScope = await ptPackageOrderScope(ctx, actor, order);
       const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.cancel").eq("key", idempotencyKey)).unique();
       if (existingIdempotency) {
         if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT cancellation.", { correlationId: actor.correlationId });
         const replay = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(existingIdempotency.result).orderId))).unique();
         if (!replay) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+        if (replay.publicId !== order.publicId) domainError("CONFLICT", "The cancellation idempotency record does not match the requested order.", { correlationId: actor.correlationId });
+        await ptPackageOrderScope(ctx, actor, replay);
         return await ptPackageOrderView(ctx, actor.organization, replay);
       }
-      const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", orderId)).unique();
-      if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+      assertBranchAccess(actor, orderScope.branch);
       if (order.status !== "pending_payment") domainError("VALIDATION_ERROR", "Only a pending PT package order can be cancelled. Use the PT refund flow after activation.", { correlationId: actor.correlationId });
-      const charge = await recordOf(ctx, actor, "charge", order.chargePublicId);
+      const charge = orderScope.charge;
       const chargeData = data(charge.data);
       if (amountOf(chargeData.paidAmount) > 0 || stringValue(chargeData.status) === "partial" || stringValue(chargeData.status) === "paid") {
         domainError("VALIDATION_ERROR", "Refund or void the collected payment before cancelling this PT order.", { correlationId: actor.correlationId });
@@ -7751,7 +7902,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "automation_failed",
           title: "Automation retries exhausted",
           body: stringValue(execution.subjectName, stringValue(execution.ruleName)),
-          href: `/automations/${stringValue(execution.ruleId)}`,
+          href: "/audit?category=automations",
           dedupeKey: `automation-exhausted:${executionRecord.publicId}`,
         });
         domainError("VALIDATION_ERROR", "This execution has exhausted its retry limit.", { correlationId: actor.correlationId });
@@ -8013,12 +8164,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const targetDefinition = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role)).unique();
       const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
-      await ctx.db.patch(membership._id, { role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: input.status ? input.status !== "deactivated" : membership.active, updatedAt: Date.now() });
-      await ctx.db.patch(user._id, { status: input.status ?? user.status ?? "active", updatedAt: Date.now() });
-      await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Account deactivated" : "Access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: user.status }, after: { role, status: input.status ?? user.status ?? "active" } });
+      const nextActive = input.status ? input.status !== "deactivated" : membership.active;
+      const nextMembershipValues = { ...membership, role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: nextActive };
+      await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
+      const beforeStatus = organizationUserStatus(user, membership);
+      const afterStatus = organizationUserStatus(user, nextMembershipValues);
+      await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.access_deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Organization access deactivated" : "Organization access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: beforeStatus, membershipActive: membership.active }, after: { role, status: afterStatus, membershipActive: nextActive } });
       const updated = await ctx.db.get(user._id);
       const nextMembership = await ctx.db.get(membership._id);
-      return { id: publicUserId(updated ?? user), organizationId: publicOrganizationId(actor.organization), name: (updated ?? user).fullName, email: (updated ?? user).email, phone: (updated ?? user).phone ?? "", role: frontendRole((nextMembership ?? membership).role), branchScope: (nextMembership ?? membership).branchScope ?? "selected", branchIds: await Promise.all((nextMembership ?? membership).branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: (updated ?? user).status ?? "active" };
+      return { id: publicUserId(updated ?? user), organizationId: publicOrganizationId(actor.organization), name: (updated ?? user).fullName, email: (updated ?? user).email, phone: (updated ?? user).phone ?? "", role: frontendRole((nextMembership ?? membership).role), branchScope: (nextMembership ?? membership).branchScope ?? "selected", branchIds: await Promise.all((nextMembership ?? membership).branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: organizationUserStatus(updated ?? user, nextMembership ?? membership) };
     }
     case "roles.update": {
       requirePermission(actor, "users.manage");
@@ -8069,6 +8223,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.supplier.upsert":
     case "operations.supplier.archive":
     case "operations.stock_movement.record":
+    case "operations.inventory.transfer":
     case "operations.retail.checkout":
     case "operations.retail.refund":
     case "operations.retail.void":

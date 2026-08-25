@@ -357,7 +357,7 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
 
     // A valid deep link is an explicit branch choice. Keep it authoritative
     // for this checkout view, but also move the app-level branch scope so a
-    // return to Inventory, Facilities, or Equipment uses the same branch.
+    // Returning to Inventory or Machines uses the same branch.
     // Mark an already-matching global branch as synced so a later topbar
     // change does not unexpectedly snap the checkout back to the URL branch.
     if (urlChanged) syncedUrlBranchId.current = undefined;
@@ -441,7 +441,7 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
   }
 
   if (!operationsModule?.entitled) {
-    return <StatePanel icon={Boxes} title="Operations is not included" description="The Growth workspace module adds inventory checkout, facilities, equipment, and supplier workflows." className="mt-4" />;
+    return <StatePanel icon={Boxes} title="Operations is not included" description="The Growth workspace module adds inventory, checkout, machines, suppliers, and purchase orders." className="mt-4" />;
   }
 
   if (!operationsModule.enabled) {

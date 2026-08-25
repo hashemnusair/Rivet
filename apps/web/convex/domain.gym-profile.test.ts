@@ -65,6 +65,7 @@ describe("gym-controlled public profile", () => {
     const t = await seeded();
     const owner = t.withIdentity({ subject: "clerk-profile-owner" });
     const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["not an image"]) as unknown as Blob));
+    await owner.mutation(api.media.generateUploadUrl, { organizationId: "org-profile", correlationId: "cor-profile-finalize", ownerType: "gym_logo", ownerPublicId: "org-profile" });
 
     await expect(owner.action(api.media.finalizeUpload, { organizationId: "org-profile", correlationId: "cor-profile-finalize", ownerType: "gym_logo", ownerPublicId: "org-profile", altText: "Profile Gym logo", storageId })).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: "Use a JPEG, PNG, or WebP image." }) });
   });
@@ -103,6 +104,46 @@ describe("gym-controlled public profile", () => {
     expect(state.abandoned).toMatchObject({ status: "replaced" });
     expect(state.abandoned).not.toHaveProperty("deleteAfter");
     expect(state.stored).toBeNull();
+  });
+
+  it("bounds unsaved profile media and removes a rejected storage object", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    await owner.mutation(api.media.generateUploadUrl, { organizationId: "org-profile", correlationId: "cor-profile-media-quota", ownerType: "gym_gallery", ownerPublicId: "org-profile" });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      expect(organization).not.toBeNull();
+      const now = Date.now();
+      for (let index = 0; index < 25; index += 1) {
+        const storageId = await ctx.storage.store(new NodeBlob([`pending-${index}`]) as unknown as Blob);
+        await ctx.db.insert("mediaAssets", { organizationId: organization!._id, publicId: `pending-${index}`, ownerType: "gym_gallery", ownerPublicId: "org-profile", storageId, contentType: "image/png", sizeBytes: 10, visibility: "public", status: "pending", deleteAfter: now + 86_400_000, createdAt: now, updatedAt: now });
+      }
+    });
+    const rejectedStorageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["rejected"]) as unknown as Blob));
+    await expectCode(owner.action(api.media.finalizeUpload, { organizationId: "org-profile", correlationId: "cor-profile-media-quota", ownerType: "gym_gallery", ownerPublicId: "org-profile", altText: "Quota test", storageId: rejectedStorageId }), "VALIDATION_ERROR");
+    expect(await t.run(async (ctx) => Boolean(await ctx.storage.get(rejectedStorageId)))).toBe(false);
+  });
+
+  it("reserves and expires upload intents before a browser receives a storage URL", async () => {
+    const t = await seeded();
+    const owner = t.withIdentity({ subject: "clerk-profile-owner" });
+    await expect(owner.mutation(api.media.generateUploadUrl, {
+      organizationId: "org-profile",
+      correlationId: "cor-profile-upload-intent",
+      ownerType: "gym_gallery",
+      ownerPublicId: "org-profile",
+    })).resolves.toEqual(expect.any(String));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      const intent = await ctx.db.query("mediaUploadIntents").withIndex("by_organization_correlation", (q) => q.eq("organizationId", organization!._id).eq("correlationId", "cor-profile-upload-intent")).unique();
+      expect(intent).toMatchObject({ ownerType: "gym_gallery", ownerPublicId: "org-profile" });
+      await ctx.db.patch(intent!._id, { expiresAt: Date.now() - 1 });
+    });
+    expect(await t.mutation(internal.media.cleanupExpired, {})).toBe(1);
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
+      expect(await ctx.db.query("mediaUploadIntents").withIndex("by_organization_correlation", (q) => q.eq("organizationId", organization!._id).eq("correlationId", "cor-profile-upload-intent")).unique()).toBeNull();
+    });
   });
 
   it("protects media referenced by published and historical profile snapshots", async () => {

@@ -19,11 +19,16 @@ export function AutomationComingSoon() {
           <p className="eyebrow mt-5">Coming soon</p>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight">Automations are paused for now</h2>
           <p className="mt-3 text-[13px] leading-6 text-ink-2">
-            We are finishing the Convex foundation and verification path before enabling automated actions in the workspace.
+            Automated actions are paused while the delivery and verification path is finalized. Existing runs and audit history remain available.
           </p>
-          <Button asChild variant="secondary" className="mt-6">
-            <Link href="/dashboard">Return to dashboard</Link>
-          </Button>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Button asChild variant="secondary">
+              <Link href="/audit?category=automations">View automation history</Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link href="/support">Contact support</Link>
+            </Button>
+          </div>
         </div>
       </section>
     </div>

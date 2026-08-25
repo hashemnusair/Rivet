@@ -21,6 +21,7 @@ import type {
   EquipmentWorkOrder,
   FacilityTask,
   InventoryBalance,
+  InventoryTransfer,
   LowStockAlert,
   Product,
   PurchaseOrder,
@@ -1903,6 +1904,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     { id: seedUuid(79), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.protein, quantityOnHand: 42, committedQuantity: 0, availableQuantity: 42, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
   ];
   const stockMovements: StockMovement[] = [{ id: seedUuid(80), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, type: "receive", quantityDelta: 40, quantity: 40, unitCost: money(650, "JOD"), referenceType: "opening_balance", idempotencyKey: "seed-opening-creatine", financialPostingStatus: "not_posted", occurredAt: iso(daysAgo(now, 30)), createdAt: iso(daysAgo(now, 30)), createdById: U.omar }];
+  const inventoryTransfers: InventoryTransfer[] = [];
   const lowStockAlerts: LowStockAlert[] = [];
   const purchaseOrders: PurchaseOrder[] = [];
   const facilityTasks: FacilityTask[] = [{ id: OPS_IDS.facility, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, zoneName: operationsZone.name, kind: "cleaning", severity: "medium", status: "open", title: "Main floor inspection", notes: "Check supplies and wipe high-touch surfaces.", assigneeId: U.hala, trafficContext: { checkInsLastHour: 18, occupancyPercent: 72, capturedAt: iso(hoursAgo(now, 1)) }, financialPostingStatus: "not_posted", createdAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) }];
@@ -1942,6 +1944,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     suppliers,
     inventoryBalances,
     stockMovements,
+    inventoryTransfers,
     lowStockAlerts,
     purchaseOrders,
     facilityTasks,

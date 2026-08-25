@@ -36,6 +36,7 @@ import type {
   EquipmentWorkOrder,
   FacilityTask,
   InventoryBalance,
+  InventoryTransfer,
   LowStockAlert,
   Product,
   ProductTombstone,
@@ -120,6 +121,7 @@ export interface MockDb {
   suppliers: Supplier[];
   inventoryBalances: InventoryBalance[];
   stockMovements: StockMovement[];
+  inventoryTransfers: InventoryTransfer[];
   lowStockAlerts: LowStockAlert[];
   purchaseOrders: PurchaseOrder[];
   facilityTasks: FacilityTask[];

@@ -505,11 +505,16 @@ export interface SubmitGymApplicationInput {
   plan: PlatformSaasPlan["name"];
   /** Defaults to monthly for legacy clients. */
   billingInterval?: BillingInterval;
+  /** Client retry key; never used as an authorization credential. */
+  idempotencyKey?: string;
+  /** Deliberately invisible browser honeypot. Bots filling it receive a generic success. */
+  website?: string;
 }
 
 export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
 export type GymApplicationNotificationStatus = "pending" | "sent" | "failed" | "not_configured";
 export type GymProvisioningStatus = "not_started" | "in_progress" | "completed" | "failed";
+export type GymProvisioningOutcome = "complete" | "partial" | "retryable" | "permanent";
 
 export interface PlatformGymApplication {
   id: UUID;
@@ -530,6 +535,12 @@ export interface PlatformGymApplication {
   reviewedBy?: string;
   reviewNotes?: string;
   provisioningStatus?: GymProvisioningStatus;
+  provisioningCheckpoint?: "claimed" | "organization_recorded" | "workspace_ready" | "invitation_recorded" | "completed";
+  provisioningOutcome?: GymProvisioningOutcome;
+  provisioningAttemptCount?: number;
+  provisioningLastCorrelationId?: string;
+  provisioningProviderStatus?: number;
+  provisioningProviderCode?: string;
   provisioningStartedAt?: string;
   provisioningError?: string;
   provisionedAt?: string;
@@ -537,6 +548,7 @@ export interface PlatformGymApplication {
   provisionedBranchId?: UUID;
   clerkOrganizationId?: string;
   clerkInvitationId?: string;
+  clerkInvitationStatus?: "pending" | "accepted" | "revoked" | "expired" | "failed";
 }
 
 export interface ReviewGymApplicationInput {
@@ -941,6 +953,7 @@ export interface GymOSApi {
   archiveSupplier(supplierId: UUID, reason: string): Promise<import("@/lib/domain/types").Supplier>;
   listInventory(input?: { branchId?: UUID; productId?: UUID }): Promise<import("@/lib/domain/types").InventoryBalance[]>;
   recordStockMovement(input: { branchId: UUID; productId: UUID; type: import("@/lib/domain/types").StockMovementType; quantity: number; unitCost?: import("@/lib/domain/types").Money; reason?: string; referenceType?: string; referenceId?: UUID; idempotencyKey: string }): Promise<import("@/lib/domain/types").StockMovement>;
+  transferInventory(input: import("@/lib/domain/types").InventoryTransferInput): Promise<import("@/lib/domain/types").InventoryTransferResult>;
   listStockMovements(query?: { branchId?: UUID; productId?: UUID; page?: number; pageSize?: number }): Promise<import("@/lib/domain/types").Page<import("@/lib/domain/types").StockMovement>>;
   listLowStockAlerts(input?: { branchId?: UUID; includeDismissed?: boolean }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
   refreshLowStockAlerts(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").LowStockAlert[]>;

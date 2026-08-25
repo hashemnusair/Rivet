@@ -16,7 +16,7 @@
     "start": "next start -p 3000",
     "lint": "node scripts/audit-secret-output.mjs && eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test scripts/safe-convex-cli.test.mjs && vitest run",
+    "test": "node --test scripts/safe-convex-cli.test.mjs scripts/validate-vercel-env.test.mjs && vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },

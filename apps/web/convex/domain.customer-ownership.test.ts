@@ -3,6 +3,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { Blob as NodeBlob } from "node:buffer";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { privacyFingerprint } from "./publicAbuse";
 
 declare global {
   interface ImportMeta {
@@ -459,6 +460,41 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(experience.memberships[0]).toMatchObject({ gymLogoUrl: expect.any(String), gymCoverUrl: expect.any(String) });
   });
 
+  it("does not project private, stale, wrong-owner, or foreign gym media", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["logo"]) as unknown as Blob));
+    const ids = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organizationA = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-a")).unique();
+      const organizationB = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-b")).unique();
+      const listing = organizationA ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationA._id).eq("entityType", "marketplaceGym").eq("publicId", "gym-a")).unique() : null;
+      expect(organizationA).not.toBeNull();
+      expect(organizationB).not.toBeNull();
+      expect(listing).not.toBeNull();
+      const valid = await ctx.db.insert("mediaAssets", { organizationId: organizationA!._id, publicId: "media-valid-logo", ownerType: "gym_logo", ownerPublicId: "org-a", storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: now, updatedAt: now });
+      const privateAsset = await ctx.db.insert("mediaAssets", { organizationId: organizationA!._id, publicId: "media-private-logo", ownerType: "gym_logo", ownerPublicId: "org-a", storageId, contentType: "image/png", sizeBytes: 4, visibility: "private", status: "active", createdAt: now, updatedAt: now });
+      const wrongOwner = await ctx.db.insert("mediaAssets", { organizationId: organizationA!._id, publicId: "media-wrong-owner", ownerType: "gym_cover", ownerPublicId: "org-a", storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: now, updatedAt: now });
+      const stale = await ctx.db.insert("mediaAssets", { organizationId: organizationA!._id, publicId: "media-stale-logo", ownerType: "gym_logo", ownerPublicId: "org-a", storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "replaced", createdAt: now, updatedAt: now });
+      const foreign = await ctx.db.insert("mediaAssets", { organizationId: organizationB!._id, publicId: "media-foreign-logo", ownerType: "gym_logo", ownerPublicId: "org-b", storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: now, updatedAt: now });
+      return { valid: String(valid), privateAsset: String(privateAsset), wrongOwner: String(wrongOwner), stale: String(stale), foreign: String(foreign), listingId: listing!._id };
+    });
+
+    const setLogo = async (logoAssetId: string) => {
+      await t.run(async (ctx) => {
+        const listing = await ctx.db.get(ids.listingId);
+        await ctx.db.patch(ids.listingId, { data: { ...(listing?.data as Record<string, unknown>), logoAssetId }, updatedAt: Date.now() });
+      });
+      const experience = await t.withIdentity({ subject: "clerk-customer-a" }).query(api.domain.query, operation("customer.experience")) as { memberships: Array<{ gymLogoUrl?: string }> };
+      return experience.memberships[0]?.gymLogoUrl;
+    };
+
+    expect(await setLogo("media-valid-logo")).toEqual(expect.any(String));
+    for (const assetId of ["media-private-logo", "media-wrong-owner", "media-stale-logo", "media-foreign-logo"]) {
+      expect(await setLogo(assetId)).toBeUndefined();
+    }
+  });
+
   it("creates a trial for the authenticated customer and only in the selected gym and active branch", async () => {
     const t = convexTest(schema, modules);
     await seedFixtures(t);
@@ -522,6 +558,71 @@ describe("exported Convex customer ownership boundaries", () => {
     }
     const routedRows = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "lead")).collect());
     expect(routedRows).toHaveLength(1);
+  });
+
+  it("replays customer trial requests idempotently with a privacy-safe guard", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customerA = t.withIdentity({ subject: "clerk-customer-a" });
+    const input = {
+      gymId: "gym-a",
+      branchId: "directory-branch-a",
+      fullName: "Customer A",
+      email: "a@example.com",
+      phone: "+962799999991",
+      preferredDate: trialDate,
+      preferredTime: "13:45",
+      goal: "Strength",
+      idempotencyKey: "trial-retry-key",
+    };
+    const first = await customerA.mutation(api.domain.mutate, operation("customer.trial.create", input)) as TrialBookingResult;
+    const replay = await customerA.mutation(api.domain.mutate, operation("customer.trial.create", input)) as TrialBookingResult;
+    expect(replay.id).toBe(first.id);
+    await expectCode(customerA.mutation(api.domain.mutate, operation("customer.trial.create", { ...input, goal: "Different goal" })), "CONFLICT");
+    const persisted = await t.run(async (ctx) => {
+      const bookings = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect();
+      const guards = await ctx.db.query("publicRequestGuards").collect();
+      const retries = await ctx.db.query("publicRequestIdempotency").collect();
+      return { bookings, guards, retries };
+    });
+    expect(persisted.bookings.filter((row) => row.publicId === first.id)).toHaveLength(1);
+    expect(persisted.guards).toHaveLength(1);
+    expect(persisted.retries).toHaveLength(1);
+    expect(JSON.stringify(persisted.guards[0])).not.toContain("clerk-customer-a");
+  });
+
+  it("replaces expired customer trial retry state before reusing its key", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customerA = t.withIdentity({ subject: "clerk-customer-a" });
+    const input = {
+      gymId: "gym-a",
+      branchId: "directory-branch-a",
+      fullName: "Customer A",
+      email: "a@example.com",
+      phone: "+962799999991",
+      preferredDate: trialDate,
+      preferredTime: "15:45",
+      goal: "Strength",
+      idempotencyKey: "trial-expired-retry-key",
+    };
+    const scope = `customer.trial.create:${await privacyFingerprint("user-a")}`;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("publicRequestIdempotency", {
+        scope,
+        key: input.idempotencyKey,
+        requestHash: "expired-hash",
+        result: { bookingId: "expired-booking" },
+        createdAt: Date.now() - 86_400_000,
+        expiresAt: Date.now() - 1,
+      });
+    });
+    const booking = await customerA.mutation(api.domain.mutate, operation("customer.trial.create", input)) as TrialBookingResult;
+    expect(booking).toMatchObject({ gymId: "gym-a", status: "requested" });
+    const retries = await t.run((ctx) => ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", scope).eq("key", input.idempotencyKey)).collect());
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.expiresAt).toBeGreaterThan(Date.now());
+    expect(retries[0]?.result).toMatchObject({ bookingId: booking.id });
   });
 
   it("does not allow foreign or inactive membership identifiers to create entry passes", async () => {

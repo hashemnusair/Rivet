@@ -102,9 +102,12 @@ describe("reception console — allowed", () => {
   });
 
   it("keeps long bilingual identities separate from membership facts", async () => {
-    const { api } = await renderWithApp(<ReceptionPage />, { role: "manager" });
+    const probe = new MockGymOSApi();
+    const managerSession = await probe.switchDemoRole("manager");
+    const branchId = managerSession.branches[0]!.id;
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "manager", branchId });
     const session = await api.getSession();
-    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    expect(session.activeBranchId).toBe(branchId);
     const members = await api.listMembers({ branchId, pageSize: 200 });
     const seededMember = members.items.find((candidate) => candidate.status === "active");
     if (!seededMember) throw new Error("no active seeded member available for layout regression");
@@ -226,9 +229,9 @@ describe("reception console — blocked", () => {
 
 describe("reception console — override", () => {
   it("offers override to a manager and requires a reason before allowing entry", async () => {
-    const { member } = await findMember("manager", (m) => m.membershipStatus === "expired");
+    const { member, branchId } = await findMember("manager", (m) => m.membershipStatus === "expired");
 
-    await renderWithApp(<ReceptionPage />, { role: "manager" });
+    await renderWithApp(<ReceptionPage />, { role: "manager", branchId });
     const user = await lookup(member.memberNumber);
 
     await user.click(await screen.findByTestId("override-checkin"));
@@ -246,9 +249,9 @@ describe("reception console — override", () => {
   });
 
   it("records the override with its reason on the audit trail", async () => {
-    const { member } = await findMember("manager", (m) => m.membershipStatus === "expired");
+    const { member, branchId } = await findMember("manager", (m) => m.membershipStatus === "expired");
 
-    const { api } = await renderWithApp(<ReceptionPage />, { role: "manager" });
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "manager", branchId });
     const user = await lookup(member.memberNumber);
 
     await user.click(await screen.findByTestId("override-checkin"));

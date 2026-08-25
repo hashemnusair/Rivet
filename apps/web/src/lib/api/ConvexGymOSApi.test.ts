@@ -45,6 +45,29 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(calls[1]).toMatchObject({ operation: "members.list", organizationId: session.organization.id, activeBranchId: session.activeBranchId });
   });
 
+  it("does not retain a stale organization or branch after a scope selection fails", async () => {
+    const scopeErrors: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi({
+      ...transportFor({ query: session }),
+      query: async (_reference, args) => {
+        const request = args as unknown as Record<string, unknown>;
+        scopeErrors.push(request);
+        if (request.organizationId === "stale-org") throw Object.assign(new Error("Organization not found"), { data: { code: ERR.NOT_FOUND, message: "Organization not found.", requestId: "scope-1" } });
+        if (request.activeBranchId === "stale-branch") throw Object.assign(new Error("Branch not found"), { data: { code: ERR.NOT_FOUND, message: "Branch not found.", requestId: "scope-2" } });
+        return session;
+      },
+    });
+
+    await api.getSession();
+    await expect(api.selectOrganization("stale-org")).rejects.toBeInstanceOf(ApiError);
+    await api.listMembers({ page: 1, pageSize: 1 });
+    expect(scopeErrors.at(-1)).toMatchObject({ organizationId: session.organization.id, activeBranchId: session.activeBranchId });
+
+    await expect(api.setActiveBranch("stale-branch")).rejects.toBeInstanceOf(ApiError);
+    await api.listMembers({ page: 1, pageSize: 1 });
+    expect(scopeErrors.at(-1)).toMatchObject({ organizationId: session.organization.id, activeBranchId: session.activeBranchId });
+  });
+
   it("routes member marketing preferences through the authenticated mutation boundary", async () => {
     let mutationArgs: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: { id: "customer-1" } }, (_kind, args) => { mutationArgs = args; }));
@@ -564,12 +587,38 @@ describe("ConvexGymOSApi contract boundary", () => {
     vi.unstubAllEnvs();
   });
 
-  it("honors an explicit mock mode in a production-mode Preview build", () => {
+  it("rejects mock mode in a production runtime outside the test harness", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
 
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
+
+    vi.unstubAllEnvs();
+  });
+
+  it("allows mock mode only for an explicitly marked preview deployment", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
+    vi.stubEnv("NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS", "preview");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
     expect(dataMode()).toBe("mock");
 
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
+    vi.unstubAllEnvs();
+  });
+
+  it("fails closed when production hosting is reported with a development Node runtime", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
     vi.unstubAllEnvs();
   });
 });

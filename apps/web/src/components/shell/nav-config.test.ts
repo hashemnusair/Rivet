@@ -31,6 +31,8 @@ describe("primary workspace navigation", () => {
       "/reports",
       "/automations",
     ]));
+    expect(hrefs.some((href) => href.includes("facilit"))).toBe(false);
+    expect(NAV_SECTIONS.flatMap((section) => section.items).map((item) => item.label).some((label) => /facilit|automation/i.test(label))).toBe(false);
   });
 
   it("filters capability routes using the server-owned workspace state", () => {

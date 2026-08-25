@@ -2,14 +2,16 @@
 
 import { ArrowLeft, CheckCircle2, FileUp, Upload } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MemberImportCommitResult, MemberImportPreview } from "@/lib/api/GymOSApi";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
-import { Input, Textarea } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/states";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 const SAMPLE_CSV = `full_name,phone,email
 Samira Haddad,+962790000001,samira@example.com
@@ -28,7 +30,17 @@ export default function MemberImportPage() {
   const [result, setResult] = useState<MemberImportCommitResult>();
   const [committing, setCommitting] = useState(false);
 
-  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
+  const [branchId, setBranchId] = useState("");
+  useEffect(() => {
+    const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
+    setBranchId((current) => visibleBranchId(session?.branches, current) ?? activeBranchId ?? "");
+  }, [session?.activeBranchId, session?.branches]);
+  useEffect(() => {
+    if (preview && preview.branchId !== visibleBranchId(session?.branches, branchId)) {
+      setPreview(undefined);
+      setResult(undefined);
+    }
+  }, [branchId, preview, session?.branches]);
   const validRows = useMemo(() => preview?.rows.filter((row) => row.status === "valid") ?? [], [preview]);
 
   const previewMutation = useApiMutation((api, input: { csv: string; branchId: string }) => api.previewMemberImport(input), {
@@ -39,12 +51,13 @@ export default function MemberImportPage() {
   });
 
   const runPreview = () => {
-    if (!branchId || !csv.trim()) return;
-    previewMutation.mutate({ csv, branchId });
+    const selectedBranchId = visibleBranchId(session?.branches, branchId);
+    if (!selectedBranchId || !csv.trim()) return;
+    previewMutation.mutate({ csv, branchId: selectedBranchId });
   };
 
   const commit = async () => {
-    if (!preview || validRows.length === 0 || committing) return;
+    if (!preview || preview.branchId !== visibleBranchId(session?.branches, branchId) || validRows.length === 0 || committing) return;
     setCommitting(true);
     try {
       let cursor = 0;
@@ -111,10 +124,18 @@ export default function MemberImportPage() {
             />
           </label>
           <div className="space-y-3 rounded-md border border-line bg-sunken/50 p-3">
-            <p className="eyebrow">Active branch</p>
+            <p className="eyebrow">Import destination</p>
             <label className="space-y-1.5">
-              <span className="text-[12px] text-ink-2">Import destination</span>
-              <Input value={session?.branches.find((branch) => branch.id === branchId)?.name ?? "No active branch"} readOnly aria-label="Import destination branch" />
+              <span className="text-[12px] text-ink-2">Choose one branch. Imports cannot use All branches.</span>
+              <Select value={branchId || "none"} onValueChange={(value) => { setBranchId(value === "none" ? "" : value); setPreview(undefined); setResult(undefined); }}>
+                <SelectTrigger aria-label="Import destination branch">
+                  <SelectValue placeholder="Choose branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Choose branch</SelectItem>
+                  {session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </label>
             <Button className="w-full" onClick={runPreview} disabled={!branchId || !csv.trim()} loading={previewMutation.isPending}>
               <Upload /> Preview rows

@@ -70,6 +70,26 @@ describe("OperationsCommandCenter", () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  it("opens a centered transfer dialog and submits the selected source and destination branches", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />);
+    await selectBranch(user, "Forge — Abdoun");
+    const transferMutation = vi.spyOn(api, "transferInventory");
+
+    await user.click(screen.getByRole("button", { name: "Move stock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move stock to another branch" });
+    expect(dialog).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("combobox", { name: "Transfer destination" }));
+    await user.click(await screen.findByRole("option", { name: "Forge — Sweifieh" }));
+    await user.clear(within(dialog).getByRole("spinbutton", { name: "Transfer quantity" }));
+    await user.type(within(dialog).getByRole("spinbutton", { name: "Transfer quantity" }), "2");
+    await user.type(within(dialog).getByRole("textbox", { name: "Transfer reason" }), "Balance the Abdoun branch");
+    await user.click(within(dialog).getByRole("button", { name: "Move stock" }));
+
+    await waitFor(() => expect(transferMutation).toHaveBeenCalledWith(expect.objectContaining({ sourceBranchId: expect.any(String), destinationBranchId: expect.any(String), quantity: 2, reason: "Balance the Abdoun branch", idempotencyKey: expect.stringMatching(/^inventory-transfer-/) })));
+    expect(transferMutation.mock.calls[0]?.[0].sourceBranchId).toBe((await api.getSession()).activeBranchId);
+  });
+
   it("switches between inventory and equipment without leaving the page", async () => {
     const user = userEvent.setup();
     await renderWithApp(<OperationsCommandCenter />);

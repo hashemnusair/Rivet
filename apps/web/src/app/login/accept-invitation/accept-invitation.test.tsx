@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   search: new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=sign_up"),
   replace: vi.fn(),
   signOut: vi.fn(),
+  claimInvitation: vi.fn().mockResolvedValue({ claimed: true }),
   signIn: null as null | { create: ReturnType<typeof vi.fn>; finalize: ReturnType<typeof vi.fn>; status: "complete" | "needs_first_factor" },
   signUp: null as null | { create: ReturnType<typeof vi.fn>; finalize: ReturnType<typeof vi.fn>; status: "complete" | "needs_identifier" },
 }));
@@ -22,11 +23,17 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: state.replace }),
 }));
 
+vi.mock("convex/react", () => ({
+  useAction: () => state.claimInvitation,
+}));
+
 describe("accept gym invitation", () => {
   beforeEach(() => {
     state.search = new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=sign_up");
     state.replace.mockReset();
     state.signOut.mockReset();
+    state.claimInvitation.mockReset();
+    state.claimInvitation.mockResolvedValue({ claimed: true });
     state.signIn = null;
     state.signUp = {
       create: vi.fn().mockResolvedValue({ error: null }),
@@ -51,6 +58,7 @@ describe("accept gym invitation", () => {
     await waitFor(() => {
       expect(state.signUp?.create).toHaveBeenCalledWith({ strategy: "ticket", ticket: "ticket-1", firstName: "Elias", lastName: "Hreish", password: "password-1" });
       expect(state.signUp?.finalize).toHaveBeenCalled();
+      expect(state.claimInvitation).toHaveBeenCalledWith({});
       expect(state.replace).toHaveBeenCalledWith("/login");
     });
   });
@@ -68,7 +76,42 @@ describe("accept gym invitation", () => {
     await waitFor(() => {
       expect(state.signIn?.create).toHaveBeenCalledWith({ strategy: "ticket", ticket: "ticket-2" });
       expect(state.signIn?.finalize).toHaveBeenCalled();
+      expect(state.claimInvitation).toHaveBeenCalledWith({});
       expect(state.replace).toHaveBeenCalledWith("/login");
+    });
+  });
+
+  it("does not finish a new account when the backend cannot verify the invitation", async () => {
+    state.claimInvitation.mockResolvedValue({ claimed: false });
+    render(<AcceptInvitation />);
+    fireEvent.change(screen.getByLabelText(/First name/), { target: { value: "Elias" } });
+    fireEvent.change(screen.getByLabelText(/Last name/), { target: { value: "Hreish" } });
+    fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "password-1" } });
+    fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "password-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Open gym workspace/i }));
+
+    await waitFor(() => {
+      expect(state.claimInvitation).toHaveBeenCalledWith({});
+      expect(state.replace).not.toHaveBeenCalled();
+      expect(screen.getByRole("alert")).toHaveTextContent(/verify this invitation|resend/i);
+    });
+  });
+
+  it("does not finish an existing invited identity when the backend returns an unclaimed result", async () => {
+    state.search = new URLSearchParams("__clerk_ticket=ticket-3&__clerk_status=sign_in");
+    state.claimInvitation.mockResolvedValue({ claimed: false });
+    state.signIn = {
+      create: vi.fn().mockResolvedValue({ error: null }),
+      finalize: vi.fn().mockResolvedValue({ error: null }),
+      status: "complete",
+    };
+
+    render(<AcceptInvitation />);
+
+    await waitFor(() => {
+      expect(state.claimInvitation).toHaveBeenCalledWith({});
+      expect(state.replace).not.toHaveBeenCalled();
+      expect(screen.getByRole("alert")).toHaveTextContent(/verify this invitation|resend/i);
     });
   });
 

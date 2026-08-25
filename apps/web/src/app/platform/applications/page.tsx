@@ -184,6 +184,8 @@ export default function PlatformApplicationsPage() {
       setApplications((current) => current.map((application) => application.id === result.applicationId ? {
         ...application,
         provisioningStatus: result.status,
+        provisioningCheckpoint: "completed",
+        provisioningOutcome: "complete",
         provisioningStartedAt: undefined,
         provisioningError: undefined,
         provisionedAt: new Date().toISOString(),
@@ -334,7 +336,9 @@ function ProvisioningCard({ application, busy, refreshing, onProvision, onRefres
     return <div className="mt-5 flex items-start gap-3 border border-success/30 bg-success-bg p-4 text-[12px] text-success"><CheckCircle2 className="mt-0.5 size-4" /><div><strong>Workspace provisioned</strong><p className="mt-1 text-[11px] opacity-80">The first branch and owner invitation are ready. The gym can now sign in after accepting the Clerk invitation.</p></div></div>;
   }
   if (status === "failed") {
-    return <div className="mt-5 border border-danger/30 bg-danger-bg p-4 text-[12px] text-danger"><div className="flex items-start gap-3"><X className="mt-0.5 size-4" /><div><strong>Provisioning needs attention</strong><p className="mt-1 text-[11px] opacity-80">{application.provisioningError ?? "The workspace was not completed."}</p></div></div><Button className="mt-4" variant="danger" size="sm" onClick={onProvision} loading={busy}>Retry provisioning</Button></div>;
+    const permanent = application.provisioningOutcome === "permanent";
+    const partial = application.provisioningOutcome === "partial";
+    return <div className="mt-5 border border-danger/30 bg-danger-bg p-4 text-[12px] text-danger"><div className="flex items-start gap-3"><X className="mt-0.5 size-4" /><div><strong>{permanent ? "Provisioning requires manual correction" : partial ? "Workspace partially created — retryable" : "Provisioning needs attention"}</strong><p className="mt-1 text-[11px] opacity-80">{application.provisioningError ?? (permanent ? "Correct the recorded conflict before trying again." : "The workspace was not completed.")}</p></div></div>{permanent ? null : <Button className="mt-4" variant="danger" size="sm" onClick={onProvision} loading={busy}>Retry provisioning</Button>}</div>;
   }
   if (status === "in_progress") {
     return <div className="mt-5 border border-warning/30 bg-warning-bg p-4 text-[12px] text-warning" role="status"><div className="flex items-start gap-3"><Clock3 className="mt-0.5 size-4" /><div><strong>Provisioning in progress</strong><p className="mt-1 text-[11px] opacity-80">The workspace request is being completed. Refresh this application in a moment before trying again.</p></div></div><Button className="mt-4" variant="secondary" size="sm" onClick={onRefresh} loading={refreshing} disabled={busy}><RefreshCcw /> Refresh status</Button></div>;

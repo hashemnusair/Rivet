@@ -12,10 +12,11 @@ import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 export function ReceptionDashboard() {
   const { session } = useApp();
-  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
+  const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
   const shift = useRealtimeApiQuery({ queryKey: ["current-shift-totals", branchId], query: (api) => api.getCurrentShiftTotals(branchId!), subscribe: (api, onValue, onError) => api.subscribeCurrentShiftTotals(branchId!, onValue, onError), enabled: Boolean(branchId) });
   const occupancy = useRealtimeApiQuery({ queryKey: ["occupancy", branchId], query: (api) => api.getOccupancy(branchId!), subscribe: (api, onValue, onError) => api.subscribeOccupancy(branchId!, onValue, onError), enabled: Boolean(branchId) });
   const checkInsInput = { branchId, date: todayISODate(session?.organization.timezone), acceptedOnly: true, pageSize: 8 };

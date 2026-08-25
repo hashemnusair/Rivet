@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 const schema = z.object({
   fullName: z.string().min(3, "Full name is required"),
@@ -52,6 +53,7 @@ export default function NewMemberPage() {
   const invalidate = useInvalidate();
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
   const [checkingDupes, setCheckingDupes] = useState(false);
+  const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? "";
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -60,11 +62,17 @@ export default function NewMemberPage() {
       fullNameAr: "",
       phone: "",
       email: "",
-      homeBranchId: session?.activeBranchId ?? session?.branches[0]?.id ?? "",
+      homeBranchId: activeBranchId,
       preferredLanguage: "en",
       marketingOptIn: false,
     },
   });
+
+  useEffect(() => {
+    const current = form.getValues("homeBranchId");
+    if (visibleBranchId(session?.branches, current)) return;
+    form.setValue("homeBranchId", activeBranchId, { shouldValidate: false });
+  }, [activeBranchId, form, session?.branches]);
 
   const createMember = useApiMutation(
     (api, values: FormValues) =>
@@ -156,7 +164,12 @@ export default function NewMemberPage() {
         onSubmit={form.handleSubmit(async (values) => {
           setErrorMsg(null);
           try {
-            await createMember.mutateAsync(values);
+            const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
+            if (!selectedBranchId) {
+              form.setError("homeBranchId", { message: "Choose a visible branch" });
+              return;
+            }
+            await createMember.mutateAsync({ ...values, homeBranchId: selectedBranchId });
           } catch (e) {
             setErrorMsg(isApiError(e) ? e.message : "Could not create the member.");
           }

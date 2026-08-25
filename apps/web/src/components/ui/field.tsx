@@ -32,15 +32,23 @@ function Field({
   children: React.ReactNode;
 }) {
   const generatedId = useId();
-  const element = isValidElement<{ id?: string }>(children) ? children : null;
+  const element = isValidElement<{ id?: string; "aria-describedby"?: string }>(children) ? children : null;
   const childId = typeof element?.props.id === "string" && element.props.id ? element.props.id : undefined;
   const canReceiveGeneratedId = Boolean(element)
     && (typeof element!.type === "string"
       ? ["input", "textarea", "select"].includes(element!.type)
       : element!.type === Input || element!.type === Textarea);
   const controlId = childId ?? htmlFor ?? (canReceiveGeneratedId ? `field-${generatedId.replace(/:/g, "")}` : undefined);
-  const child = canReceiveGeneratedId && element && !childId && controlId
-    ? cloneElement(element, { id: controlId })
+  const describedBy = [
+    element?.props["aria-describedby"],
+    error && controlId ? `${controlId}-error` : undefined,
+    !error && hint && controlId ? `${controlId}-hint` : undefined,
+  ].filter(Boolean).join(" ") || undefined;
+  const child = canReceiveGeneratedId && element
+    ? cloneElement(element, {
+        ...(childId || !controlId ? {} : { id: controlId }),
+        ...(describedBy ? { "aria-describedby": describedBy } : {}),
+      })
     : children;
   return (
     <div className={cn("min-w-0", className)}>
@@ -52,11 +60,11 @@ function Field({
       ) : null}
       {child}
       {error ? (
-        <p role="alert" className="mt-1.5 text-xs text-danger">
+        <p id={controlId ? `${controlId}-error` : undefined} role="alert" className="mt-1.5 text-xs text-danger">
           {error}
         </p>
       ) : hint ? (
-        <p className="mt-1.5 text-xs text-ink-3">{hint}</p>
+        <p id={controlId ? `${controlId}-hint` : undefined} className="mt-1.5 text-xs text-ink-3">{hint}</p>
       ) : null}
     </div>
   );

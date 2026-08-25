@@ -113,6 +113,16 @@ export function triggerMatches(rule: Data, record: Data, today: string): boolean
   return false;
 }
 
+/**
+ * Automation editing and execution are intentionally deferred in the current
+ * pilot. Notifications still need a useful, existing destination when no
+ * member or lead record is attached, so operators can inspect the immutable
+ * automation history instead of landing on a paused workspace.
+ */
+export function automationAttentionHref(memberId?: string, leadId?: string): string {
+  return memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/audit?category=automations";
+}
+
 async function ownerForRole(ctx: MutationCtx, organizationId: Id<"organizations">, role: string): Promise<Doc<"users"> | null> {
   const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect();
   const membership = memberships.find((item: Doc<"organizationMemberships">) => item.active && item.role === (role === "salesperson" ? "sales" : role));
@@ -226,7 +236,7 @@ export const evaluate = internalMutation({
               actionResults.push({ key: action, messageId, status: messageStatus, suppressionReason });
               attemptHistory.push({ action, attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason });
             } else if (action === "notify_manager") {
-              await notifyManagers(ctx, organization._id, candidateRecord.branchId, { title: stringValue(rule.name, "Automation requires attention"), body: subjectName, href: memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/automations", dedupeKey: `automation-notification:${executionId}` });
+              await notifyManagers(ctx, organization._id, candidateRecord.branchId, { title: stringValue(rule.name, "Automation requires attention"), body: subjectName, href: automationAttentionHref(memberId, leadId), dedupeKey: `automation-notification:${executionId}` });
               actionResults.push({ key: action, status: "completed" });
               attemptHistory.push({ action, attempt: 1, status: "completed", occurredAt: isoNow() });
             }

@@ -166,6 +166,8 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `CLERK_SECRET_KEY` | server-only Clerk key for invitations |
 | `CLERK_FRONTEND_API_URL` | Clerk JWT issuer configured in Convex |
 | `ENTRY_PASS_SIGNING_SECRET` | Convex-only HMAC secret |
+| `RIVET_PUBLIC_REQUEST_PEPPER` | Private pepper required by public application/trial throttling; set in Convex and Vercel Production |
+| `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` | Local/test-only fallback switch; keep unset or `0` in Production |
 | `RIVET_SITE_URL` | Convex-only origin used for owner invitation links |
 | `RESEND_API_KEY` | Convex-only email delivery secret for gym applications |
 | `RESEND_FROM_EMAIL` | Verified sender, normally `noreply@rivetjo.com` |

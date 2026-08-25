@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -111,6 +112,18 @@ describe("durable operational email", () => {
     const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "receipt-transient")).unique());
     expect(row).toMatchObject({ status: "retrying", attempts: [{ outcome: "retryable_failure", statusCode: 503, errorCode: "provider_http_503" }] });
     expect(row?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60_000);
+  });
+
+  it("routes terminal delivery failures to the email settings instead of deferred automation UI", async () => {
+    enableLiveWorker();
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "receipt-terminal" });
+    const leased = await t.mutation(internal.operationalEmail.leaseDue, { limit: 1 });
+    const delivery = leased[0] as { _id: string; leaseToken?: string };
+    expect(delivery?.leaseToken).toBeTruthy();
+    await t.mutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id as Id<"operationalEmailDeliveries">, leaseToken: delivery.leaseToken!, accepted: false, retryable: false, statusCode: 550, errorCode: "provider_terminal" });
+    const notifications = await t.run((ctx) => ctx.db.query("operationalNotifications").collect());
+    expect(notifications).toEqual([expect.objectContaining({ kind: "operational_email_failed", href: "/settings?section=email" })]);
   });
 
   it("suppresses a queued category if the gym disables it before the worker leases it", async () => {

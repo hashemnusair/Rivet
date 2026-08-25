@@ -265,11 +265,22 @@ export class ConvexGymOSApi implements GymOSApi {
   }
 
   async selectOrganization(organizationId: T.UUID): Promise<T.Session> {
+    const previousOrganizationId = this.organizationId;
+    const previousBranchId = this.activeBranchId;
     this.organizationId = organizationId;
     this.activeBranchId = undefined;
-    const session = await this.query<T.Session>("session");
-    this.activeBranchId = session.activeBranchId;
-    return session;
+    try {
+      const session = await this.query<T.Session>("session");
+      this.activeBranchId = session.activeBranchId;
+      return session;
+    } catch (error) {
+      // A stale/deleted organization must not remain latched in the adapter.
+      // Restore the last known-good scope, or leave it empty so the next call
+      // fails closed instead of silently selecting another tenant.
+      this.organizationId = previousOrganizationId;
+      this.activeBranchId = previousBranchId;
+      throw error;
+    }
   }
 
   async switchDemoRole(): Promise<T.Session> {
@@ -277,11 +288,17 @@ export class ConvexGymOSApi implements GymOSApi {
   }
 
   async setActiveBranch(branchId: T.UUID | undefined): Promise<T.Session> {
+    const previousBranchId = this.activeBranchId;
     this.activeBranchId = branchId;
-    const session = await this.query<T.Session>("session");
-    this.organizationId = session.organization.id;
-    this.activeBranchId = session.activeBranchId;
-    return session;
+    try {
+      const session = await this.query<T.Session>("session");
+      this.organizationId = session.organization.id;
+      this.activeBranchId = session.activeBranchId;
+      return session;
+    } catch (error) {
+      this.activeBranchId = previousBranchId;
+      throw error;
+    }
   }
 
   async signOut(): Promise<void> {
@@ -571,6 +588,7 @@ export class ConvexGymOSApi implements GymOSApi {
   archiveSupplier(supplierId: T.UUID, reason: string): Promise<T.Supplier> { return this.mutate("operations.supplier.archive", { id: supplierId, reason }); }
   listInventory(input: { branchId?: T.UUID; productId?: T.UUID } = {}): Promise<T.InventoryBalance[]> { return this.query("operations.inventory.list", input); }
   recordStockMovement(input: Parameters<GymOSApi["recordStockMovement"]>[0]): Promise<T.StockMovement> { return this.mutate("operations.stock_movement.record", input); }
+  transferInventory(input: T.InventoryTransferInput): Promise<T.InventoryTransferResult> { return this.mutate("operations.inventory.transfer", input); }
   listStockMovements(query: { branchId?: T.UUID; productId?: T.UUID; page?: number; pageSize?: number } = {}): Promise<T.Page<T.StockMovement>> { return this.query("operations.stock_movements.list", query); }
   listLowStockAlerts(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): Promise<T.LowStockAlert[]> { return this.query("operations.low_stock.list", input); }
   refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> { return this.mutate("operations.low_stock.refresh", input); }
@@ -608,11 +626,21 @@ export class ConvexGymOSApi implements GymOSApi {
 
 export function dataMode(): "mock" | "convex" {
   const configured = process.env.NEXT_PUBLIC_DATA_MODE;
-  // Vercel Preview is also a production-mode Next.js build. An explicit
-  // environment value must therefore win before the production default, or a
-  // Preview deployment configured for the deterministic mock experience will
-  // still try to connect to Convex.
-  if (configured === "mock" || configured === "convex") return configured;
+  const isTestRuntime = process.env.NODE_ENV === "test" || process.env.VITEST === "true" || Boolean(process.env.VITEST_WORKER_ID);
+  const deploymentClass = process.env.NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS;
+  const approvedPreview = deploymentClass === "preview" && process.env.VERCEL_ENV !== "production";
+  const isProductionDeployment = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || deploymentClass === "production";
+  // A mock adapter is useful for local visual review and unit tests, but it is
+  // not a safe production fallback. Fail closed even when a deployment has a
+  // stale NEXT_PUBLIC_DATA_MODE=mock value; otherwise a production bundle can
+  // silently expose seeded tenant data.
+  if (configured === "mock") {
+    if (isProductionDeployment && !isTestRuntime && !approvedPreview) {
+      throw new Error("RIVET production runtime cannot use mock data mode.");
+    }
+    return "mock";
+  }
+  if (configured === "convex") return "convex";
   if (process.env.NODE_ENV === "production") return "convex";
   // The preview auth bypass and mock adapter are one explicit test contract.
   // Treat the bypass as the stronger selector so the first dev-bundle request

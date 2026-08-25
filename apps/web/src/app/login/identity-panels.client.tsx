@@ -4,7 +4,7 @@ import { useClerk } from "@clerk/nextjs";
 import { CircleAlert, LogOut } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
@@ -46,7 +46,47 @@ export function IdentityPanel() {
   if (destination.area === "platform") return <AdminEntry identity={identity} />;
   if (destination.area === "gym") return <GymEntry identity={identity} />;
   if (destination.area === "unavailable") return <UnavailableGymEntry />;
+  if (destination.area === "organization-selection") return <OrganizationSelection identity={identity} />;
   return <MemberEntry identity={identity} />;
+}
+
+function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
+  const { selectOrganization } = useApp();
+  const router = useRouter();
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState(false);
+
+  const choose = async (organizationId: string) => {
+    if (busy) return;
+    setBusy(organizationId);
+    setError(false);
+    try {
+      await selectOrganization(organizationId);
+      const selected = identity.memberships.find((membership) => membership.organizationId === organizationId);
+      if (selected) router.replace(selected.role === "receptionist" ? "/reception" : selected.role === "auditor" ? "/reports" : "/dashboard");
+    } catch {
+      setBusy(undefined);
+      setError(true);
+    }
+  };
+
+  return (
+    <NotEntitled
+      title="Choose a gym workspace"
+      body="This account has access to more than one gym. Select the workspace you want to open."
+      action={(
+        <div className="mt-4 grid gap-2 text-left">
+          {identity.memberships.map((membership) => (
+            <Button key={membership.organizationId} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(membership.organizationId)} disabled={Boolean(busy)} loading={busy === membership.organizationId}>
+              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[11px] text-ink-3">{membership.role}</span></span>
+              <span aria-hidden>→</span>
+            </Button>
+          ))}
+          {error ? <p className="text-[12px] text-danger" role="alert">That workspace could not be opened. Try again.</p> : null}
+        </div>
+      )}
+    />
+  );
 }
 
 function UnavailableGymEntry() {
@@ -181,9 +221,11 @@ function AutomaticEntry({ label }: { label: string }) {
 function NotEntitled({
   title,
   body,
+  action,
 }: {
   title: string;
   body: string;
+  action?: ReactNode;
 }) {
   const { signOut: signOutClerk } = useClerk();
   const { signOut } = useApp();
@@ -212,6 +254,7 @@ function NotEntitled({
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">{body}</p>
       </div>
+      {action}
       <Button
         type="button"
         variant="secondary"

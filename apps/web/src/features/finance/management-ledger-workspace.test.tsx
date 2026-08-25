@@ -30,17 +30,18 @@ describe("ManagementLedgerWorkspace", () => {
     expect(screen.getByText(/not a statutory filing system/i)).toBeInTheDocument();
   });
 
-  it("lets an owner open a manual journal with a consolidated scope that has no branch", async () => {
+  it("requires a concrete branch before an owner can open a manual journal", async () => {
     const user = userEvent.setup();
-    await renderWithApp(<ManagementLedgerWorkspace />);
+    const { api } = await renderWithApp(<ManagementLedgerWorkspace />);
+    const session = await api.getSession();
+    const branchName = session.branches[0]!.name;
+    expect(screen.queryByRole("button", { name: /manual journal/i })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("combobox", { name: "Ledger branch scope" }));
+    await user.click(await screen.findByRole("option", { name: branchName }));
 
     await user.click(await screen.findByRole("button", { name: /manual journal/i }));
     expect(await screen.findByRole("dialog", { name: /post manual journal/i })).toBeInTheDocument();
-    const scope = screen.getByRole("combobox", { name: "Manual journal scope" });
-    await user.click(scope);
-    await user.click(await screen.findByRole("option", { name: "Consolidated journal" }));
-    expect(screen.getByText("Consolidated journals have no branch.")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Manual journal branch" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Manual journal branch" })).toHaveTextContent(branchName);
   });
 
   it("keeps source posting actions out of the auditor view while preserving the queue", async () => {

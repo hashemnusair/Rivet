@@ -127,7 +127,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               ) : (
                 <p className="flex items-center gap-2 px-1 text-[12.5px] text-night-ink-2">
                   <Building2 className="size-3.5 text-night-ink-3" aria-hidden />
-                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? session.branches[0]?.name}
+                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? "Branch unavailable"}
                 </p>
               )}
             </div>

@@ -91,6 +91,20 @@ const MOCK_EQUIPMENT_SAFETY_STATUSES: readonly T.EquipmentIssue["safetyStatus"][
 const MOCK_EQUIPMENT_WORK_ORDER_STATUSES: readonly T.EquipmentWorkOrder["status"][] = ["draft", "approved", "in_progress", "completed", "cancelled"];
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
 
+function exactCostTotal(unitCost: T.Money | undefined, quantity: number): T.Money | undefined {
+  if (!unitCost || !Number.isSafeInteger(unitCost.amount) || unitCost.amount < 0 || !Number.isSafeInteger(quantity) || quantity < 0) return undefined;
+  const amount = unitCost.amount * quantity;
+  return Number.isSafeInteger(amount) ? { amount, currency: unitCost.currency } : undefined;
+}
+
+function allocateExactCost(totalMinor: number | undefined, quantityOnHand: number, quantity: number): number | undefined {
+  if (typeof totalMinor !== "number" || !Number.isSafeInteger(totalMinor) || totalMinor < 0 || !Number.isSafeInteger(quantityOnHand) || quantityOnHand <= 0 || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > quantityOnHand) return undefined;
+  const exactTotal = totalMinor as number;
+  if (quantity === quantityOnHand) return exactTotal;
+  const numerator = exactTotal * quantity;
+  return Number.isSafeInteger(numerator) ? Math.floor(numerator / quantityOnHand) : undefined;
+}
+
 /**
  * Retail refunds are payment facts, but a guest has no member id. Keep the
  * customer and sale links on the mock payment projection so receipt and
@@ -106,6 +120,31 @@ type MockRetailAdjustmentPayment = T.Payment & {
 
 function managementLocalDate(value: string | number, timezone: string): string {
   return todayISODate(timezone, new Date(value));
+}
+
+function publicApplicationKey(email: string, gymName: string): string {
+  const normalizedGym = gymName.trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "gym";
+  return `${email.trim().toLowerCase()}::${normalizedGym}`;
+}
+
+function publicRequestSignature(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function enforceMockRateLimit(
+  limits: Map<string, { windowStartedAt: number; requestCount: number }>,
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+): void {
+  const now = Date.now();
+  const existing = limits.get(key);
+  if (existing && now - existing.windowStartedAt < windowMs) {
+    if (existing.requestCount >= maxRequests) throw ApiError.of(ERR.RATE_LIMITED, "Too many requests. Please wait and try again.");
+    existing.requestCount += 1;
+    return;
+  }
+  limits.set(key, { windowStartedAt: now, requestCount: 1 });
 }
 
 function ledgerDate(value: string | undefined, fallback: string): string {
@@ -128,6 +167,7 @@ const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" 
   { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
   { code: "4100", name: "Membership revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "4200", name: "Retail sales revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
@@ -177,6 +217,30 @@ function accountingSourceAttemptKey(sourceType: T.AccountingSourceType, sourceId
 
 function accountingSourceRequestFingerprint(input: { sourceType: T.AccountingSourceType; sourceId: T.UUID; idempotencyKey: string; reason?: string }): string {
   return stableJson({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason?.trim() ?? "" });
+}
+
+function accountingPolicyVersion(policyCode?: string): number | undefined {
+  const match = policyCode?.match(/\.v(\d+)$/);
+  if (!match?.[1]) return undefined;
+  const version = Number(match[1]);
+  return Number.isSafeInteger(version) && version > 0 ? version : undefined;
+}
+
+/**
+ * Pending source rows are historical decisions, not disposable cache rows.
+ * If a source was queued under a prior policy version, refresh/post must keep
+ * that version until an operator explicitly creates a new source fact. This
+ * mirrors Convex's code-owned policy preservation and prevents a queue
+ * refresh from silently changing the accounting meaning of an old item.
+ */
+function preserveMockSourcePolicy<TFact extends { policyCode?: string; debitCode?: string; creditCode?: string }>(fact: TFact, existing?: { status: T.AccountingSourceStatus; policyCode?: string }): TFact {
+  if (!existing || existing.status === "posted" || existing.status === "reversed" || !existing.policyCode || existing.policyCode === fact.policyCode) return fact;
+  const policyCode = existing.policyCode;
+  if (/^retail-sale-(cash|card|cliq)\.v1$/.test(policyCode)) return { ...fact, policyCode, creditCode: "4100" };
+  if (/^retail-(refund|void)-(cash|card|cliq)\.v1$/.test(policyCode)) return { ...fact, policyCode, debitCode: "1200" };
+  // Other policy families have remained stable. Preserve the source's
+  // historical code even when the current fact happens to use a newer code.
+  return { ...fact, policyCode };
 }
 
 function createMockMediaUrl(file: Blob, fallbackId: string): string {
@@ -251,6 +315,22 @@ type MockPlatformAuditEvent = PlatformGymActivity & {
   reason: string;
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
+};
+
+/**
+ * A provisioned application gets its own tenant-shaped projection in the
+ * mock. The rest of the demo database still represents the signed-in Forge
+ * workspace, so keeping these facts separately prevents a second provisioning
+ * run from overwriting the active demo tenant while still exercising the
+ * platform/public projection contracts.
+ */
+type MockProvisionedTenant = {
+  organization: T.Organization;
+  branch: T.Branch;
+  owner: T.StaffUser;
+  membershipStatus: "pending" | "accepted";
+  clerkInvitationId: string;
+  listingId: string;
 };
 
 const PUBLIC_SUBSCRIPTION_STATUSES: ReadonlySet<MarketplaceGym["subscriptionStatus"]> = new Set(["active", "trial"]);
@@ -399,6 +479,8 @@ export class MockGymOSApi implements GymOSApi {
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private archivedGymIds = new Set<string>();
+  private provisionedMockGymIds = new Set<string>([PROVISIONED_MOCK_GYM_ID]);
+  private provisionedTenants = new Map<string, MockProvisionedTenant>();
   private platformAuditEvents: MockPlatformAuditEvent[] = [];
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
   private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
@@ -408,12 +490,17 @@ export class MockGymOSApi implements GymOSApi {
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
   private platformSupportCases: PlatformSupportCase[];
+  private readonly provisioningInFlight = new Set<string>();
   private operationalNotifications: MockOperationalNotification[] = [];
   private trialBookings: TrialBooking[];
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
+  private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
+  private publicApplicationRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
+  private trialIdempotency = new Map<string, { signature: string; result: TrialBooking }>();
+  private trialRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
   private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
   private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
   private ptCancellationIdempotency = new Map<string, { signature: string; result: T.PtPackageOrder }>();
@@ -425,7 +512,7 @@ export class MockGymOSApi implements GymOSApi {
   private ptEntitlements: T.PtEntitlement[] = [];
   private ptBookings: T.PtBooking[] = [];
   private ptOrders: T.PtPackageOrder[] = [];
-  private operationsIdempotency = new Map<string, { signature: string; result: unknown }>();
+  private operationsIdempotency = new Map<string, { signature: string; result: unknown; expiresAt?: number }>();
   private accountingAccounts: T.AccountingAccount[];
   private accountingPeriods: T.AccountingPeriod[] = [];
   private accountingEntries: T.AccountingJournalEntryDetail[] = [];
@@ -435,6 +522,8 @@ export class MockGymOSApi implements GymOSApi {
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
   private mediaAssets = new Map<string, T.MediaAsset>();
+  /** Internal linkage kept out of the public trainer DTO, matching Convex's photoAssetId field. */
+  private ptTrainerPhotoAssetIds = new Map<string, string>();
   private operationalEmailKinds: string[] = [];
   private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
 
@@ -460,13 +549,38 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
   }
 
   /** The seeded Forge row is the only mock directory record linked to the tenant database. */
   private isProvisionedGym(gym: MarketplaceGym): boolean {
-    return gym.id === PROVISIONED_MOCK_GYM_ID;
+    return this.provisionedMockGymIds.has(gym.id);
+  }
+
+  private ptTrainerView(trainer: T.PtTrainerProfile): T.PtTrainerProfile {
+    const assetId = this.ptTrainerPhotoAssetIds.get(trainer.id);
+    const asset = assetId ? this.mediaAssets.get(assetId) : undefined;
+    const photoUrl = asset
+      && asset.organizationId === this.db.organization.id
+      && asset.ownerType === "trainer_photo"
+      && asset.ownerId === trainer.id
+      && asset.visibility === "public"
+      && asset.status === "active"
+      ? asset.url
+      : undefined;
+    return { ...trainer, photoUrl };
+  }
+
+  private tenantForGym(gym: MarketplaceGym): MockProvisionedTenant | undefined {
+    return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
+  }
+
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; provisioned: boolean }> {
+    return [
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, provisioned: !this.db.organization.archivedAt },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, provisioned: !organization.archivedAt })),
+    ];
   }
 
   private platformGymLogoUrl(gym: MarketplaceGym): string | undefined {
@@ -481,6 +595,10 @@ export class MockGymOSApi implements GymOSApi {
       .map((gym) => {
         const cloned = cloneMarketplaceGym(gym);
         delete cloned.logoUrl;
+        delete cloned.isProvisioned;
+        delete cloned.isArchived;
+        delete cloned.archivedAt;
+        delete cloned.archiveReason;
         return cloned;
       })));
   }
@@ -496,7 +614,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getGymPublicProfile(): Promise<T.GymPublicProfile> {
-    return this.respond(() => ({ ...this.gymPublicProfile, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ ...this.gymPublicProfile, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeGymPublicProfile(onValue: (profile: T.GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -525,7 +643,7 @@ export class MockGymOSApi implements GymOSApi {
       const logo = activate(referenced(input.logoAssetId));
       const cover = activate(referenced(input.coverAssetId));
       const gallery = input.galleryAssetIds.map((id) => activate(referenced(id))).filter((asset): asset is T.MediaAsset => Boolean(asset));
-      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: now };
+      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: now };
       return { ...this.gymPublicProfile };
     });
   }
@@ -535,7 +653,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("profiles.manage");
       const now = nowISO();
       this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
-      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now, trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)) };
       this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
       const listing = this.platformGyms[0];
       if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
@@ -556,16 +674,24 @@ export class MockGymOSApi implements GymOSApi {
 
   uploadMediaAsset(input: { ownerType: T.MediaAssetOwnerType; ownerId: string; altText?: string; file: Blob }): Promise<T.MediaAsset> {
     return this.respond(() => {
+      if (input.ownerType === "member_photo") {
+        this.require("members.write");
+        const member = this.db.members.find((candidate) => candidate.id === input.ownerId);
+        const branch = member ? this.db.branches.find((candidate) => candidate.id === member.homeBranchId) : undefined;
+        if (!member || !branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      }
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
       const now = nowISO();
       const assetId = mockUuid();
-      const asset = { id: assetId, organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: input.ownerType.startsWith("gym_") ? "pending" : "active", url: createMockMediaUrl(input.file, assetId), createdAt: now, updatedAt: now } satisfies T.MediaAsset;
+      const isProfileDraft = input.ownerType.startsWith("gym_") || input.ownerType === "trainer_photo";
+      const asset = { id: assetId, organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: isProfileDraft ? "pending" : "active", deleteAfter: isProfileDraft ? new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString() : undefined, url: createMockMediaUrl(input.file, assetId), createdAt: now, updatedAt: now } satisfies T.MediaAsset;
       this.mediaAssets.set(asset.id, asset);
       return asset;
     });
   }
 
-  discardDraftMediaAsset(assetId: T.UUID): Promise<void> { return this.respond(() => { const asset = this.mediaAssets.get(assetId); if (asset?.status === "pending") { revokeMockMediaUrl(asset.url); this.mediaAssets.delete(assetId); } }); }
+  discardDraftMediaAsset(assetId: T.UUID): Promise<void> { return this.respond(() => { const asset = this.mediaAssets.get(assetId); if (asset && (asset.ownerType.startsWith("gym_") || asset.ownerType === "trainer_photo") && asset.status === "pending") { revokeMockMediaUrl(asset.url); this.mediaAssets.delete(assetId); } }); }
 
   private customerWithPreference(persona: CustomerPersona): CustomerPersona {
     const history = this.customerPreferenceHistory.get(persona.id) ?? [];
@@ -671,11 +797,24 @@ export class MockGymOSApi implements GymOSApi {
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
       if (!gym || !this.isProvisionedGym(gym) || !publicMarketplaceGyms([gym]).length || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
       if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
+      const idempotencyKey = input.idempotencyKey?.trim();
+      const signature = publicRequestSignature({ gymId: input.gymId, branchId: input.branchId, fullName: input.fullName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), preferredDate: input.preferredDate, preferredTime: input.preferredTime, goal: input.goal.trim(), customerId: input.customerId });
+      const idempotencyScope = input.customerId ?? `anonymous:${input.email.trim().toLowerCase()}`;
+      const idempotencyMapKey = idempotencyKey ? `${idempotencyScope}:${idempotencyKey}` : undefined;
+      if (idempotencyMapKey) {
+        if (idempotencyKey!.length < 8 || idempotencyKey!.length > 200) throw ApiError.of(ERR.VALIDATION, "The trial request could not be processed.");
+        const existingRequest = this.trialIdempotency.get(idempotencyMapKey);
+        if (existingRequest) {
+          if (existingRequest.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This trial request has already been used.");
+          return { ...existingRequest.result };
+        }
+      }
       // The browser experience owns whether a member is signed in. Falling
       // back to the mock adapter's last persona would silently attach a guest
       // request to an unrelated seeded member after navigation or test reuse.
       const customerId = input.customerId;
       if (customerId && this.trialBookings.some((booking) => booking.customerId === customerId && booking.gymId === input.gymId && (booking.status === "requested" || booking.status === "confirmed"))) throw ApiError.of(ERR.CONFLICT, "You already have an open trial request with this gym.");
+      enforceMockRateLimit(this.trialRateLimits, `${customerId ?? input.email.trim().toLowerCase()}|${input.phone.trim()}`, 10, 24 * 60 * 60 * 1000);
       const internalBranchId = directoryBranch?.internalBranchId;
       let leadId: string | undefined;
       if (gym && internalBranchId) {
@@ -702,6 +841,7 @@ export class MockGymOSApi implements GymOSApi {
       }
       const booking: TrialBooking = { ...input, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
       this.trialBookings.unshift(booking);
+      if (idempotencyMapKey) this.trialIdempotency.set(idempotencyMapKey, { signature, result: { ...booking } });
       return { ...booking };
     });
   }
@@ -717,6 +857,8 @@ export class MockGymOSApi implements GymOSApi {
   previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> {
     return this.respond(() => {
       this.require("members.write");
+      const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const rows = parseImportCsv(input.csv);
       const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
@@ -753,6 +895,8 @@ export class MockGymOSApi implements GymOSApi {
       }
       const preview = this.memberImports.get(input.importId);
       if (!preview) throw ApiError.of(ERR.NOT_FOUND, "Import preview not found.");
+      const previewBranch = this.db.branches.find((item) => item.id === preview.branchId && item.status === "active");
+      if (!previewBranch || !this.branchIsVisible(previewBranch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const end = Math.min(preview.rows.length, cursor + chunkSize);
       const createdMemberIds: string[] = [];
       const errors: Array<{ rowNumber: number; message: string }> = [];
@@ -760,8 +904,7 @@ export class MockGymOSApi implements GymOSApi {
       for (let index = cursor; index < end; index += 1) {
         const row = preview.rows[index]!;
         if (row.status !== "valid") { skippedCount += 1; row.status = "skipped"; continue; }
-        const branch = this.db.branches.find((item) => item.id === preview.branchId);
-        if (!branch) { row.status = "invalid"; row.errors = ["Branch not found"]; errors.push({ rowNumber: row.rowNumber, message: "Branch not found" }); continue; }
+        const branch = previewBranch;
         this.db.counters.memberNumber += 1;
         const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: nowISO() };
         this.db.members.push(member);
@@ -790,7 +933,8 @@ export class MockGymOSApi implements GymOSApi {
       gyms: this.platformGyms.map((gym) => {
         const cloned = cloneMarketplaceGym(gym);
         delete cloned.logoUrl;
-        const logoUrl = this.isProvisionedGym(gym) ? this.platformGymLogoUrl(gym) : undefined;
+        const tenant = this.tenantForGym(gym);
+        const logoUrl = this.isProvisionedGym(gym) ? (tenant ? safeMockGymLogoUrl(gym, tenant.organization.id) : this.platformGymLogoUrl(gym)) : undefined;
         return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym) };
       }),
       bookings: this.trialBookings.map((booking) => ({ ...booking })),
@@ -800,12 +944,21 @@ export class MockGymOSApi implements GymOSApi {
       auditEvents: this.platformAuditEvents.map((event) => ({ ...event })),
       plans: this.platformPlans.map((plan) => ({ ...plan })),
       overview: buildPlatformOverview({
-        gyms: this.platformGyms.map((gym) => ({ id: gym.id, organizationId: this.isProvisionedGym(gym) ? this.db.organization.id : undefined, subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt, provisioned: this.isProvisionedGym(gym) && !gym.isArchived })),
-        organizations: [{ id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, provisioned: !this.db.organization.archivedAt }],
+        gyms: this.platformGyms.map((gym) => {
+          const tenant = this.tenantForGym(gym);
+          return { id: gym.id, organizationId: tenant?.organization.id ?? (this.isProvisionedGym(gym) ? this.db.organization.id : undefined), subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt, provisioned: this.isProvisionedGym(gym) && !gym.isArchived && !tenant?.organization.archivedAt };
+        }),
+        organizations: this.provisionedOrganizationsForOverview(),
         plans: this.platformPlans.map((plan) => ({ name: plan.name, priceMinor: plan.priceMinor })),
-        branches: this.db.branches.map((branch) => ({ organizationId: this.db.organization.id, active: branch.status === "active", status: branch.status })),
+        branches: [
+          ...this.db.branches.map((branch) => ({ organizationId: this.db.organization.id, active: branch.status === "active", status: branch.status })),
+          ...[...this.provisionedTenants.values()].map(({ organization, branch }) => ({ organizationId: organization.id, active: branch.status === "active", status: branch.status })),
+        ],
         members: this.db.members.map((member) => ({ organizationId: this.db.organization.id, status: member.status })),
-        staffMemberships: this.db.users.map((user) => ({ organizationId: user.organizationId, active: user.status === "active" })),
+        staffMemberships: [
+          ...this.db.users.map((user) => ({ organizationId: user.organizationId, active: user.status === "active" })),
+          ...[...this.provisionedTenants.values()].map(({ organization, owner }) => ({ organizationId: organization.id, active: owner.status === "active" })),
+        ],
         bookings: this.trialBookings.map((booking) => ({ gymId: booking.gymId, status: booking.status })),
         applications: this.gymApplications.map((application) => ({
           id: application.id,
@@ -814,6 +967,7 @@ export class MockGymOSApi implements GymOSApi {
           status: application.status,
           updatedAt: application.updatedAt,
           provisioningStatus: application.provisioningStatus,
+          provisioningOutcome: application.provisioningOutcome,
           provisioningError: application.provisioningError,
         })),
         invoices: this.platformInvoices,
@@ -931,22 +1085,27 @@ export class MockGymOSApi implements GymOSApi {
       const available = <T,>(value: T): PlatformData<T> => ({ state: "available", value });
       const notAvailable = <T,>(): PlatformData<T> => ({ state: "not_available" });
       const notConfigured = <T,>(): PlatformData<T> => ({ state: "not_configured" });
-      // The mock has one authoritative tenant. Other directory rows are
-      // intentionally detail-incomplete rather than borrowing Forge facts.
+      // Forge is backed by the signed-in demo database. Newly provisioned
+      // applications use a tenant-shaped mock projection so their listing,
+      // branch, owner invitation, and subscription facts are not borrowed
+      // from Forge.
+      const tenant = this.tenantForGym(gym);
       const isSeedTenant = this.isProvisionedGym(gym);
-      const organization = isSeedTenant ? this.db.organization : undefined;
-      const branches = isSeedTenant
-        ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
-        : [];
-      const owner = organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined;
+      const organization = tenant?.organization ?? (isSeedTenant ? this.db.organization : undefined);
+      const branches = tenant
+        ? [{ id: tenant.branch.id, name: tenant.branch.name, code: tenant.branch.code, address: tenant.branch.address || undefined, phone: tenant.branch.phone || undefined, status: tenant.branch.status }]
+        : isSeedTenant
+          ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
+          : [];
+      const owner = tenant?.owner ?? (organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined);
       const effectiveStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
       const effectivePlan = organization?.subscriptionPlan ?? gym.rivetPlan;
       const isArchived = Boolean(gym.isArchived || organization?.archivedAt);
       const plan = organization?.subscriptionPlan ? this.platformPlans.find((item) => item.name === organization.subscriptionPlan) : undefined;
-      const activeMemberCount = organization ? this.db.members.filter((member) => member.status === "active").length : 0;
-      const activeStaffCount = organization ? this.db.users.filter((user) => user.status === "active").length : 0;
+      const activeMemberCount = tenant ? 0 : organization ? this.db.members.filter((member) => member.status === "active").length : 0;
+      const activeStaffCount = tenant ? (tenant.owner.status === "active" ? 1 : 0) : organization ? this.db.users.filter((user) => user.status === "active").length : 0;
       const field = <T,>(value: T | undefined, missing: "not_available" | "not_configured" = "not_available"): PlatformData<T> => value === undefined ? (missing === "not_available" ? notAvailable<T>() : notConfigured<T>()) : available(value);
-      const logoUrl = organization ? this.platformGymLogoUrl(gym) : undefined;
+      const logoUrl = organization ? (tenant ? safeMockGymLogoUrl(gym, organization.id) : this.platformGymLogoUrl(gym)) : undefined;
 
       return {
         id: gym.id,
@@ -965,8 +1124,8 @@ export class MockGymOSApi implements GymOSApi {
           memberCount: organization ? available(activeMemberCount) : notAvailable(),
           activeStaffCount: organization ? available(activeStaffCount) : notAvailable(),
           staffLimit: organization ? field(plan?.staff, "not_configured") : notAvailable(),
-          automationRuleCount: organization ? available(this.db.rules.length) : notAvailable(),
-          paymentTransactionCount: organization ? available(this.db.payments.length) : notAvailable(),
+          automationRuleCount: organization ? available(tenant ? 0 : this.db.rules.length) : notAvailable(),
+          paymentTransactionCount: organization ? available(tenant ? 0 : this.db.payments.length) : notAvailable(),
           storage: notConfigured(),
         },
         subscription: {
@@ -1008,13 +1167,32 @@ export class MockGymOSApi implements GymOSApi {
 
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     return this.respond(() => {
+      if (input.website?.trim()) {
+        return { applicationId: mockUuid(), status: "pending" as const, notificationStatus: "pending" as const, submittedAt: nowISO(), duplicate: false };
+      }
+      const normalizedEmail = input.email.trim().toLowerCase();
+      const applicationKey = publicApplicationKey(normalizedEmail, input.gymName);
+      const signature = publicRequestSignature({ gymName: input.gymName.trim(), ownerName: input.ownerName.trim(), email: normalizedEmail, contactNumber: input.contactNumber.trim(), plan: input.plan, billingInterval: input.billingInterval ?? "monthly" });
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (idempotencyKey) {
+        if (idempotencyKey.length > 200) throw ApiError.of(ERR.VALIDATION, "The application request could not be processed.");
+        const existingRequest = this.publicApplicationIdempotency.get(idempotencyKey);
+        if (existingRequest) {
+          if (existingRequest.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This application request has already been used.");
+          return { ...existingRequest.result, duplicate: true };
+        }
+      }
+      const existing = this.gymApplications.find((application) => application.status !== "rejected" && publicApplicationKey(application.email, application.gymName) === applicationKey);
+      if (existing) return { applicationId: existing.id, status: existing.status, notificationStatus: existing.notificationStatus, submittedAt: existing.submittedAt, duplicate: true };
+      enforceMockRateLimit(this.publicApplicationRateLimits, `${normalizedEmail}|${input.contactNumber.trim()}`, 5, 60 * 60 * 1000);
       const submittedAt = nowISO();
       const applicationId = `application-${Date.now()}`;
+      const result = { applicationId, status: "pending" as const, notificationStatus: "sent" as const, submittedAt, duplicate: false };
       this.gymApplications.unshift({
         id: applicationId,
         gymName: input.gymName.trim(),
         ownerName: input.ownerName.trim(),
-        email: input.email.trim().toLowerCase(),
+        email: normalizedEmail,
         contactNumber: input.contactNumber.trim(),
         plan: input.plan,
         billingInterval: input.billingInterval ?? "monthly",
@@ -1024,7 +1202,8 @@ export class MockGymOSApi implements GymOSApi {
         submittedAt,
         updatedAt: submittedAt,
       });
-      return { applicationId, status: "pending" as const, notificationStatus: "sent" as const, submittedAt, duplicate: false };
+      if (idempotencyKey) this.publicApplicationIdempotency.set(idempotencyKey, { signature, result });
+      return result;
     });
   }
 
@@ -1099,10 +1278,17 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult> {
+    if (this.provisioningInFlight.has(input.applicationId)) {
+      return Promise.reject(ApiError.of(ERR.CONFLICT, "Gym provisioning is already in progress. Refresh the application before retrying."));
+    }
+    this.provisioningInFlight.add(input.applicationId);
     return this.respond(() => {
       const application = this.gymApplications.find((item) => item.id === input.applicationId);
       if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
       if (application.status !== "approved") throw ApiError.of(ERR.VALIDATION, "Only approved applications can be provisioned.");
+      if (application.provisioningStatus === "failed" && application.provisioningOutcome === "permanent") {
+        throw ApiError.of(ERR.CONFLICT, application.provisioningError ?? "Provisioning requires manual correction before it can be retried.");
+      }
       if (application.provisioningStatus === "completed" && application.provisionedOrganizationId && application.provisionedBranchId) {
         return {
           applicationId: application.id,
@@ -1120,14 +1306,120 @@ export class MockGymOSApi implements GymOSApi {
         };
       }
       const now = nowISO();
-      application.provisioningStatus = "completed";
-      application.provisionedAt = now;
-      application.provisionedOrganizationId = `org-${application.id}`;
-      application.provisionedBranchId = `branch-${application.id}`;
-      application.clerkOrganizationId = `clerk-org-${application.id.slice(0, 8)}`;
-      application.clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
+      application.provisioningStatus = "in_progress";
+      application.provisioningCheckpoint = "claimed";
+      application.provisioningOutcome = "partial";
+      application.provisioningAttemptCount = (application.provisioningAttemptCount ?? 0) + 1;
+      application.provisioningLastCorrelationId = `mock-provision:${application.id}:${application.provisioningAttemptCount}`;
       application.provisioningError = undefined;
       application.updatedAt = now;
+
+      // Keep the mock's signed-in Forge database intact while creating the
+      // same durable tenant-shaped facts that the live provisioning action
+      // projects: organization, first branch, owner invitation state, and a
+      // marketplace listing. The application id makes retries converge on the
+      // same tenant instead of appending duplicate directory rows.
+      const organizationId = mockUuid();
+      const branchId = mockUuid();
+      const ownerId = mockUuid();
+      const clerkOrganizationId = `clerk-org-${application.id.slice(0, 8)}`;
+      const clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
+      const listingId = `gym-${application.id}`;
+      const startedAt = now;
+      const trialEndsAt = new Date(addCalendarMonths(Date.parse(now), 1)).toISOString();
+      const template = this.platformGyms.find((item) => item.id === PROVISIONED_MOCK_GYM_ID) ?? MARKETPLACE_GYMS[0]!;
+      const existingOwner = this.db.users.find((user) => user.email.trim().toLowerCase() === application.email.trim().toLowerCase() && user.status !== "deactivated");
+      const owner = existingOwner ?? {
+        id: ownerId,
+        organizationId,
+        name: application.ownerName,
+        email: application.email,
+        phone: application.contactNumber,
+        role: "owner" as const,
+        branchScope: "all" as const,
+        branchIds: [branchId],
+        status: "invited" as const,
+        invitedAt: now,
+      } satisfies T.StaffUser;
+      const membershipStatus = existingOwner?.status === "active" ? "accepted" as const : "pending" as const;
+      const organization: T.Organization = {
+        ...this.db.organization,
+        id: organizationId,
+        name: application.gymName,
+        slug: `${application.gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "gym"}-${application.id.slice(0, 8)}`,
+        subscriptionPlan: application.plan,
+        billingInterval: application.billingInterval ?? "monthly",
+        status: "trial",
+        subscriptionStartedAt: startedAt,
+        trialEndsAt,
+        currentPeriodEndsAt: undefined,
+        cancelledAt: undefined,
+        archivedAt: undefined,
+        archiveReason: undefined,
+        subscriptionStatusReason: "Provisioned from approved application.",
+        updatedAt: now,
+      };
+      const branch: T.Branch = {
+        id: branchId,
+        organizationId,
+        name: `${application.gymName} — Main branch`,
+        code: "MAIN",
+        address: "Amman",
+        phone: application.contactNumber,
+        capacity: 0,
+        status: "active",
+      };
+      const listing = cloneMarketplaceGym(template);
+      listing.id = listingId;
+      listing.name = application.gymName;
+      listing.shortName = application.gymName.slice(0, 32);
+      listing.tagline = `${application.plan} workspace on RIVET`;
+      listing.description = `The ${application.gymName} workspace is ready for its owner onboarding.`;
+      listing.city = "Amman";
+      listing.areas = ["Amman"];
+      listing.memberCount = 0;
+      listing.branchCount = 1;
+      listing.rating = 0;
+      listing.reviewCount = 0;
+      listing.fromPriceMinor = 0;
+      listing.amenities = [];
+      listing.featured = false;
+      listing.subscriptionStatus = "trial";
+      listing.rivetPlan = application.plan;
+      listing.billingInterval = application.billingInterval ?? "monthly";
+      listing.joinedAt = startedAt;
+      listing.lastActiveAt = startedAt;
+      listing.monthlyRevenueMinor = 0;
+      listing.isPublic = true;
+      listing.isProvisioned = true;
+      listing.trialEndsAt = trialEndsAt;
+      listing.subscriptionStartedAt = startedAt;
+      listing.currentPeriodEndsAt = undefined;
+      listing.subscriptionStatusReason = organization.subscriptionStatusReason;
+      listing.branches = [{ id: branchId, name: branch.name, area: "Amman", address: branch.address, trialSlots: [], internalBranchId: branchId }];
+      this.provisionedTenants.set(application.id, { organization, branch, owner, membershipStatus, clerkInvitationId, listingId });
+      this.provisionedMockGymIds.add(listing.id);
+      this.platformGyms = [...this.platformGyms.filter((item) => item.id !== listing.id), listing];
+      application.provisioningStatus = "completed";
+      application.provisioningCheckpoint = "completed";
+      application.provisioningOutcome = "complete";
+      application.provisionedAt = now;
+      application.provisionedOrganizationId = organizationId;
+      application.provisionedBranchId = branchId;
+      application.clerkOrganizationId = clerkOrganizationId;
+      application.clerkInvitationId = clerkInvitationId;
+      application.clerkInvitationStatus = membershipStatus === "accepted" ? "accepted" : "pending";
+      application.provisioningError = undefined;
+      application.updatedAt = now;
+      this.recordPlatformAudit({
+        action: "gym.provisioned",
+        entityType: "platform_gym",
+        entityPublicId: listing.id,
+        entityLabel: listing.name,
+        summary: `Provisioned ${listing.name} with a ${application.plan} trial`,
+        reason: "Approved gym application provisioned",
+        after: { organizationId, branchId, ownerMembershipStatus: membershipStatus, clerkInvitationStatus: application.clerkInvitationStatus },
+      });
       return {
         applicationId: application.id,
         status: "completed" as const,
@@ -1142,6 +1434,15 @@ export class MockGymOSApi implements GymOSApi {
         clerkOrganizationId: application.clerkOrganizationId,
         clerkInvitationId: application.clerkInvitationId,
       };
+    }).then(async (result) => {
+      await Promise.all([
+        this.emitPlatformSnapshotSubscribers(),
+        this.emitMarketplaceSubscribers(),
+        this.emitPlatformGymDetailSubscribers(),
+      ]);
+      return result;
+    }).finally(() => {
+      this.provisioningInFlight.delete(input.applicationId);
     });
   }
 
@@ -1154,12 +1455,13 @@ export class MockGymOSApi implements GymOSApi {
       }
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
-      if (gym.isArchived || this.db.organization.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be changed through the subscription controls.");
-      const organization = this.isProvisionedGym(gym) ? this.db.organization : undefined;
+      const tenant = this.tenantForGym(gym);
+      const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
+      if (gym.isArchived || organization?.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be changed through the subscription controls.");
       const nextStatus = input.status ?? (organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus);
       const persistedStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
       if (nextStatus === "trial" && persistedStatus !== "trial") throw ApiError.of(ERR.VALIDATION, "A provisioned gym cannot be moved back into trial; trials start automatically during onboarding.");
-      const nextPlan = input.plan ?? this.db.organizationEntitlements.subscriptionPlan ?? organization?.subscriptionPlan ?? gym.rivetPlan;
+      const nextPlan = input.plan ?? organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
       if (input.billingInterval !== undefined && input.billingInterval !== "monthly" && input.billingInterval !== "annual") throw ApiError.of(ERR.VALIDATION, "Billing cadence is invalid.");
       const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
       const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
@@ -1242,20 +1544,22 @@ export class MockGymOSApi implements GymOSApi {
         const modulePlan = nextPlan as T.WorkspaceModulePlan;
         const catalogPlan = this.platformPlans.find((candidate) => candidate.name === modulePlan);
         const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
-        this.db.organizationEntitlements = {
-          ...this.db.organizationEntitlements,
-          organizationId: organization.id,
-          catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
-          subscriptionPlan: modulePlan,
-          entitledModules,
-          source: "subscription_plan",
-          updatedAt: organization.updatedAt,
-        };
+        if (!tenant) {
+          this.db.organizationEntitlements = {
+            ...this.db.organizationEntitlements,
+            organizationId: organization.id,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            subscriptionPlan: modulePlan,
+            entitledModules,
+            source: "subscription_plan",
+            updatedAt: organization.updatedAt,
+          };
+        }
         // A newly purchased tier is immediately usable. Keep hidden modules
         // in the stored preference row on downgrades so a later upgrade can
         // restore prior operator choices while read-time filtering locks them
         // for the lower tier.
-        if (input.plan !== undefined && previousModulePlan !== modulePlan) {
+        if (!tenant && input.plan !== undefined && previousModulePlan !== modulePlan) {
           const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, this.platformPlans.find((candidate) => candidate.name === previousModulePlan)?.entitledModules) : [];
           const nextEntitled = entitledModules;
           const newlyEntitled = nextEntitled.filter((module) => !previousEntitled.includes(module));
@@ -1293,7 +1597,9 @@ export class MockGymOSApi implements GymOSApi {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
       if (input.confirmation !== gym.name) throw ApiError.of(ERR.VALIDATION, "Type the gym name exactly to confirm archiving.", { fieldErrors: { confirmation: ["Must match the gym name exactly"] } });
-      if (gym.isArchived || (this.isProvisionedGym(gym) && this.db.organization.archivedAt)) throw ApiError.of(ERR.CONFLICT, "This gym is already archived and cannot be changed through the subscription controls.");
+      const tenant = this.tenantForGym(gym);
+      const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
+      if (gym.isArchived || organization?.archivedAt) throw ApiError.of(ERR.CONFLICT, "This gym is already archived and cannot be changed through the subscription controls.");
 
       // Archive removes access and public discovery but deliberately leaves
       // the directory row, subscription facts, and audit/financial records in
@@ -1305,12 +1611,12 @@ export class MockGymOSApi implements GymOSApi {
       gym.isArchived = true;
       gym.archivedAt = nowISO();
       gym.archiveReason = input.reason.trim();
-      if (this.isProvisionedGym(gym)) {
-        this.db.organization.status = "suspended";
-        this.db.organization.archivedAt = gym.archivedAt;
-        this.db.organization.archiveReason = input.reason.trim();
-        this.db.organization.subscriptionStatusReason = input.reason.trim();
-        this.db.organization.updatedAt = gym.archivedAt;
+      if (organization) {
+        organization.status = "suspended";
+        organization.archivedAt = gym.archivedAt;
+        organization.archiveReason = input.reason.trim();
+        organization.subscriptionStatusReason = input.reason.trim();
+        organization.updatedAt = gym.archivedAt;
       }
       this.archivedGymIds.add(gym.id);
       this.recordPlatformAudit({
@@ -1672,9 +1978,17 @@ export class MockGymOSApi implements GymOSApi {
     this.db = buildSeed();
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
+    this.publicApplicationIdempotency.clear();
+    this.publicApplicationRateLimits.clear();
+    this.trialIdempotency.clear();
+    this.trialRateLimits.clear();
     this.operationsIdempotency.clear();
+    this.mediaAssets.clear();
+    this.ptTrainerPhotoAssetIds.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = initialPlatformGyms(this.db.organization);
+    this.provisionedMockGymIds = new Set([PROVISIONED_MOCK_GYM_ID]);
+    this.provisionedTenants.clear();
     this.archivedGymIds.clear();
     this.platformAuditEvents = [];
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
@@ -1706,7 +2020,7 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
@@ -1922,6 +2236,12 @@ export class MockGymOSApi implements GymOSApi {
     return branch;
   }
 
+  private operationsTransferBranch(id: T.UUID): T.Branch {
+    const branch = this.db.branches.find((candidate) => candidate.id === id);
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
   private operationsZone(branchId: T.UUID, zoneId: T.UUID): T.Zone {
     const zone = this.db.zones.find((candidate) => candidate.id === zoneId && candidate.branchId === branchId && candidate.status === "active");
     if (!zone || !this.branchIsVisible(branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
@@ -1931,12 +2251,41 @@ export class MockGymOSApi implements GymOSApi {
   private operationsIdempotent(operation: string, key: string, signature: string): unknown | undefined {
     const existing = this.operationsIdempotency.get(`${operation}:${key}`);
     if (!existing) return undefined;
+    if (existing.expiresAt !== undefined && existing.expiresAt <= Date.now()) {
+      this.operationsIdempotency.delete(`${operation}:${key}`);
+      return undefined;
+    }
     if (existing.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This idempotency key was already used for a different request.");
     return existing.result;
   }
 
   private actor() {
     return currentUser(this.db);
+  }
+
+  /**
+   * Resolve PT order ownership and branch scope before idempotent replays.
+   * Mock mode mirrors Convex: a known key is not an authorization token, but
+   * an already-created order may still be replayed after its branch is
+   * deactivated. New mutations request the active-branch variant below.
+   */
+  private ptMembershipScope(membershipId: T.UUID, memberId?: T.UUID, requireActive = false) {
+    const membership = this.db.memberships.find((candidate) => candidate.id === membershipId && candidate.organizationId === this.db.organization.id);
+    if (!membership || (memberId && membership.memberId !== memberId)) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const branch = this.db.branches.find((candidate) => candidate.id === membership.homeBranchId && candidate.organizationId === this.db.organization.id);
+    if (!branch) throw ApiError.of(ERR.NOT_FOUND, "PT package order branch not found.");
+    if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    if (requireActive && branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "PT package order branch not found.");
+    return { membership, branch };
+  }
+
+  private ptOrderScope(order: T.PtPackageOrder, requireActive = false) {
+    if (order.organizationId !== this.db.organization.id) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const charge = this.db.charges.find((candidate) => candidate.id === order.chargeId && candidate.organizationId === this.db.organization.id && candidate.memberId === order.memberId);
+    if (!charge?.membershipId) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const scope = this.ptMembershipScope(charge.membershipId, order.memberId, requireActive);
+    if (charge.membershipId !== scope.membership.id) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    return { ...scope, charge };
   }
 
   private marketingPreferenceFor(input: { marketingOptIn?: boolean; marketingPreferenceSource?: T.MarketingPreferenceSource }, fallbackOptedIn = true): T.MarketingPreference {
@@ -1952,11 +2301,31 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private branchScopedBranchId(requested?: T.UUID): T.UUID | undefined {
-    // Managers/reception scoped to branches can only see their own.
+    // Resolve a read scope without silently moving a request to the first
+    // branch. Organization-wide actors intentionally get `undefined` when no
+    // branch is requested: that is the explicit All branches read-only view.
+    // Selected-branch actors may use their existing active selection, or the
+    // only branch they can access. Multiple accessible branches require an
+    // explicit choice.
     const user = this.actor();
-    if (user.branchScope === "all") return requested;
-    if (requested && user.branchIds.includes(requested)) return requested;
-    return user.branchIds[0];
+    const requestedBranch = requested?.trim();
+    if (requestedBranch) {
+      const branch = this.db.branches.find((candidate) => candidate.id === requestedBranch);
+      if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!this.branchIsVisible(requestedBranch)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      return requestedBranch;
+    }
+    if (user.branchScope === "all") return undefined;
+
+    const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && user.branchIds.includes(branch.id));
+    const activeSelection = this.db.session.activeBranchId;
+    if (activeSelection) {
+      if (!visibleBranches.some((branch) => branch.id === activeSelection)) throw ApiError.of(ERR.NOT_FOUND, "The selected branch is no longer available.");
+      return activeSelection;
+    }
+    if (visibleBranches.length === 1) return visibleBranches[0]!.id;
+    if (visibleBranches.length > 1) throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+    throw ApiError.of(ERR.NOT_FOUND, "No active branch is available.");
   }
 
   private branchIsVisible(branchId?: T.UUID): boolean {
@@ -2250,6 +2619,51 @@ export class MockGymOSApi implements GymOSApi {
     };
   }
 
+  /**
+   * Derive a conservative moving-average cost from branch movement facts.
+   * Product master data intentionally contains only the customer-facing
+   * selling price; purchase receipt movements are the cost source. Unknown
+   * units keep checkout/accounting truthful by leaving the cost snapshot
+   * unset instead of inventing a supplier cost.
+   */
+  private retailInventoryCostBasis(branchId: T.UUID, productId: T.UUID): T.Money | undefined {
+    const movements = this.db.stockMovements
+      .filter((movement) => movement.branchId === branchId && movement.productId === productId)
+      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+    let quantity = 0;
+    let unpricedQuantity = 0;
+    let knownCostMinor = 0;
+    for (const movement of movements) {
+      const delta = movement.quantityDelta;
+      if (!Number.isSafeInteger(delta) || delta === 0) continue;
+      if (delta > 0) {
+        const unitCost = movement.unitCost;
+        const exactCost = movement.totalCost;
+        const exactPriced = exactCost && exactCost.currency === this.db.organization.currency && Number.isSafeInteger(exactCost.amount) && exactCost.amount >= 0;
+        const priced = unitCost && unitCost.currency === this.db.organization.currency && Number.isSafeInteger(unitCost.amount) && unitCost.amount >= 0;
+        if (exactPriced && Number.isSafeInteger(knownCostMinor + exactCost.amount)) knownCostMinor += exactCost.amount;
+        else if (priced && Number.isSafeInteger(delta * unitCost.amount)) knownCostMinor += delta * unitCost.amount;
+        else unpricedQuantity += delta;
+        quantity += delta;
+        continue;
+      }
+      const outgoing = Math.min(quantity, Math.abs(delta));
+      const pricedQuantityBefore = quantity - unpricedQuantity;
+      const unpricedUsed = Math.min(unpricedQuantity, outgoing);
+      unpricedQuantity -= unpricedUsed;
+      const pricedUsed = outgoing - unpricedUsed;
+      const exactOutgoing = movement.totalCost && movement.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(movement.totalCost.amount) && movement.totalCost.amount >= 0;
+      if (exactOutgoing && pricedUsed === outgoing) knownCostMinor = Math.max(0, knownCostMinor - movement.totalCost!.amount);
+      else if (pricedUsed > 0 && pricedQuantityBefore > 0) {
+        knownCostMinor = Math.max(0, knownCostMinor - Math.round((knownCostMinor / pricedQuantityBefore) * pricedUsed));
+      }
+      quantity = Math.max(0, quantity - outgoing);
+    }
+    if (quantity <= 0 || unpricedQuantity > 0 || !Number.isSafeInteger(knownCostMinor) || knownCostMinor < 0) return undefined;
+    const amount = Math.round(knownCostMinor / quantity);
+    return Number.isSafeInteger(amount) && amount >= 0 ? money(amount, this.db.organization.currency) : undefined;
+  }
+
   private toTransaction(p: T.Payment | T.RetailPayment): T.TransactionSummary {
     const memberId = "memberId" in p ? p.memberId : p.customer.kind === "member" ? p.customer.memberId : undefined;
     const member = memberId ? this.db.members.find((m) => m.id === memberId) : undefined;
@@ -2294,11 +2708,19 @@ export class MockGymOSApi implements GymOSApi {
   private buildSession(): T.Session {
     const user = this.actor();
     const org = this.db.organization;
+    const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+    const activeBranchId = this.db.session.activeBranchId;
+    if (activeBranchId && !visibleBranches.some((branch) => branch.id === activeBranchId)) {
+      throw ApiError.of(ERR.NOT_FOUND, "The selected branch is no longer available.");
+    }
+    if (user.branchScope === "selected" && !activeBranchId && visibleBranches.length > 1) {
+      throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+    }
     return {
       user: { id: user.id, name: user.name, email: user.email },
       organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, brand: this.db.brand },
       branches: this.db.branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
-      activeBranchId: this.db.session.activeBranchId,
+      activeBranchId: activeBranchId ?? (user.branchScope === "selected" && visibleBranches.length === 1 ? visibleBranches[0]!.id : undefined),
       roles: [user.role],
       permissions: permissionsFor(this.db, user.role),
       workspace: this.workspaceAccess(),
@@ -2313,6 +2735,18 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const user = this.db.users.find((u) => u.role === role && u.status === "active");
       if (!user) throw ApiError.of(ERR.NOT_FOUND, `No active demo user for role ${role}.`);
+      const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+      let nextActiveBranchId: T.UUID | undefined;
+      if (branchId) {
+        const branch = this.db.branches.find((candidate) => candidate.id === branchId);
+        if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+        if (user.branchScope !== "all" && !user.branchIds.includes(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+        nextActiveBranchId = branchId;
+      } else if (user.branchScope === "selected" && visibleBranches.length > 1) {
+        throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+      } else {
+        nextActiveBranchId = user.branchScope === "selected" ? visibleBranches[0]?.id : undefined;
+      }
       // Convex supplies the real role while the operating data is still mocked.
       // Rebind the seeded actor to the authenticated profile so current-user UI
       // and newly created audit events never impersonate the seed persona.
@@ -2321,15 +2755,24 @@ export class MockGymOSApi implements GymOSApi {
         user.email = identity.email;
       }
       this.db.session.userId = user.id;
-      this.db.session.activeBranchId =
-        branchId ?? (user.branchScope === "selected" ? user.branchIds[0] : undefined);
+      this.db.session.activeBranchId = nextActiveBranchId;
       return this.buildSession();
     });
   }
 
   setActiveBranch(branchId: T.UUID | undefined): Promise<T.Session> {
     return this.respond(() => {
-      this.db.session.activeBranchId = branchId;
+      const user = this.actor();
+      if (branchId) {
+        const branch = this.db.branches.find((candidate) => candidate.id === branchId);
+        if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+        if (user.branchScope !== "all" && !user.branchIds.includes(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+        this.db.session.activeBranchId = branchId;
+      } else {
+        const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+        if (user.branchScope === "selected" && visibleBranches.length > 1) throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+        this.db.session.activeBranchId = user.branchScope === "selected" ? visibleBranches[0]?.id : undefined;
+      }
       return this.buildSession();
     });
   }
@@ -2636,8 +3079,9 @@ export class MockGymOSApi implements GymOSApi {
           },
         });
       }
+      const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
+      if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       this.db.counters.memberNumber += 1;
-      const branch = this.db.branches.find((b) => b.id === input.homeBranchId) ?? this.db.branches[0]!;
       const record: MemberRecord = {
         id: mockUuid(),
         memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
@@ -2908,7 +3352,7 @@ export class MockGymOSApi implements GymOSApi {
         return total + (order.totalPriceSnapshot?.amount ?? this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
       }, 0);
       return {
-        trainers: this.ptTrainers.map((item) => ({ ...item, availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
+        trainers: this.ptTrainers.map((item) => ({ ...this.ptTrainerView(item), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
         packages: this.ptPackages.map((item) => ({ ...item })),
         bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
         pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
@@ -2942,7 +3386,7 @@ export class MockGymOSApi implements GymOSApi {
         entitlements,
         upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).map((item) => this.ptBookingView(item)),
         orders: this.ptOrders.filter((item) => item.memberId === membership.memberId).map((item) => ({ ...item })),
-        trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => ({ ...item })),
+        trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)),
         packages: this.ptPackages.filter((item) => item.status === "active").map((item) => ({ ...item })),
       };
     });
@@ -2955,7 +3399,7 @@ export class MockGymOSApi implements GymOSApi {
   getCustomerPtExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> {
     const internal = this.db.memberships.find((item) => item.id === membershipId);
     if (internal) return this.getPtMemberExperience(membershipId);
-    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), packages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), packages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -2969,11 +3413,18 @@ export class MockGymOSApi implements GymOSApi {
       if (!staff) throw ApiError.of(ERR.VALIDATION, "Trainer profiles must link to an active trainer account.");
       if (input.status === "published" && input.photoAssetId && !input.photoAlt?.trim()) throw ApiError.of(ERR.VALIDATION, "Published trainer photos require alt text.");
       const existing = input.id ? this.ptTrainers.find((item) => item.id === input.id) : undefined;
+      const photoAssetId = input.photoAssetId ?? (existing ? this.ptTrainerPhotoAssetIds.get(existing.id) : undefined);
+      const photoAsset = photoAssetId ? this.mediaAssets.get(photoAssetId) : undefined;
+      if (photoAssetId && (!photoAsset || photoAsset.ownerType !== "trainer_photo" || photoAsset.ownerId !== (existing?.id ?? input.id) || photoAsset.visibility !== "public" || !["pending", "active"].includes(photoAsset.status))) throw ApiError.of(ERR.NOT_FOUND, "Trainer photo not found.");
       const now = nowISO();
       const value: T.PtTrainerProfile = { id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, userId: input.userId, displayName: input.displayName.trim(), bioEn: input.bioEn?.trim() || undefined, bioAr: input.bioAr?.trim() || undefined, specialties: [...input.specialties], languages: [...input.languages], branchIds: [...input.branchIds], photoAlt: input.photoAlt?.trim() || undefined, status: input.status, createdAt: existing?.createdAt ?? now, updatedAt: now };
       if (existing) this.ptTrainers.splice(this.ptTrainers.indexOf(existing), 1, value); else this.ptTrainers.push(value);
+      if (photoAssetId) {
+        this.ptTrainerPhotoAssetIds.set(value.id, photoAssetId);
+        if (photoAsset?.status === "pending") { photoAsset.status = "active"; delete photoAsset.deleteAfter; photoAsset.updatedAt = now; }
+      }
       this.audit({ category: "users", action: existing ? "pt.trainer.update" : "pt.trainer.create", entityType: "pt_trainer", entityId: value.id, entityLabel: value.displayName, summary: existing ? "Updated trainer profile" : "Created trainer profile" });
-      return { ...value };
+      return this.ptTrainerView(value);
     });
   }
 
@@ -3152,11 +3603,17 @@ export class MockGymOSApi implements GymOSApi {
 
   requestPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> {
     return this.respond(() => {
+      const membershipScope = this.ptMembershipScope(input.membershipId);
       const prior = this.ptOrders.find((item) => item.id === input.idempotencyKey);
-      if (prior) return { ...prior };
-      const membership = this.db.memberships.find((item) => item.id === input.membershipId);
+      if (prior) {
+        if (prior.memberId !== membershipScope.membership.memberId || prior.packageId !== input.packageId) throw ApiError.of(ERR.CONFLICT, "This idempotency key was already used for a different package request.");
+        this.ptOrderScope(prior);
+        return { ...prior };
+      }
+      const membership = membershipScope.membership;
       const ptPackage = this.ptPackages.find((item) => item.id === input.packageId && item.status === "active");
       if (!membership || !ptPackage) throw ApiError.of(ERR.NOT_FOUND, "Membership or PT package not found.");
+      this.ptMembershipScope(membership.id, membership.memberId, true);
       const charge: T.Charge = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, membershipId: membership.id, description: ptPackage.name, subtotal: { ...ptPackage.totalPrice }, discount: money(0), tax: money(0), total: { ...ptPackage.totalPrice }, paidAmount: money(0), outstandingAmount: { ...ptPackage.totalPrice }, status: "unpaid", createdAt: nowISO() };
       this.db.charges.push(charge);
       const now = nowISO();
@@ -3176,16 +3633,19 @@ export class MockGymOSApi implements GymOSApi {
       const idempotencyKey = input.idempotencyKey.trim();
       if (!idempotencyKey) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
       const signature = JSON.stringify({ orderId, reason: input.reason.trim() });
+      const order = this.ptOrders.find((item) => item.id === orderId);
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+      const orderScope = this.ptOrderScope(order);
       const prior = this.ptCancellationIdempotency.get(idempotencyKey);
       if (prior) {
         if (prior.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This cancellation key was already used for a different request.");
+        if (prior.result.id !== order.id) throw ApiError.of(ERR.CONFLICT, "The cancellation idempotency record does not match the requested order.");
+        this.ptOrderScope(prior.result);
         return { ...prior.result };
       }
-      const order = this.ptOrders.find((item) => item.id === orderId);
-      if (!order) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+      this.ptOrderScope(order, true);
       if (order.status !== "pending_payment") throw ApiError.of(ERR.VALIDATION, "Only a pending PT package order can be cancelled. Use the PT refund flow after activation.");
-      const charge = this.db.charges.find((item) => item.id === order.chargeId);
-      if (!charge) throw ApiError.of(ERR.NOT_FOUND, "PT package charge not found.");
+      const charge = orderScope.charge;
       if (charge.paidAmount.amount > 0) throw ApiError.of(ERR.VALIDATION, "Refund or void the collected payment before cancelling this PT order.");
       charge.status = "void";
       charge.outstandingAmount = money(0);
@@ -4367,6 +4827,8 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       this.require("members.write");
       this.require("memberships.sell");
+      const saleBranch = this.db.branches.find((branch) => branch.id === input.homeBranchId && branch.status === "active");
+      if (!saleBranch || !this.branchIsVisible(saleBranch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const lead = this.db.leads.find((item) => item.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       if (lead.stage === "won" && lead.convertedMemberId) throw ApiError.of(ERR.VALIDATION, "Lead was already converted.");
@@ -4440,8 +4902,9 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private createMemberSync(input: T.CreateMemberInput): MemberRecord {
+    const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
+    if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
     this.db.counters.memberNumber += 1;
-    const branch = this.db.branches.find((b) => b.id === input.homeBranchId) ?? this.db.branches[0]!;
     const record: MemberRecord = {
       id: mockUuid(),
       memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
@@ -4878,7 +5341,7 @@ export class MockGymOSApi implements GymOSApi {
       if (guest && (!guest.fullName || guest.fullName.length > 120 || !guest.phone || guest.phone.length > 40)) throw ApiError.of(ERR.VALIDATION, "Guest name and phone are required.");
       if (linesInput.length === 0 || linesInput.length > 100) throw ApiError.of(ERR.VALIDATION, "A checkout must contain 1 to 100 product lines.");
       const seen = new Set<string>();
-      const lines: Array<{ product: T.Product; quantity: number; balance: T.InventoryBalance; unitPriceMinor: number; lineTotalMinor: number }> = [];
+      const lines: Array<{ product: T.Product; quantity: number; balance: T.InventoryBalance; unitPriceMinor: number; lineTotalMinor: number; unitCost?: T.Money }> = [];
       let totalMinor = 0;
       for (const lineInput of linesInput) {
         if (seen.has(lineInput.productId)) throw ApiError.of(ERR.VALIDATION, "A checkout cannot repeat a product line.");
@@ -4894,7 +5357,7 @@ export class MockGymOSApi implements GymOSApi {
         const lineTotalMinor = product.retailPrice.amount * lineInput.quantity;
         if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) throw ApiError.of(ERR.VALIDATION, "Checkout total is too large.");
         totalMinor += lineTotalMinor;
-        lines.push({ product, quantity: lineInput.quantity, balance, unitPriceMinor: product.retailPrice.amount, lineTotalMinor });
+        lines.push({ product, quantity: lineInput.quantity, balance, unitPriceMinor: product.retailPrice.amount, lineTotalMinor, unitCost: this.retailInventoryCostBasis(branch.id, product.id) });
       }
       if (totalMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Checkout total must be greater than zero.");
       let customer: T.RetailSaleCustomer;
@@ -4911,7 +5374,7 @@ export class MockGymOSApi implements GymOSApi {
       if (method === "cash" && !shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before checking out cash sales.");
       const now = nowISO();
       const receiptNumber = this.nextReceiptNumber();
-      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency) })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), status: "completed", refundedAmount: money(0, this.db.organization.currency), returnedLines: [], method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now, updatedAt: now };
+      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor, unitCost }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency), unitCost })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), status: "completed", refundedAmount: money(0, this.db.organization.currency), returnedLines: [], method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now, updatedAt: now };
       const receipt: T.Receipt = { id: sale.receiptId, receiptNumber, paymentId: `retail-payment-${sale.id}`, retailSaleId: sale.id, issuedAt: now };
       const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer, amount: money(totalMinor, this.db.organization.currency), method, status: "completed", receiptId: receipt.id, receiptNumber, collectedById: this.actor().id, collectedByName: this.actor().name, shiftId: shift?.id, externalReference, idempotencyKey, occurredAt: now };
       this.db.retailSales.push(sale);
@@ -4921,7 +5384,7 @@ export class MockGymOSApi implements GymOSApi {
         line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
         line.balance.lastMovementAt = now;
         line.balance.updatedAt = now;
-        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.unitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
         this.db.stockMovements.unshift(movement);
       }
       if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
@@ -4938,44 +5401,53 @@ export class MockGymOSApi implements GymOSApi {
       this.require("payments.refund");
       const reason = input.reason.trim();
       if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required for retail refunds.");
-      const signature = JSON.stringify({ saleId, lines: input.lines, reason });
-      const replay = this.operationsIdempotent("retail_refund", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
-      if (replay) return replay;
       const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
       if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      // Sale/branch authorization must precede idempotent replay. A scoped
+      // actor must not be able to learn a receipt from another branch by
+      // guessing a request key that was already used there.
+      const lines = [...input.lines]
+        .map((line) => ({ productId: line.productId, quantity: line.quantity }))
+        .sort((left, right) => left.productId.localeCompare(right.productId));
+      const signature = JSON.stringify({ saleId, lines, reason });
+      const replay = this.operationsIdempotent("retail_refund", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
       if (sale.status === "voided" || sale.status === "refunded") throw ApiError.of(ERR.CONFLICT, "This retail sale can no longer be refunded.");
-      if (!input.lines.length) throw ApiError.of(ERR.VALIDATION, "Choose at least one sold item to refund.");
+      if (!lines.length) throw ApiError.of(ERR.VALIDATION, "Choose at least one sold item to refund.");
       const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
       const seen = new Set<string>();
       let refundMinor = 0;
-      for (const line of input.lines) {
+      for (const line of lines) {
         const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
         if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Refund lines must be unique sold products with positive whole quantities.");
         seen.add(line.productId);
         if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) throw ApiError.of(ERR.CONFLICT, `${sold.productName} exceeds the remaining refundable quantity.`);
         refundMinor += sold.unitPrice.amount * line.quantity;
       }
+      const refundShift = sale.method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open") : undefined;
+      if (sale.method === "cash" && !refundShift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before recording a cash refund.");
       const now = nowISO();
-      for (const line of input.lines) {
+      for (const line of lines) {
         let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
         const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
         const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
         // Resolve the original identity first. If its SKU was reused, a
         // refund must not put stock into the replacement catalog row.
-        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId) ?? (sold ? this.db.products.find((candidate) => candidate.sku === sold.sku) : undefined);
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId);
         if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
         const productId = product?.id ?? tombstone?.productId ?? line.productId;
-        if (!balance && product) {
-          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: now };
+        if (!balance && (product || tombstone)) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: tombstone ? false : true, updatedAt: now };
           this.db.inventoryBalances.push(balance);
         }
         if (balance) {
           balance.quantityOnHand += line.quantity;
           balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          if (tombstone) balance.sellable = false;
           balance.lastMovementAt = now;
           balance.updatedAt = now;
         }
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: sold?.unitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
         returned.set(line.productId, (returned.get(line.productId) ?? 0) + line.quantity);
       }
       sale.returnedLines = [...returned].map(([productId, quantity]) => ({ productId, quantity }));
@@ -5005,7 +5477,7 @@ export class MockGymOSApi implements GymOSApi {
         receiptNumber: refundReceipt.receiptNumber,
         collectedById: this.actor().id,
         collectedByName: this.actor().name,
-        shiftId: this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open")?.id,
+        shiftId: refundShift?.id,
         idempotencyKey: input.idempotencyKey,
         originalPaymentId: `retail-payment-${sale.id}`,
         refundReason: reason,
@@ -5017,7 +5489,7 @@ export class MockGymOSApi implements GymOSApi {
         this.activity({ memberId: sale.customer.memberId, type: "payment_refunded", title: `Retail sale refunded — ${sale.total.currency} ${(refundMinor / 1000).toFixed(3)}`, body: reason, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber: refundReceipt.receiptNumber, receiptId: refundReceipt.id, retailSaleId: sale.id, saleType: "retail" } });
       }
       this.audit({ category: "payments", action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Refunded ${sale.total.currency} ${(refundMinor / 1000).toFixed(3)} from retail sale`, reason, before: { status: "completed", refunded: (sale.refundedAmount.amount - refundMinor) }, after: { status: sale.status, refunded: sale.refundedAmount.amount, refundReceiptId: refundReceipt.id, refundPaymentId }, branchId: sale.branchId });
-      const result = this.getReceiptSync(sale.receiptId) as T.ReceiptDetail & { retailSale: T.RetailSale };
+      const result = this.getReceiptSync(refundReceipt.id) as T.ReceiptDetail & { retailSale: T.RetailSale };
       this.operationsIdempotency.set(`retail_refund:${input.idempotencyKey}`, { signature, result });
       return result;
     });
@@ -5029,31 +5501,37 @@ export class MockGymOSApi implements GymOSApi {
       this.require("payments.void");
       const reason = input.reason.trim();
       if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required to void a retail sale.");
+      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
+      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      // Authorize the sale and its branch before exposing any replay result.
       const signature = JSON.stringify({ saleId, reason });
       const replay = this.operationsIdempotent("retail_void", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
       if (replay) return replay;
-      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
-      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
       if (sale.status !== "completed") throw ApiError.of(ERR.CONFLICT, "Only an unadjusted retail sale can be voided.");
       if (todayISODate(TZ, new Date(sale.createdAt)) !== this.today()) throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Retail sales can only be voided on the same business day. Issue a refund instead.");
+      if (sale.method === "cash") {
+        const openShift = sale.shiftId ? this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open" && candidate.id === sale.shiftId) : undefined;
+        if (!openShift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Cash sales can only be voided while their original cash shift is open.");
+      }
       const now = nowISO();
       for (const line of sale.lines) {
         let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
         const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
-        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId) ?? this.db.products.find((candidate) => candidate.sku === line.sku);
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId);
         if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
         const productId = product?.id ?? tombstone?.productId ?? line.productId;
-        if (!balance && product) {
-          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: now };
+        if (!balance && (product || tombstone)) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: tombstone ? false : true, updatedAt: now };
           this.db.inventoryBalances.push(balance);
         }
         if (balance) {
           balance.quantityOnHand += line.quantity;
           balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          if (tombstone) balance.sellable = false;
           balance.lastMovementAt = now;
           balance.updatedAt = now;
         }
-        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: line.unitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
       }
       sale.status = "voided";
       sale.returnedLines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
@@ -5797,7 +6275,7 @@ export class MockGymOSApi implements GymOSApi {
         const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
         add(sourceType, payment.id, payment.branchId);
       }
-      for (const sale of this.db.retailSales) add("payment", `retail-payment-${sale.id}`, sale.branchId);
+      for (const sale of this.db.retailSales) add(sale.status === "voided" ? "void" : "payment", `retail-payment-${sale.id}`, sale.branchId);
       for (const membership of this.db.memberships) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
       for (const order of this.db.purchaseOrders) add("purchase_order_receipt", order.id, order.branchId);
       for (const movement of this.db.stockMovements) add("stock_movement", movement.id, movement.branchId);
@@ -5813,16 +6291,17 @@ export class MockGymOSApi implements GymOSApi {
       let excluded = 0;
       const items: T.AccountingSourcePosting[] = [];
       for (const candidate of candidates) {
-        const fact = this.mockAccountingFact(candidate.sourceType, candidate.sourceId);
+        const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
+        const fact = preserveMockSourcePolicy(this.mockAccountingFact(candidate.sourceType, candidate.sourceId), existing);
         const currency = fact.currency ?? this.db.organization.currency;
         const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
-        const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
         if (existing?.status === "posted" || existing?.status === "reversed") {
           skippedPosted += 1;
           continue;
         }
         const now = nowISO();
-        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
+        const policyVersion = accountingPolicyVersion(fact.policyCode);
+        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
         let row: T.AccountingSourcePosting;
         if (existing) {
           const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
@@ -5849,13 +6328,15 @@ export class MockGymOSApi implements GymOSApi {
       const retailSale = this.db.retailSales.find((sale) => `retail-payment-${sale.id}` === sourceId);
       const payment: T.Payment | T.RetailPayment | undefined = this.db.payments.find((candidate) => candidate.id === sourceId) ?? (retailSale ? this.retailPaymentProjection(retailSale) : undefined);
       if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Payment source not found.");
-      const isRetail = payment.type === "retail_sale";
-      const valid = sourceType === "payment" ? (payment.type === "payment" || isRetail) && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : payment.type === "payment" && payment.status === "voided";
-      const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : "1200";
-      const creditCode = sourceType === "payment" ? (isRetail ? "4100" : "1200") : accountForMethod(payment.method);
+      const isRetail = payment.type === "retail_sale" || ("retailSaleId" in payment && Boolean(payment.retailSaleId));
+      const valid = sourceType === "payment" ? (payment.type === "payment" || isRetail) && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : (payment.type === "payment" || isRetail) && payment.status === "voided";
+      const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : isRetail ? "4200" : "1200";
+      const creditCode = sourceType === "payment" ? (isRetail ? "4200" : "1200") : accountForMethod(payment.method);
       const normalizedAmount = sourceType === "refund" ? Math.abs(payment.amount.amount) : payment.amount.amount;
       const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
-      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: isRetail ? `retail-sale-${payment.method}.v1` : `${sourceType}-${payment.method}.v1`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method, saleType: isRetail ? "retail" : "membership" } };
+      const policyPrefix = isRetail ? (sourceType === "payment" ? "retail-sale" : sourceType === "refund" ? "retail-refund" : "retail-void") : sourceType;
+      const policyVersion = isRetail ? 2 : 1;
+      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${policyPrefix}-${payment.method}.v${policyVersion}`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method, saleType: isRetail ? "retail" : "membership" } };
     }
     if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
       const membership = this.db.memberships.find((candidate) => candidate.id === sourceId);
@@ -5873,11 +6354,12 @@ export class MockGymOSApi implements GymOSApi {
       if (!movement) throw ApiError.of(ERR.NOT_FOUND, "Stock movement source not found.");
       const receive = movement.type === "receive";
       const consumptive = ["sale", "consumption", "waste"].includes(movement.type);
-      const amount = movement.unitCost ? Math.abs(movement.quantity) * movement.unitCost.amount : undefined;
+      const internalTransfer = ["transfer_in", "transfer_out"].includes(movement.type);
+      const amount = movement.totalCost?.amount ?? (movement.unitCost ? Math.abs(movement.quantity) * movement.unitCost.amount : undefined);
       const purchaseOrderLinked = movement.referenceType?.toLowerCase() === "purchase_order";
-      const excludedMovementType = ["return", "transfer_in", "transfer_out", "adjustment"].includes(movement.type);
+      const retailReturn = movement.type === "return" && ["retail_refund", "retail_void"].includes(movement.referenceType?.toLowerCase() ?? "");
       const currencyMismatch = movement.unitCost?.currency !== undefined && movement.unitCost.currency !== this.db.organization.currency;
-      return { amount, currency: movement.unitCost?.currency ?? this.db.organization.currency, branchId: movement.branchId, occurredAt: movement.occurredAt, debitCode: receive ? "1300" : consumptive ? "5100" : undefined, creditCode: receive ? "2100" : consumptive ? "1300" : undefined, policyCode: receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : undefined, status: currencyMismatch ? "excluded" : purchaseOrderLinked || excludedMovementType ? "excluded" : !receive && !consumptive || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: currencyMismatch ? "Stock movement currency does not match organization currency." : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded to prevent duplicate inventory and AP posting." : excludedMovementType ? `Stock movement type ${movement.type} has no configured accounting policy.` : !receive && !consumptive ? `No accounting policy exists for stock movement type ${movement.type}.` : movement.unitCost ? undefined : "Stock movement unit cost is not configured.", details: { type: movement.type, referenceType: movement.referenceType } };
+      return { amount, currency: movement.unitCost?.currency ?? movement.totalCost?.currency ?? this.db.organization.currency, branchId: movement.branchId, occurredAt: movement.occurredAt, debitCode: receive ? "1300" : consumptive ? "5100" : retailReturn ? "1300" : undefined, creditCode: receive ? "2100" : consumptive ? "1300" : retailReturn ? "5100" : undefined, policyCode: receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : retailReturn ? "stock-return.v1" : undefined, status: currencyMismatch ? "excluded" : purchaseOrderLinked || internalTransfer ? "excluded" : !receive && !consumptive && !retailReturn || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: currencyMismatch ? "Stock movement currency does not match organization currency." : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded to prevent duplicate inventory and AP posting." : internalTransfer ? "Internal branch transfers move stock within the organization and do not create a journal entry." : !receive && !consumptive && !retailReturn ? `No accounting policy exists for stock movement type ${movement.type}.` : movement.unitCost ? undefined : "Stock movement unit cost is not configured.", details: { type: movement.type, referenceType: movement.referenceType } };
     }
     if (sourceType === "purchase_order_receipt") {
       const order = this.db.purchaseOrders.find((candidate) => candidate.id === sourceId);
@@ -5941,7 +6423,8 @@ export class MockGymOSApi implements GymOSApi {
       const existingKey = existingKeyRows.find((row) => row.sourceType === input.sourceType && row.sourceId === input.sourceId);
       if (existingKey?.status === "posted" || existingKey?.status === "reversed") return existingKey;
       if (replay?.status === "posted" || replay?.status === "reversed") return replay;
-      const fact = this.mockAccountingFact(input.sourceType, input.sourceId);
+      const historicalSource = sourceRows.find((row) => row.status !== "posted" && row.status !== "reversed");
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(input.sourceType, input.sourceId), historicalSource);
       if (!this.accountingBranchIsVisible(fact.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
       if (!fact.branchId && !fact.status) {
         fact.status = "unconfigured";
@@ -5952,9 +6435,10 @@ export class MockGymOSApi implements GymOSApi {
         const now = nowISO();
         const factCurrency = fact.currency ?? this.db.organization.currency;
         const factMoney = fact.amount === undefined ? undefined : money(fact.amount, factCurrency);
-        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
-        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion: fact.policyCode ? 1 : undefined, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        const policyVersion = accountingPolicyVersion(fact.policyCode);
+        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
         this.accountingSourceAttempts.set(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey), attempt);
         return this.accountingSourceAttemptView(attempt);
       }
@@ -5965,10 +6449,12 @@ export class MockGymOSApi implements GymOSApi {
       const credit = this.accountingAccount(`acct-${fact.creditCode}`);
       const now = nowISO();
       const entryId = mockUuid();
-      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode: fact.policyCode ?? `${input.sourceType}.v1`, policyVersion: 1, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v1:${input.idempotencyKey}`, totalDebit: money(fact.amount, this.db.organization.currency), totalCredit: money(fact.amount, this.db.organization.currency), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount, this.db.organization.currency), credit: money(0, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0, this.db.organization.currency), credit: money(fact.amount, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
+      const policyCode = fact.policyCode ?? `${input.sourceType}.v1`;
+      const policyVersion = accountingPolicyVersion(policyCode) ?? 1;
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode, policyVersion, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v${policyVersion}:${input.idempotencyKey}`, totalDebit: money(fact.amount, this.db.organization.currency), totalCredit: money(fact.amount, this.db.organization.currency), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount, this.db.organization.currency), credit: money(0, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0, this.db.organization.currency), credit: money(fact.amount, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
       this.accountingEntries.unshift(entry);
-      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion: 1, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion: 1, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
       this.audit({ category: "accounting", action: "accounting.source.post", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Posted ${input.sourceType} source`, reason: input.reason, branchId: branch?.id });
       return row;
     });
@@ -6224,7 +6710,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("audit.read");
       const branchId = this.branchScopedBranchId(query.branchId);
       let items = [...this.db.audits];
-      if (branchId) items = items.filter((a) => !a.branchId || a.branchId === branchId);
+      if (branchId) items = items.filter((a) => (!a.branchId && !a.destinationBranchId) || a.branchId === branchId || a.destinationBranchId === branchId);
       if (query.category) items = items.filter((a) => a.category === query.category);
       if (query.actorId) items = items.filter((a) => a.actorId === query.actorId);
       if (query.entityId) items = items.filter((a) => a.entityId === query.entityId);
@@ -6240,7 +6726,14 @@ export class MockGymOSApi implements GymOSApi {
   listPendingApprovals(): Promise<T.AuditEvent[]> {
     return this.respond(() => {
       this.require("audit.read");
-      return this.db.audits.filter((a) => a.approvalStatus === "pending" && this.branchIsVisible(a.branchId));
+      return this.db.audits.filter((a) => {
+        if (a.approvalStatus !== "pending") return false;
+        if (!a.branchId && !a.destinationBranchId) return true;
+        return Boolean(
+          (a.branchId && this.branchIsVisible(a.branchId))
+          || (a.destinationBranchId && this.branchIsVisible(a.destinationBranchId)),
+        );
+      });
     });
   }
 
@@ -6703,6 +7196,7 @@ export class MockGymOSApi implements GymOSApi {
       const balances = this.db.inventoryBalances.filter((candidate) => candidate.productId === product.id);
       if (this.actor().branchScope !== "all" && balances.some((balance) => !this.branchIsVisible(balance.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product has inventory in a branch outside your access.");
       if (balances.some((balance) => balance.committedQuantity > 0)) throw ApiError.of(ERR.CONFLICT, "This product has inventory committed to an open purchase order. Receive or cancel that order first.");
+      if (balances.some((balance) => balance.quantityOnHand > 0)) throw ApiError.of(ERR.CONFLICT, "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.");
       const dependentOrders = this.db.purchaseOrders.filter((order) => order.lines.some((line) => line.productId === product.id && line.receivedQuantity < line.orderedQuantity));
       if (this.actor().branchScope !== "all" && dependentOrders.some((order) => !this.branchIsVisible(order.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product is used by a purchase order in a branch outside your access.");
       const openOrder = dependentOrders.find((order) => order.status === "draft" || order.status === "approved" || order.status === "partially_received");
@@ -6763,7 +7257,7 @@ export class MockGymOSApi implements GymOSApi {
       this.requireOperationsRead();
       const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
       if (input.productId && !this.db.products.some((product) => product.id === input.productId) && !this.db.productTombstones.some((product) => product.productId === input.productId)) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
-      return this.db.inventoryBalances.filter((balance) => branchIds.includes(balance.branchId) && (!input.productId || balance.productId === input.productId)).map((balance) => ({ ...balance, availableQuantity: balance.quantityOnHand - balance.committedQuantity, lastMovementAt: balance.lastMovementAt }));
+      return this.db.inventoryBalances.filter((balance) => balance.sellable !== false && branchIds.includes(balance.branchId) && (!input.productId || balance.productId === input.productId)).map((balance) => ({ ...balance, availableQuantity: balance.quantityOnHand - balance.committedQuantity, lastMovementAt: balance.lastMovementAt }));
     });
   }
 
@@ -6782,17 +7276,116 @@ export class MockGymOSApi implements GymOSApi {
       if (existing) return { ...existing, unitCost: existing.unitCost ? { ...existing.unitCost } : undefined };
       const delta = ["receive", "return", "transfer_in"].includes(input.type) ? input.quantity : input.type === "adjustment" ? input.quantity : -input.quantity;
       let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
-      if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
+      if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
       if (balance.quantityOnHand + delta < 0) throw ApiError.of(ERR.CONFLICT, "Stock movement would make inventory negative.");
+      const basis = this.retailInventoryCostBasis(branch.id, product.id);
+      const currentTotalCost = balance.quantityOnHand === 0
+        ? { amount: 0, currency: this.db.organization.currency }
+        : balance.totalCost && balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(balance.totalCost.amount) && balance.totalCost.amount >= 0
+          ? { ...balance.totalCost }
+          : basis && Number.isSafeInteger(basis.amount * balance.quantityOnHand)
+            ? { amount: basis.amount * balance.quantityOnHand, currency: basis.currency }
+            : undefined;
+      let movementTotalCost: T.Money | undefined;
+      let nextTotalCost: T.Money | undefined;
+      if (delta < 0) {
+        const amount = allocateExactCost(currentTotalCost?.amount, balance.quantityOnHand, Math.abs(delta));
+        if (amount !== undefined && currentTotalCost) {
+          movementTotalCost = { amount, currency: currentTotalCost.currency };
+          nextTotalCost = { amount: currentTotalCost.amount - amount, currency: currentTotalCost.currency };
+        }
+      } else if (delta > 0) {
+        const incoming = exactCostTotal(input.unitCost, delta);
+        if (currentTotalCost && incoming && incoming.currency === this.db.organization.currency && Number.isSafeInteger(currentTotalCost.amount + incoming.amount)) {
+          movementTotalCost = incoming;
+          nextTotalCost = { amount: currentTotalCost.amount + incoming.amount, currency: incoming.currency };
+        } else if (incoming && balance.quantityOnHand === 0) {
+          movementTotalCost = incoming;
+          nextTotalCost = { ...incoming };
+        }
+      }
       balance.quantityOnHand += delta;
+      balance.totalCost = nextTotalCost;
       balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
       balance.lastMovementAt = nowISO();
       balance.updatedAt = nowISO();
-      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
+      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, totalCost: movementTotalCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
       this.db.stockMovements.unshift(movement);
       this.operationsIdempotency.set(`stock_movement:${input.idempotencyKey}`, { signature, result: movement });
       this.audit({ category: "operations", action: "operations.stock_movement.create", entityType: "stock_movement", entityId: movement.id, entityLabel: `${product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason, branchId: branch.id });
       return { ...movement };
+    });
+  }
+
+  transferInventory(input: T.InventoryTransferInput): Promise<T.InventoryTransferResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Transfer quantity must be a positive whole number.");
+      const reason = input.reason.trim();
+      if (reason.length < 3) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const sourceScope = this.operationsTransferBranch(input.sourceBranchId);
+      const destinationScope = this.operationsTransferBranch(input.destinationBranchId);
+      if (sourceScope.id === destinationScope.id) throw ApiError.of(ERR.VALIDATION, "Choose a different destination branch.");
+      const productScope = this.db.products.find((candidate) => candidate.id === input.productId);
+      if (!productScope) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      const signature = JSON.stringify({ sourceBranchId: sourceScope.id, destinationBranchId: destinationScope.id, productId: productScope.id, quantity: input.quantity, reason });
+      const existing = this.operationsIdempotent("inventory_transfer", idempotencyKey, signature) as T.InventoryTransferResult | undefined;
+      if (existing) return existing;
+      const sourceBranch = this.operationsBranch(sourceScope.id);
+      const destinationBranch = this.operationsBranch(destinationScope.id);
+      const product = this.db.products.find((candidate) => candidate.id === productScope.id && candidate.status === "active");
+      if (!product) throw ApiError.of(ERR.CONFLICT, "Archived products cannot be transferred.");
+      const sourceBalance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sourceBranch.id && candidate.productId === product.id);
+      const sourceAvailableQuantity = (sourceBalance?.quantityOnHand ?? 0) - (sourceBalance?.committedQuantity ?? 0);
+      if (sourceAvailableQuantity < input.quantity) throw ApiError.of(ERR.CONFLICT, "The source branch does not have enough available stock for this transfer.");
+      let destinationBalance = this.db.inventoryBalances.find((candidate) => candidate.branchId === destinationBranch.id && candidate.productId === product.id);
+      if (!destinationBalance) {
+        destinationBalance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: destinationBranch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() };
+        this.db.inventoryBalances.push(destinationBalance);
+      }
+      const destinationAvailableQuantity = destinationBalance.quantityOnHand - destinationBalance.committedQuantity;
+      const now = nowISO();
+      const transferId = mockUuid();
+      const sourceMovementKey = `${idempotencyKey}:out`;
+      const destinationMovementKey = `${idempotencyKey}:in`;
+      const sourceBasis = this.retailInventoryCostBasis(sourceBranch.id, product.id);
+      const sourceTotalCost = sourceBalance && sourceBalance.totalCost && sourceBalance.totalCost.currency === this.db.organization.currency
+        ? sourceBalance.totalCost.amount
+        : sourceBasis && sourceBalance && Number.isSafeInteger(sourceBasis.amount * sourceBalance.quantityOnHand)
+          ? sourceBasis.amount * sourceBalance.quantityOnHand
+          : undefined;
+      const movedTotalCost = sourceBalance ? allocateExactCost(sourceTotalCost, sourceBalance.quantityOnHand, input.quantity) : undefined;
+      const sourceRemainingCost = sourceTotalCost !== undefined && movedTotalCost !== undefined ? sourceTotalCost - movedTotalCost : undefined;
+      const destinationTotalCost = destinationBalance.quantityOnHand === 0
+        ? 0
+        : destinationBalance.totalCost && destinationBalance.totalCost.currency === this.db.organization.currency
+          ? destinationBalance.totalCost.amount
+          : undefined;
+      const destinationNextCost = destinationTotalCost !== undefined && movedTotalCost !== undefined && Number.isSafeInteger(destinationTotalCost + movedTotalCost) ? destinationTotalCost + movedTotalCost : undefined;
+      const unitCost = sourceBasis ?? (movedTotalCost !== undefined ? money(Math.round(movedTotalCost / input.quantity), this.db.organization.currency) : undefined);
+      const movementTotalCost = movedTotalCost === undefined ? undefined : money(movedTotalCost, this.db.organization.currency);
+      const sourceMovement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: sourceBranch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_out", quantityDelta: -input.quantity, quantity: input.quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: sourceMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+      const destinationMovement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: destinationBranch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: input.quantity, quantity: input.quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+      if (!sourceBalance) throw ApiError.of(ERR.CONFLICT, "The source branch inventory balance could not be loaded.");
+      sourceBalance.quantityOnHand -= input.quantity;
+      sourceBalance.totalCost = sourceRemainingCost === undefined ? undefined : money(sourceRemainingCost, this.db.organization.currency);
+      sourceBalance.availableQuantity = sourceBalance.quantityOnHand - sourceBalance.committedQuantity;
+      sourceBalance.lastMovementAt = now;
+      sourceBalance.updatedAt = now;
+      destinationBalance.quantityOnHand += input.quantity;
+      destinationBalance.totalCost = destinationNextCost === undefined ? undefined : money(destinationNextCost, this.db.organization.currency);
+      destinationBalance.availableQuantity = destinationBalance.quantityOnHand - destinationBalance.committedQuantity;
+      destinationBalance.lastMovementAt = now;
+      destinationBalance.updatedAt = now;
+      this.db.stockMovements.unshift(destinationMovement, sourceMovement);
+      const result: T.InventoryTransferResult = { id: transferId, organizationId: this.db.organization.id, sourceBranchId: sourceBranch.id, destinationBranchId: destinationBranch.id, productId: product.id, quantity: input.quantity, reason, idempotencyKey, status: "completed", totalCost: movementTotalCost, sourceMovementId: sourceMovement.id, destinationMovementId: destinationMovement.id, sourceMovement, destinationMovement, sourceAvailableQuantity: sourceAvailableQuantity - input.quantity, destinationAvailableQuantity: destinationAvailableQuantity + input.quantity, createdById: this.actor().id, occurredAt: now };
+      const transfer: T.InventoryTransfer = { id: transferId, organizationId: this.db.organization.id, sourceBranchId: sourceBranch.id, destinationBranchId: destinationBranch.id, productId: product.id, quantity: input.quantity, reason, status: "completed", sourceMovementId: sourceMovement.id, destinationMovementId: destinationMovement.id, totalCost: movementTotalCost, sourceAvailableBefore: sourceAvailableQuantity, destinationAvailableBefore: destinationAvailableQuantity, sourceAvailableAfter: sourceAvailableQuantity - input.quantity, destinationAvailableAfter: destinationAvailableQuantity + input.quantity, idempotencyKey, createdById: this.actor().id, occurredAt: now };
+      this.db.inventoryTransfers.unshift(transfer);
+      this.operationsIdempotency.set(`inventory_transfer:${idempotencyKey}`, { signature, result, expiresAt: Date.now() + 90 * 86_400_000 });
+      this.audit({ category: "operations", action: "operations.inventory.transfer", entityType: "inventory_transfer", entityId: transferId, entityLabel: `${product.sku} · ${sourceBranch.name} → ${destinationBranch.name}`, summary: "Inventory transferred between branches", reason, branchId: sourceBranch.id, destinationBranchId: destinationBranch.id });
+      return result;
     });
   }
 
@@ -6893,7 +7486,7 @@ export class MockGymOSApi implements GymOSApi {
       order.updatedAt = nowISO();
       for (const line of order.lines) {
         let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === order.branchId && candidate.productId === line.productId);
-        if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: order.branchId, productId: line.productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
+        if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: order.branchId, productId: line.productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
         balance.committedQuantity += line.orderedQuantity;
         balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
         balance.updatedAt = nowISO();

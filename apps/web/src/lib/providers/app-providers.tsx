@@ -25,7 +25,16 @@ import { UnsavedChangesProvider } from "@/lib/providers/unsaved-changes-provider
 import { getAppQueryDefaults } from "@/lib/providers/query-policy";
 
 /** Error codes where retrying cannot change the outcome. */
-const TERMINAL_ERROR_CODES: string[] = [ERR.FORBIDDEN, ERR.NOT_FOUND, ERR.VALIDATION, ERR.UNAUTHENTICATED];
+const TERMINAL_ERROR_CODES: string[] = [
+  ERR.FORBIDDEN,
+  ERR.NOT_FOUND,
+  ERR.VALIDATION,
+  ERR.UNAUTHENTICATED,
+  ERR.ORGANIZATION_SELECTION_REQUIRED,
+  ERR.INVITATION_NOT_ACCEPTED,
+  ERR.INVITATION_REVOKED,
+  ERR.IDENTITY_EMAIL_CONFLICT,
+];
 
 interface AppContextValue {
   session: Session | undefined;

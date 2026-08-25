@@ -369,7 +369,9 @@ export const recordAttempt = internalMutation({
         kind: "operational_email_failed",
         title: "An operational email needs attention",
         body: `${delivery.kind.replaceAll("_", " ")} could not be delivered after ${attempts.length} attempts.`,
-        href: "/automations",
+        // The automation workspace is intentionally deferred. Email delivery
+        // failures belong with the authoritative activation/provider controls.
+        href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });
     }
@@ -406,7 +408,7 @@ export const recordWebhook = internalMutation({
         kind: "operational_email_failed",
         title: "An operational email needs attention",
         body: `${delivery.kind.replaceAll("_", " ")} received a terminal provider event.`,
-        href: "/automations",
+        href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });
     }

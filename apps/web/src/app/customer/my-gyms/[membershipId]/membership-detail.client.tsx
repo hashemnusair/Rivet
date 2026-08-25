@@ -61,7 +61,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
   // public Find Gyms discovery. Use the authenticated membership projection
   // as the fallback so members never lose access to their own dashboard.
   const gym = gyms.find((item) => item.id === membership.gymId) ?? fallbackGym(membership);
-  const branch = gym.branches.find((item) => item.id === membership.branchId) ?? gym.branches[0]!;
+  const branch = gym.branches.find((item) => item.id === membership.branchId);
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
   const daysLeft = Math.max(daysFromToday(membership.endDate), 0);
@@ -102,7 +102,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           <div>
             <h1 className="font-display text-[22px] font-semibold tracking-tight">{gym.name}</h1>
             <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-ink-3">
-              <MapPin className="size-3" /> {branch.address}
+              <MapPin className="size-3" /> {branch?.address ?? "Branch unavailable"}
             </p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className={cn("h-full rounded-full", daysLeft <= 14 ? "bg-warning" : "bg-ink")} style={{ width: `${Math.round((elapsed / total) * 100)}%` }} /></div>
         </div>
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
-        <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch.name}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
+        <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
@@ -203,7 +203,9 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
     subscribe: (api, onValue, onError) => api.subscribeCustomerPtExperience(membershipId, onValue, onError),
   });
   const selectedTrainer = experience.data?.trainers.find((item) => item.id === trainerId);
-  const selectedBranchId = branchId || selectedTrainer?.branchIds[0] || "";
+  // PT bookings are writes. Never silently choose the trainer's first branch;
+  // the member must select the concrete branch for this booking.
+  const selectedBranchId = branchId;
   const slots = useApiQuery(
     ["customer", "pt", "slots", membershipId, trainerId, selectedBranchId, date],
     (api) => api.listCustomerPtAvailableSlots({ membershipId, trainerProfileId: trainerId, branchId: selectedBranchId, from: date, to: date }),

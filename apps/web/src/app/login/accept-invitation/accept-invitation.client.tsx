@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
+import { useAction } from "convex/react";
 import { ArrowRight, CircleAlert, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -12,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { LoginLayout } from "../login-chrome";
 import { PORTALS } from "../portals";
+import { api } from "../../../../convex/_generated/api";
+import { INVITATION_CLAIMED_EVENT } from "@/lib/auth/rivet-identity";
 
 export const invitationAccountSchema = z
   .object({
@@ -42,6 +45,7 @@ export function invitationErrorMessage(error: unknown): string {
   if (code.includes("revoked")) return "This invitation was revoked. Ask your RIVET contact to send a new one.";
   if (code.includes("already_accepted")) return "This invitation has already been accepted. Sign in with the invited email address.";
   if (code.includes("email_address_mismatch") || code.includes("email_mismatch")) return "This invitation belongs to a different email address. Open it from the invited inbox.";
+  if (code.includes("invitation_not_accepted")) return "We could not verify this invitation. Open the original invitation link again or ask your RIVET contact to resend it.";
   const message = [record.longMessage, record.long_message, record.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
   return message ? message.replace(/(?:__clerk_ticket|ticket)=?[^&\s]*/gi, "invitation link").slice(0, 240) : "We could not accept this invitation. Ask your RIVET contact to send a new one.";
 }
@@ -59,6 +63,7 @@ export function AcceptInvitation() {
   const { signOut } = useClerk();
   const { fetchStatus: signInFetchStatus, signIn } = useSignIn();
   const { fetchStatus: signUpFetchStatus, signUp } = useSignUp();
+  const claimInvitation = useAction(api.users.claimInvitation);
   const [state, setState] = useState<InvitationState>(status === "sign_up" ? "form" : "processing");
   const [error, setError] = useState<string>();
   const [values, setValues] = useState({ firstName: "", lastName: "", password: "", confirmPassword: "" });
@@ -77,13 +82,16 @@ export function AcceptInvitation() {
       }
       const finalized = await signIn.finalize();
       if (finalized.error) throw finalized.error;
+      const claim = await claimInvitation({});
+      if (!claim.claimed) throw { code: "INVITATION_NOT_ACCEPTED" };
+      window.dispatchEvent(new Event(INVITATION_CLAIMED_EVENT));
       setState("success");
       router.replace("/login");
     })().catch((reason: unknown) => {
       setState("error");
       setError(invitationErrorMessage(reason));
     });
-  }, [authLoaded, isSignedIn, router, signIn, signInFetchStatus, status, ticket]);
+  }, [authLoaded, claimInvitation, isSignedIn, router, signIn, signInFetchStatus, status, ticket]);
 
   useEffect(() => {
     if (status === "complete" && authLoaded && isSignedIn) {
@@ -123,6 +131,9 @@ export function AcceptInvitation() {
       }
       const finalized = await signUp.finalize();
       if (finalized.error) throw finalized.error;
+      const claim = await claimInvitation({});
+      if (!claim.claimed) throw { code: "INVITATION_NOT_ACCEPTED" };
+      window.dispatchEvent(new Event(INVITATION_CLAIMED_EVENT));
       setState("success");
       toast.success("Your gym account is ready.");
       router.replace("/login");
@@ -176,7 +187,7 @@ export function AcceptInvitation() {
 }
 
 function InvitationError({ title, body }: { title: string; body: string }) {
-  return <div className="mt-7"><div className="rounded-lg border border-danger/25 bg-danger-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-danger"><CircleAlert className="size-4" />{title}</p><p className="mt-2 text-[12.5px] leading-relaxed text-danger/90">{body}</p></div><Button asChild variant="secondary" className="mt-5 w-full" size="lg"><a href="/login">Back to sign in</a></Button></div>;
+  return <div className="mt-7" role="alert"><div className="rounded-lg border border-danger/25 bg-danger-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-danger"><CircleAlert className="size-4" />{title}</p><p className="mt-2 text-[12.5px] leading-relaxed text-danger/90">{body}</p></div><Button asChild variant="secondary" className="mt-5 w-full" size="lg"><a href="/login">Back to sign in</a></Button></div>;
 }
 
 function InvitationConflict({ onSignOut }: { onSignOut: () => void }) {

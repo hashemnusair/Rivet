@@ -24,6 +24,11 @@ const trialSchema = z.object({
 });
 type TrialValues = z.infer<typeof trialSchema>;
 
+export function resolveRequestedBranchId(search: string, branchIds: readonly string[]): string | undefined {
+  const candidate = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("branchId");
+  return candidate && branchIds.includes(candidate) ? candidate : undefined;
+}
+
 export default function GymDetailClient({ gymId }: { gymId: string }) {
   const gyms = useMarketplaceGyms();
   const gym = gyms.find((item) => item.id === gymId);
@@ -32,6 +37,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const router = useRouter();
   const [booked, setBooked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const trialRequestKeyRef = useRef<string | undefined>(undefined);
   const defaultDate = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() + 2);
@@ -51,12 +57,20 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       fullName: customer?.name ?? "",
       email: customer?.email ?? "",
       phone: customer?.phone ?? "",
-      branchId: gym?.branches[0]?.id ?? "",
+      branchId: "",
       preferredDate: defaultDate,
-      preferredTime: trialWindowForDate(gym?.branches[0], defaultDate)?.opensAt ?? "",
+      preferredTime: "",
       goal: "Try the gym and discuss the right membership",
     },
   });
+
+  const branchQueryAppliedRef = useRef(false);
+  useEffect(() => {
+    if (branchQueryAppliedRef.current || !gym || typeof window === "undefined") return;
+    branchQueryAppliedRef.current = true;
+    const requestedBranchId = resolveRequestedBranchId(window.location.search, gym.branches.map((branch) => branch.id));
+    if (requestedBranchId) setValue("branchId", requestedBranchId, { shouldDirty: false, shouldValidate: true });
+  }, [gym, setValue]);
 
   useEffect(() => {
     if (!gym) return;
@@ -66,9 +80,9 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       fullName: customer?.name ?? "",
       email: customer?.email ?? "",
       phone: customer?.phone ?? "",
-      branchId: gym.branches[0]?.id ?? "",
+      branchId: "",
       preferredDate: defaultDate,
-      preferredTime: trialWindowForDate(gym.branches[0], defaultDate)?.opensAt ?? "",
+      preferredTime: "",
       goal: "Try the gym and discuss the right membership",
     }, {
       // If identity or asynchronously loaded gym defaults change after the
@@ -82,7 +96,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const selectedBranchId = watch("branchId");
   const selectedDate = watch("preferredDate");
   const selectedTime = watch("preferredTime");
-  const selectedBranch = gym?.branches.find((branch) => branch.id === selectedBranchId) ?? gym?.branches[0];
+  const selectedBranch = gym?.branches.find((branch) => branch.id === selectedBranchId);
   const availableTrialWindow = useMemo(() => trialWindowForDate(selectedBranch, selectedDate), [selectedBranch, selectedDate]);
 
   useEffect(() => {
@@ -96,16 +110,23 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   // restored customer defaults.
   if (!previewSessionReady) return <main className="px-5 py-20 text-center"><p role="status" className="text-[13px] text-ink-3">Loading booking form…</p></main>;
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
-  const confirmedBranch = selectedBranch ?? gym.branches[0]!;
+  const confirmedBranch = selectedBranch;
+  const memberReturnTo = `/customer/gyms/${gym.id}${selectedBranch ? `?branchId=${selectedBranch.id}` : ""}`;
+  const memberSignupHref = `/login/member/create?returnTo=${encodeURIComponent(memberReturnTo)}`;
 
   const submit = handleSubmit(async (values) => {
     if (isConvexMode() && !customerSignedIn) {
-      router.push("/login");
+      // Do not submit a trial as a browser-only visitor in production. Send
+      // the visitor through the real member signup while retaining only the
+      // public gym/branch path; the signup page validates it again.
+      router.push(memberSignupHref);
       return;
     }
     setSubmitting(true);
     try {
-      await bookTrial({ gymId: gym.id, ...values });
+      const idempotencyKey = trialRequestKeyRef.current ?? (trialRequestKeyRef.current = crypto.randomUUID());
+      await bookTrial({ gymId: gym.id, ...values, idempotencyKey });
+      trialRequestKeyRef.current = undefined;
       setBooked(true);
     } finally {
       setSubmitting(false);
@@ -142,19 +163,19 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
           <aside id="book-trial" className="h-fit border border-ink bg-surface p-6 shadow-pop lg:sticky lg:top-24">
             {booked ? (
-              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{confirmedBranch.name}</p><p className="mt-1 text-[11px] text-ink-3">{customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
+              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p><p className="mt-1 text-[11px] text-ink-3">{customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
             ) : (
               <>
                 <p className="eyebrow">Free first visit</p><h2 className="mt-2 text-[24px] font-semibold tracking-tight">Book a trial at {gym.shortName}</h2><p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">No payment required. Choose a branch and preferred time; the gym will confirm.</p>
-                {!customerSignedIn ? <div className="mt-5 border border-warning/30 bg-warning-bg p-3 text-[11.5px] text-warning-deep">You can fill the form now. <Link href="/login" className="font-semibold underline">Sign in</Link> or <Link href="/login/member/create" className="font-semibold underline">create a free account</Link> to keep it under your name.</div> : null}
+                {!customerSignedIn ? <div className="mt-5 border border-warning/30 bg-warning-bg p-3 text-[11.5px] text-warning-deep">You can fill the form now. <Link href={`/login/member/create?returnTo=${encodeURIComponent(memberReturnTo)}`} className="font-semibold underline">Sign in or create a free account</Link> to keep it under your name.</div> : null}
                 <form onSubmit={submit} className="mt-6 space-y-4">
                   <TrialField label="Full name" error={errors.fullName?.message}><Input {...register("fullName")} /></TrialField>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"><TrialField label="Phone" error={errors.phone?.message}><Input {...register("phone")} /></TrialField><TrialField label="Email" error={errors.email?.message}><Input type="email" {...register("email")} /></TrialField></div>
-                  <TrialField label="Branch" error={errors.branchId?.message}><select {...register("branchId")} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px]">{gym.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></TrialField>
+                  <TrialField label="Branch" error={errors.branchId?.message}><select {...register("branchId")} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px]"><option value="">Choose branch</option>{gym.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></TrialField>
                   <div className="grid grid-cols-2 gap-3"><TrialField label="Preferred date" error={errors.preferredDate?.message}><Input type="date" min={new Date().toISOString().slice(0, 10)} {...register("preferredDate")} /></TrialField><TrialField label="Time" error={errors.preferredTime?.message}><Input type="time" min={availableTrialWindow?.opensAt} max={availableTrialWindow?.closesAt} disabled={!availableTrialWindow} {...register("preferredTime")} /></TrialField></div>
                   {availableTrialWindow ? <p role="status" className="text-[10.5px] text-ink-3">Choose any time from {availableTrialWindow.opensAt} to {availableTrialWindow.closesAt}. The gym will confirm your request.</p> : <p role="status" className="border border-line bg-sunken p-3 text-[11.5px] text-ink-3">{selectedBranch?.trialSchedule ? "This branch is closed for trial requests on the selected date. Choose another date." : "This branch has not configured online trial hours yet. Contact the gym directly."}</p>}
                   <TrialField label="What are you looking for?" error={errors.goal?.message}><Textarea {...register("goal")} /></TrialField>
-                  <Button type="submit" variant="signal" size="lg" className="w-full" loading={submitting} disabled={!availableTrialWindow}><CalendarCheck /> Send trial request</Button>
+                  <Button type="submit" variant="signal" size="lg" className="w-full" loading={submitting} disabled={!selectedBranch || !availableTrialWindow}><CalendarCheck /> Send trial request</Button>
                 </form>
                 <p className="mt-4 flex items-center justify-center gap-2 text-[10.5px] text-ink-3"><Clock className="size-3.5" /> The gym controls confirmation and follow-up.</p>
               </>

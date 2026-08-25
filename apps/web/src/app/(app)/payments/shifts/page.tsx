@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Lock, LockOpen, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
@@ -20,18 +20,25 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton, TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, StatePanel } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
 import { FinanceNav } from "@/features/finance/finance-nav";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 export default function ShiftsPage() {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager" || session?.roles[0] === "auditor";
-  const [branchId, setBranchId] = useState(session?.activeBranchId ?? session?.branches[0]?.id ?? "");
-  const effectiveBranch = canPickBranch ? branchId || session?.branches[0]?.id || "" : (session?.activeBranchId ?? session?.branches[0]?.id ?? "");
+  const [branchId, setBranchId] = useState("");
+  useEffect(() => {
+    const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
+    setBranchId((current) => visibleBranchId(session?.branches, current) ?? activeBranchId ?? "");
+  }, [session?.activeBranchId, session?.branches]);
+  const effectiveBranch = canPickBranch
+    ? visibleBranchId(session?.branches, branchId)
+    : visibleBranchId(session?.branches, session?.activeBranchId);
   const [date, setDate] = useState(todayISODate());
   const [page, setPage] = useState(1);
   const [openShiftOpen, setOpenShiftOpen] = useState(false);
@@ -39,14 +46,14 @@ export default function ShiftsPage() {
   const [varianceReview, setVarianceReview] = useState<{ shiftId: string; decision: "approved" | "rejected" } | null>(null);
   const [varianceReviewNote, setVarianceReviewNote] = useState("");
 
-  const currentShiftQuery = useApiQuery(qk.currentShift(effectiveBranch), (api) => api.getCurrentCashShift(effectiveBranch), {
+  const currentShiftQuery = useApiQuery(qk.currentShift(effectiveBranch ?? ""), (api) => api.getCurrentCashShift(effectiveBranch ?? ""), {
     enabled: Boolean(effectiveBranch),
   });
-  const totalsQuery = useApiQuery(qk.shiftTotals(effectiveBranch), (api) => api.getCurrentShiftTotals(effectiveBranch), {
+  const totalsQuery = useApiQuery(qk.shiftTotals(effectiveBranch ?? ""), (api) => api.getCurrentShiftTotals(effectiveBranch ?? ""), {
     enabled: Boolean(effectiveBranch) && Boolean(currentShiftQuery.data),
   });
-  const reconQuery = useApiQuery(qk.reconciliation(effectiveBranch, date), (api) =>
-    api.getDailyReconciliation({ branchId: effectiveBranch, date }),
+  const reconQuery = useApiQuery(qk.reconciliation(effectiveBranch ?? "", date), (api) =>
+    api.getDailyReconciliation({ branchId: effectiveBranch ?? "", date }),
   { enabled: Boolean(effectiveBranch) && can("reports.financial.read") });
   const historyQuery = useApiQuery(qk.shifts({ branchId: effectiveBranch, page }), (api) =>
     api.listCashShifts({ branchId: effectiveBranch, page, pageSize: 10 }),
@@ -68,6 +75,36 @@ export default function ShiftsPage() {
   const totals = totalsQuery.data?.totals;
   const recon = reconQuery.data;
 
+  const branchPicker = canPickBranch ? (
+    <Select value={effectiveBranch ?? ""} onValueChange={setBranchId}>
+      <SelectTrigger sizeVariant="sm" className="w-48" aria-label="Branch">
+        <SelectValue placeholder="Choose branch" />
+      </SelectTrigger>
+      <SelectContent>
+        {session?.branches.map((b) => (
+          <SelectItem key={b.id} value={b.id}>
+            {b.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null;
+
+  if (!effectiveBranch) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          eyebrow="Finance"
+          title="Shifts & cash"
+          description="Open the drawer, collect all day, close with a count — variances get reviewed, not ignored."
+          actions={branchPicker}
+        />
+        <FinanceNav />
+        <StatePanel icon={Lock} title="Choose a branch first" description="Cash shifts and reconciliation are branch-specific. Select one concrete branch above before opening or reviewing a drawer." />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -76,20 +113,7 @@ export default function ShiftsPage() {
         description="Open the drawer, collect all day, close with a count — variances get reviewed, not ignored."
         actions={
           <div className="flex items-center gap-2">
-            {canPickBranch ? (
-              <Select value={effectiveBranch} onValueChange={setBranchId}>
-                <SelectTrigger sizeVariant="sm" className="w-48" aria-label="Branch">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {session?.branches.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
+            {branchPicker}
             <Gate permission="reconciliation.open_shift">
               {!currentShift ? (
                 <Button onClick={() => setOpenShiftOpen(true)} data-testid="open-shift-page">

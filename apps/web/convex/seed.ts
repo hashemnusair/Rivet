@@ -145,13 +145,23 @@ export const seedDemoTenant = internalMutation({
         .withIndex("by_email", (q) => q.eq("email", email))
         .unique();
       if (existing) {
-        await ctx.db.patch(existing._id, { publicId: existing.publicId ?? seedPublicId(email), fullName, status: existing.status ?? "active", updatedAt: now });
+        await ctx.db.patch(existing._id, {
+          publicId: existing.publicId ?? seedPublicId(email),
+          // Migrate the old demo placeholder prefix without touching a real
+          // Clerk subject that may already have claimed this row.
+          authSubject: existing.authSubject.startsWith("invite:") ? `seed:${email}` : existing.authSubject,
+          fullName,
+          status: existing.status ?? "active",
+          updatedAt: now,
+        });
         return existing._id;
       }
       return await ctx.db.insert("users", {
         publicId: seedPublicId(email),
-        // Claimed by whoever signs in with this email; never a real Clerk subject.
-        authSubject: `invite:${email}`,
+        // Development fixture identity. Real invitation placeholders use the
+        // distinct invite: prefix and can only be promoted by the verified
+        // Clerk ticket claim action.
+        authSubject: `seed:${email}`,
         email,
         fullName,
         platformAdmin: false,

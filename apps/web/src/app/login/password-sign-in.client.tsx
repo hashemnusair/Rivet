@@ -3,6 +3,7 @@
 import { useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -15,8 +16,9 @@ type VerificationKind = "email_code" | "phone_code" | "totp" | "backup_code";
  * this always paints both primary fields immediately and only introduces a
  * second step when Client Trust or user-enabled MFA genuinely requires it.
  */
-export function PasswordSignIn() {
+export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: string }) {
   const { signIn, errors, fetchStatus } = useSignIn();
+  const router = useRouter();
   const [emailAddress, setEmailAddress] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -29,11 +31,20 @@ export function PasswordSignIn() {
   const finish = async () => {
     if (!signIn || signIn.status !== "complete") return false;
     setFinishing(true);
-    const { error } = await signIn.finalize();
+    let decoratedRedirect = redirectUrl;
+    const { error } = await signIn.finalize({
+      navigate: async ({ decorateUrl }) => {
+        decoratedRedirect = decorateUrl(redirectUrl);
+      },
+    });
     if (error) {
       setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
       setFinishing(false);
       return false;
+    }
+    if (redirectUrl !== "/login") {
+      if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
+      else router.replace(decoratedRedirect);
     }
     return true;
   };
@@ -238,7 +249,10 @@ export function PasswordSignIn() {
       </Button>
       <p className="text-center text-[12px] text-ink-3">
         New member?{" "}
-        <Link href="/login/member/create" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
+        <Link
+          href={redirectUrl === "/login" ? "/login/member/create" : `/login/member/create?returnTo=${encodeURIComponent(redirectUrl)}`}
+          className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink"
+        >
           Create a free account
         </Link>
       </p>

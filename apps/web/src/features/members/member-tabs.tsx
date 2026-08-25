@@ -22,6 +22,7 @@ import { receiptHref } from "@/lib/utils/receipt-links";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -239,7 +240,9 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
   const [bookingOpen, setBookingOpen] = useState(false);
   const query = useRealtimeApiQuery({ queryKey: qk.ptMember(membershipId ?? "none"), query: (api) => api.getPtMemberExperience(membershipId!), subscribe: (api, onValue, onError) => api.subscribePtMemberExperience(membershipId!, onValue, onError), enabled: Boolean(membershipId) });
   const selectedTrainer = query.data?.trainers.find((item) => item.id === trainerId);
-  const selectedBranch = branchId || selectedTrainer?.branchIds[0] || "";
+  // Booking is a mutation. Do not silently book at the trainer's first
+  // branch; the operator must choose a concrete branch for this session.
+  const selectedBranch = visibleBranchId(session?.branches, branchId) ?? "";
   const slots = useApiQuery(["pt", "slots", trainerId, selectedBranch, date], (api) => api.listPtAvailableSlots({ trainerProfileId: trainerId, branchId: selectedBranch, from: date, to: date }), { enabled: Boolean(trainerId && selectedBranch && date) });
   const requestPackage = useApiMutation((api, packageId: string) => api.requestPtPackage({ membershipId: membershipId!, packageId, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT package charge created. Credits activate after full payment."); await invalidate(); } });
   const book = useApiMutation((api, startsAt: string) => api.createPtBooking({ membershipId: membershipId!, trainerProfileId: trainerId, branchId: selectedBranch, startsAt, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success("PT session reserved."); setBookingOpen(false); await invalidate(); } });
@@ -260,7 +263,7 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
           </DialogHeader>
           <DialogBody className="grid gap-3">
             <label className="grid gap-1 text-[11px] font-medium">Trainer<select aria-label="Trainer" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={trainerId} onChange={(event) => { setTrainerId(event.target.value); setBranchId(""); }}><option value="">Choose a trainer</option>{experience.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.displayName}</option>)}</select></label>
-            {selectedTrainer ? <label className="grid gap-1 text-[11px] font-medium">Branch<select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={selectedBranch} onChange={(event) => setBranchId(event.target.value)}>{selectedTrainer.branchIds.map((id) => <option key={id} value={id}>{session?.branches.find((branch) => branch.id === id)?.name ?? id}</option>)}</select></label> : null}
+            {selectedTrainer ? <label className="grid gap-1 text-[11px] font-medium">Branch<select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" value={visibleBranchId(session?.branches, selectedBranch) ?? ""} onChange={(event) => setBranchId(event.target.value)}><option value="">Choose a branch</option>{selectedTrainer.branchIds.filter((id) => visibleBranchId(session?.branches, id)).map((id) => <option key={id} value={id}>{session?.branches.find((branch) => branch.id === id)?.name ?? id}</option>)}</select></label> : null}
             <label className="grid gap-1 text-[11px] font-medium">Date<input aria-label="Date" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12px]" type="date" min={addDays(todayISODate(), 1)} value={date} onChange={(event) => setDate(event.target.value)} /></label>
             {trainerId && selectedBranch ? <div><p className="mb-2 text-[11px] font-medium">Available times</p>{slots.isLoading ? <p className="text-[11px] text-ink-3">Loading slots…</p> : slots.data?.length ? <div className="flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="text-[11px] text-ink-3">No open 60-minute slots on this date.</p>}</div> : <p className="text-[11px] text-ink-3">Choose a trainer and date to load available times.</p>}
           </DialogBody>

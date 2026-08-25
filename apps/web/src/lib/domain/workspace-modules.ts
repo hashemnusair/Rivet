@@ -38,7 +38,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     key: "operations",
     version: 1,
     label: "Daily operations",
-    description: "Cleaning, facilities, equipment, inventory, suppliers, and branch work queues.",
+    description: "Inventory, checkout, suppliers, purchase orders, and machines.",
     dependencies: ["foundation"],
     required: false,
     configurable: true,

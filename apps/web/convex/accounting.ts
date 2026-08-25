@@ -80,6 +80,7 @@ export const DEFAULT_ACCOUNT_DEFINITIONS: readonly AccountDefinition[] = [
   { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
   { code: "4100", name: "Membership revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "4200", name: "Retail sales revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
@@ -107,6 +108,10 @@ export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   // checkout. They deliberately remain sourceType=payment so existing
   // collection reports include them without conflating them with a member
   // charge.
+  // v1 retail policies intentionally remain mapped to the historical
+  // membership-revenue account. They may already be referenced by posted
+  // journals, so never mutate their meaning in place. New retail facts use
+  // the v2 policies below and post to the dedicated retail revenue account.
   { policyCode: "retail-sale-cash.v1", sourceType: "payment", version: 1, debitAccountCode: "1100", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "retail-sale-card.v1", sourceType: "payment", version: 1, debitAccountCode: "1110", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "retail-sale-cliq.v1", sourceType: "payment", version: 1, debitAccountCode: "1120", creditAccountCode: "4100", recognition: "immediate" },
@@ -120,9 +125,25 @@ export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   { policyCode: "void-bank-transfer.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1120", recognition: "immediate" },
   { policyCode: "void-cliq.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1120", recognition: "immediate" },
   { policyCode: "void-other.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "retail-refund-cash.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "retail-refund-card.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1110", recognition: "immediate" },
+  { policyCode: "retail-refund-cliq.v1", sourceType: "refund", version: 1, debitAccountCode: "1200", creditAccountCode: "1120", recognition: "immediate" },
+  { policyCode: "retail-void-cash.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "retail-void-card.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1110", recognition: "immediate" },
+  { policyCode: "retail-void-cliq.v1", sourceType: "void", version: 1, debitAccountCode: "1200", creditAccountCode: "1120", recognition: "immediate" },
+  { policyCode: "retail-sale-cash.v2", sourceType: "payment", version: 2, debitAccountCode: "1100", creditAccountCode: "4200", recognition: "immediate" },
+  { policyCode: "retail-sale-card.v2", sourceType: "payment", version: 2, debitAccountCode: "1110", creditAccountCode: "4200", recognition: "immediate" },
+  { policyCode: "retail-sale-cliq.v2", sourceType: "payment", version: 2, debitAccountCode: "1120", creditAccountCode: "4200", recognition: "immediate" },
+  { policyCode: "retail-refund-cash.v2", sourceType: "refund", version: 2, debitAccountCode: "4200", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "retail-refund-card.v2", sourceType: "refund", version: 2, debitAccountCode: "4200", creditAccountCode: "1110", recognition: "immediate" },
+  { policyCode: "retail-refund-cliq.v2", sourceType: "refund", version: 2, debitAccountCode: "4200", creditAccountCode: "1120", recognition: "immediate" },
+  { policyCode: "retail-void-cash.v2", sourceType: "void", version: 2, debitAccountCode: "4200", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "retail-void-card.v2", sourceType: "void", version: 2, debitAccountCode: "4200", creditAccountCode: "1110", recognition: "immediate" },
+  { policyCode: "retail-void-cliq.v2", sourceType: "void", version: 2, debitAccountCode: "4200", creditAccountCode: "1120", recognition: "immediate" },
   { policyCode: "purchase-order-receipt.v1", sourceType: "purchase_order_receipt", version: 1, debitAccountCode: "1300", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "stock-receive.v1", sourceType: "stock_movement", version: 1, debitAccountCode: "1300", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "stock-consume.v1", sourceType: "stock_movement", version: 1, debitAccountCode: "5100", creditAccountCode: "1300", recognition: "immediate" },
+  { policyCode: "stock-return.v1", sourceType: "stock_movement", version: 1, debitAccountCode: "1300", creditAccountCode: "5100", recognition: "immediate" },
   { policyCode: "facility-supplies.v1", sourceType: "facility_supplies", version: 1, debitAccountCode: "5300", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "equipment-acquisition.v1", sourceType: "equipment_acquisition", version: 1, debitAccountCode: "1500", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "equipment-repair.v1", sourceType: "equipment_repair", version: 1, debitAccountCode: "5200", creditAccountCode: "2100", recognition: "immediate" },
@@ -335,6 +356,20 @@ function policyDefinition(policyCode: string): PolicyDefinition | undefined {
 async function policyByCode(ctx: ReadContext, actor: ActorContext, policyCode: string): Promise<Policy | undefined> {
   const policy = await ctx.db.query("accountingPostingPolicies").withIndex("by_organization_code", (q) => q.eq("organizationId", actor.organization._id).eq("policyCode", policyCode)).collect();
   return policy.find((candidate) => candidate.status === "active" && candidate.version === Math.max(...policy.map((item) => item.version))) ?? policy.find((candidate) => candidate.status === "active");
+}
+
+/**
+ * A source-posting row is an accounting decision, not a disposable cache.
+ * Preserve its prior policy for pending/unconfigured historical facts so a
+ * queue refresh or later retry cannot silently reclassify a v1 source as v2.
+ * Posted and reversed rows are already immutable and are handled before this
+ * helper is called.
+ */
+async function preserveExistingSourcePolicy(ctx: ReadContext, actor: ActorContext, existing: SourcePosting | undefined, fact: SourceFact): Promise<SourceFact> {
+  if (!existing || existing.status === "posted" || existing.status === "reversed" || !existing.policyCode || existing.policyCode === fact.policyCode) return fact;
+  const configured = policyDefinition(existing.policyCode) ?? await policyByCode(ctx, actor, existing.policyCode);
+  if (!configured) return fact;
+  return { ...fact, policyCode: configured.policyCode, debitAccountCode: configured.debitAccountCode, creditAccountCode: configured.creditAccountCode };
 }
 
 async function periodForDate(ctx: ReadContext, actor: ActorContext, postingDate: string): Promise<Period | undefined> {
@@ -556,16 +591,25 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     const occurredAt = Date.parse(text(value.occurredAt)) || record.createdAt;
     const sourceCurrency = amount.currency ?? currency;
     const invalidCurrency = sourceCurrency !== currency;
-    const retailSale = sourceType === "payment" && sourcePaymentType === "retail_sale";
-    const invalidType = (sourceType === "payment" ? !["payment", "retail_sale"].includes(sourcePaymentType) : sourcePaymentType !== expectedType) || (sourceType === "payment" && sourceStatus === "voided") || (sourceType === "void" && sourceStatus !== "voided");
+    // Refund facts carry `retailSaleId`; void facts retain the original
+    // retail_sale payment type. Resolve that lifecycle before choosing the
+    // debit account so retail adjustments reverse retail revenue rather than
+    // membership receivables.
+    const retailSale = sourcePaymentType === "retail_sale" || Boolean(optionalText(value.retailSaleId));
+    const validType = sourceType === "payment"
+      ? ["payment", "retail_sale"].includes(sourcePaymentType)
+      : sourceType === "refund"
+        ? sourcePaymentType === expectedType
+        : ["payment", "retail_sale"].includes(sourcePaymentType) && sourceStatus === "voided";
+    const invalidType = !validType || (sourceType === "payment" && sourceStatus === "voided");
     const normalizedAmount = amount.amount === undefined ? undefined : sourceType === "refund" ? Math.abs(amount.amount) : amount.amount;
     const invalidAmount = normalizedAmount === undefined || normalizedAmount <= 0;
-    const debit = sourceType === "payment" ? paymentAccount(method) : "1200";
-    const credit = sourceType === "payment" ? retailSale ? "4100" : "1200" : paymentAccount(method);
+    const debit = sourceType === "payment" ? paymentAccount(method) : retailSale ? "4200" : "1200";
+    const credit = sourceType === "payment" ? retailSale ? "4200" : "1200" : paymentAccount(method);
     // Policy codes are code-owned and use a stable hyphenated namespace.
     // Keep the source fact's method mapping explicit so a payment cannot
     // silently fall through to an unconfigured policy because of punctuation.
-    const policyCode = retailSale ? `retail-sale-${method}.v1` : `${sourceType}-${method}.v1`;
+    const policyCode = retailSale ? `${sourceType === "payment" ? "retail-sale" : sourceType === "refund" ? "retail-refund" : "retail-void"}-${method}.v2` : `${sourceType}-${method}.v1`;
     return {
       sourceType,
       sourcePublicId: sourceId,
@@ -662,13 +706,13 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     const branch = await branchById(ctx, actor, movement.branchId);
     const unitCost = movement.unitCostMinor;
     const quantity = Math.abs(movement.quantity);
-    const amount = unitCost === undefined ? undefined : quantity * unitCost;
+    const amount = movement.totalCostMinor ?? (unitCost === undefined ? undefined : quantity * unitCost);
     const receive = movement.type === "receive";
     const consumptive = ["sale", "consumption", "waste"].includes(movement.type);
-    const policyCode = receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : undefined;
+    const internalTransfer = ["transfer_in", "transfer_out"].includes(movement.type);
+    const retailReturn = movement.type === "return" && ["retail_refund", "retail_void"].includes(text(movement.referenceType).toLowerCase());
+    const policyCode = receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : retailReturn ? "stock-return.v1" : undefined;
     const purchaseOrderLinked = text(movement.referenceType).toLowerCase() === "purchase_order";
-    const excludedMovementType = ["return", "transfer_in", "transfer_out", "adjustment"].includes(movement.type);
-    const excluded = purchaseOrderLinked || excludedMovementType;
     return {
       sourceType,
       sourcePublicId: sourceId,
@@ -679,11 +723,11 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       occurredAt: movement.occurredAt,
       memo: `Stock ${movement.type} ${sourceId}`,
       policyCode,
-      debitAccountCode: receive ? "1300" : consumptive ? "5100" : undefined,
-      creditAccountCode: receive ? "2100" : consumptive ? "1300" : undefined,
+      debitAccountCode: receive ? "1300" : consumptive ? "5100" : retailReturn ? "1300" : undefined,
+      creditAccountCode: receive ? "2100" : consumptive ? "1300" : retailReturn ? "5100" : undefined,
       details: { movementType: movement.type, productId: String(movement.productId), quantity },
-      status: movement.unitCostCurrency && movement.unitCostCurrency !== currency ? "excluded" : excluded ? "excluded" : !receive && !consumptive || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined,
-      reason: movement.unitCostCurrency && movement.unitCostCurrency !== currency ? `Stock movement currency does not match organization currency ${currency}.` : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded because the purchase receipt owns inventory and AP posting." : excludedMovementType ? `Stock movement type ${movement.type} has no configured accounting policy.` : !receive && !consumptive ? `No accounting policy exists for stock movement type ${movement.type}.` : amount === undefined ? "Stock movement unit cost is not configured." : !Number.isSafeInteger(amount) || amount <= 0 ? "Stock movement cost is not a positive integer minor-unit amount." : undefined,
+      status: (movement.totalCostCurrency ?? movement.unitCostCurrency) && (movement.totalCostCurrency ?? movement.unitCostCurrency) !== currency ? "excluded" : purchaseOrderLinked || internalTransfer ? "excluded" : !receive && !consumptive && !retailReturn || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined,
+      reason: (movement.totalCostCurrency ?? movement.unitCostCurrency) && (movement.totalCostCurrency ?? movement.unitCostCurrency) !== currency ? `Stock movement currency does not match organization currency ${currency}.` : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded because the purchase receipt owns inventory and AP posting." : internalTransfer ? "Internal branch transfers move stock within the organization and do not create a journal entry." : !receive && !consumptive && !retailReturn ? `No accounting policy exists for stock movement type ${movement.type}.` : amount === undefined ? "Stock movement unit cost is not configured." : !Number.isSafeInteger(amount) || amount <= 0 ? "Stock movement cost is not a positive integer minor-unit amount." : undefined,
     };
   }
 
@@ -1029,19 +1073,20 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
 }
 
 async function refreshSourceProjection(ctx: MutationCtx, actor: ActorContext, fact: SourceFact, status: QueueSourceStatus): Promise<{ row: SourcePosting; created: boolean; updated: boolean; skippedPosted: boolean }> {
-  const existing = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", fact.sourceType).eq("sourcePublicId", fact.sourcePublicId)).unique();
+  const existing = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", fact.sourceType).eq("sourcePublicId", fact.sourcePublicId)).unique() ?? undefined;
   if (existing?.status === "posted" || existing?.status === "reversed") return { row: existing, created: false, updated: false, skippedPosted: true };
+  const effectiveFact = await preserveExistingSourcePolicy(ctx, actor, existing, fact);
   const now = Date.now();
   const patch = {
-    branchId: fact.branch?._id,
+    branchId: effectiveFact.branch?._id,
     status,
-    amountMinor: fact.amountMinor,
-    currency: fact.currency,
-    policyCode: fact.policyCode,
-    policyVersion: policyDefinition(fact.policyCode ?? "")?.version,
-    reason: fact.reason,
-    details: fact.details,
-    occurredAt: fact.occurredAt,
+    amountMinor: effectiveFact.amountMinor,
+    currency: effectiveFact.currency,
+    policyCode: effectiveFact.policyCode,
+    policyVersion: policyDefinition(effectiveFact.policyCode ?? "")?.version,
+    reason: effectiveFact.reason,
+    details: effectiveFact.details,
+    occurredAt: effectiveFact.occurredAt,
     journalEntryPublicId: undefined,
     idempotencyKey: undefined,
     updatedAt: now,
@@ -1216,7 +1261,7 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const idempotencyKey = text(input.idempotencyKey).trim();
   if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
   const requestFingerprint = sourcePostingRequestFingerprint({ sourceType, sourcePublicId: sourceId, idempotencyKey, reason: optionalText(input.reason) });
-  const sourceExisting = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", sourceType).eq("sourcePublicId", sourceId)).unique();
+  const sourceExisting = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", sourceType).eq("sourcePublicId", sourceId)).unique() ?? undefined;
   if (sourceExisting) requireAccountingRecordVisible(actor, sourceExisting.branchId);
   const attemptsWithKey = await ctx.db.query("accountingPostingAttempts").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", actor.organization._id).eq("idempotencyKey", idempotencyKey)).collect();
   for (const attempt of attemptsWithKey) requireAccountingRecordVisible(actor, attempt.branchId);
@@ -1232,7 +1277,8 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const existingKey = existingKeyRows.find((row) => row.sourceType === sourceType && row.sourcePublicId === sourceId);
   if (existingKey?.status === "posted" || existingKey?.status === "reversed") return await sourcePostingView(ctx, actor, existingKey);
   if (sourceExisting?.status === "posted" || sourceExisting?.status === "reversed") return await sourcePostingView(ctx, actor, sourceExisting);
-  const fact = await sourceFact(ctx, actor, sourceType, sourceId);
+  const rawFact = await sourceFact(ctx, actor, sourceType, sourceId);
+  const fact = await preserveExistingSourcePolicy(ctx, actor, sourceExisting, rawFact);
   if (fact.status) return await persistSourceDecision(ctx, actor, fact, fact.status, idempotencyKey, requestFingerprint);
   if (!fact.policyCode || !fact.debitAccountCode || !fact.creditAccountCode || fact.amountMinor === undefined || fact.amountMinor <= 0 || fact.currency !== actor.organization.currency.toUpperCase()) return await persistSourceDecision(ctx, actor, fact, "unconfigured", idempotencyKey, requestFingerprint);
   // Source policies are lazily seeded for organizations created before the

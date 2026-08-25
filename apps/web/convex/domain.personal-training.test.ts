@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
-import { api } from "./_generated/api";
+import { Blob as NodeBlob } from "node:buffer";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -52,6 +53,77 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("Convex personal-training lifecycle", () => {
+  it("projects trainer photos only when the active public asset belongs to that trainer", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const assetIds = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique();
+      const foreignOrganization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt-foreign")).unique();
+      const trainer = organization ? await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "trainer-profile")).unique() : null;
+      expect(organization).not.toBeNull();
+      expect(foreignOrganization).not.toBeNull();
+      expect(trainer).not.toBeNull();
+      const storageId = await ctx.storage.store(new NodeBlob(["trainer-photo"], { type: "image/png" }) as unknown as Blob);
+      const insert = async (organizationId: NonNullable<typeof organization>, publicId: string, ownerPublicId: string, visibility: "public" | "private", status: "active" | "replaced") => await ctx.db.insert("mediaAssets", { organizationId: organizationId._id, publicId, ownerType: "trainer_photo", ownerPublicId, storageId, contentType: "image/png", sizeBytes: 13, visibility, status, createdAt: now, updatedAt: now });
+      const valid = await insert(organization!, "pt-photo-valid", "trainer-profile", "public", "active");
+      const privateAsset = await insert(organization!, "pt-photo-private", "trainer-profile", "private", "active");
+      const wrongOwner = await insert(organization!, "pt-photo-wrong-owner", "another-trainer", "public", "active");
+      const stale = await insert(organization!, "pt-photo-stale", "trainer-profile", "public", "replaced");
+      const foreign = await insert(foreignOrganization!, "pt-photo-foreign", "trainer-profile", "public", "active");
+      return { trainerId: trainer!._id, valid: String(valid), privateAsset: String(privateAsset), wrongOwner: String(wrongOwner), stale: String(stale), foreign: String(foreign) };
+    });
+
+    const setPhoto = async (photoAssetId: string) => {
+      await t.run(async (ctx) => ctx.db.patch(assetIds.trainerId, { photoAssetId }));
+      const experience = await t.withIdentity({ subject: "clerk-pt-customer" }).query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { trainers: Array<{ photoUrl?: string }> };
+      return experience.trainers[0]?.photoUrl;
+    };
+
+    expect(await setPhoto("pt-photo-valid")).toEqual(expect.any(String));
+    for (const photoAssetId of ["pt-photo-private", "pt-photo-wrong-owner", "pt-photo-stale", "pt-photo-foreign"]) {
+      expect(await setPhoto(photoAssetId)).toBeUndefined();
+    }
+  });
+
+  it("keeps trainer uploads pending until the profile mutation links and activates them", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["pending-trainer-photo"], { type: "image/png" }) as unknown as Blob));
+    const pending = await owner.mutation(internal.media.commit, {
+      organizationId: "org-pt",
+      correlationId: "cor-pt-trainer-photo-pending",
+      ownerType: "trainer_photo",
+      ownerPublicId: "trainer-profile",
+      altText: "Coach Lina during a strength session",
+      contentType: "image/png",
+      sizeBytes: 20,
+      storageId,
+    });
+    expect(pending.status).toBe("pending");
+
+    const profile = await owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", {
+      id: "trainer-profile",
+      userId: "pt-trainer",
+      displayName: "Coach Lina",
+      specialties: ["Strength"],
+      languages: ["en", "ar"],
+      branchIds: ["pt-branch"],
+      status: "published",
+      photoAssetId: pending.id,
+      photoAlt: "Coach Lina during a strength session",
+    })) as { photoUrl?: string };
+    expect(profile.photoUrl).toEqual(expect.any(String));
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique();
+      const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", pending.id)).unique();
+      expect(asset).toMatchObject({ status: "active", ownerType: "trainer_photo", ownerPublicId: "trainer-profile" });
+      expect(asset).not.toHaveProperty("deleteAfter");
+    });
+  });
+
   it("allows arbitrary package terms while preserving existing order terms and supports unpaid cancellation", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

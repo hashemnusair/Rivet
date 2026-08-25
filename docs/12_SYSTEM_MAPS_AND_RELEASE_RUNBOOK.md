@@ -16,6 +16,33 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current release posture
 
+### Latest local implementation status — 25 August 2026
+
+The current working tree contains the implemented P0/P1 readiness slices:
+explicit branch scope with read-only **All branches**, retail
+finance/accounting lifecycle hardening, invitation and multi-org identity
+security, public media and abuse controls, production fail-closed configuration
+and security headers, provisioning retry preservation, real Clerk customer
+signup, atomic inventory transfers, and truthful deferred handling for
+Facilities/Automations. The primary Operations scope is Inventory, Checkout,
+and Machines.
+
+The final independent security review also fixed required upload-intent and
+storage ownership checks, member-photo branch authorization, authorization
+before purchase-order and PT idempotent replay responses, and strict Clerk
+invitation/application/workspace metadata matching. External edge/IP/device
+rate limiting and provider-backed/Production verification remain open.
+
+Credential-free local validation passed: **136 Vitest files / 828 tests**,
+**14 Node deployment-safety tests**, application and Convex TypeScript checks,
+full lint and secret-output audit, the production Next build, and
+`git diff --check`.
+
+This evidence is local to the uncommitted working tree. No Playwright run was
+performed, no commit/push was made, and no Convex or Vercel Production deploy
+was performed. Live provider-backed invitation/signup checks and Production
+smoke, rollback, capacity/headroom, and backup/recovery gates remain open.
+
 - Current `main` is `fe86322251f5429c4f27162a0c99229ae3506a23`. It contains the
   default-off platform-subscription reconciliation, aggregate impact preview,
   retail refund/void recovery, and the final paid-translation-provider removal.
@@ -96,9 +123,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   draft → approved → in-progress → completed, with cancellation available at
   the permitted stages. Recommendations use completed, non-reversed repair
   evidence and ignore cancelled work.
-- Working-tree validation passed: full Vitest coverage (**128 files / 743
+- Working-tree validation passed: full Vitest coverage (**136 files / 828
   tests**), app and Convex TypeScript checks, full ESLint and secret-output
-  audit, the production Next build, 9/9 safe Convex CLI tests, and
+  audit, the production Next build, 14 Node deployment-safety tests, and
   `git diff --check`. A mock-mode in-app browser visual pass (not Playwright)
   verified the All branches comparison, independent Sweifieh stock with
   global branch synchronization, Abdoun machine issue/work-order UI, the
@@ -516,6 +543,8 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `CLERK_SECRET_KEY` | Development server key | Dedicated development key or absent | Production server key | Same-environment server key | Staging secret |
 | `CLERK_FRONTEND_API_URL` | Optional in Next.js | Dedicated development issuer or absent | Production issuer | Required; must match Clerk environment | — |
 | `ENTRY_PASS_SIGNING_SECRET` | — | — | — | Unique per deployment | — |
+| `RIVET_PUBLIC_REQUEST_PEPPER` | Local/test value or explicit fallback | Preview value if public forms are exercised | Strong private value | Required; must match the protected runtime configuration | — |
+| `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` | `1` only for deterministic local/test work | Optional for mock-only preview | Must be unset or `0` | Must be unset in Production | — |
 | `RIVET_SITE_URL` | — | — | — | Correct environment origin | — |
 | `RESEND_API_KEY` | — | — | — | Production or sandbox key | — |
 | `RESEND_FROM_EMAIL` | — | — | — | Verified sender | — |
@@ -579,6 +608,8 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.
+- [ ] Confirm `RIVET_PUBLIC_REQUEST_PEPPER` exists in Convex and Vercel Production, is at least 32 characters with mixed character classes, and is not the local fallback.
+- [ ] Confirm `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset or `0` in Production.
 - [ ] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
 - [ ] Confirm `RESEND_API_KEY` exists.
 - [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.

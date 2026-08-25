@@ -9,6 +9,7 @@ describe("AutomationComingSoon", () => {
     expect(screen.getByRole("heading", { name: "Automations are paused for now" })).toBeInTheDocument();
     expect(screen.getByText("Coming soon")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "New rule" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Return to dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "View automation history" })).toHaveAttribute("href", "/audit?category=automations");
+    expect(screen.getByRole("link", { name: "Contact support" })).toHaveAttribute("href", "/support");
   });
 });

@@ -9,6 +9,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { qk } from "@/lib/api/keys";
 import type { LeadSource } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { fromMajor } from "@/lib/utils/money";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const { session } = useApp();
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
+  const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? "";
   // Lead ownership is not limited to salespeople: owners and managers may
   // legitimately carry a queue, and the current actor must remain visible
   // when their role is not salesperson.
@@ -53,7 +55,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       fullName: "",
       phone: "",
       email: "",
-      branchId: session?.activeBranchId ?? session?.branches[0]?.id ?? "",
+      branchId: activeBranchId,
       source: "instagram",
       ownerId: session?.user.id,
       expectedValue: "",
@@ -68,7 +70,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         fullName: "",
         phone: "",
         email: "",
-        branchId: session?.activeBranchId ?? session?.branches[0]?.id ?? "",
+        branchId: activeBranchId,
         source: "instagram",
         ownerId: session?.user.id,
         expectedValue: "",
@@ -77,8 +79,11 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       });
       setServerError(null);
     }
+    // Reset when the dialog opens so a stale branch can never be carried into
+    // a new lead. `activeBranchId` is already validated against visible
+    // session branches above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, activeBranchId]);
 
   const mutation = useApiMutation(
     (api, v: FormValues) =>
@@ -109,7 +114,14 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           <DialogTitle>New lead</DialogTitle>
           <DialogDescription>Capture it now — the 24h first-contact automation starts counting immediately.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
+        <form onSubmit={form.handleSubmit((v) => {
+          const selectedBranchId = visibleBranchId(session?.branches, v.branchId);
+          if (!selectedBranchId) {
+            form.setError("branchId", { message: "Choose a visible branch" });
+            return;
+          }
+          mutation.mutate({ ...v, branchId: selectedBranchId });
+        })}>
           <DialogBody className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Full name" required error={form.formState.errors.fullName?.message}>
@@ -123,16 +135,17 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Branch" required>
+              <Field label="Branch" required error={form.formState.errors.branchId?.message}>
                 <Controller
                   control={form.control}
                   name="branchId"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
                       <SelectTrigger aria-label="Branch">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">Choose branch</SelectItem>
                         {session?.branches.map((b) => (
                           <SelectItem key={b.id} value={b.id}>
                             {b.name}

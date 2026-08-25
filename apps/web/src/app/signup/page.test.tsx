@@ -61,13 +61,14 @@ describe("gym application pricing selection", () => {
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
     await user.click(screen.getByRole("button", { name: /Send gym application/ }));
 
-    expect(state.submitGymApplication).toHaveBeenCalledWith({
+    expect(state.submitGymApplication).toHaveBeenCalledWith(expect.objectContaining({
       ownerName: "Annual Owner",
       gymName: "Annual Gym",
       email: "annual-owner@example.test",
       contactNumber: "+962790000999",
       plan: "Enterprise",
       billingInterval: "annual",
-    });
+    }));
+    expect(state.submitGymApplication.mock.calls[0]?.[0].idempotencyKey).toEqual(expect.any(String));
   });
 });

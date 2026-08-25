@@ -64,6 +64,33 @@ describe("session and role switching", () => {
     });
     expect(owner.roles).toEqual(["owner"]);
   });
+
+  it("keeps All branches read-only and never falls back across selected branch scope", async () => {
+    const owner = await api.getSession();
+    expect(owner.branches.length).toBeGreaterThanOrEqual(2);
+    await api.setActiveBranch(undefined);
+    await expect(api.getSession()).resolves.toMatchObject({ activeBranchId: undefined });
+    await expect(api.listMembers({ pageSize: 100 })).resolves.toBeDefined();
+
+    const internals = api as unknown as { db: MockDb };
+    const receptionist = internals.db.users.find((user) => user.role === "receptionist" && user.status === "active");
+    if (!receptionist) throw new Error("seed should contain an active receptionist");
+    const [branchA, branchB] = owner.branches;
+    if (!branchA || !branchB) throw new Error("seed should contain two branches");
+
+    await api.switchDemoRole("receptionist", branchA.id);
+    receptionist.branchScope = "selected";
+    receptionist.branchIds = [branchA.id, branchB.id];
+    internals.db.session.activeBranchId = undefined;
+    await expect(api.listMembers({ pageSize: 100 })).rejects.toMatchObject({ code: ERR.ORGANIZATION_SELECTION_REQUIRED });
+
+    await expect(api.setActiveBranch("stale-branch")).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    internals.db.branches.find((branch) => branch.id === branchB.id)!.status = "inactive";
+    await expect(api.setActiveBranch(branchB.id)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    internals.db.branches.find((branch) => branch.id === branchB.id)!.status = "active";
+    receptionist.branchIds = [branchA.id];
+    await expect(api.setActiveBranch(branchB.id)).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
 });
 
 describe("Brand Kit persistence", () => {
@@ -202,6 +229,71 @@ describe("platform gym applications", () => {
 
     const cleared = await api.saveGymApplicationReviewNote({ applicationId: approved.id, note: "   " });
     expect(cleared.reviewNotes).toBeUndefined();
+  });
+
+  it("keeps mock provisioning retries idempotent and exposes a completed checkpoint", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    const first = await api.provisionGym({ applicationId: approved.id });
+    const second = await api.provisionGym({ applicationId: approved.id });
+    expect(second).toEqual(first);
+
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.applications.find((item) => item.id === approved.id)).toMatchObject({
+      provisioningStatus: "completed",
+      provisioningCheckpoint: "completed",
+      provisioningOutcome: "complete",
+      provisioningAttemptCount: 1,
+    });
+  });
+
+  it("projects a provisioned application into its own public listing, branch, owner invitation, and platform facts", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    const result = await api.provisionGym({ applicationId: approved.id });
+
+    const snapshot = await api.getPlatformSnapshot();
+    const listing = snapshot.gyms.find((gym) => gym.name === approved.gymName);
+    expect(listing).toMatchObject({
+      subscriptionStatus: "trial",
+      rivetPlan: approved.plan,
+      billingInterval: approved.billingInterval,
+      isProvisioned: true,
+      isPublic: true,
+      branchCount: 1,
+      branches: [expect.objectContaining({ internalBranchId: result.branchId })],
+    });
+    const publicListings = await api.listMarketplaceGyms();
+    const publicListing = publicListings.find((gym) => gym.id === listing?.id);
+    expect(publicListing).toBeDefined();
+    expect(publicListing).not.toHaveProperty("isProvisioned");
+    expect(snapshot.overview.gymCounts.trial).toBe(1);
+    expect(snapshot.overview.branchCount).toBe(3);
+
+    const detail = await api.getPlatformGymDetail(listing!.id);
+    expect(detail.organization).toMatchObject({ state: "available", value: { id: result.organizationId, name: approved.gymName, status: "trial" } });
+    expect(detail.branches).toMatchObject({ state: "available", value: [expect.objectContaining({ id: result.branchId, code: "MAIN" })] });
+    expect(detail.owner).toMatchObject({ state: "available", value: { name: approved.ownerName, email: approved.email } });
+    expect(detail.activity).toMatchObject({ state: "available", value: [expect.objectContaining({ action: "gym.provisioned" })] });
+    expect(snapshot.applications.find((item) => item.id === approved.id)).toMatchObject({
+      provisioningStatus: "completed",
+      provisioningOutcome: "complete",
+      provisionedOrganizationId: result.organizationId,
+      provisionedBranchId: result.branchId,
+      clerkInvitationStatus: "pending",
+    });
+  });
+
+  it("reports a busy provisioning attempt instead of racing a second mock retry", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    api.setBehavior({ latencyMs: 25 });
+    const first = api.provisionGym({ applicationId: approved.id });
+    await expect(api.provisionGym({ applicationId: approved.id })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await expect(first).resolves.toMatchObject({ status: "completed" });
   });
 });
 
@@ -587,6 +679,51 @@ describe("gym public profile media", () => {
     stopSnapshot();
     stopDetail();
   });
+
+  it("keeps trainer photos pending until the linked profile save", async () => {
+    const workspace = await api.getPtWorkspace();
+    const trainer = workspace.trainers[0];
+    expect(trainer).toBeDefined();
+    const asset = await api.uploadMediaAsset({ ownerType: "trainer_photo", ownerId: trainer!.id, altText: "Coach profile photo", file: new Blob(["trainer"], { type: "image/png" }) });
+    expect(asset.status).toBe("pending");
+    expect((await api.getPtWorkspace()).trainers[0]?.photoUrl).toBeUndefined();
+
+    await api.upsertPtTrainerProfile({
+      id: trainer!.id,
+      userId: trainer!.userId,
+      displayName: trainer!.displayName,
+      bioEn: trainer!.bioEn,
+      bioAr: trainer!.bioAr,
+      specialties: trainer!.specialties,
+      languages: trainer!.languages,
+      branchIds: trainer!.branchIds,
+      status: trainer!.status,
+      photoAssetId: asset.id,
+      photoAlt: "Coach profile photo",
+    });
+    expect((await api.getPtWorkspace()).trainers[0]?.photoUrl).toBe(asset.url);
+    expect((api as unknown as { mediaAssets: Map<string, T.MediaAsset> }).mediaAssets.get(asset.id)).toMatchObject({ status: "active" });
+  });
+
+  it("keeps member-photo uploads inside the member's branch scope", async () => {
+    const internals = api as unknown as { db: MockDb };
+    const session = await api.getSession();
+    const sourceBranch = session.branches[0];
+    const memberBranch = session.branches[1];
+    if (!sourceBranch || !memberBranch) throw new Error("seed should contain two branches");
+    const member = internals.db.members.find((candidate) => candidate.homeBranchId === memberBranch.id);
+    const salesperson = internals.db.users.find((candidate) => candidate.role === "salesperson" && candidate.status === "active");
+    if (!member || !salesperson) throw new Error("seed should contain a member and salesperson");
+
+    salesperson.branchScope = "selected";
+    salesperson.branchIds = [sourceBranch.id];
+    await api.switchDemoRole("salesperson", sourceBranch.id);
+    await expect(api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file: new Blob(["member"], { type: "image/png" }) })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+
+    salesperson.branchIds = [memberBranch.id];
+    await api.switchDemoRole("salesperson", memberBranch.id);
+    await expect(api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file: new Blob(["member"], { type: "image/png" }) })).resolves.toMatchObject({ ownerType: "member_photo", visibility: "private", status: "active" });
+  });
 });
 
 describe("tenant/branch scoping and authorization", () => {
@@ -708,6 +845,20 @@ describe("member creation", () => {
 
     const after = await api.listMembers({ pageSize: 1 });
     expect(after.totalItems).toBe(before.totalItems + 1);
+  });
+
+  it("fails closed when a member mutation receives a stale branch", async () => {
+    await expect(api.createMember({
+      fullName: "Stale Branch Test",
+      phone: "+962 79 555 1200",
+      homeBranchId: "branch-no-longer-visible",
+      preferredLanguage: "en",
+    })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    await expect(api.previewMemberImport({
+      branchId: "branch-no-longer-visible",
+      csv: "full_name,phone\nStale Branch,+962790001200",
+    })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
   });
 
   it("defaults new members and imported rows to opted in while preserving explicit opt-out", async () => {
@@ -1801,11 +1952,12 @@ describe("retail checkout", () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;
     const product = await api.upsertProduct({ sku: "MOCK-RETAIL", name: "Mock retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
-    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, idempotencyKey: "mock-retail-opening" });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, unitCost: money(500, "JOD"), idempotencyKey: "mock-retail-opening" });
     const member = await freshMemberForSale();
     const reconciliationBefore = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
     await api.switchDemoRole("receptionist");
     const memberSale = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
+    expect(memberSale.retailSale.lines[0]?.unitCost).toEqual(money(500, "JOD"));
     const replay = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
     expect(replay.receiptId).toBe(memberSale.receiptId);
     await expect(api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" })).rejects.toMatchObject({ code: ERR.CONFLICT });
@@ -1842,7 +1994,7 @@ describe("retail checkout", () => {
   it("restores mock inventory for reason-gated retail refunds and voids", async () => {
     const branchId = (await api.getSession()).branches[0]!.id;
     const product = await api.upsertProduct({ sku: "MOCK-RETURN", name: "Mock return item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
-    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, idempotencyKey: "mock-return-opening" });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, unitCost: money(500, "JOD"), idempotencyKey: "mock-return-opening" });
     const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Return Guest", phone: "+962790000081" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "MOCK-RETURN", idempotencyKey: "mock-return-sale" });
     await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "mock-return-invalid" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned unopened item", idempotencyKey: "mock-return-refund" });
@@ -1851,6 +2003,7 @@ describe("retail checkout", () => {
     const refundPayment = internals.db.payments.find((payment) => payment.type === "refund" && "retailSaleId" in payment && payment.retailSaleId === sale.retailSale.id);
     expect(refundPayment).toMatchObject({ amount: { amount: -2_000 }, originalPaymentId: `retail-payment-${sale.retailSale.id}`, refundReason: "Customer returned unopened item" });
     expect(refundPayment?.receiptId).toBeTruthy();
+    expect((internals.db.stockMovements.find((movement) => movement.type === "return") as T.StockMovement | undefined)?.unitCost).toEqual(money(500, "JOD"));
     await expect(api.getReceipt(refundPayment!.receiptId)).resolves.toMatchObject({ payment: { type: "refund", amount: { amount: -2_000 } }, retailSale: { status: "partially_refunded" } });
     const originalReceipt = await api.getReceipt(sale.receiptId);
     expect(originalReceipt.relatedPayments).toEqual(expect.arrayContaining([expect.objectContaining({ id: refundPayment!.id, type: "refund", amount: expect.objectContaining({ amount: -2_000 }) })]));
@@ -1860,6 +2013,11 @@ describe("retail checkout", () => {
     const voidSale = await api.checkoutRetail({ branchId, guest: { fullName: "Void Guest", phone: "+962790000082" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-VOID", idempotencyKey: "mock-void-sale" });
     await expect(api.voidRetailSale(voidSale.retailSale.id, { reason: "Duplicate terminal entry", idempotencyKey: "mock-void-action" })).resolves.toMatchObject({ retailSale: { status: "voided" } });
     await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 3 })]);
+    const cashSale = await api.checkoutRetail({ branchId, guest: { fullName: "Cash void guest", phone: "+962790000083" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-cash-void-sale" });
+    const cashInternals = api as unknown as { db: MockDb };
+    cashInternals.db.shifts.filter((shift) => shift.branchId === branchId).forEach((shift) => { shift.status = "closed"; });
+    await expect(api.voidRetailSale(cashSale.retailSale.id, { reason: "Cash void after close", idempotencyKey: "mock-cash-void-after-close" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    expect(cashInternals.db.retailSales.find((sale) => sale.id === cashSale.retailSale.id)?.status).toBe("completed");
   });
 
   it("does not sell an item until a positive retail price is configured", async () => {
@@ -1987,17 +2145,61 @@ describe("management accounting mock contract", () => {
   it("projects retail collections into clearing and revenue accounting", async () => {
     const branch = (await api.getSession()).branches[0]!;
     const product = await api.upsertProduct({ sku: "MOCK-ACCOUNTING-RETAIL", name: "Accounting retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
-    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-accounting-retail-opening" });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(500, "JOD"), idempotencyKey: "mock-accounting-retail-opening" });
     await api.switchDemoRole("receptionist");
     const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Accounting guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-ACCOUNTING", idempotencyKey: "mock-accounting-retail-sale" });
     await api.switchDemoRole("owner");
     const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
     const source = refreshed.items.find((item) => item.sourceId === sale.payment.id);
-    expect(source).toMatchObject({ sourceType: "payment", status: "pending", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v1", details: { saleType: "retail" } });
+    expect(source).toMatchObject({ sourceType: "payment", status: "pending", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v2", details: { saleType: "retail" } });
     const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: sale.payment.id, idempotencyKey: "mock-accounting-retail-post" });
-    expect(posted).toMatchObject({ status: "posted", amount: money(2_000, "JOD") });
+    expect(posted).toMatchObject({ status: "posted", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v2", policyVersion: 2 });
     const journal = await api.getAccountingJournalEntry(posted.journalEntryId!);
-    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1110", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "4100", credit: money(2_000, "JOD") })]));
+    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1110", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "4200", credit: money(2_000, "JOD") })]));
+    expect(journal).toMatchObject({ policyCode: "retail-sale-card.v2", policyVersion: 2, idempotencyKey: `source:payment:${sale.payment.id}:v2:mock-accounting-retail-post` });
+    const movements = (api as unknown as { db: MockDb }).db.stockMovements;
+    const saleMovement = movements.find((movement) => movement.referenceType === "retail_sale" && movement.referenceId === sale.retailSale.id);
+    expect(saleMovement).toBeDefined();
+    const stockRefresh = await api.refreshAccountingSourceQueue({ sourceTypes: ["stock_movement"] });
+    const stockSource = stockRefresh.items.find((item) => item.sourceId === saleMovement!.id);
+    expect(stockSource).toMatchObject({ status: "pending", policyCode: "stock-consume.v1", amount: money(500, "JOD") });
+    const stockPosted = await api.postAccountingSource({ sourceType: "stock_movement", sourceId: saleMovement!.id, idempotencyKey: "mock-accounting-retail-cogs" });
+    const stockJournal = await api.getAccountingJournalEntry(stockPosted.journalEntryId!);
+    expect(stockJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "5100", debit: money(500, "JOD") }), expect.objectContaining({ accountCode: "1300", credit: money(500, "JOD") })]));
+    const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Accounting integration return", idempotencyKey: "mock-accounting-retail-refund" });
+    expect(refunded.payment).toMatchObject({ type: "refund", amount: money(-2_000, "JOD") });
+    const refundPayment = (api as unknown as { db: MockDb }).db.payments.find((payment) => payment.type === "refund" && "retailSaleId" in payment && payment.retailSaleId === sale.retailSale.id);
+    expect(refundPayment).toBeDefined();
+    const returnMovement = (api as unknown as { db: MockDb }).db.stockMovements.find((movement) => movement.referenceType === "retail_refund" && movement.referenceId === sale.retailSale.id);
+    expect(returnMovement).toBeDefined();
+    await api.refreshAccountingSourceQueue({ sourceTypes: ["refund", "stock_movement"] });
+    const refundPosted = await api.postAccountingSource({ sourceType: "refund", sourceId: refundPayment!.id, idempotencyKey: "mock-accounting-retail-refund-post" });
+    const refundJournal = await api.getAccountingJournalEntry(refundPosted.journalEntryId!);
+    expect(refundJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "4200", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "1110", credit: money(2_000, "JOD") })]));
+    const returnPosted = await api.postAccountingSource({ sourceType: "stock_movement", sourceId: returnMovement!.id, idempotencyKey: "mock-accounting-retail-return-cogs" });
+    const returnJournal = await api.getAccountingJournalEntry(returnPosted.journalEntryId!);
+    expect(returnJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1300", debit: money(500, "JOD") }), expect.objectContaining({ accountCode: "5100", credit: money(500, "JOD") })]));
+  });
+
+  it("preserves a historical pending retail policy across refresh and post", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-HISTORICAL-POLICY", name: "Historical policy item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(300, "JOD"), idempotencyKey: "mock-historical-policy-opening" });
+    await api.switchDemoRole("receptionist");
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Historical policy guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "HISTORICAL-POLICY", idempotencyKey: "mock-historical-policy-sale" });
+    await api.switchDemoRole("owner");
+    await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const internals = api as unknown as { accountingSources: T.AccountingSourcePosting[] };
+    const existing = internals.accountingSources.find((row) => row.sourceId === sale.payment.id);
+    expect(existing).toBeDefined();
+    Object.assign(existing!, { status: "unconfigured", policyCode: "retail-sale-card.v1", policyVersion: 1, reason: "Historical source awaiting review." });
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    expect(refreshed.items.find((row) => row.sourceId === sale.payment.id)).toMatchObject({ status: "pending", policyCode: "retail-sale-card.v1", policyVersion: 1 });
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: sale.payment.id, idempotencyKey: "mock-historical-policy-post" });
+    expect(posted).toMatchObject({ status: "posted", policyCode: "retail-sale-card.v1", policyVersion: 1 });
+    const journal = await api.getAccountingJournalEntry(posted.journalEntryId!);
+    expect(journal).toMatchObject({ policyCode: "retail-sale-card.v1", policyVersion: 1, idempotencyKey: `source:payment:${sale.payment.id}:v1:mock-historical-policy-post` });
+    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "4100", credit: money(1_000, "JOD") })]));
   });
 
   it("replays an unconfigured source decision by key while a new key retries after source repair", async () => {
@@ -2101,6 +2303,8 @@ describe("management accounting mock contract", () => {
     await api.switchDemoRole("receptionist");
     await expect(api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
     await api.switchDemoRole("owner");
+    await expect(api.deleteProduct({ productId: product.id, reason: "Stock must be cleared first", confirmation: "mock-delete" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "adjustment", quantity: -2, reason: "Clearing stock before permanent deletion", idempotencyKey: "mock-delete-clear" });
     const deleted = await api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" });
     expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "MOCK-DELETE" });
     await expect(api.deleteProduct({ productId: product.id, reason: "Retry", confirmation: "mock-delete" })).resolves.toMatchObject({ deleted: true, productId: product.id });
@@ -2121,18 +2325,21 @@ describe("management accounting mock contract", () => {
     await expect(api.deleteProduct({ productId: product.id, reason: "Open order", confirmation: "MOCK-OPEN-PO" })).rejects.toMatchObject({ code: ERR.CONFLICT });
   });
 
-  it("refunds a deleted product from its snapshot without recreating a balance", async () => {
+  it("refunds a deleted product into a non-sellable tombstone balance", async () => {
     const session = await api.getSession();
     const branch = session.branches[0]!;
     const product = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Mock refundable retired stock", unit: "each", reorderPoint: 1, retailPrice: money(1_000) });
-    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-delete-refund-receive" });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(400, "JOD"), idempotencyKey: "mock-delete-refund-receive" });
     const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Deleted mock guest", phone: "+962790000012" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-DELETE-REFUND", idempotencyKey: "mock-delete-refund-sale" });
     await api.deleteProduct({ productId: product.id, reason: "Retiring this item", confirmation: "MOCK-DELETE-REFUND" });
     const replacement = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Replacement mock retail stock", unit: "each", reorderPoint: 1 });
     expect(replacement.id).not.toBe(product.id);
     await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned retired item", idempotencyKey: "mock-delete-refund-action" })).resolves.toMatchObject({ retailSale: { status: "refunded" } });
     const internals = api as unknown as { db: MockDb };
-    expect(internals.db.inventoryBalances.some((balance) => balance.productId === product.id || balance.productId === replacement.id)).toBe(false);
+    expect(internals.db.inventoryBalances).toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.id, quantityOnHand: 1, sellable: false })]));
+    expect(internals.db.inventoryBalances.some((balance) => balance.productId === replacement.id)).toBe(false);
+    await expect(api.listInventory({ branchId: branch.id, productId: product.id })).resolves.toEqual([]);
     expect(internals.db.stockMovements.some((movement) => movement.productId === product.id && movement.type === "return" && movement.productName === "Mock refundable retired stock")).toBe(true);
+    expect(internals.db.stockMovements.find((movement) => movement.productId === product.id && movement.type === "return")?.unitCost).toEqual(money(400, "JOD"));
   });
 });

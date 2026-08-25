@@ -86,6 +86,16 @@ async function seed(t: TestConvex<typeof schema>) {
       createdAt: now,
       updatedAt: now,
     });
+    const pendingOperator = await ctx.db.insert("users", {
+      publicId: "identity-pending-operator",
+      authSubject: "clerk-identity-pending-operator",
+      email: "pending-operator@identity.example",
+      fullName: "Pending Operator",
+      platformAdmin: false,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
     await ctx.db.insert("organizationMemberships", {
       organizationId: activeOrganization.organization,
       userId: activeAdmin,
@@ -109,6 +119,17 @@ async function seed(t: TestConvex<typeof schema>) {
         updatedAt: now,
       });
     }
+    await ctx.db.insert("organizationMemberships", {
+      organizationId: activeOrganization.organization,
+      userId: pendingOperator,
+      role: "manager",
+      branchIds: [activeOrganization.branch],
+      branchScope: "all",
+      active: true,
+      invitationStatus: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
     for (const { key, organization, branch } of organizations) {
       if (key !== "suspended" && key !== "cancelled") continue;
       await ctx.db.insert("organizationMemberships", {
@@ -197,6 +218,40 @@ describe("identity routing projection", () => {
 
     await expect(t.withIdentity({ subject: "clerk-identity-disabled-admin" }).query(api.users.current, {})).resolves.toBeNull();
     await expect(t.withIdentity({ subject: "clerk-identity-invited-admin" }).query(api.users.current, {})).resolves.toBeNull();
-    await expect(t.withIdentity({ subject: "clerk-identity-admin" }).query(api.users.current, {})).resolves.toMatchObject({ publicId: "identity-admin", status: "active" });
+    const current = await t.withIdentity({ subject: "clerk-identity-admin" }).query(api.users.current, {});
+    expect(current).toMatchObject({ publicId: "identity-admin", id: "identity-admin", status: "active" });
+    expect(current).not.toHaveProperty("authSubject");
+    expect(current).not.toHaveProperty("_id");
+    expect(current).not.toHaveProperty("_creationTime");
+  });
+
+  it("does not route an active user through a pending invitation", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+
+    await expect(t.withIdentity({ subject: "clerk-identity-pending-operator" }).query(api.identity.current, {})).resolves.toMatchObject({
+      pending: false,
+      memberships: [],
+    });
+  });
+
+  it("requires explicit organization selection when more than one gym is routable", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+
+    const identity = await t.withIdentity({ subject: "clerk-identity-admin" }).query(api.identity.current, {});
+    expect(identity).toMatchObject({ organizationSelectionRequired: true });
+    await expect(t.withIdentity({ subject: "clerk-identity-admin" }).query(api.domain.query, {
+      operation: "session",
+      input: {},
+      correlationId: "identity-ambiguous-session",
+    })).rejects.toMatchObject({ data: expect.objectContaining({ code: "ORGANIZATION_SELECTION_REQUIRED" }) });
+
+    await expect(t.withIdentity({ subject: "clerk-identity-admin" }).query(api.domain.query, {
+      operation: "session",
+      input: {},
+      organizationId: "identity-org",
+      correlationId: "identity-explicit-session",
+    })).resolves.toMatchObject({ organization: { id: "identity-org" } });
   });
 });

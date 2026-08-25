@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GymDetailClient from "./gym-detail.client";
@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
     }],
   },
   showGym: true,
+  convexMode: false,
   previewSessionReady: true,
   bookTrial: vi.fn(),
   push: vi.fn(),
@@ -56,7 +57,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/api/ConvexGymOSApi", () => ({
-  isConvexMode: () => false,
+  isConvexMode: () => state.convexMode,
 }));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
@@ -73,6 +74,7 @@ describe("GymDetailClient trial form", () => {
   beforeEach(() => {
     state.customer = null;
     state.showGym = true;
+    state.convexMode = false;
     state.previewSessionReady = true;
     state.bookTrial.mockReset().mockResolvedValue({ id: "booking-1" });
     state.push.mockReset();
@@ -89,6 +91,14 @@ describe("GymDetailClient trial form", () => {
     view.rerender(<GymDetailClient gymId="forge-fitness" />);
 
     expect(screen.getByLabelText("Full name")).toBeInTheDocument();
+  });
+
+  it("restores a valid branch selected in the return URL after signup", async () => {
+    window.history.replaceState({}, "", "/customer/gyms/forge-fitness?branchId=forge-abdoun");
+
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    await waitFor(() => expect(screen.getByLabelText("Branch")).toHaveValue("forge-abdoun"));
   });
 
   it("preserves visitor input when customer defaults hydrate after typing begins", async () => {
@@ -131,10 +141,27 @@ describe("GymDetailClient trial form", () => {
     };
     render(<GymDetailClient gymId="forge-fitness" />);
 
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "forge-abdoun" } });
     fireEvent.change(screen.getByLabelText("Time"), { target: { value: "13:30" } });
     await user.click(screen.getByRole("button", { name: "Send trial request" }));
 
     expect(state.bookTrial).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: "13:30" }));
+  });
+
+  it("routes an unauthenticated production trial through signup with safe gym and branch context", async () => {
+    state.convexMode = true;
+    window.history.replaceState({}, "", "/customer/gyms/forge-fitness");
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Visitor Test" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+962790000001" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "visitor@example.com" } });
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "forge-abdoun" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send trial request" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Send trial request" }));
+
+    await waitFor(() => expect(state.push).toHaveBeenCalledWith("/login/member/create?returnTo=%2Fcustomer%2Fgyms%2Fforge-fitness%3FbranchId%3Dforge-abdoun"));
+    expect(state.bookTrial).not.toHaveBeenCalled();
   });
 
   it("denies a direct public detail route when the gym is no longer publishable", () => {

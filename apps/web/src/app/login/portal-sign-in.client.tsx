@@ -174,7 +174,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 
         {!DEMO_AUTH_BYPASS && audience === "account" ? (
           !clerkLoaded || !clerkSignedIn ? (
-            <PasswordSignIn />
+            <PasswordSignIn redirectUrl={redirectUrl} />
           ) : (
             <ProfileCompletionGate>
               {CONVEX_ENABLED ? <IdentityPanel /> : <NoRoleSource>{accounts}</NoRoleSource>}

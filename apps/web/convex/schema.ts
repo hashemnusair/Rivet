@@ -314,6 +314,15 @@ export default defineSchema({
     productId: v.id("products"),
     quantityOnHand: v.number(),
     committedQuantity: v.number(),
+    // Exact moving-average valuation for quantityOnHand. Optional for legacy
+    // rows; new stock mutations materialize it when cost evidence exists.
+    totalCostMinor: v.optional(v.number()),
+    totalCostCurrency: v.optional(v.string()),
+    // Normal balances are sellable by default for backwards compatibility
+    // with rows written before this field existed. Balances created for a
+    // deleted product are retained only as historical tombstone evidence and
+    // explicitly set this to false so returned units can never be sold again.
+    sellable: v.optional(v.boolean()),
     lastMovementAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
@@ -337,6 +346,10 @@ export default defineSchema({
     quantity: v.number(),
     unitCostMinor: v.optional(v.number()),
     unitCostCurrency: v.optional(v.string()),
+    // Unit cost can be fractional when an exact total is allocated across
+    // whole units. Keep the exact integer total for reconciliation.
+    totalCostMinor: v.optional(v.number()),
+    totalCostCurrency: v.optional(v.string()),
     reason: v.optional(v.string()),
     referenceType: v.optional(v.string()),
     referenceId: v.optional(v.string()),
@@ -351,6 +364,34 @@ export default defineSchema({
     .index("by_branch_product_occurred", ["organizationId", "branchId", "productId", "occurredAt"])
     .index("by_product_occurred", ["organizationId", "productId", "occurredAt"])
     .index("by_idempotency", ["organizationId", "idempotencyKey"]),
+
+  inventoryTransfers: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    sourceBranchId: v.id("branches"),
+    destinationBranchId: v.id("branches"),
+    productId: v.id("products"),
+    quantity: v.number(),
+    reason: v.string(),
+    status: v.literal("completed"),
+    sourceMovementId: v.string(),
+    destinationMovementId: v.string(),
+    totalCostMinor: v.optional(v.number()),
+    totalCostCurrency: v.optional(v.string()),
+    sourceAvailableBefore: v.number(),
+    destinationAvailableBefore: v.number(),
+    sourceAvailableAfter: v.number(),
+    destinationAvailableAfter: v.number(),
+    idempotencyKey: v.string(),
+    createdByUserId: v.id("users"),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"])
+    .index("by_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_source_occurred", ["organizationId", "sourceBranchId", "occurredAt"])
+    .index("by_destination_occurred", ["organizationId", "destinationBranchId", "occurredAt"]),
 
   // Retail sales are kept separate from membership payments. The line and
   // customer snapshots make a printed receipt explainable even if a product
@@ -377,6 +418,11 @@ export default defineSchema({
       unitPriceMinor: v.number(),
       lineTotalMinor: v.number(),
       currency: v.string(),
+      // Moving-average cost captured at checkout. This is an internal
+      // accounting snapshot; it is intentionally independent from the
+      // customer-facing retail price and product master.
+      unitCostMinor: v.optional(v.number()),
+      unitCostCurrency: v.optional(v.string()),
     })),
     subtotalMinor: v.number(),
     totalMinor: v.number(),
@@ -971,6 +1017,18 @@ export default defineSchema({
     reviewedBy: v.optional(v.string()),
     reviewNotes: v.optional(v.string()),
     provisioningStatus: v.optional(v.union(v.literal("not_started"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"))),
+    // Provisioning is a resumable workflow around external Clerk calls. These
+    // fields are checkpoints, not a second source of tenant lifecycle truth:
+    // organization and membership rows remain authoritative once they exist.
+    provisioningCheckpoint: v.optional(v.union(v.literal("claimed"), v.literal("organization_recorded"), v.literal("workspace_ready"), v.literal("invitation_recorded"), v.literal("completed"))),
+    provisioningOutcome: v.optional(v.union(v.literal("complete"), v.literal("partial"), v.literal("retryable"), v.literal("permanent"))),
+    provisioningAttemptCount: v.optional(v.number()),
+    provisioningLastCorrelationId: v.optional(v.string()),
+    // A lease fences delayed action retries from a newer provisioning attempt.
+    provisioningLeaseId: v.optional(v.string()),
+    // Keep only bounded provider diagnostics; never persist the Clerk payload.
+    provisioningProviderStatus: v.optional(v.number()),
+    provisioningProviderCode: v.optional(v.string()),
     provisioningStartedAt: v.optional(v.number()),
     provisioningError: v.optional(v.string()),
     provisionedAt: v.optional(v.number()),
@@ -978,6 +1036,7 @@ export default defineSchema({
     provisionedBranchId: v.optional(v.string()),
     clerkOrganizationId: v.optional(v.string()),
     clerkInvitationId: v.optional(v.string()),
+    clerkInvitationStatus: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked"), v.literal("expired"), v.literal("failed"))),
   })
     .index("by_application_key", ["applicationKey"])
     .index("by_status", ["status"])
@@ -1018,6 +1077,7 @@ export default defineSchema({
     invitationStatus: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked"))),
     invitedAt: v.optional(v.number()),
     clerkInvitationId: v.optional(v.string()),
+    clerkInvitationStatus: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked"), v.literal("expired"), v.literal("failed"))),
     invitationSentAt: v.optional(v.number()),
     invitationLastAttemptAt: v.optional(v.number()),
     invitationError: v.optional(v.string()),
@@ -1222,7 +1282,34 @@ export default defineSchema({
   })
     .index("by_organization_public_id", ["organizationId", "publicId"])
     .index("by_owner", ["organizationId", "ownerType", "ownerPublicId"])
+    // Tenant-scoped cleanup reads must stay bounded. The legacy by_cleanup
+    // index remains for the global scheduled job, while this index lets the
+    // upload quota inspect only one organization at a time.
+    .index("by_organization_cleanup", ["organizationId", "status", "deleteAfter"])
+    .index("by_organization_owner_status", ["organizationId", "ownerType", "status", "deleteAfter"])
     .index("by_cleanup", ["status", "deleteAfter"]),
+
+  // A URL generated by Convex does not expose its eventual storage id until
+  // the browser uploads the bytes. Keep a short-lived, tenant-scoped intent so
+  // abandoned browser sessions count toward the profile-media quota. The
+  // expiry row is not a substitute for provider-side object TTL cleanup: an
+  // upload that never reaches storage cannot be deleted by this table.
+  mediaUploadIntents: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    correlationId: v.string(),
+    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo")),
+    ownerPublicId: v.string(),
+    // Bound by the first finalize call after Convex's upload endpoint returns
+    // its storage id. Retries must present the same object; a correlation id
+    // alone is never sufficient to authorize a commit.
+    storageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_expires", ["organizationId", "expiresAt"])
+    .index("by_organization_correlation", ["organizationId", "correlationId"])
+    .index("by_intent_expiry", ["expiresAt"]),
 
   domainRecords: defineTable({
     organizationId: v.id("organizations"),
@@ -1247,6 +1334,7 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     publicId: v.string(),
     branchId: v.optional(v.id("branches")),
+    destinationBranchId: v.optional(v.id("branches")),
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
@@ -1279,6 +1367,32 @@ export default defineSchema({
     createdAt: v.number(),
     expiresAt: v.optional(v.number()),
   }).index("by_organization_operation_key", ["organizationId", "operation", "key"]),
+
+  // Public entry points do not have an organization-scoped idempotency row
+  // yet. Keep their retry records separate from tenant mutations and retain
+  // only the minimum opaque result needed to replay a successful request.
+  publicRequestIdempotency: defineTable({
+    scope: v.string(),
+    key: v.string(),
+    requestHash: v.string(),
+    result: v.any(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_scope_key", ["scope", "key"])
+    .index("by_expires_at", ["expiresAt"]),
+
+  // Bounded, privacy-safe application/user throttling. The fingerprint is a
+  // one-way digest; edge/WAF controls remain necessary for IP-level abuse.
+  publicRequestGuards: defineTable({
+    scope: v.string(),
+    fingerprint: v.string(),
+    windowStartedAt: v.number(),
+    requestCount: v.number(),
+    lastRequestAt: v.number(),
+  })
+    .index("by_scope_fingerprint", ["scope", "fingerprint"])
+    .index("by_last_request", ["lastRequestAt"]),
 
   entryPasses: defineTable({
     organizationId: v.id("organizations"),

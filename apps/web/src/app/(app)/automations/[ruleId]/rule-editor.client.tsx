@@ -124,7 +124,7 @@ export default function RuleEditorPageClient() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumbs items={[{ label: "Automations", href: "/automations" }, { label: rule.name }]} />
+      <Breadcrumbs items={[{ label: "Automation history", href: "/audit?category=automations" }, { label: rule.name }]} />
       <PageHeader
         eyebrow="System · Automations"
         title={rule.name}

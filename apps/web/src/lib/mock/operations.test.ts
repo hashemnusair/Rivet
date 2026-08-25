@@ -57,6 +57,38 @@ describe("mock daily operations parity", () => {
     expect((await api.listStockMovements({ branchId })).items.filter((item) => item.id === first.id)).toHaveLength(1);
   });
 
+  it("moves stock between independent branches as one replay-safe pair", async () => {
+    const session = await api.getSession();
+    const source = session.branches.find((branch) => branch.code === "ABD")!;
+    const destination = session.branches.find((branch) => branch.code === "SWF")!;
+    const product = (await api.listProducts()).find((item) => item.sku === "SUP-PROTEIN")!;
+    const first = await api.transferInventory({ sourceBranchId: source.id, destinationBranchId: destination.id, productId: product.id, quantity: 5, reason: "Restock the Sweifieh branch", idempotencyKey: "mock-transfer-1" });
+    const replay = await api.transferInventory({ sourceBranchId: source.id, destinationBranchId: destination.id, productId: product.id, quantity: 5, reason: "Restock the Sweifieh branch", idempotencyKey: "mock-transfer-1" });
+    expect(replay.id).toBe(first.id);
+    expect(first.sourceMovement).toMatchObject({ type: "transfer_out", referenceType: "inventory_transfer", referenceId: first.id, idempotencyKey: "mock-transfer-1:out" });
+    expect(first.destinationMovement).toMatchObject({ type: "transfer_in", referenceType: "inventory_transfer", referenceId: first.id, idempotencyKey: "mock-transfer-1:in" });
+    expect((await api.listInventory({ branchId: source.id, productId: product.id }))[0]).toMatchObject({ availableQuantity: 37 });
+    expect((await api.listInventory({ branchId: destination.id, productId: product.id }))[0]).toMatchObject({ availableQuantity: 5 });
+    await expect(api.transferInventory({ sourceBranchId: source.id, destinationBranchId: source.id, productId: product.id, quantity: 1, reason: "Same branch", idempotencyKey: "mock-transfer-same" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.transferInventory({ sourceBranchId: source.id, destinationBranchId: destination.id, productId: product.id, quantity: 100, reason: "Too much stock", idempotencyKey: "mock-transfer-over" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("keeps exact transfer valuation and excludes both internal movements from accounting", async () => {
+    const session = await api.getSession();
+    const source = session.branches.find((branch) => branch.code === "ABD")!;
+    const destination = session.branches.find((branch) => branch.code === "SWF")!;
+    const product = await api.upsertProduct({ sku: "MOCK-TRANSFER-COST", name: "Transfer cost item", unit: "each", reorderPoint: 1 });
+    await api.recordStockMovement({ branchId: source.id, productId: product.id, type: "receive", quantity: 2, unitCost: { amount: 333, currency: "JOD" }, idempotencyKey: "mock-transfer-cost-a" });
+    await api.recordStockMovement({ branchId: source.id, productId: product.id, type: "receive", quantity: 2, unitCost: { amount: 334, currency: "JOD" }, idempotencyKey: "mock-transfer-cost-b" });
+    const transfer = await api.transferInventory({ sourceBranchId: source.id, destinationBranchId: destination.id, productId: product.id, quantity: 2, reason: "Preserve exact cost", idempotencyKey: "mock-transfer-cost" });
+    expect(transfer).toMatchObject({ status: "completed", totalCost: { amount: 667 }, sourceMovement: { totalCost: { amount: 667 } }, destinationMovement: { totalCost: { amount: 667 } } });
+    expect(await api.listInventory({ branchId: source.id, productId: product.id })).toEqual([expect.objectContaining({ quantityOnHand: 2, totalCost: { amount: 667, currency: "JOD" } })]);
+    expect(await api.listInventory({ branchId: destination.id, productId: product.id })).toEqual([expect.objectContaining({ quantityOnHand: 2, totalCost: { amount: 667, currency: "JOD" } })]);
+    await api.refreshAccountingSourceQueue({ sourceTypes: ["stock_movement"] });
+    const postings = await api.listAccountingSourcePostings({ sourceType: "stock_movement" });
+    expect(postings.items.filter((posting) => [transfer.sourceMovementId, transfer.destinationMovementId].includes(posting.sourceId))).toEqual(expect.arrayContaining([expect.objectContaining({ status: "excluded" }), expect.objectContaining({ status: "excluded" })]));
+  });
+
   it("keeps recommendation explicitly unavailable when inputs are missing", async () => {
     const asset = await api.upsertEquipmentAsset({ branchId: (await api.getSession()).branches[0]!.id, code: "NEW-01", name: "New asset" });
     const recommendation = await api.getEquipmentRecommendation(asset.id);

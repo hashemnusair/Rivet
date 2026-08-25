@@ -10,12 +10,19 @@ const clerk = vi.hoisted(() => ({
   },
 }));
 
+const navigation = vi.hoisted(() => ({ router: { replace: vi.fn() } }));
+
 vi.mock("@clerk/nextjs", () => ({
   useSignIn: () => clerk.hook,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => navigation.router,
+}));
+
 describe("PasswordSignIn", () => {
   beforeEach(() => {
+    navigation.router.replace.mockReset();
     clerk.hook = {
       signIn: null,
       errors: { fields: { identifier: null, password: null, code: null } },
@@ -57,6 +64,33 @@ describe("PasswordSignIn", () => {
       expect(password).toHaveBeenCalledWith({ emailAddress: "admin@rivetjo.com", password: "secret-password" });
       expect(finalize).toHaveBeenCalledOnce();
     });
+  });
+
+  it("returns to a safe customer destination after sign-in and preserves it for signup", async () => {
+    const password = vi.fn().mockResolvedValue({ error: null });
+    const finalize = vi.fn().mockResolvedValue({ error: null });
+    clerk.hook = {
+      signIn: {
+        status: "complete",
+        password,
+        finalize,
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn redirectUrl="/customer/gyms/forge?branchId=abdoun" />);
+    expect(screen.getByRole("link", { name: "Create a free account" })).toHaveAttribute(
+      "href",
+      "/login/member/create?returnTo=%2Fcustomer%2Fgyms%2Fforge%3FbranchId%3Dabdoun",
+    );
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "member@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun"));
   });
 
   it("handles Clerk Client Trust without replacing the whole form", async () => {

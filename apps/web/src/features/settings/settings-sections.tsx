@@ -324,7 +324,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [form, setForm] = useState({ name: "", email: "", role: "receptionist" as RoleKey, branchScope: "selected" as "all" | "selected", branchIds: [] as string[] });
 
   useEffect(() => {
-    if (open) setForm({ name: "", email: "", role: "receptionist", branchScope: "selected", branchIds: session?.branches[0] ? [session.branches[0].id] : [] });
+    if (open) setForm({ name: "", email: "", role: "receptionist", branchScope: "selected", branchIds: [] });
   }, [open, session]);
 
   const mutation = useApiMutation((api) => api.inviteUser(form), {
@@ -396,7 +396,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!form.name || !form.email}>
+          <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!form.name || !form.email || (form.branchScope === "selected" && form.branchIds.length === 0)}>
             Send invite
           </Button>
         </DialogFooter>
@@ -900,7 +900,10 @@ export function OperationalRulesSection() {
         return schedule ? { ...schedule, days: normalizedTrialDays(schedule.days) } : { branchId, days: defaultTrialDays() };
       }),
     });
-    setSelectedBranchId((current) => branchIds.includes(current) ? current : (branchIds[0] ?? ""));
+    // Branch schedules are edited one concrete branch at a time. Never pick
+    // the first branch implicitly after a stale selection or an all-branch
+    // scope is restored.
+    setSelectedBranchId((current) => branchIds.includes(current) ? current : "");
   }, [settingsQuery.data]);
 
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
@@ -983,9 +986,9 @@ export function OperationalRulesSection() {
         <header className="border-b border-line p-5">
           <h2 className="font-display text-[15px] font-semibold">Branch hours and free trials</h2>
           <p className="mb-3 text-[12.5px] text-ink-3">Opening hours and trial-request windows use the organization timezone. Members may request any time inside the saved trial window.</p>
-          <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+          <Select value={selectedBranchId || "none"} onValueChange={(value) => setSelectedBranchId(value === "none" ? "" : value)}>
             <SelectTrigger aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
-            <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+            <SelectContent><SelectItem value="none">Choose a branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
           </Select>
         </header>
         <div className="divide-y divide-line">
@@ -1010,7 +1013,7 @@ export function OperationalRulesSection() {
                 </div>
               </div>
             );
-          }) : <p className="p-5 text-[12.5px] text-ink-3">Create an active branch before setting hours.</p>}
+          }) : <p className="p-5 text-[12.5px] text-ink-3">{branches.length ? "Choose a branch to edit its hours and trial window." : "Create an active branch before setting hours."}</p>}
         </div>
       </section>
       <div className="xl:col-span-2 flex justify-end"><Button onClick={() => save.mutate(policies)} loading={save.isPending}>Save operational rules</Button></div>

@@ -216,6 +216,10 @@ export interface InventoryBalance {
   quantityOnHand: number;
   committedQuantity: number;
   availableQuantity: number;
+  /** Moving-average inventory valuation for the on-hand quantity. */
+  totalCost?: Money;
+  /** False for retained deleted-product tombstone balances. */
+  sellable?: boolean;
   lastMovementAt?: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -235,6 +239,8 @@ export interface StockMovement {
   quantityDelta: number;
   quantity: number;
   unitCost?: Money;
+  /** Exact valuation for this movement. Unit cost is display-only and may round. */
+  totalCost?: Money;
   reason?: string;
   referenceType?: string;
   referenceId?: UUID;
@@ -244,6 +250,62 @@ export interface StockMovement {
   occurredAt: ISODateTime;
   createdAt: ISODateTime;
   createdById: UUID;
+}
+
+/**
+ * Moves sellable stock between two active branches in the same gym. The
+ * server records a paired transfer_out/transfer_in movement atomically.
+ */
+export interface InventoryTransferInput {
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface InventoryTransferResult {
+  id: UUID;
+  organizationId: UUID;
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  idempotencyKey: string;
+  status: "completed";
+  totalCost?: Money;
+  sourceMovementId: UUID;
+  destinationMovementId: UUID;
+  sourceMovement: StockMovement;
+  destinationMovement: StockMovement;
+  sourceAvailableQuantity: number;
+  destinationAvailableQuantity: number;
+  createdById: UUID;
+  occurredAt: ISODateTime;
+}
+
+/** Immutable transfer facts retained for branch reconciliation and history. */
+export interface InventoryTransfer {
+  id: UUID;
+  organizationId: UUID;
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  status: "completed";
+  sourceMovementId: UUID;
+  destinationMovementId: UUID;
+  totalCost?: Money;
+  sourceAvailableBefore: number;
+  destinationAvailableBefore: number;
+  sourceAvailableAfter: number;
+  destinationAvailableAfter: number;
+  idempotencyKey: string;
+  createdById: UUID;
+  occurredAt: ISODateTime;
 }
 
 export interface LowStockAlert {
@@ -1647,6 +1709,8 @@ export interface RetailSaleLine {
   quantity: number;
   unitPrice: Money;
   lineTotal: Money;
+  /** Internal accounting snapshot captured from branch stock at checkout. */
+  unitCost?: Money;
 }
 
 export interface RetailSaleCustomer {
@@ -2292,6 +2356,8 @@ export interface AuditEvent {
   id: UUID;
   organizationId: UUID;
   branchId?: UUID;
+  /** Optional second branch for cross-branch operational events. */
+  destinationBranchId?: UUID;
   actorId: UUID;
   actorName: string;
   actorRole: AuditActorRole;

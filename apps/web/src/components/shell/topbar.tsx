@@ -142,7 +142,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
           <span className="hidden md:inline-flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 h-8 text-[12.5px] text-ink-2">
             <Building2 className="size-3.5 text-ink-3" aria-hidden />
             {session.branches.find((b) => b.id === session.activeBranchId)?.name ??
-              session.branches[0]?.name}
+              "Branch unavailable"}
           </span>
         )
       ) : null}

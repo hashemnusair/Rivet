@@ -31,6 +31,7 @@ import type {
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { formatDate, todayISODate } from "@/lib/utils/dates";
 import { money, parseMoneyInput } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
@@ -162,8 +163,10 @@ function ManualJournalDialog({
   pending: boolean;
   onSubmit: (input: PostManualJournalInput) => void;
 }) {
-  const [scope, setScope] = useState<"branch" | "consolidated">("branch");
-  const [branchId, setBranchId] = useState(activeBranchId ?? branches[0]?.id ?? "");
+  // Manual journals from this workspace are always branch-scoped. The
+  // organization-wide filter is deliberately read-only.
+  const scope = "branch" as const;
+  const [branchId, setBranchId] = useState(visibleBranchId(branches, activeBranchId) ?? "");
   const [postingDate, setPostingDate] = useState(todayISODate());
   const [memo, setMemo] = useState("");
   const [reason, setReason] = useState("");
@@ -175,8 +178,7 @@ function ManualJournalDialog({
 
   useEffect(() => {
     if (!open) return;
-    setScope("branch");
-    setBranchId(activeBranchId ?? branches[0]?.id ?? "");
+    setBranchId(visibleBranchId(branches, activeBranchId) ?? "");
     setPostingDate(todayISODate());
     setMemo("");
     setReason("");
@@ -200,9 +202,10 @@ function ManualJournalDialog({
       description: line.description.trim() || undefined,
     }));
     if (normalized.length < 2 || !memo.trim() || reason.trim().length < 3 || !idempotencyKey.trim()) return;
+    if (!visibleBranchId(branches, branchId)) return;
     if (normalized.some((line) => !line.accountId || (line.debit.amount <= 0 && line.credit.amount <= 0))) return;
     onSubmit({
-      branchId: scope === "branch" ? branchId || undefined : undefined,
+      branchId,
       scope,
       postingDate,
       memo: memo.trim(),
@@ -222,16 +225,10 @@ function ManualJournalDialog({
         <form onSubmit={submit}>
           <DialogBody className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Scope" required>
-                <Select value={scope} onValueChange={(value) => setScope(value as "branch" | "consolidated")}>
-                  <SelectTrigger aria-label="Manual journal scope"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="branch">Branch journal</SelectItem><SelectItem value="consolidated">Consolidated journal</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field label="Branch" hint={scope === "consolidated" ? "Consolidated journals have no branch." : undefined} required={scope === "branch"}>
-                <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)} disabled={scope === "consolidated"}>
-                  <SelectTrigger aria-label="Manual journal branch"><SelectValue placeholder={scope === "consolidated" ? "No branch" : "Choose branch"} /></SelectTrigger>
-                  <SelectContent><SelectItem value="none">No branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+              <Field label="Branch" hint="Choose one concrete branch. Consolidated posting is read-only here." required>
+                <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
+                  <SelectTrigger aria-label="Manual journal branch"><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                  <SelectContent><SelectItem value="none">Choose branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label="Posting date" required><Input type="date" value={postingDate} onChange={(event) => setPostingDate(event.target.value)} /></Field>
@@ -259,7 +256,7 @@ function ManualJournalDialog({
               <Field label="Idempotency key" hint="Reuse this key only for the same request." required><Input dir="ltr" value={idempotencyKey} onChange={(event) => setIdempotencyKey(event.target.value)} required /></Field>
             </div>
           </DialogBody>
-          <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" loading={pending} disabled={!memo.trim() || reason.trim().length < 3 || !idempotencyKey.trim()}>Post journal</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" loading={pending} disabled={!memo.trim() || reason.trim().length < 3 || !idempotencyKey.trim() || !visibleBranchId(branches, branchId)}>Post journal</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -397,7 +394,7 @@ export function ManagementLedgerWorkspace() {
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const [tab, setTab] = useState<LedgerTab>("overview");
-  const [branchFilter, setBranchFilter] = useState<string>(session?.activeBranchId ?? "all");
+  const [branchFilter, setBranchFilter] = useState<string>(visibleBranchId(session?.branches, session?.activeBranchId) ?? "all");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<AccountingSourceStatus | "all">("all");
   const [selectedJournalId, setSelectedJournalId] = useState<string>();
@@ -406,13 +403,16 @@ export function ManagementLedgerWorkspace() {
   const [postingSourceId, setPostingSourceId] = useState<string>();
 
   useEffect(() => {
-    if (branchFilter !== "all" && !session?.branches.some((branch) => branch.id === branchFilter)) setBranchFilter(session?.activeBranchId ?? "all");
+    if (branchFilter !== "all" && !visibleBranchId(session?.branches, branchFilter)) setBranchFilter("all");
   }, [branchFilter, session?.activeBranchId, session?.branches]);
 
-  const canRead = can("reports.financial.read");
-  const canWrite = can("accounting.post");
-  const canOwner = session?.roles.includes("owner") ?? false;
   const scopeBranchId = branchFilter === "all" ? undefined : branchFilter;
+  const canRead = can("reports.financial.read");
+  // The consolidated filter is intentionally read-only. Posting or refreshing
+  // source facts requires one concrete branch so a write can never silently
+  // span every branch in the organization.
+  const canWrite = can("accounting.post") && Boolean(scopeBranchId);
+  const canOwner = session?.roles.includes("owner") ?? false;
   const currency = session?.organization.currency ?? "JOD";
 
   const workspaceQuery = useApiQuery(qk.workspaceAccess, (api) => api.getWorkspaceAccess(), { enabled: Boolean(session) && canRead });
@@ -471,7 +471,7 @@ export function ManagementLedgerWorkspace() {
         eyebrow="Finance · management ledger"
         title="Management ledger"
         description="One auditable place to post operational facts, review balances, and keep branch control totals honest. This is management accounting, not a statutory filing system."
-        actions={canOwner ? <Button type="button" onClick={() => setManualOpen(true)}><Plus /> Manual journal</Button> : <Badge variant="outline">Read-only for this role</Badge>}
+        actions={canOwner && scopeBranchId ? <Button type="button" onClick={() => setManualOpen(true)}><Plus /> Manual journal</Button> : <Badge variant="outline">{canOwner ? "Select a branch to post" : "Read-only for this role"}</Badge>}
       />
 
       <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Ledger scope filters">
@@ -498,7 +498,7 @@ export function ManagementLedgerWorkspace() {
 
       <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-3 py-2.5 text-[11.5px] text-ink-3"><Coins className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Amounts are stored as integer minor units in {currency}. The ledger preserves source policy versions and audit reasons; statutory accounting, tax filing, and external-provider settlement remain outside this workspace.</p></div>
 
-      <ManualJournalDialog open={manualOpen} onOpenChange={setManualOpen} accounts={accounts} branches={session?.branches ?? []} activeBranchId={session?.activeBranchId} currency={currency} pending={manualMutation.isPending} onSubmit={(input) => manualMutation.mutate(input)} />
+      <ManualJournalDialog open={manualOpen} onOpenChange={setManualOpen} accounts={accounts} branches={session?.branches ?? []} activeBranchId={scopeBranchId} currency={currency} pending={manualMutation.isPending} onSubmit={(input) => manualMutation.mutate(input)} />
       <ReasonDialog action={reasonAction} onClose={() => setReasonAction(null)} onSubmit={submitReason} pending={reasonPending} />
     </div>
   );

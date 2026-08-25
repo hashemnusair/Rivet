@@ -211,7 +211,7 @@ export const markSent = internalMutation({
     correlationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.membershipId, { clerkInvitationId: args.clerkInvitationId, invitationSentAt: args.sentAt, invitationLastAttemptAt: args.sentAt, invitationError: undefined, invitationStatus: "pending", updatedAt: args.sentAt });
+    await ctx.db.patch(args.membershipId, { clerkInvitationId: args.clerkInvitationId, clerkInvitationStatus: "pending", invitationSentAt: args.sentAt, invitationLastAttemptAt: args.sentAt, invitationError: undefined, invitationStatus: "pending", updatedAt: args.sentAt });
     await ctx.db.insert("auditEvents", {
       organizationId: args.organizationId,
       publicId: crypto.randomUUID(),
@@ -247,7 +247,7 @@ export const markFailed = internalMutation({
     correlationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.membershipId, { invitationLastAttemptAt: args.attemptedAt, invitationError: args.message, updatedAt: args.attemptedAt });
+    await ctx.db.patch(args.membershipId, { clerkInvitationStatus: "failed", invitationLastAttemptAt: args.attemptedAt, invitationError: args.message, updatedAt: args.attemptedAt });
     await ctx.db.insert("auditEvents", {
       organizationId: args.organizationId,
       publicId: crypto.randomUUID(),

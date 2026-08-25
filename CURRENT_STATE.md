@@ -1,5 +1,51 @@
 # GymOS / RIVET current implementation state
 
+## Production-readiness implementation slices — 25 August 2026 (working-tree update)
+
+The current local working tree includes the implemented P0/P1 slices from the
+readiness plan:
+
+- explicit tenant and branch scope for mutations, with **All branches** kept
+  read-only;
+- retail finance and accounting lifecycle hardening, including stock-cost,
+  refund/void, cash-shift, and journal invariants;
+- invitation acceptance, safe user projections, deterministic multi-org
+  selection, and related identity/security boundaries;
+- public media ownership/upload controls, abuse limits and idempotency, and
+  production fail-closed configuration/security headers;
+- provisioning retry and lease fencing that preserves authoritative tenant
+  state;
+- the real Clerk customer signup flow, including verification and safe return
+  context;
+- atomic branch-to-branch inventory transfers with valuation and audit parity;
+- truthful deferred handling for Facilities and Automations, with no dead-end
+  operator actions; and
+- the focused Operations scope of Inventory, Checkout, and Machines.
+
+The final independent security review also fixed required upload-intent and
+storage ownership checks, member-photo branch authorization, authorization
+before purchase-order and PT idempotent replay responses, and strict matching
+of Clerk invitation, application, and workspace metadata. External edge/IP/
+device rate limiting and provider-backed/Production verification remain open.
+
+Credential-free local validation for this working tree passed: **136 Vitest
+files / 828 tests**, **14 Node deployment-safety tests**, application and
+Convex TypeScript checks, full lint plus the secret-output audit, the
+production Next build, and `git diff --check`.
+
+This is local working-tree evidence only. No Playwright run was performed; no
+commit or push was made; and no Convex or Vercel Production deployment was
+performed. Live provider-backed invitation/signup verification and the
+Production smoke, rollback, capacity/headroom, and backup/recovery gates
+remain outstanding.
+
+## Deferred operational surfaces and truthful destinations — 25 August 2026 (working-tree update)
+
+- The supervised Operations scope is explicitly **Inventory, Checkout, and Machines**. Facilities/cleaning tasks are not being restored to the operator workspace in this slice; their backend records and accounting history remain preserved for a later product decision.
+- Automations remains deferred. Existing automation rules, executions, retries, notifications, and audit events remain intact, but deferred pages expose only a truthful paused state with links to automation audit history and RIVET Support. No rule creation, execution, or delivery controls are advertised.
+- Failure notifications no longer send operators to the paused automation route. Terminal operational-email failures open the real **Settings → Operational email** controls, while automation attention and exhausted-retry notices open immutable automation audit history when no member or lead record is available.
+- Navigation tests cover the absence of Facilities and Automations from the primary workspace, and Convex regressions cover the truthful notification destinations. This is a scope/dead-link cleanup; no provider activation, Production data mutation, or Convex deploy is implied.
+
 ## Operations branch comparison and equipment restoration — 25 August 2026 (working-tree update)
 
 - The Operations workspace now treats inventory as branch-local data. A
@@ -28,9 +74,10 @@
   cannot receive new issues.
 - Convex and MockGymOSApi implement the same branch filtering, equipment
   lifecycle, safety, assignee-scope, recommendation, and work-order rules.
-  Validation for this working tree passed: full Vitest coverage (**128 files /
-  743 tests**), app and Convex TypeScript checks, full ESLint and
-  secret-output audit, the production Next build, 9/9 safe Convex CLI tests,
+  Validation for this working tree passed: full Vitest coverage (**136 files /
+  828 tests**), app and Convex TypeScript checks, full ESLint and
+  secret-output audit, the production Next build, 14 Node deployment-safety
+  tests,
   and `git diff --check`. A mock-mode in-app browser visual pass (not
   Playwright) verified the All branches comparison, independent Sweifieh stock
   with global branch synchronization, Abdoun machine issue/work-order UI, the

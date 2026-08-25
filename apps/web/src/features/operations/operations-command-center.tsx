@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   Archive,
+  ArrowRightLeft,
   Boxes,
   Check,
   CheckCircle2,
@@ -23,6 +24,7 @@ import type {
   EquipmentIssue,
   EquipmentRecommendation,
   EquipmentWorkOrder,
+  InventoryTransferInput,
   InventoryBalance,
   LowStockAlert,
   CreatePurchaseOrderInput,
@@ -332,6 +334,7 @@ type OperationsMutations = {
   purchaseOrder: ReturnType<typeof useApiMutation<unknown, CreatePurchaseOrderInput>>;
   approveOrder: ReturnType<typeof useApiMutation<unknown, { id: string; reason?: string }>>;
   receiveOrder: ReturnType<typeof useApiMutation<unknown, { purchaseOrderId: string; idempotencyKey: string }>>;
+  transfer: ReturnType<typeof useApiMutation<unknown, InventoryTransferInput>>;
   asset: ReturnType<typeof useApiMutation<unknown, UpsertEquipmentAssetInput>>;
   issue: ReturnType<typeof useApiMutation<unknown, { branchId: string; assetId: string; title: string; description?: string; severity: EquipmentIssue["severity"]; downtimeDays?: number; safetyStatus: EquipmentIssue["safetyStatus"] }>>;
   issueUpdate: ReturnType<typeof useApiMutation<unknown, { id: string; input: UpdateEquipmentIssueInput }>>;
@@ -347,11 +350,12 @@ function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): O
   const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order draft created." });
   const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
   const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Purchase order received into stock." });
+  const transfer = useApiMutation((api, input: InventoryTransferInput) => api.transferInventory(input), { ...options, successMessage: "Stock moved to the destination branch." });
   const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Equipment saved." });
   const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Equipment issue reported." });
   const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Equipment issue updated." });
   const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Work order saved." });
-  return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, asset, issue, issueUpdate, workOrder } as OperationsMutations;
+  return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, transfer, asset, issue, issueUpdate, workOrder } as OperationsMutations;
 }
 
 function PurchaseOrderRow({ order, writeEnabled, currency, mutations }: { order: PurchaseOrder; writeEnabled: boolean; currency: string; mutations: OperationsMutations }) {
@@ -366,6 +370,36 @@ function SupplierManagementDialog({ open, onOpenChange, suppliers, branches, wri
 
 function PurchaseOrderListDialog({ open, onOpenChange, orders, writeEnabled, currency, mutations, onCreate }: { open: boolean; onOpenChange: (open: boolean) => void; orders: PurchaseOrder[]; writeEnabled: boolean; currency: string; mutations: OperationsMutations; onCreate: () => void }) {
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>Purchase orders</DialogTitle><DialogDescription>Approve a draft to reserve stock, then receive it when it arrives.</DialogDescription></DialogHeader><DialogBody className="max-h-[60vh] overflow-y-auto p-0">{orders.length === 0 ? <EmptyState compact title="No purchase orders" description="Create a draft when a stock alert needs replenishment." className="m-4" /> : <div className="divide-y divide-line">{orders.map((order) => <PurchaseOrderRow key={order.id} order={order} writeEnabled={writeEnabled} currency={currency} mutations={mutations} />)}</div>}</DialogBody><DialogFooter>{writeEnabled ? <Button onClick={onCreate}><Plus /> New purchase order</Button> : null}<Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter></DialogContent></Dialog>;
+}
+
+function TransferStockDialog({ open, onOpenChange, sourceBranchId, branches, products, inventory, pending, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; sourceBranchId?: string; branches: Array<{ id: string; name: string; status?: string }>; products: Product[]; inventory: InventoryBalance[]; pending: boolean; onSubmit: (input: InventoryTransferInput) => void }) {
+  const [productId, setProductId] = useState("");
+  const [destinationBranchId, setDestinationBranchId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [reason, setReason] = useState("");
+  const availableByProduct = useMemo(() => new Map(inventory.filter((row) => row.branchId === sourceBranchId).map((row) => [row.productId, row.availableQuantity])), [inventory, sourceBranchId]);
+  const transferableProducts = useMemo(() => products.filter((product) => product.status === "active" && (availableByProduct.get(product.id) ?? 0) > 0), [availableByProduct, products]);
+  const destinations = useMemo(() => branches.filter((branch) => branch.id !== sourceBranchId && branch.status !== "inactive"), [branches, sourceBranchId]);
+  const selectedAvailable = productId ? availableByProduct.get(productId) ?? 0 : 0;
+  const sourceBranchName = branches.find((branch) => branch.id === sourceBranchId)?.name ?? "Selected branch";
+
+  useEffect(() => {
+    if (!open) return;
+    setProductId((current) => transferableProducts.some((product) => product.id === current) ? current : transferableProducts[0]?.id ?? "");
+    setDestinationBranchId((current) => destinations.some((branch) => branch.id === current) ? current : destinations[0]?.id ?? "");
+    setQuantity("1");
+    setReason("");
+  }, [destinations, open, sourceBranchId, transferableProducts]); // Reset only when the source branch or dialog changes.
+
+  const parsedQuantity = Number(quantity);
+  const canSubmit = Boolean(sourceBranchId && productId && destinationBranchId && Number.isSafeInteger(parsedQuantity) && parsedQuantity > 0 && parsedQuantity <= selectedAvailable && reason.trim().length >= 3 && !pending);
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Move stock to another branch</DialogTitle><DialogDescription>Choose an item and destination. The source branch decreases and the destination branch increases together.</DialogDescription></DialogHeader><DialogBody><div className="mb-3 rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2"><span className="text-ink-3">Moving from</span> <strong>{sourceBranchName}</strong></div><form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); if (!canSubmit || !sourceBranchId) return; onSubmit({ sourceBranchId, destinationBranchId, productId, quantity: parsedQuantity, reason: reason.trim(), idempotencyKey: newKey("inventory-transfer") }); }}>
+    <Field label="Item" hint={transferableProducts.length > 0 ? "Only items available at the selected branch are shown." : "There is no available stock to move from this branch."} required><Select value={productId || "none"} onValueChange={(value) => setProductId(value === "none" ? "" : value)}><SelectTrigger aria-label="Transfer item"><SelectValue placeholder="Choose an item" /></SelectTrigger><SelectContent>{transferableProducts.length === 0 ? <SelectItem value="none" disabled>No available items</SelectItem> : transferableProducts.map((product) => <SelectItem key={product.id} value={product.id}>{product.name} · {availableByProduct.get(product.id)} available</SelectItem>)}</SelectContent></Select></Field>
+    <Field label="Destination branch" required><Select value={destinationBranchId || "none"} onValueChange={(value) => setDestinationBranchId(value === "none" ? "" : value)}><SelectTrigger aria-label="Transfer destination"><SelectValue placeholder="Choose a branch" /></SelectTrigger><SelectContent>{destinations.length === 0 ? <SelectItem value="none" disabled>No other branch available</SelectItem> : destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+    <Field label="Quantity" hint={productId ? `Up to ${selectedAvailable} available at the source branch.` : "Choose an item first."} required><Input aria-label="Transfer quantity" type="number" min="1" max={selectedAvailable || undefined} step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} required /></Field>
+    <Field label="Reason" hint="This is saved with both stock movements and the audit record." required><Textarea aria-label="Transfer reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Restock the Sweifieh branch" required /></Field>
+    <DialogFooter className="px-0 pb-0"><Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button><Button type="submit" loading={pending} disabled={!canSubmit}><ArrowRightLeft /> Move stock</Button></DialogFooter>
+  </form></DialogBody></DialogContent></Dialog>;
 }
 
 function EquipmentRecommendationPanel({ asset, recommendation, loading, error }: { asset?: EquipmentAsset; recommendation?: EquipmentRecommendation; loading: boolean; error?: unknown }) {
@@ -422,6 +456,7 @@ function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled,
   const [orderForm, setOrderForm] = useState(false);
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [ordersDialog, setOrdersDialog] = useState(false);
+  const [transferDialog, setTransferDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: "product" | "supplier"; id: string; label: string }>();
   const productName = useMemo(() => new Map(products.map((product) => [product.id, product.name])), [products]);
   const alertProductIds = useMemo(() => new Set(alerts.map((alert) => alert.productId)), [alerts]);
@@ -439,7 +474,7 @@ function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled,
   return (
     <div className="space-y-4" data-testid="operations-inventory">
       <section className="panel overflow-hidden">
-        <SectionHeader icon={Boxes} title="Inventory" description={branchId ? "Available is what staff can sell at " + branchLabel.toLowerCase() + "." : "Compare available stock across branches. Choose one branch above before editing or selling."} actions={<div className="flex flex-wrap gap-2">{writeEnabled ? <><Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }} disabled={!branchId}><Plus /> Add item</Button><Button size="sm" variant="secondary" onClick={() => setSupplierDialog(true)}><Store /> Suppliers</Button><Button size="sm" variant="secondary" onClick={() => setOrdersDialog(true)} disabled={!branchId}><ShoppingCart /> Purchase orders</Button></> : null}</div>} />
+        <SectionHeader icon={Boxes} title="Inventory" description={branchId ? "Available is what staff can sell at " + branchLabel.toLowerCase() + "." : "Compare available stock across branches. Choose one branch above before editing or selling."} actions={<div className="flex flex-wrap gap-2">{writeEnabled ? <><Button size="sm" onClick={() => { setEditingProduct(undefined); setProductForm(true); }} disabled={!branchId}><Plus /> Add item</Button><Button size="sm" variant="secondary" onClick={() => setTransferDialog(true)} disabled={!branchId}><ArrowRightLeft /> Move stock</Button><Button size="sm" variant="secondary" onClick={() => setSupplierDialog(true)}><Store /> Suppliers</Button><Button size="sm" variant="secondary" onClick={() => setOrdersDialog(true)} disabled={!branchId}><ShoppingCart /> Purchase orders</Button></> : null}</div>} />
         {!writeEnabled ? <div className="p-4"><ReadOnlyNotice /></div> : null}
         {!branchId && writeEnabled ? <div className="border-b border-line bg-warning-bg/40 px-4 py-2.5 text-[12px] text-warning-deep" role="status">Select a branch above to add items, change quantities, create purchase orders, or check out.</div> : null}
         <div className="overflow-x-auto"><table className="w-full text-start"><caption className="sr-only">Available inventory</caption><thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="px-4 py-2.5 font-medium">Item</th><th className="px-4 py-2.5 text-end font-medium">Available</th><th className="px-4 py-2.5 font-medium">Status</th><th className="px-4 py-2.5 text-end font-medium">Selling price</th><th className="px-4 py-2.5 text-end font-medium">Actions</th></tr></thead><tbody className="divide-y divide-line">{products.length === 0 ? <tr><td colSpan={5}><EmptyState compact title="No stock items yet" description="Add an item to start tracking what is available." className="m-4" /></td></tr> : products.map((product) => { const rows = inventoryByProduct.get(product.id) ?? []; const productAlerts = alerts.filter((alert) => alert.productId === product.id); const selectedRow = rows.find((row) => row.branchId === branchId); const available = selectedRow?.availableQuantity ?? 0; const totalAvailable = rows.reduce((sum, row) => sum + row.availableQuantity, 0); const low = selectedRow ? available <= product.reorderPoint : rows.some((row) => row.availableQuantity <= product.reorderPoint); const needsReplenishment = alertProductIds.has(product.id); const alertBranches = [...new Set(productAlerts.map((alert) => branches.find((branch) => branch.id === alert.branchId)?.name ?? alert.branchId))].join(", "); return <tr key={product.id} className="text-[12.5px]"><td className="px-4 py-3"><span className="font-medium">{product.name}</span><span className="block text-[11px] text-ink-3">{product.sku} · {product.unit}</span></td><td className={cn("px-4 py-3 text-end font-mono", needsReplenishment ? "text-warning-deep" : "text-ink")} dir="ltr">{branchId ? available : <><span>Total {totalAvailable}</span>{rows.length > 0 ? <span className="mt-1 block text-[10px] font-sans text-ink-3">{rows.map((row) => `${branches.find((branch) => branch.id === row.branchId)?.name ?? row.branchId}: ${row.availableQuantity}`).join(" · ")}</span> : null}</>}</td><td className="px-4 py-3">{needsReplenishment ? <Badge variant="warning" dot>{branchId ? (low ? "Low stock" : "Replenish soon") : `${low ? "Low stock" : "Replenish soon"} · ${alertBranches}`}</Badge> : <Badge variant="success" dot>Available</Badge>}</td><td className="px-4 py-3 text-end font-mono" dir="ltr">{product.retailPrice ? <MoneyText money={product.retailPrice} /> : <span className="text-ink-3">Not set</span>}</td><td className="px-4 py-3 text-end"><div className="flex justify-end gap-1">{writeEnabled ? <><Button size="icon" variant="ghost" aria-label={"Edit " + product.name} onClick={() => { setEditingProduct(product); setProductForm(true); }} disabled={!branchId}><Pencil /></Button><Button size="icon" variant="ghost" aria-label={"Delete " + product.name} onClick={() => setDeleteTarget({ type: "product", id: product.id, label: product.name })}><Trash2 /></Button></> : null}</div></td></tr>; })}</tbody></table></div>
@@ -448,6 +483,7 @@ function InventoryTab({ branchId, branchLabel, branches, currency, writeEnabled,
 
       <SupplierManagementDialog open={supplierDialog} onOpenChange={setSupplierDialog} suppliers={suppliers} branches={branches} writeEnabled={writeEnabled} onAdd={() => { setSupplierDialog(false); setEditingSupplier(undefined); setSupplierForm(true); }} onEdit={(supplier) => { setSupplierDialog(false); setEditingSupplier(supplier); setSupplierForm(true); }} onArchive={(supplier) => { setSupplierDialog(false); setDeleteTarget({ type: "supplier", id: supplier.id, label: supplier.name }); }} />
       <PurchaseOrderListDialog open={ordersDialog} onOpenChange={setOrdersDialog} orders={orders} writeEnabled={writeEnabled} currency={currency} mutations={mutations} onCreate={() => { setOrdersDialog(false); setOrderForm(true); }} />
+      <TransferStockDialog open={transferDialog} onOpenChange={setTransferDialog} sourceBranchId={branchId} branches={branches} products={products} inventory={inventory} pending={mutations.transfer.isPending} onSubmit={(input) => mutations.transfer.mutate(input, { onSuccess: () => setTransferDialog(false) })} />
 
       {productForm ? <ProductForm key={editingProduct?.id ?? "new-product"} currency={currency} branchId={branchId} product={editingProduct} availableQuantity={editingProduct ? inventoryByProduct.get(editingProduct.id)?.[0]?.availableQuantity : undefined} pending={mutations.product.isPending} onCancel={closeProductForm} onRequestDelete={editingProduct ? () => { const productToDelete = editingProduct; closeProductForm(); setDeleteTarget({ type: "product", id: productToDelete.id, label: productToDelete.name }); } : undefined} onSubmit={(input) => mutations.product.mutate(input, { onSuccess: closeProductForm })} /> : null}
       {supplierForm ? <SupplierForm key={editingSupplier?.id ?? "new-supplier"} defaultBranchId={branchId} branches={branches} supplier={editingSupplier} pending={mutations.supplier.isPending} onCancel={closeSupplierForm} onSubmit={(input) => mutations.supplier.mutate(input, { onSuccess: closeSupplierForm })} /> : null}

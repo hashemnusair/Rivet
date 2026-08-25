@@ -10,5 +10,10 @@
  * all. A deliberate public demo should be built as a preview deployment, not by
  * loosening this.
  */
-export const DEMO_AUTH_BYPASS =
-  process.env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1" && process.env.NODE_ENV !== "production";
+export function demoAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  const approvedPreview = env.NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS === "preview" && env.VERCEL_ENV !== "production";
+  const productionDeployment = env.NODE_ENV === "production" || env.VERCEL_ENV === "production" || env.NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS === "production";
+  return env.NEXT_PUBLIC_RIVET_DEMO_AUTH === "1" && (!productionDeployment || approvedPreview);
+}
+
+export const DEMO_AUTH_BYPASS = demoAuthBypassAllowed();

@@ -27,6 +27,7 @@ export interface BookTrialInput {
   preferredDate: string;
   preferredTime: string;
   goal: string;
+  idempotencyKey?: string;
 }
 
 export interface RegisterCustomerInput {
@@ -426,7 +427,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
-      const booking = await getApi().createTrialBooking({ ...input, customerId });
+      const booking = await getApi().createTrialBooking({ ...input, idempotencyKey: input.idempotencyKey ?? crypto.randomUUID(), customerId });
       if (!customerId && booking.customerId) setCustomerId(booking.customerId);
       setBookings((current) => {
         const next = [booking, ...current.filter((item) => item.id !== booking.id)];

@@ -14,6 +14,17 @@ export interface RequestArgs {
   correlationId?: string;
 }
 
+/**
+ * A membership row is routable only after its invitation has been accepted.
+ * `undefined` remains a legacy-accepted value for rows written before the
+ * invitationStatus field existed; new invitation rows always write an
+ * explicit status. Pending/revoked/unknown rows are never treated as
+ * workspace access, even when their historical `active` flag was left true.
+ */
+export function membershipInvitationAccepted(membership: MaybeMembership): boolean {
+  return Boolean(membership && (membership.invitationStatus === undefined || membership.invitationStatus === "accepted"));
+}
+
 export interface ActorContext {
   user: NonNullable<Awaited<ReturnType<typeof findUser>>>;
   organization: NonNullable<Awaited<ReturnType<typeof findOrganization>>>;
@@ -166,7 +177,19 @@ async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">): Promise
     .query("organizationMemberships")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .collect();
-  return (rows.find((row) => row.active) ?? null) as MaybeMembership;
+  const routable = [];
+  for (const row of rows) {
+    if (!row.active || !membershipInvitationAccepted(row as MaybeMembership)) continue;
+    const organization = await ctx.db.get(row.organizationId);
+    if (!organization || !["trial", "active", "past_due"].includes(organization.status)) continue;
+    routable.push({ row, organization });
+  }
+  if (routable.length > 1) {
+    domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a gym workspace before continuing.", {
+      details: { membershipCount: routable.length },
+    });
+  }
+  return (routable[0]?.row ?? null) as MaybeMembership;
 }
 
 export async function requireAuthenticated(ctx: ReadCtx) {
@@ -200,7 +223,7 @@ export async function requireMember(ctx: ReadCtx) {
     .query("organizationMemberships")
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
-  if (memberships.some((membership) => membership.active)) {
+  if (memberships.some((membership) => membership.active && membershipInvitationAccepted(membership as MaybeMembership))) {
     domainError("FORBIDDEN", "Gym team accounts must use their gym workspace.");
   }
 
@@ -221,6 +244,13 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
     domainError("FORBIDDEN", "You are not an active member of this organization.");
   }
 
+  if (!membershipInvitationAccepted(membership)) {
+    // Deliberately do not distinguish pending, revoked, or failed invitation
+    // state to callers. The invitation flow must prove acceptance before a
+    // workspace becomes routable; an email match alone is not sufficient.
+    domainError("FORBIDDEN", "This workspace invitation has not been accepted.");
+  }
+
   const organization = (await ctx.db.get(membership.organizationId)) as MaybeOrganization;
   if (!organization || organization.status === "suspended" || organization.status === "cancelled") {
     domainError("FORBIDDEN", "This organization is not available.");
@@ -232,15 +262,34 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
     .unique();
   const role = membership.role;
   const branchScope = membership.branchScope ?? (role === "owner" || role === "manager" ? "all" : "selected");
+  const organizationBranches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+  const activeBranchIds = new Set(organizationBranches.filter((candidate) => candidate.active && candidate.status !== "inactive").map((candidate) => candidate._id));
   const branchIds = branchScope === "all"
-    ? (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect())
-        .filter((branch) => branch.active)
-        .map((branch) => branch._id)
-    : membership.branchIds;
-  const branch = args.branchId || args.activeBranchId ? await findBranch(ctx, organization._id, args.branchId ?? args.activeBranchId) : null;
+    ? organizationBranches.filter((branch) => activeBranchIds.has(branch._id)).map((branch) => branch._id)
+    : membership.branchIds.filter((branchId) => activeBranchIds.has(branchId));
+  const requestedBranchId = args.branchId ?? args.activeBranchId;
+  const branch = requestedBranchId ? await findBranch(ctx, organization._id, requestedBranchId) : null;
+
+  // Never treat a stale, inactive, or foreign active-branch selection as if
+  // no branch had been selected. That would silently widen a selected actor's
+  // read scope and allow a mutation that omitted its own branch field to run
+  // against an unintended workspace. A selected actor with multiple branches
+  // must also make an explicit choice before any operation proceeds.
+  if (requestedBranchId && !branch) {
+    domainError("FORBIDDEN", "You do not have access to this branch.");
+  }
 
   if (branch && (!branch.active || branch.organizationId !== organization._id || (branchScope === "selected" && !branchIds.includes(branch._id)))) {
     domainError("FORBIDDEN", "You do not have access to this branch.");
+  }
+
+  if (!requestedBranchId && branchScope === "selected" && branchIds.length > 1) {
+    domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a branch before continuing.", {
+      details: { branchCount: branchIds.length },
+    });
+  }
+  if (!requestedBranchId && branchScope === "selected" && branchIds.length === 0) {
+    domainError("FORBIDDEN", "No active branch is available for this workspace.");
   }
 
   return {

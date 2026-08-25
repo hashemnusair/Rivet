@@ -175,6 +175,8 @@ export interface CustomerActivity {
 export interface TrialBooking {
   id: string;
   customerId?: string;
+  /** Stable client retry key for the durable customer trial mutation. */
+  idempotencyKey?: string;
   gymId: string;
   branchId: string;
   fullName: string;

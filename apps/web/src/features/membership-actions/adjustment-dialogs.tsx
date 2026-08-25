@@ -49,7 +49,9 @@ export function TransferMembershipDialog({
   const form = useForm<TransferValues>({ resolver: zodResolver(transferSchema), defaultValues: { branchId: "", reason: "" } });
   useEffect(() => {
     if (open) {
-      form.reset({ branchId: destinations[0]?.id ?? "", reason: "" });
+      // A transfer changes branch ownership. Require the operator to choose
+      // the concrete destination instead of silently using the first option.
+      form.reset({ branchId: "", reason: "" });
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,9 +74,9 @@ export function TransferMembershipDialog({
         <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
           <DialogBody className="space-y-4">
             <Field label="Destination branch" required error={form.formState.errors.branchId?.message}>
-              <Select value={form.watch("branchId")} onValueChange={(value) => form.setValue("branchId", value, { shouldValidate: true })}>
+              <Select value={form.watch("branchId") || "none"} onValueChange={(value) => form.setValue("branchId", value === "none" ? "" : value, { shouldValidate: true })}>
                 <SelectTrigger aria-label="Destination branch"><SelectValue placeholder="Select branch" /></SelectTrigger>
-                <SelectContent>{destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+                <SelectContent><SelectItem value="none">Choose a destination</SelectItem>{destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
             {destinations.length === 0 ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">No other active branch is available to your account.</p> : null}

@@ -25,6 +25,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { formatTime, todayISODate } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { Button } from "@/components/ui/button";
 import { Kbd, Monogram } from "@/components/ui/misc";
 import { ForbiddenState } from "@/components/ui/states";
@@ -39,7 +40,10 @@ export default function ReceptionPage() {
   const { can } = usePermissions();
   const invalidate = useInvalidate();
 
-  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
+  // Reception is a concrete branch lane. An organization-wide scope or a
+  // stale persisted branch must fail closed instead of silently using the
+  // first branch in the session.
+  const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
   const branch = session?.branches.find((b) => b.id === branchId);
   const currency = session?.organization.currency ?? "JOD";
 

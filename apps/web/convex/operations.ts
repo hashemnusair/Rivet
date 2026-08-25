@@ -166,6 +166,31 @@ async function branchByPublicId(ctx: ReadContext, actor: ActorContext, id: strin
   return branch;
 }
 
+/**
+ * Resolve a branch for an idempotent replay without requiring it to remain
+ * active. The caller still has to belong to the same organization and retain
+ * branch scope access; only lifecycle validation is deferred until after the
+ * replay lookup.
+ */
+async function transferBranchScope(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<Branch> {
+  const branch = id
+    ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", id)).unique()
+    : null;
+  if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
+  if (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id)) {
+    domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  }
+  return branch;
+}
+
+async function transferProductScope(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<Product> {
+  const product = id
+    ? await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", id)).unique()
+    : null;
+  if (!product) domainError("NOT_FOUND", "Product not found.", { correlationId: actor.correlationId });
+  return product;
+}
+
 async function visibleBranches(ctx: ReadContext, actor: ActorContext): Promise<Branch[]> {
   const rows = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   return rows.filter((branch) => branch.active && (actor.branchScope === "all" || actor.branchIds.includes(branch._id)));
@@ -236,12 +261,14 @@ async function userByPublicId(ctx: ReadContext, actor: ActorContext, id: string 
   return user;
 }
 
-async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: string; entityType: string; entityId: string; entityLabel: string; summary: string; branchId?: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
+async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: string; entityType: string; entityId: string; entityLabel: string; summary: string; branchId?: string; destinationBranchId?: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
   const branch = input.branchId ? await branchByPublicId(ctx, actor, input.branchId) : undefined;
+  const destinationBranch = input.destinationBranchId ? await branchByPublicId(ctx, actor, input.destinationBranchId) : undefined;
   await ctx.db.insert("auditEvents", {
     organizationId: actor.organization._id,
     publicId: `audit-${crypto.randomUUID()}`,
     branchId: branch?._id,
+    destinationBranchId: destinationBranch?._id,
     actorUserId: actor.user._id,
     actorPublicId: publicUserId(actor.user),
     actorName: actor.user.fullName,
@@ -261,7 +288,15 @@ async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: str
 }
 
 async function idempotentResult(ctx: MutationCtx, actor: ActorContext, operation: string, key: string, requestHash: string): Promise<Data | undefined> {
-  const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", operation).eq("key", key)).unique();
+  const rows = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", operation).eq("key", key)).collect();
+  const now = Date.now();
+  // Idempotency records are bounded retention artifacts, not permanent
+  // reservations. Remove expired rows at the point of reuse, including old
+  // duplicate rows from pre-unique-index deployments, so a retry can safely
+  // create a fresh immutable fact without a background job.
+  const expired = rows.filter((row) => row.expiresAt !== undefined && row.expiresAt <= now);
+  if (expired.length > 0) await Promise.all(expired.map((row) => ctx.db.delete(row._id)));
+  const existing = rows.find((row) => !expired.some((stale) => stale._id === row._id));
   if (!existing) return undefined;
   if (existing.requestHash !== requestHash) domainError("CONFLICT", "This idempotency key was already used for a different request.", { correlationId: actor.correlationId });
   return value(existing.result);
@@ -295,7 +330,7 @@ function supplierView(supplier: Supplier, organizationId: string, branches: Map<
 function movementView(movement: StockMovement, organizationId: string, branches: Map<string, string>, products: Map<string, string>, tombstones: Map<string, ProductTombstone> = new Map(), createdById = String(movement.createdByUserId)): Data {
   const tombstone = tombstones.get(String(movement.productId));
   const productId = products.get(String(movement.productId)) ?? tombstone?.productPublicId ?? String(movement.productId);
-  return { id: movement.publicId, organizationId, branchId: branches.get(String(movement.branchId)) ?? String(movement.branchId), productId, productSku: movement.productSku ?? tombstone?.sku, productName: movement.productName ?? tombstone?.name, productUnit: movement.productUnit ?? tombstone?.unit, type: movement.type, quantityDelta: movement.quantityDelta, quantity: movement.quantity, unitCost: money(movement.unitCostMinor, movement.unitCostCurrency), reason: movement.reason, referenceType: movement.referenceType, referenceId: movement.referenceId, idempotencyKey: movement.idempotencyKey, financialPostingStatus: movement.financialPostingStatus, financialSourceId: movement.financialSourceId, occurredAt: iso(movement.occurredAt), createdAt: iso(movement.createdAt), createdById };
+  return { id: movement.publicId, organizationId, branchId: branches.get(String(movement.branchId)) ?? String(movement.branchId), productId, productSku: movement.productSku ?? tombstone?.sku, productName: movement.productName ?? tombstone?.name, productUnit: movement.productUnit ?? tombstone?.unit, type: movement.type, quantityDelta: movement.quantityDelta, quantity: movement.quantity, unitCost: money(movement.unitCostMinor, movement.unitCostCurrency), totalCost: money(movement.totalCostMinor, movement.totalCostCurrency), reason: movement.reason, referenceType: movement.referenceType, referenceId: movement.referenceId, idempotencyKey: movement.idempotencyKey, financialPostingStatus: movement.financialPostingStatus, financialSourceId: movement.financialSourceId, occurredAt: iso(movement.occurredAt), createdAt: iso(movement.createdAt), createdById };
 }
 
 async function balanceRow(ctx: ReadContext, organizationId: Id<"organizations">, branchId: Id<"branches">, productId: Id<"products">): Promise<InventoryBalance | null> {
@@ -306,7 +341,7 @@ async function ensureBalance(ctx: MutationCtx, actor: ActorContext, branchId: Id
   const existing = await balanceRow(ctx, actor.organization._id, branchId, productId);
   if (existing) return existing;
   const publicId = `inventory-${String(branchId)}-${String(productId)}`;
-  const id = await ctx.db.insert("inventoryBalances", { organizationId: actor.organization._id, publicId, branchId, productId, quantityOnHand: 0, committedQuantity: 0, updatedAt: Date.now() });
+  const id = await ctx.db.insert("inventoryBalances", { organizationId: actor.organization._id, publicId, branchId, productId, quantityOnHand: 0, committedQuantity: 0, sellable: true, updatedAt: Date.now() });
   const created = await ctx.db.get(id);
   if (!created) domainError("NOT_FOUND", "Inventory balance could not be created.", { correlationId: actor.correlationId });
   return created;
@@ -474,6 +509,9 @@ async function deleteProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (productBalances.some((row) => row.committedQuantity > 0)) {
     domainError("CONFLICT", "This product has inventory committed to an open purchase order. Receive or cancel that order first.", { correlationId: actor.correlationId });
   }
+  if (productBalances.some((row) => row.quantityOnHand > 0)) {
+    domainError("CONFLICT", "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.", { correlationId: actor.correlationId });
+  }
 
   const orders = await ctx.db.query("purchaseOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const dependentOrders = orders.filter((order) => order.lines.some((line) => line.productId === product._id && line.receivedQuantity < line.orderedQuantity));
@@ -587,8 +625,71 @@ function movementDelta(type: typeof STOCK_TYPES[number], quantity: number): numb
   return -quantity;
 }
 
-async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, input: { branch: Branch; product: Product; type: typeof STOCK_TYPES[number]; quantity: number; quantityDelta?: number; unitCost?: { amount: number; currency: string }; reason?: string; referenceType?: string; referenceId?: string; idempotencyKey: string; financialPostingStatus: "not_posted" | "pending" | "posted" | "failed"; financialSourceId?: string }): Promise<Data> {
-  const requestHash = JSON.stringify({ branchId: publicBranchId(input.branch), productId: input.product.publicId, type: input.type, quantity: input.quantity, quantityDelta: input.quantityDelta, unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId });
+/**
+ * Resolve the branch's moving-average inventory cost without adding a cost
+ * field back to the product editor. Purchase receipts already carry the
+ * authoritative unit cost; checkout snapshots the cost that was actually in
+ * stock at that moment. If any remaining units have no cost evidence, return
+ * undefined instead of inventing a value and letting accounting post fake COGS.
+ */
+async function inventoryCostBasis(ctx: ReadContext, actor: ActorContext, branch: Branch, product: Product, occurredAt: number): Promise<{ amount: number; currency: string } | undefined> {
+  const movements = await ctx.db
+    .query("stockMovements")
+    .withIndex("by_branch_product_occurred", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("productId", product._id))
+    .collect();
+  let quantity = 0;
+  let unpricedQuantity = 0;
+  let knownCostMinor = 0;
+  for (const movement of movements.filter((row) => row.occurredAt <= occurredAt).sort((left, right) => left.occurredAt - right.occurredAt)) {
+    const delta = movement.quantityDelta;
+    if (!Number.isSafeInteger(delta) || delta === 0) continue;
+    if (delta > 0) {
+      const exactPriced = movement.totalCostMinor !== undefined && movement.totalCostCurrency === actor.organization.currency && Number.isSafeInteger(movement.totalCostMinor) && movement.totalCostMinor >= 0;
+      const priced = movement.unitCostMinor !== undefined && movement.unitCostCurrency === actor.organization.currency && Number.isSafeInteger(movement.unitCostMinor) && movement.unitCostMinor >= 0;
+      if (exactPriced && Number.isSafeInteger(knownCostMinor + movement.totalCostMinor!)) knownCostMinor += movement.totalCostMinor!;
+      else if (priced && Number.isSafeInteger(delta * movement.unitCostMinor!)) knownCostMinor += delta * movement.unitCostMinor!;
+      else unpricedQuantity += delta;
+      quantity += delta;
+      continue;
+    }
+    const outgoing = Math.min(quantity, Math.abs(delta));
+    // Consume unpriced units first. This is conservative: a sale only gets a
+    // cost basis when every unit still on hand is backed by a known receipt.
+    const pricedQuantityBefore = quantity - unpricedQuantity;
+    const unpricedUsed = Math.min(unpricedQuantity, outgoing);
+    unpricedQuantity -= unpricedUsed;
+    const pricedUsed = outgoing - unpricedUsed;
+    const exactOutgoing = movement.totalCostMinor !== undefined && movement.totalCostCurrency === actor.organization.currency && Number.isSafeInteger(movement.totalCostMinor) && movement.totalCostMinor >= 0;
+    if (exactOutgoing && pricedUsed === outgoing) knownCostMinor = Math.max(0, knownCostMinor - movement.totalCostMinor!);
+    else if (pricedUsed > 0 && pricedQuantityBefore > 0) {
+      knownCostMinor -= Math.round((knownCostMinor / pricedQuantityBefore) * pricedUsed);
+      knownCostMinor = Math.max(0, knownCostMinor);
+    }
+    quantity = Math.max(0, quantity - outgoing);
+  }
+  if (quantity <= 0 || unpricedQuantity > 0 || !Number.isSafeInteger(knownCostMinor) || knownCostMinor < 0) return undefined;
+  const amount = Math.round(knownCostMinor / quantity);
+  return Number.isSafeInteger(amount) && amount >= 0 ? { amount, currency: actor.organization.currency } : undefined;
+}
+
+function exactCostTotal(unitCost: { amount: number; currency: string } | undefined, quantity: number): { amount: number; currency: string } | undefined {
+  if (!unitCost || !Number.isSafeInteger(unitCost.amount) || unitCost.amount < 0 || !Number.isSafeInteger(quantity) || quantity < 0) return undefined;
+  const amount = unitCost.amount * quantity;
+  return Number.isSafeInteger(amount) ? { amount, currency: unitCost.currency } : undefined;
+}
+
+/** Allocate a whole-minor-unit total deterministically while conserving it. */
+function allocateExactCost(totalMinor: number | undefined, quantityOnHand: number, quantity: number): number | undefined {
+  if (typeof totalMinor !== "number" || !Number.isSafeInteger(totalMinor) || totalMinor < 0 || !Number.isSafeInteger(quantityOnHand) || quantityOnHand <= 0 || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > quantityOnHand) return undefined;
+  const exactTotal = totalMinor as number;
+  if (quantity === quantityOnHand) return exactTotal;
+  const numerator = exactTotal * quantity;
+  if (!Number.isSafeInteger(numerator)) return undefined;
+  return Math.floor(numerator / quantityOnHand);
+}
+
+async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, input: { branch: Branch; product: Product; type: typeof STOCK_TYPES[number]; quantity: number; quantityDelta?: number; unitCost?: { amount: number; currency: string }; totalCostMinor?: number; totalCostCurrency?: string; reason?: string; referenceType?: string; referenceId?: string; idempotencyKey: string; financialPostingStatus: "not_posted" | "pending" | "posted" | "failed"; financialSourceId?: string }): Promise<Data> {
+  const requestHash = JSON.stringify({ branchId: publicBranchId(input.branch), productId: input.product.publicId, type: input.type, quantity: input.quantity, quantityDelta: input.quantityDelta, unitCost: input.unitCost, totalCostMinor: input.totalCostMinor, totalCostCurrency: input.totalCostCurrency, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId });
   const existing = await idempotentResult(ctx, actor, "operations.stock_movement", input.idempotencyKey, requestHash);
   if (existing) return existing;
   const delta = input.type === "adjustment" && input.quantityDelta !== undefined ? input.quantityDelta : movementDelta(input.type, input.quantity);
@@ -597,10 +698,42 @@ async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, inp
   const nextQuantity = balance.quantityOnHand + delta;
   if (nextQuantity < 0) domainError("CONFLICT", "Stock movement would make inventory negative.", { correlationId: actor.correlationId, details: { productId: input.product.publicId, branchId: publicBranchId(input.branch), quantityOnHand: balance.quantityOnHand, requestedDelta: delta } });
   const now = Date.now();
+  const currentCostKnown = balance.quantityOnHand === 0
+    ? { amount: 0, currency: actor.organization.currency }
+    : (Number.isSafeInteger(balance.totalCostMinor) && (balance.totalCostMinor ?? 0) >= 0 && balance.totalCostCurrency === actor.organization.currency
+      ? { amount: balance.totalCostMinor!, currency: balance.totalCostCurrency }
+      : undefined);
+  let movementTotalCostMinor: number | undefined;
+  let movementTotalCostCurrency: string | undefined;
+  let nextTotalCostMinor: number | undefined;
+  let nextTotalCostCurrency: string | undefined;
+  if (delta < 0) {
+    movementTotalCostMinor = allocateExactCost(currentCostKnown?.amount, balance.quantityOnHand, Math.abs(delta));
+    movementTotalCostCurrency = movementTotalCostMinor === undefined ? undefined : currentCostKnown?.currency;
+    if (currentCostKnown && movementTotalCostMinor !== undefined) {
+      nextTotalCostMinor = currentCostKnown.amount - movementTotalCostMinor;
+      nextTotalCostCurrency = currentCostKnown.currency;
+    }
+  } else if (delta > 0) {
+    const incoming = input.totalCostMinor !== undefined
+      ? (Number.isSafeInteger(input.totalCostMinor) && input.totalCostMinor >= 0 ? { amount: input.totalCostMinor, currency: input.totalCostCurrency ?? actor.organization.currency } : undefined)
+      : exactCostTotal(input.unitCost, delta);
+    if (currentCostKnown && incoming && incoming.currency === actor.organization.currency && Number.isSafeInteger(currentCostKnown.amount + incoming.amount)) {
+      movementTotalCostMinor = incoming.amount;
+      movementTotalCostCurrency = incoming.currency;
+      nextTotalCostMinor = currentCostKnown.amount + incoming.amount;
+      nextTotalCostCurrency = incoming.currency;
+    } else if (incoming && balance.quantityOnHand === 0) {
+      movementTotalCostMinor = incoming.amount;
+      movementTotalCostCurrency = incoming.currency;
+      nextTotalCostMinor = incoming.amount;
+      nextTotalCostCurrency = incoming.currency;
+    }
+  }
   const publicId = `movement-${crypto.randomUUID()}`;
-  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: input.branch._id, productId: input.product._id, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCostMinor: input.unitCost?.amount, unitCostCurrency: input.unitCost?.currency, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
-  await ctx.db.patch(balance._id, { quantityOnHand: nextQuantity, lastMovementAt: now, updatedAt: now });
-  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(input.branch), productId: input.product.publicId, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: input.branch._id, productId: input.product._id, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCostMinor: input.unitCost?.amount, unitCostCurrency: input.unitCost?.currency, totalCostMinor: movementTotalCostMinor, totalCostCurrency: movementTotalCostCurrency, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  await ctx.db.patch(balance._id, { quantityOnHand: nextQuantity, totalCostMinor: nextTotalCostMinor, totalCostCurrency: nextTotalCostCurrency, lastMovementAt: now, updatedAt: now });
+  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(input.branch), productId: input.product.publicId, productSku: input.product.sku, productName: input.product.name, productUnit: input.product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, totalCost: movementTotalCostMinor === undefined ? undefined : { amount: movementTotalCostMinor, currency: movementTotalCostCurrency ?? actor.organization.currency }, reason: input.reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: input.financialPostingStatus, financialSourceId: input.financialSourceId, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
   await saveIdempotentResult(ctx, actor, "operations.stock_movement", input.idempotencyKey, requestHash, view);
   await audit(ctx, actor, { action: "operations.stock_movement.create", entityType: "stock_movement", entityId: publicId, entityLabel: `${input.product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason: input.reason, after: { productId: input.product.publicId, quantityDelta: delta, financialPostingStatus: input.financialPostingStatus }, branchId: publicBranchId(input.branch) });
   return view;
@@ -623,6 +756,82 @@ async function recordStockMovement(ctx: MutationCtx, actor: ActorContext, input:
   return await recordMovementInternal(ctx, actor, { branch, product, type, quantity, unitCost, reason, referenceType: optionalText(input.referenceType), referenceId: optionalText(input.referenceId), idempotencyKey, financialPostingStatus: "not_posted" });
 }
 
+/**
+ * Transfer stock between two concrete branches in one Convex mutation. The
+ * source and destination movements share one transfer reference while the
+ * idempotency record makes a retried request return the original pair.
+ */
+async function transferInventory(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requireOperationsWrite(actor);
+  const quantity = integer(input.quantity, Number.NaN);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) domainError("VALIDATION_ERROR", "Transfer quantity must be a positive whole number.", { correlationId: actor.correlationId });
+  const reason = text(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const idempotencyKey = optionalText(input.idempotencyKey);
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  // Resolve scope before lifecycle validation so an authenticated retry can
+  // replay after a branch/product is archived without exposing foreign rows.
+  const sourceScope = await transferBranchScope(ctx, actor, optionalText(input.sourceBranchId));
+  const destinationScope = await transferBranchScope(ctx, actor, optionalText(input.destinationBranchId));
+  if (sourceScope._id === destinationScope._id) {
+    domainError("VALIDATION_ERROR", "Choose a different destination branch.", { correlationId: actor.correlationId });
+  }
+  const productScope = await transferProductScope(ctx, actor, optionalText(input.productId));
+  const requestHash = JSON.stringify({ sourceBranchId: sourceScope.publicId, destinationBranchId: destinationScope.publicId, productId: productScope.publicId, quantity, reason });
+  const existing = await idempotentResult(ctx, actor, "operations.inventory.transfer", idempotencyKey, requestHash);
+  if (existing) return existing;
+
+  const sourceBranch = await branchByPublicId(ctx, actor, sourceScope.publicId);
+  const destinationBranch = await branchByPublicId(ctx, actor, destinationScope.publicId);
+  const product = await productByPublicId(ctx, actor, productScope.publicId);
+  if (product.status !== "active") domainError("CONFLICT", "Archived products cannot be transferred.", { correlationId: actor.correlationId });
+
+  const sourceBalance = await balanceRow(ctx, actor.organization._id, sourceBranch._id, product._id);
+  const sourceAvailableQuantity = (sourceBalance?.quantityOnHand ?? 0) - (sourceBalance?.committedQuantity ?? 0);
+  if (sourceAvailableQuantity < quantity) {
+    domainError("CONFLICT", "The source branch does not have enough available stock for this transfer.", { correlationId: actor.correlationId, details: { productId: product.publicId, sourceBranchId: sourceBranch.publicId, availableQuantity: sourceAvailableQuantity, requestedQuantity: quantity } });
+  }
+  const destinationBalance = await ensureBalance(ctx, actor, destinationBranch._id, product._id);
+  const destinationAvailableQuantity = destinationBalance.quantityOnHand - destinationBalance.committedQuantity;
+  const now = Date.now();
+  const transferId = `transfer-${crypto.randomUUID()}`;
+  const basis = await inventoryCostBasis(ctx, actor, sourceBranch, product, now);
+  const sourceTotalCostMinor = sourceBalance && Number.isSafeInteger(sourceBalance.totalCostMinor) && (sourceBalance.totalCostMinor ?? 0) >= 0 && sourceBalance.totalCostCurrency === actor.organization.currency
+    ? sourceBalance.totalCostMinor
+    : basis && sourceBalance && Number.isSafeInteger(basis.amount * sourceBalance.quantityOnHand)
+      ? basis.amount * sourceBalance.quantityOnHand
+      : undefined;
+  const movedTotalCostMinor = sourceBalance ? allocateExactCost(sourceTotalCostMinor, sourceBalance.quantityOnHand, quantity) : undefined;
+  const sourceRemainingCostMinor = sourceTotalCostMinor !== undefined && movedTotalCostMinor !== undefined ? sourceTotalCostMinor - movedTotalCostMinor : undefined;
+  const destinationTotalCostMinor = destinationBalance.quantityOnHand === 0
+    ? 0
+    : (Number.isSafeInteger(destinationBalance.totalCostMinor) && (destinationBalance.totalCostMinor ?? 0) >= 0 && destinationBalance.totalCostCurrency === actor.organization.currency
+      ? destinationBalance.totalCostMinor
+      : undefined);
+  const destinationNextCostMinor = destinationTotalCostMinor !== undefined && movedTotalCostMinor !== undefined && Number.isSafeInteger(destinationTotalCostMinor + movedTotalCostMinor)
+    ? destinationTotalCostMinor + movedTotalCostMinor
+    : undefined;
+  const unitCost = basis ?? (movedTotalCostMinor !== undefined ? { amount: Math.round(movedTotalCostMinor / quantity), currency: actor.organization.currency } : undefined);
+  const sourceMovementId = `movement-${crypto.randomUUID()}`;
+  const destinationMovementId = `movement-${crypto.randomUUID()}`;
+  const sourceMovementKey = `${idempotencyKey}:out`;
+  const destinationMovementKey = `${idempotencyKey}:in`;
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: sourceMovementId, branchId: sourceBranch._id, productId: product._id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_out", quantityDelta: -quantity, quantity, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: sourceMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: destinationMovementId, branchId: destinationBranch._id, productId: product._id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: quantity, quantity, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  if (sourceBalance) await ctx.db.patch(sourceBalance._id, { quantityOnHand: sourceBalance.quantityOnHand - quantity, totalCostMinor: sourceRemainingCostMinor, totalCostCurrency: sourceRemainingCostMinor === undefined ? undefined : actor.organization.currency, lastMovementAt: now, updatedAt: now });
+  else domainError("CONFLICT", "The source branch inventory balance could not be loaded.", { correlationId: actor.correlationId });
+  await ctx.db.patch(destinationBalance._id, { quantityOnHand: destinationBalance.quantityOnHand + quantity, totalCostMinor: destinationNextCostMinor, totalCostCurrency: destinationNextCostMinor === undefined ? undefined : actor.organization.currency, lastMovementAt: now, updatedAt: now });
+  await ctx.db.insert("inventoryTransfers", { organizationId: actor.organization._id, publicId: transferId, sourceBranchId: sourceBranch._id, destinationBranchId: destinationBranch._id, productId: product._id, quantity, reason, status: "completed", sourceMovementId, destinationMovementId, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, sourceAvailableBefore: sourceAvailableQuantity, destinationAvailableBefore: destinationAvailableQuantity, sourceAvailableAfter: sourceAvailableQuantity - quantity, destinationAvailableAfter: destinationAvailableQuantity + quantity, idempotencyKey, createdByUserId: actor.user._id, occurredAt: now, createdAt: now });
+  const movementTotalCost = movedTotalCostMinor === undefined ? undefined : { amount: movedTotalCostMinor, currency: actor.organization.currency };
+  const sourceMovement = { id: sourceMovementId, organizationId: publicOrganizationId(actor.organization), branchId: sourceBranch.publicId, productId: product.publicId, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_out", quantityDelta: -quantity, quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: sourceMovementKey, financialPostingStatus: "not_posted", occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  const destinationMovement = { id: destinationMovementId, organizationId: publicOrganizationId(actor.organization), branchId: destinationBranch.publicId, productId: product.publicId, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: quantity, quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  const result = { id: transferId, organizationId: publicOrganizationId(actor.organization), sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, quantity, reason, idempotencyKey, status: "completed", totalCost: movementTotalCost, sourceMovementId, destinationMovementId, sourceMovement, destinationMovement, sourceAvailableQuantity: sourceAvailableQuantity - quantity, destinationAvailableQuantity: destinationAvailableQuantity + quantity, createdById: publicUserId(actor.user), occurredAt: iso(now) };
+  await saveIdempotentResult(ctx, actor, "operations.inventory.transfer", idempotencyKey, requestHash, result);
+  await audit(ctx, actor, { action: "operations.inventory.transfer", entityType: "inventory_transfer", entityId: transferId, entityLabel: `${product.sku} · ${sourceBranch.name} → ${destinationBranch.name}`, summary: "Inventory transferred between branches", reason, branchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, before: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, sourceAvailableQuantity, destinationAvailableQuantity }, after: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, quantity, totalCostMinor: movedTotalCostMinor, sourceAvailableQuantity: sourceAvailableQuantity - quantity, destinationAvailableQuantity: destinationAvailableQuantity + quantity } });
+  return result;
+}
+
 function retailSaleView(sale: Doc<"retailSales">, organizationId: string, branchId: string): Data {
   return {
     id: sale.publicId,
@@ -638,6 +847,7 @@ function retailSaleView(sale: Doc<"retailSales">, organizationId: string, branch
       quantity: line.quantity,
       unitPrice: { amount: line.unitPriceMinor, currency: line.currency },
       lineTotal: { amount: line.lineTotalMinor, currency: line.currency },
+      unitCost: money(line.unitCostMinor, line.unitCostCurrency),
     })),
     subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
     total: { amount: sale.totalMinor, currency: sale.currency },
@@ -686,10 +896,10 @@ function retailReceiptDetail(
     receiptNumber,
     collectedById: sale.createdByPublicId,
     collectedByName: sale.createdByName,
-    shiftId: sale.shiftId,
+    shiftId: receipt.shiftId ?? sale.shiftId,
     externalReference: receipt.externalReference ?? sale.externalReference,
     idempotencyKey: receipt.idempotencyKey ?? sale.idempotencyKey,
-    occurredAt: iso(sale.createdAt),
+    occurredAt: text(receipt.occurredAt) || iso(sale.createdAt),
   };
   return {
     receipt,
@@ -704,9 +914,13 @@ function retailReceiptDetail(
   };
 }
 
-async function openCashShiftForBranch(ctx: ReadContext, actor: ActorContext, branch: Branch): Promise<Doc<"domainRecords"> | null> {
+async function openCashShiftForBranch(ctx: ReadContext, actor: ActorContext, branch: Branch, expectedShiftId?: string): Promise<Doc<"domainRecords"> | null> {
   const shifts = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "shift")).collect();
-  return shifts.find((shift) => shift.branchId === branch._id && value(shift.data).status === "open") ?? null;
+  return shifts.find((shift) => shift.branchId === branch._id && value(shift.data).status === "open" && (!expectedShiftId || cashShiftPublicId(shift) === expectedShiftId)) ?? null;
+}
+
+function cashShiftPublicId(shift: Doc<"domainRecords">): string {
+  return optionalText(value(shift.data).id) ?? shift.publicId;
 }
 
 async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -732,7 +946,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   if (guest && (!guest.fullName || guest.fullName.length > 120 || !guest.phone || guest.phone.length > 40)) domainError("VALIDATION_ERROR", "Guest name and phone are required.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Required"], phone: ["Required"] } });
   if (normalizedLines.length === 0 || normalizedLines.length > 100) domainError("VALIDATION_ERROR", "A checkout must contain 1 to 100 product lines.", { correlationId: actor.correlationId });
   const seen = new Set<string>();
-  const lines: Array<{ product: Product; quantity: number; balance: InventoryBalance; unitPriceMinor: number; lineTotalMinor: number }> = [];
+  const lines: Array<{ product: Product; quantity: number; balance: InventoryBalance; unitPriceMinor: number; lineTotalMinor: number; unitCost?: { amount: number; currency: string } }> = [];
   let totalMinor = 0;
   for (const raw of normalizedLines) {
     if (!raw.productId || seen.has(raw.productId)) domainError("VALIDATION_ERROR", "A checkout cannot repeat a product line.", { correlationId: actor.correlationId });
@@ -747,7 +961,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     // failure.
     const balance = await balanceRow(ctx, actor.organization._id, branch._id, product._id);
     const available = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
-    if (!balance || available < raw.quantity) domainError("CONFLICT", `${product.name} has only ${available} available.`, { correlationId: actor.correlationId, details: { productId: product.publicId, availableQuantity: available, requestedQuantity: raw.quantity } });
+    if (!balance || balance.sellable === false || available < raw.quantity) domainError("CONFLICT", `${product.name} has only ${available} available.`, { correlationId: actor.correlationId, details: { productId: product.publicId, availableQuantity: available, requestedQuantity: raw.quantity } });
     const lineTotalMinor = product.retailPriceMinor * raw.quantity;
     if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) domainError("VALIDATION_ERROR", "Checkout total is too large.", { correlationId: actor.correlationId });
     totalMinor += lineTotalMinor;
@@ -782,9 +996,10 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   if (method === "cash") {
     const shift = await openCashShiftForBranch(ctx, actor, branch);
     if (!shift) domainError("NO_OPEN_SHIFT", "Open a cash shift before checking out cash sales.", { correlationId: actor.correlationId });
-    shiftId = String(value(shift.data).id);
+    shiftId = cashShiftPublicId(shift);
   }
   const now = Date.now();
+  for (const line of lines) line.unitCost = await inventoryCostBasis(ctx, actor, branch, line.product, now);
   const receipt = await allocateRetailReceipt(ctx, actor);
   const saleId = `retail-sale-${crypto.randomUUID()}`;
   const sale = await ctx.db.insert("retailSales", {
@@ -795,7 +1010,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     receiptNumber: receipt.number,
     memberId: memberRecord?.publicId,
     customer,
-    lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor }) => ({ productId: product.publicId, sku: product.sku, productName: product.name, quantity, unitPriceMinor, lineTotalMinor, currency: actor.organization.currency })),
+    lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor, unitCost }) => ({ productId: product.publicId, sku: product.sku, productName: product.name, quantity, unitPriceMinor, lineTotalMinor, currency: actor.organization.currency, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency })),
     subtotalMinor: totalMinor,
     totalMinor,
     currency: actor.organization.currency,
@@ -849,7 +1064,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   for (const line of lines) {
     const movementId = `movement-${crypto.randomUUID()}`;
     const delta = -line.quantity;
-    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.unitCost?.amount, unitCostCurrency: line.unitCost?.currency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
     await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, lastMovementAt: now, updatedAt: now });
   }
   if (memberRecord) {
@@ -893,24 +1108,35 @@ async function recordDeletedProductReturn(
   tombstone: ProductTombstone,
   branch: Branch,
   quantity: number,
+  unitCost: { amount: number; currency: string } | undefined,
   reason: string,
   referenceId: string,
   idempotencyKey: string,
   referenceType: "retail_refund" | "retail_void",
 ): Promise<void> {
   const productId = tombstone.originalProductId as Id<"products">;
-  const requestHash = JSON.stringify({ branchId: publicBranchId(branch), productId: tombstone.productPublicId, type: "return", quantity, reason, referenceType, referenceId });
+  const requestHash = JSON.stringify({ branchId: publicBranchId(branch), productId: tombstone.productPublicId, type: "return", quantity, unitCost, reason, referenceType, referenceId });
   const replay = await idempotentResult(ctx, actor, "operations.stock_movement", idempotencyKey, requestHash);
   if (replay) return;
   const now = Date.now();
   const publicId = `movement-${crypto.randomUUID()}`;
-  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: branch._id, productId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return", quantityDelta: quantity, quantity, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
-  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: tombstone.productPublicId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return" as const, quantityDelta: quantity, quantity, unitCost: undefined, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted" as const, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
+  await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId, branchId: branch._id, productId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return", quantityDelta: quantity, quantity, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+  // The catalog row is gone, but the returned physical units still belong to
+  // the deleted identity. Keep a non-sellable tombstone balance so inventory
+  // history and COGS remain reconcilable without ever putting stock into a
+  // replacement product that reused the SKU.
+  const existingBalance = await balanceRow(ctx, actor.organization._id, branch._id, productId);
+  if (existingBalance) {
+    await ctx.db.patch(existingBalance._id, { quantityOnHand: existingBalance.quantityOnHand + quantity, sellable: false, lastMovementAt: now, updatedAt: now });
+  } else {
+    await ctx.db.insert("inventoryBalances", { organizationId: actor.organization._id, publicId: `inventory-${String(branch._id)}-${String(productId)}`, branchId: branch._id, productId, quantityOnHand: quantity, committedQuantity: 0, sellable: false, lastMovementAt: now, updatedAt: now });
+  }
+  const view = { id: publicId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), productId: tombstone.productPublicId, productSku: tombstone.sku, productName: tombstone.name, productUnit: tombstone.unit, type: "return" as const, quantityDelta: quantity, quantity, unitCost, reason, referenceType, referenceId, idempotencyKey, financialPostingStatus: "not_posted" as const, occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
   await saveIdempotentResult(ctx, actor, "operations.stock_movement", idempotencyKey, requestHash, view);
   await audit(ctx, actor, { action: "operations.stock_movement.create", entityType: "stock_movement", entityId: publicId, entityLabel: `${tombstone.sku} · return`, summary: "Recorded return for a deleted product", reason, after: { productId: tombstone.productPublicId, quantityDelta: quantity, financialPostingStatus: "not_posted" }, branchId: publicBranchId(branch) });
 }
 
-async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">, branch: Branch, lines: Array<{ productId: string; quantity: number }>, reason: string, idempotencyKey: string, referenceType: "retail_refund" | "retail_void"): Promise<void> {
+async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: Doc<"retailSales">, branch: Branch, lines: Array<{ productId: string; quantity: number; unitCost?: { amount: number; currency: string } }>, reason: string, idempotencyKey: string, referenceType: "retail_refund" | "retail_void"): Promise<void> {
   for (const line of lines) {
     const product = await ctx.db.query("products").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", line.productId)).unique();
     if (product) {
@@ -919,6 +1145,7 @@ async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: D
         product,
         type: "return",
         quantity: line.quantity,
+        unitCost: line.unitCost,
         reason,
         referenceType,
         referenceId: sale.publicId,
@@ -929,7 +1156,7 @@ async function restoreRetailStock(ctx: MutationCtx, actor: ActorContext, sale: D
     }
     const tombstone = await productTombstoneByPublicId(ctx, actor, line.productId);
     if (!tombstone) domainError("NOT_FOUND", "The product identity for this sale is no longer available.", { correlationId: actor.correlationId });
-    await recordDeletedProductReturn(ctx, actor, tombstone, branch, line.quantity, reason, sale.publicId, `${idempotencyKey}:${tombstone.productPublicId}`, referenceType);
+    await recordDeletedProductReturn(ctx, actor, tombstone, branch, line.quantity, line.unitCost, reason, sale.publicId, `${idempotencyKey}:${tombstone.productPublicId}`, referenceType);
   }
 }
 
@@ -944,9 +1171,12 @@ async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Da
   const lines = rawLines.map((raw) => ({ productId: optionalText(value(raw).productId) ?? "", quantity: integer(value(raw).quantity, Number.NaN) })).sort((a, b) => a.productId.localeCompare(b.productId));
   const saleId = optionalText(input.saleId) ?? "";
   const requestHash = JSON.stringify({ saleId, lines, reason });
+  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
+  // Resolve and authorize the sale's organization/branch before consulting
+  // the idempotency store. Otherwise a scoped actor could replay a receipt
+  // from another branch merely by guessing a previously-used request key.
   const replay = await idempotentResult(ctx, actor, "operations.retail.refund", idempotencyKey, requestHash);
   if (replay) return replay;
-  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
   if (sale.status === "voided") domainError("CONFLICT", "Voided retail sales cannot be refunded.", { correlationId: actor.correlationId });
   if (sale.status === "refunded") domainError("CONFLICT", "This retail sale is already fully refunded.", { correlationId: actor.correlationId });
   if (lines.length === 0 || lines.length > sale.lines.length) domainError("VALIDATION_ERROR", "Choose at least one sold item to refund.", { correlationId: actor.correlationId });
@@ -969,16 +1199,23 @@ async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Da
     else nextReturned.push({ ...line });
   }
   const status = refundedMinor >= sale.totalMinor ? "refunded" as const : "partially_refunded" as const;
-  await restoreRetailStock(ctx, actor, sale, branch, lines, reason!, idempotencyKey, "retail_refund");
+  const openShift = await openCashShiftForBranch(ctx, actor, branch);
+  if (sale.method === "cash" && !openShift) domainError("NO_OPEN_SHIFT", "Open a cash shift before recording a cash refund.", { correlationId: actor.correlationId });
+  const linesWithCost = lines.map((line) => {
+    const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+    const unitCost = sold?.unitCostMinor !== undefined && sold.unitCostCurrency ? { amount: sold.unitCostMinor, currency: sold.unitCostCurrency } : undefined;
+    return { ...line, unitCost };
+  });
+  await restoreRetailStock(ctx, actor, sale, branch, linesWithCost, reason!, idempotencyKey, "retail_refund");
   await ctx.db.patch(sale._id, { status, refundedMinor, returnedLines: nextReturned, refundReason: reason, updatedAt: now });
   await patchRetailPayment(ctx, actor, sale, { status, refundedAmount: { amount: refundedMinor, currency: sale.currency }, refundReason: reason });
 
   const refundReceipt = await allocateRetailReceipt(ctx, actor);
   const refundPaymentId = `retail-refund-${crypto.randomUUID()}`;
-  const openShift = await openCashShiftForBranch(ctx, actor, branch);
-  const refundReceiptData = { id: refundReceipt.id, receiptNumber: refundReceipt.number, paymentId: refundPaymentId, retailSaleId: sale.publicId, issuedAt: iso(now), kind: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", customer: sale.customer, externalReference: sale.externalReference, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, refundReason: reason };
+  const refundShiftId = openShift ? cashShiftPublicId(openShift) : undefined;
+  const refundReceiptData = { id: refundReceipt.id, receiptNumber: refundReceipt.number, paymentId: refundPaymentId, retailSaleId: sale.publicId, issuedAt: iso(now), occurredAt: iso(now), shiftId: refundShiftId, kind: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", customer: sale.customer, externalReference: sale.externalReference, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, refundReason: reason };
   await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "receipt", publicId: refundReceipt.id, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { ...refundReceiptData, organizationId: publicOrganizationId(actor.organization) } });
-  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "payment", publicId: refundPaymentId, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { id: refundPaymentId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), memberId: sale.memberId, customer: sale.customer, type: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", receiptId: refundReceipt.id, receiptNumber: refundReceipt.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: openShift ? String(value(openShift.data).id) : undefined, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, retailSaleId: sale.publicId, refundReason: reason, occurredAt: iso(now) } });
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "payment", publicId: refundPaymentId, branchId: branch._id, memberPublicId: sale.memberId, createdAt: now, updatedAt: now, data: { id: refundPaymentId, organizationId: publicOrganizationId(actor.organization), branchId: publicBranchId(branch), memberId: sale.memberId, customer: sale.customer, type: "refund", amount: { amount: -refundMinor, currency: sale.currency }, method: sale.method, status: "completed", receiptId: refundReceipt.id, receiptNumber: refundReceipt.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: refundShiftId, idempotencyKey, originalPaymentId: `retail-payment-${sale.publicId}`, retailSaleId: sale.publicId, refundReason: reason, occurredAt: iso(now) } });
   await audit(ctx, actor, { action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.publicId, entityLabel: sale.receiptNumber, summary: `Refunded ${sale.currency} ${(refundMinor / 1000).toFixed(3)} from retail sale ${sale.receiptNumber}`, reason, before: { status: sale.status, refundedMinor: sale.refundedMinor ?? 0 }, after: { status, refundedMinor, returnedLines: nextReturned }, branchId: publicBranchId(branch) });
   const updated = await ctx.db.get(sale._id);
   if (!updated) domainError("NOT_FOUND", "Retail sale could not be loaded after refund.", { correlationId: actor.correlationId });
@@ -996,17 +1233,25 @@ async function voidRetailSale(ctx: MutationCtx, actor: ActorContext, input: Data
   if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
   const saleId = optionalText(input.saleId) ?? "";
   const requestHash = JSON.stringify({ saleId, reason });
+  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
+  // Branch authorization must happen before idempotent replay for the same
+  // reason as refunds: a replay response is still sensitive receipt data.
   const replay = await idempotentResult(ctx, actor, "operations.retail.void", idempotencyKey, requestHash);
   if (replay) return replay;
-  const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
   if (sale.status === "voided") domainError("CONFLICT", "This retail sale is already voided.", { correlationId: actor.correlationId });
   if ((sale.refundedMinor ?? 0) > 0) domainError("CONFLICT", "A partially refunded retail sale cannot be voided.", { correlationId: actor.correlationId });
+  if (sale.method === "cash") {
+    const openShift = sale.shiftId ? await openCashShiftForBranch(ctx, actor, branch, sale.shiftId) : null;
+    if (!openShift) {
+      domainError("NO_OPEN_SHIFT", "Cash sales can only be voided while their original cash shift is open.", { correlationId: actor.correlationId });
+    }
+  }
   const timeZone = actor.organization.timezone || "Asia/Amman";
   if (businessDate(sale.createdAt, timeZone) !== businessDate(Date.now(), timeZone)) domainError("CONFLICT", "Retail sales can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
-  const lines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
+  const lines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCost: line.unitCostMinor !== undefined && line.unitCostCurrency ? { amount: line.unitCostMinor, currency: line.unitCostCurrency } : undefined }));
   await restoreRetailStock(ctx, actor, sale, branch, lines, reason!, idempotencyKey, "retail_void");
   const now = Date.now();
-  await ctx.db.patch(sale._id, { status: "voided", returnedLines: lines, voidReason: reason, voidedAt: now, updatedAt: now });
+  await ctx.db.patch(sale._id, { status: "voided", returnedLines: lines.map(({ productId, quantity }) => ({ productId, quantity })), voidReason: reason, voidedAt: now, updatedAt: now });
   await patchRetailPayment(ctx, actor, sale, { status: "voided", voidReason: reason });
   await audit(ctx, actor, { action: "operations.retail_sale.void", entityType: "retail_sale", entityId: sale.publicId, entityLabel: sale.receiptNumber, summary: `Voided retail sale ${sale.receiptNumber}`, reason, before: { status: sale.status }, after: { status: "voided", returnedLines: lines }, branchId: publicBranchId(branch) });
   const updated = await ctx.db.get(sale._id);
@@ -1032,11 +1277,11 @@ async function listInventory(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const tombstone = requestedProductId ? await productTombstoneByPublicId(ctx, actor, requestedProductId) : null;
   if (requestedProductId && !product && !tombstone) domainError("NOT_FOUND", "Product not found.", { correlationId: actor.correlationId });
   const internalProductId = product?._id ?? (tombstone?.originalProductId as Id<"products"> | undefined);
-  const rows = (await Promise.all(branches.map((branch) => ctx.db.query("inventoryBalances").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat().filter((row) => !internalProductId || row.productId === internalProductId);
+  const rows = (await Promise.all(branches.map((branch) => ctx.db.query("inventoryBalances").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat().filter((row) => row.sellable !== false && (!internalProductId || row.productId === internalProductId));
   const branchMap = await branchPublicMap(ctx, actor);
   const productMap = await productPublicMap(ctx, actor);
   const tombstones = await productTombstoneMap(ctx, actor);
-  return rows.sort((left, right) => String(left.productId).localeCompare(String(right.productId))).map((row) => ({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: branchMap.get(String(row.branchId)) ?? String(row.branchId), productId: productMap.get(String(row.productId)) ?? tombstones.get(String(row.productId))?.productPublicId ?? String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, availableQuantity: row.quantityOnHand - row.committedQuantity, lastMovementAt: row.lastMovementAt ? iso(row.lastMovementAt) : undefined, updatedAt: iso(row.updatedAt) }));
+  return rows.sort((left, right) => String(left.productId).localeCompare(String(right.productId))).map((row) => ({ id: row.publicId, organizationId: publicOrganizationId(actor.organization), branchId: branchMap.get(String(row.branchId)) ?? String(row.branchId), productId: productMap.get(String(row.productId)) ?? tombstones.get(String(row.productId))?.productPublicId ?? String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, availableQuantity: row.quantityOnHand - row.committedQuantity, totalCost: money(row.totalCostMinor, row.totalCostCurrency), lastMovementAt: row.lastMovementAt ? iso(row.lastMovementAt) : undefined, updatedAt: iso(row.updatedAt) }));
 }
 
 async function listStockMovements(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -1224,11 +1469,18 @@ async function receivePurchaseOrder(ctx: MutationCtx, actor: ActorContext, input
   const idempotencyKey = optionalText(input.idempotencyKey);
   if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded receiving idempotency key is required.", { correlationId: actor.correlationId });
   const requestHash = JSON.stringify({ purchaseOrderId: orderId, lines: input.lines });
-  const existingResult = await idempotentResult(ctx, actor, "operations.purchase_order.receive", idempotencyKey, requestHash);
-  if (existingResult) return existingResult;
   const order = orderId ? await ctx.db.query("purchaseOrders").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", orderId)).unique() : null;
   if (!order) domainError("NOT_FOUND", "Purchase order not found.", { correlationId: actor.correlationId });
   const branch = await ctx.db.get(order.branchId);
+  // The target order and its branch are resolved before consulting the
+  // idempotency record. A known key is not a bearer token: a caller must still
+  // belong to this tenant and retain access to the order's branch. Replay is
+  // allowed after a successful receive changes the order status (and after a
+  // branch is deactivated), but never across an organization or branch scope.
+  if (!branch || branch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Purchase order not found.", { correlationId: actor.correlationId });
+  if (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  const existingResult = await idempotentResult(ctx, actor, "operations.purchase_order.receive", idempotencyKey, requestHash);
+  if (existingResult) return existingResult;
   assertBranchAccess(actor, branch);
   if (order.status !== "approved" && order.status !== "partially_received") domainError("CONFLICT", "Only approved purchase orders can be received.", { correlationId: actor.correlationId });
   const requested = Array.isArray(input.lines) && input.lines.length > 0 ? input.lines : (await Promise.all(order.lines.filter((line) => line.receivedQuantity < line.orderedQuantity).map(async (line) => ({ productId: (await ctx.db.get(line.productId))?.publicId ?? String(line.productId), quantity: line.orderedQuantity - line.receivedQuantity }))));
@@ -1686,6 +1938,7 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.supplier.upsert": return await upsertSupplier(ctx, actor, input);
     case "operations.supplier.archive": return await archiveSupplier(ctx, actor, input);
     case "operations.stock_movement.record": return await recordStockMovement(ctx, actor, input);
+    case "operations.inventory.transfer": return await transferInventory(ctx, actor, input);
     case "operations.retail.checkout": return await retailCheckout(ctx, actor, input);
     case "operations.retail.refund": return await refundRetailSale(ctx, actor, input);
     case "operations.retail.void": return await voidRetailSale(ctx, actor, input);

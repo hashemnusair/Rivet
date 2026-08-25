@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
 const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
@@ -17,6 +18,8 @@ const applicationArgs = {
   contactNumber: v.string(),
   plan,
   billingInterval: v.optional(billingInterval),
+  idempotencyKey: v.optional(v.string()),
+  website: v.optional(v.string()),
 };
 
 const applicationResult = v.object({
@@ -34,6 +37,8 @@ type ApplicationInput = {
   contactNumber: string;
   plan: "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
+  idempotencyKey?: string;
+  website?: string;
 };
 
 type ApplicationResult = {
@@ -80,6 +85,20 @@ function cleanPhone(value: string): string {
   return phone;
 }
 
+/**
+ * Formatting is presentation; throttling must use one stable phone identity.
+ * Preserve a leading international `+`, accept `00` as its E.164 equivalent,
+ * and otherwise retain digits only because a local number has no safe country
+ * code to infer here.
+ */
+function canonicalPhone(value: string): string {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("00")) return `+${digits.slice(2)}`;
+  return digits;
+}
+
 function slug(value: string): string {
   return value
     .toLowerCase()
@@ -95,7 +114,7 @@ function inputValues(args: ApplicationInput) {
   const ownerName = clean(args.ownerName, "owner_name", 160);
   const email = cleanEmail(args.email);
   const contactNumber = cleanPhone(args.contactNumber);
-  return { gymName, ownerName, email, contactNumber, plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
+  return { gymName, ownerName, email, contactNumber, canonicalContactNumber: canonicalPhone(contactNumber), plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
 }
 
 /**
@@ -115,6 +134,41 @@ export const create = internalMutation({
   }),
   handler: async (ctx, args) => {
     const values = inputValues(args);
+    const requestHash = await privacyFingerprint({
+      scope: "gym_application",
+      gymName: slug(values.gymName),
+      ownerName: values.ownerName,
+      email: values.email,
+      contactNumber: values.canonicalContactNumber,
+      plan: values.plan,
+      billingInterval: values.billingInterval,
+    });
+    const idempotencyKey = args.idempotencyKey?.trim();
+    if (idempotencyKey) {
+      if (idempotencyKey.length > 200) domainError("VALIDATION_ERROR", "The application request could not be processed.");
+      const existingRequests = await ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", "gym_application").eq("key", idempotencyKey)).collect();
+      const existingRequest = existingRequests.find((row) => row.expiresAt > Date.now());
+      if (existingRequest) {
+        if (existingRequest.requestHash !== requestHash) domainError("CONFLICT", "This application request has already been used.");
+        const previous = existingRequest.result as { applicationDocumentId: Id<"gymApplications">; applicationId: string; status: ApplicationResult["status"]; notificationStatus: ApplicationResult["notificationStatus"]; submittedAt: number };
+        // Remove stale rows left by an older non-unique implementation while
+        // retaining the active replay record.
+        await Promise.all(existingRequests.filter((row) => row._id !== existingRequest._id && row.expiresAt <= Date.now()).map((row) => ctx.db.delete(row._id)));
+        return { ...previous, duplicate: true };
+      }
+      if (existingRequests.length > 0) {
+        // Delete expired rows before a replacement insert. Convex indexes are
+        // not unique constraints, so leaving the old row would make the next
+        // lookup ambiguous after enough retries.
+        await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
+      }
+    }
+    await enforcePublicRateLimit(ctx, {
+      scope: "gym_application",
+      fingerprint: await privacyFingerprint({ email: values.email, contactNumber: values.canonicalContactNumber }),
+      maxRequests: 5,
+      windowMs: 60 * 60 * 1000,
+    });
     const baseKey = `${values.email}::${slug(values.gymName)}`;
     const matches = await ctx.db
       .query("gymApplications")
@@ -137,7 +191,12 @@ export const create = internalMutation({
     const applicationDocumentId = await ctx.db.insert("gymApplications", {
       publicId,
       applicationKey: matches.length > 0 ? `${baseKey}::${now}` : baseKey,
-      ...values,
+      gymName: values.gymName,
+      ownerName: values.ownerName,
+      email: values.email,
+      contactNumber: values.contactNumber,
+      plan: values.plan,
+      billingInterval: values.billingInterval,
       status: "pending",
       notificationStatus: "pending",
       submittedAt: now,
@@ -150,6 +209,16 @@ export const create = internalMutation({
       href: `/platform/applications?application=${publicId}`,
       dedupeKey: `gym-application:${publicId}`,
     });
+    if (idempotencyKey) {
+      await ctx.db.insert("publicRequestIdempotency", {
+        scope: "gym_application",
+        key: idempotencyKey,
+        requestHash,
+        result: { applicationDocumentId, applicationId: publicId, status: "pending", notificationStatus: "pending", submittedAt: now },
+        createdAt: now,
+        expiresAt: now + 365 * 86_400_000,
+      });
+    }
     return { applicationDocumentId, applicationId: publicId, status: "pending" as const, notificationStatus: "pending" as const, submittedAt: now, duplicate: false };
   },
 });
@@ -318,6 +387,12 @@ export const submit = action({
   args: applicationArgs,
   returns: applicationResult,
   handler: async (ctx, args): Promise<ApplicationResult> => {
+    // A hidden field catches unsophisticated automated form submissions. It
+    // intentionally returns the same generic success shape without creating
+    // a lead, logging raw input, or revealing which field was detected.
+    if (args.website?.trim()) {
+      return { applicationId: crypto.randomUUID(), status: "pending", notificationStatus: "pending", submittedAt: new Date().toISOString(), duplicate: false };
+    }
     const created = await ctx.runMutation(internal.gymApplications.create, args);
     if (created.duplicate && created.notificationStatus === "sent") return { applicationId: created.applicationId, status: created.status, notificationStatus: created.notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: true };
 
