@@ -1,8 +1,8 @@
 import { Building2, Dumbbell, LogIn, Lock, type LucideIcon } from "lucide-react";
 
 /**
- * RIVET has one sign-in address (`/login`) with three portals beneath it. The
- * portals never share an account list: gym staff, members and platform
+ * RIVET has a generic account sign-in (`/login`) plus three audience-specific
+ * portals beneath it. The portals never share an account list: gym staff, members and platform
  * administrators each authenticate into their own surface. Gym access is
  * issued by RIVET after an application is reviewed; it is never self-created.
  */
@@ -37,7 +37,7 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   staff: {
     id: "staff",
-    href: "/login",
+    href: "/login/gym",
     icon: Building2,
     title: "Gym team",
     blurb: "Run the floor, the sales desk and the cash drawer.",
@@ -46,7 +46,7 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   member: {
     id: "member",
-    href: "/login",
+    href: "/login/member",
     icon: Dumbbell,
     title: "Gym member",
     blurb: "Your memberships, visits, receipts and entry QR.",
@@ -57,7 +57,7 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   admin: {
     id: "admin",
-    href: "/login",
+    href: "/login/admin",
     icon: Lock,
     title: "Platform administration",
     blurb: "Tenants, subscriptions, billing and support across the network.",

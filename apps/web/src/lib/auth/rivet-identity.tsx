@@ -69,6 +69,8 @@ export interface RivetIdentity {
   platformAdmin: boolean;
   /** The account has an active gym-team row, but that gym cannot be entered. */
   gymAccessUnavailable: boolean;
+  /** A pending staff invitation may be reconciled through provider verification once. */
+  invitationClaimEligible?: boolean;
   /** More than one routable gym is available and a user choice is required. */
   organizationSelectionRequired?: boolean;
   memberships: RivetMembership[];
@@ -216,6 +218,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
       fullName: result.user.fullName,
       platformAdmin: result.user.platformAdmin,
       gymAccessUnavailable: result.gymAccessUnavailable,
+      invitationClaimEligible: result.invitationClaimEligible,
       organizationSelectionRequired: result.organizationSelectionRequired,
       memberships: result.memberships.map((m) => ({
         organizationId: m.organizationId,

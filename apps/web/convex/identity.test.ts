@@ -231,7 +231,139 @@ describe("identity routing projection", () => {
 
     await expect(t.withIdentity({ subject: "clerk-identity-pending-operator" }).query(api.identity.current, {})).resolves.toMatchObject({
       pending: false,
+      gymAccessUnavailable: true,
+      invitationClaimEligible: false,
       memberships: [],
+    });
+  });
+
+  it("marks an existing authenticated user with a pending owner invitation as claim-eligible", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "identity-org")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization!._id)).first();
+      const existingMember = await ctx.db.insert("users", {
+        publicId: "identity-existing-member-owner",
+        authSubject: "clerk-existing-member-owner",
+        email: "existing-member-owner@identity.example",
+        fullName: "Existing Member Owner",
+        platformAdmin: false,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("organizationMemberships", {
+        organizationId: organization!._id,
+        userId: existingMember,
+        role: "owner",
+        branchIds: [branch!._id],
+        branchScope: "all",
+        active: true,
+        invitationStatus: "pending",
+        clerkInvitationId: "identity-existing-member-owner-invitation",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(t.withIdentity({ subject: "clerk-existing-member-owner" }).query(api.identity.current, {})).resolves.toMatchObject({
+      gymAccessUnavailable: true,
+      invitationClaimEligible: true,
+      memberships: [],
+    });
+  });
+
+  it("marks revoked and inactive gym memberships unavailable instead of routing them as members", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "identity-org")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "identity-org-branch")).unique();
+      for (const [key, subject, invitationStatus, active] of [
+        ["revoked", "clerk-identity-revoked-operator", "revoked", true],
+        ["inactive", "clerk-identity-inactive-operator", undefined, false],
+      ] as const) {
+        const user = await ctx.db.insert("users", {
+          publicId: `identity-${key}-operator`,
+          authSubject: subject,
+          email: `${key}@identity.example`,
+          fullName: `${key} Operator`,
+          platformAdmin: false,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.insert("organizationMemberships", {
+          organizationId: organization!._id,
+          userId: user,
+          role: "receptionist",
+          branchIds: [branch!._id],
+          active,
+          ...(invitationStatus ? { invitationStatus } : {}),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    for (const subject of ["clerk-identity-revoked-operator", "clerk-identity-inactive-operator"]) {
+      await expect(t.withIdentity({ subject }).query(api.identity.current, {})).resolves.toMatchObject({
+        gymAccessUnavailable: true,
+        memberships: [],
+      });
+    }
+  });
+
+  it("keeps a valid gym membership routable when a second invitation is still pending", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organizations = await ctx.db.query("organizations").collect();
+      const active = organizations.find((organization) => organization.publicId === "identity-org");
+      const trial = organizations.find((organization) => organization.publicId === "identity-trial-org");
+      const activeBranch = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", active!._id)).first();
+      const trialBranch = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", trial!._id)).first();
+      const user = await ctx.db.insert("users", {
+        publicId: "identity-valid-with-pending",
+        authSubject: "clerk-identity-valid-with-pending",
+        email: "valid-with-pending@identity.example",
+        fullName: "Valid With Pending",
+        platformAdmin: false,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("organizationMemberships", {
+        organizationId: active!._id,
+        userId: user,
+        role: "manager",
+        branchIds: [activeBranch!._id],
+        branchScope: "all",
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("organizationMemberships", {
+        organizationId: trial!._id,
+        userId: user,
+        role: "owner",
+        branchIds: [trialBranch!._id],
+        branchScope: "all",
+        active: true,
+        invitationStatus: "pending",
+        clerkInvitationId: "pending-secondary-invitation",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(t.withIdentity({ subject: "clerk-identity-valid-with-pending" }).query(api.identity.current, {})).resolves.toMatchObject({
+      gymAccessUnavailable: true,
+      memberships: [{ organizationId: "identity-org" }],
     });
   });
 

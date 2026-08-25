@@ -1,5 +1,6 @@
 "use client";
 
+import { useAction } from "convex/react";
 import { useClerk } from "@clerk/nextjs";
 import { CircleAlert, LogOut } from "lucide-react";
 import Image from "next/image";
@@ -8,9 +9,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
-import { destinationFor, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
+import { destinationFor, INVITATION_CLAIMED_EVENT, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
+import type { Audience } from "./portals";
+import { api } from "../../../convex/_generated/api";
 
 const ENTRY_TRANSITION_MS = 900;
 const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
@@ -20,7 +23,7 @@ const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(re
  * happened to open—decides where they go. This prevents an administrator from
  * being offered member access merely because they signed in on the gym page.
  */
-export function IdentityPanel() {
+export function IdentityPanel({ audience = "account" }: { audience?: Audience }) {
   const identity = useRivetIdentity();
 
   if (identity.status === "loading" || identity.status === "pending") {
@@ -42,12 +45,83 @@ export function IdentityPanel() {
 
   if (identity.status !== "ready") return null;
 
+  if (audience === "staff") {
+    if (identity.memberships.length > 0) {
+      const staffDestination = destinationFor(identity);
+      if (staffDestination.area === "organization-selection") return <OrganizationSelection identity={identity} />;
+      return <GymEntry identity={identity} />;
+    }
+    if (identity.gymAccessUnavailable && identity.invitationClaimEligible) return <StaffInvitationRecovery />;
+    if (identity.gymAccessUnavailable) return <UnavailableGymEntry />;
+    return <NoGymTeamEntry />;
+  }
+
+  if (audience === "member") {
+    if (identity.gymAccessUnavailable) return <UnavailableGymEntry />;
+    if (identity.platformAdmin || identity.memberships.length > 0) return <WrongAudienceEntry audience="member" />;
+    return <MemberEntry identity={identity} />;
+  }
+
+  if (audience === "admin") {
+    return identity.platformAdmin ? <AdminEntry identity={identity} /> : <WrongAudienceEntry audience="admin" />;
+  }
+
   const destination = destinationFor(identity);
   if (destination.area === "platform") return <AdminEntry identity={identity} />;
   if (destination.area === "gym") return <GymEntry identity={identity} />;
   if (destination.area === "unavailable") return <UnavailableGymEntry />;
   if (destination.area === "organization-selection") return <OrganizationSelection identity={identity} />;
   return <MemberEntry identity={identity} />;
+}
+
+function StaffInvitationRecovery() {
+  const claimInvitation = useAction(api.users.claimInvitation);
+  const attempted = useRef(false);
+  const [state, setState] = useState<"checking" | "claimed" | "failed">("checking");
+
+  useEffect(() => {
+    if (attempted.current) return;
+    attempted.current = true;
+    void claimInvitation({})
+      .then((result) => {
+        if (!result.claimed) {
+          setState("failed");
+          return;
+        }
+        setState("claimed");
+        // ConvexIdentity listens for this event and retries its synchronized
+        // identity query in place. Do not navigate through the member portal
+        // while that provider-verified claim is being reconciled.
+        window.dispatchEvent(new Event(INVITATION_CLAIMED_EVENT));
+      })
+      .catch(() => setState("failed"));
+  }, [claimInvitation]);
+
+  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? "Verifying your gym invitation" : "Checking your gym invitation"} />;
+  return (
+    <NotEntitled
+      title="Your gym invitation could not be verified"
+      body="This staff account is not currently routable into a gym workspace. Ask the gym owner to resend the invitation, then try again."
+    />
+  );
+}
+
+function NoGymTeamEntry() {
+  return (
+    <NotEntitled
+      title="This account is not on a gym team"
+      body="The gym team portal is for gym staff. Ask a gym owner or manager to invite this account, or use the member portal if you train at a RIVET gym."
+    />
+  );
+}
+
+function WrongAudienceEntry({ audience }: { audience: "member" | "admin" }) {
+  return (
+    <NotEntitled
+      title={audience === "admin" ? "Platform administrator access required" : "This is the member portal"}
+      body={audience === "admin" ? "Only RIVET platform administrators can open this portal." : "Gym team accounts must use the gym team portal. Member access is kept separate from staff workspaces."}
+    />
+  );
 }
 
 function OrganizationSelection({ identity }: { identity: RivetIdentity }) {

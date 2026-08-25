@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   } as import("@/lib/auth/rivet-identity").RivetIdentity,
   replace: vi.fn(),
   signIn: vi.fn(),
+  claimInvitation: vi.fn(),
   signInAsIdentity: vi.fn(),
   signInPlatformAdmin: vi.fn(),
   signOutClerk: vi.fn(),
@@ -24,6 +25,10 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({ signOut: state.signOutClerk }),
+}));
+
+vi.mock("convex/react", () => ({
+  useAction: () => state.claimInvitation,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -53,6 +58,7 @@ describe("IdentityPanel", () => {
     vi.useFakeTimers();
     state.replace.mockReset();
     state.signIn.mockReset();
+    state.claimInvitation.mockReset();
     state.signInAsIdentity.mockReset();
     state.signInPlatformAdmin.mockReset();
     state.signOutClerk.mockReset();
@@ -145,5 +151,123 @@ describe("IdentityPanel", () => {
 
     expect(state.signIn).toHaveBeenCalledWith("receptionist", "branch-b", { name: "Branch Staff", email: "staff@rivetjo.com" });
     expect(state.replace).toHaveBeenCalledWith("/reception");
+  });
+
+  it("keeps a staff portal account without a gym team out of member bootstrap", () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-no-gym",
+      email: "unassigned@rivetjo.com",
+      fullName: "Unassigned User",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [],
+    };
+
+    render(<IdentityPanel audience="staff" />);
+
+    expect(screen.getByText("This account is not on a gym team")).toBeVisible();
+    expect(state.signIn).not.toHaveBeenCalled();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.replace).not.toHaveBeenCalled();
+  });
+
+  it("keeps a staff account with a gym membership on the staff route", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-staff",
+      email: "staff@rivetjo.com",
+      fullName: "Gym Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [{
+        organizationId: "org-1",
+        organizationName: "QA Gym",
+        organizationSlug: "qa-gym",
+        role: "manager",
+        branchScope: "all",
+        branches: [{ id: "branch-a", name: "Main", code: "MAIN" }],
+      }],
+    };
+    state.signIn.mockResolvedValue(undefined);
+
+    render(<IdentityPanel audience="staff" />);
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(state.signIn).toHaveBeenCalledWith("manager", undefined, { name: "Gym Staff", email: "staff@rivetjo.com" });
+    expect(state.replace).toHaveBeenCalledWith("/dashboard");
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+  });
+
+  it("does not elevate a gym or platform account from the member portal", () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-staff",
+      email: "staff@rivetjo.com",
+      fullName: "Gym Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [{ organizationId: "org-1", organizationName: "QA Gym", organizationSlug: "qa-gym", role: "owner", branchScope: "all", branches: [] }],
+    };
+
+    render(<IdentityPanel audience="member" />);
+
+    expect(screen.getByText("This is the member portal")).toBeVisible();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.replace).not.toHaveBeenCalled();
+  });
+
+  it("attempts one provider-verified staff invitation reconciliation without member fallback", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-pending-staff",
+      email: "pending@rivetjo.com",
+      fullName: "Pending Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: true,
+      invitationClaimEligible: true,
+      memberships: [],
+    };
+    state.claimInvitation.mockResolvedValue({ claimed: true });
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(<IdentityPanel audience="staff" />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(state.claimInvitation).toHaveBeenCalledOnce();
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "rivet:invitation-claimed" }));
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    dispatchSpy.mockRestore();
+  });
+
+  it("stays on an explicit staff-access error when invitation verification fails", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-pending-staff",
+      email: "pending@rivetjo.com",
+      fullName: "Pending Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: true,
+      invitationClaimEligible: true,
+      memberships: [],
+    };
+    state.claimInvitation.mockResolvedValue({ claimed: false });
+
+    render(<IdentityPanel audience="staff" />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Your gym invitation could not be verified")).toBeVisible();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.replace).not.toHaveBeenCalled();
   });
 });

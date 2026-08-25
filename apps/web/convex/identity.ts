@@ -60,11 +60,19 @@ export const current = query({
 
     const memberships: IdentityMembership[] = [];
     let gymAccessUnavailable = false;
+    let invitationClaimEligible = false;
     for (const row of rows) {
       // An active database row is not enough to route a user. Invitation
       // delivery failures, pending tickets, and revoked invitations retain
       // their rows for audit/history but must not become workspace access.
-      if (!row.active || !membershipInvitationAccepted(row)) continue;
+      // Still mark the account as gym-associated so generic routing cannot
+      // silently fall through to the member portal after a staff invitation
+      // is revoked or a membership is deactivated.
+      if (!row.active || !membershipInvitationAccepted(row)) {
+        gymAccessUnavailable = true;
+        if (row.active && row.invitationStatus === "pending" && row.clerkInvitationId) invitationClaimEligible = true;
+        continue;
+      }
       const organization = await ctx.db.get(row.organizationId);
       // A staff membership is not enough to route into a workspace: the
       // tenant itself must still be operational. Suspended/cancelled gyms
@@ -105,6 +113,7 @@ export const current = query({
         platformAdmin: user.platformAdmin,
       },
       gymAccessUnavailable,
+      invitationClaimEligible,
       // The UI must render an explicit organization chooser when this is true;
       // callers must never select memberships by array order.
       organizationSelectionRequired: memberships.length > 1,
