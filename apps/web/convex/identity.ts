@@ -10,6 +10,7 @@ type IdentityMembership = {
   organizationSlug: string;
   organizationStatus: string;
   role: string;
+  branchScope: "all" | "selected";
   branches: Array<{ id: string; name: string; code: string }>;
 };
 
@@ -74,11 +75,13 @@ export const current = query({
         continue;
       }
 
-      const branches = [];
-      for (const branchId of row.branchIds) {
-        const branch = await ctx.db.get(branchId);
-        if (branch?.active && branch.publicId) branches.push({ id: branch.publicId, name: branch.name, code: branch.code });
-      }
+      const branchScope = row.branchScope ?? (row.role === "owner" || row.role === "manager" ? "all" : "selected");
+      const branchRows = branchScope === "all"
+        ? await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect()
+        : await Promise.all(row.branchIds.map((branchId) => ctx.db.get(branchId)));
+      const branches = branchRows
+        .filter((branch): branch is NonNullable<typeof branch> => Boolean(branch?.active && branch.publicId && branch.organizationId === organization._id))
+        .map((branch) => ({ id: branch.publicId!, name: branch.name, code: branch.code }));
 
       memberships.push({
         organizationId: organization.publicId,
@@ -86,6 +89,7 @@ export const current = query({
         organizationSlug: organization.slug,
         organizationStatus: organization.status,
         role: toFrontendRole(row.role),
+        branchScope,
         branches,
       });
     }

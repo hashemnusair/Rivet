@@ -254,4 +254,48 @@ describe("identity routing projection", () => {
       correlationId: "identity-explicit-session",
     })).resolves.toMatchObject({ organization: { id: "identity-org" } });
   });
+
+  it("projects selected-scope branch access so login can require a concrete branch", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "identity-org")).unique();
+      const firstBranch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "identity-org-branch")).unique();
+      const secondBranch = await ctx.db.insert("branches", {
+        organizationId: organization!._id,
+        publicId: "identity-org-branch-two",
+        name: "Second",
+        code: "SECOND",
+        active: true,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const user = await ctx.db.insert("users", {
+        publicId: "identity-selected-operator",
+        authSubject: "clerk-identity-selected-operator",
+        email: "selected@identity.example",
+        fullName: "Selected Operator",
+        platformAdmin: false,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("organizationMemberships", {
+        organizationId: organization!._id,
+        userId: user,
+        role: "receptionist",
+        branchIds: [firstBranch!._id, secondBranch],
+        branchScope: "selected",
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(t.withIdentity({ subject: "clerk-identity-selected-operator" }).query(api.identity.current, {})).resolves.toMatchObject({
+      memberships: [{ branchScope: "selected", branches: [{ id: "identity-org-branch" }, { id: "identity-org-branch-two" }] }],
+    });
+  });
 });

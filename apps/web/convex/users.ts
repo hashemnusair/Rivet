@@ -15,6 +15,24 @@ type SafeUser = {
   status: "active";
 };
 
+/**
+ * Legacy user rows created before public identifiers were required can still
+ * be found by their authenticated Clerk subject. Allocate the browser-safe
+ * identifier inside the same mutation that authenticates the user so
+ * identity.current never has to fall back to a Convex document id.
+ */
+async function allocatePublicId(ctx: MutationCtx): Promise<string> {
+  // UUID collisions are vanishingly unlikely, but checking the unique public
+  // id index keeps this repair deterministic even if a malformed import has
+  // already used a generated value.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = crypto.randomUUID();
+    const existing = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", candidate)).first();
+    if (!existing) return candidate;
+  }
+  throw new Error("IDENTITY_PUBLIC_ID_ALLOCATION_FAILED");
+}
+
 function safeUserProjection(user: {
   publicId?: string;
   email: string;
@@ -82,8 +100,9 @@ export async function ensureUserRecord(ctx: MutationCtx, suppliedFullName?: stri
     // invited row to active; ensureCurrent must never do that implicitly.
     if (existing.status === "invited") throw new Error("INVITATION_NOT_ACCEPTED");
     const nextEmail = email || existing.email;
-    await ctx.db.patch(existing._id, { email: nextEmail, fullName, status: "active", updatedAt: now });
-    return { ...existing, email: nextEmail, fullName, status: "active" as const, updatedAt: now };
+    const publicId = existing.publicId ?? await allocatePublicId(ctx);
+    await ctx.db.patch(existing._id, { publicId, email: nextEmail, fullName, status: "active", updatedAt: now });
+    return { ...existing, publicId, email: nextEmail, fullName, status: "active" as const, updatedAt: now };
   }
 
   // A record may already exist for this email without a Clerk subject —
@@ -144,7 +163,10 @@ export const ensureCurrent = mutation({
   args: { fullName: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const user = await ensureUserRecord(ctx, args.fullName);
-    return user?._id;
+    // Only return a non-sensitive acknowledgement. The caller does not need
+    // the Convex document id, and returning it would turn an authentication
+    // bootstrap mutation into an accidental internal-id disclosure.
+    return { synced: Boolean(user?.publicId) };
   },
 });
 

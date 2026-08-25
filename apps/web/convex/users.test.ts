@@ -286,12 +286,12 @@ describe("invitation claim boundary", () => {
     expect(state.membership).toMatchObject({ invitationStatus: "accepted", clerkInvitationId: "org-inv-users-security" });
   });
 
-  it("fails closed when a legacy user row has no public id", async () => {
+  it("repairs a legacy authenticated user without exposing an internal id", async () => {
     const t = convexTest(schema, modules);
     const subject = "clerk-legacy-user-without-public-id";
-    await t.run(async (ctx) => {
+    const userId = await t.run(async (ctx) => {
       const now = Date.now();
-      await ctx.db.insert("users", {
+      return await ctx.db.insert("users", {
         authSubject: subject,
         email: "legacy@users-security.example",
         fullName: "Legacy User",
@@ -302,10 +302,20 @@ describe("invitation claim boundary", () => {
       });
     });
 
-    const current = await t.withIdentity({ subject }).query(api.users.current, {});
-    expect(current).toMatchObject({ id: "", publicId: "", email: "legacy@users-security.example" });
+    const identity = t.withIdentity({ subject, email: "legacy@users-security.example" });
+    await expect(identity.mutation(api.users.ensureCurrent, {})).resolves.toMatchObject({ synced: true });
+    const repaired = await t.run(async (ctx) => await ctx.db.get(userId));
+    expect(repaired?.publicId).toEqual(expect.any(String));
+    expect(repaired?.publicId).not.toBe(userId);
+
+    const current = await identity.query(api.users.current, {});
+    expect(current).toMatchObject({ id: repaired?.publicId, publicId: repaired?.publicId, email: "legacy@users-security.example" });
     expect(current).not.toHaveProperty("_id");
     expect(current).not.toHaveProperty("_creationTime");
     expect(current).not.toHaveProperty("authSubject");
+
+    await expect(identity.mutation(api.users.ensureCurrent, {})).resolves.toMatchObject({ synced: true });
+    await expect(t.run(async (ctx) => (await ctx.db.get(userId))?.publicId)).resolves.toBe(repaired?.publicId);
+    await expect(identity.query(api.identity.current, {})).resolves.toMatchObject({ user: { id: repaired?.publicId } });
   });
 });

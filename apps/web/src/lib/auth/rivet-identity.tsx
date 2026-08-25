@@ -50,6 +50,8 @@ export interface RivetMembership {
   organizationName: string;
   organizationSlug: string;
   role: RoleKey;
+  /** All-branch memberships may safely open read-only; selected scope needs an explicit branch. */
+  branchScope?: "all" | "selected";
   branches: Array<{ id: string; name: string; code: string }>;
 }
 
@@ -220,6 +222,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
         organizationName: m.organizationName,
         organizationSlug: m.organizationSlug,
         role: toRoleKey(m.role),
+        branchScope: m.branchScope,
         branches: m.branches,
       })),
     };

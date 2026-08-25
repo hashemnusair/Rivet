@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
-import { destinationFor, useRivetIdentity, type RivetIdentity } from "@/lib/auth/rivet-identity";
+import { destinationFor, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 
@@ -99,18 +99,96 @@ function UnavailableGymEntry() {
 }
 
 function GymEntry({ identity }: { identity: RivetIdentity }) {
+  const membership = identity.memberships[0];
+
+  if (!membership) {
+    return (
+      <NotEntitled
+        title="This account is not on a gym team"
+        body="Gym staff are added by the gym's owner or manager. Once someone puts your email on the team, this portal opens your workspace automatically."
+      />
+    );
+  }
+
+  // Selected-scope staff with more than one visible branch cannot safely use
+  // an implicit branch. Keep the login handoff on this page until the user
+  // chooses one, instead of calling the session query without a branch and
+  // leaving them on an endless loading state.
+  if (membership.branchScope === "selected" && membership.branches.length > 1) {
+    return <BranchSelection identity={identity} membership={membership} />;
+  }
+
+  if (membership.branchScope === "selected" && membership.branches.length === 0) {
+    return (
+      <NotEntitled
+        title="No active branch is available"
+        body="Your gym role is active, but it is not assigned to an active branch. Ask a gym manager to update your branch access."
+      />
+    );
+  }
+
+  return <AutomaticGymEntry identity={identity} membership={membership} />;
+}
+
+function BranchSelection({ identity, membership }: { identity: RivetIdentity; membership: RivetMembership }) {
+  const { signIn } = useApp();
+  const router = useRouter();
+  const [busy, setBusy] = useState<string>();
+  const [failed, setFailed] = useState(false);
+  const destination = destinationFor(identity);
+
+  const choose = async (branchId: string) => {
+    if (busy) return;
+    setBusy(branchId);
+    setFailed(false);
+    try {
+      await Promise.all([
+        signIn(membership.role, branchId, {
+          name: identity.fullName || identity.email || "RIVET user",
+          email: identity.email || "",
+        }),
+        holdTransition(),
+      ]);
+      router.replace(destination.href);
+    } catch {
+      setBusy(undefined);
+      setFailed(true);
+      toast.error("Could not open the selected branch.");
+    }
+  };
+
+  return (
+    <NotEntitled
+      title="Choose a branch workspace"
+      body="Your role has access to more than one branch. Select the branch you want to open so RIVET can protect branch-specific work."
+      action={(
+        <div className="mt-4 grid gap-2 text-left">
+          {membership.branches.map((branch) => (
+            <Button key={branch.id} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(branch.id)} disabled={Boolean(busy)} loading={busy === branch.id}>
+              <span><span className="block font-medium">{branch.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">Code {branch.code}</span></span>
+              <span aria-hidden>→</span>
+            </Button>
+          ))}
+          {failed ? <p className="text-[12px] text-danger" role="alert">That branch could not be opened. Try again.</p> : null}
+        </div>
+      )}
+    />
+  );
+}
+
+function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; membership: RivetMembership }) {
   const router = useRouter();
   const { signIn } = useApp();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
-  const membership = identity.memberships[0];
   const destination = destinationFor(identity);
+  const branchId = membership.branchScope === "selected" ? membership.branches[0]?.id : undefined;
 
   useEffect(() => {
-    if (!membership || started.current) return;
+    if (started.current) return;
     started.current = true;
     void Promise.all([
-      signIn(membership.role, undefined, {
+      signIn(membership.role, branchId, {
         name: identity.fullName || identity.email || "RIVET user",
         email: identity.email || "",
       }),
@@ -121,16 +199,7 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
         setFailed(true);
         toast.error("Could not open the workspace.");
       });
-  }, [destination.href, identity.email, identity.fullName, membership, router, signIn]);
-
-  if (!membership) {
-    return (
-      <NotEntitled
-        title="This account is not on a gym team"
-        body="Gym staff are added by the gym's owner or manager. Once someone puts your email on the team, this portal opens your workspace automatically."
-      />
-    );
-  }
+  }, [branchId, destination.href, identity.email, identity.fullName, membership.role, router, signIn]);
 
   if (failed) {
     return (

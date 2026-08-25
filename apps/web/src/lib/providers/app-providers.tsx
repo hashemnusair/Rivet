@@ -277,7 +277,14 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (role: RoleKey, branchId?: UUID, identity?: { name: string; email: string }) => {
       if (convexMode) {
-        const s = await getApi().getSession();
+        // A selected-branch membership must carry its concrete branch into
+        // the first session query. Calling getSession() with no branch would
+        // correctly fail closed for a multi-branch selected-scope user, but
+        // the login handoff would then remain stuck on the transition screen.
+        // All-branch memberships intentionally omit this value: their initial
+        // all-branches session is read-only until the user chooses a branch
+        // from the shell selector.
+        const s = branchId ? await getApi().setActiveBranch(branchId) : await getApi().getSession();
         setSession(s);
         setSignedIn(true);
         queryClient.clear();

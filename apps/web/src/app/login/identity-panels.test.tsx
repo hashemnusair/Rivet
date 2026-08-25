@@ -11,8 +11,9 @@ const state = vi.hoisted(() => ({
     platformAdmin: true,
     gymAccessUnavailable: false,
     memberships: [],
-  },
+  } as import("@/lib/auth/rivet-identity").RivetIdentity,
   replace: vi.fn(),
+  signIn: vi.fn(),
   signInAsIdentity: vi.fn(),
   signInPlatformAdmin: vi.fn(),
   signOutClerk: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock("@/lib/auth/rivet-identity", async (importOriginal) => {
 });
 
 vi.mock("@/lib/providers/app-providers", () => ({
-  useApp: () => ({ signIn: vi.fn(), signOut: state.signOutApp }),
+  useApp: () => ({ signIn: state.signIn, signOut: state.signOutApp }),
 }));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
@@ -51,6 +52,7 @@ describe("IdentityPanel", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     state.replace.mockReset();
+    state.signIn.mockReset();
     state.signInAsIdentity.mockReset();
     state.signInPlatformAdmin.mockReset();
     state.signOutClerk.mockReset();
@@ -65,7 +67,7 @@ describe("IdentityPanel", () => {
       platformAdmin: true,
       gymAccessUnavailable: false,
       memberships: [],
-    };
+    } as import("@/lib/auth/rivet-identity").RivetIdentity;
   });
 
   it("finishes the platform handoff after the branded transition", () => {
@@ -104,5 +106,44 @@ describe("IdentityPanel", () => {
     expect(state.signOutCustomer).toHaveBeenCalledOnce();
     expect(state.signOutPlatformAdmin).toHaveBeenCalledOnce();
     expect(state.signOutClerk).toHaveBeenCalledWith({ redirectUrl: "/login" });
+  });
+
+  it("asks selected-scope staff to choose a branch before initializing the session", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-3",
+      email: "staff@rivetjo.com",
+      fullName: "Branch Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [{
+        organizationId: "org-1",
+        organizationName: "QA Gym",
+        organizationSlug: "qa-gym",
+        role: "receptionist",
+        branchScope: "selected",
+        branches: [
+          { id: "branch-a", name: "Main", code: "MAIN" },
+          { id: "branch-b", name: "Second", code: "SECOND" },
+        ],
+      }],
+    } as import("@/lib/auth/rivet-identity").RivetIdentity;
+    state.signIn.mockResolvedValue(undefined);
+
+    render(<IdentityPanel />);
+
+    expect(screen.getByText("Choose a branch workspace")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Main/ })).toBeVisible();
+    expect(state.signIn).not.toHaveBeenCalled();
+
+    await act(async () => {
+      screen.getByRole("button", { name: /Second/ }).click();
+      vi.advanceTimersByTime(900);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(state.signIn).toHaveBeenCalledWith("receptionist", "branch-b", { name: "Branch Staff", email: "staff@rivetjo.com" });
+    expect(state.replace).toHaveBeenCalledWith("/reception");
   });
 });
