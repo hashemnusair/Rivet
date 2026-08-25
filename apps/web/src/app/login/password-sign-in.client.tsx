@@ -26,27 +26,34 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
   const [code, setCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
-  const busy = fetchStatus === "fetching" || finishing;
+  const [submitting, setSubmitting] = useState(false);
+  const busy = fetchStatus === "fetching" || finishing || submitting;
 
   const finish = async () => {
     if (!signIn || signIn.status !== "complete") return false;
     setFinishing(true);
-    let decoratedRedirect = redirectUrl;
-    const { error } = await signIn.finalize({
-      navigate: async ({ decorateUrl }) => {
-        decoratedRedirect = decorateUrl(redirectUrl);
-      },
-    });
-    if (error) {
+    try {
+      let decoratedRedirect = redirectUrl;
+      const { error } = await signIn.finalize({
+        navigate: async ({ decorateUrl }) => {
+          decoratedRedirect = decorateUrl(redirectUrl);
+        },
+      });
+      if (error) {
+        setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
+        return false;
+      }
+      if (redirectUrl !== "/login") {
+        if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
+        else router.replace(decoratedRedirect);
+      }
+      return true;
+    } catch (error) {
       setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
-      setFinishing(false);
       return false;
+    } finally {
+      setFinishing(false);
     }
-    if (redirectUrl !== "/login") {
-      if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
-      else router.replace(decoratedRedirect);
-    }
-    return true;
   };
 
   const beginVerification = async () => {
@@ -82,27 +89,34 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
     if (!signIn || busy) return;
     setLocalError(null);
 
-    const { error } = await signIn.password({ emailAddress: emailAddress.trim(), password });
-    if (error) {
-      setLocalError(messageFrom(error, "The email or password is incorrect."));
-      return;
-    }
-
-    if (signIn.status === "complete") {
-      await finish();
-      return;
-    }
-
-    if (signIn.status === "needs_client_trust" || signIn.status === "needs_second_factor") {
-      try {
-        await beginVerification();
-      } catch (verificationError) {
-        setLocalError(messageFrom(verificationError, "Additional verification could not be started."));
+    setSubmitting(true);
+    try {
+      const { error } = await signIn.password({ emailAddress: emailAddress.trim(), password });
+      if (error) {
+        setLocalError(messageFrom(error, "The email or password is incorrect."));
+        return;
       }
-      return;
-    }
 
-    setLocalError("Sign-in needs an additional step. Please try again or contact RIVET support.");
+      if (signIn.status === "complete") {
+        await finish();
+        return;
+      }
+
+      if (signIn.status === "needs_client_trust" || signIn.status === "needs_second_factor") {
+        try {
+          await beginVerification();
+        } catch (verificationError) {
+          setLocalError(messageFrom(verificationError, "Additional verification could not be started."));
+        }
+        return;
+      }
+
+      setLocalError("Sign-in needs an additional step. Please try again or contact RIVET support.");
+    } catch (error) {
+      setLocalError(messageFrom(error, "The email or password is incorrect."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const submitCode = async (event: FormEvent<HTMLFormElement>) => {
@@ -110,35 +124,58 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
     if (!signIn || !verification || busy) return;
     setLocalError(null);
 
-    const result =
-      verification === "email_code"
-        ? await signIn.mfa.verifyEmailCode({ code: code.trim() })
-        : verification === "phone_code"
-          ? await signIn.mfa.verifyPhoneCode({ code: code.trim() })
-          : verification === "totp"
-            ? await signIn.mfa.verifyTOTP({ code: code.trim() })
-            : await signIn.mfa.verifyBackupCode({ code: code.trim() });
+    setSubmitting(true);
+    try {
+      const result =
+        verification === "email_code"
+          ? await signIn.mfa.verifyEmailCode({ code: code.trim() })
+          : verification === "phone_code"
+            ? await signIn.mfa.verifyPhoneCode({ code: code.trim() })
+            : verification === "totp"
+              ? await signIn.mfa.verifyTOTP({ code: code.trim() })
+              : await signIn.mfa.verifyBackupCode({ code: code.trim() });
 
-    if (result.error) {
-      setLocalError(messageFrom(result.error, "That verification code is not valid."));
-      return;
+      if (result.error) {
+        setLocalError(messageFrom(result.error, "That verification code is not valid."));
+        return;
+      }
+      if (!(await finish()) && signIn.status !== "complete") {
+        setLocalError("Verification is not complete yet. Please try again.");
+      }
+    } catch (error) {
+      setLocalError(messageFrom(error, "That verification code is not valid."));
+    } finally {
+      setSubmitting(false);
     }
-    if (!(await finish())) setLocalError("Verification is not complete yet. Please try again.");
   };
 
   const resend = async () => {
     if (!signIn || busy) return;
     setLocalError(null);
-    const result = verification === "email_code" ? await signIn.mfa.sendEmailCode() : await signIn.mfa.sendPhoneCode();
-    if (result.error) setLocalError(messageFrom(result.error, "A new code could not be sent."));
+    setSubmitting(true);
+    try {
+      const result = verification === "email_code" ? await signIn.mfa.sendEmailCode() : await signIn.mfa.sendPhoneCode();
+      if (result.error) setLocalError(messageFrom(result.error, "A new code could not be sent."));
+    } catch (error) {
+      setLocalError(messageFrom(error, "A new code could not be sent."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const startOver = async () => {
     if (!signIn) return;
-    await signIn.reset();
-    setVerification(null);
-    setCode("");
-    setLocalError(null);
+    setSubmitting(true);
+    try {
+      await signIn.reset();
+      setVerification(null);
+      setCode("");
+      setLocalError(null);
+    } catch (error) {
+      setLocalError(messageFrom(error, "We could not restart sign-in. Please try again."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (verification) {
@@ -185,11 +222,11 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
           </Button>
         </form>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[12px]">
-          <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink">
-            <ArrowLeft className="size-3.5" /> Use another account
-          </button>
+            <button type="button" onClick={() => void startOver()} disabled={busy} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50">
+              <ArrowLeft className="size-3.5" /> Use another account
+            </button>
           {sentCode ? (
-            <button type="button" onClick={() => void resend()} className="font-medium text-ink-2 transition-colors hover:text-ink">
+            <button type="button" onClick={() => void resend()} disabled={busy} className="font-medium text-ink-2 transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50">
               Didn’t receive it? Resend
             </button>
           ) : null}

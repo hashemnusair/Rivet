@@ -66,6 +66,59 @@ describe("PasswordSignIn", () => {
     });
   });
 
+  it("shows a Clerk rejection when password submission throws and re-enables sign in", async () => {
+    const password = vi.fn().mockRejectedValue({ errors: [{ longMessage: "Your password is incorrect." }] });
+    clerk.hook = {
+      signIn: {
+        status: "needs_first_factor",
+        password,
+        finalize: vi.fn(),
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "admin@rivetjo.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "wrong-password" } });
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Your password is incorrect.");
+      expect(submit).not.toBeDisabled();
+    });
+  });
+
+  it("shows a Clerk rejection when finalizing throws and re-enables sign in", async () => {
+    const password = vi.fn().mockResolvedValue({ error: null });
+    const finalize = vi.fn().mockRejectedValue({ errors: [{ message: "The session could not be finalized." }] });
+    clerk.hook = {
+      signIn: {
+        status: "complete",
+        password,
+        finalize,
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "admin@rivetjo.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("The session could not be finalized.");
+      expect(submit).not.toBeDisabled();
+    });
+  });
+
   it("returns to a safe customer destination after sign-in and preserves it for signup", async () => {
     const password = vi.fn().mockResolvedValue({ error: null });
     const finalize = vi.fn().mockResolvedValue({ error: null });
