@@ -36,10 +36,25 @@ See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, 
   writes were performed. Console: one 422 confined to the Clerk sign-in
   handshake, no app errors; network all 200s; laptop and narrow-viewport
   layouts clean.
-- Ledger state for this tenant is honestly empty (no queue runs, no
-  journals). The next owner step is the accounting operating procedure:
-  refresh the source queue, post the deferred originals, then recognition,
-  per [HANDOFF_PLAN.md](HANDOFF_PLAN.md).
+- With the owner's explicit approval, the accounting operating procedure was
+  then executed live on the owner's two-branch test gym (27 August 2026):
+  an organization-wide source-queue refresh discovered 46 facts
+  (15 pending / 31 unconfigured, month-scoped facts correctly anchored to
+  tenant-local Asia/Amman dates); all 15 originals were posted; a second
+  org-wide refresh surfaced 16 dependency-unlocked facts (STAIR-01
+  straight-line depreciation months and membership recognition schedules),
+  which were posted; a final org-wide refresh left 0 pending / 15 honestly
+  unconfigured and proved coverage. Result: trial balance JOD 2.4K = 2.4K
+  across 11 accounts; income statement with retail revenue 175.000, COGS
+  100.000, repairs 200.000, depreciation 20.000/month; balance sheet
+  reconciling to zero difference (equipment 1,200.000 gross, accumulated
+  depreciation −280.000 = 14 posted months, deferred membership revenue
+  210.000, negative AR −355.000 reflecting collections that predate the
+  ledger — the documented opening-balance responsibility); cash flow
+  proven (0 → +740.000 → 740.000, all operating); and a full-August range
+  showing earned membership revenue 18.924 recognized inside August by the
+  tenant-date anchoring. The consolidated coverage badge cleared on all
+  three statements.
 
 ## Management-ledger deep dive: tenant-date anchoring, demo-auth repair, consolidated refresh — 26 August 2026 (working-tree update)
 
