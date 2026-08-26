@@ -8,6 +8,7 @@ import type { WorkspaceAccess } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { LedgerTutorial } from "./ledger-tutorial";
 import { scopedStatementHref } from "./management-statements-workspace";
 import { PageHeader } from "@/components/shared/chrome";
 import { Skeleton } from "@/components/ui/misc";
@@ -56,6 +57,7 @@ export function ManagementLedgerHome() {
           </Link>
         ))}
       </div>
+      <LedgerTutorial />
       <p className="text-[11.5px] text-ink-3">Figures come from posted management-ledger entries for the selected branch and period. Each statement explains any incomplete source coverage.</p>
     </div>
   );

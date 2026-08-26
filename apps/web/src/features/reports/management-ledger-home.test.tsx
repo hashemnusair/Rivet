@@ -43,6 +43,25 @@ describe("ManagementLedgerHome", () => {
     expect(screen.getByTestId("statement-card-cashflow")).toHaveAttribute("href", "/finance/cash-flow?from=2026-08-01&to=2026-08-20&branchId=branch-sweifieh");
   });
 
+  it("walks through the animated ledger tutorial and closes on the last step", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    await renderWithApp(<ManagementLedgerHome />);
+
+    await user.click(await screen.findByRole("button", { name: /How the ledger works/i }));
+    const dialog = await screen.findByRole("dialog", { name: /How the ledger works/i });
+    expect(dialog).toHaveTextContent("One honest notebook");
+    expect(screen.getByRole("button", { name: /^Back$/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /^Next$/i }));
+    expect(dialog).toHaveTextContent("Refresh finds the facts");
+
+    await user.click(screen.getByRole("tab", { name: /Step 7/i }));
+    expect(dialog).toHaveTextContent("Two clicks a month");
+    await user.click(screen.getByRole("button", { name: /^Done$/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("does not show statement destinations when reporting is not entitled", async () => {
     const { api } = await renderWithApp(<ManagementLedgerHome />);
     await act(async () => {

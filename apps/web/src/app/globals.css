@@ -89,6 +89,12 @@
   --animate-marquee: marquee 46s linear infinite;
   --animate-underline: underline-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 
+  /* Ledger tutorial vignettes — settle-style motion that replays when a step
+     mounts. Direction-neutral (scale/rotate/draw) so RTL needs no mirroring. */
+  --animate-ledger-tilt: ledger-tilt 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-ledger-fill: ledger-fill 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-ledger-draw: ledger-draw 0.45s ease-out both;
+
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
@@ -145,6 +151,20 @@
   @keyframes underline-in {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
+  }
+  /* A beam settling level — the "every debit has an equal credit" moment. */
+  @keyframes ledger-tilt {
+    0% { transform: rotate(-9deg); }
+    55% { transform: rotate(3deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes ledger-fill {
+    from { transform: scaleY(0.18); }
+    to { transform: scaleY(1); }
+  }
+  /* Checkmark stroke draw; the element supplies its own dash values. */
+  @keyframes ledger-draw {
+    to { stroke-dashoffset: 0; }
   }
 }
 
