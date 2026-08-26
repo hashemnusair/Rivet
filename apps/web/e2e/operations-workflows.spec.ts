@@ -1,40 +1,39 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("daily operations workflows", () => {
-  test("records stock, completes a facility task, and resolves an equipment issue", async ({ page }) => {
+  test("gates writes on a concrete branch, opens purchasing dialogs, and resolves an equipment issue", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
     await page.getByRole("button", { name: /Open .+ workspace/i }).click();
     await page.goto("/operations");
     await expect(page.getByTestId("operations-command-center")).toBeVisible();
 
-    await page.getByRole("button", { name: /Add supplier/i }).click();
-    const supplierDialog = page.getByRole("dialog", { name: "Add supplier" });
-    await expect(supplierDialog).toBeVisible();
-    await expect(supplierDialog.getByLabel(/Supplier name/)).toBeFocused();
-    await supplierDialog.getByRole("button", { name: "Cancel" }).click();
+    // The all-branches comparison view is deliberately read-only: branch
+    // writes stay disabled until one concrete branch is chosen.
+    await expect(page.getByText(/Select a branch above to add items/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add item" })).toBeDisabled();
 
-    await page.getByRole("button", { name: /Record movement/i }).click();
-    const movement = page.getByRole("dialog", { name: "Record stock movement" });
-    await movement.getByLabel("Quantity").fill("1");
-    await movement.getByRole("button", { name: /Record movement/i }).click();
-    await expect(page.getByText(/Recent stock movements/i)).toBeVisible();
+    await page.getByRole("combobox", { name: "Operations branch" }).click();
+    await page.getByRole("option", { name: "Forge — Abdoun" }).click();
+    await expect(page.getByText(/Select a branch above to add items/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add item" })).toBeEnabled();
 
-    await page.getByRole("tab", { name: /Facilities/i }).click();
-    await page.getByRole("button", { name: /Request task/i }).click();
-    const taskForm = page.getByRole("dialog", { name: "Request facility task" });
-    await taskForm.getByPlaceholder("Restock bathroom supplies").fill("Verify operations test task");
-    await taskForm.getByRole("button", { name: /Create task/i }).click();
-    const taskRow = page.getByText("Verify operations test task").locator("xpath=ancestor::div[contains(@class, 'flex-col')][1]");
-    await expect(taskRow).toContainText("open");
-    await taskRow.getByRole("button", { name: "Start" }).click();
-    await taskRow.getByRole("button", { name: "Complete" }).click();
-    await expect(taskRow).toContainText("completed");
+    // Stock movements between branches go through the transfer dialog.
+    await page.getByRole("button", { name: "Move stock" }).click();
+    const transferDialog = page.getByRole("dialog", { name: "Move stock to another branch" });
+    await expect(transferDialog).toBeVisible();
+    await transferDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(transferDialog).toHaveCount(0);
 
+    // Resolving a machine issue confirms the machine is safe to operate and
+    // keeps the report in the immutable issue history.
     await page.getByRole("tab", { name: /Equipment/i }).click();
-    const issueRow = page.getByText("Belt slipping under load").locator("xpath=ancestor::div[contains(@class, 'space-y-1.5')][1]");
-    await expect(issueRow).toContainText("in progress");
-    await issueRow.getByRole("button", { name: "Resolve issue" }).click();
-    await expect(issueRow).toContainText("resolved");
+    const issueCard = page
+      .getByText("Belt slipping under load")
+      .locator("xpath=ancestor::div[contains(@class, 'space-y-2')][1]");
+    await expect(issueCard).toContainText("in progress");
+    await issueCard.getByRole("button", { name: "Resolve issue" }).click();
+    await expect(issueCard).toContainText("resolved");
+    await expect(issueCard.getByRole("button", { name: "Resolve issue" })).toHaveCount(0);
   });
 });

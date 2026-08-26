@@ -315,13 +315,19 @@ test.describe("sensitive actions are audited", () => {
   test("a manager override appears in the audit log with its reason", async ({ page }) => {
     await signIn(page, "Manager");
 
-    // Find an expired member so the check-in is blocked.
+    // Find an expired member so the check-in is blocked. Reception is a
+    // concrete branch lane that fails closed on the organization-wide scope,
+    // so pick one branch first — after this point every navigation stays
+    // client-side so the in-memory selection and mock tenant survive.
     await page.goto("/members");
+    await page.getByRole("combobox", { name: "Active branch" }).click();
+    await page.getByRole("option", { name: "Forge — Abdoun" }).click();
     await page.getByLabel("Membership status filter").click();
     await page.getByRole("option", { name: /^Expired$/ }).click();
     const number = await page.getByTestId("member-row").first().locator("p.font-mono").first().innerText();
 
-    await page.goto("/reception");
+    await page.getByRole("link", { name: "Reception", exact: true }).click();
+    await expect(page).toHaveURL(/\/reception/);
     await page.getByTestId("reception-search").fill(number.trim());
     await expect(page.getByTestId("checkin-verdict")).toHaveAttribute("data-decision", "blocked");
 

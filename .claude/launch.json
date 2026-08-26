@@ -6,6 +6,24 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 3000
+    },
+    {
+      "name": "web-mock",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3210"
+      ],
+      "port": 3210
     }
   ]
 }

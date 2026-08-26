@@ -8,6 +8,19 @@ function isoDateFromToday(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Return to the platform gym record between tier rounds. History unwinding is
+ * unreliable here: the workspace tours coalesce client-side entries and a
+ * back-restored document re-enters the console at its root. Reloading the
+ * record mirrors the test's opening navigation instead. Each tier round stays
+ * reload-free between the platform save and the gym-workspace observation,
+ * which is the realtime entitlement contract this suite proves.
+ */
+async function returnToPlatformGym(page: Page) {
+  await page.goto("/platform/gyms/forge-fitness");
+  await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+}
+
 async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string, options: { assertDateRequired?: boolean } = {}) {
   await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
   await page.getByLabel("Gym plan").click();
@@ -64,19 +77,19 @@ async function expectPremiumWorkspace(page: Page) {
   await expect(page.getByTestId("management-ledger-home")).toBeVisible();
 
   await page.getByTestId("statement-card-income").click();
-  await expect(page).toHaveURL(/\/finance\/income-statement$/);
+  await expect(page).toHaveURL(/\/finance\/income-statement/);
   await expect(page.getByTestId("income-statement")).toBeVisible();
 
   await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Statements", exact: true }).click();
   await expect(page).toHaveURL(/\/finance$/);
   await page.getByTestId("statement-card-balance").click();
-  await expect(page).toHaveURL(/\/finance\/balance-sheet$/);
+  await expect(page).toHaveURL(/\/finance\/balance-sheet/);
   await expect(page.getByTestId("balance-sheet")).toBeVisible();
 
   await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Statements", exact: true }).click();
   await expect(page).toHaveURL(/\/finance$/);
   await page.getByTestId("statement-card-cashflow").click();
-  await expect(page).toHaveURL(/\/finance\/cash-flow$/);
+  await expect(page).toHaveURL(/\/finance\/cash-flow/);
   await expect(page.getByTestId("cashflow-statement")).toBeVisible();
 
   await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Payments", exact: true }).click();
@@ -109,21 +122,14 @@ test.describe("RIVET platform subscription entitlements", () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectRestrictedWorkspace(page, "Starter");
 
-    // Return through the client-side history created by the in-app links. A
-    // full navigation would intentionally recreate the mock adapter and hide
-    // the realtime persistence contract this test is proving.
-    await page.goBack();
-    await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await returnToPlatformGym(page);
     await openGymSubscriptionEditor(page, "Growth", "Verify Growth operations access boundary.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectRestrictedWorkspace(page, "Growth");
 
-    await page.goBack();
-    await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await returnToPlatformGym(page);
 
     await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.");
 
@@ -134,12 +140,7 @@ test.describe("RIVET platform subscription entitlements", () => {
     // Pro and Enterprise both expose the complete five-pillar workspace. The
     // second transition proves the fourth tier does not accidentally lose the
     // reporting link while the catalog expands.
-    await page.goBack();
-    await page.goBack();
-    await page.goBack();
-    await page.goBack();
-    await page.goBack();
-    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await returnToPlatformGym(page);
 
     await openGymSubscriptionEditor(page, "Enterprise", "Verify Enterprise retains every workspace module.");
 

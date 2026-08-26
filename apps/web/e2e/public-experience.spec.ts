@@ -52,23 +52,17 @@ test.describe("RIVET member experience", () => {
     expect(page.context().pages()).toHaveLength(pageCount);
   });
 
-  test("creates a member account and restores it after reload", async ({ page }) => {
+  test("routes preview signup to the seeded member entry point instead of faking an account", async ({ page }) => {
+    // Member signup always runs through Clerk in real deployments. The
+    // preview deliberately refuses to imitate account creation or collect a
+    // password, and points at the seeded member personas instead.
     await page.goto("/customer/signup");
 
-    await page.getByLabel("Full name").fill("Nour QA");
-    await page.getByLabel("Email").fill("nour.qa@example.com");
-    await page.getByLabel("Mobile number").fill("+962 79 321 4455");
-    await page.locator("#signup-password").fill("preview-pass");
-    await page.locator("#signup-confirm").fill("preview-pass");
-    const createAccount = page.getByRole("button", { name: /create account/i });
-    await expect(createAccount).toBeEnabled();
-    await createAccount.click();
-
-    await expect(page).toHaveURL(/\/customer\/discover/, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
-
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
+    await expect(page.getByRole("heading", { name: /Member signup runs through Clerk/i })).toBeVisible();
+    await expect(page.getByText(/does not create accounts or store passwords/i)).toBeVisible();
+    await page.getByRole("link", { name: /Open member preview/i }).click();
+    await expect(page).toHaveURL(/\/login\/member/);
+    await expect(page.getByRole("radio", { name: /Yousef Nasser/i })).toBeVisible();
   });
 
   test("sends a member trial request into the selected gym CRM", async ({ page }) => {
@@ -79,7 +73,13 @@ test.describe("RIVET member experience", () => {
 
     await page.getByRole("link", { name: /View & book/i }).first().click();
     await expect(page).toHaveURL(/\/customer\/gyms\/forge-fitness/);
-    await page.getByRole("button", { name: /Send trial request/i }).click();
+    // Trial requests are scheduled: choosing a branch unlocks that branch's
+    // bookable window and pre-fills the opening time.
+    await page.getByLabel("Branch").selectOption({ label: "Forge — Abdoun" });
+    await expect(page.getByLabel("Time")).toBeEnabled();
+    const sendAuthenticatedTrial = page.getByRole("button", { name: /Send trial request/i });
+    await expect(sendAuthenticatedTrial).toBeEnabled();
+    await sendAuthenticatedTrial.click();
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
 
@@ -112,8 +112,12 @@ test.describe("RIVET member experience", () => {
     await page.getByLabel("Full name").fill("Unauthenticated QA");
     await page.getByLabel("Phone").fill("+962 79 321 4456");
     await page.getByLabel("Email").fill("unauthenticated.qa@example.com");
+    await page.getByLabel("Branch").selectOption({ label: "Forge — Abdoun" });
+    await expect(page.getByLabel("Time")).toBeEnabled();
     await page.getByLabel("What are you looking for?").fill("Test the public request confirmation");
-    await page.getByRole("button", { name: /Send trial request/i }).click();
+    const sendPublicTrial = page.getByRole("button", { name: /Send trial request/i });
+    await expect(sendPublicTrial).toBeEnabled();
+    await sendPublicTrial.click();
 
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
@@ -156,7 +160,11 @@ test.describe("RIVET gym applications", () => {
     await expect(pricing.getByText("JD 63.200", { exact: true })).toBeVisible();
     await expect(pricing.getByText("JD 758.400 billed annually", { exact: false }).first()).toBeVisible();
 
-    await pricing.getByRole("link", { name: "Send gym application" }).first().click();
+    // The carrying contract lives in the link itself: the Starter card must
+    // encode the selected plan and billing interval before any navigation.
+    const starterApplication = pricing.getByRole("link", { name: "Send gym application" }).first();
+    await expect(starterApplication).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
+    await starterApplication.click();
     await expect(page).toHaveURL(/\/signup\?plan=Starter&interval=annual$/);
     await expect(page.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
