@@ -2,6 +2,20 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Ledger tutorial on the statements hub — 27 August 2026
+
+- `/finance` gained a "How the ledger works" button under the three
+  statement cards (release `21c13b9`, CI run `33023409096` green, Vercel
+  auto-deploy verified live). It opens a seven-step plain-language animated
+  walkthrough for non-accountant owners: the notebook concept, the
+  refresh/post queue loop, balanced posting, each of the three statements,
+  and the two-click monthly routine. Vignettes reuse the existing
+  settle-motion keyframes plus three new direction-neutral ones
+  (`ledger-tilt`, `ledger-fill`, `ledger-draw`), replay when a step mounts,
+  need no RTL mirroring, and flatten under the global reduced-motion rule.
+  Covered by a new hub test (full suite now 872); verified in mock-mode
+  browser and live on Production with an authenticated owner session.
+
 ## Release and authenticated Production smoke — 27 August 2026
 
 - Application release `cb9f10c` (five commits over `4b8bcc4`: tenant-local
