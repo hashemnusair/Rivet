@@ -255,6 +255,20 @@ function monthEndDate(month: string): string {
   return new Date(Date.UTC(year!, monthNumber!, 0)).toISOString().slice(0, 10);
 }
 
+/**
+ * Monthly and date-only accounting facts name a tenant-local calendar date.
+ * Anchor their timestamp so localDate(timestamp) equals that date: a plain
+ * UTC month-end drifts into the next local day — and the next accounting
+ * period — for timezones ahead of UTC, and a UTC-midnight purchase date
+ * drifts into the previous local day for timezones behind UTC.
+ */
+function tenantDateTimestamp(date: string, timezone: string): number {
+  let timestamp = Date.parse(`${date}T12:00:00.000Z`);
+  for (let step = 0; step < 15 && localDate(timestamp, timezone) > date; step += 1) timestamp -= 3_600_000;
+  for (let step = 0; step < 15 && localDate(timestamp, timezone) < date; step += 1) timestamp += 3_600_000;
+  return timestamp;
+}
+
 function monthStartDate(month: string): string {
   return `${month}-01`;
 }
@@ -835,7 +849,7 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
       ? allocateMembershipByMonth(recognitionBase, startDate, endDate, { cancellationDate, freezes: membershipFreezeWindows(value, startDate, endDate) })
       : [];
     const selected = allocations.find((candidate) => candidate.month === allocation.month);
-    const occurredAt = selected ? Date.parse(monthEndDate(selected.month) + "T23:59:59.999Z") : record.createdAt;
+    const occurredAt = selected ? tenantDateTimestamp(monthEndDate(selected.month), actor.organization.timezone) : record.createdAt;
     const invalidCurrency = sourceCurrency !== currency || (discount.currency !== undefined && discount.currency !== currency);
     const approvalStatus = text(value.discountApprovalStatus, "none");
     const futureMonth = validAccountingMonth(allocation.month) && allocation.month > localDate(Date.now(), actor.organization.timezone).slice(0, 7);
@@ -913,7 +927,7 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
     const serviceMonth = serviceDate.date?.slice(0, 7);
     const monthIndex = serviceMonth && validAccountingMonth(allocation.month) ? (Number(allocation.month.slice(0, 4)) - Number(serviceMonth.slice(0, 4))) * 12 + Number(allocation.month.slice(5, 7)) - Number(serviceMonth.slice(5, 7)) : -1;
     const amount = depreciationBase !== undefined && usefulLife !== undefined ? monthlyDepreciationAmount(depreciationBase, usefulLife, monthIndex) : undefined;
-    const occurredAt = validAccountingMonth(allocation.month) ? Date.parse(monthEndDate(allocation.month) + "T23:59:59.999Z") : asset.createdAt;
+    const occurredAt = validAccountingMonth(allocation.month) ? tenantDateTimestamp(monthEndDate(allocation.month), actor.organization.timezone) : asset.createdAt;
     const sourceCurrency = asset.purchaseCostCurrency ?? currency;
     const invalidCurrency = sourceCurrency !== currency;
     const futureMonth = validAccountingMonth(allocation.month) && allocation.month > localDate(Date.now(), actor.organization.timezone).slice(0, 7);
@@ -974,7 +988,7 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
   }
 
   if (sourceType === "stock_movement") {
-    const movement = await ctx.db.query("stockMovements").withIndex("by_idempotency", (q) => q.eq("organizationId", actor.organization._id)).collect().then((rows) => rows.find((row) => row.publicId === sourceId));
+    const movement = await ctx.db.query("stockMovements").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
     if (!movement) domainError("NOT_FOUND", "Stock movement source not found.", { correlationId: actor.correlationId });
     const branch = await accountingBranchById(ctx, actor, movement.branchId);
     const unitCost = movement.unitCostMinor;
@@ -1036,7 +1050,7 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
     const sourceCurrency = asset.purchaseCostCurrency ?? currency;
     const purchaseDate = optionalText(asset.purchaseDate);
     const purchaseTimestamp = purchaseDate && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ? new Date(`${purchaseDate}T00:00:00.000Z`) : undefined;
-    const occurredAt = purchaseTimestamp && purchaseTimestamp.toISOString().slice(0, 10) === purchaseDate ? purchaseTimestamp.getTime() : asset.createdAt;
+    const occurredAt = purchaseTimestamp && purchaseTimestamp.toISOString().slice(0, 10) === purchaseDate ? tenantDateTimestamp(purchaseDate, actor.organization.timezone) : asset.createdAt;
     return {
       sourceType,
       sourcePublicId: sourceId,
@@ -1111,8 +1125,7 @@ async function markOperationalSource(ctx: MutationCtx, actor: ActorContext, fact
     return;
   }
   if (fact.sourceType === "stock_movement") {
-    const rows = await ctx.db.query("stockMovements").withIndex("by_idempotency", (q) => q.eq("organizationId", actor.organization._id)).collect();
-    const movement = rows.find((row) => row.publicId === sourcePublicId);
+    const movement = await ctx.db.query("stockMovements").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourcePublicId)).unique();
     if (movement) await ctx.db.patch(movement._id, { financialPostingStatus: status, financialSourceId: `source-${fact.sourceType}-${sourcePublicId}` });
     return;
   }

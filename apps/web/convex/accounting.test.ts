@@ -74,6 +74,42 @@ describe("immutable management-accounting ledger", () => {
     expect(detail).toMatchObject({ postingDate: "2026-02-01", periodId: "2026-02" });
   });
 
+  it("anchors monthly revenue recognition to the tenant-local service month end", async () => {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      // Ahead-of-UTC tenants must not see a UTC month-end drift into the next
+      // local day and therefore the next accounting period.
+      await ctx.db.patch(organization!._id, { timezone: "Asia/Amman" });
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-may", branchId: branch!._id, createdAt: now, updatedAt: now, data: { id: "accounting-membership-may", homeBranchId: "accounting-branch-a", startDate: "2026-05-01", endDate: "2026-05-31", salePrice: { amount: 31_000, currency: "JOD" }, frozenDaysUsed: 0 } });
+    });
+    const sale = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-may", idempotencyKey: "may-sale", reason: "Post May membership sale" })) as { status: string };
+    expect(sale.status).toBe("posted");
+    const recognition = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: "membership-revenue:accounting-membership-may:2026-05", idempotencyKey: "may-recognition", reason: "Recognize May service" })) as { status: string; amount: { amount: number }; journalEntryId: string };
+    expect(recognition).toMatchObject({ status: "posted", amount: { amount: 31_000 } });
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: recognition.journalEntryId })) as { postingDate: string; periodId: string };
+    expect(detail).toMatchObject({ postingDate: "2026-05-31", periodId: "2026-05" });
+  });
+
+  it("anchors an equipment purchase date to the same tenant-local calendar day", async () => {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      // Behind-UTC tenants must not see a UTC-midnight purchase date drift
+      // into the previous local day.
+      await ctx.db.patch(organization!._id, { timezone: "America/New_York" });
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      const now = Date.now();
+      await ctx.db.insert("equipmentAssets", { organizationId: organization!._id, publicId: "accounting-asset-a", branchId: branch!._id, code: "TREAD-01", name: "Treadmill", status: "active", purchaseDate: "2026-03-10", purchaseCostMinor: 240_000, purchaseCostCurrency: "JOD", expectedUsefulLifeMonths: 24, createdAt: now, updatedAt: now });
+    });
+    const acquisition = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_acquisition", sourceId: "accounting-asset-a", idempotencyKey: "asset-acquisition", reason: "Post treadmill acquisition" })) as { status: string; journalEntryId: string };
+    expect(acquisition.status).toBe("posted");
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: acquisition.journalEntryId })) as { postingDate: string; periodId: string };
+    expect(detail).toMatchObject({ postingDate: "2026-03-10", periodId: "2026-03" });
+  });
+
   it("sorts the journal register by posting date instead of insertion order", async () => {
     const { owner } = await seeded();
     const lines = [{ accountId: "acct-1100", debit: { amount: 100, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-1200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 100, currency: "JOD" } }];

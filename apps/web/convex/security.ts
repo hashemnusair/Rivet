@@ -348,16 +348,6 @@ export function assertNonEmptyString(value: unknown, field: string, correlationI
   }
 }
 
-export function branchIdFromPublic(actor: ActorContext, publicId: string | undefined): Id<"branches"> | undefined {
-  if (!publicId) return undefined;
-  if (actor.branch) return actor.branch._id;
-  return undefined;
-}
-
-export function hashRequest(value: unknown): string {
-  return JSON.stringify(value, Object.keys((value ?? {}) as Record<string, unknown>).sort());
-}
-
 export function safeString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }

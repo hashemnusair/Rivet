@@ -365,7 +365,8 @@ export default defineSchema({
     .index("by_organization", ["organizationId"])
     .index("by_branch_product_occurred", ["organizationId", "branchId", "productId", "occurredAt"])
     .index("by_product_occurred", ["organizationId", "productId", "occurredAt"])
-    .index("by_idempotency", ["organizationId", "idempotencyKey"]),
+    .index("by_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_public_id", ["organizationId", "publicId"]),
 
   inventoryTransfers: defineTable({
     organizationId: v.id("organizations"),

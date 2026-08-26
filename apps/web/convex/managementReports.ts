@@ -162,8 +162,7 @@ interface JournalBundle {
   lines: JournalLine[];
 }
 
-async function effectiveEntries(ctx: QueryCtx, actor: ActorContext, branch: Branch | undefined, from?: string, to?: string): Promise<JournalBundle[]> {
-  const entries = await ctx.db.query("accountingJournalEntries").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+async function effectiveEntries(ctx: QueryCtx, actor: ActorContext, entries: JournalEntry[], branch: Branch | undefined, from?: string, to?: string): Promise<JournalBundle[]> {
   const selected = entries.filter((entry) => (entry.status === "posted" || entry.status === "reversed") && (!from || entry.postingDate >= from) && (!to || entry.postingDate <= to) && inScope(actor, branch, entry.branchId));
   const bundles: JournalBundle[] = [];
   for (const entry of selected) {
@@ -182,6 +181,9 @@ interface ReportContext {
   accounts: Map<string, Account>;
   sourceCounts: Record<SourceStatus, number>;
   sourceRows: SourcePosting[];
+  // All journal entries for the organization, collected once per report
+  // request and shared by the policy scan and the statement builders.
+  entries: JournalEntry[];
   policies: Array<{ code: string; version: number }>;
   queueCoverage: QueueCoverage;
   warnings: string[];
@@ -209,8 +211,8 @@ async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject)
   for (const row of sourceRows) sourceCounts[row.status] += 1;
   const accountRows = await ctx.db.query("accountingAccounts").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const accounts = new Map(accountRows.map((account) => [account.code, account]));
-  const effectivePolicyEntries = await ctx.db.query("accountingJournalEntries").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
-  const policies = [...new Map(effectivePolicyEntries
+  const entries = await ctx.db.query("accountingJournalEntries").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const policies = [...new Map(entries
     .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= fromDate && entry.postingDate <= toDate && inScope(actor, branch, entry.branchId) && entry.policyCode && entry.policyVersion)
     .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
   const queueCoverage = await sourceQueueCoverageForReport(ctx, actor, { branch, fromDate, toDate });
@@ -232,7 +234,7 @@ async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject)
   if (unresolvedPostingCount > 0) warnings.add("Some authoritative source facts are not posted; review the source queue before relying on these figures.");
   if (recognitionStatus === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
   if (depreciationStatus === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
-  return { branch, branchIdsByPublicId, fromDate, toDate, generatedAt: iso(Date.now()), accounts, sourceCounts, sourceRows, policies, queueCoverage: queueCoverage.status, warnings: [...warnings], lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, membershipRevenueRecognition: recognitionStatus, depreciationCoverage: depreciationStatus };
+  return { branch, branchIdsByPublicId, fromDate, toDate, generatedAt: iso(Date.now()), accounts, sourceCounts, sourceRows, entries, policies, queueCoverage: queueCoverage.status, warnings: [...warnings], lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, membershipRevenueRecognition: recognitionStatus, depreciationCoverage: depreciationStatus };
 }
 
 function reportMeta(actor: ActorContext, report: ReportContext): JsonObject {
@@ -332,7 +334,7 @@ function rowDate(row: DomainRecord, field = "createdAt", timezone = "UTC"): stri
 
 async function incomeStatement(ctx: QueryCtx, actor: ActorContext, input: JsonObject): Promise<JsonObject> {
   const report = await contextFor(ctx, actor, input);
-  const bundles = await effectiveEntries(ctx, actor, report.branch, report.fromDate, report.toDate);
+  const bundles = await effectiveEntries(ctx, actor, report.entries, report.branch, report.fromDate, report.toDate);
   const currency = actor.organization.currency;
   const revenue = sectionFromGroups(bundles, new Set(["revenue"]), report.accounts, currency);
   const costOfSales = sectionFromGroups(bundles, new Set(["cost_of_sales"]), report.accounts, currency);
@@ -346,7 +348,7 @@ async function incomeStatement(ctx: QueryCtx, actor: ActorContext, input: JsonOb
 
 async function balanceSheet(ctx: QueryCtx, actor: ActorContext, input: JsonObject): Promise<JsonObject> {
   const report = await contextFor(ctx, actor, input);
-  const bundles = await effectiveEntries(ctx, actor, report.branch, undefined, report.toDate);
+  const bundles = await effectiveEntries(ctx, actor, report.entries, report.branch, undefined, report.toDate);
   const currency = actor.organization.currency;
   const currentAssets = sectionFromGroups(bundles, new Set(["asset_current"]), report.accounts, currency);
   const noncurrentAssets = sectionFromGroups(bundles, new Set(["asset_noncurrent"]), report.accounts, currency);
@@ -365,9 +367,8 @@ async function balanceSheet(ctx: QueryCtx, actor: ActorContext, input: JsonObjec
   return { ...reportMeta(actor, report), asOfDate: report.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, currentEarnings: money(currentEarnings, currency), totalAssets: money(totalAssets, currency), totalLiabilities: money(totalLiabilities, currency), totalEquity: money(totalEquity, currency), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity, currency), difference: money(difference, currency), balanced: difference === 0 };
 }
 
-function cashflowCategory(bundles: JournalBundle[], cashLine: JournalLine, accounts: Map<string, Account>): "operating" | "investing" | "financing" {
-  const bundle = bundles.find((candidate) => candidate.lines.some((line) => line._id === cashLine._id));
-  const counterparts = bundle?.lines.filter((line) => line._id !== cashLine._id && !CASH_CODES.has(line.accountCode)) ?? [];
+function cashflowCategory(bundle: JournalBundle, cashLine: JournalLine, accounts: Map<string, Account>): "operating" | "investing" | "financing" {
+  const counterparts = bundle.lines.filter((line) => line._id !== cashLine._id && !CASH_CODES.has(line.accountCode));
   if (counterparts.some((line) => line.accountCode === "1500" || line.statementGroup === "asset_noncurrent" || accounts.get(line.accountCode)?.accountType === "asset" && accounts.get(line.accountCode)?.statementGroup === "asset_noncurrent")) return "investing";
   if (counterparts.some((line) => line.accountCode === "3000" || line.statementGroup === "liability_noncurrent" || accounts.get(line.accountCode)?.accountType === "equity")) return "financing";
   return "operating";
@@ -375,7 +376,7 @@ function cashflowCategory(bundles: JournalBundle[], cashLine: JournalLine, accou
 
 async function cashflowStatement(ctx: QueryCtx, actor: ActorContext, input: JsonObject): Promise<JsonObject> {
   const report = await contextFor(ctx, actor, input);
-  const before = await effectiveEntries(ctx, actor, report.branch, undefined, undefined);
+  const before = await effectiveEntries(ctx, actor, report.entries, report.branch, undefined, undefined);
   const period = before.filter((bundle) => bundle.entry.postingDate >= report.fromDate && bundle.entry.postingDate <= report.toDate);
   const currency = actor.organization.currency;
   const categoryRows = new Map<string, { category: "operating" | "investing" | "financing"; code: string; name: string; amount: number; ids: Set<string> }>();
@@ -392,7 +393,7 @@ async function cashflowStatement(ctx: QueryCtx, actor: ActorContext, input: Json
   for (const bundle of period) {
     for (const line of bundle.lines) {
       if (!CASH_CODES.has(line.accountCode)) continue;
-      const category = cashflowCategory(period, line, report.accounts);
+      const category = cashflowCategory(bundle, line, report.accounts);
       const key = `${category}:${line.accountCode}`;
       const current = categoryRows.get(key) ?? { category, code: line.accountCode, name: line.accountName, amount: 0, ids: new Set<string>() };
       current.amount += line.debitMinor - line.creditMinor;

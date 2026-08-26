@@ -122,6 +122,18 @@ function managementLocalDate(value: string | number, timezone: string): string {
   return todayISODate(timezone, new Date(value));
 }
 
+/**
+ * Mirror of the Convex tenant-date anchoring: a monthly or date-only
+ * accounting fact's timestamp must land on the same tenant-local calendar
+ * date it names, in every timezone.
+ */
+function tenantDateIso(date: string, timezone: string): string {
+  let timestamp = Date.parse(`${date}T12:00:00.000Z`);
+  for (let step = 0; step < 15 && managementLocalDate(timestamp, timezone) > date; step += 1) timestamp -= 3_600_000;
+  for (let step = 0; step < 15 && managementLocalDate(timestamp, timezone) < date; step += 1) timestamp += 3_600_000;
+  return new Date(timestamp).toISOString();
+}
+
 function publicApplicationKey(email: string, gymName: string): string {
   const normalizedGym = gymName.trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "gym";
   return `${email.trim().toLowerCase()}::${normalizedGym}`;
@@ -6437,7 +6449,7 @@ export class MockGymOSApi implements GymOSApi {
     for (const order of this.db.purchaseOrders) if (mockTimestampInDateRange(order.receivedAt ?? order.updatedAt, this.db.organization.timezone, dateRange)) add("purchase_order_receipt", order.id, order.branchId);
     for (const movement of this.db.stockMovements) if (mockTimestampInDateRange(movement.occurredAt, this.db.organization.timezone, dateRange)) add("stock_movement", movement.id, movement.branchId);
     for (const task of this.db.facilityTasks) if (mockTimestampInDateRange(task.completedAt ?? task.updatedAt, this.db.organization.timezone, dateRange)) add("facility_supplies", task.id, task.branchId);
-    for (const asset of this.db.equipmentAssets) if (mockTimestampInDateRange(asset.purchaseDate ? `${asset.purchaseDate}T00:00:00.000Z` : asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_acquisition", asset.id, asset.branchId);
+    for (const asset of this.db.equipmentAssets) if (mockTimestampInDateRange(asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_acquisition", asset.id, asset.branchId);
     if (allowed.has("equipment_depreciation")) {
       const serviceRange = mockServiceDateRangeThroughToday(dateRange);
       for (const asset of this.db.equipmentAssets) {
@@ -6575,7 +6587,7 @@ export class MockGymOSApi implements GymOSApi {
       const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
       const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes: membership.activeFreeze ? [membership.activeFreeze] : [] });
       const selected = allocations.find((allocation) => allocation.month === serviceMonth);
-      const occurredAt = selected ? `${accountingMonthEnd(selected.month)}T23:59:59.999Z` : membership.createdAt;
+      const occurredAt = selected ? tenantDateIso(accountingMonthEnd(selected.month), this.db.organization.timezone) : membership.createdAt;
       const currencyMismatch = sourceCurrency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
       const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
       const valid = dependencyValid && !futureMonth && selected !== undefined && selected.amount > 0 && Number.isSafeInteger(netAmount) && netAmount >= 0 && membership.discount.amount >= 0 && membership.discount.amount <= membership.salePrice.amount && membership.discountApprovalStatus !== "pending" && membership.discountApprovalStatus !== "rejected";
@@ -6605,7 +6617,7 @@ export class MockGymOSApi implements GymOSApi {
       const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
       const retiredWithoutEffectiveDate = asset.status === "retired" || asset.status === "replaced";
       const valid = dependencyValid && !futureMonth && !retiredWithoutEffectiveDate && serviceDate !== undefined && cost !== undefined && Number.isSafeInteger(cost) && cost > 0 && usefulLife !== undefined && Number.isSafeInteger(usefulLife) && usefulLife > 0 && usefulLife <= MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS && amount !== undefined && amount > 0;
-      const occurredAt = /^\d{4}-\d{2}$/.test(serviceMonth) ? `${accountingMonthEnd(serviceMonth)}T23:59:59.999Z` : asset.createdAt;
+      const occurredAt = /^\d{4}-\d{2}$/.test(serviceMonth) ? tenantDateIso(accountingMonthEnd(serviceMonth), this.db.organization.timezone) : asset.createdAt;
       return { amount, currency: sourceCurrency, branchId: asset.branchId, occurredAt, debitCode: "5600", creditCode: "1550", policyCode: "equipment-depreciation.v1", status: currencyMismatch ? "excluded" : valid ? undefined : "unconfigured", reason: currencyMismatch ? "Equipment cost currency does not match organization currency." : !dependencyValid ? "The equipment acquisition must be posted in the same branch and currency before depreciation can be recorded." : retiredWithoutEffectiveDate ? "Retired or replaced equipment needs an audited effective retirement date before its depreciation schedule can continue." : futureMonth ? "Future equipment service months cannot be depreciated." : serviceDate === undefined ? "Equipment needs a valid placed-in-service date or purchase date before depreciation can be configured." : cost === undefined || !Number.isSafeInteger(cost) || cost <= 0 ? "Equipment purchase cost must be a positive integer minor-unit amount before depreciation can be configured." : usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife <= 0 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS ? `Equipment expected useful life must be between 1 and ${MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS} months.` : serviceMonth === "unconfigured" ? "Equipment depreciation service month is not configured." : monthIndex < 0 || monthIndex >= usefulLife ? "Equipment depreciation service month falls outside the useful-life schedule." : amount === undefined || amount <= 0 ? "Equipment depreciation amount is not a positive integer minor-unit amount." : "Equipment depreciation source is not configured.", details: { assetId, assetCode: asset.code, serviceMonth, depreciationStartDate: serviceDate, depreciationDateSource: asset.installationDate && validAccountingDate(asset.installationDate) ? "installation" : "purchase", purchaseCostMinor: cost, postedAcquisitionAmountMinor: acquisition?.amount?.amount, depreciationBaseMinor: depreciationBase, usefulLifeMonths: usefulLife, residualValueMinor: 0, monthIndex: monthIndex >= 0 ? monthIndex : undefined, allocatedAmountMinor: amount, allocationPolicy: "straight-line-monthly-remainder.v1" } };
     }
     if (sourceType === "stock_movement") {
@@ -6645,7 +6657,7 @@ export class MockGymOSApi implements GymOSApi {
       const asset = this.db.equipmentAssets.find((candidate) => candidate.id === sourceId);
       if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset source not found.");
       const amount = asset.purchaseCost?.amount;
-      return { amount, currency: asset.purchaseCost?.currency ?? this.db.organization.currency, branchId: asset.branchId, occurredAt: asset.purchaseDate ? `${asset.purchaseDate}T00:00:00.000Z` : asset.createdAt, debitCode: "1500", creditCode: "2100", policyCode: "equipment-acquisition.v1", status: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "excluded" : !asset.purchaseDate || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "Equipment acquisition currency does not match organization currency." : !asset.purchaseDate ? "Equipment purchase date is not configured." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined };
+      return { amount, currency: asset.purchaseCost?.currency ?? this.db.organization.currency, branchId: asset.branchId, occurredAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, debitCode: "1500", creditCode: "2100", policyCode: "equipment-acquisition.v1", status: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "excluded" : !asset.purchaseDate || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "Equipment acquisition currency does not match organization currency." : !asset.purchaseDate ? "Equipment purchase date is not configured." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined };
     }
     const workOrder = this.db.equipmentWorkOrders.find((candidate) => candidate.id === sourceId);
     if (!workOrder) throw ApiError.of(ERR.NOT_FOUND, "Equipment work-order source not found.");
