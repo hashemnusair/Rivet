@@ -1,0 +1,344 @@
+# RIVET engineering handoff plan
+
+Last updated: 26 August 2026  
+Handoff baseline: `main` at `4b8bcc4716bcf0dd37f709004887c6c8525d91b3`
+
+## Purpose
+
+This is the shortest path for the next engineer or release operator to continue
+RIVET safely. It describes the current implementation, the next work in order,
+the validation gates, and the ownership boundary between engineering and the
+people who control Production providers.
+
+Do not turn this file into another issue tracker. The canonical issue-level
+backlog is [`docs/13_PRODUCT_AND_OPERATIONS_TODO.md`](docs/13_PRODUCT_AND_OPERATIONS_TODO.md),
+the system and release procedure is
+[`docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`](docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md),
+and the complete chronological implementation record is
+[`CURRENT_STATE.md`](CURRENT_STATE.md). Preserve
+[`FRONTEND_HANDOFF.md`](FRONTEND_HANDOFF.md) as a frozen historical artifact.
+
+## Current state at handoff
+
+- `main` and `origin/main` matched at `4b8bcc4` when this handoff was written.
+- The web application uses Next.js, Clerk, and Convex through the existing
+  `GymOSApi` boundary. Production must use Convex and fail closed when required
+  configuration is missing.
+- The platform console, gym workspace, members, CRM, reception, payments,
+  subscriptions, retail checkout/inventory, equipment operations, support,
+  audit, and management reporting have persisted Convex implementations with
+  mock parity and authorization tests.
+- Management Ledger is a standalone three-statement experience:
+  `/finance/income-statement`, `/finance/balance-sheet`, and
+  `/finance/cash-flow`. The figures are generated from posted journal facts,
+  not frontend placeholders.
+- Commit `4b8bcc4` adds durable accounting-source coverage evidence, conditional
+  and deduplicated report warnings, membership revenue recognition, and
+  equipment depreciation policies. The source queue stores scope, candidate
+  digest, and projection fingerprints so a report only claims completeness
+  when the current source population is represented.
+- Membership sales and renewals remain deferred until the matching source is
+  posted. Recognition then allocates exact integer minor units over eligible
+  service days, excludes freezes, observes cancellation, rejects future months,
+  and never exceeds the posted deferred amount.
+- Equipment depreciation requires a posted acquisition in the same branch and
+  currency. Eligible active assets use straight-line monthly depreciation,
+  zero residual value, exact final-unit rounding, and a bounded useful life.
+- Native Arabic fields, RTL layout support, and IBM Plex Sans Arabic remain.
+  The paid General Translation integration has been removed and is not a
+  deployment dependency.
+- No Convex Production deploy or Vercel Production success is claimed for
+  `4b8bcc4`. A Git push may trigger Vercel, but its result must be checked
+  separately. Convex deployment is deliberately separate.
+
+## Local validation evidence for `4b8bcc4`
+
+The accounting change passed:
+
+- focused financial tests: 5 files / 45 tests;
+- complete Vitest suite: 142 files / 867 tests;
+- application TypeScript and Convex TypeScript checks;
+- full ESLint and secret-output audit;
+- Next.js Production build with 51 generated static pages;
+- `git diff --check`;
+- focused statement UI regression after the final warning-copy adjustment:
+  12/12 tests.
+
+No Playwright run is part of this handoff or required by the repository's push
+workflow. Browser acceptance is manual unless the owner explicitly requests a
+separate browser-testing scope.
+
+## What is complete versus what is not
+
+### Implemented and code-tested
+
+1. Tenant, role, permission, module, and branch authorization around the core
+   commercial and management workflows.
+2. Active-gym access behavior, unavailable-gym owner recovery, and role-aware
+   sign-in routing.
+3. Platform gym lifecycle and subscription controls, entitlement projection,
+   four-tier plan catalog, and public-directory isolation.
+4. Member, membership, CRM, reception, payment, receipt, shift, retail checkout,
+   inventory, stock transfer, and equipment workflows.
+5. Management Ledger statement routes and accounting source processing,
+   including the recognition/depreciation safeguards described above.
+6. Provider-independent Production build, environment validation, secret-output
+   audit, and guarded Convex CLI wrappers.
+
+### Not yet a finished business or Production claim
+
+1. The business owner/accountant has not formally approved the chart of
+   accounts, recognition convention, depreciation convention, opening-balance
+   process, inventory valuation, period close, tax, or statutory reporting.
+2. Retired/replaced equipment has no authoritative effective retirement or
+   disposal date. Such assets stay explicitly unconfigured rather than
+   continuing or inventing depreciation.
+3. Opening balances and statutory/tax/e-invoicing are not implemented claims.
+   The current statements are management reports.
+4. The latest Convex schema/functions still require an exact-target Production
+   dry run and deploy. The latest web commit requires Vercel deployment
+   verification.
+5. Authenticated acceptance with an active Production gym owner is still
+   required for the changed Operations and Management Ledger surfaces.
+6. Edge IP/device rate limiting, provider capacity/headroom, backups, and
+   recovery evidence remain provider/operator responsibilities.
+7. Clerk invitation/signup, Resend delivery, and isolated multi-tenant
+   acceptance require configured identities and provider access.
+
+## Execution plan
+
+### P0 — release the current code safely
+
+Owner: release engineer plus the Production provider owner.
+
+1. Confirm the checked-out SHA and a clean tree:
+
+   ```bash
+   git fetch origin
+   git rev-parse HEAD
+   git rev-parse origin/main
+   git status --short --branch
+   ```
+
+2. Run the credential-free local gate from the repository root:
+
+   ```bash
+   pnpm install --frozen-lockfile
+   pnpm --dir apps/web exec tsc --noEmit --pretty false
+   pnpm --dir apps/web exec tsc --noEmit -p convex/tsconfig.json --pretty false
+   pnpm --dir apps/web lint
+   pnpm --dir apps/web test
+   pnpm --dir apps/web build
+   git diff --check
+   ```
+
+3. In provider dashboards, confirm variable presence and environment/target
+   alignment without copying values into chat or terminal output. Use the
+   value-free checklist in the release runbook. At minimum confirm Clerk
+   Production keys/issuer, the Convex URL, `RIVET_SITE_URL`,
+   `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_DATA_MODE=convex`,
+   `ENTRY_PASS_SIGNING_SECRET`, `RIVET_PUBLIC_REQUEST_PEPPER`, Resend sender,
+   and a current backup/export.
+
+4. Confirm the exact Convex Production deployment. The documented target is
+   `descriptive-meerkat-589`; stop if the configured operator context resolves
+   to anything else. Inspect names only:
+
+   ```bash
+   pnpm convex:env:names -- --prod
+   ```
+
+5. Run the guarded dry run only after the target and authority are explicit:
+
+   ```bash
+   pnpm convex:deploy -- --dry-run
+   ```
+
+   Review schema/index output. Stop on any unexpected deletion, destructive
+   migration, or target mismatch. Never add verbose/debug flags, an admin key,
+   a push-request dump, or secret assignments to the command.
+
+6. With explicit Production authorization, deploy through the wrapper:
+
+   ```bash
+   pnpm convex:deploy
+   ```
+
+7. Verify the read-only Convex health endpoint, recent error state, and Vercel
+   deployment for the exact Git SHA. Do not infer deployment success from the
+   Git push alone.
+
+8. Perform a manual, read-first smoke with an active gym owner:
+
+   - sign in and confirm the gym workspace—not the member workspace—opens;
+   - open `/operations`, switch branches, and verify inventory remains
+     independently scoped per branch;
+   - open Checkout and confirm products, available quantities, receipt data,
+     and payment choices load without creating a sale;
+   - open Machines and verify equipment, issue, and work-order data;
+   - open all three `/finance/*` statement routes;
+   - change date and branch scope and confirm figures and completeness state
+     update without duplicate warnings;
+   - inspect browser console/network failures and ordinary laptop/mobile layout.
+
+   Any write test must use a disposable, explicitly approved target and retain
+   audit and cleanup evidence.
+
+9. Record exact SHA, Convex deployment, Vercel status, validation results,
+   health result, mutations, and cleanup in `CURRENT_STATE.md`. Never record
+   secret values or unnecessary personal data.
+
+### P0 — accounting operating procedure
+
+Owner: gym owner/manager for operations; accountant/product owner for policy.
+
+1. Approve or revise the management accounting policies before importing
+   historical balances or presenting the reports as complete.
+2. Refresh the accounting source queue for the intended organization, branch,
+   and period.
+3. Resolve every `unconfigured`, `unsupported`, or failed source; do not post
+   around missing prerequisites merely to remove a warning.
+4. Post the underlying membership sale/renewal before recognition and the
+   equipment acquisition before depreciation.
+5. Post recognition/depreciation only through the supported source actions.
+   Future-period and mismatched branch/currency facts should remain rejected.
+6. Re-run the source refresh and confirm queue coverage is proven for the same
+   scope before relying on the statements.
+7. Tie out net income, the balance-sheet equation, opening/closing cash, source
+   links, reversals, and closed-period behavior against approved sample facts.
+8. Keep retired/replaced assets out of depreciation until an audited disposal
+   date and policy are implemented.
+
+### P1 — close acceptance and operational gaps
+
+1. Run authenticated active-owner acceptance for Operations and all statement
+   pages, including loading, empty, error, stale-data, permission, and module
+   gates.
+2. Complete disposable multi-tenant isolation checks with owner, manager,
+   staff, member, and platform identities. Prove that a branch/user cannot read
+   or mutate another tenant's records.
+3. Verify fresh-user and existing-user Clerk invitation acceptance against the
+   live provider configuration, including pending/revoked and retry cases.
+4. Verify one complete retail sale and receipt path, plus an approved same-day
+   void or bounded refund, and reconcile inventory, payment, receipt, shift,
+   journal, member timeline, and audit evidence.
+5. Establish external IP/device rate limits in Vercel/WAF for public application,
+   invitation-claim, trial, entry-pass, check-in, and other abuse-sensitive
+   endpoints. Retain the in-application privacy-safe limits as defense in depth.
+6. Confirm capacity, alerting, backup freshness, recovery ownership, and the
+   rollback operator for Vercel, Convex, Clerk, and Resend.
+7. Close the remaining credentialed acceptance items in the canonical backlog;
+   do not mark them complete from unit tests alone.
+
+### P2 — product decisions and later expansion
+
+1. Commercially approve the four subscription tiers, prices, limits, trial,
+   annual discount, and downgrade/read-only behavior.
+2. Decide and implement audited equipment retirement/disposal and opening
+   balance workflows.
+3. Complete Arabic copy and manual RTL review without adding another paid
+   translation dependency unless the owner explicitly chooses one.
+4. Select WhatsApp/SMS/supplier providers only after templates, consent,
+   quiet-hours, retries, cost, and accountable ownership are approved.
+5. Keep supplier marketplaces, autonomous purchasing, hardware integrations,
+   statutory/tax/e-invoicing, and other expansion work outside the release until
+   separately scoped.
+
+## Rollback guidance
+
+- Web rollback: select the last known-good Vercel deployment for the same
+  Production project and domain. Record the before/after deployment IDs and
+  Git SHAs.
+- Code rollback: prefer a new audited revert commit on `main`; do not rewrite
+  shared history or force-push.
+- Convex functions: redeploy a reviewed known-good Git revision through
+  `pnpm convex:deploy`. Do not assume reverting web code reverts Convex.
+- Data/schema: do not delete indexes, tables, journal facts, receipts, audits,
+  or tenant data as a rollback shortcut. Restore only from a confirmed backup
+  under an approved recovery procedure.
+- Feature containment: where supported, disable the affected capability or
+  keep an unconfigured source unposted while the defect is investigated.
+- After rollback, repeat health, sign-in routing, tenant isolation, and the
+  affected money-changing smoke. Record the incident and cleanup.
+
+## Stop conditions
+
+Stop the release and escalate when:
+
+- local `HEAD`, `origin/main`, Vercel SHA, or Convex target do not align;
+- a required variable is missing, weak, or belongs to the wrong environment;
+- a deploy proposes an unexpected index/schema deletion;
+- a statement claims completeness without a current proven source refresh;
+- a tenant/branch authorization result is ambiguous;
+- a write would affect a non-disposable Production record without explicit
+  approval;
+- rollback or backup ownership is unknown;
+- completing the release would require inventing accounting or commercial
+  policy.
+
+## First files to read
+
+1. [`AGENTS.md`](AGENTS.md) — engineering and secret-safe execution rules.
+2. [`CURRENT_STATE.md`](CURRENT_STATE.md) — latest implementation and release
+   evidence.
+3. [`docs/13_PRODUCT_AND_OPERATIONS_TODO.md`](docs/13_PRODUCT_AND_OPERATIONS_TODO.md)
+   — canonical active backlog.
+4. [`docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`](docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md)
+   — architecture, environment ownership, and release procedure.
+5. [`apps/web/convex/accounting.ts`](apps/web/convex/accounting.ts) and
+   [`apps/web/convex/managementReports.ts`](apps/web/convex/managementReports.ts)
+   — accounting source policies and report projections.
+6. [`apps/web/src/features/reports/management-statements-workspace.tsx`](apps/web/src/features/reports/management-statements-workspace.tsx)
+   — statement hub/detail UI and completeness presentation.
+7. [`apps/web/src/lib/api/GymOSApi.ts`](apps/web/src/lib/api/GymOSApi.ts),
+   [`apps/web/src/lib/api/ConvexGymOSApi.ts`](apps/web/src/lib/api/ConvexGymOSApi.ts),
+   and [`apps/web/src/lib/mock/MockGymOSApi.ts`](apps/web/src/lib/mock/MockGymOSApi.ts)
+   — client contract, Production adapter, and mock parity.
+8. [`apps/web/scripts/safe-convex-cli.mjs`](apps/web/scripts/safe-convex-cli.mjs)
+   and [`apps/web/scripts/validate-vercel-env.mjs`](apps/web/scripts/validate-vercel-env.mjs)
+   — deployment safety boundaries.
+
+## Handoff completion report template
+
+```text
+Git
+- Released SHA:
+- origin/main matches: yes/no
+- Working tree clean: yes/no
+
+Local gates
+- App TypeScript:
+- Convex TypeScript:
+- Lint/secret audit:
+- Vitest:
+- Production build:
+- git diff --check:
+
+Providers
+- Exact Convex Production target confirmed: yes/no
+- Guarded dry run result:
+- Convex deploy result:
+- Read-only health result:
+- Exact Vercel SHA/status:
+- Clerk/Convex alignment: yes/no
+- Backup and rollback owner confirmed: yes/no
+
+Acceptance
+- Active-owner sign-in routing:
+- Operations/branch inventory:
+- Checkout/receipt:
+- Machines/work orders:
+- Income statement:
+- Balance sheet:
+- Cash flow statement:
+- Tenant/branch/role denial:
+- Browser console/network:
+
+Production writes
+- Exact approved targets:
+- Mutations performed:
+- Audit evidence:
+- Cleanup completed:
+
+Open blockers and owner:
+```

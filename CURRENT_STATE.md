@@ -1,6 +1,128 @@
 # GymOS / RIVET current implementation state
 
-Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification.
+Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification. See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
+
+## Management-ledger deep dive: tenant-date anchoring, demo-auth repair, consolidated refresh — 26 August 2026 (working-tree update)
+
+- **Tenant-local date anchoring (correctness fix, Convex + mock parity).**
+  Monthly recognition/depreciation facts were timestamped at the UTC month
+  end, so for tenants ahead of UTC (Asia/Amman) an August service month
+  resolved to a September tenant-local date: it posted into the September
+  period and fell out of any August-scoped statement and its coverage check.
+  Equipment purchase dates parsed at UTC midnight had the mirror-image drift
+  (previous local day) for tenants behind UTC. Both adapters now anchor these
+  facts to a timestamp whose tenant-local calendar date equals the stated
+  date. Regression tests cover Asia/Amman recognition (posts into the service
+  month's own period) and America/New_York acquisition (same calendar day).
+  Already-posted journals are immutable and keep their historical dates;
+  non-posted queue projections re-anchor on the next refresh.
+- **Demo-auth client bundle regression (repaired).** Commit `5ac4b59` moved
+  the demo-bypass environment reads behind a function parameter, which
+  Next.js cannot statically inline into browser bundles; every client bundle
+  therefore computed `DEMO_AUTH_BYPASS === false`. The demo persona picker
+  never rendered and the entire mock-mode Playwright contract was broken
+  (the repo's happy-path spec failed at sign-in). The constant is now built
+  from literal `process.env.*` member expressions; production remains
+  fail-closed because NODE_ENV inlines as "production" there. The happy-path
+  spec passes again.
+- **Consolidated queue refresh (functional gap closed).** The ledger-controls
+  UI offered "Refresh queue" only with a concrete branch selected, while a
+  consolidated statement's coverage can only be proven by an
+  organization-wide run — so consolidated statements could never reach proven
+  coverage through the product UI. A queue refresh is a projection scan, not
+  a posting write; it is now available in the consolidated view (posting a
+  source and manual journals remain branch-gated, and read-only roles are
+  unchanged). New workspace test covers the consolidated refresh.
+- **End-to-end verification.** Mock-mode browser walkthrough of the sign-in
+  personas, ledger hub, all three statement routes, and ledger controls
+  (org-wide refresh, branch-scoped pending queue, role gating), plus a new
+  integration test that drives queue refresh → deferred membership posting →
+  recognition posting → the income statement's account-4100 revenue line →
+  proven coverage for both branch and consolidated scope.
+- **Dead code removed** from `convex/security.ts`: `hashRequest` (its
+  JSON.stringify array-replacer silently dropped nested keys from the
+  fingerprint) and `branchIdFromPublic` — both unused.
+- `.claude/launch.json` gained a `web-mock` configuration encoding the
+  sanctioned mock + demo-auth local browser contract (mirrors the Playwright
+  webServer environment); the existing `gymos-web` entry is preserved.
+- Validation for this working tree: complete Vitest suite **142 files /
+  871 tests** (includes the four new regression tests), application and
+  Convex TypeScript checks, full ESLint with secret-output audit, Next.js
+  production build, `git diff --check`, and the mock-mode Playwright
+  happy-path spec — all passing.
+
+## Mock-mode browser suite restored — 26 August 2026 (working-tree update)
+
+- Running the full credential-free Playwright suite after the demo-auth
+  repair surfaced six failures that had been invisible while the whole suite
+  failed at sign-in. Diagnosis: **no product defects** — six specs had
+  fossilized against deliberate, documented, unit-tested product changes
+  while the browser contract was dark. The specs were updated to today's
+  product truth:
+  - Reception and Operations are fail-closed concrete-branch lanes; the
+    manager-override and operations specs now select a branch (and the
+    operations spec was rewritten for the rebuilt Inventory/Checkout/
+    Equipment command center — the old Facilities tab and "Add supplier"
+    button no longer exist; it now also asserts the read-only all-branches
+    gate and resolves the seeded equipment issue).
+  - Statement routes canonicalize their date/branch scope into the URL, so
+    `$`-anchored URL assertions were relaxed.
+  - Preview member signup deliberately refuses to imitate account creation;
+    the spec now asserts the Clerk notice and the seeded-persona entry point
+    instead of typing a fake password.
+  - Public/member trial requests are scheduled: the specs select a branch,
+    wait for the unlocked time window, and assert the enabled submit.
+  - The platform entitlement spec's fixed goBack choreography rotted (in-app
+    tours coalesce history entries and a back-restored document re-enters
+    the console root); tier rounds now return by reloading the gym record —
+    each round stays reload-free between the platform save and the
+    gym-workspace observation, which is the realtime contract being proved.
+  - The pricing spec additionally asserts the Starter card's
+    `?plan=&interval=` href (the carrying contract) before navigating.
+- Final browser verdict: **31 passed / 0 failed / 14 skipped** — the skips
+  are the credential-gated Convex smoke, operational-flow, and staging
+  journeys, which require Clerk storage-state files and the staging guard
+  environment documented in the release runbook.
+
+## Accounting query performance and release-gate evidence — 26 August 2026 (working-tree update)
+
+- Report/accounting read paths were optimized without changing behavior,
+  posting policy, amounts, or any authorization decision:
+  - `stockMovements` gained a `by_public_id` index. The stock-movement
+    source-fact resolver and the posted/reversed status writeback now use an
+    indexed unique lookup instead of collecting the entire movement table per
+    lookup. Source-queue coverage evaluation (which resolves every candidate
+    on each statement render) previously scanned all movements once per
+    stock-movement candidate.
+  - Cash-flow classification receives each journal bundle directly instead of
+    re-searching every period bundle for the line it already came from.
+  - The statement report context collects the organization's journal entries
+    once per request and shares that collection between the policy scan and
+    the statement builders, halving the entry-table scans per report.
+- The next Convex deploy will therefore propose exactly one additive schema
+  change: new index `by_public_id` on `stockMovements`. No table or index
+  deletion is expected; stop per the runbook if the dry run shows anything
+  destructive.
+- Local validation for this working tree (26 August 2026): complete Vitest
+  suite **142 files / 867 tests** passed; focused financial plus statement UI
+  tests (6 files / 39 tests) passed; application and Convex TypeScript checks;
+  full ESLint with secret-output audit; Next.js production build; and
+  `git diff --check` — all clean.
+- Value-free provider inspection: `pnpm convex:env:names -- --prod` resolved
+  through the configured operator context (project `rivet`) and returned the
+  Production variable names. **`RIVET_PUBLIC_REQUEST_PEPPER` is not among
+  them.** `convex/publicAbuse.ts` requires a strong pepper in a production
+  Convex runtime and otherwise fails closed with `CONFIGURATION_ERROR` on the
+  public application/trial/entry-pass/check-in protection paths. This is a
+  release stop-condition: the owner must set the variable in the Convex
+  Production deployment dashboard (never through chat, CLI arguments, or
+  logs). The 25 August pepper correction may have been applied to the Vercel
+  environment only.
+- No Convex Production deploy, no Vercel deployment verification, and no
+  authenticated owner smoke are claimed for this tree. The release remains
+  gated on the missing Convex variable above, exact-target confirmation
+  (`descriptive-meerkat-589`), and explicit Production authorization per
+  [HANDOFF_PLAN.md](HANDOFF_PLAN.md).
 
 ## Management Ledger accounting completeness — 26 August 2026 (working-tree update)
 
