@@ -1,7 +1,7 @@
 "use client";
 
-import { ManagementLedgerWorkspace } from "@/features/finance/management-ledger-workspace";
+import { ManagementStatementsWorkspace } from "@/features/reports/management-statements-workspace";
 
 export default function FinancePage() {
-  return <ManagementLedgerWorkspace />;
+  return <ManagementStatementsWorkspace />;
 }

@@ -2,6 +2,34 @@
 
 Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification.
 
+## Management Ledger simplification — 26 August 2026 (working-tree update)
+
+- `/finance` is now the canonical, read-focused Management Ledger workspace. It
+  presents three simple statement tabs: **Income Statement** (including Net
+  Income), **Balance Sheet**, and **Cash Flow Statement**. Date and branch
+  scope stay visible, and only the active statement loads its report query.
+- Advanced accounting maintenance remains available at `/finance/controls`:
+  journal entries, source queue refresh/posting, periods, reversals, and close/
+  reopen actions. Those controls remain protected by the `finance` module and
+  the existing financial permissions.
+- `/reports/statements` remains a compatibility route for the same three
+  statements. The everyday statement route is owned by the `reporting` module;
+  the advanced controls route is owned by `finance`. Both require
+  `reports.financial.read`, so module and permission boundaries stay explicit.
+- Statement metadata now keeps completeness caveats visible. Non-proven source
+  coverage shows a warning, report warnings remain visible, and background
+  refresh failures identify that the last successful data is being shown.
+  No unsupported figures are inferred.
+- Financial mutations use centralized invalidation for both `finance` and
+  `managementReports`, so posting, reversal, period, and source-queue changes
+  refresh the controls and statement projections together.
+- Final validation passed: `pnpm --dir apps/web test` (**139 files / 851
+  tests**), app and Convex TypeScript checks, the production build, focused
+  frontend coverage (**23 tests**) and Convex workspace coverage (**7 tests**),
+  targeted lint, and `git diff --check`. No browser visual verification is
+  claimed; the local authenticated visual pass was blocked by a demo-auth
+  hydration mismatch.
+
 ## Production-readiness implementation slices — 25 August 2026 (working-tree update)
 
 The current local working tree includes the implemented P0/P1 slices from the

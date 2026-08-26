@@ -23,6 +23,13 @@ async function seeded(plan?: "Starter" | "Growth" | "Pro" | "Enterprise") {
 }
 
 describe("server-owned workspace entitlements", () => {
+  it("assigns the statements route to reporting and maintenance controls to finance", async () => {
+    const { owner } = await seeded("Pro");
+    const access = await owner.query(api.domain.query, operation("workspace.access")) as { catalog: Array<{ key: string; routePrefixes: string[] }> };
+    expect(access.catalog.find((module) => module.key === "finance")?.routePrefixes).toEqual(["/finance/controls"]);
+    expect(access.catalog.find((module) => module.key === "reporting")?.routePrefixes).toEqual(["/finance", "/reports/statements"]);
+  });
+
   it("derives all four entitlements from the organization plan", async () => {
     for (const [plan, expected] of [["Starter", ["foundation", "revenue"]], ["Growth", ["foundation", "revenue", "operations"]], ["Pro", ["foundation", "revenue", "operations", "finance", "reporting"]], ["Enterprise", ["foundation", "revenue", "operations", "finance", "reporting"]]] as const) {
       const { owner } = await seeded(plan);

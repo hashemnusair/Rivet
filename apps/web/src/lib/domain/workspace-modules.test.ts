@@ -21,6 +21,11 @@ describe("workspace module catalog", () => {
     expect(defaultWorkspacePreferences(entitledModulesForPlan())).toEqual(entitledModulesForPlan());
   });
 
+  it("assigns the statements route to reporting and maintenance controls to finance", () => {
+    expect(WORKSPACE_MODULE_CATALOG.find((module) => module.key === "finance")?.routePrefixes).toEqual(["/finance/controls"]);
+    expect(WORKSPACE_MODULE_CATALOG.find((module) => module.key === "reporting")?.routePrefixes).toEqual(["/finance", "/reports/statements"]);
+  });
+
   it("rejects unknown, unentitled, and dependency-breaking selections", () => {
     expect(() => validateWorkspaceModuleSelection(["foundation", "future"], entitledModulesForPlan("Starter"))).toThrow(/Unknown workspace module/);
     expect(() => validateWorkspaceModuleSelection(["foundation", "operations"], entitledModulesForPlan("Starter"))).toThrow(/not included/);

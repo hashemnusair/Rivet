@@ -62,4 +62,6 @@ export const INVALIDATE_ALL = [
   "reconciliation",
   "audit",
   "approvals",
+  "finance",
+  "managementReports",
 ] as const;

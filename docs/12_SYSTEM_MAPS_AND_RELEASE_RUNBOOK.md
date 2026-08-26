@@ -1,6 +1,6 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-25 for the subscription, retail, provider-removal, and
+Last reviewed: 2026-08-26 for the Management Ledger, subscription, retail, provider-removal, and
 Operations branch/equipment working-tree update.
 
 ## Purpose
@@ -13,6 +13,33 @@ This is the orientation and release-control document for RIVET. Use it to answer
 4. What must be verified before a real gym is invited?
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
+
+### Management Ledger simplification — 26 August 2026 (working-tree update)
+
+- `/finance` is the canonical simple statement workspace. It contains three
+  same-page tabs: **Income Statement** (with Net Income), **Balance Sheet**, and
+  **Cash Flow Statement**. Date and branch filters apply to the active report,
+  and inactive statement tabs do not issue report queries until selected.
+- `/finance/controls` is the advanced maintenance destination for journal
+  entries, source queue refresh/posting, periods, reversals, and close/reopen
+  actions. It remains owned by the `finance` workspace module. The statement
+  workspace and its `/reports/statements` compatibility route are owned by the
+  `reporting` module; all of these routes still require
+  `reports.financial.read`.
+- Completeness is intentionally truthful: non-proven queue coverage and report
+  warnings remain visible, and a background refresh failure identifies stale
+  last-successful data with a reload action. The UI does not turn missing or
+  unconfigured source facts into estimates.
+- Central query invalidation now includes both `finance` and
+  `managementReports`, keeping statement projections aligned after accounting
+  source posting, manual journals, reversals, and period changes.
+- Final validation passed: `pnpm --dir apps/web test` (**139 files / 851
+  tests**), app and Convex TypeScript checks, the production build, focused
+  frontend coverage (**23 tests**) and Convex workspace coverage (**7 tests**),
+  targeted lint, and `git diff --check`. No browser visual verification is
+  claimed; the local authenticated visual pass was blocked by a demo-auth
+  hydration mismatch. This remains validation evidence only and is not a
+  deployment claim.
 
 ## Current release posture
 

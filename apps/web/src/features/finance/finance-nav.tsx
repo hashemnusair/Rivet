@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Banknote, FileBarChart, LineChart } from "lucide-react";
+import { ArrowLeftRight, Banknote, FileBarChart, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -20,10 +20,7 @@ export const FINANCE_LINKS: readonly FinanceLink[] = [
   { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
   { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
   { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
-  // The operational Reports screen is a foundation view. Management
-  // statements are the Pro reporting module and must not remain advertised
-  // to Starter/Growth tenants merely because the actor has a finance role.
-  { href: "/reports/statements", label: "Management statements", icon: LineChart, anyPermission: ["reports.financial.read"], moduleKey: "reporting" },
+  { href: "/finance", label: "Management ledger", icon: ScrollText, anyPermission: ["reports.financial.read"], moduleKey: "reporting" },
 ];
 
 export function financeLinkIsVisible(

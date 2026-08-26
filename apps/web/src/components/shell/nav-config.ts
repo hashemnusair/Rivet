@@ -56,7 +56,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Finance",
     items: [
       { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
-      { href: "/finance", label: "Management ledger", icon: ScrollText, anyPermission: ["reports.financial.read"], moduleKey: "finance" },
+      { href: "/finance", label: "Management ledger", icon: ScrollText, anyPermission: ["reports.financial.read"], moduleKey: "reporting" },
     ],
   },
   {

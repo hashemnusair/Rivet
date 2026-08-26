@@ -9,7 +9,7 @@ import type {
 } from "./types";
 
 /** Increment only when the module contract or dependency graph changes. */
-export const WORKSPACE_MODULE_CATALOG_VERSION = 1;
+export const WORKSPACE_MODULE_CATALOG_VERSION = 2;
 
 export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = [
   {
@@ -54,7 +54,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     required: false,
     configurable: true,
     availableOn: ["Pro", "Enterprise"],
-    routePrefixes: ["/finance"],
+    routePrefixes: ["/finance/controls"],
   },
   {
     key: "reporting",
@@ -65,7 +65,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     required: false,
     configurable: true,
     availableOn: ["Pro", "Enterprise"],
-    routePrefixes: ["/reports/statements"],
+    routePrefixes: ["/finance", "/reports/statements"],
   },
 ] as const;
 

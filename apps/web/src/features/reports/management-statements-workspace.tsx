@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  BarChart3,
   Banknote,
   CalendarDays,
   CheckCircle2,
@@ -14,13 +13,12 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import type {
   BalanceSheet,
   CashflowSection,
   CashflowStatement,
-  GeneralManagerAnalysis,
   IncomeStatement,
-  ManagementAnalysisMetric,
   ManagementReportCompleteness,
   ManagementStatementSection,
   UUID,
@@ -31,19 +29,19 @@ import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
-import { DateTimeText, MoneyText } from "@/components/shared/data-display";
+import { MoneyText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
-import { EmptyState, ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
+import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinanceNav } from "@/features/finance/finance-nav";
 
-type StatementsTab = "income" | "balance" | "cashflow" | "analysis";
+type StatementsTab = "income" | "balance" | "cashflow";
 
 const STATUS_LABELS: Record<string, string> = {
   available: "Available",
@@ -91,17 +89,6 @@ function ReportStatusBadge({ status }: { status: string }) {
   );
 }
 
-function moneyAmount(value: unknown): value is { amount: number; currency: string } {
-  return Boolean(value && typeof value === "object" && "amount" in value && "currency" in value);
-}
-
-function metricValue(metric: ManagementAnalysisMetric): ReactNode {
-  if (metric.value === undefined || metric.value === null) return <span className="text-ink-3">—</span>;
-  if (moneyAmount(metric.value)) return <MoneyText money={metric.value} />;
-  const suffix = metric.unit === "days" ? " days" : metric.unit === "count" ? " records" : "";
-  return <span dir="ltr" className="tabular">{metric.value}{suffix}</span>;
-}
-
 function SectionLines({ section, emptyLabel = "No posted lines in this scope." }: { section: ManagementStatementSection; emptyLabel?: string }) {
   if (section.lines.length === 0) return <p className="px-4 py-5 text-[12px] text-ink-3">{emptyLabel}</p>;
   return (
@@ -147,25 +134,21 @@ function ReportErrorOrLoading({ loading, error, onRetry, title }: { loading: boo
   return null;
 }
 
-function ReportMetadata({ report }: { report?: ManagementReportCompleteness }) {
+function ReportQuality({ report }: { report?: ManagementReportCompleteness }) {
   if (!report) return null;
-  const counts = Object.entries(report.sourcePostingCounts).sort(([left], [right]) => left.localeCompare(right));
   return (
-    <>
-      <section className="panel overflow-hidden" aria-label="Statement metadata">
-        <div className="grid gap-0 divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-          <div className="p-3.5"><p className="eyebrow">Reporting period</p><p className="mt-1 text-[12px] font-medium" dir="ltr">{formatDate(report.fromDate)} – {formatDate(report.toDate)}</p><p className="mt-0.5 text-[11px] text-ink-3">{report.timezone} · {report.branchId ? "Selected branch" : "All accessible branches"}</p></div>
-          <div className="p-3.5"><p className="eyebrow">Generated</p><p className="mt-1 text-[12px] font-medium"><DateTimeText iso={report.generatedAt} /></p><p className="mt-0.5 text-[11px] text-ink-3">Amounts in <span dir="ltr">{report.currency}</span></p></div>
-          <div className="p-3.5"><p className="eyebrow">Queue coverage</p><div className="mt-1 flex flex-wrap items-center gap-2"><ReportStatusBadge status={report.queueCoverage} /><span className="text-[11px] text-ink-3">{report.lastQueueProjectionAt ? <><DateTimeText iso={report.lastQueueProjectionAt} /></> : "No refresh timestamp"}</span></div></div>
-          <div className="p-3.5"><p className="eyebrow">Policy versions</p><p className="mt-1 text-[12px] font-medium">{report.policyVersions.length > 0 ? report.policyVersions.map((policy) => `${policy.code} v${policy.version}`).join(" · ") : "None reported"}</p></div>
-        </div>
-        <div className="border-t border-line px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2"><p className="eyebrow me-1">Source status counts</p>{counts.length === 0 ? <span className="text-[11px] text-ink-3">No source statuses reported.</span> : counts.map(([status, count]) => <Badge key={status} variant={status === "posted" || status === "reversed" ? "success" : status === "pending" || status === "unconfigured" ? "warning" : status === "failed" ? "danger" : "signal"}><span className="capitalize">{statusLabel(status)}</span> <span dir="ltr">{count}</span></Badge>)}</div>
-        </div>
-      </section>
-      {report.warnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Completeness warnings</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{report.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></div></section> : null}
+    <section className="space-y-2" aria-label="Statement quality and scope">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+        <span dir="ltr">{formatDate(report.fromDate)} – {formatDate(report.toDate)}</span>
+        <span aria-hidden>·</span>
+        <span>{report.branchId ? "Selected branch" : "All accessible branches"}</span>
+        <span aria-hidden>·</span>
+        <span dir="ltr">{report.currency}</span>
+        {report.queueCoverage !== "proven" ? <Badge variant="warning">Data coverage: {STATUS_LABELS[report.queueCoverage] ?? statusLabel(report.queueCoverage)}</Badge> : null}
+      </div>
+      {report.warnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{report.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></div></section> : null}
       <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
-    </>
+    </section>
   );
 }
 
@@ -235,21 +218,6 @@ function CashflowView({ report }: { report: CashflowStatement }) {
   );
 }
 
-function AnalysisMetricCard({ metric }: { metric: ManagementAnalysisMetric }) {
-  return (
-    <section className="panel p-4" aria-label={metric.label}>
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="eyebrow">{metric.label}</p><p className="mt-1 text-[21px] font-semibold tabular">{metricValue(metric)}</p></div><ReportStatusBadge status={metric.status} /></div>
-      {metric.note ? <p className="mt-2 text-[12px] text-ink-2">{metric.note}</p> : null}
-      <p className="mt-2 text-[11px] text-ink-3">{metric.sourceCount} source {metric.sourceCount === 1 ? "record" : "records"}{metric.drilldownIds.length > 0 ? ` · ${metric.drilldownIds.length} drilldown ${metric.drilldownIds.length === 1 ? "ID" : "IDs"}` : ""}</p>
-      {metric.drilldownIds.length > 0 ? <details className="mt-2 text-[10px] text-ink-3"><summary className="cursor-pointer font-medium text-ink-2">View identifiers</summary><div className="mt-1 space-y-0.5 font-mono" dir="ltr">{metric.drilldownIds.slice(0, 5).map((id) => <div key={id}>{id}</div>)}{metric.drilldownIds.length > 5 ? <div>+{metric.drilldownIds.length - 5} more</div> : null}</div></details> : null}
-    </section>
-  );
-}
-
-function AnalysisView({ report }: { report: GeneralManagerAnalysis }) {
-  return <div className="space-y-4" data-testid="gm-analysis"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{report.metrics.length === 0 ? <EmptyState icon={BarChart3} title="No management metrics available" description="The reporting contract returned no configured metrics for this scope." compact className="sm:col-span-2 xl:col-span-3" /> : report.metrics.map((metric) => <AnalysisMetricCard key={metric.key} metric={metric} />)}</div><p className="text-[11.5px] text-ink-3">Metrics are shown only when the reporting contract provides a status, source count, and bounded drilldown identifiers. No inferred insight is added here.</p></div>;
-}
-
 function reportsForInput(input: { fromDate: string; toDate: string; branchId?: UUID }) {
   return input;
 }
@@ -275,27 +243,31 @@ export function ManagementStatementsWorkspace() {
   const reportingModule = workspace?.modules.find((module) => module.key === "reporting");
   const ready = Boolean(reportingModule?.entitled && reportingModule.enabled && validRange);
 
-  const incomeQuery = useApiQuery(qk.managementReports({ kind: "income", ...reportInput }), (api) => api.getIncomeStatement(reportInput), { enabled: ready });
-  const balanceQuery = useApiQuery(qk.managementReports({ kind: "balance", ...reportInput }), (api) => api.getBalanceSheet(reportInput), { enabled: ready });
-  const cashflowQuery = useApiQuery(qk.managementReports({ kind: "cashflow", ...reportInput }), (api) => api.getCashflowStatement(reportInput), { enabled: ready });
-  const analysisQuery = useApiQuery(qk.managementReports({ kind: "analysis", ...reportInput }), (api) => api.getGeneralManagerAnalysis(reportInput), { enabled: ready });
+  const incomeQuery = useApiQuery(qk.managementReports({ kind: "income", ...reportInput }), (api) => api.getIncomeStatement(reportInput), { enabled: ready && tab === "income", retry: false });
+  const balanceQuery = useApiQuery(qk.managementReports({ kind: "balance", ...reportInput }), (api) => api.getBalanceSheet(reportInput), { enabled: ready && tab === "balance", retry: false });
+  const cashflowQuery = useApiQuery(qk.managementReports({ kind: "cashflow", ...reportInput }), (api) => api.getCashflowStatement(reportInput), { enabled: ready && tab === "cashflow", retry: false });
 
-  const metadata = incomeQuery.data ?? balanceQuery.data ?? cashflowQuery.data ?? analysisQuery.data;
-  const reportError = incomeQuery.error ?? balanceQuery.error ?? cashflowQuery.error ?? analysisQuery.error;
-  const loading = incomeQuery.isLoading || balanceQuery.isLoading || cashflowQuery.isLoading || analysisQuery.isLoading;
+  const activeReport = tab === "income" ? incomeQuery.data : tab === "balance" ? balanceQuery.data : cashflowQuery.data;
+  const activeQuery = tab === "income" ? incomeQuery : tab === "balance" ? balanceQuery : cashflowQuery;
+  const activeBackgroundError = activeQuery.isBackgroundError;
+  const activeLoading = tab === "income" ? incomeQuery.isLoading : tab === "balance" ? balanceQuery.isLoading : cashflowQuery.isLoading;
   const readOnly = !(session?.roles.some((role) => role === "owner" || role === "manager") ?? false);
-  const refresh = () => { void Promise.all([incomeQuery.refetch(), balanceQuery.refetch(), cashflowQuery.refetch(), analysisQuery.refetch()]); };
+  const refresh = () => {
+    if (tab === "income") void incomeQuery.refetch();
+    else if (tab === "balance") void balanceQuery.refetch();
+    else void cashflowQuery.refetch();
+  };
 
-  if (sessionLoading && !session) return <><PageHeader eyebrow="Reporting" title="Management statements" description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (sessionLoading && !session) return <><PageHeader eyebrow="Finance" title="Management ledger" description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
-  if (workspaceQuery.isLoading) return <><PageHeader eyebrow="Reporting" title="Management statements" description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (workspaceQuery.isLoading) return <><PageHeader eyebrow="Finance" title="Management ledger" description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
-  if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds financial statements and general-manager analysis." className="mt-4" />;
+  if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds the income statement, balance sheet, and cash flow statement." className="mt-4" />;
   if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Management reporting is paused" description="An organization owner can enable the reporting module from workspace settings." className="mt-4" />;
 
   return (
     <div className="space-y-5" data-testid="management-statements-workspace">
-      <PageHeader eyebrow="Reporting · management accounting" title="Management statements" description="Read-only statements and decision support from posted management-ledger facts. This workspace does not claim statutory accounting compliance." actions={<><Badge variant="outline">{readOnly ? "Read-only access" : "Read-only statement view"}</Badge><Button type="button" variant="secondary" onClick={refresh} disabled={loading}><RefreshCw className={loading ? "animate-spin" : undefined} /> Refresh</Button></>} />
+      <PageHeader eyebrow="Finance" title="Management ledger" description="Three clear statements from posted management-ledger facts: income, balance sheet, and cash flow." actions={<><Badge variant="outline">{readOnly ? "Read-only access" : "Read-only statements"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={activeLoading}><RefreshCw className={activeLoading ? "animate-spin" : undefined} /> Reload</Button></>} />
       <FinanceNav />
       <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Statement scope filters">
         <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} dir="ltr" /></Field>
@@ -305,15 +277,14 @@ export function ManagementStatementsWorkspace() {
         {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
       </section>
 
-      {reportError && !loading ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some statement panels could not refresh. Panels that loaded remain visible. <button type="button" className="font-medium underline" onClick={refresh}>Retry all</button></div> : null}
-      <ReportMetadata report={metadata} />
+      <ReportQuality report={activeReport} />
+      {activeBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh}>Reload</button></div> : null}
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as StatementsTab)}>
-        <TabsList className="max-w-full overflow-x-auto" aria-label="Management statements"><TabsTrigger value="income"><TrendingUp className="size-3.5" /> Income statement</TabsTrigger><TabsTrigger value="balance"><Scale className="size-3.5" /> Balance sheet</TabsTrigger><TabsTrigger value="cashflow"><Banknote className="size-3.5" /> Cashflow</TabsTrigger><TabsTrigger value="analysis"><BarChart3 className="size-3.5" /> GM analysis</TabsTrigger></TabsList>
-        <TabsContent value="income"><ReportErrorOrLoading loading={incomeQuery.isLoading} error={incomeQuery.error} onRetry={() => void incomeQuery.refetch()} title="Income statement" />{incomeQuery.data ? <IncomeStatementView report={incomeQuery.data} /> : null}</TabsContent>
-        <TabsContent value="balance"><ReportErrorOrLoading loading={balanceQuery.isLoading} error={balanceQuery.error} onRetry={() => void balanceQuery.refetch()} title="Balance sheet" />{balanceQuery.data ? <BalanceSheetView report={balanceQuery.data} /> : null}</TabsContent>
-        <TabsContent value="cashflow"><ReportErrorOrLoading loading={cashflowQuery.isLoading} error={cashflowQuery.error} onRetry={() => void cashflowQuery.refetch()} title="Cashflow statement" />{cashflowQuery.data ? <CashflowView report={cashflowQuery.data} /> : null}</TabsContent>
-        <TabsContent value="analysis"><ReportErrorOrLoading loading={analysisQuery.isLoading} error={analysisQuery.error} onRetry={() => void analysisQuery.refetch()} title="General-manager analysis" />{analysisQuery.data ? <AnalysisView report={analysisQuery.data} /> : null}</TabsContent>
+        <TabsList className="max-w-full overflow-x-auto" aria-label="Management statements"><TabsTrigger value="income"><TrendingUp className="size-3.5" /> Income statement</TabsTrigger><TabsTrigger value="balance"><Scale className="size-3.5" /> Balance sheet</TabsTrigger><TabsTrigger value="cashflow"><Banknote className="size-3.5" /> Cash flow statement</TabsTrigger></TabsList>
+        <TabsContent value="income"><ReportErrorOrLoading loading={incomeQuery.isLoading} error={incomeQuery.isError ? incomeQuery.error : undefined} onRetry={() => void incomeQuery.refetch()} title="Income statement" />{incomeQuery.data ? <IncomeStatementView report={incomeQuery.data} /> : null}</TabsContent>
+        <TabsContent value="balance"><ReportErrorOrLoading loading={balanceQuery.isLoading} error={balanceQuery.isError ? balanceQuery.error : undefined} onRetry={() => void balanceQuery.refetch()} title="Balance sheet" />{balanceQuery.data ? <BalanceSheetView report={balanceQuery.data} /> : null}</TabsContent>
+        <TabsContent value="cashflow"><ReportErrorOrLoading loading={cashflowQuery.isLoading} error={cashflowQuery.isError ? cashflowQuery.error : undefined} onRetry={() => void cashflowQuery.refetch()} title="Cashflow statement" />{cashflowQuery.data ? <CashflowView report={cashflowQuery.data} /> : null}</TabsContent>
       </Tabs>
     </div>
   );

@@ -4,7 +4,7 @@
  * contract. No music/signage or other speculative modules belong here.
  */
 
-export const WORKSPACE_MODULE_CATALOG_VERSION = 1;
+export const WORKSPACE_MODULE_CATALOG_VERSION = 2;
 
 export type WorkspaceModuleKey = "foundation" | "revenue" | "operations" | "finance" | "reporting";
 export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -64,7 +64,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     required: false,
     configurable: true,
     availableOn: ["Pro", "Enterprise"],
-    routePrefixes: ["/finance"],
+    routePrefixes: ["/finance/controls"],
   },
   {
     key: "reporting",
@@ -75,7 +75,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     required: false,
     configurable: true,
     availableOn: ["Pro", "Enterprise"],
-    routePrefixes: ["/reports/statements"],
+    routePrefixes: ["/finance", "/reports/statements"],
   },
 ] as const;
 
