@@ -183,6 +183,41 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/source name will not be recorded/i);
   });
 
+  it("filters stock by search and keeps row actions to sell, reorder, and edit", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+
+    await screen.findByRole("button", { name: "Edit Creatine monohydrate" });
+    expect(screen.queryByRole("button", { name: /^Delete /i })).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Search stock items" }), "creatine");
+    expect(screen.getByText("Creatine monohydrate")).toBeInTheDocument();
+    expect(screen.queryByText("Protein bar")).not.toBeInTheDocument();
+    await user.clear(screen.getByRole("textbox", { name: "Search stock items" }));
+    expect(await screen.findByText("Protein bar")).toBeInTheDocument();
+  });
+
+  it("jumps from an inventory row into checkout with that item already in the sale", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />);
+    await selectBranch(user);
+
+    await user.click(await screen.findByRole("button", { name: "Sell Protein bar" }));
+    expect(screen.getByRole("tab", { name: /Checkout/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: "Add another Protein bar" })).toBeInTheDocument();
+  });
+
+  it("opens a reorder draft with the row's product preselected", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+
+    await user.click(await screen.findByRole("button", { name: "Reorder Protein bar" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create purchase order" });
+    expect(within(dialog).getByRole("combobox", { name: "Purchase order product" })).toHaveTextContent(/Protein bar/);
+  });
+
   it("edits selected-branch availability without sending removed product fields", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });

@@ -195,7 +195,7 @@ function CustomerPicker({
             <>
               <div className="relative">
                 <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-                <Input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or member number…" className="ps-8" aria-label="Search member for retail sale" />
+                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or member number…" className="ps-8" aria-label="Search member for retail sale" />
               </div>
               <div className="mt-3">
                 {query.isLoading ? (
@@ -285,7 +285,7 @@ function Cart({ lines, inventory, currency, onQuantity, onRemove }: { lines: Car
   );
 }
 
-export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}) {
+export function RetailCheckout({ embedded = false, preselectProductId }: { embedded?: boolean; preselectProductId?: string } = {}) {
   const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
@@ -316,7 +316,9 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
   const [validationError, setValidationError] = useState<string>();
   const idempotencyKey = useRef(newIdempotencyKey());
   const currency = session?.organization.currency ?? "JOD";
-  const preselectedProductId = searchParams.get("productId");
+  // A Sell action in the Inventory tab preselects through the prop; a deep
+  // link preselects through the URL. Both use the same guarded effect below.
+  const preselectedProductId = preselectProductId ?? searchParams.get("productId");
   const concreteBranchId = visibleBranchIds.has(branchId) ? branchId : validUrlBranchId ?? globalBranchId ?? "";
   const workspaceQuery = useApiQuery(qk.workspaceAccess, (api) => api.getWorkspaceAccess(), { enabled: Boolean(session) });
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings(), { enabled: Boolean(session) });
@@ -526,19 +528,21 @@ export function RetailCheckout({ embedded = false }: { embedded?: boolean } = {}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
-          <CustomerPicker mode={mode} onModeChange={setMode} member={member} onMember={setMember} guest={guest} onGuest={setGuest} branchId={concreteBranchId} />
-
+          {/* Desk order: scan the items first, then say who is buying, then
+              how it was paid. The server validates the whole sale either way. */}
           <section className="panel overflow-hidden" aria-labelledby="products-heading">
             <header className="border-b border-line px-4 py-3.5">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div><p className="eyebrow">Sellable stock</p><h2 id="products-heading" className="mt-1 text-[16px] font-semibold">Choose items</h2><p className="mt-1 text-[12px] text-ink-3">Only active items with a configured selling price and available stock can be sold.</p></div>
-                <div className="relative w-full max-w-xs"><Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden /><Input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search stock…" className="ps-8" aria-label="Search sellable stock" /></div>
+                <div className="relative w-full max-w-xs"><Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden /><Input autoFocus value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search stock…" className="ps-8" aria-label="Search sellable stock" /></div>
               </div>
             </header>
             <div className="p-4">
               {productsQuery.isLoading ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-40 w-full" />)}</div> : visibleProducts.length === 0 ? <EmptyState compact title={productSearch ? "No matching stock" : "No sellable stock"} description="Add active stock and set a selling price in the Operations catalog." /> : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} available={stockFor(product.id)} quantity={cart[product.id] ?? 0} currency={currency} onAdd={() => addProduct(product)} />)}</div>}
             </div>
           </section>
+
+          <CustomerPicker mode={mode} onModeChange={setMode} member={member} onMember={setMember} guest={guest} onGuest={setGuest} branchId={concreteBranchId} />
 
           <section className="panel p-4" aria-labelledby="payment-heading">
             <div className="mb-3"><p className="eyebrow">Payment</p><h2 id="payment-heading" className="mt-1 text-[16px] font-semibold">How was it paid?</h2></div>
