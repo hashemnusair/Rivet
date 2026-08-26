@@ -55,6 +55,16 @@ See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, 
   showing earned membership revenue 18.924 recognized inside August by the
   tenant-date anchoring. The consolidated coverage badge cleared on all
   three statements.
+- The owner then posted the opening-balance manual journal (Main branch,
+  posting date 2025-06-01, memo "Opening balances at ledger cutover"):
+  Dr 1200 Accounts receivable 355.000 / Cr 3000 Owner equity 355.000,
+  derived from the trial-balance offset and the outstanding-balances record
+  of JOD 0.000. Verified after posting: receivables net to zero, owner
+  equity 355.000, and the balance sheet reconciles at 1,810.000 =
+  1,810.000 with difference 0.000. Remaining unconfigured queue rows are
+  the reviewed deliberate exclusions (cancelled test memberships and their
+  recognition schedules, stock adjustments without a posting policy, one
+  historical stock sale without a unit cost).
 
 ## Management-ledger deep dive: tenant-date anchoring, demo-auth repair, consolidated refresh — 26 August 2026 (working-tree update)
 
