@@ -131,8 +131,40 @@ function ReportErrorOrLoading({ loading, error, onRetry, title }: { loading: boo
   return null;
 }
 
-function ReportQuality({ report }: { report?: ManagementReportCompleteness }) {
+const MEMBERSHIP_RECOGNITION_WARNING_KEY = "membership-revenue-recognition";
+
+function normalizedWarningKey(warning: string): string {
+  const normalized = warning.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalized.startsWith("membership revenue recognition") ? MEMBERSHIP_RECOGNITION_WARNING_KEY : normalized;
+}
+
+/** Keep report caveats readable when a provider repeats the same warning. */
+export function dedupeStatementWarnings(warnings: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return warnings.reduce<string[]>((deduped, warning) => {
+    const displayWarning = warning.trim().replace(/\s+/g, " ");
+    if (!displayWarning) return deduped;
+    const key = normalizedWarningKey(displayWarning);
+    if (seen.has(key)) return deduped;
+    seen.add(key);
+    deduped.push(displayWarning);
+    return deduped;
+  }, []);
+}
+
+function statementWarnings(report: ManagementReportCompleteness | undefined, kind: ManagementStatementKind): string[] {
+  if (!report) return [];
+  const warnings = [...report.warnings];
+  const membershipRevenueRecognition = kind === "income" ? (report as IncomeStatement).membershipRevenueRecognition : undefined;
+  if (membershipRevenueRecognition === "not_configured" && !warnings.some((warning) => normalizedWarningKey(warning) === MEMBERSHIP_RECOGNITION_WARNING_KEY)) {
+    warnings.push("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
+  }
+  return dedupeStatementWarnings(warnings);
+}
+
+function ReportQuality({ report, warnings }: { report?: ManagementReportCompleteness; warnings?: readonly string[] }) {
   if (!report) return null;
+  const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings);
   return (
     <section className="space-y-2" aria-label="Statement quality and scope">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
@@ -143,14 +175,13 @@ function ReportQuality({ report }: { report?: ManagementReportCompleteness }) {
         <span dir="ltr">{report.currency}</span>
         {report.queueCoverage !== "proven" ? <Badge variant="warning">Data coverage: {STATUS_LABELS[report.queueCoverage] ?? statusLabel(report.queueCoverage)}</Badge> : null}
       </div>
-      {report.warnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{report.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></div></section> : null}
+      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul></div></div></section> : null}
       <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
     </section>
   );
 }
 
 function IncomeStatementView({ report }: { report: IncomeStatement }) {
-  const recognitionWarning = report.membershipRevenueRecognition !== "available";
   return (
     <div className="space-y-4" data-testid="income-statement">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -158,7 +189,6 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
         <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" />
         <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue less cost of sales, operating expenses, and other expenses." />
       </div>
-      {recognitionWarning ? <div className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status"><p className="font-medium">Membership revenue recognition is {(STATUS_LABELS[report.membershipRevenueRecognition] ?? statusLabel(report.membershipRevenueRecognition)).toLowerCase()}.</p><p className="mt-0.5">Deferred membership sales are not presented as earned revenue until a recognition policy is configured.</p></div> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <StatementSectionCard title="Revenue" section={report.revenue} tone="positive" />
         <StatementSectionCard title="Cost of sales" section={report.costOfSales} tone="negative" />
@@ -372,6 +402,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
 
   const report = statementQuery.data;
   const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} /> : <CashflowView report={report as CashflowStatement} /> : null;
+  const reportWarnings = statementWarnings(report, kind);
 
   if (sessionLoading && !session) return <><PageHeader eyebrow="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
@@ -384,7 +415,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
       <PageHeader eyebrow="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} />
-      <ReportQuality report={report} />
+      <ReportQuality report={report} warnings={reportWarnings} />
       {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}
       <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
       {reportView}

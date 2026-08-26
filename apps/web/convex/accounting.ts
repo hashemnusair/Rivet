@@ -32,10 +32,12 @@ export type AccountingSourceType =
   | "void"
   | "membership_sale"
   | "membership_renewal"
+  | "membership_revenue_recognition"
   | "purchase_order_receipt"
   | "stock_movement"
   | "facility_supplies"
   | "equipment_acquisition"
+  | "equipment_depreciation"
   | "equipment_repair";
 
 type PostingStatus = "pending" | "posted" | "unconfigured" | "excluded" | "failed" | "reversed";
@@ -76,6 +78,7 @@ export const DEFAULT_ACCOUNT_DEFINITIONS: readonly AccountDefinition[] = [
   { code: "1200", name: "Accounts receivable", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "1300", name: "Inventory", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "1500", name: "Gym equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "investing", normalBalance: "debit" },
+  { code: "1550", name: "Accumulated depreciation — equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "non_cash", normalBalance: "credit" },
   { code: "2100", name: "Supplier payables", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
@@ -84,6 +87,7 @@ export const DEFAULT_ACCOUNT_DEFINITIONS: readonly AccountDefinition[] = [
   { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5600", name: "Depreciation expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "non_cash", normalBalance: "debit" },
   { code: "5900", name: "Other operating expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
 ];
 
@@ -99,6 +103,7 @@ interface PolicyDefinition {
 export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   { policyCode: "membership-sale.v1", sourceType: "membership_sale", version: 1, debitAccountCode: "1200", creditAccountCode: "2200", recognition: "deferred" },
   { policyCode: "membership-renewal.v1", sourceType: "membership_renewal", version: 1, debitAccountCode: "1200", creditAccountCode: "2200", recognition: "deferred" },
+  { policyCode: "membership-revenue-recognition.v1", sourceType: "membership_revenue_recognition", version: 1, debitAccountCode: "2200", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "payment-cash.v1", sourceType: "payment", version: 1, debitAccountCode: "1100", creditAccountCode: "1200", recognition: "immediate" },
   { policyCode: "payment-card.v1", sourceType: "payment", version: 1, debitAccountCode: "1110", creditAccountCode: "1200", recognition: "immediate" },
   { policyCode: "payment-bank-transfer.v1", sourceType: "payment", version: 1, debitAccountCode: "1120", creditAccountCode: "1200", recognition: "immediate" },
@@ -146,6 +151,7 @@ export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   { policyCode: "stock-return.v1", sourceType: "stock_movement", version: 1, debitAccountCode: "1300", creditAccountCode: "5100", recognition: "immediate" },
   { policyCode: "facility-supplies.v1", sourceType: "facility_supplies", version: 1, debitAccountCode: "5300", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "equipment-acquisition.v1", sourceType: "equipment_acquisition", version: 1, debitAccountCode: "1500", creditAccountCode: "2100", recognition: "immediate" },
+  { policyCode: "equipment-depreciation.v1", sourceType: "equipment_depreciation", version: 1, debitAccountCode: "5600", creditAccountCode: "1550", recognition: "immediate" },
   { policyCode: "equipment-repair.v1", sourceType: "equipment_repair", version: 1, debitAccountCode: "5200", creditAccountCode: "2100", recognition: "immediate" },
 ];
 
@@ -229,6 +235,154 @@ function periodBounds(periodId: string): { start: string; end: string } {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
+type MonthlyAllocation = { month: string; serviceStart: string; serviceEnd: string; days: number; amount: number };
+
+// Accounting schedules are intentionally bounded. A malformed legacy record
+// must never be able to make a refresh walk an unbounded date range.
+export const MAX_MEMBERSHIP_SERVICE_MONTHS = 120;
+export const MAX_EQUIPMENT_USEFUL_LIFE_MONTHS = 600;
+const DAY_MS = 86_400_000;
+
+function validCalendarDate(value: unknown): string | undefined {
+  const candidate = optionalText(value);
+  if (!candidate || !/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return undefined;
+  const parsed = new Date(`${candidate}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate ? candidate : undefined;
+}
+
+function monthEndDate(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber!, 0)).toISOString().slice(0, 10);
+}
+
+function monthStartDate(month: string): string {
+  return `${month}-01`;
+}
+
+function addCalendarMonths(month: string, count: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber! - 1 + count, 1)).toISOString().slice(0, 7);
+}
+
+function calendarMonthSpan(startDate: string, endDate: string): number {
+  const startYear = Number(startDate.slice(0, 4));
+  const startMonth = Number(startDate.slice(5, 7));
+  const endYear = Number(endDate.slice(0, 4));
+  const endMonth = Number(endDate.slice(5, 7));
+  return (endYear - startYear) * 12 + endMonth - startMonth + 1;
+}
+
+type FreezeWindow = { startDate: string; endDate: string };
+
+function freezeWindows(value: unknown, startDate: string, endDate: string): FreezeWindow[] {
+  const rows: unknown[] = [];
+  if (Array.isArray(value)) rows.push(...value);
+  const windows = new Map<string, FreezeWindow>();
+  for (const raw of rows) {
+    const row = objectValue(raw);
+    const status = optionalText(row.status);
+    if (status && !["active", "completed"].includes(status)) continue;
+    const start = validCalendarDate(row.startDate);
+    const end = validCalendarDate(row.endDate);
+    if (!start || !end || start > end || end < startDate || start > endDate) continue;
+    const clipped = { startDate: start < startDate ? startDate : start, endDate: end > endDate ? endDate : end };
+    if (clipped.startDate <= clipped.endDate) windows.set(`${clipped.startDate}:${clipped.endDate}`, clipped);
+  }
+  return [...windows.values()].sort((left, right) => left.startDate.localeCompare(right.startDate) || left.endDate.localeCompare(right.endDate));
+}
+
+function cancellationLocalDate(value: unknown, timezone: string): { date?: string; invalid: boolean } {
+  const raw = optionalText(value);
+  if (!raw) return { invalid: false };
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) return { invalid: true };
+  return { date: localDate(timestamp, timezone), invalid: false };
+}
+
+function membershipFreezeWindows(value: JsonRecord, startDate: string, endDate: string): FreezeWindow[] {
+  const rows: unknown[] = Array.isArray(value.freezes) ? [...value.freezes] : [];
+  if (value.activeFreeze && typeof value.activeFreeze === "object" && !Array.isArray(value.activeFreeze)) rows.push(value.activeFreeze);
+  return freezeWindows(rows, startDate, endDate);
+}
+
+function dayExcluded(date: string, windows: readonly FreezeWindow[]): boolean {
+  return windows.some((window) => window.startDate <= date && date <= window.endDate);
+}
+
+function nextCalendarDay(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + DAY_MS).toISOString().slice(0, 10);
+}
+
+function previousCalendarDay(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) - DAY_MS).toISOString().slice(0, 10);
+}
+
+function validAccountingMonth(value: string): boolean {
+  if (!/^\d{4}-\d{2}$/.test(value)) return false;
+  const [year, month] = value.split("-").map(Number);
+  return Number.isInteger(year) && Number.isInteger(month) && month! >= 1 && month! <= 12;
+}
+
+/**
+ * Allocate a net membership amount by inclusive service days. Integer minor
+ * units are distributed by quotient/remainder so allocations always sum to
+ * the source amount and never depend on floating point rounding.
+ */
+function allocateMembershipByMonth(netAmount: number, startDate: string, endDate: string, options?: { cancellationDate?: string; freezes?: unknown }): MonthlyAllocation[] {
+  if (!Number.isSafeInteger(netAmount) || netAmount < 0 || startDate > endDate || calendarMonthSpan(startDate, endDate) > MAX_MEMBERSHIP_SERVICE_MONTHS) return [];
+  const windows = freezeWindows(options?.freezes, startDate, endDate);
+  const serviceDates: string[] = [];
+  for (let date = startDate; date <= endDate; date = nextCalendarDay(date)) if (!dayExcluded(date, windows)) serviceDates.push(date);
+  if (serviceDates.length === 0) return [];
+  const quotient = Math.floor(netAmount / serviceDates.length);
+  const remainder = netAmount - quotient * serviceDates.length;
+  const earnedThrough = options?.cancellationDate && options.cancellationDate < endDate ? options.cancellationDate : endDate;
+  const grouped = new Map<string, MonthlyAllocation>();
+  for (let index = 0; index < serviceDates.length; index += 1) {
+    const date = serviceDates[index]!;
+    if (date > earnedThrough) continue;
+    const amount = quotient + (index < remainder ? 1 : 0);
+    if (amount <= 0) continue;
+    const month = date.slice(0, 7);
+    const row = grouped.get(month) ?? { month, serviceStart: date, serviceEnd: date, days: 0, amount: 0 };
+    row.serviceEnd = date;
+    row.days += 1;
+    row.amount += amount;
+    grouped.set(month, row);
+  }
+  // A zero allocation is not a candidate. There is no journal to post and
+  // treating it as incomplete would make a valid low-value term look broken.
+  return [...grouped.values()].filter((row) => row.amount > 0);
+}
+
+function allocationForSource(sourceId: string, prefix: string): { entityId: string; month: string } | undefined {
+  const marker = `${prefix}:`;
+  if (!sourceId.startsWith(marker)) return undefined;
+  const rest = sourceId.slice(marker.length);
+  const separator = rest.lastIndexOf(":");
+  if (separator < 1) return undefined;
+  const entityId = rest.slice(0, separator);
+  const month = rest.slice(separator + 1);
+  return /^\d{4}-\d{2}$/.test(month) || month === "unconfigured" ? { entityId, month } : undefined;
+}
+
+function equipmentServiceDate(input: { installationDate?: unknown; purchaseDate?: unknown }): { date?: string; source?: "placed_in_service" | "purchase" } {
+  const placedInService = validCalendarDate(input.installationDate);
+  if (placedInService) return { date: placedInService, source: "placed_in_service" };
+  const purchase = validCalendarDate(input.purchaseDate);
+  if (purchase) return { date: purchase, source: "purchase" };
+  return {};
+}
+
+function monthlyDepreciationAmount(costMinor: number, usefulLifeMonths: number, monthIndex: number): number | undefined {
+  if (!Number.isSafeInteger(costMinor) || costMinor <= 0 || !Number.isSafeInteger(usefulLifeMonths) || usefulLifeMonths < 1 || monthIndex < 0 || monthIndex >= usefulLifeMonths) return undefined;
+  const base = Math.floor(costMinor / usefulLifeMonths);
+  const remainder = costMinor - base * usefulLifeMonths;
+  // The first remainder months receive one extra minor unit. This is a
+  // deterministic straight-line schedule whose total always equals cost.
+  return base + (monthIndex < remainder ? 1 : 0);
+}
+
 async function requireFinance(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preference = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
@@ -273,6 +427,19 @@ async function branchByPublicId(ctx: ReadContext, actor: ActorContext, branchPub
 async function branchById(ctx: ReadContext, actor: ActorContext, branchId: Id<"branches">): Promise<Doc<"branches">> {
   const branch = await ctx.db.get(branchId);
   assertBranchAccess(actor, branch);
+  return branch;
+}
+
+/**
+ * Historical accounting facts remain readable after a branch is deactivated.
+ * This resolver keeps the tenant and actor scope checks, but deliberately does
+ * not require the branch to remain active. Mutations still reject the fact via
+ * its unconfigured status, so an inactive branch can never receive new books.
+ */
+async function accountingBranchById(ctx: ReadContext, actor: ActorContext, branchId: Id<"branches">): Promise<Doc<"branches"> | undefined> {
+  const branch = await ctx.db.get(branchId);
+  if (!branch || branch.organizationId !== actor.organization._id) return undefined;
+  if (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id)) return undefined;
   return branch;
 }
 
@@ -446,6 +613,7 @@ function sourceView(row: SourcePosting, organizationId: string, branchPublicId?:
     currency: row.currency,
     policyCode: row.policyCode,
     policyVersion: row.policyVersion,
+    projectionFingerprint: row.projectionFingerprint,
     journalEntryId: row.journalEntryPublicId,
     idempotencyKey: row.idempotencyKey,
     reason: row.reason,
@@ -458,7 +626,7 @@ function sourceView(row: SourcePosting, organizationId: string, branchPublicId?:
 
 async function sourcePostingAttemptView(ctx: ReadContext, actor: ActorContext, attempt: PostingAttempt): Promise<JsonRecord> {
   requireAccountingRecordVisible(actor, attempt.branchId);
-  const branch = attempt.branchId ? await branchById(ctx, actor, attempt.branchId) : undefined;
+  const branch = attempt.branchId ? await accountingBranchById(ctx, actor, attempt.branchId) : undefined;
   return {
     id: attempt.sourcePostingPublicId ?? attempt.publicId,
     organizationId: publicOrganizationId(actor.organization),
@@ -535,14 +703,16 @@ async function journalEntryView(ctx: ReadContext, actor: ActorContext, entry: Jo
 async function sourceBranchForRecord(ctx: ReadContext, actor: ActorContext, record: DomainRecord): Promise<{ branch?: Doc<"branches">; branchPublicId?: string }> {
   if (!record.branchId) {
     const branchPublic = optionalText(objectValue(record.data).branchId) ?? optionalText(objectValue(record.data).homeBranchId);
-    const branch = await branchByPublicId(ctx, actor, branchPublic);
+    if (!branchPublic) return {};
+    const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", branchPublic)).unique();
+    if (!branch || (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id))) return {};
     return { branch, branchPublicId: branch ? publicBranchId(branch) : undefined };
   }
-  const branch = await branchById(ctx, actor, record.branchId);
+  const branch = await accountingBranchById(ctx, actor, record.branchId);
   return { branch, branchPublicId: branch ? publicBranchId(branch) : undefined };
 }
 
-interface SourceFact {
+export interface SourceFact {
   sourceType: AccountingSourceType;
   sourcePublicId: string;
   branch?: Doc<"branches">;
@@ -574,7 +744,16 @@ async function domainSource(ctx: ReadContext, actor: ActorContext, entityType: s
   return await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", entityType).eq("publicId", sourceId)).unique() ?? undefined;
 }
 
-async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: AccountingSourceType, sourceId: string): Promise<SourceFact> {
+async function sourcePostingByIdentity(ctx: ReadContext, actor: ActorContext, sourceType: AccountingSourceType, sourcePublicId: string): Promise<SourcePosting | undefined> {
+  return await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", sourceType).eq("sourcePublicId", sourcePublicId)).unique() ?? undefined;
+}
+
+function supersededByImmediatePlanChange(value: JsonRecord): boolean {
+  if (!Array.isArray(value.adjustments)) return false;
+  return value.adjustments.some((item) => text(objectValue(item).type) === "plan_change" && Boolean(optionalText(objectValue(objectValue(item).after).successorMembershipId)));
+}
+
+export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: AccountingSourceType, sourceId: string): Promise<SourceFact> {
   const currency = actor.organization.currency.toUpperCase();
   if (!sourceId.trim()) domainError("VALIDATION_ERROR", "A source id is required.", { correlationId: actor.correlationId });
 
@@ -627,6 +806,58 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     };
   }
 
+  if (sourceType === "membership_revenue_recognition") {
+    const allocation = allocationForSource(sourceId, "membership-revenue");
+    if (!allocation) domainError("VALIDATION_ERROR", "Membership recognition source id must include a membership id and YYYY-MM service month.", { correlationId: actor.correlationId });
+    const record = await domainSource(ctx, actor, "membership", allocation.entityId);
+    if (!record) domainError("NOT_FOUND", "Membership recognition source not found.", { correlationId: actor.correlationId });
+    const value = objectValue(record.data);
+    const sale = amountObject(value.salePrice);
+    const discount = amountObject(value.discount);
+    const sourceCurrency = sale.currency ?? currency;
+    const discountAmount = discount.amount ?? 0;
+    const netAmount = sale.amount !== undefined && Number.isSafeInteger(sale.amount - discountAmount) ? sale.amount - discountAmount : undefined;
+    const startDate = validCalendarDate(value.startDate);
+    const endDate = validCalendarDate(value.endDate);
+    const originalSourceType: AccountingSourceType = optionalText(value.previousMembershipId) ? "membership_renewal" : "membership_sale";
+    const originalSource = await sourcePostingByIdentity(ctx, actor, originalSourceType, allocation.entityId);
+    const recordBranchId = await sourceRecordBranchId(ctx, actor, record);
+    const originalBranch = originalSource?.branchId ? await accountingBranchById(ctx, actor, originalSource.branchId) : undefined;
+    const recordBranch = recordBranchId ? await accountingBranchById(ctx, actor, recordBranchId) : undefined;
+    const recognitionBranch = originalBranch ?? recordBranch;
+    const originalAmount = originalSource?.amountMinor;
+    const dependencyValid = originalSource?.status === "posted" && originalBranch !== undefined && originalSource.branchId === recordBranchId && originalSource.currency === currency && originalAmount !== undefined && Number.isSafeInteger(originalAmount) && originalAmount > 0;
+    const recognitionBase = dependencyValid && netAmount !== undefined && netAmount >= 0 ? Math.min(netAmount, originalAmount!) : undefined;
+    const cancellation = cancellationLocalDate(value.cancelledAt, actor.organization.timezone);
+    const cancellationDate = cancellation.date && supersededByImmediatePlanChange(value) ? previousCalendarDay(cancellation.date) : cancellation.date;
+    const scheduleTooLong = Boolean(startDate && endDate && startDate <= endDate && calendarMonthSpan(startDate, cancellationDate && cancellationDate < endDate ? cancellationDate : endDate) > MAX_MEMBERSHIP_SERVICE_MONTHS);
+    const allocations = startDate && endDate && startDate <= endDate && recognitionBase !== undefined && recognitionBase >= 0 && !scheduleTooLong
+      ? allocateMembershipByMonth(recognitionBase, startDate, endDate, { cancellationDate, freezes: membershipFreezeWindows(value, startDate, endDate) })
+      : [];
+    const selected = allocations.find((candidate) => candidate.month === allocation.month);
+    const occurredAt = selected ? Date.parse(monthEndDate(selected.month) + "T23:59:59.999Z") : record.createdAt;
+    const invalidCurrency = sourceCurrency !== currency || (discount.currency !== undefined && discount.currency !== currency);
+    const approvalStatus = text(value.discountApprovalStatus, "none");
+    const futureMonth = validAccountingMonth(allocation.month) && allocation.month > localDate(Date.now(), actor.organization.timezone).slice(0, 7);
+    const valid = dependencyValid && !cancellation.invalid && !futureMonth && !scheduleTooLong && startDate !== undefined && endDate !== undefined && startDate <= endDate && selected !== undefined && selected.amount > 0 && Number.isSafeInteger(netAmount) && discountAmount >= 0 && sale.amount !== undefined && discountAmount <= sale.amount && approvalStatus !== "pending" && approvalStatus !== "rejected";
+    return {
+      sourceType,
+      sourcePublicId: sourceId,
+      branch: recognitionBranch,
+      branchPublicId: recognitionBranch ? publicBranchId(recognitionBranch) : undefined,
+      amountMinor: selected?.amount,
+      currency: sourceCurrency,
+      occurredAt,
+      memo: "Membership revenue recognition " + allocation.entityId + " · " + allocation.month,
+      policyCode: "membership-revenue-recognition.v1",
+      debitAccountCode: "2200",
+      creditAccountCode: "4100",
+      details: { membershipId: allocation.entityId, serviceMonth: allocation.month, serviceStart: selected?.serviceStart ?? startDate, serviceEnd: selected?.serviceEnd ?? endDate, serviceDays: selected?.days, netAmountMinor: netAmount, postedDeferredAmountMinor: originalAmount, recognitionBaseMinor: recognitionBase, cancellationDate, frozenServiceDaysExcluded: startDate && endDate ? membershipFreezeWindows(value, startDate, endDate) : [], allocatedAmountMinor: selected?.amount, allocationPolicy: "daily-weighted-largest-remainder.v1" },
+      status: invalidCurrency ? "excluded" : valid ? undefined : "unconfigured",
+      reason: invalidCurrency ? "Membership currency does not match organization currency " + currency + "." : cancellation.invalid ? "Membership cancellation date is invalid." : futureMonth ? "Future membership service months cannot be recognized." : scheduleTooLong ? `Membership service schedules cannot exceed ${MAX_MEMBERSHIP_SERVICE_MONTHS} months.` : !startDate || !endDate || startDate > endDate ? "Membership service start and end dates must be valid calendar dates." : netAmount === undefined || netAmount < 0 || !Number.isSafeInteger(netAmount) ? "Membership net amount is not a safe non-negative integer minor-unit amount." : approvalStatus === "pending" || approvalStatus === "rejected" ? "Membership discount approval is not complete." : !dependencyValid ? "The original membership sale or renewal must be posted in the same branch and currency before revenue can be recognized." : !selected ? "No positive earned amount exists for " + allocation.month + "." : selected.amount <= 0 ? "This service month has no positive amount to recognize." : "Membership recognition source is not configured.",
+    };
+  }
+
   if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
     const record = await domainSource(ctx, actor, "membership", sourceId);
     if (!record) domainError("NOT_FOUND", "Membership source not found.", { correlationId: actor.correlationId });
@@ -664,10 +895,52 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     };
   }
 
+  if (sourceType === "equipment_depreciation") {
+    const allocation = allocationForSource(sourceId, "equipment-depreciation");
+    if (!allocation) domainError("VALIDATION_ERROR", "Equipment depreciation source id must include an asset id and YYYY-MM service month.", { correlationId: actor.correlationId });
+    const asset = await ctx.db.query("equipmentAssets").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", allocation.entityId)).unique();
+    if (!asset) domainError("NOT_FOUND", "Equipment depreciation source not found.", { correlationId: actor.correlationId });
+    const acquisitionSource = await sourcePostingByIdentity(ctx, actor, "equipment_acquisition", asset.publicId);
+    const acquisitionBranch = acquisitionSource?.branchId ? await accountingBranchById(ctx, actor, acquisitionSource.branchId) : undefined;
+    const assetBranch = await accountingBranchById(ctx, actor, asset.branchId);
+    const branch = acquisitionBranch ?? assetBranch;
+    const serviceDate = equipmentServiceDate({ installationDate: asset.installationDate, purchaseDate: asset.purchaseDate });
+    const cost = asset.purchaseCostMinor;
+    const usefulLife = asset.expectedUsefulLifeMonths;
+    const acquisitionAmount = acquisitionSource?.amountMinor;
+    const dependencyValid = acquisitionSource?.status === "posted" && acquisitionSource.branchId === asset.branchId && acquisitionBranch !== undefined && acquisitionSource.currency === currency && acquisitionAmount !== undefined && Number.isSafeInteger(acquisitionAmount) && acquisitionAmount > 0;
+    const depreciationBase = dependencyValid && cost !== undefined && Number.isSafeInteger(cost) && cost > 0 ? Math.min(cost, acquisitionAmount!) : undefined;
+    const serviceMonth = serviceDate.date?.slice(0, 7);
+    const monthIndex = serviceMonth && validAccountingMonth(allocation.month) ? (Number(allocation.month.slice(0, 4)) - Number(serviceMonth.slice(0, 4))) * 12 + Number(allocation.month.slice(5, 7)) - Number(serviceMonth.slice(5, 7)) : -1;
+    const amount = depreciationBase !== undefined && usefulLife !== undefined ? monthlyDepreciationAmount(depreciationBase, usefulLife, monthIndex) : undefined;
+    const occurredAt = validAccountingMonth(allocation.month) ? Date.parse(monthEndDate(allocation.month) + "T23:59:59.999Z") : asset.createdAt;
+    const sourceCurrency = asset.purchaseCostCurrency ?? currency;
+    const invalidCurrency = sourceCurrency !== currency;
+    const futureMonth = validAccountingMonth(allocation.month) && allocation.month > localDate(Date.now(), actor.organization.timezone).slice(0, 7);
+    const retiredWithoutEffectiveDate = asset.status === "retired" || asset.status === "replaced";
+    const valid = dependencyValid && !futureMonth && !retiredWithoutEffectiveDate && serviceDate.date !== undefined && cost !== undefined && Number.isSafeInteger(cost) && cost > 0 && usefulLife !== undefined && Number.isSafeInteger(usefulLife) && usefulLife > 0 && usefulLife <= MAX_EQUIPMENT_USEFUL_LIFE_MONTHS && amount !== undefined && amount > 0;
+    return {
+      sourceType,
+      sourcePublicId: sourceId,
+      branch,
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
+      amountMinor: amount,
+      currency: sourceCurrency,
+      occurredAt,
+      memo: "Equipment depreciation " + allocation.entityId + " · " + (allocation.month === "unconfigured" ? "unconfigured" : allocation.month),
+      policyCode: "equipment-depreciation.v1",
+      debitAccountCode: "5600",
+      creditAccountCode: "1550",
+      details: { assetId: allocation.entityId, assetCode: asset.code, serviceMonth: allocation.month, depreciationStartDate: serviceDate.date, depreciationDateSource: serviceDate.source, purchaseCostMinor: cost, postedAcquisitionAmountMinor: acquisitionAmount, depreciationBaseMinor: depreciationBase, usefulLifeMonths: usefulLife, residualValueMinor: 0, monthIndex: monthIndex >= 0 ? monthIndex : undefined, allocatedAmountMinor: amount, allocationPolicy: "straight-line-monthly-remainder.v1" },
+      status: invalidCurrency ? "excluded" : valid ? undefined : "unconfigured",
+      reason: invalidCurrency ? "Equipment cost currency does not match organization currency " + currency + "." : retiredWithoutEffectiveDate ? "Retired or replaced equipment needs an audited effective retirement date before its depreciation schedule can continue." : futureMonth ? "Future equipment service months cannot be depreciated." : !serviceDate.date ? "Equipment needs a valid placed-in-service date or purchase date before depreciation can be configured." : cost === undefined || !Number.isSafeInteger(cost) || cost <= 0 ? "Equipment purchase cost must be a positive integer minor-unit amount before depreciation can be configured." : usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife <= 0 || usefulLife > MAX_EQUIPMENT_USEFUL_LIFE_MONTHS ? `Equipment expected useful life must be between 1 and ${MAX_EQUIPMENT_USEFUL_LIFE_MONTHS} months.` : !dependencyValid ? "The equipment acquisition must be posted in the same branch and currency before depreciation can be recorded." : allocation.month === "unconfigured" ? "Equipment depreciation service month is not configured." : monthIndex < 0 || monthIndex >= usefulLife ? "Equipment depreciation service month falls outside the useful-life schedule." : amount === undefined || amount <= 0 ? "Equipment depreciation amount is not a positive integer minor-unit amount." : "Equipment depreciation source is not configured.",
+    };
+  }
+
   if (sourceType === "purchase_order_receipt") {
     const order = await ctx.db.query("purchaseOrders").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
     if (!order) domainError("NOT_FOUND", "Purchase order source not found.", { correlationId: actor.correlationId });
-    const branch = await branchById(ctx, actor, order.branchId);
+    const branch = await accountingBranchById(ctx, actor, order.branchId);
     let total = 0;
     let invalidCurrency = order.currency !== currency;
     let received = 0;
@@ -677,8 +950,8 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       received += quantity;
       if (line.unitCostCurrency !== currency) invalidCurrency = true;
       const lineTotal = quantity * line.unitCostMinor;
-      if (!Number.isSafeInteger(lineTotal) || lineTotal <= 0) return { sourceType, sourcePublicId: sourceId, branch, branchPublicId: publicBranchId(branch), currency: line.unitCostCurrency, occurredAt: order.receivedAt ?? order.updatedAt, memo: `Purchase order receipt ${sourceId}`, policyCode: "purchase-order-receipt.v1", debitAccountCode: "1300", creditAccountCode: "2100", status: "unconfigured", reason: "Purchase order receipt cost is not a safe integer minor-unit amount." };
-      if (!Number.isSafeInteger(total + lineTotal)) return { sourceType, sourcePublicId: sourceId, branch, branchPublicId: publicBranchId(branch), currency: line.unitCostCurrency, occurredAt: order.receivedAt ?? order.updatedAt, memo: `Purchase order receipt ${sourceId}`, policyCode: "purchase-order-receipt.v1", debitAccountCode: "1300", creditAccountCode: "2100", status: "unconfigured", reason: "Purchase order receipt cost is not a safe integer minor-unit amount." };
+      if (!Number.isSafeInteger(lineTotal) || lineTotal <= 0) return { sourceType, sourcePublicId: sourceId, branch, branchPublicId: branch ? publicBranchId(branch) : undefined, currency: line.unitCostCurrency, occurredAt: order.receivedAt ?? order.updatedAt, memo: `Purchase order receipt ${sourceId}`, policyCode: "purchase-order-receipt.v1", debitAccountCode: "1300", creditAccountCode: "2100", status: "unconfigured", reason: "Purchase order receipt cost is not a safe integer minor-unit amount." };
+      if (!Number.isSafeInteger(total + lineTotal)) return { sourceType, sourcePublicId: sourceId, branch, branchPublicId: branch ? publicBranchId(branch) : undefined, currency: line.unitCostCurrency, occurredAt: order.receivedAt ?? order.updatedAt, memo: `Purchase order receipt ${sourceId}`, policyCode: "purchase-order-receipt.v1", debitAccountCode: "1300", creditAccountCode: "2100", status: "unconfigured", reason: "Purchase order receipt cost is not a safe integer minor-unit amount." };
       total += lineTotal;
     }
     const fullyReceived = order.status === "received" && order.lines.length > 0 && order.lines.every((line) => line.receivedQuantity >= line.orderedQuantity);
@@ -686,7 +959,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       sourceType,
       sourcePublicId: sourceId,
       branch,
-      branchPublicId: publicBranchId(branch),
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
       amountMinor: total || undefined,
       currency: order.currency,
       occurredAt: order.receivedAt ?? order.updatedAt,
@@ -703,7 +976,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
   if (sourceType === "stock_movement") {
     const movement = await ctx.db.query("stockMovements").withIndex("by_idempotency", (q) => q.eq("organizationId", actor.organization._id)).collect().then((rows) => rows.find((row) => row.publicId === sourceId));
     if (!movement) domainError("NOT_FOUND", "Stock movement source not found.", { correlationId: actor.correlationId });
-    const branch = await branchById(ctx, actor, movement.branchId);
+    const branch = await accountingBranchById(ctx, actor, movement.branchId);
     const unitCost = movement.unitCostMinor;
     const quantity = Math.abs(movement.quantity);
     const amount = movement.totalCostMinor ?? (unitCost === undefined ? undefined : quantity * unitCost);
@@ -717,7 +990,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       sourceType,
       sourcePublicId: sourceId,
       branch,
-      branchPublicId: publicBranchId(branch),
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
       amountMinor: amount,
       currency: movement.unitCostCurrency ?? currency,
       occurredAt: movement.occurredAt,
@@ -734,14 +1007,14 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
   if (sourceType === "facility_supplies") {
     const task = await ctx.db.query("facilityTasks").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
     if (!task) domainError("NOT_FOUND", "Facility task source not found.", { correlationId: actor.correlationId });
-    const branch = await branchById(ctx, actor, task.branchId);
+    const branch = await accountingBranchById(ctx, actor, task.branchId);
     const amount = task.suppliesCostMinor;
     const sourceCurrency = task.suppliesCostCurrency ?? currency;
     return {
       sourceType,
       sourcePublicId: sourceId,
       branch,
-      branchPublicId: publicBranchId(branch),
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
       amountMinor: amount,
       currency: sourceCurrency,
       occurredAt: task.completedAt ?? task.updatedAt,
@@ -758,7 +1031,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
   if (sourceType === "equipment_acquisition") {
     const asset = await ctx.db.query("equipmentAssets").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
     if (!asset) domainError("NOT_FOUND", "Equipment asset source not found.", { correlationId: actor.correlationId });
-    const branch = await branchById(ctx, actor, asset.branchId);
+    const branch = await accountingBranchById(ctx, actor, asset.branchId);
     const amount = asset.purchaseCostMinor;
     const sourceCurrency = asset.purchaseCostCurrency ?? currency;
     const purchaseDate = optionalText(asset.purchaseDate);
@@ -768,7 +1041,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
       sourceType,
       sourcePublicId: sourceId,
       branch,
-      branchPublicId: publicBranchId(branch),
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
       amountMinor: amount,
       currency: sourceCurrency,
       occurredAt,
@@ -784,7 +1057,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
 
   const workOrder = await ctx.db.query("equipmentWorkOrders").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
   if (!workOrder) domainError("NOT_FOUND", "Equipment work-order source not found.", { correlationId: actor.correlationId });
-  const branch = await branchById(ctx, actor, workOrder.branchId);
+  const branch = await accountingBranchById(ctx, actor, workOrder.branchId);
   const partsCost = workOrder.partsCostMinor ?? 0;
   const laborCost = workOrder.laborCostMinor ?? 0;
   const combinedCost = Number.isSafeInteger(partsCost) && Number.isSafeInteger(laborCost) && Number.isSafeInteger(partsCost + laborCost) ? partsCost + laborCost : undefined;
@@ -794,7 +1067,7 @@ async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceType: Acc
     sourceType,
     sourcePublicId: sourceId,
     branch,
-    branchPublicId: publicBranchId(branch),
+    branchPublicId: branch ? publicBranchId(branch) : undefined,
     amountMinor: amount || undefined,
     currency: sourceCurrency,
     occurredAt: workOrder.completedAt ?? workOrder.updatedAt,
@@ -860,6 +1133,7 @@ async function markOperationalSource(ctx: MutationCtx, actor: ActorContext, fact
     if (workOrder) await ctx.db.patch(workOrder._id, { financialPostingStatus: status, financialSourceId: `source-${fact.sourceType}-${sourcePublicId}` });
     return;
   }
+  if (fact.sourceType === "membership_revenue_recognition" || fact.sourceType === "equipment_depreciation") return;
   const entity = fact.sourceType === "payment" || fact.sourceType === "refund" || fact.sourceType === "void" ? "payment" : "membership";
   const record = await domainSource(ctx, actor, entity, sourcePublicId);
   if (record) await ctx.db.patch(record._id, { data: { ...objectValue(record.data), financialPostingStatus: status, financialSourceId: `source-${fact.sourceType}-${sourcePublicId}` }, updatedAt: Date.now() });
@@ -867,7 +1141,7 @@ async function markOperationalSource(ctx: MutationCtx, actor: ActorContext, fact
 
 async function sourcePostingView(ctx: ReadContext, actor: ActorContext, row: SourcePosting): Promise<JsonRecord> {
   requireAccountingRecordVisible(actor, row.branchId);
-  const branch = row.branchId ? await branchById(ctx, actor, row.branchId) : undefined;
+  const branch = row.branchId ? await accountingBranchById(ctx, actor, row.branchId) : undefined;
   return sourceView(row, publicOrganizationId(actor.organization), branch ? publicBranchId(branch) : undefined);
 }
 
@@ -993,19 +1267,51 @@ async function listSourcePostings(ctx: QueryCtx, actor: ActorContext, input: Jso
 }
 
 type QueueSourceStatus = Extract<PostingStatus, "pending" | "unconfigured" | "excluded">;
-interface SourceCandidate {
+export interface SourceCandidate {
   sourceType: AccountingSourceType;
   sourcePublicId: string;
   branchId?: Id<"branches">;
 }
 
-const SUPPORTED_SOURCE_TYPES: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_repair"];
+interface SourceCandidateDateRange {
+  fromDate?: string;
+  toDate?: string;
+}
+
+export const SUPPORTED_SOURCE_TYPES: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
 
 function queueSourceStatus(fact: SourceFact, currency: string): QueueSourceStatus {
   if (fact.status) return fact.status;
   if (!fact.branch) return "unconfigured";
   if (!fact.policyCode || !fact.debitAccountCode || !fact.creditAccountCode || fact.amountMinor === undefined || fact.amountMinor <= 0 || fact.currency !== currency) return "unconfigured";
   return "pending";
+}
+
+function normalizeSourceBranch(fact: SourceFact): SourceFact {
+  if (!fact.branch && !fact.status) return { ...fact, status: "unconfigured", reason: "Source fact is missing its historical branch." };
+  if (fact.branch && fact.branch.status !== "active" && !fact.status) return { ...fact, status: "unconfigured", reason: "Historical source belongs to an inactive branch and cannot receive a new posting." };
+  return fact;
+}
+
+function sourceFactFingerprint(fact: SourceFact, status: QueueSourceStatus): string {
+  return canonicalJson({
+    sourceType: fact.sourceType,
+    sourcePublicId: fact.sourcePublicId,
+    branchId: fact.branchPublicId,
+    amountMinor: fact.amountMinor,
+    currency: fact.currency,
+    occurredAt: fact.occurredAt,
+    policyCode: fact.policyCode,
+    debitAccountCode: fact.debitAccountCode,
+    creditAccountCode: fact.creditAccountCode,
+    status,
+    reason: fact.reason,
+    details: fact.details ?? null,
+  });
+}
+
+function sourceTypesDigest(sourceTypes: readonly AccountingSourceType[]): string {
+  return [...new Set(sourceTypes)].sort().join(",");
 }
 
 async function sourceRecordBranchId(ctx: ReadContext, actor: ActorContext, record: DomainRecord): Promise<Id<"branches"> | undefined> {
@@ -1017,7 +1323,28 @@ async function sourceRecordBranchId(ctx: ReadContext, actor: ActorContext, recor
   return branch?._id;
 }
 
-async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, sourceTypes: readonly AccountingSourceType[], requestedBranch?: Doc<"branches">): Promise<SourceCandidate[]> {
+function timestampInDateRange(timestamp: number, timezone: string, range?: SourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const date = localDate(timestamp, timezone);
+  return (!range.fromDate || date >= range.fromDate) && (!range.toDate || date <= range.toDate);
+}
+
+function monthInDateRange(month: string, range?: SourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const monthStart = monthStartDate(month);
+  const monthEnd = monthEndDate(month);
+  return (!range.toDate || monthStart <= range.toDate) && (!range.fromDate || monthEnd >= range.fromDate);
+}
+
+function serviceDateRangeThroughToday(timezone: string, range?: SourceCandidateDateRange): SourceCandidateDateRange {
+  const today = localDate(Date.now(), timezone);
+  return {
+    fromDate: range?.fromDate,
+    toDate: !range?.toDate || range.toDate > today ? today : range.toDate,
+  };
+}
+
+export async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, sourceTypes: readonly AccountingSourceType[], requestedBranch?: Doc<"branches">, dateRange?: SourceCandidateDateRange): Promise<SourceCandidate[]> {
   const candidates: SourceCandidate[] = [];
   const seen = new Set<string>();
   const allowed = new Set(sourceTypes);
@@ -1037,7 +1364,8 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
       const paymentType = text(value.type, "payment");
       const paymentStatus = text(value.status).toLowerCase();
       const sourceType: AccountingSourceType | undefined = paymentType === "refund" ? "refund" : ["payment", "retail_sale"].includes(paymentType) && ["voided", "void"].includes(paymentStatus) ? "void" : ["payment", "retail_sale"].includes(paymentType) ? "payment" : undefined;
-      if (sourceType) add(sourceType, record.publicId, await sourceRecordBranchId(ctx, actor, record));
+      const occurredAt = Date.parse(text(value.occurredAt)) || record.createdAt;
+      if (sourceType && timestampInDateRange(occurredAt, actor.organization.timezone, dateRange)) add(sourceType, record.publicId, await sourceRecordBranchId(ctx, actor, record));
     }
   }
 
@@ -1045,7 +1373,35 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
     const records = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "membership")).collect();
     for (const record of records) {
       const sourceType: AccountingSourceType = optionalText(objectValue(record.data).previousMembershipId) ? "membership_renewal" : "membership_sale";
-      add(sourceType, record.publicId, await sourceRecordBranchId(ctx, actor, record));
+      if (timestampInDateRange(record.createdAt, actor.organization.timezone, dateRange)) add(sourceType, record.publicId, await sourceRecordBranchId(ctx, actor, record));
+    }
+  }
+  if (allowed.has("membership_revenue_recognition")) {
+    const records = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "membership")).collect();
+    const serviceRange = serviceDateRangeThroughToday(actor.organization.timezone, dateRange);
+    for (const record of records) {
+      const branchId = await sourceRecordBranchId(ctx, actor, record);
+      const value = objectValue(record.data);
+      const startDate = validCalendarDate(value.startDate);
+      const endDate = validCalendarDate(value.endDate);
+      const sale = amountObject(value.salePrice);
+      const discount = amountObject(value.discount);
+      const netAmount = sale.amount !== undefined && Number.isSafeInteger(sale.amount - (discount.amount ?? 0)) ? sale.amount - (discount.amount ?? 0) : undefined;
+      const originalType: AccountingSourceType = optionalText(value.previousMembershipId) ? "membership_renewal" : "membership_sale";
+      const originalSource = await sourcePostingByIdentity(ctx, actor, originalType, record.publicId);
+      const recognitionBase = originalSource?.status === "posted" && originalSource.amountMinor !== undefined && Number.isSafeInteger(originalSource.amountMinor) && originalSource.amountMinor > 0 && netAmount !== undefined
+        ? Math.min(netAmount, originalSource.amountMinor)
+        : netAmount;
+      const cancellation = cancellationLocalDate(value.cancelledAt, actor.organization.timezone);
+      const cancellationDate = cancellation.date && supersededByImmediatePlanChange(value) ? previousCalendarDay(cancellation.date) : cancellation.date;
+      const allocations = startDate && endDate && startDate <= endDate && recognitionBase !== undefined && recognitionBase >= 0 && calendarMonthSpan(startDate, cancellationDate && cancellationDate < endDate ? cancellationDate : endDate) <= MAX_MEMBERSHIP_SERVICE_MONTHS
+        ? allocateMembershipByMonth(recognitionBase, startDate, endDate, { cancellationDate, freezes: membershipFreezeWindows(value, startDate, endDate) })
+        : [];
+      if (allocations.length === 0) {
+        if (timestampInDateRange(record.createdAt, actor.organization.timezone, dateRange)) add("membership_revenue_recognition", "membership-revenue:" + record.publicId + ":unconfigured", branchId);
+      } else {
+        for (const allocation of allocations) if (monthInDateRange(allocation.month, serviceRange)) add("membership_revenue_recognition", "membership-revenue:" + record.publicId + ":" + allocation.month, branchId);
+      }
     }
   }
 
@@ -1065,6 +1421,24 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
     const assets = await ctx.db.query("equipmentAssets").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
     for (const asset of assets) add("equipment_acquisition", asset.publicId, asset.branchId);
   }
+  if (allowed.has("equipment_depreciation")) {
+    const assets = await ctx.db.query("equipmentAssets").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    const serviceRange = serviceDateRangeThroughToday(actor.organization.timezone, dateRange);
+    for (const asset of assets) {
+      const serviceDate = equipmentServiceDate({ installationDate: asset.installationDate, purchaseDate: asset.purchaseDate }).date;
+      const usefulLife = asset.expectedUsefulLifeMonths;
+      const startMonth = serviceDate?.slice(0, 7);
+      if (!startMonth || usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife < 1 || usefulLife > MAX_EQUIPMENT_USEFUL_LIFE_MONTHS || asset.status === "retired" || asset.status === "replaced") {
+        if (timestampInDateRange(asset.createdAt, actor.organization.timezone, dateRange)) add("equipment_depreciation", "equipment-depreciation:" + asset.publicId + ":unconfigured", asset.branchId);
+        continue;
+      }
+      for (let monthIndex = 0; monthIndex < usefulLife; monthIndex += 1) {
+        const month = addCalendarMonths(startMonth, monthIndex);
+        const amount = asset.purchaseCostMinor === undefined ? undefined : monthlyDepreciationAmount(asset.purchaseCostMinor, usefulLife, monthIndex);
+        if (amount !== undefined && amount > 0 && monthInDateRange(month, serviceRange)) add("equipment_depreciation", "equipment-depreciation:" + asset.publicId + ":" + month, asset.branchId);
+      }
+    }
+  }
   if (allowed.has("equipment_repair")) {
     const workOrders = await ctx.db.query("equipmentWorkOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
     for (const workOrder of workOrders) add("equipment_repair", workOrder.publicId, workOrder.branchId);
@@ -1072,27 +1446,82 @@ async function discoverSourceCandidates(ctx: ReadContext, actor: ActorContext, s
   return candidates;
 }
 
-async function refreshSourceProjection(ctx: MutationCtx, actor: ActorContext, fact: SourceFact, status: QueueSourceStatus): Promise<{ row: SourcePosting; created: boolean; updated: boolean; skippedPosted: boolean }> {
+export interface SourceQueueCandidateFact {
+  candidate: SourceCandidate;
+  fact: SourceFact;
+  status: QueueSourceStatus;
+  row?: SourcePosting;
+  current: boolean;
+}
+
+/**
+ * Rebuild the authoritative candidate set for one report scope and compare it
+ * with the latest persisted refresh run. Coverage is a separate concern from
+ * posting status: a complete scan may still contain pending/unconfigured
+ * rows, but every candidate must be represented by a current queue row.
+ */
+export async function sourceQueueCoverageForReport(
+  ctx: QueryCtx,
+  actor: ActorContext,
+  input: { branch?: Doc<"branches">; fromDate: string; toDate: string },
+): Promise<{ status: "proven" | "refresh_required"; candidates: SourceQueueCandidateFact[]; candidateDigest: string; lastQueueProjectionAt?: string }> {
+  const allCandidates = await discoverSourceCandidates(ctx, actor, SUPPORTED_SOURCE_TYPES, input.branch, { fromDate: input.fromDate, toDate: input.toDate });
+  const candidates: SourceQueueCandidateFact[] = [];
+  for (const candidate of allCandidates) {
+    const fact = normalizeSourceBranch(await sourceFact(ctx, actor, candidate.sourceType, candidate.sourcePublicId));
+    const occurredDate = localDate(fact.occurredAt, actor.organization.timezone);
+    if (occurredDate < input.fromDate || occurredDate > input.toDate) continue;
+    const row = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", candidate.sourceType).eq("sourcePublicId", candidate.sourcePublicId)).unique() ?? undefined;
+    const effectiveFact = await preserveExistingSourcePolicy(ctx, actor, row, fact);
+    const status = queueSourceStatus(effectiveFact, actor.organization.currency.toUpperCase());
+    const postedEvidence = row?.status === "posted" || row?.status === "reversed";
+    candidates.push({ candidate, fact: effectiveFact, status, row, current: postedEvidence ? Boolean(row.projectionFingerprint) : Boolean(row?.projectionFingerprint && row.projectionFingerprint === sourceFactFingerprint(effectiveFact, status)) });
+  }
+  const digestRows = candidates.map((item) => ({ key: item.candidate.sourceType + ":" + item.candidate.sourcePublicId, fingerprint: item.row && (item.row.status === "posted" || item.row.status === "reversed") ? item.row.projectionFingerprint ?? sourceFactFingerprint(item.fact, item.status) : sourceFactFingerprint(item.fact, item.status) })).sort((left, right) => left.key.localeCompare(right.key));
+  const candidateDigest = canonicalJson(digestRows);
+  const runs = await ctx.db.query("accountingSourceQueueRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const matchingTypeRuns = runs.filter((run) => sourceTypesDigest(run.sourceTypes) === sourceTypesDigest(SUPPORTED_SOURCE_TYPES));
+  const matchingScopeRuns = matchingTypeRuns.filter((run) => input.branch ? run.branchId === undefined || run.branchId === input.branch!._id : run.branchId === undefined);
+  const matchingDateRuns = matchingScopeRuns.filter((run) => (!run.fromDate && !run.toDate) || (run.fromDate === input.fromDate && run.toDate === input.toDate));
+  const reportRun = matchingDateRuns
+    .sort((left, right) => right.scannedAt - left.scannedAt)[0];
+  const current = candidates.every((item) => item.current);
+  const fullScan = Boolean(reportRun && !reportRun.fromDate && !reportRun.toDate);
+  const matchingDigest = fullScan || Boolean(reportRun && reportRun.candidateDigest === candidateDigest && reportRun.candidateCount === candidates.length);
+  const proven = Boolean(reportRun && matchingDigest && current);
+  const lastQueueProjectionAt = runs.length > 0 ? new Date(Math.max(...runs.map((run) => run.scannedAt))).toISOString() : undefined;
+  return { status: proven ? "proven" : "refresh_required", candidates, candidateDigest, lastQueueProjectionAt };
+}
+
+async function refreshSourceProjection(ctx: MutationCtx, actor: ActorContext, fact: SourceFact): Promise<{ row: SourcePosting; created: boolean; updated: boolean; skippedPosted: boolean }> {
   const existing = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", fact.sourceType).eq("sourcePublicId", fact.sourcePublicId)).unique() ?? undefined;
-  if (existing?.status === "posted" || existing?.status === "reversed") return { row: existing, created: false, updated: false, skippedPosted: true };
   const effectiveFact = await preserveExistingSourcePolicy(ctx, actor, existing, fact);
+  const effectiveStatus = queueSourceStatus(effectiveFact, actor.organization.currency.toUpperCase());
   const now = Date.now();
+  if (existing?.status === "posted" || existing?.status === "reversed") {
+    if (!existing.projectionFingerprint) {
+      await ctx.db.patch(existing._id, { projectionFingerprint: sourceFactFingerprint(effectiveFact, effectiveStatus), updatedAt: now });
+      return { row: (await ctx.db.get(existing._id))!, created: false, updated: true, skippedPosted: true };
+    }
+    return { row: existing, created: false, updated: false, skippedPosted: true };
+  }
   const patch = {
     branchId: effectiveFact.branch?._id,
-    status,
+    status: effectiveStatus,
     amountMinor: effectiveFact.amountMinor,
     currency: effectiveFact.currency,
     policyCode: effectiveFact.policyCode,
     policyVersion: policyDefinition(effectiveFact.policyCode ?? "")?.version,
     reason: effectiveFact.reason,
     details: effectiveFact.details,
+    projectionFingerprint: sourceFactFingerprint(effectiveFact, effectiveStatus),
     occurredAt: effectiveFact.occurredAt,
     journalEntryPublicId: undefined,
     idempotencyKey: undefined,
     updatedAt: now,
   };
   if (existing) {
-    const changed = existing.branchId !== patch.branchId || existing.status !== patch.status || existing.amountMinor !== patch.amountMinor || existing.currency !== patch.currency || existing.policyCode !== patch.policyCode || existing.policyVersion !== patch.policyVersion || existing.journalEntryPublicId !== patch.journalEntryPublicId || existing.idempotencyKey !== patch.idempotencyKey || existing.reason !== patch.reason || existing.occurredAt !== patch.occurredAt || canonicalJson(existing.details ?? null) !== canonicalJson(patch.details ?? null);
+    const changed = existing.branchId !== patch.branchId || existing.status !== patch.status || existing.amountMinor !== patch.amountMinor || existing.currency !== patch.currency || existing.policyCode !== patch.policyCode || existing.policyVersion !== patch.policyVersion || existing.journalEntryPublicId !== patch.journalEntryPublicId || existing.idempotencyKey !== patch.idempotencyKey || existing.reason !== patch.reason || existing.occurredAt !== patch.occurredAt || existing.projectionFingerprint !== patch.projectionFingerprint || canonicalJson(existing.details ?? null) !== canonicalJson(patch.details ?? null);
     if (changed) await ctx.db.patch(existing._id, patch);
     return { row: (await ctx.db.get(existing._id))!, created: false, updated: changed, skippedPosted: false };
   }
@@ -1105,9 +1534,20 @@ async function refreshSourceQueue(ctx: MutationCtx, actor: ActorContext, input: 
   requirePostingRole(actor);
   const requestedTypes = Array.isArray(input.sourceTypes) ? input.sourceTypes.map((value) => text(value)) : [...SUPPORTED_SOURCE_TYPES];
   if (requestedTypes.some((sourceType) => !SUPPORTED_SOURCE_TYPES.includes(sourceType as AccountingSourceType))) domainError("VALIDATION_ERROR", "Source queue refresh contains an unsupported source type.", { correlationId: actor.correlationId });
+  const fromDate = optionalText(input.fromDate) ? dateOnly(input.fromDate) : undefined;
+  const toDate = optionalText(input.toDate) ? dateOnly(input.toDate) : undefined;
+  if (fromDate && toDate && fromDate > toDate) domainError("VALIDATION_ERROR", "Source queue fromDate must be on or before toDate.", { correlationId: actor.correlationId });
   const requestedBranchId = optionalText(input.branchId);
   const requestedBranch = await branchByPublicId(ctx, actor, requestedBranchId);
-  const candidates = await discoverSourceCandidates(ctx, actor, requestedTypes as AccountingSourceType[], requestedBranch);
+  // A refresh without an explicit end date covers all historical facts and
+  // service/depreciation allocations through today. Future allocations cannot
+  // affect a current report and would make the queue needlessly expensive for
+  // long-lived memberships/assets; an explicit toDate opts into that horizon.
+  const candidateRange: SourceCandidateDateRange = {
+    fromDate,
+    toDate: toDate ?? localDate(Date.now(), actor.organization.timezone),
+  };
+  const candidates = await discoverSourceCandidates(ctx, actor, requestedTypes as AccountingSourceType[], requestedBranch, candidateRange);
   const items: JsonRecord[] = [];
   let created = 0;
   let updated = 0;
@@ -1115,11 +1555,15 @@ async function refreshSourceQueue(ctx: MutationCtx, actor: ActorContext, input: 
   let pending = 0;
   let unconfigured = 0;
   let excluded = 0;
+  let coverageProven = sourceTypesDigest(requestedTypes as AccountingSourceType[]) === sourceTypesDigest(SUPPORTED_SOURCE_TYPES);
+  const digestRows: Array<{ key: string; fingerprint?: string }> = [];
   for (const candidate of candidates) {
-    const rawFact = await sourceFact(ctx, actor, candidate.sourceType, candidate.sourcePublicId);
-    const fact = !rawFact.branch && !rawFact.status ? { ...rawFact, status: "unconfigured" as const, reason: "Source fact is missing an active branch." } : rawFact;
-    const status = queueSourceStatus(fact, actor.organization.currency.toUpperCase());
-    const result = await refreshSourceProjection(ctx, actor, fact, status);
+    const fact = normalizeSourceBranch(await sourceFact(ctx, actor, candidate.sourceType, candidate.sourcePublicId));
+    const occurredDate = localDate(fact.occurredAt, actor.organization.timezone);
+    if ((fromDate && occurredDate < fromDate) || (toDate && occurredDate > toDate)) continue;
+    const result = await refreshSourceProjection(ctx, actor, fact);
+    digestRows.push({ key: candidate.sourceType + ":" + candidate.sourcePublicId, fingerprint: result.row.projectionFingerprint });
+    if (!result.row.projectionFingerprint) coverageProven = false;
     if (result.created) created += 1;
     if (result.updated) updated += 1;
     if (result.skippedPosted) skippedPosted += 1;
@@ -1128,8 +1572,22 @@ async function refreshSourceQueue(ctx: MutationCtx, actor: ActorContext, input: 
     if (result.row.status === "excluded") excluded += 1;
     if (!result.skippedPosted) items.push(await sourcePostingView(ctx, actor, result.row));
   }
-  if (created > 0 || updated > 0) await insertAudit(ctx, actor, { action: "accounting.source_queue.refresh", entityType: "accounting_source_posting", entityId: requestedBranch?.publicId ?? "organization", summary: `Refreshed accounting source queue (${created} created, ${updated} updated)`, branchId: requestedBranch?._id, after: { scanned: candidates.length, created, updated, pending, unconfigured, excluded } });
-  return { organizationId: publicOrganizationId(actor.organization), branchId: requestedBranch?.publicId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, items };
+  const sortedDigestRows = digestRows.sort((left, right) => left.key.localeCompare(right.key));
+  const scanNow = Date.now();
+  await ctx.db.insert("accountingSourceQueueRuns", {
+    organizationId: actor.organization._id,
+    publicId: "queue-" + crypto.randomUUID(),
+    branchId: requestedBranch?._id,
+    fromDate,
+    toDate,
+    sourceTypes: [...new Set(requestedTypes)] as AccountingSourceType[],
+    candidateDigest: canonicalJson(sortedDigestRows),
+    candidateCount: sortedDigestRows.length,
+    scannedAt: scanNow,
+    createdAt: scanNow,
+  });
+  await insertAudit(ctx, actor, { action: "accounting.source_queue.refresh", entityType: "accounting_source_queue_run", entityId: requestedBranch?.publicId ?? "organization", summary: "Refreshed accounting source queue (" + created + " created, " + updated + " updated)", branchId: requestedBranch?._id, after: { scanned: candidates.length, coveredCandidates: sortedDigestRows.length, created, updated, pending, unconfigured, excluded, fromDate, toDate, sourceTypes: sourceTypesDigest(requestedTypes as AccountingSourceType[]) } });
+  return { organizationId: publicOrganizationId(actor.organization), branchId: requestedBranch?.publicId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, queueCoverage: coverageProven ? "proven" : "refresh_required", scannedFromDate: fromDate, scannedToDate: toDate, items };
 }
 
 function validateLineAmounts(lines: JsonRecord[], currency: string, correlationId: string): { accountId: string; debit: number; credit: number; description?: string }[] {
@@ -1241,7 +1699,7 @@ async function persistSourceDecision(ctx: MutationCtx, actor: ActorContext, fact
   const existing = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", fact.sourceType).eq("sourcePublicId", fact.sourcePublicId)).unique();
   const now = Date.now();
   const branchId = fact.branch?._id ?? existing?.branchId;
-  const payload = { branchId, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, idempotencyKey, journalEntryPublicId: undefined, reason: fact.reason, details: fact.details, updatedAt: now };
+  const payload = { branchId, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, idempotencyKey, journalEntryPublicId: undefined, reason: fact.reason, details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, status), updatedAt: now };
   let row: SourcePosting;
   if (existing) { await ctx.db.patch(existing._id, payload); row = (await ctx.db.get(existing._id))!; } else { const id = await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType: fact.sourceType, sourcePublicId: fact.sourcePublicId, ...payload, occurredAt: fact.occurredAt, createdAt: now }); row = (await ctx.db.get(id))!; }
   const attemptId = await ctx.db.insert("accountingPostingAttempts", { organizationId: actor.organization._id, publicId: `attempt-${crypto.randomUUID()}`, sourceType: fact.sourceType, sourcePublicId: fact.sourcePublicId, sourcePostingPublicId: row.publicId, branchId, idempotencyKey, requestFingerprint, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
@@ -1255,7 +1713,7 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   await requireFinance(ctx, actor);
   requirePostingRole(actor);
   const sourceType = text(input.sourceType) as AccountingSourceType;
-  const supported: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_repair"];
+  const supported: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
   if (!supported.includes(sourceType)) domainError("VALIDATION_ERROR", "Accounting source type is unsupported.", { correlationId: actor.correlationId });
   const sourceId = text(input.sourceId ?? input.sourcePublicId).trim();
   const idempotencyKey = text(input.idempotencyKey).trim();
@@ -1277,7 +1735,7 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const existingKey = existingKeyRows.find((row) => row.sourceType === sourceType && row.sourcePublicId === sourceId);
   if (existingKey?.status === "posted" || existingKey?.status === "reversed") return await sourcePostingView(ctx, actor, existingKey);
   if (sourceExisting?.status === "posted" || sourceExisting?.status === "reversed") return await sourcePostingView(ctx, actor, sourceExisting);
-  const rawFact = await sourceFact(ctx, actor, sourceType, sourceId);
+  const rawFact = normalizeSourceBranch(await sourceFact(ctx, actor, sourceType, sourceId));
   const fact = await preserveExistingSourcePolicy(ctx, actor, sourceExisting, rawFact);
   if (fact.status) return await persistSourceDecision(ctx, actor, fact, fact.status, idempotencyKey, requestFingerprint);
   if (!fact.policyCode || !fact.debitAccountCode || !fact.creditAccountCode || fact.amountMinor === undefined || fact.amountMinor <= 0 || fact.currency !== actor.organization.currency.toUpperCase()) return await persistSourceDecision(ctx, actor, fact, "unconfigured", idempotencyKey, requestFingerprint);
@@ -1299,8 +1757,8 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const postingDate = localDate(fact.occurredAt, actor.organization.timezone);
   const entry = await insertJournal(ctx, actor, { branch, scope: "branch", postingDate, memo: fact.memo, reason: optionalText(input.reason), sourceType, sourcePublicId: sourceId, policyCode: policy.policyCode, policyVersion: policy.version, idempotencyKey: entryKey, lines: [{ accountId: `acct-${fact.debitAccountCode}`, debit: fact.amountMinor, credit: 0, description: fact.memo }, { accountId: `acct-${fact.creditAccountCode}`, debit: 0, credit: fact.amountMinor, description: fact.memo }] });
   const now = Date.now();
-  const sourceIdValue = sourceExisting?._id ?? await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType, sourcePublicId: sourceId, branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
-  if (sourceExisting) await ctx.db.patch(sourceExisting._id, { branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, updatedAt: now });
+  const sourceIdValue = sourceExisting?._id ?? await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType, sourcePublicId: sourceId, branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, "pending"), occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
+  if (sourceExisting) await ctx.db.patch(sourceExisting._id, { branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, "pending"), updatedAt: now });
   await markOperationalSource(ctx, actor, fact, sourceId, "posted");
   await insertAudit(ctx, actor, { action: "accounting.source.post", entityType: "accounting_source_posting", entityId: sourceId, summary: `Posted ${sourceType} source ${sourceId}`, reason: optionalText(input.reason), branchId: branch._id, after: { amountMinor: fact.amountMinor, journalEntryId: entry.publicId, policyCode: policy.policyCode, policyVersion: policy.version } });
   const row = await ctx.db.get(sourceIdValue);

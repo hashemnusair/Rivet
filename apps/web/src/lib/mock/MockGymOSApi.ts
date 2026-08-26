@@ -163,6 +163,7 @@ const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" 
   { code: "1200", name: "Accounts receivable", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "1300", name: "Inventory", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "1500", name: "Gym equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "investing", normalBalance: "debit" },
+  { code: "1550", name: "Accumulated depreciation — equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "non_cash", normalBalance: "credit" },
   { code: "2100", name: "Supplier payables", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
   { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
@@ -171,6 +172,7 @@ const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" 
   { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5600", name: "Depreciation expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "non_cash", normalBalance: "debit" },
 ];
 
 function mockAccount(orgId: string, definition: (typeof MOCK_ACCOUNT_DEFINITIONS)[number]): T.AccountingAccount {
@@ -225,6 +227,111 @@ function accountingPolicyVersion(policyCode?: string): number | undefined {
   const version = Number(match[1]);
   return Number.isSafeInteger(version) && version > 0 ? version : undefined;
 }
+
+type MockMonthlyAllocation = { month: string; serviceStart: string; serviceEnd: string; days: number; amount: number };
+const MOCK_MAX_MEMBERSHIP_SERVICE_MONTHS = 120;
+const MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS = 600;
+
+function validAccountingDate(value: string | undefined): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined;
+}
+
+function accountingMonthEnd(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber!, 0)).toISOString().slice(0, 10);
+}
+
+function accountingAddMonths(month: string, count: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber! - 1 + count, 1)).toISOString().slice(0, 7);
+}
+
+function mockMembershipAllocations(amount: number, start: string | undefined, end: string | undefined, options?: { cancellationDate?: string; freezes?: readonly T.FreezePeriod[] }): MockMonthlyAllocation[] {
+  if (!start || !end || start > end || !Number.isSafeInteger(amount) || amount < 0) return [];
+  const monthSpan = (Number(end.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(end.slice(5, 7)) - Number(start.slice(5, 7)) + 1;
+  if (monthSpan > MOCK_MAX_MEMBERSHIP_SERVICE_MONTHS) return [];
+  const excluded = new Set<string>();
+  for (const freeze of options?.freezes ?? []) {
+    if (freeze.status !== "active" && freeze.status !== "completed") continue;
+    let date = freeze.startDate < start ? start : freeze.startDate;
+    const freezeEnd = freeze.endDate > end ? end : freeze.endDate;
+    while (date <= freezeEnd) {
+      excluded.add(date);
+      date = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
+    }
+  }
+  const serviceDates: string[] = [];
+  for (let date = start; date <= end; date = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)) if (!excluded.has(date)) serviceDates.push(date);
+  if (serviceDates.length === 0) return [];
+  const quotient = Math.floor(amount / serviceDates.length);
+  const residual = amount - quotient * serviceDates.length;
+  const earnedThrough = options?.cancellationDate && options.cancellationDate < end ? options.cancellationDate : end;
+  const rows = new Map<string, MockMonthlyAllocation>();
+  for (let index = 0; index < serviceDates.length; index += 1) {
+    const date = serviceDates[index]!;
+    if (date > earnedThrough) continue;
+    const dailyAmount = quotient + (index < residual ? 1 : 0);
+    if (dailyAmount <= 0) continue;
+    const month = date.slice(0, 7);
+    const row = rows.get(month) ?? { month, serviceStart: date, serviceEnd: date, days: 0, amount: 0 };
+    row.serviceEnd = date;
+    row.days += 1;
+    row.amount += dailyAmount;
+    rows.set(month, row);
+  }
+  return [...rows.values()].filter((row) => row.amount > 0);
+}
+
+function mockMonthlyDepreciationAmount(cost: number | undefined, usefulLife: number | undefined, monthIndex: number): number | undefined {
+  if (cost === undefined || usefulLife === undefined || !Number.isSafeInteger(cost) || cost <= 0 || !Number.isSafeInteger(usefulLife) || usefulLife < 1 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS || monthIndex < 0 || monthIndex >= usefulLife) return undefined;
+  const base = Math.floor(cost / usefulLife);
+  return base + (monthIndex < cost - base * usefulLife ? 1 : 0);
+}
+
+type MockSourceCandidateDateRange = { fromDate?: string; toDate?: string };
+
+function mockTimestampInDateRange(value: string | number, timezone: string, range?: MockSourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const date = managementLocalDate(value, timezone);
+  return (!range.fromDate || date >= range.fromDate) && (!range.toDate || date <= range.toDate);
+}
+
+function mockMonthInDateRange(month: string, range?: MockSourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const monthStart = `${month}-01`;
+  const monthEnd = accountingMonthEnd(month);
+  return (!range.toDate || monthStart <= range.toDate) && (!range.fromDate || monthEnd >= range.fromDate);
+}
+
+function mockServiceDateRangeThroughToday(range?: MockSourceCandidateDateRange): MockSourceCandidateDateRange {
+  const today = managementLocalDate(Date.now(), TZ);
+  return { fromDate: range?.fromDate, toDate: !range?.toDate || range.toDate > today ? today : range.toDate };
+}
+
+function mockSourceProjectionFingerprint(fact: { sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID; amount?: number; currency?: string; occurredAt: string; debitCode?: string; creditCode?: string; policyCode?: string; status?: T.AccountingSourceStatus; reason?: string; details?: Record<string, unknown> }, status: T.AccountingSourceStatus): string {
+  return stableJson({ sourceType: fact.sourceType, sourceId: fact.sourceId, branchId: fact.branchId, amount: fact.amount, currency: fact.currency, occurredAt: fact.occurredAt, debitCode: fact.debitCode, creditCode: fact.creditCode, policyCode: fact.policyCode, status, reason: fact.reason, details: fact.details ?? null });
+}
+
+function mockSourceTypesDigest(sourceTypes: readonly T.AccountingSourceType[]): string {
+  return [...new Set(sourceTypes)].sort().join(",");
+}
+
+const MOCK_ACCOUNTING_SOURCE_TYPES: readonly T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
+
+type MockAccountingFact = {
+  amount?: number;
+  currency?: string;
+  branchId?: T.UUID;
+  occurredAt: string;
+  debitCode?: string;
+  creditCode?: string;
+  policyCode?: string;
+  reason?: string;
+  status?: T.AccountingSourceStatus;
+  details?: Record<string, unknown>;
+};
 
 /**
  * Pending source rows are historical decisions, not disposable cache rows.
@@ -518,6 +625,7 @@ export class MockGymOSApi implements GymOSApi {
   private accountingEntries: T.AccountingJournalEntryDetail[] = [];
   private accountingSources: T.AccountingSourcePosting[] = [];
   private accountingSourceAttempts = new Map<string, MockAccountingSourceAttempt>();
+  private accountingSourceQueueRuns: Array<{ branchId?: T.UUID; fromDate?: T.ISODate; toDate?: T.ISODate; sourceTypes: T.AccountingSourceType[]; candidateDigest: string; candidateCount: number; scannedAt: T.ISODateTime }> = [];
   private accountingEntryFingerprints = new Map<string, string>();
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
@@ -5986,15 +6094,52 @@ export class MockGymOSApi implements GymOSApi {
     return { lines, total: money(lines.reduce((sum, row) => sum + row.amount.amount, 0)) };
   }
 
-  private managementReportMetadata(range: { fromDate: string; toDate: string; branchId?: T.UUID }): T.ManagementReportCompleteness {
+  private mockSourceQueueCoverage(range: { fromDate: string; toDate: string; branchId?: T.UUID }): { status: "proven" | "refresh_required"; candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }>; lastQueueProjectionAt?: string } {
+    const allCandidates = this.mockAccountingSourceCandidates(MOCK_ACCOUNTING_SOURCE_TYPES, range.branchId, { fromDate: range.fromDate, toDate: range.toDate });
+    const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }> = [];
+    for (const candidate of allCandidates) {
+      const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(candidate.sourceType, candidate.sourceId), existing);
+      const occurredDate = managementLocalDate(fact.occurredAt, this.db.organization.timezone);
+      if (occurredDate < range.fromDate || occurredDate > range.toDate) continue;
+      const currency = fact.currency ?? this.db.organization.currency;
+      const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+      const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: candidate.sourceType, sourceId: candidate.sourceId }, status);
+      const postedEvidence = existing?.status === "posted" || existing?.status === "reversed";
+      candidates.push({ sourceType: candidate.sourceType, sourceId: candidate.sourceId, status, current: postedEvidence ? Boolean(existing.projectionFingerprint) : existing?.projectionFingerprint === projectionFingerprint, row: existing, fact });
+    }
+    const digestRows = candidates.map((item) => ({ key: `${item.sourceType}:${item.sourceId}`, fingerprint: item.row && (item.row.status === "posted" || item.row.status === "reversed") ? item.row.projectionFingerprint ?? mockSourceProjectionFingerprint({ ...item.fact, sourceType: item.sourceType, sourceId: item.sourceId }, item.status) : mockSourceProjectionFingerprint({ ...item.fact, sourceType: item.sourceType, sourceId: item.sourceId }, item.status) })).sort((left, right) => left.key.localeCompare(right.key));
+    const candidateDigest = stableJson(digestRows);
+    const runs = this.accountingSourceQueueRuns;
+    const reportRun = runs.find((run) => mockSourceTypesDigest(run.sourceTypes) === mockSourceTypesDigest(MOCK_ACCOUNTING_SOURCE_TYPES) && (range.branchId ? run.branchId === undefined || run.branchId === range.branchId : run.branchId === undefined) && ((!run.fromDate && !run.toDate) || (run.fromDate === range.fromDate && run.toDate === range.toDate)));
+    const fullScan = reportRun !== undefined && !reportRun.fromDate && !reportRun.toDate;
+    const runMatches = Boolean(reportRun && (fullScan || (reportRun.candidateDigest === candidateDigest && reportRun.candidateCount === candidates.length)));
+    const current = candidates.every((candidate) => candidate.current);
+    const latest = runs.map((run) => run.scannedAt).sort().at(-1);
+    return { status: runMatches && current ? "proven" : "refresh_required", candidates, lastQueueProjectionAt: latest };
+  }
+
+  private managementReportMetadata(range: { fromDate: string; toDate: string; branchId?: T.UUID }): T.ManagementReportCompleteness & { membershipRevenueRecognition: T.ManagementMetricStatus; depreciationCoverage: T.ManagementMetricStatus } {
     const sourceRows = this.accountingSources.filter((row) => managementLocalDate(row.occurredAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.occurredAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
     const sourcePostingCounts: Record<T.AccountingSourceStatus, number> = { pending: 0, posted: 0, unconfigured: 0, excluded: 0, failed: 0, reversed: 0 };
     for (const row of sourceRows) sourcePostingCounts[row.status] += 1;
-    const latest = sourceRows.map((row) => row.updatedAt).sort().at(-1);
+    const queueCoverage = this.mockSourceQueueCoverage(range);
+    const statusFor = (sourceType: T.AccountingSourceType): T.ManagementMetricStatus => {
+      const candidates = queueCoverage.candidates.filter((candidate) => candidate.sourceType === sourceType);
+      if (candidates.length === 0) return "not_available";
+      return candidates.every((candidate) => candidate.current && (candidate.row?.status === "posted" || candidate.row?.status === "reversed") && candidate.fact.status === undefined) ? "available" : "not_configured";
+    };
+    const membershipRevenueRecognition = statusFor("membership_revenue_recognition");
+    const depreciationCoverage = statusFor("equipment_depreciation");
+    const warnings = new Set<string>();
+    if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
+    if (sourceRows.some((row) => ["pending", "unconfigured", "excluded", "failed"].includes(row.status))) warnings.add("Some authoritative accounting sources are not posted; pending, excluded, or failed facts are omitted from the statements.");
+    if (membershipRevenueRecognition === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
+    if (depreciationCoverage === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
     const policyVersions = [...new Map(this.accountingEntries
       .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate && this.managementBranchVisible(entry.branchId, range.branchId) && entry.policyCode && entry.policyVersion)
       .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
-    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: "refresh_required", lastQueueProjectionAt: latest, warnings: ["Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.", "Membership revenue recognition is not configured; deferred membership sales are excluded from recognized revenue until an approved policy exists.", "Fixed assets are shown gross because accumulated depreciation is not configured."], disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
+    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: queueCoverage.status, lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, warnings: [...warnings], membershipRevenueRecognition, depreciationCoverage, disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
   }
 
   getIncomeStatement(input: T.ManagementReportInput): Promise<T.IncomeStatement> {
@@ -6009,7 +6154,8 @@ export class MockGymOSApi implements GymOSApi {
       const otherExpenses = this.managementStatementSection(entries, ["other_expense"], "debit");
       const totalRevenue = revenue.total.amount + otherIncome.total.amount;
       const totalCosts = costOfSales.total.amount + operatingExpenses.total.amount + otherExpenses.total.amount;
-      return { ...this.managementReportMetadata(range), revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue), totalCosts: money(totalCosts), netIncome: money(totalRevenue - totalCosts), membershipRevenueRecognition: "not_configured" };
+      const metadata = this.managementReportMetadata(range);
+      return { ...metadata, revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue), totalCosts: money(totalCosts), netIncome: money(totalRevenue - totalCosts), membershipRevenueRecognition: metadata.membershipRevenueRecognition };
     });
   }
 
@@ -6254,34 +6400,77 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  private mockAccountingSourceCandidates(sourceTypes: readonly T.AccountingSourceType[], requestedBranchId?: T.UUID, dateRange?: MockSourceCandidateDateRange): Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> {
+    const allowed = new Set(sourceTypes);
+    const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> = [];
+    const seen = new Set<string>();
+    const add = (sourceType: T.AccountingSourceType, sourceId: T.UUID, branchId?: T.UUID) => {
+      if (!allowed.has(sourceType) || (requestedBranchId && branchId !== requestedBranchId) || !this.accountingBranchIsVisible(branchId)) return;
+      const key = `${sourceType}:${sourceId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push({ sourceType, sourceId, branchId });
+    };
+
+    for (const payment of this.db.payments) {
+      const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
+      if (mockTimestampInDateRange(payment.occurredAt, this.db.organization.timezone, dateRange)) add(sourceType, payment.id, payment.branchId);
+    }
+    for (const sale of this.db.retailSales) if (mockTimestampInDateRange(sale.createdAt, this.db.organization.timezone, dateRange)) add(sale.status === "voided" ? "void" : "payment", `retail-payment-${sale.id}`, sale.branchId);
+    for (const membership of this.db.memberships) if (mockTimestampInDateRange(membership.createdAt, this.db.organization.timezone, dateRange)) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
+    if (allowed.has("membership_revenue_recognition")) {
+      const serviceRange = mockServiceDateRangeThroughToday(dateRange);
+      for (const membership of this.db.memberships) {
+        const netAmount = membership.salePrice.amount - membership.discount.amount;
+        const originalType: T.AccountingSourceType = membership.previousMembershipId ? "membership_renewal" : "membership_sale";
+        const original = this.accountingSources.find((row) => row.sourceType === originalType && row.sourceId === membership.id && row.status === "posted");
+        const recognitionBase = original?.amount?.amount !== undefined ? Math.min(netAmount, original.amount.amount) : netAmount;
+        const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
+        const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
+        const freezes = membership.activeFreeze ? [membership.activeFreeze] : [];
+        const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes });
+        if (allocations.length === 0) {
+          if (mockTimestampInDateRange(membership.createdAt, this.db.organization.timezone, dateRange)) add("membership_revenue_recognition", `membership-revenue:${membership.id}:unconfigured`, membership.homeBranchId);
+        } else for (const allocation of allocations) if (mockMonthInDateRange(allocation.month, serviceRange)) add("membership_revenue_recognition", `membership-revenue:${membership.id}:${allocation.month}`, membership.homeBranchId);
+      }
+    }
+    for (const order of this.db.purchaseOrders) if (mockTimestampInDateRange(order.receivedAt ?? order.updatedAt, this.db.organization.timezone, dateRange)) add("purchase_order_receipt", order.id, order.branchId);
+    for (const movement of this.db.stockMovements) if (mockTimestampInDateRange(movement.occurredAt, this.db.organization.timezone, dateRange)) add("stock_movement", movement.id, movement.branchId);
+    for (const task of this.db.facilityTasks) if (mockTimestampInDateRange(task.completedAt ?? task.updatedAt, this.db.organization.timezone, dateRange)) add("facility_supplies", task.id, task.branchId);
+    for (const asset of this.db.equipmentAssets) if (mockTimestampInDateRange(asset.purchaseDate ? `${asset.purchaseDate}T00:00:00.000Z` : asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_acquisition", asset.id, asset.branchId);
+    if (allowed.has("equipment_depreciation")) {
+      const serviceRange = mockServiceDateRangeThroughToday(dateRange);
+      for (const asset of this.db.equipmentAssets) {
+        const serviceDate = validAccountingDate(asset.installationDate) ?? validAccountingDate(asset.purchaseDate);
+        const usefulLife = asset.expectedUsefulLifeMonths;
+        if (!serviceDate || usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife < 1 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS || asset.status === "retired" || asset.status === "replaced") {
+          if (mockTimestampInDateRange(asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_depreciation", `equipment-depreciation:${asset.id}:unconfigured`, asset.branchId);
+          continue;
+        }
+        const startMonth = serviceDate.slice(0, 7);
+        for (let monthIndex = 0; monthIndex < usefulLife; monthIndex += 1) {
+          const month = accountingAddMonths(startMonth, monthIndex);
+          const amount = mockMonthlyDepreciationAmount(asset.purchaseCost?.amount, usefulLife, monthIndex);
+          if (amount !== undefined && amount > 0 && mockMonthInDateRange(month, serviceRange)) add("equipment_depreciation", `equipment-depreciation:${asset.id}:${month}`, asset.branchId);
+        }
+      }
+    }
+    for (const workOrder of this.db.equipmentWorkOrders) if (mockTimestampInDateRange(workOrder.completedAt ?? workOrder.updatedAt, this.db.organization.timezone, dateRange)) add("equipment_repair", workOrder.id, workOrder.branchId);
+    return candidates;
+  }
+
   refreshAccountingSourceQueue(input: T.RefreshAccountingSourceQueueInput = {}): Promise<T.RefreshAccountingSourceQueueResult> {
     return this.respond(() => {
       this.requireAccountingPosting();
-      const supported: T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_repair"];
+      const supported = [...MOCK_ACCOUNTING_SOURCE_TYPES];
       const sourceTypes = input.sourceTypes ?? supported;
       if (sourceTypes.some((sourceType) => !supported.includes(sourceType))) throw ApiError.of(ERR.VALIDATION, "Source queue refresh contains an unsupported source type.");
-      const allowed = new Set(sourceTypes);
+      const fromDate = input.fromDate === undefined ? undefined : validAccountingDate(input.fromDate);
+      const toDate = input.toDate === undefined ? undefined : validAccountingDate(input.toDate);
+      if (input.fromDate !== undefined && !fromDate || input.toDate !== undefined && !toDate) throw ApiError.of(ERR.VALIDATION, "Source queue dates must use real YYYY-MM-DD calendar dates.");
+      if (fromDate && toDate && fromDate > toDate) throw ApiError.of(ERR.VALIDATION, "Source queue fromDate must be on or before toDate.");
       const requestedBranchId = input.branchId ? this.accountingBranch(input.branchId)?.id : undefined;
-      const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> = [];
-      const seen = new Set<string>();
-      const add = (sourceType: T.AccountingSourceType, sourceId: T.UUID, branchId?: T.UUID) => {
-        if (!allowed.has(sourceType) || (requestedBranchId && branchId !== requestedBranchId) || !this.accountingBranchIsVisible(branchId)) return;
-        const key = `${sourceType}:${sourceId}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        candidates.push({ sourceType, sourceId, branchId });
-      };
-      for (const payment of this.db.payments) {
-        const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
-        add(sourceType, payment.id, payment.branchId);
-      }
-      for (const sale of this.db.retailSales) add(sale.status === "voided" ? "void" : "payment", `retail-payment-${sale.id}`, sale.branchId);
-      for (const membership of this.db.memberships) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
-      for (const order of this.db.purchaseOrders) add("purchase_order_receipt", order.id, order.branchId);
-      for (const movement of this.db.stockMovements) add("stock_movement", movement.id, movement.branchId);
-      for (const task of this.db.facilityTasks) add("facility_supplies", task.id, task.branchId);
-      for (const asset of this.db.equipmentAssets) add("equipment_acquisition", asset.id, asset.branchId);
-      for (const workOrder of this.db.equipmentWorkOrders) add("equipment_repair", workOrder.id, workOrder.branchId);
+      const candidates = this.mockAccountingSourceCandidates(sourceTypes, requestedBranchId, { fromDate, toDate: toDate ?? managementLocalDate(Date.now(), this.db.organization.timezone) });
 
       let created = 0;
       let updated = 0;
@@ -6289,22 +6478,34 @@ export class MockGymOSApi implements GymOSApi {
       let pending = 0;
       let unconfigured = 0;
       let excluded = 0;
+      let coverageProven = sourceTypes.length === supported.length && supported.every((sourceType) => sourceTypes.includes(sourceType));
       const items: T.AccountingSourcePosting[] = [];
+      const digestRows: Array<{ key: string; fingerprint?: string }> = [];
       for (const candidate of candidates) {
         const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
         const fact = preserveMockSourcePolicy(this.mockAccountingFact(candidate.sourceType, candidate.sourceId), existing);
         const currency = fact.currency ?? this.db.organization.currency;
         const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+        const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: candidate.sourceType, sourceId: candidate.sourceId }, status);
+        const inRange = (!fromDate || managementLocalDate(fact.occurredAt, this.db.organization.timezone) >= fromDate) && (!toDate || managementLocalDate(fact.occurredAt, this.db.organization.timezone) <= toDate);
+        if (!inRange) continue;
         if (existing?.status === "posted" || existing?.status === "reversed") {
           skippedPosted += 1;
+          if (!existing.projectionFingerprint) {
+            existing.projectionFingerprint = projectionFingerprint;
+            existing.updatedAt = nowISO();
+            updated += 1;
+          }
+          digestRows.push({ key: `${candidate.sourceType}:${candidate.sourceId}`, fingerprint: existing.projectionFingerprint });
+          if (!existing.projectionFingerprint) coverageProven = false;
           continue;
         }
         const now = nowISO();
         const policyVersion = accountingPolicyVersion(fact.policyCode);
-        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
+        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
         let row: T.AccountingSourcePosting;
         if (existing) {
-          const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
+          const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || existing.projectionFingerprint !== next.projectionFingerprint || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
           if (changed) { Object.assign(existing, next); updated += 1; }
           row = existing;
         } else {
@@ -6315,14 +6516,19 @@ export class MockGymOSApi implements GymOSApi {
         if (row.status === "pending") pending += 1;
         if (row.status === "unconfigured") unconfigured += 1;
         if (row.status === "excluded") excluded += 1;
+        digestRows.push({ key: `${candidate.sourceType}:${candidate.sourceId}`, fingerprint: row.projectionFingerprint });
+        if (!row.projectionFingerprint) coverageProven = false;
         items.push({ ...row, amount: row.amount ? { ...row.amount } : undefined });
       }
-      if (created > 0 || updated > 0) this.audit({ category: "accounting", action: "accounting.source_queue.refresh", entityType: "accounting_source_posting", entityId: requestedBranchId ?? this.db.organization.id, entityLabel: "Source queue", summary: `Refreshed accounting source queue (${created} created, ${updated} updated)`, branchId: requestedBranchId });
-      return { organizationId: this.db.organization.id, branchId: requestedBranchId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, items };
+      const scannedAt = nowISO();
+      const sortedDigestRows = digestRows.sort((left, right) => left.key.localeCompare(right.key));
+      this.accountingSourceQueueRuns.unshift({ branchId: requestedBranchId, fromDate, toDate, sourceTypes: [...new Set(sourceTypes)], candidateDigest: stableJson(sortedDigestRows), candidateCount: sortedDigestRows.length, scannedAt });
+      this.audit({ category: "accounting", action: "accounting.source_queue.refresh", entityType: "accounting_source_queue_run", entityId: requestedBranchId ?? this.db.organization.id, entityLabel: "Source queue", summary: `Refreshed accounting source queue (${created} created, ${updated} updated)`, branchId: requestedBranchId });
+      return { organizationId: this.db.organization.id, branchId: requestedBranchId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, queueCoverage: coverageProven ? "proven" : "refresh_required", scannedFromDate: fromDate, scannedToDate: toDate, items };
     });
   }
 
-  private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): { amount?: number; currency?: string; branchId?: T.UUID; occurredAt: string; debitCode?: string; creditCode?: string; policyCode?: string; reason?: string; status?: T.AccountingSourceStatus; details?: Record<string, unknown> } {
+  private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): MockAccountingFact {
     const accountForMethod = (method: T.PaymentMethodKey) => method === "card" ? "1110" : method === "bank_transfer" || method === "cliq" ? "1120" : "1100";
     if (["payment", "refund", "void"].includes(sourceType)) {
       const retailSale = this.db.retailSales.find((sale) => `retail-payment-${sale.id}` === sourceId);
@@ -6348,6 +6554,59 @@ export class MockGymOSApi implements GymOSApi {
       const validAmount = Number.isSafeInteger(netAmount) && netAmount >= 0;
       const currencyMismatch = membership.salePrice.currency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
       return { amount: netAmount, currency: membership.salePrice.currency, branchId: membership.homeBranchId, occurredAt: membership.createdAt, debitCode: "1200", creditCode: "2200", policyCode: `${sourceType === "membership_sale" ? "membership-sale" : "membership-renewal"}.v1`, status: currencyMismatch ? "excluded" : validLifecycle && validDiscount && validAmount ? undefined : "unconfigured", reason: currencyMismatch ? "Membership currency does not match organization currency." : !validLifecycle ? "Membership lifecycle does not match the requested sale or renewal source type." : !validDiscount ? "Membership discount approval or currency is not configured." : !validAmount ? "Membership sale net amount is not a safe non-negative integer." : undefined, details: { previousMembershipId: membership.previousMembershipId, salePriceMinor: membership.salePrice.amount, discountMinor: membership.discount.amount, netAmountMinor: netAmount, discountApprovalStatus: membership.discountApprovalStatus } };
+    }
+    if (sourceType === "membership_revenue_recognition") {
+      const prefix = "membership-revenue:";
+      if (!sourceId.startsWith(prefix)) throw ApiError.of(ERR.VALIDATION, "Membership recognition source id is invalid.");
+      const remainder = sourceId.slice(prefix.length);
+      const separator = remainder.lastIndexOf(":");
+      const membershipId = separator > 0 ? remainder.slice(0, separator) : "";
+      const serviceMonth = separator > 0 ? remainder.slice(separator + 1) : "";
+      if (!membershipId || !serviceMonth) throw ApiError.of(ERR.VALIDATION, "Membership recognition source id is invalid.");
+      const membership = this.db.memberships.find((candidate) => candidate.id === membershipId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership recognition source not found.");
+      const sourceCurrency = membership.salePrice.currency;
+      const netAmount = membership.salePrice.amount - membership.discount.amount;
+      const originalType: T.AccountingSourceType = membership.previousMembershipId ? "membership_renewal" : "membership_sale";
+      const original = this.accountingSources.find((row) => row.sourceType === originalType && row.sourceId === membership.id);
+      const dependencyValid = original?.status === "posted" && original.branchId === membership.homeBranchId && original.currency === this.db.organization.currency && original.amount !== undefined && Number.isSafeInteger(original.amount.amount) && original.amount.amount > 0;
+      const recognitionBase = dependencyValid ? Math.min(netAmount, original.amount!.amount) : netAmount;
+      const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
+      const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
+      const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes: membership.activeFreeze ? [membership.activeFreeze] : [] });
+      const selected = allocations.find((allocation) => allocation.month === serviceMonth);
+      const occurredAt = selected ? `${accountingMonthEnd(selected.month)}T23:59:59.999Z` : membership.createdAt;
+      const currencyMismatch = sourceCurrency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
+      const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
+      const valid = dependencyValid && !futureMonth && selected !== undefined && selected.amount > 0 && Number.isSafeInteger(netAmount) && netAmount >= 0 && membership.discount.amount >= 0 && membership.discount.amount <= membership.salePrice.amount && membership.discountApprovalStatus !== "pending" && membership.discountApprovalStatus !== "rejected";
+      return { amount: selected?.amount, currency: sourceCurrency, branchId: original?.branchId ?? membership.homeBranchId, occurredAt, debitCode: "2200", creditCode: "4100", policyCode: "membership-revenue-recognition.v1", status: currencyMismatch ? "excluded" : valid ? undefined : "unconfigured", reason: currencyMismatch ? "Membership currency does not match organization currency." : !dependencyValid ? "The original membership sale or renewal must be posted in the same branch and currency before revenue can be recognized." : futureMonth ? "Future membership service months cannot be recognized." : !validAccountingDate(membership.startDate) || !validAccountingDate(membership.endDate) || membership.startDate > membership.endDate ? "Membership service start and end dates must be valid calendar dates." : !Number.isSafeInteger(netAmount) || netAmount < 0 || membership.discount.amount > membership.salePrice.amount ? "Membership net amount is not a safe non-negative integer minor-unit amount." : !selected ? `No positive earned amount exists for ${serviceMonth}.` : selected.amount <= 0 ? "This service month has no positive amount to recognize." : membership.discountApprovalStatus === "pending" || membership.discountApprovalStatus === "rejected" ? "Membership discount approval is not complete." : "Membership recognition source is not configured.", details: { membershipId, serviceMonth, serviceStart: selected?.serviceStart, serviceEnd: selected?.serviceEnd, serviceDays: selected?.days, netAmountMinor: netAmount, postedDeferredAmountMinor: original?.amount?.amount, recognitionBaseMinor: recognitionBase, cancellationDate: planChangeCutoff, allocatedAmountMinor: selected?.amount, allocationPolicy: "daily-weighted-largest-remainder.v1" } };
+    }
+    if (sourceType === "equipment_depreciation") {
+      const prefix = "equipment-depreciation:";
+      if (!sourceId.startsWith(prefix)) throw ApiError.of(ERR.VALIDATION, "Equipment depreciation source id is invalid.");
+      const remainder = sourceId.slice(prefix.length);
+      const separator = remainder.lastIndexOf(":");
+      const assetId = separator > 0 ? remainder.slice(0, separator) : "";
+      const serviceMonth = separator > 0 ? remainder.slice(separator + 1) : "";
+      if (!assetId || !serviceMonth) throw ApiError.of(ERR.VALIDATION, "Equipment depreciation source id is invalid.");
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === assetId);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment depreciation source not found.");
+      const acquisition = this.accountingSources.find((row) => row.sourceType === "equipment_acquisition" && row.sourceId === asset.id);
+      const serviceDate = validAccountingDate(asset.installationDate) ?? validAccountingDate(asset.purchaseDate);
+      const serviceMonthStart = serviceDate?.slice(0, 7);
+      const monthIndex = serviceMonthStart && /^\d{4}-\d{2}$/.test(serviceMonth) ? (Number(serviceMonth.slice(0, 4)) - Number(serviceMonthStart.slice(0, 4))) * 12 + Number(serviceMonth.slice(5, 7)) - Number(serviceMonthStart.slice(5, 7)) : -1;
+      const cost = asset.purchaseCost?.amount;
+      const usefulLife = asset.expectedUsefulLifeMonths;
+      const dependencyValid = acquisition?.status === "posted" && acquisition.branchId === asset.branchId && acquisition.currency === this.db.organization.currency && acquisition.amount !== undefined && Number.isSafeInteger(acquisition.amount.amount) && acquisition.amount.amount > 0;
+      const depreciationBase = dependencyValid && cost !== undefined ? Math.min(cost, acquisition.amount!.amount) : cost;
+      const amount = mockMonthlyDepreciationAmount(depreciationBase, usefulLife, monthIndex);
+      const sourceCurrency = asset.purchaseCost?.currency ?? this.db.organization.currency;
+      const currencyMismatch = sourceCurrency !== this.db.organization.currency;
+      const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
+      const retiredWithoutEffectiveDate = asset.status === "retired" || asset.status === "replaced";
+      const valid = dependencyValid && !futureMonth && !retiredWithoutEffectiveDate && serviceDate !== undefined && cost !== undefined && Number.isSafeInteger(cost) && cost > 0 && usefulLife !== undefined && Number.isSafeInteger(usefulLife) && usefulLife > 0 && usefulLife <= MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS && amount !== undefined && amount > 0;
+      const occurredAt = /^\d{4}-\d{2}$/.test(serviceMonth) ? `${accountingMonthEnd(serviceMonth)}T23:59:59.999Z` : asset.createdAt;
+      return { amount, currency: sourceCurrency, branchId: asset.branchId, occurredAt, debitCode: "5600", creditCode: "1550", policyCode: "equipment-depreciation.v1", status: currencyMismatch ? "excluded" : valid ? undefined : "unconfigured", reason: currencyMismatch ? "Equipment cost currency does not match organization currency." : !dependencyValid ? "The equipment acquisition must be posted in the same branch and currency before depreciation can be recorded." : retiredWithoutEffectiveDate ? "Retired or replaced equipment needs an audited effective retirement date before its depreciation schedule can continue." : futureMonth ? "Future equipment service months cannot be depreciated." : serviceDate === undefined ? "Equipment needs a valid placed-in-service date or purchase date before depreciation can be configured." : cost === undefined || !Number.isSafeInteger(cost) || cost <= 0 ? "Equipment purchase cost must be a positive integer minor-unit amount before depreciation can be configured." : usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife <= 0 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS ? `Equipment expected useful life must be between 1 and ${MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS} months.` : serviceMonth === "unconfigured" ? "Equipment depreciation service month is not configured." : monthIndex < 0 || monthIndex >= usefulLife ? "Equipment depreciation service month falls outside the useful-life schedule." : amount === undefined || amount <= 0 ? "Equipment depreciation amount is not a positive integer minor-unit amount." : "Equipment depreciation source is not configured.", details: { assetId, assetCode: asset.code, serviceMonth, depreciationStartDate: serviceDate, depreciationDateSource: asset.installationDate && validAccountingDate(asset.installationDate) ? "installation" : "purchase", purchaseCostMinor: cost, postedAcquisitionAmountMinor: acquisition?.amount?.amount, depreciationBaseMinor: depreciationBase, usefulLifeMonths: usefulLife, residualValueMinor: 0, monthIndex: monthIndex >= 0 ? monthIndex : undefined, allocatedAmountMinor: amount, allocationPolicy: "straight-line-monthly-remainder.v1" } };
     }
     if (sourceType === "stock_movement") {
       const movement = this.db.stockMovements.find((candidate) => candidate.id === sourceId);
@@ -6436,8 +6695,9 @@ export class MockGymOSApi implements GymOSApi {
         const factCurrency = fact.currency ?? this.db.organization.currency;
         const factMoney = fact.amount === undefined ? undefined : money(fact.amount, factCurrency);
         const policyVersion = accountingPolicyVersion(fact.policyCode);
-        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+        const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, fact.status);
+        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
         const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
         this.accountingSourceAttempts.set(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey), attempt);
         return this.accountingSourceAttemptView(attempt);
@@ -6453,8 +6713,9 @@ export class MockGymOSApi implements GymOSApi {
       const policyVersion = accountingPolicyVersion(policyCode) ?? 1;
       const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode, policyVersion, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v${policyVersion}:${input.idempotencyKey}`, totalDebit: money(fact.amount, this.db.organization.currency), totalCredit: money(fact.amount, this.db.organization.currency), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount, this.db.organization.currency), credit: money(0, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0, this.db.organization.currency), credit: money(fact.amount, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
       this.accountingEntries.unshift(entry);
-      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
-      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+      const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, "pending");
+      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
       this.audit({ category: "accounting", action: "accounting.source.post", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Posted ${input.sourceType} source`, reason: input.reason, branchId: branch?.id });
       return row;
     });
@@ -7610,7 +7871,7 @@ export class MockGymOSApi implements GymOSApi {
       const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
       const status = input.status ?? existing?.status ?? "active";
       if (!MOCK_EQUIPMENT_ASSET_STATUSES.includes(status) || !/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || !Number.isSafeInteger(input.purchaseCost.amount) || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
-      if ((input.expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(input.expectedServiceIntervalDays) || input.expectedServiceIntervalDays < 1)) || (input.expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(input.expectedUsefulLifeMonths) || input.expectedUsefulLifeMonths < 1))) throw ApiError.of(ERR.VALIDATION, "Equipment service intervals must be positive whole numbers.");
+      if ((input.expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(input.expectedServiceIntervalDays) || input.expectedServiceIntervalDays < 1)) || (input.expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(input.expectedUsefulLifeMonths) || input.expectedUsefulLifeMonths < 1 || input.expectedUsefulLifeMonths > 600))) throw ApiError.of(ERR.VALIDATION, "Equipment service intervals must be positive whole numbers and useful life must be between 1 and 600 months.");
       // Retired/replaced assets remain in history, but their code can be
       // reused by a new live asset. Maintenance assets still reserve it.
       const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && (asset.status === "active" || asset.status === "maintenance") && asset.id !== input.id);

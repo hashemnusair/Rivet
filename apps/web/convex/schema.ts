@@ -111,10 +111,12 @@ const accountingSourceType = v.union(
   v.literal("void"),
   v.literal("membership_sale"),
   v.literal("membership_renewal"),
+  v.literal("membership_revenue_recognition"),
   v.literal("purchase_order_receipt"),
   v.literal("stock_movement"),
   v.literal("facility_supplies"),
   v.literal("equipment_acquisition"),
+  v.literal("equipment_depreciation"),
   v.literal("equipment_repair"),
 );
 const accountingSourceStatus = v.union(v.literal("pending"), v.literal("posted"), v.literal("unconfigured"), v.literal("excluded"), v.literal("failed"), v.literal("reversed"));
@@ -723,6 +725,10 @@ export default defineSchema({
     idempotencyKey: v.optional(v.string()),
     reason: v.optional(v.string()),
     details: v.optional(v.any()),
+    // Fingerprint of the authoritative source fact used to build this queue
+    // row. It lets reports distinguish a current empty/complete scan from a
+    // stale projection without mutating posted source decisions.
+    projectionFingerprint: v.optional(v.string()),
     occurredAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -732,6 +738,25 @@ export default defineSchema({
     .index("by_organization_status", ["organizationId", "status"])
     .index("by_organization_branch_status", ["organizationId", "branchId", "status"])
     .index("by_organization_idempotency", ["organizationId", "idempotencyKey"]),
+
+  // A refresh is itself an auditable coverage fact. An empty run is retained
+  // so a report can prove that no in-scope candidates existed at that scan.
+  // The candidate digest is compared to current authoritative facts before a
+  // report marks coverage proven.
+  accountingSourceQueueRuns: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.optional(v.id("branches")),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+    sourceTypes: v.array(accountingSourceType),
+    candidateDigest: v.string(),
+    candidateCount: v.number(),
+    scannedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_organization_scope", ["organizationId", "branchId", "fromDate", "toDate"]),
 
   // Every failed/excluded source-posting request is retained independently
   // from the mutable per-source queue projection. This preserves replay

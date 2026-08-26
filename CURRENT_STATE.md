@@ -2,7 +2,34 @@
 
 Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification.
 
-## Management Ledger standalone reporting — 26 August 2026 (working-tree update)
+## Management Ledger accounting completeness — 26 August 2026 (working-tree update)
+
+- The accounting source queue now persists a scoped refresh run, authoritative
+  candidate digest, and per-source projection fingerprint. A statement reports
+  queue coverage as proven only when a current complete scan represents every
+  in-scope source; legacy posted/reversed rows receive a safe fingerprint
+  backfill without changing journal amounts, policies, or status.
+- Time-based membership sales remain deferred on posting (Dr 1200 / Cr 2200).
+  After that sale or renewal is posted, earned monthly service can be posted
+  through `membership-revenue-recognition.v1` (Dr 2200 / Cr 4100). Allocation
+  uses exact integer minor units across persisted service days, excludes
+  active/completed freeze dates, stops future earning at cancellation, and
+  never recognizes more than the posted deferred amount. Future months,
+  unposted sales, mismatched branch/currency, and schedules over 120 months stay
+  explicitly unconfigured.
+- Equipment acquisition must be posted before depreciation. Eligible active
+  assets use `equipment-depreciation.v1`: straight-line monthly, installation
+  date falling back to purchase date, zero residual, deterministic final-unit
+  rounding, Dr 5600 / Cr 1550, and no cash-flow classification. Cost, date,
+  organization currency, and a 1–600 month useful life are required. Retired or
+  replaced assets remain unconfigured until an audited effective retirement/
+  disposal workflow exists; the system does not invent that date.
+- Statement warnings are now conditional and deduplicated. The UI renders one
+  completeness panel rather than repeating the same membership/depreciation
+  caveat. Missing inputs or unposted sources still produce a specific warning;
+  an honestly complete projection removes the blanket warning.
+
+## Management Ledger standalone reporting — 26 August 2026
 
 - `/finance` is the canonical, read-focused Management Ledger hub. It contains
   three equal statement links—**Income statement**, **Balance sheet**, and
@@ -27,18 +54,16 @@ Vercel Production rebuild requested on 25 August 2026 after the project owner co
   accounting maintenance remains at `/finance/controls`—journal entries,
   source queue refresh/posting, periods, reversals, and close/reopen—and stays
   behind the `finance` module and its existing mutation permissions.
-- Statement metadata keeps completeness caveats visible. Reports use posted or
-  reversed management-ledger entries only; incomplete source coverage and
-  report warnings remain visible, and background refresh failures identify when
-  the last successful data is being shown. The UI does not infer unsupported
-  figures. Membership revenue recognition, depreciation, and opening balances
-  remain unconfigured, so cash-flow reconciliation can be mathematically sound
-  while source coverage is still unproven. These are management reports, not
-  statutory or tax statements.
+- Statement metadata keeps conditional completeness caveats visible. Reports
+  use posted or reversed management-ledger entries only; incomplete source
+  coverage and specific unconfigured facts remain visible, and background
+  refresh failures identify when the last successful data is being shown.
+  Opening balances remain an explicit operator responsibility. These are
+  management reports, not statutory or tax statements.
 - Financial mutations use centralized invalidation for both `finance` and
   `managementReports`, so posting, reversal, period, and source-queue changes
   refresh controls and statement projections together.
-- Final validation passed: `pnpm --dir apps/web test` (**142 files / 863
+- Final validation passed: `pnpm --dir apps/web test` (**142 files / 867
   tests**), app and Convex TypeScript checks, the production build, full lint
   and secret-output audit, and `git diff --check`. No Playwright run was
   performed and no browser visual verification is claimed.
@@ -606,7 +631,7 @@ below and makes no deployment, Production-verification, or merge claim.
 
 - Five-pillar schema additions are typed/additive; no destructive migration, seed, import, restore, or Production write was run in this release.
 - Permission catalog v2 remains additive for legacy roles; explicit current-version role edits can omit permissions intentionally.
-- Reports do not invent opening balances, historical snapshots, revenue recognition, depreciation, or unsupported source postings. Cashflow remains unproven while source-queue coverage is incomplete.
+- Reports do not invent opening balances, historical snapshots, unsupported source postings, cancellation proceeds, or retirement dates. Revenue recognition and depreciation post only from their validated, dependency-backed schedules. Cashflow remains unproven while source-queue coverage is incomplete.
 - Preserve `FRONTEND_HANDOFF.md` as the frozen historical artifact; this file is the living implementation and release-status handoff.
 
 Primary files for orientation:

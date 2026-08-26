@@ -45,8 +45,8 @@ describe("management reporting projections", () => {
 
     const input = { fromDate: "2026-08-01", toDate: "2026-08-31", branchId: "reports-branch-a" };
     const income = await owner.query(api.domain.query, operation("reports.income_statement", input)) as { netIncome: { amount: number }; totalRevenue: { amount: number }; totalCosts: { amount: number }; membershipRevenueRecognition: string; warnings: string[] };
-    expect(income).toMatchObject({ totalRevenue: { amount: 100_000 }, totalCosts: { amount: 20_000 }, netIncome: { amount: 80_000 }, membershipRevenueRecognition: "not_configured" });
-    expect(income.warnings.some((warning) => warning.includes("revenue recognition"))).toBe(true);
+    expect(income).toMatchObject({ totalRevenue: { amount: 100_000 }, totalCosts: { amount: 20_000 }, netIncome: { amount: 80_000 }, membershipRevenueRecognition: "not_available" });
+    expect(income.warnings.some((warning) => warning.includes("revenue recognition"))).toBe(false);
 
     const balance = await owner.query(api.domain.query, operation("reports.balance_sheet", input)) as { totalAssets: { amount: number }; totalLiabilities: { amount: number }; currentEarnings: { amount: number }; totalEquity: { amount: number }; difference: { amount: number }; balanced: boolean };
     expect(balance).toMatchObject({ totalAssets: { amount: 150_000 }, totalLiabilities: { amount: 20_000 }, currentEarnings: { amount: 80_000 }, totalEquity: { amount: 130_000 }, difference: { amount: 0 }, balanced: true });

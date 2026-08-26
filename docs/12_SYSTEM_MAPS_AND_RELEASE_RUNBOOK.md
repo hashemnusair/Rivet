@@ -14,7 +14,27 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
-### Management Ledger standalone reporting — 26 August 2026 (working-tree update)
+### Management Ledger accounting completeness — 26 August 2026 (working-tree update)
+
+- A complete source refresh now persists its scope, candidate digest, and
+  source projection fingerprints. Reports prove coverage only when the current
+  authoritative candidates match that evidence. Posted/reversed legacy rows
+  can be fingerprinted during refresh without rewriting financial facts.
+- Membership sale/renewal posting remains deferred (1200 → 2200). Monthly
+  recognition (2200 → 4100) is allowed only after the matching deferred source
+  is posted in the same branch/currency. Exact service-day allocation excludes
+  active/completed freezes, stops at cancellation, is capped by the posted
+  deferred amount, rejects future months, and is bounded to 120 months.
+- Depreciation requires a posted acquisition in the same branch/currency plus a
+  valid installation/purchase date, positive cost, and 1–600 month life. The
+  approved MVP convention is straight-line monthly with zero residual and
+  exact final-unit rounding (5600 → 1550, non-cash). Retired/replaced assets
+  stay unconfigured because no authoritative effective retirement date exists.
+- Statement UI warnings are conditional and deduplicated into one panel. A
+  missing/unposted fact remains visible; a proven and fully posted scope no
+  longer repeats generic membership, depreciation, and coverage warnings.
+
+### Management Ledger standalone reporting — 26 August 2026
 
 - `/finance` is the canonical Management Ledger hub. It is deliberately
   separate from Payments, Shifts & cash, and general Reports: the hub presents
@@ -44,13 +64,15 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   reversed management-ledger entries only; incomplete source coverage and
   report warnings are shown, and a background refresh failure labels the last
   successful result as stale. The UI never estimates missing source facts.
-  Membership revenue recognition, depreciation, and opening balances are still
-  unconfigured; cash-flow arithmetic may reconcile while source coverage is
-  unproven. These are management reports and make no statutory or tax claim.
+  Validated membership recognition and equipment depreciation are supported;
+  missing inputs remain explicitly unconfigured. Opening balances remain an
+  operator responsibility, and cash-flow arithmetic may reconcile while source
+  coverage is unproven. These are management reports and make no statutory or
+  tax claim.
 - Central invalidation covers both `finance` and `managementReports`, keeping
   controls and statement projections aligned after source posting, manual
   journals, reversals, and period changes.
-- Final local validation passed: `pnpm --dir apps/web test` (**142 files / 863
+- Final local validation passed: `pnpm --dir apps/web test` (**142 files / 867
   tests**), app and Convex TypeScript checks, production build, full lint and
   secret-output audit, and `git diff --check`. No Playwright run was performed;
   no browser visual verification or deployment success is claimed by this

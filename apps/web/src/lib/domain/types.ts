@@ -1905,10 +1905,12 @@ export type AccountingSourceType =
   | "void"
   | "membership_sale"
   | "membership_renewal"
+  | "membership_revenue_recognition"
   | "purchase_order_receipt"
   | "stock_movement"
   | "facility_supplies"
   | "equipment_acquisition"
+  | "equipment_depreciation"
   | "equipment_repair";
 
 export interface AccountingAccount {
@@ -2023,6 +2025,7 @@ export interface AccountingSourcePosting {
   idempotencyKey?: string;
   reason?: string;
   details?: Record<string, unknown>;
+  projectionFingerprint?: string;
   occurredAt: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -2045,6 +2048,9 @@ export interface AccountingSourcePostingQuery extends ListQuery {
 export interface RefreshAccountingSourceQueueInput {
   branchId?: UUID;
   sourceTypes?: AccountingSourceType[];
+  /** Optional report window. Omitted means all authoritative source dates. */
+  fromDate?: ISODate;
+  toDate?: ISODate;
 }
 
 export interface RefreshAccountingSourceQueueResult {
@@ -2057,6 +2063,10 @@ export interface RefreshAccountingSourceQueueResult {
   pending: number;
   unconfigured: number;
   excluded: number;
+  /** Whether this refresh completely covers its requested scope. */
+  queueCoverage?: "proven" | "refresh_required";
+  scannedFromDate?: ISODate;
+  scannedToDate?: ISODate;
   items: AccountingSourcePosting[];
 }
 
@@ -2154,6 +2164,7 @@ export interface BalanceSheet extends ManagementReportCompleteness {
   totalLiabilitiesAndEquity: Money;
   difference: Money;
   balanced: boolean;
+  depreciationCoverage?: ManagementMetricStatus;
 }
 
 export type ManagementCashflowCategory = "operating" | "investing" | "financing";

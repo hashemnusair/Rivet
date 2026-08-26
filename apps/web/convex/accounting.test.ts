@@ -255,4 +255,132 @@ describe("immutable management-accounting ledger", () => {
     const ownerSources = await owner.query(api.domain.query, operation("accounting.source_postings.list")) as { items: Array<{ sourceId: string; branchId?: string }> };
     expect(ownerSources.items.map((item) => item.sourceId)).toContain("accounting-payment-consolidated");
   });
+
+  it("recognizes membership revenue by persisted service days with exact allocation and idempotent posting", async () => {
+    const { owner, manager, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-recognition", branchId: branch!._id, createdAt: Date.parse("2026-01-01T00:00:00.000Z"), updatedAt: Date.parse("2026-01-01T00:00:00.000Z"), data: { id: "accounting-membership-recognition", homeBranchId: "accounting-branch-a", startDate: "2026-01-15", endDate: "2026-03-14", salePrice: { amount: 100_000, currency: "JOD" }, discount: { amount: 10_000, currency: "JOD" }, discountApprovalStatus: "approved", frozenDaysUsed: 0 } });
+    });
+
+    const salePosting = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-recognition", idempotencyKey: "membership-recognition-sale", reason: "Post deferred membership sale" })) as { status: string };
+    expect(salePosting.status).toBe("posted");
+
+    const refreshed = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"], fromDate: "2026-01-01", toDate: "2026-03-31" })) as { items: Array<{ sourceId: string; status: string; amount?: { amount: number }; details?: Record<string, unknown> }>; queueCoverage?: string };
+    expect(refreshed.queueCoverage).toBe("refresh_required");
+    expect(refreshed.items).toHaveLength(3);
+    expect(refreshed.items.reduce((sum, item) => sum + (item.amount?.amount ?? 0), 0)).toBe(90_000);
+    expect(refreshed.items.map((item) => item.details?.serviceMonth)).toEqual(["2026-01", "2026-02", "2026-03"]);
+
+    const firstSource = refreshed.items[0]!;
+    const posted = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: firstSource.sourceId, idempotencyKey: "membership-recognition-post", reason: "Recognize earned January service" })) as { status: string; amount: { amount: number }; journalEntryId: string };
+    expect(posted).toMatchObject({ status: "posted", amount: { amount: firstSource.amount?.amount } });
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: posted.journalEntryId })) as { lines: Array<{ accountCode: string; debit: { amount: number }; credit: { amount: number } }> };
+    expect(detail.lines.map((line) => line.accountCode)).toEqual(["2200", "4100"]);
+    expect(detail.lines.reduce((sum, line) => sum + line.debit.amount, 0)).toBe(firstSource.amount?.amount);
+    const replay = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: firstSource.sourceId, idempotencyKey: "membership-recognition-retry", reason: "Retry after receipt" })) as { journalEntryId: string };
+    expect(replay.journalEntryId).toBe(posted.journalEntryId);
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-cutoff", branchId: branch!._id, createdAt: Date.parse("2026-01-01T00:00:00.000Z"), updatedAt: Date.parse("2026-01-01T00:00:00.000Z"), data: { id: "accounting-membership-cutoff", homeBranchId: "accounting-branch-a", startDate: "2026-01-01", endDate: "2026-03-31", salePrice: { amount: 9_000, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, discountApprovalStatus: "approved", frozenDaysUsed: 28 } });
+    });
+    await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-cutoff", idempotencyKey: "membership-cutoff-sale", reason: "Post deferred sale before lifecycle changes" }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const membership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "membership").eq("publicId", "accounting-membership-cutoff")).unique();
+      await ctx.db.patch(membership!._id, { data: { ...(membership!.data as Record<string, unknown>), cancelledAt: "2026-03-15T12:00:00.000Z", freezes: [{ id: "freeze-accounting", startDate: "2026-02-01", endDate: "2026-02-28", status: "completed", reason: "Medical", createdAt: "2026-01-20T00:00:00.000Z" }] }, updatedAt: Date.now() });
+    });
+    const cutoff = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"], fromDate: "2026-01-01", toDate: "2026-03-31" })) as { items: Array<{ sourceId: string; amount?: { amount: number }; details?: Record<string, unknown> }> };
+    const cutoffRows = cutoff.items.filter((item) => item.sourceId.includes("accounting-membership-cutoff"));
+    expect(cutoffRows.map((item) => item.details?.serviceMonth)).toEqual(["2026-01", "2026-03"]);
+    expect(cutoffRows.reduce((sum, item) => sum + (item.amount?.amount ?? 0), 0)).toBeLessThan(9_000);
+    const futureRecognition = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: "membership-revenue:accounting-membership-cutoff:2027-01", idempotencyKey: "membership-recognition-future", reason: "Reject future period" })) as { status: string; reason?: string };
+    expect(futureRecognition).toMatchObject({ status: "unconfigured", reason: "Future membership service months cannot be recognized." });
+  });
+
+  it("posts straight-line equipment depreciation with a date fallback and keeps incomplete assets unconfigured", async () => {
+    const { owner, manager, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      const now = Date.parse("2026-01-01T00:00:00.000Z");
+      await ctx.db.insert("equipmentAssets", { organizationId: organization!._id, publicId: "accounting-equipment-depreciable", branchId: branch!._id, code: "TREAD-01", name: "Treadmill", purchaseDate: "2026-01-01", installationDate: "2026-01-15", purchaseCostMinor: 1_000, purchaseCostCurrency: "JOD", status: "active", expectedUsefulLifeMonths: 3, createdAt: now, updatedAt: now });
+      await ctx.db.insert("equipmentAssets", { organizationId: organization!._id, publicId: "accounting-equipment-incomplete", branchId: branch!._id, code: "BIKE-01", name: "Bike", status: "active", createdAt: now, updatedAt: now });
+    });
+
+    const beforeAcquisition = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["equipment_depreciation"], fromDate: "2026-01-01", toDate: "2026-03-31" })) as { items: Array<{ sourceId: string; status: string; reason?: string }> };
+    expect(beforeAcquisition.items.filter((item) => item.sourceId.includes("accounting-equipment-depreciable")).every((item) => item.status === "unconfigured" && item.reason?.includes("acquisition must be posted"))).toBe(true);
+
+    const acquisitionPosting = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_acquisition", sourceId: "accounting-equipment-depreciable", idempotencyKey: "equipment-acquisition-before-depreciation", reason: "Post equipment acquisition" })) as { status: string };
+    expect(acquisitionPosting.status).toBe("posted");
+
+    const refreshed = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["equipment_depreciation"], fromDate: "2026-01-01", toDate: "2026-03-31" })) as { items: Array<{ sourceId: string; status: string; amount?: { amount: number }; reason?: string; details?: Record<string, unknown> }> };
+    const validItems = refreshed.items.filter((item) => item.sourceId.includes("accounting-equipment-depreciable"));
+    expect(validItems).toHaveLength(3);
+    expect(validItems.map((item) => item.amount?.amount)).toEqual([334, 333, 333]);
+    expect(validItems.reduce((sum, item) => sum + (item.amount?.amount ?? 0), 0)).toBe(1_000);
+    const incomplete = refreshed.items.find((item) => item.sourceId.includes("accounting-equipment-incomplete"));
+    expect(incomplete).toMatchObject({ status: "unconfigured", reason: "Equipment needs a valid placed-in-service date or purchase date before depreciation can be configured." });
+
+    const posted = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_depreciation", sourceId: validItems[0]!.sourceId, idempotencyKey: "equipment-depreciation-post", reason: "Post January depreciation" })) as { status: string; journalEntryId: string };
+    expect(posted.status).toBe("posted");
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: posted.journalEntryId })) as { lines: Array<{ accountCode: string }> };
+    expect(detail.lines.map((line) => line.accountCode)).toEqual(["5600", "1550"]);
+    const invalidPost = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_depreciation", sourceId: incomplete!.sourceId, idempotencyKey: "equipment-depreciation-invalid", reason: "Record incomplete depreciation fact" })) as { status: string; journalEntryId?: string };
+    expect(invalidPost).toMatchObject({ status: "unconfigured" });
+    expect(invalidPost.journalEntryId).toBeUndefined();
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const asset = await ctx.db.query("equipmentAssets").withIndex("by_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-equipment-depreciable")).unique();
+      await ctx.db.patch(asset!._id, { status: "retired", updatedAt: Date.now() });
+    });
+    const retired = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_depreciation", sourceId: validItems[1]!.sourceId, idempotencyKey: "equipment-depreciation-retired", reason: "Do not post retired asset" })) as { status: string; reason?: string };
+    expect(retired).toMatchObject({ status: "unconfigured", reason: expect.stringContaining("effective retirement date") });
+    const future = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "equipment_depreciation", sourceId: "equipment-depreciation:accounting-equipment-depreciable:2027-01", idempotencyKey: "equipment-depreciation-future", reason: "Reject future period" })) as { status: string; reason?: string };
+    expect(future).toMatchObject({ status: "unconfigured" });
+  });
+
+  it("proves queue coverage only after a complete scan and invalidates it when a new source appears", async () => {
+    const { owner, manager, t } = await seeded();
+    const reportInput = { fromDate: "2026-08-01", toDate: "2026-08-31", branchId: "accounting-branch-a" };
+    const before = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { queueCoverage: string };
+    expect(before.queueCoverage).toBe("refresh_required");
+
+    const firstRefresh = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh")) as { queueCoverage?: string; scanned: number };
+    expect(firstRefresh.scanned).toBeGreaterThan(0);
+    expect(firstRefresh.queueCoverage).toBe("proven");
+    const afterRefresh = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { queueCoverage: string; warnings: string[] };
+    expect(afterRefresh.queueCoverage).toBe("proven");
+    expect(afterRefresh.warnings.some((warning) => warning.includes("source queue coverage"))).toBe(false);
+
+    await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "accounting-payment-a", idempotencyKey: "legacy-fingerprint-payment", reason: "Post source before legacy migration check" }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const source = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", organization!._id).eq("sourceType", "payment").eq("sourcePublicId", "accounting-payment-a")).unique();
+      await ctx.db.patch(source!._id, { projectionFingerprint: undefined, updatedAt: Date.now() });
+    });
+    const migrated = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh")) as { updated: number };
+    expect(migrated.updated).toBeGreaterThan(0);
+    const migratedSources = await owner.query(api.domain.query, operation("accounting.source_postings.list", { sourceType: "payment" })) as { items: Array<{ sourceId: string; projectionFingerprint?: string }> };
+    expect(migratedSources.items.find((item) => item.sourceId === "accounting-payment-a")?.projectionFingerprint).toBeTruthy();
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "payment", publicId: "accounting-payment-after-refresh", branchId: branch!._id, createdAt: now, updatedAt: now, data: { id: "accounting-payment-after-refresh", branchId: "accounting-branch-a", type: "payment", status: "completed", amount: { amount: 1_500, currency: "JOD" }, method: "cash", occurredAt: "2026-08-15T12:00:00.000Z" } });
+    });
+    const stale = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { queueCoverage: string };
+    expect(stale.queueCoverage).toBe("refresh_required");
+    await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh"));
+    const provenAgain = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { queueCoverage: string };
+    expect(provenAgain.queueCoverage).toBe("proven");
+
+    const emptyRange = await owner.query(api.domain.query, operation("reports.income_statement", { fromDate: "2030-01-01", toDate: "2030-01-31", branchId: "accounting-branch-a" })) as { queueCoverage: string };
+    expect(emptyRange.queueCoverage).toBe("proven");
+  });
 });

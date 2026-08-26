@@ -1638,7 +1638,7 @@ async function upsertEquipmentAsset(ctx: MutationCtx, actor: ActorContext, input
   const purchaseCost = requireNonNegativeMoney(input.purchaseCost, actor.organization.currency, "Purchase cost", actor.correlationId);
   const expectedServiceIntervalDays = input.expectedServiceIntervalDays === undefined ? undefined : integer(input.expectedServiceIntervalDays, Number.NaN);
   const expectedUsefulLifeMonths = input.expectedUsefulLifeMonths === undefined ? undefined : integer(input.expectedUsefulLifeMonths, Number.NaN);
-  if ((expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(expectedServiceIntervalDays) || expectedServiceIntervalDays < 1)) || (expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(expectedUsefulLifeMonths) || expectedUsefulLifeMonths < 1))) domainError("VALIDATION_ERROR", "Equipment service intervals must be positive whole numbers.", { correlationId: actor.correlationId });
+  if ((expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(expectedServiceIntervalDays) || expectedServiceIntervalDays < 1)) || (expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(expectedUsefulLifeMonths) || expectedUsefulLifeMonths < 1 || expectedUsefulLifeMonths > 600))) domainError("VALIDATION_ERROR", "Equipment service intervals must be positive whole numbers and useful life must be between 1 and 600 months.", { correlationId: actor.correlationId });
   const inputId = optionalText(input.id);
   const existing = inputId ? await assetByPublicId(ctx, actor, inputId) : null;
   if (existing && existing.branchId !== branch._id) domainError("CONFLICT", "Equipment assets cannot be reassigned between branches; use a future transfer workflow.", { correlationId: actor.correlationId });

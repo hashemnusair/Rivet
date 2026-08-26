@@ -136,6 +136,31 @@ describe("ManagementStatementPage", () => {
     expect(screen.queryByText(/Temporary report outage/i)).not.toBeInTheDocument();
   });
 
+  it("shows each report warning once in one completeness panel", async () => {
+    const originalGetIncomeStatement = MockGymOSApi.prototype.getIncomeStatement;
+    vi.spyOn(MockGymOSApi.prototype, "getIncomeStatement").mockImplementation(function (this: MockGymOSApi, input) {
+      return originalGetIncomeStatement.call(this, input).then((report) => ({
+        ...report,
+        warnings: [
+          report.warnings[0] ?? "",
+          report.warnings[0] ?? "",
+          "Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.",
+          "Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.",
+        ],
+      }));
+    });
+
+    await renderWithApp(<ManagementStatementPage kind="income" />);
+    expect(await screen.findByTestId("income-statement")).toBeInTheDocument();
+
+    expect(screen.getAllByRole("status", { name: "Statement warnings" })).toHaveLength(1);
+    expect(screen.getAllByText("Some figures may be incomplete")).toHaveLength(1);
+    expect(screen.getAllByText("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.")).toHaveLength(1);
+    expect(screen.getAllByText("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.")).toHaveLength(1);
+    expect(screen.getAllByText("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.")).toHaveLength(1);
+    expect(screen.queryByText("Deferred membership sales are not presented as earned revenue until a recognition policy is configured.")).not.toBeInTheDocument();
+  });
+
   it("locks the direct route when a live subscription downgrade removes reporting", async () => {
     const { api } = await renderWithApp(<ManagementStatementPage kind="income" />);
 

@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, requirePermission, type ActorContext } from "./security";
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
+import { sourceQueueCoverageForReport, type SourceQueueCandidateFact } from "./accounting";
 
 type Account = Doc<"accountingAccounts">;
 type JournalEntry = Doc<"accountingJournalEntries">;
@@ -51,6 +52,7 @@ type StatementGroup = JournalLine["statementGroup"];
 type QueueCoverage = "proven" | "refresh_required" | "unavailable";
 type ReconciliationStatus = "proven" | "unproven" | "not_available";
 type ScopedBranchId = Id<"branches"> | undefined | null;
+type ManagementMetricStatus = "available" | "not_available" | "not_configured";
 
 function value(input: unknown): JsonObject {
   return input && typeof input === "object" && !Array.isArray(input) ? input as JsonObject : {};
@@ -184,6 +186,8 @@ interface ReportContext {
   queueCoverage: QueueCoverage;
   warnings: string[];
   lastQueueProjectionAt?: string;
+  membershipRevenueRecognition: ManagementMetricStatus;
+  depreciationCoverage: ManagementMetricStatus;
 }
 
 async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject): Promise<ReportContext> {
@@ -209,13 +213,26 @@ async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject)
   const policies = [...new Map(effectivePolicyEntries
     .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= fromDate && entry.postingDate <= toDate && inScope(actor, branch, entry.branchId) && entry.policyCode && entry.policyVersion)
     .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
-  const lastQueueProjectionAt = sourceRows.length > 0 ? iso(Math.max(...sourceRows.map((row) => row.updatedAt))) : undefined;
-  const warnings = [
-    "Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.",
-    "Membership revenue recognition is not configured; deferred membership sales are excluded from recognized revenue until an approved policy exists.",
-    "Fixed assets are shown gross because accumulated depreciation is not configured.",
-  ];
-  return { branch, branchIdsByPublicId, fromDate, toDate, generatedAt: iso(Date.now()), accounts, sourceCounts, sourceRows, policies, queueCoverage: "refresh_required", warnings, lastQueueProjectionAt };
+  const queueCoverage = await sourceQueueCoverageForReport(ctx, actor, { branch, fromDate, toDate });
+  const recognitionCandidates = queueCoverage.candidates.filter((candidate: SourceQueueCandidateFact) => candidate.candidate.sourceType === "membership_revenue_recognition");
+  const depreciationCandidates = queueCoverage.candidates.filter((candidate: SourceQueueCandidateFact) => candidate.candidate.sourceType === "equipment_depreciation");
+  const recognitionStatus: ManagementMetricStatus = recognitionCandidates.length === 0
+    ? "not_available"
+    : recognitionCandidates.every((candidate) => candidate.current && candidate.row && (candidate.row.status === "posted" || candidate.row.status === "reversed") && candidate.fact.status === undefined)
+      ? "available"
+      : "not_configured";
+  const depreciationStatus: ManagementMetricStatus = depreciationCandidates.length === 0
+    ? "not_available"
+    : depreciationCandidates.every((candidate) => candidate.current && candidate.row && (candidate.row.status === "posted" || candidate.row.status === "reversed") && candidate.fact.status === undefined)
+      ? "available"
+      : "not_configured";
+  const warnings = new Set<string>();
+  if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
+  const unresolvedPostingCount = sourceRows.filter((row) => ["pending", "unconfigured", "excluded", "failed"].includes(row.status)).length;
+  if (unresolvedPostingCount > 0) warnings.add("Some authoritative source facts are not posted; review the source queue before relying on these figures.");
+  if (recognitionStatus === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
+  if (depreciationStatus === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
+  return { branch, branchIdsByPublicId, fromDate, toDate, generatedAt: iso(Date.now()), accounts, sourceCounts, sourceRows, policies, queueCoverage: queueCoverage.status, warnings: [...warnings], lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, membershipRevenueRecognition: recognitionStatus, depreciationCoverage: depreciationStatus };
 }
 
 function reportMeta(actor: ActorContext, report: ReportContext): JsonObject {
@@ -231,6 +248,7 @@ function reportMeta(actor: ActorContext, report: ReportContext): JsonObject {
     sourcePostingCounts: report.sourceCounts,
     queueCoverage: report.queueCoverage,
     lastQueueProjectionAt: report.lastQueueProjectionAt,
+    depreciationCoverage: report.depreciationCoverage,
     warnings: report.warnings,
     disclaimer: DISCLAIMER,
   };
@@ -323,7 +341,7 @@ async function incomeStatement(ctx: QueryCtx, actor: ActorContext, input: JsonOb
   const otherExpenses = sectionFromGroups(bundles, new Set(["other_expense"]), report.accounts, currency);
   const totalRevenue = revenue.total.amount + otherIncome.total.amount;
   const totalCosts = costOfSales.total.amount + operatingExpenses.total.amount + otherExpenses.total.amount;
-  return { ...reportMeta(actor, report), revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue, currency), totalCosts: money(totalCosts, currency), netIncome: money(totalRevenue - totalCosts, currency), membershipRevenueRecognition: "not_configured" };
+  return { ...reportMeta(actor, report), revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue, currency), totalCosts: money(totalCosts, currency), netIncome: money(totalRevenue - totalCosts, currency), membershipRevenueRecognition: report.membershipRevenueRecognition };
 }
 
 async function balanceSheet(ctx: QueryCtx, actor: ActorContext, input: JsonObject): Promise<JsonObject> {
