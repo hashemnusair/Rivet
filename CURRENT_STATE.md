@@ -1,6 +1,45 @@
 # GymOS / RIVET current implementation state
 
-Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification. See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
+See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
+
+## Release and authenticated Production smoke — 27 August 2026
+
+- Application release `cb9f10c` (five commits over `4b8bcc4`: tenant-local
+  accounting dates + ledger read performance, demo-auth inlining repair,
+  consolidated source-queue refresh, browser-suite restoration, and docs)
+  pushed to `main`. GitHub Actions run `33019165155` passed (typecheck, lint,
+  unit tests, build, and the credential-gated Convex codegen check). The
+  only CI annotation is the known Node 20 deprecation on the pinned
+  `checkout@v4` / `setup-node@v4` / `pnpm-setup@v4` actions.
+- Vercel auto-deployed the web from the push; the live site serves the new
+  build (verified behaviorally: rebuilt operations command center, statement
+  URL scope canonicalization, consolidated Refresh queue with its banner).
+- The owner deployed Convex to exact Production `descriptive-meerkat-589`
+  through the guarded wrapper. First attempt did not take effect (live
+  statements still emitted pre-`4b8bcc4` warning copy — caught during the
+  smoke); after the owner re-ran the deploy, the live responses switched to
+  the current conditional completeness copy, confirming the new functions.
+- The owner set `RIVET_PUBLIC_REQUEST_PEPPER` in the Convex Production
+  environment; `pnpm convex:env:names -- --prod` now lists it (names only).
+  The 25 August pepper-strength blocker is closed.
+- Signed-in, read-first Production smoke with an active gym owner
+  (two-branch test gym), all passing: sign-in routes to the gym workspace;
+  dashboard KPIs live; `/operations` all-branches view read-only with
+  writes gated, per-branch inventory scoping correct (7/5 split), Checkout
+  loads members, stock, and Cash/CliQ/Visa options with no sale created,
+  Machines lists the branch asset with zero issues/work orders; all three
+  `/finance` statements render with the conditional completeness warnings,
+  single deduplicated panel, balance-sheet equation reconciling, cash-flow
+  reconciliation honestly `unproven` pending a queue refresh, and date/
+  branch scope changes updating figures and the canonical URL; ledger
+  controls show the 17-account chart and the consolidated refresh. No
+  writes were performed. Console: one 422 confined to the Clerk sign-in
+  handshake, no app errors; network all 200s; laptop and narrow-viewport
+  layouts clean.
+- Ledger state for this tenant is honestly empty (no queue runs, no
+  journals). The next owner step is the accounting operating procedure:
+  refresh the source queue, post the deferred originals, then recognition,
+  per [HANDOFF_PLAN.md](HANDOFF_PLAN.md).
 
 ## Management-ledger deep dive: tenant-date anchoring, demo-auth repair, consolidated refresh — 26 August 2026 (working-tree update)
 
