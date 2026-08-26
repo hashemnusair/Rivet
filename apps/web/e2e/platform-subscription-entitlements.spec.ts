@@ -32,11 +32,11 @@ async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth")
   } else {
     await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
   }
-  await expect(primaryNav.getByRole("link", { name: "Management ledger", exact: true })).toHaveCount(0);
+  await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toHaveCount(0);
 
   // Payments remains a foundation surface and exposes the secondary finance
-  // switcher. The premium Management statements link must not be advertised
-  // for Starter/Growth, even when the actor has financial role permissions.
+  // switcher. Statements are a separate, reporting-entitled workspace and
+  // must not be advertised for Starter/Growth.
   await primaryNav.getByRole("link", { name: "Payments", exact: true }).click();
   await expect(page).toHaveURL(/\/payments$/);
   const financeNav = page.getByRole("navigation", { name: "Finance views" });
@@ -53,23 +53,36 @@ async function expectPremiumWorkspace(page: Page) {
   const primaryNav = page.locator('aside[aria-label="Primary navigation"]');
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Management ledger", exact: true })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toBeVisible();
 
   await primaryNav.getByRole("link", { name: "Operations", exact: true }).click();
   await expect(page).toHaveURL(/\/operations$/);
   await expect(page.getByTestId("operations-command-center")).toBeVisible();
 
-  await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Management ledger", exact: true }).click();
+  await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Statements", exact: true }).click();
   await expect(page).toHaveURL(/\/finance$/);
-  await expect(page.getByTestId("management-ledger-workspace")).toBeVisible();
+  await expect(page.getByTestId("management-ledger-home")).toBeVisible();
+
+  await page.getByTestId("statement-card-income").click();
+  await expect(page).toHaveURL(/\/finance\/income-statement$/);
+  await expect(page.getByTestId("income-statement")).toBeVisible();
+
+  await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Statements", exact: true }).click();
+  await expect(page).toHaveURL(/\/finance$/);
+  await page.getByTestId("statement-card-balance").click();
+  await expect(page).toHaveURL(/\/finance\/balance-sheet$/);
+  await expect(page.getByTestId("balance-sheet")).toBeVisible();
+
+  await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Statements", exact: true }).click();
+  await expect(page).toHaveURL(/\/finance$/);
+  await page.getByTestId("statement-card-cashflow").click();
+  await expect(page).toHaveURL(/\/finance\/cash-flow$/);
+  await expect(page.getByTestId("cashflow-statement")).toBeVisible();
 
   await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Payments", exact: true }).click();
   await expect(page).toHaveURL(/\/payments$/);
   const financeNav = page.getByRole("navigation", { name: "Finance views" });
-  await expect(financeNav.getByRole("link", { name: "Management statements", exact: true })).toBeVisible();
-  await financeNav.getByRole("link", { name: "Management statements", exact: true }).click();
-  await expect(page).toHaveURL(/\/reports\/statements$/);
-  await expect(page.getByTestId("management-statements-workspace")).toBeVisible();
+  await expect(financeNav.getByRole("link", { name: "Management statements", exact: true })).toHaveCount(0);
 }
 
 test.describe("RIVET platform subscription entitlements", () => {

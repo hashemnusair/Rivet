@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Banknote, FileBarChart, ScrollText } from "lucide-react";
+import { ArrowLeftRight, Banknote, FileBarChart } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -20,7 +20,6 @@ export const FINANCE_LINKS: readonly FinanceLink[] = [
   { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
   { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
   { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
-  { href: "/finance", label: "Management ledger", icon: ScrollText, anyPermission: ["reports.financial.read"], moduleKey: "reporting" },
 ];
 
 export function financeLinkIsVisible(

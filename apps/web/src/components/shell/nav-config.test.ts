@@ -15,7 +15,7 @@ describe("primary workspace navigation", () => {
       "Leads",
       "Follow-ups",
       "Payments",
-      "Management ledger",
+      "Statements",
       "Audit log",
       "Support",
       "Settings",
@@ -53,6 +53,14 @@ describe("primary workspace navigation", () => {
     expect(navItemIsVisible(finance!, starter)).toBe(false);
     expect(navItemIsVisible(operations!, pro)).toBe(true);
     expect(navItemIsVisible(finance!, pro)).toBe(true);
+  });
+
+  it("keeps statements in their own primary navigation section", () => {
+    const finance = NAV_SECTIONS.find((section) => section.label === "Finance");
+    const ledger = NAV_SECTIONS.find((section) => section.label === "Management ledger");
+
+    expect(finance?.items.some((item) => item.href === "/finance")).toBe(false);
+    expect(ledger?.items).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/finance", label: "Statements" })]));
   });
 
   it("does not hide legacy routes while the workspace capability snapshot is absent", () => {

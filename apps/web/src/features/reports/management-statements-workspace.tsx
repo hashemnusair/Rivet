@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowLeft,
   Banknote,
   CalendarDays,
   CheckCircle2,
@@ -10,10 +11,10 @@ import {
   RefreshCw,
   Scale,
   ShieldAlert,
-  TrendingUp,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   BalanceSheet,
   CashflowSection,
@@ -38,10 +39,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FinanceNav } from "@/features/finance/finance-nav";
 
-type StatementsTab = "income" | "balance" | "cashflow";
+export type ManagementStatementKind = "income" | "balance" | "cashflow";
 
 const STATUS_LABELS: Record<string, string> = {
   available: "Available",
@@ -79,12 +78,10 @@ function StatementLoading() {
 }
 
 function ReportStatusBadge({ status }: { status: string }) {
-  const normalized = status;
-  const variant = STATUS_VARIANTS[normalized] ?? "neutral";
   return (
-    <Badge variant={variant}>
+    <Badge variant={STATUS_VARIANTS[status] ?? "neutral"}>
       <span className="sr-only">Status: </span>
-      {STATUS_LABELS[normalized] ?? statusLabel(status)}
+      {STATUS_LABELS[status] ?? statusLabel(status)}
     </Badge>
   );
 }
@@ -122,7 +119,7 @@ function SummaryCard({ label, value, context, tone = "default" }: { label: strin
   return (
     <section className="panel p-4">
       <p className="eyebrow">{label}</p>
-      <div className={cn("mt-1.5 text-[21px] font-semibold leading-tight tabular", tone === "positive" && "text-success-deep", tone === "warning" && "text-warning-deep", tone === "danger" && "text-danger")}>{value}</div>
+      <div className={cn("mt-1.5 text-[21px] font-semibold leading-tight tabular", tone === "positive" && "text-success-deep", tone === "warning" && "text-warning-deep", tone === "danger" && "text-danger")} dir="ltr">{value}</div>
       {context ? <p className="mt-1.5 text-[11.5px] text-ink-3">{context}</p> : null}
     </section>
   );
@@ -218,74 +215,179 @@ function CashflowView({ report }: { report: CashflowStatement }) {
   );
 }
 
-function reportsForInput(input: { fromDate: string; toDate: string; branchId?: UUID }) {
-  return input;
+const STATEMENT_LABELS: Record<ManagementStatementKind, { label: string; description: string }> = {
+  income: { label: "Income statement", description: "Revenue, costs, and net income for the selected period." },
+  balance: { label: "Balance sheet", description: "Assets, liabilities, and equity as of the selected date." },
+  cashflow: { label: "Cash flow statement", description: "Cash movement by operating, investing, and financing activity." },
+};
+
+function validDateParam(value: string | null, fallback: string): string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
+  const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? value : fallback;
 }
 
-export function ManagementStatementsWorkspace() {
+export function scopedStatementHref(path: string, fromDate: string, toDate: string, branchFilter: string): string {
+  const params = new URLSearchParams();
+  if (fromDate) params.set("from", fromDate);
+  if (toDate) params.set("to", toDate);
+  if (branchFilter !== "all") params.set("branchId", branchFilter);
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+type StatementBranch = { id: string; name: string };
+
+function normalizeBranchFilter(value: string | null | undefined, branches: readonly StatementBranch[]): string {
+  const candidate = value?.trim();
+  if (!candidate || candidate === "all") return "all";
+  return branches.some((branch) => branch.id === candidate) ? candidate : "all";
+}
+
+function StatementScopeFilters({
+  branches,
+  fromDate,
+  toDate,
+  branchFilter,
+  onFromDateChange,
+  onToDateChange,
+  onBranchChange,
+}: {
+  branches: readonly StatementBranch[];
+  fromDate: string;
+  toDate: string;
+  branchFilter: string;
+  onFromDateChange: (value: string) => void;
+  onToDateChange: (value: string) => void;
+  onBranchChange: (value: string) => void;
+}) {
+  const validRange = fromDate.length > 0 && toDate.length > 0 && fromDate <= toDate;
+  return (
+    <section className="panel flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end" aria-label="Statement scope filters">
+      <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
+      <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
+      <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+      <div className="flex items-center gap-2 text-[11.5px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
+      {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
+    </section>
+  );
+}
+
+/** One statement per route; only the selected report projection is fetched. */
+export function ManagementStatementPage({ kind }: { kind: ManagementStatementKind }) {
   const { session, sessionLoading } = useApp();
   const { can } = usePermissions();
-  const [tab, setTab] = useState<StatementsTab>("income");
-  const [fromDate, setFromDate] = useState(addDays(todayISODate(), -29));
-  const [toDate, setToDate] = useState(todayISODate());
-  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const defaults = useMemo(() => ({ from: addDays(todayISODate(), -29), to: todayISODate() }), []);
+  const searchParamsKey = searchParams.toString();
+  const sessionBranchKey = session?.branches.map((branch) => branch.id).join("|") ?? "";
+  const availableBranches = useMemo(() => session?.branches ?? [], [session?.branches]);
+  const [fromDate, setFromDate] = useState(() => validDateParam(searchParams.get("from") ?? searchParams.get("fromDate"), defaults.from));
+  const [toDate, setToDate] = useState(() => validDateParam(searchParams.get("to") ?? searchParams.get("toDate"), defaults.to));
+  const [branchFilter, setBranchFilter] = useState(() => searchParams.get("branchId") || "all");
+  const lastObservedUrlRef = useRef(searchParamsKey);
+  const lastObservedBranchKeyRef = useRef(sessionBranchKey);
+  const pendingCanonicalHrefRef = useRef<string | null>(null);
+  const suppressUrlWriteRef = useRef(false);
+  const initialUrlWriteRef = useRef(true);
   const canRead = can("reports.financial.read");
-
-  useEffect(() => {
-    if (branchFilter !== "all" && !session?.branches.some((branch) => branch.id === branchFilter)) setBranchFilter("all");
-  }, [branchFilter, session?.branches]);
-
-  const scopeBranchId = branchFilter === "all" ? undefined : branchFilter;
+  const effectiveBranchFilter = normalizeBranchFilter(branchFilter, availableBranches);
+  const scopeBranchId = effectiveBranchFilter === "all" ? undefined : effectiveBranchFilter as UUID;
   const validRange = fromDate.length > 0 && toDate.length > 0 && fromDate <= toDate;
-  const reportInput = useMemo(() => reportsForInput({ fromDate, toDate, branchId: scopeBranchId }), [fromDate, toDate, scopeBranchId]);
+  const reportInput = useMemo(() => ({ fromDate, toDate, branchId: scopeBranchId }), [fromDate, toDate, scopeBranchId]);
   const workspaceQuery = useApiQuery(qk.workspaceAccess, (api) => api.getWorkspaceAccess(), { enabled: Boolean(session) && canRead });
   const workspace = workspaceQuery.data as WorkspaceAccess | undefined;
   const reportingModule = workspace?.modules.find((module) => module.key === "reporting");
   const ready = Boolean(reportingModule?.entitled && reportingModule.enabled && validRange);
-
-  const incomeQuery = useApiQuery(qk.managementReports({ kind: "income", ...reportInput }), (api) => api.getIncomeStatement(reportInput), { enabled: ready && tab === "income", retry: false });
-  const balanceQuery = useApiQuery(qk.managementReports({ kind: "balance", ...reportInput }), (api) => api.getBalanceSheet(reportInput), { enabled: ready && tab === "balance", retry: false });
-  const cashflowQuery = useApiQuery(qk.managementReports({ kind: "cashflow", ...reportInput }), (api) => api.getCashflowStatement(reportInput), { enabled: ready && tab === "cashflow", retry: false });
-
-  const activeReport = tab === "income" ? incomeQuery.data : tab === "balance" ? balanceQuery.data : cashflowQuery.data;
-  const activeQuery = tab === "income" ? incomeQuery : tab === "balance" ? balanceQuery : cashflowQuery;
-  const activeBackgroundError = activeQuery.isBackgroundError;
-  const activeLoading = tab === "income" ? incomeQuery.isLoading : tab === "balance" ? balanceQuery.isLoading : cashflowQuery.isLoading;
+  const statementQuery = useApiQuery<IncomeStatement | BalanceSheet | CashflowStatement>(
+    qk.managementReports({ kind, ...reportInput }),
+    (api) => kind === "income" ? api.getIncomeStatement(reportInput) : kind === "balance" ? api.getBalanceSheet(reportInput) : api.getCashflowStatement(reportInput),
+    { enabled: ready, retry: false },
+  );
   const readOnly = !(session?.roles.some((role) => role === "owner" || role === "manager") ?? false);
+  const definition = STATEMENT_LABELS[kind];
+  const currentHref = searchParamsKey ? `${pathname}?${searchParamsKey}` : pathname;
+  const desiredHref = scopedStatementHref(pathname, fromDate, toDate, effectiveBranchFilter);
+  const hasScopeParams = searchParams.get("from") !== null || searchParams.get("to") !== null || searchParams.get("fromDate") !== null || searchParams.get("toDate") !== null || searchParams.get("branchId") !== null;
   const refresh = () => {
-    if (tab === "income") void incomeQuery.refetch();
-    else if (tab === "balance") void balanceQuery.refetch();
-    else void cashflowQuery.refetch();
+    if (!validRange) return;
+    void statementQuery.refetch();
   };
 
-  if (sessionLoading && !session) return <><PageHeader eyebrow="Finance" title="Management ledger" description="Loading your reporting workspace…" /><StatementLoading /></>;
+  // Keep the local controls aligned with browser back/forward and any other
+  // same-route URL changes. The pending href ref prevents the URL writer from
+  // racing this effect with the previous scope for one render.
+  useEffect(() => {
+    const urlChanged = lastObservedUrlRef.current !== searchParamsKey;
+    const branchesChanged = lastObservedBranchKeyRef.current !== sessionBranchKey;
+    if (!urlChanged && !branchesChanged) return;
+    lastObservedUrlRef.current = searchParamsKey;
+    lastObservedBranchKeyRef.current = sessionBranchKey;
+
+    // Do not canonicalize a clean URL while the session is still hydrating. A
+    // valid branch in the URL must be checked against the actual session list
+    // before it can be retained or removed.
+    if (!session && searchParams.get("branchId") !== null) return;
+    if (!urlChanged && !searchParamsKey) return;
+
+    const nextFromDate = validDateParam(searchParams.get("from") ?? searchParams.get("fromDate"), defaults.from);
+    const nextToDate = validDateParam(searchParams.get("to") ?? searchParams.get("toDate"), defaults.to);
+    const nextBranchFilter = normalizeBranchFilter(searchParams.get("branchId"), availableBranches);
+    const nextHref = scopedStatementHref(pathname, nextFromDate, nextToDate, nextBranchFilter);
+    const stateChanged = nextFromDate !== fromDate || nextToDate !== toDate || nextBranchFilter !== effectiveBranchFilter;
+
+    suppressUrlWriteRef.current = true;
+    if (stateChanged) {
+      pendingCanonicalHrefRef.current = nextHref;
+      if (nextFromDate !== fromDate) setFromDate(nextFromDate);
+      if (nextToDate !== toDate) setToDate(nextToDate);
+      if (nextBranchFilter !== effectiveBranchFilter) setBranchFilter(nextBranchFilter);
+    } else {
+      pendingCanonicalHrefRef.current = null;
+      if (currentHref !== nextHref) router.replace(nextHref, { scroll: false });
+    }
+  }, [availableBranches, currentHref, defaults.from, defaults.to, effectiveBranchFilter, fromDate, pathname, router, searchParams, searchParamsKey, session, sessionBranchKey, sessionLoading, toDate]);
+
+  useEffect(() => {
+    if (suppressUrlWriteRef.current) {
+      suppressUrlWriteRef.current = false;
+      return;
+    }
+    if (initialUrlWriteRef.current) {
+      initialUrlWriteRef.current = false;
+      // A clean URL is intentionally left clean on first render. Once a
+      // control changes, subsequent state changes are reflected in the URL.
+      if (!hasScopeParams && !pendingCanonicalHrefRef.current) return;
+      if (hasScopeParams && searchParams.get("branchId") !== null && !session) return;
+    }
+    if (pendingCanonicalHrefRef.current) {
+      if (pendingCanonicalHrefRef.current !== desiredHref) return;
+      pendingCanonicalHrefRef.current = null;
+    }
+    if (currentHref !== desiredHref) router.replace(desiredHref, { scroll: false });
+  }, [currentHref, desiredHref, hasScopeParams, pathname, router, searchParams, session]);
+
+  const report = statementQuery.data;
+  const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} /> : <CashflowView report={report as CashflowStatement} /> : null;
+
+  if (sessionLoading && !session) return <><PageHeader eyebrow="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
-  if (workspaceQuery.isLoading) return <><PageHeader eyebrow="Finance" title="Management ledger" description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (workspaceQuery.isLoading) return <><PageHeader eyebrow="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds the income statement, balance sheet, and cash flow statement." className="mt-4" />;
   if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Management reporting is paused" description="An organization owner can enable the reporting module from workspace settings." className="mt-4" />;
 
   return (
-    <div className="space-y-5" data-testid="management-statements-workspace">
-      <PageHeader eyebrow="Finance" title="Management ledger" description="Three clear statements from posted management-ledger facts: income, balance sheet, and cash flow." actions={<><Badge variant="outline">{readOnly ? "Read-only access" : "Read-only statements"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={activeLoading}><RefreshCw className={activeLoading ? "animate-spin" : undefined} /> Reload</Button></>} />
-      <FinanceNav />
-      <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Statement scope filters">
-        <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} dir="ltr" /></Field>
-        <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} dir="ltr" /></Field>
-        <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={setBranchFilter}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="ms-auto flex items-center gap-2 pb-0.5"><CalendarDays className="size-4 text-ink-3" aria-hidden /><span className="text-[11.5px] text-ink-3">{branchFilter === "all" ? "Consolidated accessible scope" : session?.branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
-        {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
-      </section>
-
-      <ReportQuality report={activeReport} />
-      {activeBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh}>Reload</button></div> : null}
-
-      <Tabs value={tab} onValueChange={(value) => setTab(value as StatementsTab)}>
-        <TabsList className="max-w-full overflow-x-auto" aria-label="Management statements"><TabsTrigger value="income"><TrendingUp className="size-3.5" /> Income statement</TabsTrigger><TabsTrigger value="balance"><Scale className="size-3.5" /> Balance sheet</TabsTrigger><TabsTrigger value="cashflow"><Banknote className="size-3.5" /> Cash flow statement</TabsTrigger></TabsList>
-        <TabsContent value="income"><ReportErrorOrLoading loading={incomeQuery.isLoading} error={incomeQuery.isError ? incomeQuery.error : undefined} onRetry={() => void incomeQuery.refetch()} title="Income statement" />{incomeQuery.data ? <IncomeStatementView report={incomeQuery.data} /> : null}</TabsContent>
-        <TabsContent value="balance"><ReportErrorOrLoading loading={balanceQuery.isLoading} error={balanceQuery.isError ? balanceQuery.error : undefined} onRetry={() => void balanceQuery.refetch()} title="Balance sheet" />{balanceQuery.data ? <BalanceSheetView report={balanceQuery.data} /> : null}</TabsContent>
-        <TabsContent value="cashflow"><ReportErrorOrLoading loading={cashflowQuery.isLoading} error={cashflowQuery.isError ? cashflowQuery.error : undefined} onRetry={() => void cashflowQuery.refetch()} title="Cashflow statement" />{cashflowQuery.data ? <CashflowView report={cashflowQuery.data} /> : null}</TabsContent>
-      </Tabs>
+    <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
+      <PageHeader eyebrow="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
+      <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} />
+      <ReportQuality report={report} />
+      {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}
+      <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
+      {reportView}
     </div>
   );
 }

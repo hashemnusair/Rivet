@@ -2,33 +2,46 @@
 
 Vercel Production rebuild requested on 25 August 2026 after the project owner corrected the strength of `RIVET_PUBLIC_REQUEST_PEPPER`; deployment success remains pending verification.
 
-## Management Ledger simplification — 26 August 2026 (working-tree update)
+## Management Ledger standalone reporting — 26 August 2026 (working-tree update)
 
-- `/finance` is now the canonical, read-focused Management Ledger workspace. It
-  presents three simple statement tabs: **Income Statement** (including Net
-  Income), **Balance Sheet**, and **Cash Flow Statement**. Date and branch
-  scope stay visible, and only the active statement loads its report query.
-- Advanced accounting maintenance remains available at `/finance/controls`:
-  journal entries, source queue refresh/posting, periods, reversals, and close/
-  reopen actions. Those controls remain protected by the `finance` module and
-  the existing financial permissions.
-- `/reports/statements` remains a compatibility route for the same three
-  statements. The everyday statement route is owned by the `reporting` module;
-  the advanced controls route is owned by `finance`. Both require
-  `reports.financial.read`, so module and permission boundaries stay explicit.
-- Statement metadata now keeps completeness caveats visible. Non-proven source
-  coverage shows a warning, report warnings remain visible, and background
-  refresh failures identify that the last successful data is being shown.
-  No unsupported figures are inferred.
+- `/finance` is the canonical, read-focused Management Ledger hub. It contains
+  three equal statement links—**Income statement**, **Balance sheet**, and
+  **Cash flow statement**—and no payment, shift, report, or journal controls.
+  The hub is intentionally a choice screen rather than another dense ledger
+  view; it does not display fabricated preview figures.
+- Each statement has its own focused route backed by the existing Convex/Mock
+  report projections: `/finance/income-statement` calls the income-statement
+  projection (including Net Income), `/finance/balance-sheet` calls the balance
+  sheet projection, and `/finance/cash-flow` calls the cash-flow projection.
+  These pages share one statement shell, so date and branch filters, loading,
+  retry, warnings, and stale-data behavior are consistent without duplicating
+  report logic.
+- Statement scope is reflected in the URL (`from`, `to`, and `branchId`) and is
+  preserved when opening a card or returning to the hub. Every hub and detail
+  route enforces the `reporting` workspace entitlement plus
+  `reports.financial.read`. The sidebar gives Management ledger its own section
+  with a single **Statements** entry; it is no longer grouped under Finance,
+  and the payment FinanceNav is not rendered on ledger pages.
+- `/reports/statements` is retained only as a compatibility redirect to the
+  `/finance` hub, preserving supported date/branch query parameters. Advanced
+  accounting maintenance remains at `/finance/controls`—journal entries,
+  source queue refresh/posting, periods, reversals, and close/reopen—and stays
+  behind the `finance` module and its existing mutation permissions.
+- Statement metadata keeps completeness caveats visible. Reports use posted or
+  reversed management-ledger entries only; incomplete source coverage and
+  report warnings remain visible, and background refresh failures identify when
+  the last successful data is being shown. The UI does not infer unsupported
+  figures. Membership revenue recognition, depreciation, and opening balances
+  remain unconfigured, so cash-flow reconciliation can be mathematically sound
+  while source coverage is still unproven. These are management reports, not
+  statutory or tax statements.
 - Financial mutations use centralized invalidation for both `finance` and
   `managementReports`, so posting, reversal, period, and source-queue changes
-  refresh the controls and statement projections together.
-- Final validation passed: `pnpm --dir apps/web test` (**139 files / 851
-  tests**), app and Convex TypeScript checks, the production build, focused
-  frontend coverage (**23 tests**) and Convex workspace coverage (**7 tests**),
-  targeted lint, and `git diff --check`. No browser visual verification is
-  claimed; the local authenticated visual pass was blocked by a demo-auth
-  hydration mismatch.
+  refresh controls and statement projections together.
+- Final validation passed: `pnpm --dir apps/web test` (**142 files / 863
+  tests**), app and Convex TypeScript checks, the production build, full lint
+  and secret-output audit, and `git diff --check`. No Playwright run was
+  performed and no browser visual verification is claimed.
 
 ## Production-readiness implementation slices — 25 August 2026 (working-tree update)
 

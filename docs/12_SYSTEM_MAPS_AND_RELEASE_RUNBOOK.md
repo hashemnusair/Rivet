@@ -14,32 +14,47 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
-### Management Ledger simplification — 26 August 2026 (working-tree update)
+### Management Ledger standalone reporting — 26 August 2026 (working-tree update)
 
-- `/finance` is the canonical simple statement workspace. It contains three
-  same-page tabs: **Income Statement** (with Net Income), **Balance Sheet**, and
-  **Cash Flow Statement**. Date and branch filters apply to the active report,
-  and inactive statement tabs do not issue report queries until selected.
-- `/finance/controls` is the advanced maintenance destination for journal
+- `/finance` is the canonical Management Ledger hub. It is deliberately
+  separate from Payments, Shifts & cash, and general Reports: the hub presents
+  exactly three focused links—**Income statement**, **Balance sheet**, and
+  **Cash flow statement**—without payment or journal controls and without
+  placeholder preview figures.
+- The three links open dedicated, backend-backed pages:
+  `/finance/income-statement`, `/finance/balance-sheet`, and
+  `/finance/cash-flow`. Each page uses the shared statement shell and calls only
+  its corresponding existing report projection (`income_statement`,
+  `balance_sheet`, or `cashflow_statement`), including real posted-ledger
+  amounts, warnings, loading, retry, and stale-data handling. The income page
+  surfaces Net Income as part of its report.
+- Date and branch scope is carried in `from`, `to`, and `branchId` URL
+  parameters. Hub links preserve the current scope, and detail pages keep it
+  synchronized with the visible filters. The hub and all statement pages are
+  gated by the `reporting` workspace entitlement and
+  `reports.financial.read`. The primary sidebar now has a standalone
+  **Management ledger → Statements** section; the ledger is absent from the
+  Finance section and from the payment FinanceNav.
+- `/reports/statements` remains a compatibility redirect to `/finance`,
+  preserving supported scope parameters for existing bookmarks. Advanced
+  maintenance is intentionally separate at `/finance/controls`: journal
   entries, source queue refresh/posting, periods, reversals, and close/reopen
-  actions. It remains owned by the `finance` workspace module. The statement
-  workspace and its `/reports/statements` compatibility route are owned by the
-  `reporting` module; all of these routes still require
-  `reports.financial.read`.
-- Completeness is intentionally truthful: non-proven queue coverage and report
-  warnings remain visible, and a background refresh failure identifies stale
-  last-successful data with a reload action. The UI does not turn missing or
-  unconfigured source facts into estimates.
-- Central query invalidation now includes both `finance` and
-  `managementReports`, keeping statement projections aligned after accounting
-  source posting, manual journals, reversals, and period changes.
-- Final validation passed: `pnpm --dir apps/web test` (**139 files / 851
-  tests**), app and Convex TypeScript checks, the production build, focused
-  frontend coverage (**23 tests**) and Convex workspace coverage (**7 tests**),
-  targeted lint, and `git diff --check`. No browser visual verification is
-  claimed; the local authenticated visual pass was blocked by a demo-auth
-  hydration mismatch. This remains validation evidence only and is not a
-  deployment claim.
+  actions remain under the `finance` module and existing mutation permissions.
+- Reporting remains truthful about coverage. Projections read posted or
+  reversed management-ledger entries only; incomplete source coverage and
+  report warnings are shown, and a background refresh failure labels the last
+  successful result as stale. The UI never estimates missing source facts.
+  Membership revenue recognition, depreciation, and opening balances are still
+  unconfigured; cash-flow arithmetic may reconcile while source coverage is
+  unproven. These are management reports and make no statutory or tax claim.
+- Central invalidation covers both `finance` and `managementReports`, keeping
+  controls and statement projections aligned after source posting, manual
+  journals, reversals, and period changes.
+- Final local validation passed: `pnpm --dir apps/web test` (**142 files / 863
+  tests**), app and Convex TypeScript checks, production build, full lint and
+  secret-output audit, and `git diff --check`. No Playwright run was performed;
+  no browser visual verification or deployment success is claimed by this
+  working-tree evidence.
 
 ## Current release posture
 

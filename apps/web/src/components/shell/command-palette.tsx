@@ -11,6 +11,7 @@ import {
   ListFilter,
   Plus,
   ScanLine,
+  ScrollText,
   Settings,
   ShieldCheck,
   UserPlus,
@@ -19,7 +20,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getApi } from "@/lib/api/client";
-import type { LeadSummary, MemberSummary } from "@/lib/domain/types";
+import type { LeadSummary, MemberSummary, Session } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Monogram } from "@/components/ui/misc";
 import { MembershipStatusChip } from "@/components/shared/status-chip";
@@ -31,7 +32,7 @@ import { MembershipStatusChip } from "@/components/shared/status-chip";
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter();
   const { canAny } = usePermissions();
-  const { signedIn } = useApp();
+  const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
   const [members, setMembers] = useState<MemberSummary[]>([]);
   const [leads, setLeads] = useState<LeadSummary[]>([]);
@@ -94,6 +95,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     router.push(href);
   };
 
+  // Keep reporting out of the palette unless both gates are already present.
+  // A role permission alone must not advertise a locked subscription route.
+  const canOpenManagementLedger = canOpenManagementLedgerFromSession(session)
+    && canAny(["reports.financial.read"]);
+
   const pages = [
     { href: "/dashboard", label: "Dashboard", icon: Gauge },
     { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, perm: ["crm.read"] },
@@ -102,6 +108,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { href: "/reception", label: "Reception", icon: ShieldCheck },
     { href: "/pt", label: "Personal training", icon: Dumbbell, perm: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
     { href: "/payments", label: "Payments", icon: ArrowLeftRight, perm: ["reports.financial.read"] },
+    ...(canOpenManagementLedger ? [{ href: "/finance", label: "Management ledger", icon: ScrollText }] : []),
     { href: "/support", label: "Support", icon: CircleHelp },
     { href: "/settings", label: "Settings", icon: Settings, perm: ["settings.manage", "users.manage"] },
   ].filter((p) => !p.perm || canAny(p.perm));
@@ -205,6 +212,20 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         </div>
       </div>
     </Command.Dialog>
+  );
+}
+
+/**
+ * The command palette is a convenience surface, but it must use the same
+ * entitlement boundary as the sidebar. Keep this predicate exported so the
+ * two-gate rule can be regression-tested without mounting cmdk.
+ */
+export function canOpenManagementLedgerFromSession(
+  session: Pick<Session, "permissions" | "workspace"> | undefined,
+): boolean {
+  return Boolean(
+    session?.permissions.includes("reports.financial.read") &&
+      session.workspace?.modules.some((module) => module.key === "reporting" && module.entitled && module.enabled),
   );
 }
 

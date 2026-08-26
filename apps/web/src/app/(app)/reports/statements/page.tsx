@@ -1,7 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
+import { managementStatementsRedirectTarget } from "./legacy-statements-route";
 
-import { ManagementStatementsWorkspace } from "@/features/reports/management-statements-workspace";
-
-export default function ManagementStatementsPage() {
-  return <ManagementStatementsWorkspace />;
+export default async function ManagementStatementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  redirect(managementStatementsRedirectTarget(await searchParams));
 }

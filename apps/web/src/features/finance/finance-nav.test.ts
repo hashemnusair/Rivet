@@ -17,25 +17,19 @@ function sessionFor(plan: "Starter" | "Growth" | "Pro" | "Enterprise"): Pick<Ses
 describe("finance secondary navigation", () => {
   it("keeps one reports entry and removes the duplicate management-statements link", () => {
     const reports = FINANCE_LINKS.find((item) => item.href === "/reports");
-    const ledger = FINANCE_LINKS.find((item) => item.href === "/finance");
     expect(reports).toBeDefined();
-    expect(ledger).toBeDefined();
+    expect(FINANCE_LINKS.some((item) => item.href === "/finance")).toBe(false);
     expect(FINANCE_LINKS.some((item) => item.href === "/reports/statements")).toBe(false);
 
     expect(financeLinkIsVisible(reports!, sessionFor("Starter"))).toBe(true);
-    expect(financeLinkIsVisible(ledger!, sessionFor("Starter"))).toBe(false);
-    expect(financeLinkIsVisible(ledger!, sessionFor("Pro"))).toBe(true);
   });
 
   it("keeps legacy sessions compatible when the workspace snapshot is absent", () => {
     const reports = FINANCE_LINKS.find((item) => item.href === "/reports");
-    const ledger = FINANCE_LINKS.find((item) => item.href === "/finance");
     expect(reports).toBeDefined();
-    expect(ledger).toBeDefined();
     // Legacy sessions with no explicit entitlement snapshot remain compatible;
     // the backend still enforces access if a user reaches a report route.
     expect(financeLinkIsVisible(reports!, { permissions: ["reports.financial.read"] })).toBe(true);
-    expect(financeLinkIsVisible(ledger!, { permissions: ["reports.financial.read"] })).toBe(true);
   });
 
   it("requires the role permission even for an entitled Pro module", () => {
