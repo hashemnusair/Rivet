@@ -44,6 +44,19 @@ describe("ManagementLedgerWorkspace", () => {
     expect(screen.getByRole("combobox", { name: "Manual journal branch" })).toHaveTextContent(branchName);
   });
 
+  it("allows an owner to refresh the source queue in the consolidated view without exposing posting", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<ManagementLedgerWorkspace />);
+    const refreshSpy = vi.spyOn(api, "refreshAccountingSourceQueue");
+
+    await user.click(await screen.findByRole("tab", { name: /source queue/i }));
+    expect(await screen.findByText(/queue refresh covers all accessible branches/i)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /refresh queue/i }));
+
+    expect(refreshSpy).toHaveBeenCalledWith({ branchId: undefined });
+    expect(screen.queryByRole("button", { name: /post source/i })).not.toBeInTheDocument();
+  });
+
   it("keeps source posting actions out of the auditor view while preserving the queue", async () => {
     await renderWithApp(<ManagementLedgerWorkspace />, { role: "auditor" });
 
