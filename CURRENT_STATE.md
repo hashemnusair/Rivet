@@ -2,6 +2,34 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## "Bill a gym" guided walkthrough — 27 August 2026
+
+- The billing page gained a **Bill a gym** wizard (three steps: choose gym →
+  plan & billing → review & confirm) as the friendly front door over the
+  same `platform.gym.update` path the gym detail controls use — no new
+  backend, so every date, credit, and invoice stays server-derived.
+  - Step 1 lists only provisioned, unarchived gyms with their live status,
+    plan · cadence, and paid-through date, behind a search box.
+  - Step 2 shows the four catalog tiers (current one tagged) and the
+    monthly/annual cards with computed amounts.
+  - Step 3 adapts to the situation: reactivation ("starts a fresh paid term
+    today"), a change on an active tenant ("unused paid days carry over, so
+    there is no need to wait for the current term to end" — deliberately no
+    "schedule for later" option, since the day credit makes it financially
+    equivalent), or a no-op guard when the gym is already on exactly that
+    plan and cadence. It reuses the shared billing preview and requires the
+    audit reason.
+  - The billing-preview math moved to a shared module
+    (`src/lib/platform/subscription-billing.ts`) used by both the wizard and
+    the gym detail page; invoice-type badges now distinguish **Subscription
+    change** from **Automatic renewal** (CSV export too).
+- Covered by a wizard test suite (walkthrough payloads, reactivation with
+  explicit active status, provisioned-only listing, no-op guard), shared
+  billing-math tests, and a billing-page assertion (suite now 886). Verified
+  in the mock browser end-to-end: wizard → annual Pro → "JOD 2390.400 · 19
+  unused paid days" → confirm → invoice landed in the ledger tagged
+  Subscription change.
+
 ## Subscription changes bill themselves — 27 August 2026
 
 - Release `f140edb` rebuilds the platform subscription-change flow around one

@@ -13,6 +13,7 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
 import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformSaasPlan } from "@/lib/api/GymOSApi";
+import { subscriptionBillingLines } from "@/lib/platform/subscription-billing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
@@ -338,9 +339,9 @@ function subscriptionMaterialChange(
 }
 
 /**
- * Mirrors the server's billing rules so the admin sees the exact consequence
- * before saving: a material change landing on an active subscription starts a
- * new term today, issues its invoice, and rolls unused paid days forward.
+ * Situation-aware preview for the inline controls. Non-active drafts explain
+ * their consequence; active drafts delegate to the shared billing projection
+ * that mirrors the server's invoice-and-credit rules.
  */
 export function subscriptionBillingPreview(
   detail: PlatformGymDetail,
@@ -351,26 +352,16 @@ export function subscriptionBillingPreview(
   if (draft.status === "suspended") return { lines: ["Access is suspended immediately and the gym leaves public discovery.", "No invoice is issued; the paid-through date stays on record."] };
   if (draft.status === "cancelled") return { lines: ["The subscription is cancelled and the gym leaves public discovery.", "No invoice is issued."] };
   if (draft.status !== "active") return { lines: ["No billing change: invoices are only issued when the subscription is active."] };
-  const priceMinor = planCatalog.find((item) => item.name === draft.plan)?.priceMinor;
-  const amountMinor = priceMinor === undefined ? undefined : draft.billingInterval === "annual" ? Math.round(priceMinor * 12 * 0.8) : priceMinor;
-  const DAY_MS = 86_400_000;
-  const storedPeriodEnd = detail.subscription.currentPeriodEndsAt.state === "available" ? Date.parse(detail.subscription.currentPeriodEndsAt.value) : undefined;
-  const creditDays = (detail.controls.status === "active" || detail.controls.status === "overdue")
-    && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && storedPeriodEnd > now
-    ? Math.ceil((storedPeriodEnd - now) / DAY_MS)
-    : 0;
-  const end = new Date(now);
-  end.setUTCMonth(end.getUTCMonth() + (draft.billingInterval === "annual" ? 12 : 1));
-  const newPeriodEnd = new Date(end.getTime() + creditDays * DAY_MS);
-  const lines = [
-    amountMinor === undefined
-      ? `A ${draft.billingInterval} invoice for the new ${draft.plan} term is issued today.`
-      : `An invoice for JOD ${(amountMinor / 1_000).toFixed(3)} (${draft.plan} · ${draft.billingInterval === "annual" ? "annual, saves 20%" : "monthly"}) is issued today.`,
-    ...(creditDays > 0 ? [`${creditDays} unused paid ${creditDays === 1 ? "day" : "days"} from the current term ${creditDays === 1 ? "carries" : "carry"} over.`] : []),
-    `The new term runs until about ${newPeriodEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}.`,
-    "Any older unpaid subscription invoice is voided so nothing is billed twice.",
-  ];
-  return { lines };
+  return {
+    lines: subscriptionBillingLines({
+      currentStatus: detail.controls.status,
+      currentPeriodEndsAt: detail.subscription.currentPeriodEndsAt.state === "available" ? detail.subscription.currentPeriodEndsAt.value : undefined,
+      plan: draft.plan,
+      billingInterval: draft.billingInterval,
+      priceMinor: planCatalog.find((item) => item.name === draft.plan)?.priceMinor,
+      now,
+    }),
+  };
 }
 
 function readBillingInterval(field: PlatformGymDetail["subscription"]["billingInterval"]): BillingInterval {

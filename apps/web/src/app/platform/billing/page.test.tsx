@@ -133,6 +133,7 @@ describe("BillingPage", () => {
     render(<BillingPage />);
 
     expect(screen.getByText("Subscription invoices")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Bill a gym/ })).toBeEnabled();
     expect(screen.getByText("Issued T−3 and due at term end")).toBeInTheDocument();
     expect(screen.getByText("In grace / past due")).toBeInTheDocument();
     expect(screen.getAllByText("Automatic renewal", { selector: "span" })).toHaveLength(3);

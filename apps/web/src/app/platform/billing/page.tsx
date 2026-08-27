@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, CreditCard, FilePlus2, Landmark, Send, ShieldCheck } from "lucide-react";
+import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, CreditCard, FilePlus2, Landmark, Receipt, Send, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BillGymWizard } from "./bill-gym-wizard";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import type { CreatePlatformInvoiceInput, PlatformBillingInvoice, RecordPlatformInvoicePaymentInput } from "@/lib/api/GymOSApi";
@@ -22,6 +23,7 @@ export default function BillingPage() {
   const invoices = useMemo(() => localInvoices ?? platformSnapshot?.invoices ?? [], [localInvoices, platformSnapshot?.invoices]);
   const overview = platformSnapshot?.overview;
   const [createOpen, setCreateOpen] = useState(false);
+  const [billWizardOpen, setBillWizardOpen] = useState(false);
   const [action, setAction] = useState<InvoiceAction>();
   const [focusedInvoiceId, setFocusedInvoiceId] = useState<string>();
 
@@ -102,8 +104,13 @@ export default function BillingPage() {
       <div className="mx-auto max-w-[1480px]">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div><p className="eyebrow">Payments control</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Billing & invoices</h1><p className="mt-2 text-[12.5px] text-ink-2">Automatic subscription renewals are invoiced in the platform ledger; collections are confirmed manually.</p></div>
-          <Button variant="secondary" onClick={() => downloadInvoices(invoices)} disabled={invoices.length === 0}><ArrowDownToLine /> Export ledger</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => downloadInvoices(invoices)} disabled={invoices.length === 0}><ArrowDownToLine /> Export ledger</Button>
+            <Button variant="signal" onClick={() => setBillWizardOpen(true)} disabled={!platformSnapshot}><Receipt /> Bill a gym</Button>
+          </div>
         </div>
+
+        <BillGymWizard open={billWizardOpen} onOpenChange={setBillWizardOpen} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} />
 
         <section className="mt-7 border border-line bg-surface p-5" aria-labelledby="billing-policy-heading">
           <div className="flex items-start gap-3">
@@ -214,7 +221,7 @@ function InvoiceRow({ invoice, focused, issuing, onIssue, onPastDue, onPayment, 
   const canVoid = !["paid", "void"].includes(invoice.status);
   const paymentLabel = invoice.status === "past_due" && isAutomaticRenewal(invoice) ? "Reactivate" : "Record payment";
   const graceEnd = isAutomaticRenewal(invoice) ? graceEndAt(invoice) : undefined;
-  return <tr id={`platform-invoice-${invoice.id}`} className={cn("border-b border-line last:border-b-0", focused && "bg-info-bg/50")}><td className="px-5 py-4"><div className="font-mono text-[10px]">{invoice.id}</div>{isAutomaticRenewal(invoice) ? <span className="mt-1 inline-flex rounded-full bg-signal-bg px-2 py-1 font-mono text-[7.5px] uppercase tracking-[.04em] text-signal">Automatic renewal</span> : <span className="mt-1 inline-flex rounded-full bg-sunken px-2 py-1 font-mono text-[7.5px] uppercase tracking-[.04em] text-ink-3">Manual exception</span>}</td><td className="px-4 py-4 text-[12px] font-medium">{invoice.gym}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.issuedAt ?? invoice.date)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.dueAt)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{invoice.status === "past_due" && isAutomaticRenewal(invoice) ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-1 block">Due + 2 days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-1 block">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</td><td className="px-4 py-4 text-end text-[11.5px] font-semibold">{amount}</td><td className="px-4 py-4"><Status invoice={invoice} /></td><td className="px-5 py-4"><div className="flex justify-end gap-1">{invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}{invoice.status === "open" && !isAutomaticRenewal(invoice) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}{outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}{canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}</div></td></tr>;
+  return <tr id={`platform-invoice-${invoice.id}`} className={cn("border-b border-line last:border-b-0", focused && "bg-info-bg/50")}><td className="px-5 py-4"><div className="font-mono text-[10px]">{invoice.id}</div>{isAutomaticRenewal(invoice) ? <span className="mt-1 inline-flex rounded-full bg-signal-bg px-2 py-1 font-mono text-[7.5px] uppercase tracking-[.04em] text-signal">{isSubscriptionChange(invoice) ? "Subscription change" : "Automatic renewal"}</span> : <span className="mt-1 inline-flex rounded-full bg-sunken px-2 py-1 font-mono text-[7.5px] uppercase tracking-[.04em] text-ink-3">Manual exception</span>}</td><td className="px-4 py-4 text-[12px] font-medium">{invoice.gym}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.issuedAt ?? invoice.date)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.dueAt)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{invoice.status === "past_due" && isAutomaticRenewal(invoice) ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-1 block">Due + 2 days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-1 block">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</td><td className="px-4 py-4 text-end text-[11.5px] font-semibold">{amount}</td><td className="px-4 py-4"><Status invoice={invoice} /></td><td className="px-5 py-4"><div className="flex justify-end gap-1">{invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}{invoice.status === "open" && !isAutomaticRenewal(invoice) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}{outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}{canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}</div></td></tr>;
 }
 
 function Status({ invoice }: { invoice: PlatformBillingInvoice }) {
@@ -225,6 +232,11 @@ function Status({ invoice }: { invoice: PlatformBillingInvoice }) {
 
 function isAutomaticRenewal(invoice: PlatformBillingInvoice): boolean {
   return Boolean(invoice.cycleKey?.trim());
+}
+
+/** Term invoices issued by an admin subscription change, not the renewal clock. */
+function isSubscriptionChange(invoice: PlatformBillingInvoice): boolean {
+  return Boolean(invoice.cycleKey?.startsWith("change:"));
 }
 
 function graceEndAt(invoice: PlatformBillingInvoice): string | undefined {
@@ -268,7 +280,7 @@ function Card({ icon, label, value, detail, warning = false }: { icon: React.Rea
 }
 
 function downloadInvoices(invoices: PlatformBillingInvoice[]) {
-  const csv = [["Invoice", "Gym", "Invoice type", "Cycle key", "Billing interval", "Period start", "Period end", "Issued", "Due", "Grace ends", "Amount minor", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided"], ...invoices.map((invoice) => [invoice.id, invoice.gym, isAutomaticRenewal(invoice) ? "automatic renewal" : "manual exception", invoice.cycleKey ?? "", invoice.billingInterval ?? "", invoice.periodStart ?? "", invoice.periodEnd ?? "", invoice.issuedAt ?? invoice.date, invoice.dueAt ?? "", graceEndAt(invoice) ?? "", invoice.amountMinor ?? invoice.amount, invoice.currency ?? "", invoice.status, invoice.pastDueAt ?? "", invoice.paymentReference ?? "", invoice.paidAt ?? "", invoice.voidedAt ?? ""])]
+  const csv = [["Invoice", "Gym", "Invoice type", "Cycle key", "Billing interval", "Period start", "Period end", "Issued", "Due", "Grace ends", "Amount minor", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided"], ...invoices.map((invoice) => [invoice.id, invoice.gym, isSubscriptionChange(invoice) ? "subscription change" : isAutomaticRenewal(invoice) ? "automatic renewal" : "manual exception", invoice.cycleKey ?? "", invoice.billingInterval ?? "", invoice.periodStart ?? "", invoice.periodEnd ?? "", invoice.issuedAt ?? invoice.date, invoice.dueAt ?? "", graceEndAt(invoice) ?? "", invoice.amountMinor ?? invoice.amount, invoice.currency ?? "", invoice.status, invoice.pastDueAt ?? "", invoice.paymentReference ?? "", invoice.paidAt ?? "", invoice.voidedAt ?? ""])]
     .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
     .join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
