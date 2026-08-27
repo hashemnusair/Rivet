@@ -354,7 +354,7 @@ function AutomaticEntry({ label }: { label: string }) {
       <div className="relative flex size-16 items-center justify-center">
         <span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden />
         <span className="absolute inset-2 rounded-full bg-sunken" aria-hidden />
-        <Image src="/brand/rivet-glyph.png" alt="" width={26} height={36} className="relative h-9 w-auto" />
+        <Image src="/brand/rivet-glyph.png" alt="" width={23} height={36} className="relative" />
       </div>
       <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">You’re signed in</p>
       <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
