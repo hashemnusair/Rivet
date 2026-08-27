@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
-import { Dialog, DialogBody, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDateTime } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 
@@ -203,20 +203,22 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </section>
 
         <Dialog open={deleteOpen} onOpenChange={(open) => { if (!archive.isPending) setDeleteOpen(open); }}>
-          <DialogHeader>
-            <DialogTitle>Archive {detail.name}?</DialogTitle>
-            <DialogDescription>This removes the gym from active RIVET workspaces and public discovery. Financial, subscription, and audit history are retained for compliance and future review.</DialogDescription>
-          </DialogHeader>
-          <DialogBody className="grid gap-4">
-            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for archiving<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
-            {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[10.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
-            {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
-            <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
-          </DialogFooter>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Archive {detail.name}?</DialogTitle>
+              <DialogDescription>This removes the gym from active RIVET workspaces and public discovery. Financial, subscription, and audit history are retained for compliance and future review.</DialogDescription>
+            </DialogHeader>
+            <DialogBody className="grid gap-4">
+              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
+              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for archiving<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
+              {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[10.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
+              {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
+              <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">

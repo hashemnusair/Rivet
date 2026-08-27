@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformGymDetail } from "@/lib/api/GymOSApi";
@@ -210,19 +210,24 @@ describe("Gym admin detail subscription controls", () => {
     expect(input).not.toHaveProperty("cancelledAt");
   });
 
-  it("requires an exact gym name and reason before archiving", () => {
+  it("archives only through a confirmation dialog with an exact gym name and reason", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
     expect(screen.queryByRole("button", { name: "Delete gym" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Archive gym" })[0]!);
-    const confirm = () => screen.getAllByRole("button", { name: "Archive gym" })[1]!;
+    // The confirmation form must live inside the modal, never inline.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Archive gym" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive gym" }));
+    const dialog = screen.getByRole("dialog", { name: /Archive Forge Fitness\?/ });
+    const confirm = () => within(dialog).getByRole("button", { name: "Archive gym" });
     expect(confirm()).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge" } });
-    fireEvent.change(screen.getByLabelText("Reason for archiving"), { target: { value: "Customer requested account closure." } });
+    fireEvent.change(within(dialog).getByLabelText("Type the gym name to confirm"), { target: { value: "Forge" } });
+    fireEvent.change(within(dialog).getByLabelText("Reason for archiving"), { target: { value: "Customer requested account closure." } });
     expect(confirm()).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });
+    fireEvent.change(within(dialog).getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });
     expect(confirm()).toBeEnabled();
     fireEvent.click(confirm());
 

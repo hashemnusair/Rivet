@@ -22,6 +22,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, role
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
+import { annualPrice } from "./subscriptionReconciliation";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
@@ -3633,6 +3634,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     let staffLimit: number | undefined;
     let automationRuleCount = 0;
     let paymentTransactionCount = 0;
+    let recurringAmountMinor: number | undefined;
+    let invoices: Array<Record<string, unknown> & { id: string }> | undefined;
     let activity: Array<{ id: string; action: string; summary: string; actorName: string; occurredAt: string }> = [];
 
     if (organization) {
@@ -3664,6 +3667,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === effectivePlan);
       const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
       if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
+
+      // The recurring amount is the same catalog price and annual formula the
+      // subscription clock invoices with, so this panel can never disagree
+      // with the ledger it summarizes.
+      const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
+      if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
+        recurringAmountMinor = billingInterval(organization.billingInterval) === "annual" ? annualPrice(configuredPrice) : configuredPrice;
+      }
+      invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect())
+        .filter((row) => row.organizationId === organization._id)
+        .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
 
       const directActivity = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "platform_gym").eq("entityPublicId", gymId)).collect();
       const applicationId = optionalString(gym.applicationId);
@@ -3716,6 +3730,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       branches,
       owner,
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
+      recurringAmountMinor,
+      invoices,
       activity,
     });
   }

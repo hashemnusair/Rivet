@@ -103,4 +103,15 @@ describe("platform gym detail projection", () => {
     expect(detail.subscription.paymentMethod).toEqual({ state: "not_configured" });
     expect(detail.subscription.invoices).toEqual({ state: "not_configured" });
   });
+
+  it("surfaces the derived recurring amount and scoped invoices when the caller provides them", () => {
+    const detail = buildPlatformGymDetail({
+      ...source(),
+      recurringAmountMinor: 143_200,
+      invoices: [{ id: "INV-1", status: "paid" }, { id: "INV-2", status: "open" }],
+    });
+
+    expect(detail.subscription.recurringAmount).toEqual({ state: "available", value: { amount: 143_200, currency: source().organization!.currency } });
+    expect(detail.subscription.invoices).toEqual({ state: "available", value: [{ id: "INV-1", status: "paid" }, { id: "INV-2", status: "open" }] });
+  });
 });

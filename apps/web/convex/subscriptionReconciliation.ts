@@ -152,7 +152,8 @@ function planPrice(data: Record<string, unknown>, plans: Map<string, number>): n
   return plans.get(plan) ?? DEFAULT_PLAN_PRICES[plan];
 }
 
-function annualPrice(monthlyMinor: number): number {
+/** One shared annual formula: twelve months with the published 20% saving. */
+export function annualPrice(monthlyMinor: number): number {
   return Math.round(monthlyMinor * 12 * 0.8);
 }
 

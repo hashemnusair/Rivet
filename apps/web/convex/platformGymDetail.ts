@@ -60,6 +60,10 @@ export interface PlatformGymDetailSource {
     automationRuleCount: number;
     paymentTransactionCount: number;
   };
+  /** Derived from the live plan catalog and the tenant's billing interval. */
+  recurringAmountMinor?: number;
+  /** Platform invoices already scoped to this tenant, snapshot-view shaped. */
+  invoices?: Array<Record<string, unknown> & { id: string }>;
   activity: Array<{
     id: string;
     action: string;
@@ -159,10 +163,12 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
       currentPeriodEndsAt: currentPeriodEndsAt ? available(currentPeriodEndsAt) : organization ? notConfigured() : notAvailable(),
       cancelledAt: cancelledAt ? available(cancelledAt) : organization ? notConfigured() : notAvailable(),
       statusReason: organization?.subscriptionStatusReason ? available(organization.subscriptionStatusReason) : organization ? notConfigured() : notAvailable(),
-      recurringAmount: tenantAvailable ? notConfigured() : notAvailable(),
+      recurringAmount: tenantAvailable && source.recurringAmountMinor !== undefined && organization
+        ? available({ amount: source.recurringAmountMinor, currency: organization.currency })
+        : tenantAvailable ? notConfigured() : notAvailable(),
       renewalDate: currentPeriodEndsAt ? available(currentPeriodEndsAt) : tenantAvailable ? notConfigured() : notAvailable(),
       paymentMethod: tenantAvailable ? notConfigured() : notAvailable(),
-      invoices: tenantAvailable ? notConfigured() : notAvailable(),
+      invoices: tenantAvailable && source.invoices ? available(source.invoices) : tenantAvailable ? notConfigured() : notAvailable(),
     },
     activity: tenantAvailable ? available(source.activity) : notAvailable(),
   };

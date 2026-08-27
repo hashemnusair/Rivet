@@ -1257,10 +1257,14 @@ export class MockGymOSApi implements GymOSApi {
           currentPeriodEndsAt: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           cancelledAt: organization ? field(organization.cancelledAt ?? gym.cancelledAt, "not_configured") : notAvailable(),
           statusReason: organization ? field(organization.subscriptionStatusReason ?? gym.subscriptionStatusReason, "not_configured") : notAvailable(),
-          recurringAmount: notConfigured(),
+          // Mirror the Convex derivation: the catalog price with the shared
+          // annual formula, and the platform invoices scoped to this gym.
+          recurringAmount: organization && plan
+            ? available({ amount: (organization.billingInterval ?? gym.billingInterval ?? "monthly") === "annual" ? Math.round(plan.priceMinor * 12 * 0.8) : plan.priceMinor, currency: organization.currency ?? "JOD" })
+            : organization ? notConfigured() : notAvailable(),
           renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
-          invoices: notConfigured(),
+          invoices: organization ? available(this.platformInvoices.filter((invoice) => invoice.gymId === gym.id).map((invoice) => ({ ...invoice }))) : notAvailable(),
         },
         activity: organization
           ? available(this.platformAuditEvents.filter((event) => event.entityType === "platform_gym" && event.entityPublicId === gym.id).map(({ entityType: _entityType, entityPublicId: _entityPublicId, entityLabel: _entityLabel, reason: _reason, ...event }) => ({ ...event })))
