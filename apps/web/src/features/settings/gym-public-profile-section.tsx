@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, Globe2, History, ImagePlus, Save, Send, Undo2 } from "lucide-react";
+import { Eye, Globe2, History, ImagePlus, Save, Send } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { qk } from "@/lib/api/keys";
 import type { GymPublicProfile, MediaAsset, MediaAssetOwnerType, UpdateGymPublicProfileInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
+import { useApp } from "@/lib/providers/app-providers";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { formatDateTime } from "@/lib/utils/dates";
 
@@ -96,12 +97,13 @@ function profileSnapshot(form: UpdateGymPublicProfileInput, amenities: string): 
 export function GymPublicProfileSection() {
   const invalidate = useInvalidate();
   const { setGuard } = useUnsavedChanges();
+  const { session } = useApp();
   const profile = useRealtimeApiQuery({ queryKey: qk.gymProfile, query: (api) => api.getGymPublicProfile(), subscribe: (api, onValue, onError) => api.subscribeGymPublicProfile(onValue, onError) });
   const versions = useApiQuery(qk.gymProfileVersions, (api) => api.listGymProfileVersions());
   const [form, setForm] = useState<UpdateGymPublicProfileInput>(emptyForm);
   const [amenities, setAmenities] = useState("");
-  const [unpublishOpen, setUnpublishOpen] = useState(false);
-  const [unpublishReason, setUnpublishReason] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState("");
   const [uploadedAssets, setUploadedAssets] = useState<Record<string, MediaAsset>>({});
   const [pendingMedia, setPendingMedia] = useState<PendingMediaState>(() => emptyPendingMedia());
   const [baseline, setBaseline] = useState<string>();
@@ -157,8 +159,20 @@ export function GymPublicProfileSection() {
     toast.success("Public profile draft saved and audited.");
     await invalidate([qk.gymProfile]);
   } });
-  const publish = useApiMutation((api) => api.publishGymPublicProfile(), { onSuccess: async () => { toast.success("Public profile published. Discovery will update in realtime when platform eligibility is active."); await invalidate([qk.gymProfile]); } });
-  const unpublish = useApiMutation((api) => api.unpublishGymPublicProfile(unpublishReason), { onSuccess: async () => { toast.success("Public profile unpublished."); setUnpublishOpen(false); setUnpublishReason(""); await invalidate([qk.gymProfile]); } });
+  const publish = useApiMutation((api) => api.publishGymPublicProfile(), { onSuccess: async () => { toast.success("Public page published. Later changes are reviewed by RIVET before going live."); await invalidate([qk.gymProfile]); } });
+  const requestReview = useApiMutation((api) => api.createSupportCase({
+    email: session?.user.email ?? "",
+    subject: `Public page update — review draft v${profile.data?.version ?? ""}`,
+    body: `${reviewMessage.trim() ? `${reviewMessage.trim()}\n\n` : ""}The gym saved public page draft v${profile.data?.version ?? "?"} and asks RIVET to review and publish it.`,
+    priority: "normal",
+    requestType: "general",
+  }), {
+    onSuccess: async () => {
+      setReviewOpen(false);
+      setReviewMessage("");
+      toast.success("Sent to RIVET. The team reviews your draft and publishes it for you.");
+    },
+  });
   const prepareMedia = (kind: MediaDraftKind, file: File, altText: string) => {
     const draft = { file, altText, previewUrl: createLocalMediaPreview(file) } satisfies PendingMedia;
     setPendingMedia((current) => {
@@ -266,11 +280,15 @@ export function GymPublicProfileSection() {
           <Field label="Accent color"><div className="flex gap-2"><Input type="color" className="w-14 p-1" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /><Input value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></div></Field>
           <div className="sm:col-span-2 rounded-md border border-line p-3"><p className="flex items-center gap-2 text-[12.5px] font-medium"><ImagePlus className="size-4 text-ink-3" /> Gallery</p><p className="mt-1 text-[11px] text-ink-3">Choose photos to preview locally, then save the draft to upload and sanitize them.</p>{form.galleryAssetIds.length || pendingMedia.gallery.length ? <ol className="mt-3 grid gap-2 sm:grid-cols-2">{form.galleryAssetIds.map((assetId, index) => { const asset = uploadedAssets[assetId] ?? value.gallery.find((item) => item.id === assetId); return <li key={assetId} className="flex items-center gap-2 rounded-md border border-line bg-sunken p-2"><span className="size-12 shrink-0 rounded-sm bg-cover bg-center" role="img" aria-label={asset?.altText ?? `Gallery image ${index + 1}`} style={{ backgroundImage: asset?.url ? `url(${asset.url})` : undefined }} /><span className="min-w-0 flex-1"><span className="block truncate text-[11.5px] font-medium">Image {index + 1}</span><span className="block truncate text-[10px] text-ink-3">{asset?.altText ?? "Saved image"}</span></span><Button type="button" size="icon" variant="ghost" aria-label={`Move image ${index + 1} earlier`} disabled={index === 0} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!]; return { ...current, galleryAssetIds: ids }; })}>↑</Button><Button type="button" size="icon" variant="ghost" aria-label={`Move image ${index + 1} later`} disabled={index === form.galleryAssetIds.length - 1} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index], ids[index + 1]] = [ids[index + 1]!, ids[index]!]; return { ...current, galleryAssetIds: ids }; })}>↓</Button><Button type="button" size="icon" variant="ghost" aria-label={`Remove image ${index + 1}`} onClick={() => removeAsset("gallery", assetId)}>×</Button></li>; })}{pendingMedia.gallery.map((draft, index) => <li key={`${draft.file.name}-${index}`} className="flex items-center gap-2 rounded-md border border-dashed border-line-2 bg-sunken p-2"><span className="size-12 shrink-0 rounded-sm bg-cover bg-center" role="img" aria-label={draft.altText || `Pending gallery image ${index + 1}`} style={{ backgroundImage: draft.previewUrl ? `url(${draft.previewUrl})` : undefined }} /><span className="min-w-0 flex-1"><span className="block truncate text-[11.5px] font-medium">Pending image {index + 1}</span><span className="block truncate text-[10px] text-ink-3">{draft.altText.trim().length >= 3 ? "Preview ready · save draft to upload" : "Add an accessible image description"}</span></span><Button type="button" size="icon" variant="ghost" aria-label={`Remove pending image ${index + 1}`} onClick={() => removePendingGallery(index)}>×</Button></li>)}</ol> : <p className="mt-3 rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[11.5px] text-ink-3">No gallery images selected.</p>}<MediaUploadField label="Add gallery image" draft={pendingMedia.gallery.at(-1)} loading={save.isPending} onSelect={(file, altText) => prepareMedia("gallery", file, altText)} onAltTextChange={(altText) => updatePendingAltText("gallery", altText)} onRemove={pendingMedia.gallery.length ? () => removePendingGallery(pendingMedia.gallery.length - 1) : undefined} /></div>
         </div>
+        {value.publishLocked ? (
+          <p className="mt-4 rounded-md border border-line bg-sunken px-3 py-2.5 text-[11px] text-ink-2">Your page is live. Save changes as a draft, then send them to RIVET — the team reviews and publishes for you.</p>
+        ) : null}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          {value.status === "published" ? <Button variant="secondary" onClick={() => setUnpublishOpen(true)}><Undo2 /> Unpublish</Button> : null}
           {dirty ? <Button variant="ghost" onClick={discardChanges}>Discard changes</Button> : null}
           <Button variant="secondary" loading={save.isPending} disabled={!dirty || !pendingMediaReady || !form.shortName.trim() || !form.taglineEn.trim() || !form.descriptionEn.trim()} title={!pendingMediaReady ? "Add an accessible description to each selected image before saving." : undefined} onClick={() => save.mutate()}><Save /> Save draft</Button>
-          <Button loading={publish.isPending} disabled={value.status !== "draft" || dirty || save.isPending} title={dirty ? "Save or discard the unsaved edits before publishing." : undefined} onClick={() => publish.mutate()}><Send /> Publish draft</Button>
+          {value.publishLocked
+            ? <Button disabled={value.status !== "draft" || dirty || save.isPending} title={dirty ? "Save or discard the unsaved edits first." : value.status !== "draft" ? "Save a draft first — your published page has no pending changes." : undefined} onClick={() => setReviewOpen(true)}><Send /> Send to RIVET for review</Button>
+            : <Button loading={publish.isPending} disabled={value.status !== "draft" || dirty || save.isPending} title={dirty ? "Save or discard the unsaved edits before publishing." : undefined} onClick={() => publish.mutate()}><Send /> Publish draft</Button>}
         </div>
       </section>
 
@@ -288,7 +306,7 @@ export function GymPublicProfileSection() {
         <div className="flex items-start gap-2 rounded-lg border border-line bg-sunken p-4 text-[11.5px] text-ink-2"><Globe2 className="mt-0.5 size-4 shrink-0" /><p>Published trainers and active PT packages are read from their authoritative records. A published profile can still be absent from Find Gyms when the platform directory eligibility switch is disabled.</p></div>
       </div>
 
-      <Dialog open={unpublishOpen} onOpenChange={setUnpublishOpen}><DialogContent><DialogHeader><DialogTitle>Unpublish gym profile?</DialogTitle><DialogDescription>The gym disappears from public discovery, while its subscription and operational records remain intact.</DialogDescription></DialogHeader><DialogBody><Field label="Reason" required><Textarea value={unpublishReason} onChange={(event) => setUnpublishReason(event.target.value)} placeholder="Why is this profile being unpublished?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setUnpublishOpen(false)}>Cancel</Button><Button variant="danger" loading={unpublish.isPending} disabled={unpublishReason.trim().length < 3} onClick={() => unpublish.mutate()}>Unpublish profile</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Send draft v{value.version} to RIVET?</DialogTitle><DialogDescription>The RIVET team reviews your saved draft and publishes it for you. You can add a note for the reviewer.</DialogDescription></DialogHeader><DialogBody><Field label="Note for the reviewer (optional)"><Textarea value={reviewMessage} onChange={(event) => setReviewMessage(event.target.value)} placeholder="What changed and why?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setReviewOpen(false)}>Cancel</Button><Button loading={requestReview.isPending} onClick={() => requestReview.mutate()}><Send /> Send to RIVET</Button></DialogFooter></DialogContent></Dialog>
     </div>
   );
 }

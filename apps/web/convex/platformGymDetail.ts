@@ -64,6 +64,9 @@ export interface PlatformGymDetailSource {
   recurringAmountMinor?: number;
   /** Platform invoices already scoped to this tenant, snapshot-view shaped. */
   invoices?: Array<Record<string, unknown> & { id: string }>;
+  /** Public-page review facts: the live version plus any draft awaiting the
+   * platform team's publish after the tenant's first self-serve publish. */
+  publicPage?: { publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string };
   activity: Array<{
     id: string;
     action: string;
@@ -143,6 +146,7 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
       archiveReason,
     },
     organization: organizationData,
+    publicPage: tenantAvailable && source.publicPage ? available(source.publicPage) : notAvailable(),
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),
     branches: tenantAvailable ? available(source.branches) : notAvailable(),
     owner: source.owner ? available(source.owner) : notAvailable(),

@@ -182,6 +182,43 @@ function gymProfileMediaIds(value: unknown): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
+/**
+ * Publishes the tenant's saved profile draft: snapshots an immutable version,
+ * projects it onto the marketplace listing, and schedules unreferenced media
+ * for deletion. Shared by the tenant's first self-serve publish and the
+ * platform console's reviewed publish.
+ */
+async function applyGymProfilePublish(
+  ctx: MutationCtx,
+  organization: Doc<"organizations">,
+  listing: Doc<"domainRecords">,
+  draft: Doc<"domainRecords">,
+): Promise<{ versionId: string; listingBefore: Data }> {
+  const draftValue = data(draft.data);
+  const draftVersion = numberValue(draftValue.version);
+  const now = Date.now();
+  const publishedAt = utcIso(now);
+  const allVersions = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileVersion")).collect();
+  const oldVersions = allVersions.filter((record) => stringValue(data(record.data).status) === "published");
+  for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
+  const versionId = newPublicId();
+  const versionValue = { ...draftValue, status: "published", version: draftVersion, publishedAt, updatedAt: publishedAt };
+  await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
+  await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
+  const listingBefore = data(listing.data);
+  await ctx.db.patch(listing._id, { data: { ...listingBefore, shortName: draftValue.shortName, tagline: draftValue.taglineEn, taglineAr: draftValue.taglineAr, description: draftValue.descriptionEn, descriptionAr: draftValue.descriptionAr, category: draftValue.category, audience: draftValue.audience, amenities: draftValue.amenities, contactEmail: draftValue.contactEmail, contactPhone: draftValue.contactPhone, websiteUrl: draftValue.websiteUrl, instagramUrl: draftValue.instagramUrl, accent: draftValue.accentColor, logoAssetId: draftValue.logoAssetId, coverAssetId: draftValue.coverAssetId, galleryAssetIds: draftValue.galleryAssetIds, profilePublished: true, profileVersion: draftValue.version }, updatedAt: now });
+  // Keep assets referenced by immutable profile snapshots. The version
+  // history is retained for audit and preview, so replacing the current
+  // draft must not make an older snapshot point at a deleted object.
+  const referencedMedia = new Set([...gymProfileMediaIds(draftValue), ...allVersions.flatMap((record) => gymProfileMediaIds(record.data))]);
+  const orgPublicId = publicOrganizationId(organization);
+  const publicMedia = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_gallery").eq("ownerPublicId", orgPublicId)).collect())
+    .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_logo").eq("ownerPublicId", orgPublicId)).collect())
+    .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_cover").eq("ownerPublicId", orgPublicId)).collect());
+  for (const asset of publicMedia.filter((item) => item.status === "active" && !referencedMedia.has(item.publicId))) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+  return { versionId, listingBefore };
+}
+
 function offerProjection(value: Data): Data {
   const expiresAt = optionalString(value.expiresAt);
   return value.status === "sent" && expiresAt && Date.parse(expiresAt) <= Date.now()
@@ -3331,10 +3368,14 @@ async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, sourc
     gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId), "gym_cover"),
     Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id), "gym_gallery"))),
   ]);
+  const versionRecords = await recordsOf(ctx, actor, "gymProfileVersion");
   return {
     organizationId: publicOrganizationId(actor.organization),
     version: numberValue(value.version, numberValue(listingValue.profileVersion, 1)),
     status: stringValue(value.status, booleanValue(listingValue.profilePublished, true) ? "published" : "unpublished"),
+    // After the first publish, tenants save drafts but RIVET reviews and
+    // publishes them; the editor uses this to swap its publish action.
+    publishLocked: versionRecords.length > 0,
     shortName: stringValue(value.shortName, stringValue(listingValue.shortName, actor.organization.name.slice(0, 16))),
     taglineEn: stringValue(value.taglineEn, stringValue(listingValue.tagline)),
     taglineAr: optionalString(value.taglineAr) ?? optionalString(listingValue.taglineAr),
@@ -3636,6 +3677,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     let paymentTransactionCount = 0;
     let recurringAmountMinor: number | undefined;
     let invoices: Array<Record<string, unknown> & { id: string }> | undefined;
+    let publicPage: { publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string } | undefined;
     let activity: Array<{ id: string; action: string; summary: string; actorName: string; occurredAt: string }> = [];
 
     if (organization) {
@@ -3678,6 +3720,19 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect())
         .filter((row) => row.organizationId === organization._id)
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
+
+      // Public-page review facts: after the first self-serve publish, tenant
+      // drafts wait here for a platform admin to review and publish them.
+      const profileDraft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+      const profileDraftValue = profileDraft ? data(profileDraft.data) : undefined;
+      publicPage = {
+        publishedVersion: booleanValue(gym.profilePublished, false) ? numberValue(gym.profileVersion, 0) : 0,
+        ...(profileDraftValue ? {
+          draftVersion: numberValue(profileDraftValue.version),
+          draftStatus: stringValue(profileDraftValue.status, "draft"),
+          draftUpdatedAt: optionalString(profileDraftValue.updatedAt),
+        } : {}),
+      };
 
       const directActivity = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "platform_gym").eq("entityPublicId", gymId)).collect();
       const applicationId = optionalString(gym.applicationId);
@@ -3732,6 +3787,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
       recurringAmountMinor,
       invoices,
+      publicPage,
       activity,
     });
   }
@@ -5945,6 +6001,42 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return marketplaceView(platformMarketplaceProjection(updated, updatedOrganization, updatedEntitlement), true);
   }
 
+  if (operation === "platform.gym.profile.publish") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    requireReason(input.reason, admin.correlationId);
+    const reason = input.reason.trim();
+    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+    const current = data(record.data);
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    const targetOrganization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = targetOrganization && record.organizationId === targetOrganization._id ? targetOrganization : null;
+    if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
+    const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+    if (!draft) domainError("VALIDATION_ERROR", "This gym has not saved a public-page draft yet.", { correlationId: admin.correlationId });
+    const draftValue = data(draft.data);
+    if (!stringValue(draftValue.taglineEn).trim() || !stringValue(draftValue.descriptionEn).trim()) domainError("VALIDATION_ERROR", "The saved draft is missing its English tagline or description.", { correlationId: admin.correlationId });
+    const draftVersion = numberValue(draftValue.version);
+    if (stringValue(draftValue.status) === "published" && booleanValue(current.profilePublished, false) && numberValue(current.profileVersion) === draftVersion) {
+      return { id: gymId, publishedVersion: draftVersion };
+    }
+    const { versionId, listingBefore } = await applyGymProfilePublish(ctx, organization, record, draft);
+    await insertPlatformAudit(ctx, admin, {
+      action: "gym.profile.publish",
+      entityType: "platform_gym",
+      entityPublicId: gymId,
+      entityLabel: stringValue(current.name, gymId),
+      summary: `Reviewed and published the public page draft v${draftVersion}`,
+      reason,
+      before: { profilePublished: booleanValue(listingBefore.profilePublished, false), profileVersion: listingBefore.profileVersion },
+      after: { profilePublished: true, profileVersion: draftVersion, versionId },
+    });
+    return { id: gymId, publishedVersion: draftVersion };
+  }
+
   if (operation === "platform.plan.update") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const name = stringValue(input.name);
@@ -6667,42 +6759,23 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (stringValue(draftValue.status) === "published" && booleanValue(listingValue.profilePublished, false) && numberValue(listingValue.profileVersion) === draftVersion) {
         return await currentGymProfile(ctx, actor);
       }
-      const now = Date.now();
-      const publishedAt = utcIso(now);
       const allVersions = await recordsOf(ctx, actor, "gymProfileVersion");
-      const oldVersions = allVersions.filter((record) => stringValue(data(record.data).status) === "published");
-      for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
-      const versionId = newPublicId();
-      const versionValue = { ...draftValue, status: "published", version: draftVersion, publishedAt, updatedAt: publishedAt };
-      await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
-      await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
-      const listingBefore = data(listing.data);
-      await ctx.db.patch(listing._id, { data: { ...listingBefore, shortName: draftValue.shortName, tagline: draftValue.taglineEn, taglineAr: draftValue.taglineAr, description: draftValue.descriptionEn, descriptionAr: draftValue.descriptionAr, category: draftValue.category, audience: draftValue.audience, amenities: draftValue.amenities, contactEmail: draftValue.contactEmail, contactPhone: draftValue.contactPhone, websiteUrl: draftValue.websiteUrl, instagramUrl: draftValue.instagramUrl, accent: draftValue.accentColor, logoAssetId: draftValue.logoAssetId, coverAssetId: draftValue.coverAssetId, galleryAssetIds: draftValue.galleryAssetIds, profilePublished: true, profileVersion: draftValue.version }, updatedAt: now });
-      // Keep assets referenced by immutable profile snapshots. The version
-      // history is retained for audit and preview, so replacing the current
-      // draft must not make an older snapshot point at a deleted object.
-      const referencedMedia = new Set([...gymProfileMediaIds(draftValue), ...allVersions.flatMap((record) => gymProfileMediaIds(record.data))]);
-      const publicMedia = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_gallery").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
-        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_logo").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
-        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_cover").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect());
-      for (const asset of publicMedia.filter((item) => item.status === "active" && !referencedMedia.has(item.publicId))) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.publish", entityType: "gym_public_profile", entityId: versionId, entityLabel: actor.organization.name, summary: `Published gym profile v${numberValue(draftValue.version)}`, before: { profilePublished: booleanValue(listingBefore.profilePublished, true), version: listingBefore.profileVersion }, after: { profilePublished: true, version: draftValue.version } });
+      // Only the very first publish is self-serve. Every later change is
+      // reviewed by the platform team: the tenant keeps saving drafts and
+      // sends a support case; RIVET publishes the draft from the console.
+      if (allVersions.length > 0) {
+        domainError("VALIDATION_ERROR", "The public page locks after its first publish. Save your draft, then ask RIVET support to review and publish it.", { correlationId: actor.correlationId });
+      }
+      const { versionId, listingBefore } = await applyGymProfilePublish(ctx, actor.organization, listing, draft);
+      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.publish", entityType: "gym_public_profile", entityId: versionId, entityLabel: actor.organization.name, summary: `Published gym profile v${draftVersion}`, before: { profilePublished: booleanValue(listingBefore.profilePublished, true), version: listingBefore.profileVersion }, after: { profilePublished: true, version: draftVersion } });
       return await currentGymProfile(ctx, actor);
     }
     case "profiles.gym.unpublish": {
       requirePermission(actor, "profiles.manage");
-      requireReason(input.reason, actor.correlationId);
-      const listing = (await marketplaceRows(ctx)).find((record) => record.organizationId === actor.organization._id);
-      if (!listing) domainError("NOT_FOUND", "Gym public profile not found.", { correlationId: actor.correlationId });
-      const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
-      const now = Date.now();
-      const changedAt = utcIso(now);
-      await ctx.db.patch(listing._id, { data: { ...data(listing.data), profilePublished: false }, updatedAt: now });
-      if (draft) await ctx.db.patch(draft._id, { data: { ...data(draft.data), status: "unpublished", updatedAt: changedAt }, updatedAt: now });
-      const published = (await recordsOf(ctx, actor, "gymProfileVersion")).filter((record) => stringValue(data(record.data).status) === "published");
-      for (const record of published) await ctx.db.patch(record._id, { data: { ...data(record.data), status: "unpublished", unpublishedAt: changedAt, updatedAt: changedAt }, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.unpublish", entityType: "gym_public_profile", entityId: "current", entityLabel: actor.organization.name, summary: "Unpublished gym profile", reason: stringValue(input.reason), before: { profilePublished: booleanValue(data(listing.data).profilePublished, true) }, after: { profilePublished: false } });
-      return await currentGymProfile(ctx, actor);
+      // Removing the live page is a platform decision, like every change
+      // after the first publish. Support routes it to the RIVET team, which
+      // hides the listing from the console.
+      domainError("VALIDATION_ERROR", "Ask RIVET support to take the public page down; the platform team removes it from discovery for you.", { correlationId: actor.correlationId });
     }
     case "pt.trainer.upsert": {
       requirePermission(actor, "pt.manage");

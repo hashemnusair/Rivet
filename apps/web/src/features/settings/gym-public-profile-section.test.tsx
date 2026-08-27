@@ -13,21 +13,27 @@ vi.mock("next/navigation", () => ({
 afterEach(() => resetApiForTests());
 
 describe("GymPublicProfileSection draft safety", () => {
-  it("never allows a saved draft to be published while newer local edits exist", async () => {
+  it("locks publishing after the first publish and routes saved drafts to RIVET review", async () => {
     const user = userEvent.setup();
     await renderWithApp(<GymPublicProfileSection />);
     const shortName = await screen.findByLabelText(/Short name/);
 
+    // The seeded page is already live, so the tenant never sees a direct
+    // publish action again — only the reviewed path.
+    expect(screen.queryByRole("button", { name: "Publish draft" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Unpublish/ })).not.toBeInTheDocument();
+
     await user.clear(shortName);
     await user.type(shortName, "Saved profile");
     await user.click(screen.getByRole("button", { name: "Save draft" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Publish draft" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send to RIVET for review" })).toBeEnabled());
 
+    // Newer local edits must be saved or discarded before requesting review.
     await user.clear(shortName);
     await user.type(shortName, "Newer unsaved profile");
-    const publish = screen.getByRole("button", { name: "Publish draft" });
-    expect(publish).toBeDisabled();
-    expect(publish).toHaveAttribute("title", "Save or discard the unsaved edits before publishing.");
+    const review = screen.getByRole("button", { name: "Send to RIVET for review" });
+    expect(review).toBeDisabled();
+    expect(review).toHaveAttribute("title", "Save or discard the unsaved edits first.");
   });
 
   it("previews logo and cover locally and defers server upload until draft save", async () => {

@@ -26,6 +26,7 @@ export default function BillingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [billWizardOpen, setBillWizardOpen] = useState(false);
   const [billWizardGymId, setBillWizardGymId] = useState<string>();
+  const [policyOpen, setPolicyOpen] = useState(false);
   const [action, setAction] = useState<InvoiceAction>();
   const [focusedInvoiceId, setFocusedInvoiceId] = useState<string>();
   const requestedBillGymId = searchParams.get("bill")?.trim() || undefined;
@@ -115,8 +116,9 @@ export default function BillingPage() {
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
         <div className="flex flex-wrap items-end justify-between gap-5">
-          <div><p className="eyebrow">Payments control</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Billing & invoices</h1><p className="mt-2 text-[12.5px] text-ink-2">Automatic subscription renewals are invoiced in the platform ledger; collections are confirmed manually.</p></div>
+          <div><p className="eyebrow">Payments control</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Billing & invoices</h1><p className="mt-2 text-[12.5px] text-ink-2">Subscriptions, invoices, and collections in one place.</p></div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setPolicyOpen(true)}><CalendarClock /> Renewal policy</Button>
             <Button variant="secondary" onClick={() => downloadInvoices(invoices)} disabled={invoices.length === 0}><ArrowDownToLine /> Export ledger</Button>
             <Button variant="signal" onClick={() => { setBillWizardGymId(undefined); setBillWizardOpen(true); }} disabled={!platformSnapshot}><Receipt /> Bill a gym</Button>
           </div>
@@ -126,22 +128,24 @@ export default function BillingPage() {
 
         <GymSubscriptions gyms={platformSnapshot?.gyms ?? []} onBill={(gymId) => { setBillWizardGymId(gymId); setBillWizardOpen(true); }} />
 
-        <section className="mt-7 border border-line bg-surface p-5" aria-labelledby="billing-policy-heading">
-          <div className="flex items-start gap-3">
-            <CalendarClock className="mt-0.5 size-5 shrink-0 text-signal" />
-            <div className="min-w-0">
-              <p className="eyebrow">Automated renewal policy</p>
-              <h2 id="billing-policy-heading" className="mt-1 text-[17px] font-semibold">The subscription clock runs automatically</h2>
-              <p className="mt-2 max-w-4xl text-[11.5px] leading-relaxed text-ink-2">Automatic renewal invoices are issued three days before the current term ends, due at term end, and held in a two-day grace period. If payment is not confirmed by the grace deadline, the gym is suspended. Record a verified bank transfer or payment reference on the invoice to mark it paid and reactivate the gym for its next period. RIVET does not claim automatic card charging or provider retries.</p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-2 text-[10.5px] text-ink-2 sm:grid-cols-4">
-            <PolicyStep index="01" title="Issued T−3" detail="Three days before term end" />
-            <PolicyStep index="02" title="Due at term end" detail="The current period boundary" />
-            <PolicyStep index="03" title="Two-day grace" detail="Pay by due date + 2 days" />
-            <PolicyStep index="04" title="Suspension" detail="Unpaid grace closes access" />
-          </div>
-        </section>
+        <Dialog open={policyOpen} onOpenChange={setPolicyOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>How renewals work</DialogTitle>
+              <DialogDescription>The subscription clock runs on its own; you only confirm payments.</DialogDescription>
+            </DialogHeader>
+            <DialogBody className="grid gap-2">
+              <PolicyStep index="01" title="Invoice issued" detail="Three days before the term ends" />
+              <PolicyStep index="02" title="Due" detail="On the day the term ends" />
+              <PolicyStep index="03" title="Two-day grace" detail="Time to confirm a bank transfer" />
+              <PolicyStep index="04" title="Suspension" detail="Unpaid after grace closes access" />
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">Record the payment reference on an invoice to mark it paid and reactivate the gym. RIVET never charges cards automatically.</p>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setPolicyOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <section className="mt-7 grid gap-3 sm:grid-cols-3">
           <Card icon={<CreditCard />} label="Collected" value={platformSnapshot ? formatMoney(invoiceTotals.collected) : "—"} detail="Paid invoice records" />
@@ -150,7 +154,7 @@ export default function BillingPage() {
         </section>
 
         <section className="mt-5" aria-labelledby="renewal-summary-heading">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[10.5px] text-ink-3">Cycle-key invoices come from the subscription clock and from subscription changes.</p></div>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[10.5px] text-ink-3">From the renewal clock and subscription changes.</p></div>
           <div className="grid gap-3 sm:grid-cols-3">
             <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail="Issued T−3 and due at term end" />
             <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail="Grace ends two days after due" warning={renewalSummary.inGrace.length > 0} />
@@ -166,12 +170,12 @@ export default function BillingPage() {
         ) : null}
 
         <section className="mt-5 border border-line bg-surface">
-          <div className="border-b border-line px-5 py-4"><p className="eyebrow">Invoice ledger</p><h2 className="mt-1 text-[17px] font-semibold">Subscription invoices</h2><p className="mt-1 text-[10.5px] text-ink-3">Renewals from the subscription clock and term invoices from subscription changes, sorted ahead of manual exceptions.</p></div>
+          <div className="border-b border-line px-5 py-4"><p className="eyebrow">Invoice ledger</p><h2 className="mt-1 text-[17px] font-semibold">Subscription invoices</h2><p className="mt-1 text-[10.5px] text-ink-3">Renewals and change invoices, newest workflow first.</p></div>
           {!platformSnapshot ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the persisted invoice ledger…</p> : automatedInvoices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-ink-3">No subscription invoices are currently recorded.</p> : <InvoiceTable invoices={automatedInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} />}
         </section>
 
         {platformSnapshot && manualInvoices.length ? <details className="mt-4 border border-line bg-surface" open={manualInvoices.some((invoice) => invoice.id === focusedInvoiceId)}>
-          <summary className="cursor-pointer list-none px-5 py-4 text-[12px] font-medium marker:hidden"><span className="eyebrow">Exception workflow</span><span className="mt-1 block text-[15px] font-semibold">Manual invoices <span className="font-mono text-[10px] text-ink-3">({manualInvoices.length})</span></span><span className="mt-1 block text-[10.5px] text-ink-3">For exceptional, non-cycle charges only. Manual creation does not contact a gym or charge a provider.</span></summary>
+          <summary className="cursor-pointer list-none px-5 py-4 text-[12px] font-medium marker:hidden"><span className="eyebrow">Exception workflow</span><span className="mt-1 block text-[15px] font-semibold">Manual invoices <span className="font-mono text-[10px] text-ink-3">({manualInvoices.length})</span></span><span className="mt-1 block text-[10.5px] text-ink-3">One-off charges outside the renewal clock.</span></summary>
           <div className="border-t border-line"><InvoiceTable invoices={manualInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} /></div>
         </details> : null}
 

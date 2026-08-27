@@ -655,7 +655,10 @@ describe("gym public profile media", () => {
     });
     expect(draft).toMatchObject({ status: "draft", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
 
-    const published = await api.publishGymPublicProfile();
+    // The seeded page is already live, so publication runs through the
+    // platform review path.
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the media update." });
+    const published = await api.getGymPublicProfile();
     expect(published).toMatchObject({ status: "published", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
     expect((await api.listMarketplaceGyms())[0]).toMatchObject({ logo: { id: logo.id }, cover: { id: cover.id } });
 
@@ -672,7 +675,8 @@ describe("gym public profile media", () => {
       galleryAssetIds: [],
     });
     expect(replacementDraft).toMatchObject({ status: "draft", logo: { id: replacement.id }, gallery: [] });
-    expect(await api.publishGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the logo replacement." });
+    expect(await api.getGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
   });
 
   it("projects the published logo into reactive platform surfaces while keeping public rows scoped", async () => {
@@ -683,7 +687,7 @@ describe("gym public profile media", () => {
     const profile = await api.getGymPublicProfile();
     const logo = await api.uploadMediaAsset({ ownerType: "gym_logo", ownerId: profile.organizationId, altText: "Forge admin logo", file: new Blob(["logo"], { type: "image/png" }) });
     await api.saveGymPublicProfile({ shortName: profile.shortName, taglineEn: profile.taglineEn, descriptionEn: profile.descriptionEn, category: profile.category, audience: profile.audience, amenities: profile.amenities, accentColor: profile.accentColor, logoAssetId: logo.id, galleryAssetIds: [] });
-    await api.publishGymPublicProfile();
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the logo update." });
 
     expect(snapshotValues.at(-1)?.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ logoUrl: logo.url });
     expect(detailValues.at(-1)?.logoUrl).toEqual({ state: "available", value: logo.url });

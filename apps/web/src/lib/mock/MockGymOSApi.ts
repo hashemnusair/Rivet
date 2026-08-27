@@ -669,7 +669,7 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
   }
 
@@ -734,7 +734,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getGymPublicProfile(): Promise<T.GymPublicProfile> {
-    return this.respond(() => ({ ...this.gymPublicProfile, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ ...this.gymPublicProfile, publishLocked: this.gymProfileVersions.length > 0, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeGymPublicProfile(onValue: (profile: T.GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -771,6 +771,9 @@ export class MockGymOSApi implements GymOSApi {
   async publishGymPublicProfile(): Promise<T.GymPublicProfile> {
     const result = await this.respond(() => {
       this.require("profiles.manage");
+      // Parity with Convex: only the first publish is self-serve; later
+      // drafts are reviewed and published by the platform team.
+      if (this.gymProfileVersions.length > 0) throw ApiError.of(ERR.VALIDATION, "The public page locks after its first publish. Save your draft, then ask RIVET support to review and publish it.");
       const now = nowISO();
       this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
       this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now, trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)) };
@@ -786,9 +789,8 @@ export class MockGymOSApi implements GymOSApi {
   unpublishGymPublicProfile(reason: string): Promise<T.GymPublicProfile> {
     return this.respond(() => {
       this.require("profiles.manage");
-      if (!reason.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to unpublish the gym profile.");
-      this.gymPublicProfile = { ...this.gymPublicProfile, status: "unpublished", updatedAt: nowISO() };
-      return { ...this.gymPublicProfile };
+      void reason;
+      throw ApiError.of(ERR.VALIDATION, "Ask RIVET support to take the public page down; the platform team removes it from discovery for you.");
     });
   }
 
@@ -1236,6 +1238,12 @@ export class MockGymOSApi implements GymOSApi {
         controls: { status: effectiveStatus, plan: effectivePlan, isPublic: Boolean(organization && PUBLIC_SUBSCRIPTION_STATUSES.has(effectiveStatus) && gym.isPublic), isArchived, archivedAt: gym.archivedAt ?? (organization?.archivedAt ? new Date(organization.archivedAt).toISOString() : undefined), archiveReason: gym.archiveReason ?? organization?.archiveReason },
         organization: organization
           ? available({ id: organization.id, name: organization.name, status: organization.status, currency: organization.currency, timezone: organization.timezone })
+          : notAvailable(),
+        publicPage: organization
+          ? available({
+              publishedVersion: gym.profileVersion ?? (tenant ? 1 : this.gymProfileVersions.some((item) => item.status === "published") ? this.gymProfileVersions.find((item) => item.status === "published")!.version : 0),
+              ...(!tenant && this.gymPublicProfile.status === "draft" ? { draftVersion: this.gymPublicProfile.version, draftStatus: "draft", draftUpdatedAt: this.gymPublicProfile.updatedAt } : {}),
+            })
           : notAvailable(),
         joinedAt: notAvailable(),
         branches: organization ? available(branches) : notAvailable(),
@@ -1801,6 +1809,32 @@ export class MockGymOSApi implements GymOSApi {
     await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]);
   }
 
+  async publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }> {
+    const result = await this.respond(() => {
+      this.requireReason(input.reason);
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (!this.isProvisionedGym(gym) || this.tenantForGym(gym)) throw ApiError.of(ERR.VALIDATION, "This gym has not saved a public-page draft yet.");
+      if (this.gymPublicProfile.status !== "draft") throw ApiError.of(ERR.VALIDATION, "This gym has not saved a public-page draft yet.");
+      const now = nowISO();
+      this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
+      this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
+      Object.assign(gym, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
+      this.recordPlatformAudit({
+        action: "gym.profile.publish",
+        entityType: "platform_gym",
+        entityPublicId: gym.id,
+        entityLabel: gym.name,
+        summary: `Reviewed and published the public page draft v${this.gymPublicProfile.version}`,
+        reason: input.reason.trim(),
+      });
+      return { id: gym.id, publishedVersion: this.gymPublicProfile.version };
+    });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
+  }
+
   async updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
     const result = await this.respond(() => {
       this.requireReason(input.reason);
@@ -2190,7 +2224,7 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");

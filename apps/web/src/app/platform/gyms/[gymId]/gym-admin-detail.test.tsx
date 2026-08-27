@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   },
   mutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
-  api: { updatePlatformGym: vi.fn(), archivePlatformGym: vi.fn() },
+  api: { updatePlatformGym: vi.fn(), archivePlatformGym: vi.fn(), publishPlatformGymProfile: vi.fn() },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -48,6 +48,7 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
     logoUrl: available("https://cdn.example/forge.png"),
     controls: { status: "active", plan: "Growth", isPublic: true, ...overrides },
     organization: organizationState === "available" ? available({ id: "10000000-0000-4000-8000-000000000001", name: "Forge Fitness", status: "active", currency: "JOD", timezone: "Asia/Amman" }) : { state: "not_available" },
+    publicPage: organizationState === "available" ? available({ publishedVersion: 1 }) : { state: "not_available" as const },
     joinedAt: available("2026-01-01T00:00:00.000Z"),
     branches: available([{ id: "branch-1", name: "Main branch", code: "FOR-MAIN", address: "Amman", status: "active" }]),
     owner: available({ name: "Owner", email: "owner@example.com", phone: "+962 79 000 0000" }),
@@ -84,6 +85,7 @@ describe("Gym admin detail (informational record)", () => {
     state.invalidate.mockClear();
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
     state.api.archivePlatformGym.mockReset().mockResolvedValue(undefined);
+    state.api.publishPlatformGymProfile.mockReset().mockResolvedValue({ id: "gym-1", publishedVersion: 2 });
     Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", { configurable: true, value: () => false });
     Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: () => undefined });
     Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", { configurable: true, value: () => undefined });
@@ -124,8 +126,8 @@ describe("Gym admin detail (informational record)", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Cleanup-only record");
     expect(screen.getByRole("button", { name: /Manage subscription/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Marketplace profile unavailable" })).toBeDisabled();
-    expect(screen.getByText("Already suppressed because this directory row is not provisioned.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Public page" })).toBeDisabled();
+    expect(screen.getByText("Suppressed: this row is not provisioned.")).toBeInTheDocument();
     expect(screen.getByLabelText("Public directory listing")).toBeDisabled();
     expect(screen.getByLabelText("Public directory listing")).not.toBeChecked();
   });
@@ -153,8 +155,25 @@ describe("Gym admin detail (informational record)", () => {
     const listingSwitch = screen.getByRole("switch", { name: "Public directory listing" });
     expect(listingSwitch).not.toBeChecked();
     expect(listingSwitch).toBeDisabled();
-    expect(screen.getByText(/Reactivate it from the Billing page first/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Marketplace profile unavailable" })).toBeDisabled();
+    expect(screen.getByText(/Reactivate from Billing first/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Public page" })).toBeDisabled();
+  });
+
+  it("offers a reviewed publish when the gym's draft is newer than the live page", () => {
+    const withDraft = detail();
+    withDraft.publicPage = available({ publishedVersion: 1, draftVersion: 2, draftStatus: "draft", draftUpdatedAt: "2026-08-27T10:00:00.000Z" });
+    state.query = { data: withDraft, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    expect(screen.getByText(/awaiting your review/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Publish draft v2/ }));
+    const dialog = screen.getByRole("dialog", { name: /Publish Forge Fitness/ });
+    const confirm = within(dialog).getByRole("button", { name: "Publish draft" });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Reason for this change"), { target: { value: "Reviewed the rebrand request." } });
+    fireEvent.click(confirm);
+
+    expect(state.api.publishPlatformGymProfile).toHaveBeenCalledWith({ gymId: "gym-1", reason: "Reviewed the rebrand request." });
   });
 
   it("archives only through a confirmation dialog with an exact gym name and reason", () => {

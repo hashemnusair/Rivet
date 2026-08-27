@@ -2,6 +2,38 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Reviewed public pages + console cleanup — 27 August 2026
+
+- **Public-page governance:** a gym's first publish stays self-serve; after
+  that the page locks. Tenants keep saving drafts, but `profiles.gym.publish`
+  rejects with a support pointer, `profiles.gym.unpublish` is tenant-blocked
+  entirely (the platform hides listings from the console), and the editor
+  swaps its Publish button for **"Send to RIVET for review"**, which files a
+  prefilled support case. The new `platform.gym.profile.publish` op (admin +
+  reason, shared `applyGymProfilePublish` core with the tenant path) lets the
+  platform team publish the saved draft in one click from the gym page's new
+  **Public page** card ("Live at v1 · Draft v2 awaiting your review →
+  Publish draft"). `GymPublicProfile.publishLocked` and the platform detail's
+  `publicPage` facts carry the state; MockGymOSApi mirrors all of it.
+- **Console cleanup ("simplicity and efficiency"):**
+  - Overview: hero card KPIs with short factual sublines, and the always-on
+    zero-count strip replaced by an **attention strip** that renders only
+    real work (e.g. "2 applications awaiting review") or a quiet "Nothing
+    needs your attention right now."; billing position lost its disclaimer
+    paragraph.
+  - Billing: the large automated-renewal-policy section is now a **Renewal
+    policy** button opening a centered dialog with the four steps; section
+    sublines shortened throughout.
+  - Gym detail: a proper hero (logo, name, status chip, "Pro · monthly ·
+    paid through …", Public page / Manage subscription actions) plus the
+    Public page review card; verbose explainer sentences trimmed.
+- Suite now 887 (profile lock + platform publish covered in Convex tests,
+  the review flow in the editor test, the admin publish card in the detail
+  test; mock media tests route second publishes through the review path).
+  Verified in the mock browser end-to-end on the gym side (locked editor →
+  save draft v2 → "Send to RIVET" support case + toast) and the console
+  side (attention strip, policy dialog, hero, review-card states).
+
 ## Billing owns subscriptions; gym pages are informational — 27 August 2026
 
 - Per the owner's direction, every subscription action now lives on the

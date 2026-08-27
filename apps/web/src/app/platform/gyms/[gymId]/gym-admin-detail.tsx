@@ -34,6 +34,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const organizationAvailable = detail?.organization.state === "available";
   const [isPublic, setIsPublic] = useState(false);
   const [listingReason, setListingReason] = useState("");
+  const [publishPageOpen, setPublishPageOpen] = useState(false);
+  const [publishPageReason, setPublishPageReason] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
@@ -55,6 +57,15 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
       setListingReason("");
       toast.success("Public listing saved and audited.");
     },
+  });
+
+  const publishPage = useApiMutation((api) => api.publishPlatformGymProfile({ gymId, reason: publishPageReason.trim() }), {
+    onSuccess: async () => {
+      await invalidate([qk.platformGymDetail(gymId)]);
+      setPublishPageOpen(false);
+      setPublishPageReason("");
+    },
+    successMessage: "Draft reviewed and published. The public page is live.",
   });
 
   const archive = useApiMutation<void, ArchivePlatformGymInput>((api, input) => {
@@ -80,6 +91,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
   const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(detail.controls.status);
   const marketplaceProfileAvailable = organizationAvailable && isPublicSubscriptionStatus(detail.controls.status) && detail.controls.isPublic;
+  const publicPage = detail.publicPage.state === "available" ? detail.publicPage.value : undefined;
+  const draftAwaitingReview = Boolean(publicPage && publicPage.draftStatus === "draft" && (publicPage.draftVersion ?? 0) > publicPage.publishedVersion);
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -93,23 +106,33 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           </div>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <PlatformGymLogo name={detail.name} shortName={detail.shortName} accent={detail.accent} logoUrl={detail.logoUrl?.state === "available" ? detail.logoUrl.value : undefined} className="size-14 text-[11px]" />
-            <div>
-              <h1 className="text-[27px] font-semibold tracking-tight">{detail.name}</h1>
-              <p className="mt-1 text-[11.5px] text-ink-3">Customer since <FieldValue field={detail.joinedAt} render={(value) => value.slice(0, 10)} /></p>
+        <section className="mt-6 border border-line bg-surface p-6">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <PlatformGymLogo name={detail.name} shortName={detail.shortName} accent={detail.accent} logoUrl={detail.logoUrl?.state === "available" ? detail.logoUrl.value : undefined} className="size-16 text-[12px]" />
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-[26px] font-semibold tracking-tight">{detail.name}</h1>
+                  <HeroStatus status={detail.controls.status} />
+                </div>
+                <p className="mt-1.5 text-[12px] text-ink-2">
+                  {detail.controls.plan}
+                  {detail.subscription.billingInterval?.state === "available" ? ` · ${detail.subscription.billingInterval.value}` : ""}
+                  {detail.subscription.currentPeriodEndsAt.state === "available" ? ` · paid through ${formatDateTime(detail.subscription.currentPeriodEndsAt.value).split(",")[0]}` : ""}
+                </p>
+                <p className="mt-0.5 text-[11px] text-ink-3">Customer since <FieldValue field={detail.joinedAt} render={(value) => value.slice(0, 10)} /></p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Public page <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="Hidden from public discovery">Public page <ExternalLink /></Button>}
+              {organizationAvailable
+                ? <Button asChild variant="signal"><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />Manage subscription</Link></Button>
+                : <Button variant="signal" disabled title="Unavailable until this gym is provisioned"><Receipt />Manage subscription</Button>}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Marketplace profile <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="This gym is hidden from public discovery">Marketplace profile unavailable <ExternalLink /></Button>}
-            {organizationAvailable
-              ? <Button asChild variant="signal"><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />Manage subscription</Link></Button>
-              : <Button variant="signal" disabled title="Subscription management is unavailable until this gym is provisioned"><Receipt />Manage subscription</Button>}
-          </div>
-        </div>
+        </section>
 
-        {!organizationAvailable ? <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so subscription and listing changes are unavailable. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
+        {!organizationAvailable ? <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked. Resolve it through the applications workflow.</p></div> : null}
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
           <section className="border border-line bg-surface">
@@ -160,11 +183,46 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </div>
 
         <section className="mt-5 border border-line bg-surface p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="eyebrow">Marketplace</p>
+              <h2 className="mt-1 text-[16px] font-semibold">Public page</h2>
+              <p className="mt-1 text-[11px] text-ink-2">
+                {publicPage
+                  ? publicPage.publishedVersion > 0
+                    ? <>Live at v{publicPage.publishedVersion}.{draftAwaitingReview ? <> Draft v{publicPage.draftVersion} saved {publicPage.draftUpdatedAt ? formatDateTime(publicPage.draftUpdatedAt) : "by the gym"} — awaiting your review.</> : " No draft awaiting review."}</>
+                    : draftAwaitingReview
+                      ? <>Never published. Draft v{publicPage.draftVersion} is waiting — the gym&rsquo;s first publish is self-serve, but you can publish it for them.</>
+                      : "Never published, and the gym has not saved a draft."
+                  : "Unavailable until this gym is provisioned."}
+              </p>
+            </div>
+            {draftAwaitingReview ? <Button variant="signal" onClick={() => { setPublishPageReason(""); setPublishPageOpen(true); }}><Check />Publish draft v{publicPage?.draftVersion}</Button> : null}
+          </div>
+        </section>
+
+        <Dialog open={publishPageOpen} onOpenChange={(open) => { if (!publishPage.isPending) setPublishPageOpen(open); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Publish {detail.name}&rsquo;s draft v{publicPage?.draftVersion}?</DialogTitle>
+              <DialogDescription>The saved draft replaces the live public page immediately. Review it in the gym&rsquo;s support ticket or preview before publishing.</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="publish-page-reason">Reason for this change<Textarea id="publish-page-reason" value={publishPageReason} onChange={(event) => setPublishPageReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setPublishPageOpen(false)} disabled={publishPage.isPending}>Cancel</Button>
+              <Button variant="signal" loading={publishPage.isPending} disabled={!publishPageReason.trim()} onClick={() => publishPage.mutate()}><Check />Publish draft</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="eyebrow">Marketplace</p>
               <h2 className="mt-1 text-[16px] font-semibold">Public directory listing</h2>
-              <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while this subscription is not active or in trial. Reactivate it from the Billing page first." : "Already suppressed because this directory row is not provisioned."}</p>
+              <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while the subscription is not active. Reactivate from Billing first." : "Suppressed: this row is not provisioned."}</p>
             </div>
             <Switch checked={publicListingAllowed && isPublic} onCheckedChange={setIsPublic} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
           </div>
@@ -183,7 +241,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <div>
             <p className="eyebrow text-danger">Danger zone</p>
             <h2 className="mt-1 text-[16px] font-semibold">Remove gym access</h2>
-            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archive this gym to remove workspace access and public discovery. Financial records, subscription facts, and the platform audit trail are retained.</p>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archiving removes access and public discovery. All records and history are kept.</p>
           </div>
           <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Archive />Archive gym</Button>
         </section>
@@ -230,6 +288,12 @@ function UnavailableBlock<T>({ field, empty }: { field: PlatformData<T>; empty: 
 
 function statusLabel(value: string) {
   return value === "overdue" ? "Past due" : value.replaceAll("_", " ");
+}
+
+function HeroStatus({ status }: { status: PlatformGymDetail["controls"]["status"] }) {
+  const label = status === "overdue" ? "past due" : status;
+  const tone = status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep";
+  return <span className={`rounded-sm px-2 py-1 font-mono text-[8px] uppercase tracking-[.12em] ${tone}`}>{label}</span>;
 }
 
 function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["status"] | undefined): boolean {

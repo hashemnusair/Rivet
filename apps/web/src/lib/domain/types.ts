@@ -2511,6 +2511,9 @@ export interface GymPublicProfile {
   organizationId: UUID;
   version: number;
   status: "draft" | "published" | "unpublished";
+  /** True once any version has been published: later changes are saved as
+   * drafts and sent to RIVET support for review instead of self-publishing. */
+  publishLocked: boolean;
   shortName: string;
   taglineEn: string;
   taglineAr?: string;

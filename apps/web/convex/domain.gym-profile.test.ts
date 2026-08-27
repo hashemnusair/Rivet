@@ -17,6 +17,7 @@ async function seeded() {
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "profile-branch", name: "Abdoun", code: "ABD", address: "Amman", active: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "profile-owner", authSubject: "clerk-profile-owner", email: "owner@profile.example", fullName: "Profile Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const reception = await ctx.db.insert("users", { publicId: "profile-reception", authSubject: "clerk-profile-reception", email: "reception@profile.example", fullName: "Profile Reception", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("users", { publicId: "profile-admin", authSubject: "clerk-profile-admin", email: "admin@rivet.example", fullName: "Platform Admin", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: reception, role: "receptionist", branchIds: [branch], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "marketplaceGym", publicId: "profile-gym", createdAt: now, updatedAt: now, data: { id: "profile-gym", targetOrganizationId: "org-profile", name: "Profile Gym", shortName: "PROFILE", tagline: "Old tagline", description: "Old description", city: "Amman", areas: ["Abdoun"], category: "Gym", audience: "All members", memberCount: 999, branchCount: 1, fromPriceMinor: 999_000, amenities: [], accent: "#15140f", featured: false, subscriptionStatus: "active", rivetPlan: "Growth", joinedAt: new Date(now).toISOString().slice(0, 10), lastActiveAt: new Date(now).toISOString(), monthlyRevenueMinor: 0, isPublic: true, branches: [{ id: "profile-branch-public", internalBranchId: "profile-branch", name: "Abdoun", area: "Abdoun", address: "Amman", trialSlots: ["18:00"] }] } });
@@ -46,12 +47,23 @@ describe("gym-controlled public profile", () => {
 
     const versions = await owner.query(api.domain.query, operation("profiles.gym.versions")) as Array<{ version: number; status: string }>;
     expect(versions).toEqual([expect.objectContaining({ version: 1, status: "published" })]);
-    await expectCode(owner.mutation(api.domain.mutate, operation("profiles.gym.unpublish", { reason: "" })), "VALIDATION_ERROR");
-    await owner.mutation(api.domain.mutate, operation("profiles.gym.unpublish", { reason: "Temporarily hiding the public profile" }));
-    expect(await owner.query(api.domain.query, operation("public.marketplace"))).toEqual([]);
 
-    const listing = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).first())?.data);
-    expect(listing).toMatchObject({ isPublic: true, profilePublished: false });
+    // After the first publish, tenants can neither republish nor take the
+    // page down themselves: both routes go through RIVET.
+    await expectCode(owner.mutation(api.domain.mutate, operation("profiles.gym.unpublish", { reason: "Temporarily hiding the public profile" })), "VALIDATION_ERROR");
+    const secondDraft = await owner.mutation(api.domain.mutate, operation("profiles.gym.save", { ...input, taglineEn: "Reviewed tagline" })) as { status: string; version: number };
+    expect(secondDraft).toMatchObject({ status: "draft", version: 2 });
+    await expectCode(owner.mutation(api.domain.mutate, operation("profiles.gym.publish")), "VALIDATION_ERROR");
+
+    // The platform admin reviews and publishes the saved draft.
+    const admin = t.withIdentity({ subject: "clerk-profile-admin" });
+    await expectCode(owner.mutation(api.domain.mutate, operation("platform.gym.profile.publish", { gymId: "profile-gym", reason: "Tenant is not a platform admin." })), "FORBIDDEN");
+    const reviewed = await admin.mutation(api.domain.mutate, operation("platform.gym.profile.publish", { gymId: "profile-gym", reason: "Reviewed the requested public page update." })) as { publishedVersion: number };
+    expect(reviewed).toMatchObject({ publishedVersion: 2 });
+    publicRows = await owner.query(api.domain.query, operation("public.marketplace")) as Array<Record<string, unknown>>;
+    expect(publicRows[0]).toMatchObject({ tagline: "Reviewed tagline", profileVersion: 2 });
+    const audit = await t.run(async (ctx) => (await ctx.db.query("platformAuditEvents").collect()).find((event) => event.action === "gym.profile.publish"));
+    expect(audit).toMatchObject({ entityPublicId: "profile-gym", reason: "Reviewed the requested public page update." });
   });
 
   it("denies profile management to reception", async () => {
@@ -174,7 +186,8 @@ describe("gym-controlled public profile", () => {
 
     const second = await owner.mutation(internal.media.commit, { ...request, storageId: secondStorageId });
     await owner.mutation(api.domain.mutate, operation("profiles.gym.save", { shortName: "PROFILE", taglineEn: "Train with a plan", descriptionEn: "A real operating gym in Amman.", category: "Gym", audience: "All members", amenities: [], accentColor: "#123456", logoAssetId: second.id, galleryAssetIds: [] }));
-    await owner.mutation(api.domain.mutate, operation("profiles.gym.publish"));
+    // Post-first-publish changes ship through the platform review path.
+    await t.withIdentity({ subject: "clerk-profile-admin" }).mutation(api.domain.mutate, operation("platform.gym.profile.publish", { gymId: "profile-gym", reason: "Reviewed logo replacement." }));
     const states = await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-profile")).unique();
       const rows = await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization!._id).eq("ownerType", "gym_logo").eq("ownerPublicId", "org-profile")).collect();

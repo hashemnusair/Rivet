@@ -27,35 +27,28 @@ export default function PlatformOverviewPage() {
         <PageHeading
           eyebrow="RIVET operations"
           title="Platform overview"
-          description="A live view of persisted subscriptions, tenant activity, applications, billing, and support work across RIVET."
+          description="Tenants, money, and anything that needs you — live."
           action={<Button asChild variant="signal"><Link href="/platform/gyms">Manage gyms <ArrowRight /></Link></Button>}
         />
 
         <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi icon={<Building2 />} label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} detail={overview ? `${overview.gymCounts.trial} trial · ${overview.gymCounts.past_due} past due · ${overview.gymCounts.suspended} suspended · ${overview.gymCounts.cancelled} cancelled` : "Loading tenant status"} />
-          <Kpi icon={<CreditCard />} label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} detail={overview ? "Effective monthly rate; annual plans counted at their 20% saving" : "Loading subscriptions"} />
-          <Kpi icon={<Users />} label="Active members" value={overview ? overview.memberCount.toLocaleString() : "—"} detail={overview ? `${overview.branchCount} active branches · ${overview.activeStaffCount} active staff` : "Loading tenant usage"} />
-          <Kpi icon={<LifeBuoy />} label="Open support cases" value={overview ? String(openCases) : "—"} detail={overview ? `${urgentCases} urgent` : "Loading support queue"} warning={urgentCases > 0} />
+          <Kpi icon={<Building2 />} label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} detail={overview ? gymCountsDetail(overview.gymCounts) : "Loading"} />
+          <Kpi icon={<CreditCard />} label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} detail={overview ? "Annual plans at their real monthly rate" : "Loading"} />
+          <Kpi icon={<Users />} label="Active members" value={overview ? overview.memberCount.toLocaleString() : "—"} detail={overview ? `${overview.branchCount} branches · ${overview.activeStaffCount} staff` : "Loading"} />
+          <Kpi icon={<LifeBuoy />} label="Open support cases" value={overview ? String(openCases) : "—"} detail={overview ? urgentCases > 0 ? `${urgentCases} urgent` : "None urgent" : "Loading"} warning={urgentCases > 0} />
         </section>
 
-        <section className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
-          <MiniMetric label="Applications awaiting review" value={overview ? String(overview.pendingApplications) : "—"} warning={Boolean(overview?.pendingApplications)} />
-          <MiniMetric label="Provisioning failures" value={overview ? String(overview.provisioningFailures) : "—"} warning={Boolean(overview?.provisioningFailures)} />
-          <MiniMetric label="Trials expiring in 14 days" value={overview ? String(overview.trialsExpiringSoon) : "—"} warning={Boolean(overview?.trialsExpiringSoon)} />
-          <MiniMetric label="Past-due gym accounts" value={overview ? String(overview.pastDueAccounts) : "—"} warning={Boolean(overview?.pastDueAccounts)} />
-        </section>
+        {overview ? <AttentionStrip overview={overview} /> : null}
 
         <section className="mt-5 border border-line bg-surface p-5 sm:p-6">
-            <p className="eyebrow">Platform ledger</p>
-            <h2 className="mt-2 text-[20px] font-semibold">Billing position</h2>
-            <p className="mt-2 max-w-xl text-[11.5px] leading-relaxed text-ink-3">These values are derived from persisted platform invoices. External card charging and payout data remain unavailable until a billing provider is configured.</p>
-            <div className="mt-6 grid gap-px border border-line bg-line sm:grid-cols-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div><p className="eyebrow">Platform ledger</p><h2 className="mt-2 text-[20px] font-semibold">Billing position</h2></div>
+              <Button asChild variant="secondary" size="sm"><Link href="/platform/billing">Open billing <ArrowRight /></Link></Button>
+            </div>
+            <div className="mt-5 grid gap-px border border-line bg-line sm:grid-cols-3">
               <MiniMetric label="Collected" value={overview ? formatMoney(overview.invoiceTotals.collected) : "—"} />
               <MiniMetric label="Outstanding" value={overview ? formatMoney(overview.invoiceTotals.outstanding) : "—"} />
               <MiniMetric label="Overdue" value={overview ? formatMoney(overview.invoiceTotals.overdue) : "—"} warning={Boolean(overview?.invoiceTotals.overdue.amount)} />
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button asChild variant="secondary" size="sm"><Link href="/platform/billing">Open invoice ledger <ArrowRight /></Link></Button>
             </div>
             <div className="mt-6 border-t border-line pt-5">
               <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Monthly invoice history</p>
@@ -96,6 +89,36 @@ export default function PlatformOverviewPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function gymCountsDetail(counts: { trial: number; past_due: number; suspended: number; cancelled: number }): string {
+  const parts = [
+    counts.trial ? `${counts.trial} trial` : "",
+    counts.past_due ? `${counts.past_due} past due` : "",
+    counts.suspended ? `${counts.suspended} suspended` : "",
+    counts.cancelled ? `${counts.cancelled} cancelled` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Every tenant is current";
+}
+
+/** Only work that actually needs the operator; quiet when there is none. */
+function AttentionStrip({ overview }: { overview: NonNullable<ReturnType<typeof useExperience>["platformSnapshot"]>["overview"] }) {
+  const items = [
+    { count: overview.pendingApplications, label: "applications awaiting review", href: "/platform/applications" },
+    { count: overview.provisioningFailures, label: "provisioning failures", href: "/platform/applications" },
+    { count: overview.trialsExpiringSoon, label: "trials ending within 14 days", href: "/platform/gyms" },
+    { count: overview.pastDueAccounts, label: "past-due gym accounts", href: "/platform/billing" },
+  ].filter((item) => item.count > 0);
+  if (items.length === 0) return <p className="mt-3 border border-line bg-surface px-4 py-3 text-[11.5px] text-ink-3">Nothing needs your attention right now.</p>;
+  return (
+    <section className="mt-3 flex flex-wrap gap-2" aria-label="Needs attention">
+      {items.map((item) => (
+        <Link key={item.label} href={item.href} className="inline-flex items-center gap-2 border border-warning/40 bg-warning-bg px-3 py-2 text-[11.5px] font-medium text-warning-deep transition-colors hover:border-warning">
+          <CircleAlert className="size-3.5" aria-hidden />{item.count} {item.label}
+        </Link>
+      ))}
+    </section>
   );
 }
 

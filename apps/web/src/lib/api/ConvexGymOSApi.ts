@@ -369,6 +369,7 @@ export class ConvexGymOSApi implements GymOSApi {
    */
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> { return this.mutatePlatform("platform.gym.update", input); }
   async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> { await this.mutatePlatform("platform.gym.archive", input); }
+  publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }> { return this.mutatePlatform("platform.gym.profile.publish", input); }
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> { return this.mutate("platform.plan.update", input); }
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.create", input); }
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice> { return this.mutate("platform.invoice.issue", { invoiceId }); }

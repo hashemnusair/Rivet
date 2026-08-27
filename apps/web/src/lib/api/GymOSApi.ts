@@ -358,6 +358,9 @@ export interface PlatformGymDetail {
     archivedAt?: string;
     archiveReason?: string;
   }>;
+  /** Public-page review state: the live version plus any tenant draft
+   * awaiting the platform team's publish. */
+  publicPage: PlatformData<{ publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string }>;
   joinedAt: PlatformData<string>;
   branches: PlatformData<PlatformGymDetailBranch[]>;
   owner: PlatformData<PlatformGymOwner>;
@@ -739,6 +742,8 @@ export interface GymOSApi {
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
   archivePlatformGym?(input: ArchivePlatformGymInput): Promise<void>;
+  /** Reviews and publishes the tenant's saved public-page draft. */
+  publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice>;
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
