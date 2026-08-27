@@ -226,7 +226,10 @@ test.describe("sidebar layout", () => {
       }));
 
     const expanded = await measure();
-    await page.getByRole("button", { name: "Collapse sidebar" }).click({ force: true });
+    const collapseButton = page.getByRole("button", { name: "Collapse sidebar" });
+    await expect(sidebar).toHaveCSS("width", "228px");
+    await expect(collapseButton).toBeVisible();
+    await collapseButton.click();
     await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
     await expect(sidebar).toHaveCSS("width", "60px");
     const collapsed = await measure();
