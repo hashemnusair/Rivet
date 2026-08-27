@@ -148,7 +148,7 @@ export default function LeadDetailPageClient() {
           ) : null}
         </div>
 
-        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Event-backed sales progress" data-testid="lead-stage-progress">
+        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress" data-testid="lead-stage-progress">
           <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : progressFacts.hasTrialBooking ? "Booked" : "Not booked"} />
           <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Membership sold" : saleFailed ? "Not sold" : trialDone ? "Ready" : "After trial"} />
           <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
