@@ -2,6 +2,44 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Subscription changes bill themselves — 27 August 2026
+
+- Release `f140edb` rebuilds the platform subscription-change flow around one
+  rule: **a material change that lands on an active subscription starts a new
+  paid term today, and the server does all the math.** This fixes the
+  monthly/annual asymmetry the owner reported (activating monthly appeared to
+  "add money" while switching to annual changed nothing) and adds the
+  requested compensation for mid-term switches.
+  - `platform.gym.update` now derives the new period end (today + 1 or 12
+    calendar months), credits every unused paid day from the outgoing active
+    term into the new one (e.g. 14 days into a monthly term → the remaining
+    days extend the new annual term), immediately issues an **open platform
+    invoice** at interval-correct pricing (annual = monthly × 12 × 0.8 via the
+    shared `annualPrice`), voids superseded unpaid cycle invoices so nothing
+    is billed twice, queues the invoice-issued email, and records the invoice
+    id + credit days in the audit event. Suspend/cancel no longer demand a
+    date and never bill. An explicit admin date remains a supported override.
+  - **Active MRR is now interval-aware**: annual tenants count at their
+    effective monthly rate (price × 0.8) instead of the headline monthly
+    price, which previously overstated them by 25%.
+  - The gym-detail controls lost the mandatory "Membership end date" field;
+    in its place a live **"What happens when you save"** preview shows the
+    exact invoice amount, carried-over days, and new term end before the
+    admin commits. Suspend/cancel drafts preview their consequences too.
+  - Billing page copy now covers both invoice sources ("Subscription
+    invoices": clock renewals + change term invoices).
+  - MockGymOSApi mirrors the whole derivation; `PlatformBillingInvoice`
+    gained `creditDays`.
+- Covered by new Convex tests (interval-correct amounts, 16-day credit roll,
+  supersede-void, no-invoice suspend; suite now 878), an interval-aware MRR
+  unit test, rewritten detail-component tests asserting the preview, and the
+  platform entitlements + public-experience Playwright specs (date-field
+  interactions removed; the Pro round now performs a real annual save).
+  Verified end-to-end in the mock browser: Pro monthly → annual showed
+  "JOD 2390.400 · 19 unused paid days carry over · runs until 15 Sept 2027",
+  and the save produced exactly that renewal date, the open invoice, and the
+  audit entry.
+
 ## Platform admin console production pass — 27 August 2026
 
 - Release `034415f` (CI run `33062534767` green, Vercel deploy verified live
