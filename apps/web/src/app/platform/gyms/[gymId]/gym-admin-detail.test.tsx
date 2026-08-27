@@ -15,10 +15,15 @@ const state = vi.hoisted(() => ({
   mutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
   api: { updatePlatformGym: vi.fn(), archivePlatformGym: vi.fn() },
+  listPublicSaasPlans: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  getApi: () => ({ listPublicSaasPlans: state.listPublicSaasPlans }),
 }));
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
@@ -85,20 +90,27 @@ describe("Gym admin detail subscription controls", () => {
     state.invalidate.mockClear();
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
     state.api.archivePlatformGym.mockReset().mockResolvedValue(undefined);
+    state.listPublicSaasPlans.mockReset().mockResolvedValue([
+      { name: "Starter", priceMinor: 79_000 },
+      { name: "Growth", priceMinor: 149_000 },
+      { name: "Pro", priceMinor: 249_000 },
+      { name: "Enterprise", priceMinor: 500_000 },
+    ]);
     Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", { configurable: true, value: () => false });
     Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: () => undefined });
     Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", { configurable: true, value: () => undefined });
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
   });
 
-  it("keeps trial dates server-owned while allowing the paid period boundary", () => {
+  it("owns every lifecycle date on the server and explains the automatic billing", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
     expect(screen.queryByLabelText("Trial ends")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Subscription started")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Cancelled on")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Membership end date")).toHaveValue("2026-02-01");
-    expect(screen.getByText(/Trial starts from onboarding/)).toBeInTheDocument();
+    // The paid boundary is server-derived; there is no date to type anymore.
+    expect(screen.queryByLabelText("Membership end date")).not.toBeInTheDocument();
+    expect(screen.getByText(/Billing runs itself/)).toBeInTheDocument();
     expect(screen.getByText("Trial ends")).toBeInTheDocument();
     expect(screen.getByText("Period ends")).toBeInTheDocument();
     expect(screen.getAllByText("Billing cadence").length).toBeGreaterThanOrEqual(2);
@@ -173,26 +185,42 @@ describe("Gym admin detail subscription controls", () => {
     expect(screen.queryByRole("link", { name: /Marketplace profile/i })).not.toBeInTheDocument();
   });
 
-  it("sends an explicit hidden listing when saving a suspension", () => {
+  it("sends an explicit hidden listing when saving a suspension and previews the consequence", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    expect(screen.getByText(/Access is suspended immediately/)).toBeInTheDocument();
+    expect(screen.getByText(/No invoice is issued; the paid-through date stays on record/)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Account requested a temporary pause." } });
     fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
 
-    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", status: "suspended", currentPeriodEndsAt: "2026-02-01T23:59:59.999Z", isPublic: false, reason: "Account requested a temporary pause." }));
+    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input).toMatchObject({ gymId: "gym-1", status: "suspended", isPublic: false, reason: "Account requested a temporary pause." });
+    expect(input.currentPeriodEndsAt).toBeUndefined();
   });
 
-  it("submits an annual billing cadence change with the audited controls", async () => {
+  it("submits an annual billing cadence change and previews the interval-correct invoice", async () => {
     const user = userEvent.setup();
+    const future = detail();
+    future.subscription.currentPeriodEndsAt = available(new Date(Date.now() + 16 * 86_400_000).toISOString());
+    state.query = { data: future, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     render(<GymAdminDetail gymId="gym-1" />);
 
     await user.click(screen.getByRole("combobox", { name: "Billing cadence" }));
     await user.click(screen.getByRole("option", { name: /Annual/ }));
+
+    // Preview mirrors the server: annual = monthly × 12 × 0.8, and the
+    // unused paid days on the current term carry into the new one.
+    expect(await screen.findByText(/JOD 1430\.400/)).toBeInTheDocument();
+    expect(screen.getByText(/16 unused paid days from the current term carry over/)).toBeInTheDocument();
+    expect(screen.getByText(/older unpaid subscription invoice is voided/)).toBeInTheDocument();
+
     await user.type(screen.getByPlaceholderText("Required for the immutable platform audit trail"), "Approved annual billing.");
     await user.click(screen.getByRole("button", { name: "Save controls" }));
 
-    expect(state.api.updatePlatformGym).toHaveBeenCalledWith(expect.objectContaining({ gymId: "gym-1", billingInterval: "annual", currentPeriodEndsAt: "2026-02-01T23:59:59.999Z", reason: "Approved annual billing." }));
+    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input).toMatchObject({ gymId: "gym-1", billingInterval: "annual", reason: "Approved annual billing." });
+    expect(input.currentPeriodEndsAt).toBeUndefined();
   });
 
   it("omits a historical cancellation date when reactivating a cancelled gym", () => {

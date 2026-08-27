@@ -33,7 +33,7 @@ export default function PlatformOverviewPage() {
 
         <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Kpi icon={<Building2 />} label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} detail={overview ? `${overview.gymCounts.trial} trial · ${overview.gymCounts.past_due} past due · ${overview.gymCounts.suspended} suspended · ${overview.gymCounts.cancelled} cancelled` : "Loading tenant status"} />
-          <Kpi icon={<CreditCard />} label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} detail={overview ? "From active plan assignments" : "Loading subscriptions"} />
+          <Kpi icon={<CreditCard />} label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} detail={overview ? "Effective monthly rate; annual plans counted at their 20% saving" : "Loading subscriptions"} />
           <Kpi icon={<Users />} label="Active members" value={overview ? overview.memberCount.toLocaleString() : "—"} detail={overview ? `${overview.branchCount} active branches · ${overview.activeStaffCount} active staff` : "Loading tenant usage"} />
           <Kpi icon={<LifeBuoy />} label="Open support cases" value={overview ? String(openCases) : "—"} detail={overview ? `${urgentCases} urgent` : "Loading support queue"} warning={urgentCases > 0} />
         </section>

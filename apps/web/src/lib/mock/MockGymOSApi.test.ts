@@ -431,12 +431,24 @@ describe("platform subscription controls", () => {
     expect(latestActivity).toMatchObject({ before: { billingInterval: "annual" }, after: { billingInterval: "monthly" } });
   });
 
-  it("requires a selected end date for material changes but keeps trial end automatic", async () => {
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", reason: "Require an explicit membership boundary." })).rejects.toMatchObject({ code: ERR.VALIDATION });
-    const suspended = await api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Pause access at the selected membership boundary." });
-    expect(suspended).toMatchObject({ subscriptionStatus: "suspended", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z" });
-    const cancelled = await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Cancel at the selected membership boundary." });
-    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", cancelledAt: expect.any(String) });
+  it("suspends and cancels without a date, bills server-derived paid terms, and keeps trial end automatic", async () => {
+    const suspended = await api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", reason: "Pause access immediately." });
+    expect(suspended).toMatchObject({ subscriptionStatus: "suspended" });
+
+    // Reactivation derives the term and issues the interval-correct invoice
+    // through the same path monthly and annual changes share.
+    const invoicesBefore = (await api.getPlatformSnapshot()).invoices.length;
+    const reactivated = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", reason: "Reactivate on annual billing." });
+    expect(reactivated).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
+    expect(Date.parse(reactivated.currentPeriodEndsAt!)).toBeGreaterThan(Date.now() + 300 * 86_400_000);
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.invoices.length).toBe(invoicesBefore + 1);
+    const termInvoice = snapshot.invoices.find((invoice) => invoice.cycleKey?.startsWith("change:"));
+    const tenantPlanPrice = snapshot.plans.find((plan) => plan.name === reactivated.rivetPlan)!.priceMinor;
+    expect(termInvoice).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(tenantPlanPrice * 12 * 0.8) });
+
+    const cancelled = await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", reason: "Cancel the subscription." });
+    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });
 
     await api.resetDemo();
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Trial end remains server-derived." })).rejects.toMatchObject({ code: ERR.VALIDATION });

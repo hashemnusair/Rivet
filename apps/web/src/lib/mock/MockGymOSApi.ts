@@ -696,10 +696,10 @@ export class MockGymOSApi implements GymOSApi {
     return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
   }
 
-  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; provisioned: boolean }> {
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean }> {
     return [
-      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, provisioned: !this.db.organization.archivedAt },
-      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, provisioned: !organization.archivedAt })),
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt })),
     ];
   }
 
@@ -1628,11 +1628,23 @@ export class MockGymOSApi implements GymOSApi {
         || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
       const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
       if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) throw ApiError.of(ERR.VALIDATION, "Trial end is fixed automatically from onboarding; do not provide a paid period end date.");
-      if (materialMembershipChange && nextStatus !== "trial" && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "A membership end date is required for plan, status, or billing cadence changes.");
+      // Parity with Convex: a material change landing on an active
+      // subscription starts a new server-derived paid term today, rolls the
+      // unused paid days forward, and issues the term invoice below.
+      const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
+      const DAY_MS = 86_400_000;
+      const creditDays = startsNewPaidTerm
+        && (currentStatus === "active" || currentStatus === "overdue")
+        && Number.isFinite(storedCurrentPeriodEndsAt) && storedCurrentPeriodEndsAt! > nowTimestamp
+        ? Math.ceil((storedCurrentPeriodEndsAt! - nowTimestamp) / DAY_MS)
+        : 0;
+      const computedPeriodEndsAt = startsNewPaidTerm
+        ? addCalendarMonths(nowTimestamp, billingInterval === "annual" ? 12 : 1) + creditDays * DAY_MS
+        : undefined;
       const nextSubscriptionStartedAt = Number.isFinite(storedSubscriptionStartedAt) ? storedSubscriptionStartedAt : PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? nowTimestamp : undefined;
       const nextTrialEndsAt = nextStatus === "trial" ? (Number.isFinite(storedTrialEndsAt) ? storedTrialEndsAt : nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1)) : storedTrialEndsAt;
       if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "A trial must end in the future; its end date is derived from onboarding.");
-      const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined;
+      const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : computedPeriodEndsAt ?? (Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
       if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && Number.isFinite(storedSubscriptionStartedAt) && selectedPeriodEndsAt < storedSubscriptionStartedAt!) throw ApiError.of(ERR.VALIDATION, "The membership end date must be on or after the subscription start date.");
       if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "An active subscription must end in the future.");
       const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
@@ -1699,12 +1711,46 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
+      let issuedTermInvoiceId: string | undefined;
+      if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
+        // Parity with Convex: unpaid subscription-cycle invoices are
+        // superseded by the new term; manual invoices (no cycle key) stay.
+        const appliedCreditDays = periodBoundaryChanged ? 0 : creditDays;
+        const nowIso = new Date(nowTimestamp).toISOString();
+        for (const invoice of this.platformInvoices) {
+          if (invoice.gymId === gym.id && invoice.cycleKey && ["draft", "open", "past_due", "failed"].includes(invoice.status)) {
+            invoice.status = "void";
+            invoice.voidedAt = nowIso;
+          }
+        }
+        const priceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
+        const amountMinor = billingInterval === "annual" ? Math.round(priceMinor * 12 * 0.8) : priceMinor;
+        issuedTermInvoiceId = `INV-${crypto.randomUUID()}`;
+        this.platformInvoices.unshift({
+          id: issuedTermInvoiceId,
+          gymId: gym.id,
+          gym: gym.name,
+          amountMinor,
+          amount: `JOD ${(amountMinor / 1_000).toFixed(3)}`,
+          currency: "JOD",
+          date: nowIso,
+          issuedAt: nowIso,
+          dueAt: nowIso,
+          periodStart: nowIso,
+          periodEnd: new Date(nextCurrentPeriodEndsAt).toISOString(),
+          cycleKey: `change:${organization.id}:${nowTimestamp}`,
+          billingInterval,
+          ...(appliedCreditDays > 0 ? { creditDays: appliedCreditDays } : {}),
+          status: "open",
+        });
+      }
+
       this.recordPlatformAudit({
         action: "gym.subscription.update",
         entityType: "platform_gym",
         entityPublicId: gym.id,
         entityLabel: gym.name,
-        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}`,
+        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
         reason: input.reason.trim(),
         before: beforeAudit,
         after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic },

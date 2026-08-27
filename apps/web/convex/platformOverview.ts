@@ -3,7 +3,7 @@ export type PlatformQueueSeverity = "danger" | "warning" | "info";
 export interface PlatformOverviewInput {
   now?: number;
   gyms: Array<{ id: string; organizationId?: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
-  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; provisioned?: boolean }>;
+  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; billingInterval?: "monthly" | "annual"; provisioned?: boolean }>;
   plans: Array<{ name: string; priceMinor: number }>;
   branches: Array<{ organizationId?: string; active: boolean; status?: string }>;
   members: Array<{ organizationId?: string; status?: string }>;
@@ -135,7 +135,11 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     // can lag a plan mutation and must never make MRR look stale.
     const plan = organization.subscriptionPlan ?? organization.entitlementPlan;
     if (!plan) return total;
-    return total + (planPrices.get(plan) ?? 0);
+    const monthlyPrice = planPrices.get(plan) ?? 0;
+    // Annual tenants pay twelve months with the published 20% saving, so
+    // their effective monthly revenue is the discounted rate — not the
+    // headline monthly price.
+    return total + (organization.billingInterval === "annual" ? Math.round(monthlyPrice * 0.8) : monthlyPrice);
   }, 0);
   const paidInvoices = eligibleInvoices.filter(({ invoice }) => invoice.status === "paid");
   const overdueInvoices = eligibleInvoices.filter(({ invoice }) => ["failed", "past_due", "overdue"].includes(invoice.status ?? ""));

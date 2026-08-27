@@ -83,17 +83,18 @@ describe("exported Convex platform subscription lifecycle", () => {
     });
   });
 
-  it("requires and persists an admin-selected end date for material changes while keeping trial dates automatic", async () => {
+  it("suspends and cancels without a date, keeps the stored boundary, and keeps trial dates automatic", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const platform = t.withIdentity({ subject: "clerk-platform" });
 
-    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Require an explicit membership boundary." })), "VALIDATION_ERROR");
-    const suspended = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Pause access at the selected membership boundary." })) as Record<string, unknown>;
-    expect(suspended).toMatchObject({ subscriptionStatus: "suspended", currentPeriodEndsAt: SELECTED_PERIOD_END });
+    const suspended = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Pause access immediately." })) as Record<string, unknown>;
+    expect(suspended).toMatchObject({ subscriptionStatus: "suspended" });
+    const suspendedInvoices = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()));
+    expect(suspendedInvoices).toHaveLength(0);
 
-    const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Cancel at the selected membership boundary." })) as Record<string, unknown>;
-    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, cancelledAt: expect.any(String) });
+    const cancelled = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", reason: "Cancel the subscription." })) as Record<string, unknown>;
+    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });
 
     const trialTest = convexTest(schema, modules);
     await seed(trialTest, { status: "trial" });
@@ -102,6 +103,74 @@ describe("exported Convex platform subscription lifecycle", () => {
     const trial = await trialPlatform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "trial", reason: "Start the onboarding trial." })) as Record<string, unknown>;
     expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String) });
     expect(trial.currentPeriodEndsAt).toBeUndefined();
+  });
+
+  it("derives the paid term, issues interval-correct invoices, and rolls unused days into the new term", async () => {
+    const DAY_MS = 86_400_000;
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const startedAt = Date.now() - 14 * DAY_MS;
+    const storedBoundary = Date.now() + 16 * DAY_MS;
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      await ctx.db.patch(organization!._id, { subscriptionStartedAt: startedAt, currentPeriodEndsAt: storedBoundary, billingInterval: "monthly" });
+    });
+
+    // 14 days into a monthly term, the tenant moves to annual: the server
+    // derives the boundary, credits the ~16 unused days, and bills annual
+    // pricing through the same path monthly changes use.
+    const before = Date.now();
+    const annual = await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      billingInterval: "annual",
+      reason: "Owner asked to move to annual billing.",
+    })) as Record<string, unknown>;
+    expect(annual).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
+    const annualEnd = Date.parse(String(annual.currentPeriodEndsAt));
+    const expectedLow = new Date(before);
+    expectedLow.setUTCMonth(expectedLow.getUTCMonth() + 12);
+    expect(annualEnd).toBeGreaterThanOrEqual(expectedLow.getTime() + 15 * DAY_MS);
+    expect(annualEnd).toBeLessThanOrEqual(expectedLow.getTime() + 17 * DAY_MS);
+
+    const afterAnnual = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    expect(afterAnnual).toHaveLength(1);
+    expect(afterAnnual[0]).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(149_000 * 12 * 0.8), creditDays: 16 });
+    expect(String(afterAnnual[0]?.cycleKey)).toMatch(/^change:org-sub:/);
+
+    // A plan change mid-term voids the superseded unpaid invoice and issues
+    // the new term's invoice so the tenant is never billed twice.
+    const downgrade = await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      plan: "Starter",
+      reason: "Owner downgraded to Starter.",
+    })) as Record<string, unknown>;
+    expect(downgrade).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Starter", billingInterval: "annual" });
+    const afterDowngrade = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    expect(afterDowngrade).toHaveLength(2);
+    const voided = afterDowngrade.find((invoice) => invoice.status === "void");
+    const open = afterDowngrade.find((invoice) => invoice.status === "open");
+    expect(voided).toMatchObject({ billingInterval: "annual", amountMinor: Math.round(149_000 * 12 * 0.8) });
+    expect(open).toMatchObject({ billingInterval: "annual", amountMinor: Math.round(79_000 * 12 * 0.8) });
+
+    // Reactivating a suspended tenant bills a fresh term with no credit.
+    await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Pause while payment is arranged." }));
+    const reactivated = await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", {
+      gymId: "subscription-gym",
+      status: "active",
+      billingInterval: "monthly",
+      reason: "Reactivate on monthly billing.",
+    })) as Record<string, unknown>;
+    expect(reactivated).toMatchObject({ subscriptionStatus: "active", billingInterval: "monthly" });
+    const final = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    expect(final).toHaveLength(3);
+    const reactivationInvoice = final.find((invoice) => invoice.status === "open");
+    expect(reactivationInvoice).toMatchObject({ billingInterval: "monthly", amountMinor: 79_000 });
+    expect(reactivationInvoice?.creditDays).toBeUndefined();
+
+    const audits = await t.run(async (ctx) => await ctx.db.query("platformAuditEvents").collect());
+    const billedAudit = audits.find((event) => event.action === "gym.subscription.update" && typeof event.summary === "string" && event.summary.includes("issued INV-"));
+    expect(billedAudit).toBeDefined();
+    expect(audits.some((event) => event.action === "invoice.void")).toBe(true);
   });
 
   it("keeps the directory, tenant lifecycle, and immutable audit reason aligned", async () => {

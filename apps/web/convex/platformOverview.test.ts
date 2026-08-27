@@ -53,6 +53,22 @@ describe("buildPlatformOverview", () => {
     expect(overview.operatorQueue.map((item) => item.id)).toEqual(["support:case-1", "invoice:inv-due", "application:app-1"]);
   });
 
+  it("counts annual tenants at their discounted effective monthly rate", () => {
+    const overview = buildPlatformOverview({
+      gyms: [],
+      organizations: [
+        { id: "org-monthly", status: "active", subscriptionPlan: "Growth", billingInterval: "monthly", provisioned: true },
+        { id: "org-annual", status: "active", subscriptionPlan: "Growth", billingInterval: "annual", provisioned: true },
+      ],
+      plans: [{ name: "Growth", priceMinor: 149_000 }],
+      branches: [], members: [], staffMemberships: [], bookings: [], applications: [], invoices: [], supportCases: [],
+    });
+
+    // Annual = 12 months at the published 20% saving, so the effective
+    // monthly rate is price × 0.8 — never the headline monthly price.
+    expect(overview.activeMrr).toEqual({ amount: 149_000 + Math.round(149_000 * 0.8), currency: "JOD" });
+  });
+
   it("does not manufacture totals or queue entries for an empty deployment", () => {
     const overview = buildPlatformOverview({
       gyms: [], organizations: [], plans: [], branches: [], members: [], staffMemberships: [], bookings: [], applications: [], invoices: [], supportCases: [],

@@ -3548,7 +3548,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const provisionedOrganizationIds = new Set(gymProjections.filter(({ view, provisioned, organizationId }) => provisioned && !booleanValue(view.isArchived) && organizationId).map(({ organizationId }) => organizationId as string));
     const overview = buildPlatformOverview({
       gyms: gymProjections.map(({ view, provisioned, organizationId }) => ({ id: stringValue(view.id), organizationId, subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned: provisioned && !booleanValue(view.isArchived) })),
-      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, provisioned: provisionedOrganizationIds.has(String(organization._id)) })),
+      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)) })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
       branches: branches.map((branch) => ({ organizationId: String(branch.organizationId), active: branch.active, status: branch.status })),
       members: memberRows.map((member) => ({ organizationId: String(member.organizationId), status: optionalString(data(member.data).status) })),
@@ -5735,9 +5735,20 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) {
       domainError("VALIDATION_ERROR", "Trial end is fixed automatically from onboarding; do not provide a paid period end date.", { correlationId: admin.correlationId });
     }
-    if (materialMembershipChange && nextStatus !== "trial" && requestedPeriodEndsAt === undefined) {
-      domainError("VALIDATION_ERROR", "A membership end date is required for plan, status, or billing cadence changes.", { correlationId: admin.correlationId });
-    }
+    // A material change that lands on an active subscription starts a new paid
+    // term today: the server derives the boundary and issues the invoice, so
+    // monthly and annual changes always bill through the same path. Unused
+    // paid days on the outgoing term roll into the new one as a day credit.
+    const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
+    const DAY_MS = 86_400_000;
+    const creditDays = startsNewPaidTerm
+      && (previousSubscriptionStatus === "active" || previousSubscriptionStatus === "overdue")
+      && storedPeriodEndsAt !== undefined && storedPeriodEndsAt > nowMs
+      ? Math.ceil((storedPeriodEndsAt - nowMs) / DAY_MS)
+      : 0;
+    const computedPeriodEndsAt = startsNewPaidTerm
+      ? addCalendarMonths(nowMs, interval === "annual" ? 12 : 1) + creditDays * DAY_MS
+      : undefined;
     const nextSubscriptionStartedAt = storedSubscriptionStartedAt
       ?? ((nextStatus === "trial" || nextStatus === "active") ? nowMs : undefined);
     const nextTrialEndsAt = nextStatus === "trial"
@@ -5746,7 +5757,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowMs) {
       domainError("VALIDATION_ERROR", "A trial must end in the future; its end date is derived from onboarding.", { correlationId: admin.correlationId });
     }
-    const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : storedPeriodEndsAt;
+    // An explicit admin date remains an override; otherwise the server-derived
+    // term applies, and non-billing changes keep the stored boundary.
+    const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : computedPeriodEndsAt ?? storedPeriodEndsAt;
     if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && storedSubscriptionStartedAt !== undefined && selectedPeriodEndsAt < storedSubscriptionStartedAt) {
       domainError("VALIDATION_ERROR", "The membership end date must be on or after the subscription start date.", { correlationId: admin.correlationId });
     }
@@ -5779,6 +5792,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const previousModulePlan = workspacePlan(organization?.subscriptionPlan);
     let updatedOrganization: Organization | null = organization;
     let updatedEntitlement: Doc<"organizationEntitlements"> | null = entitlementBefore;
+    let issuedTermInvoice: { invoiceId: string; amountMinor: number; creditDays: number; periodEnd: string } | undefined;
     if (organization) {
       const modulePlan = workspacePlan(nextPlan);
       if (!modulePlan) domainError("CONFIGURATION_ERROR", "This organization has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
@@ -5836,16 +5850,86 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           }
         }
       }
+      if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
+        // The new paid term is billed the moment it is granted. Earlier unpaid
+        // subscription invoices cover a term this change supersedes, so they
+        // are voided instead of double-billing the tenant. Manually created
+        // invoices (no cycle key) are never touched.
+        const appliedCreditDays = periodBoundaryChanged ? 0 : creditDays;
+        const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+        for (const row of invoiceRows) {
+          const invoice = data(row.data);
+          const invoiceStatus = stringValue(invoice.status);
+          const key = optionalString(invoice.cycleKey);
+          if (!key || !["draft", "open", "past_due", "failed"].includes(invoiceStatus)) continue;
+          await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
+          await insertPlatformAudit(ctx, admin, {
+            action: "invoice.void",
+            entityType: "platform_invoice",
+            entityPublicId: row.publicId,
+            entityLabel: row.publicId,
+            summary: "Voided a subscription invoice superseded by a subscription change",
+            reason,
+            before: { status: invoiceStatus },
+            after: { status: "void" },
+          });
+        }
+        const catalogPrice = numberValue(catalog.find((candidate) => stringValue(candidate.name) === modulePlan)?.priceMinor);
+        if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
+          domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
+        }
+        const amountMinor = interval === "annual" ? annualPrice(catalogPrice) : catalogPrice;
+        const invoiceId = `INV-${newPublicId()}`;
+        const periodEndIso = new Date(nextCurrentPeriodEndsAt).toISOString();
+        await ctx.db.insert("domainRecords", {
+          organizationId: organization._id,
+          entityType: "platformInvoice",
+          publicId: invoiceId,
+          createdAt: nowMs,
+          updatedAt: nowMs,
+          data: {
+            id: invoiceId,
+            gymId,
+            gym: stringValue(current.name, "Gym"),
+            amountMinor,
+            amount: platformInvoiceAmount(amountMinor, JOD),
+            currency: JOD,
+            date: now,
+            issuedAt: now,
+            dueAt: now,
+            periodStart: now,
+            periodEnd: periodEndIso,
+            cycleKey: `change:${targetOrganizationId}:${nowMs}`,
+            billingInterval: interval,
+            ...(appliedCreditDays > 0 ? { creditDays: appliedCreditDays } : {}),
+            status: "open",
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+        issuedTermInvoice = { invoiceId, amountMinor, creditDays: appliedCreditDays, periodEnd: periodEndIso };
+        const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
+        if (billedRecipient && billedRecipient.organization._id === organization._id) await queueOperationalEmail(ctx, {
+          organizationId: billedRecipient.organization._id,
+          kind: "platform_invoice_issued",
+          templateVersion: "platform-invoice-issued-v1",
+          recipientReference: publicUserId(billedRecipient.user),
+          recipientEmail: billedRecipient.user.email,
+          dedupeKey: `subscription-change-invoice:${invoiceId}`,
+        });
+      }
     }
     await insertPlatformAudit(ctx, admin, {
       action: "gym.subscription.update",
       entityType: "platform_gym",
       entityPublicId: gymId,
       entityLabel: stringValue(current.name, gymId),
-      summary: "Updated gym subscription controls",
+      summary: issuedTermInvoice
+        ? `Updated gym subscription controls and issued ${issuedTermInvoice.invoiceId} for the new term`
+        : "Updated gym subscription controls",
       reason,
       before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
-      after: platformSubscriptionSnapshot(updated, updatedOrganization, updatedEntitlement),
+      after: { ...platformSubscriptionSnapshot(updated, updatedOrganization, updatedEntitlement), ...(issuedTermInvoice ? { termInvoice: issuedTermInvoice } : {}) },
     });
     if (organization && statusTransitioned && (requestedStatus === "suspended" || requestedStatus === "cancelled")) {
       const recipient = await platformGymOwnerRecipient(ctx, gymId);

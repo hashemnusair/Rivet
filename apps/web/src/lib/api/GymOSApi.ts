@@ -269,6 +269,8 @@ export interface PlatformBillingInvoice {
   /** Deterministic subscription cycle key; prevents duplicate automation invoices. */
   cycleKey?: string;
   billingInterval?: BillingInterval;
+  /** Unused paid days from the outgoing term rolled into this invoice's period. */
+  creditDays?: number;
   paymentReference?: string;
   paidAt?: string;
   pastDueAt?: string;
@@ -643,8 +645,10 @@ export interface UpdatePlatformGymInput {
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
   billingInterval?: BillingInterval;
-  /** The admin-selected paid membership/subscription boundary. Trial ends
-   * remain server-derived from onboarding and are never accepted here. */
+  /** Optional override for the paid membership boundary. When omitted on a
+   * change that activates or re-prices the subscription, the server derives
+   * the new term (today + interval + unused-day credit) and issues the term
+   * invoice. Trial ends remain server-derived from onboarding. */
   currentPeriodEndsAt?: string;
   isPublic?: boolean;
   reason: string;

@@ -129,7 +129,7 @@ export default function BillingPage() {
         </section>
 
         <section className="mt-5" aria-labelledby="renewal-summary-heading">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[10.5px] text-ink-3">Cycle-key invoices are created by the subscription clock.</p></div>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="eyebrow">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[10.5px] text-ink-3">Cycle-key invoices come from the subscription clock and from subscription changes.</p></div>
           <div className="grid gap-3 sm:grid-cols-3">
             <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail="Issued T−3 and due at term end" />
             <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail="Grace ends two days after due" warning={renewalSummary.inGrace.length > 0} />
@@ -145,8 +145,8 @@ export default function BillingPage() {
         ) : null}
 
         <section className="mt-5 border border-line bg-surface">
-          <div className="border-b border-line px-5 py-4"><p className="eyebrow">Invoice ledger</p><h2 className="mt-1 text-[17px] font-semibold">Automatic renewal invoices</h2><p className="mt-1 text-[10.5px] text-ink-3">Sorted ahead of manual exceptions so the subscription clock stays visible.</p></div>
-          {!platformSnapshot ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the persisted invoice ledger…</p> : automatedInvoices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-ink-3">No automatic renewal invoices are currently recorded.</p> : <InvoiceTable invoices={automatedInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} />}
+          <div className="border-b border-line px-5 py-4"><p className="eyebrow">Invoice ledger</p><h2 className="mt-1 text-[17px] font-semibold">Subscription invoices</h2><p className="mt-1 text-[10.5px] text-ink-3">Renewals from the subscription clock and term invoices from subscription changes, sorted ahead of manual exceptions.</p></div>
+          {!platformSnapshot ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the persisted invoice ledger…</p> : automatedInvoices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-ink-3">No subscription invoices are currently recorded.</p> : <InvoiceTable invoices={automatedInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} />}
         </section>
 
         {platformSnapshot && manualInvoices.length ? <details className="mt-4 border border-line bg-surface" open={manualInvoices.some((invoice) => invoice.id === focusedInvoiceId)}>

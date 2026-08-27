@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Users } from "lucide-react";
+import { Archive, ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Receipt, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -8,10 +8,11 @@ import type { MouseEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
+import { getApi } from "@/lib/api/client";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
@@ -32,9 +33,9 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
   const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
-  const [currentPeriodEndsAt, setCurrentPeriodEndsAt] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [reason, setReason] = useState("");
+  const [planCatalog, setPlanCatalog] = useState<PlatformSaasPlan[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
@@ -46,15 +47,21 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
-    setCurrentPeriodEndsAt(readDateInput(detail.subscription.currentPeriodEndsAt));
     setIsPublic(detail.organization.state === "available" && normalizePublicListing(detail.controls.isPublic, detail.controls.status));
   }, [detail]);
+
+  useEffect(() => {
+    // The billing preview reads the same public catalog as the landing page,
+    // so the projected invoice always matches what the server will issue.
+    let cancelled = false;
+    getApi().listPublicSaasPlans().then((plans) => { if (!cancelled) setPlanCatalog(plans); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const dirty = detail && organizationAvailable ? subscriptionDraftIsDirty(detail, {
     status,
     plan,
     billingInterval,
-    currentPeriodEndsAt,
     isPublic,
   }) : false;
 
@@ -70,7 +77,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
   const update = useApiMutation((api) => {
     if (!organizationAvailable) throw new Error("Subscription controls are unavailable until this gym is provisioned.");
-    return api.updatePlatformGym({ gymId, status, plan, billingInterval, currentPeriodEndsAt: dateInputToIso(currentPeriodEndsAt), isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
+    return api.updatePlatformGym({ gymId, status, plan, billingInterval, isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
   }, {
     onSuccess: async () => {
       editing.current = false;
@@ -107,7 +114,6 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     setStatus(detail.controls.status);
     setPlan(detail.controls.plan);
     setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
-    setCurrentPeriodEndsAt(readDateInput(detail.subscription.currentPeriodEndsAt));
     setIsPublic(detail.organization.state === "available" && detail.controls.isPublic);
     setReason("");
   };
@@ -124,11 +130,12 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     if (!organizationAvailable) return;
     editing.current = true;
     setStatus(next);
-    if (next === "trial") setCurrentPeriodEndsAt("");
     if (!isPublicSubscriptionStatus(next)) setIsPublic(false);
   };
   const materialSubscriptionChange = detail ? subscriptionMaterialChange(detail, { status, plan, billingInterval }) : false;
-  const requiresPeriodEnd = materialSubscriptionChange && draftStatus !== "trial";
+  const billingPreview = materialSubscriptionChange && plan
+    ? subscriptionBillingPreview(detail, { status: draftStatus, plan, billingInterval }, planCatalog)
+    : undefined;
   const saveControls = () => {
     if (!detail || !organizationAvailable || !status || !plan) return;
     update.mutate();
@@ -166,7 +173,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">{organizationAvailable ? "Changes update the tenant record, public directory state, and immutable platform audit trail." : "This directory row is retained for audit and cleanup, but is not linked to a provisioned tenant. Subscription changes are unavailable."}</p></div>
-            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim() || (requiresPeriodEnd && !currentPeriodEndsAt)}><Check />Save controls</Button>
+            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim()}><Check />Save controls</Button>
           </div>
           {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so plan, status, lifecycle dates, public visibility, and save actions are disabled. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
           {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
@@ -176,11 +183,18 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
               <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent>{detail.controls.status === "trial" ? <SelectItem value="trial">Trial</SelectItem> : null}<SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
               <label className="grid gap-1.5 text-[12px] font-medium">Billing cadence<Select value={billingInterval} onValueChange={(value) => edit(setBillingInterval, value as BillingInterval)}><SelectTrigger aria-label="Billing cadence" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="annual">Annual · saves 20%</SelectItem></SelectContent></Select></label>
             </div>
-            <div className="mt-4 border border-line bg-sunken/60 px-4 py-3 text-[10.5px] leading-relaxed text-ink-2" role="note">
-              <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Trial starts from onboarding and ends on its fixed server-derived date. Select the paid membership end date when changing a plan, status, or billing cadence.</p>
-              <p className="mt-2 text-ink-3">Trial end remains automatic and is never editable. Active periods must end in the future; cancellation keeps the selected boundary while its cancellation timestamp is recorded by the server.</p>
-            </div>
-            <label className="mt-4 grid gap-1.5 text-[12px] font-medium" htmlFor="current-period-ends">Membership end date<Input id="current-period-ends" type="date" aria-label="Membership end date" value={currentPeriodEndsAt} onChange={(event) => edit(setCurrentPeriodEndsAt, event.target.value)} disabled={!organizationAvailable || draftStatus === "trial"} />{draftStatus === "trial" ? <span className="text-[10.5px] font-normal text-ink-3">Trial end is fixed automatically from onboarding.</span> : requiresPeriodEnd && !currentPeriodEndsAt ? <span className="text-[10.5px] font-normal text-warning">Required for this subscription change.</span> : null}</label>
+            {billingPreview ? (
+              <div className="mt-4 border border-signal/40 bg-signal-bg/60 px-4 py-3 text-[11.5px] leading-relaxed" role="note" aria-label="Billing preview">
+                <p className="flex items-start gap-2 font-semibold"><Receipt className="mt-0.5 size-3.5 shrink-0" aria-hidden />What happens when you save</p>
+                <ul className="mt-2 grid gap-1 text-ink-2">
+                  {billingPreview.lines.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-4 border border-line bg-sunken/60 px-4 py-3 text-[10.5px] leading-relaxed text-ink-2" role="note">
+                <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Billing runs itself: changing the plan, status, or cadence starts the new paid term today, issues its invoice, and carries any unused paid days forward automatically.</p>
+              </div>
+            )}
             <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" disabled={!organizationAvailable} /></label>
             <div className="mt-4 flex items-start justify-between gap-4 border-t border-line pt-4">
               <div>
@@ -305,14 +319,12 @@ export function subscriptionDraftIsDirty(
     status: PlatformGymDetail["controls"]["status"] | undefined;
     plan: PlatformGymDetail["controls"]["plan"] | undefined;
     billingInterval: BillingInterval;
-    currentPeriodEndsAt: string;
     isPublic: boolean;
   },
 ): boolean {
   return draft.status !== detail.controls.status
     || draft.plan !== detail.controls.plan
     || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval)
-    || draft.currentPeriodEndsAt !== readDateInput(detail.subscription.currentPeriodEndsAt)
     || draft.isPublic !== detail.controls.isPublic;
 }
 
@@ -325,17 +337,44 @@ function subscriptionMaterialChange(
     || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval);
 }
 
+/**
+ * Mirrors the server's billing rules so the admin sees the exact consequence
+ * before saving: a material change landing on an active subscription starts a
+ * new term today, issues its invoice, and rolls unused paid days forward.
+ */
+export function subscriptionBillingPreview(
+  detail: PlatformGymDetail,
+  draft: { status: PlatformGymDetail["controls"]["status"] | undefined; plan: PlatformGymDetail["controls"]["plan"]; billingInterval: BillingInterval },
+  planCatalog: PlatformSaasPlan[],
+  now = Date.now(),
+): { lines: string[] } {
+  if (draft.status === "suspended") return { lines: ["Access is suspended immediately and the gym leaves public discovery.", "No invoice is issued; the paid-through date stays on record."] };
+  if (draft.status === "cancelled") return { lines: ["The subscription is cancelled and the gym leaves public discovery.", "No invoice is issued."] };
+  if (draft.status !== "active") return { lines: ["No billing change: invoices are only issued when the subscription is active."] };
+  const priceMinor = planCatalog.find((item) => item.name === draft.plan)?.priceMinor;
+  const amountMinor = priceMinor === undefined ? undefined : draft.billingInterval === "annual" ? Math.round(priceMinor * 12 * 0.8) : priceMinor;
+  const DAY_MS = 86_400_000;
+  const storedPeriodEnd = detail.subscription.currentPeriodEndsAt.state === "available" ? Date.parse(detail.subscription.currentPeriodEndsAt.value) : undefined;
+  const creditDays = (detail.controls.status === "active" || detail.controls.status === "overdue")
+    && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && storedPeriodEnd > now
+    ? Math.ceil((storedPeriodEnd - now) / DAY_MS)
+    : 0;
+  const end = new Date(now);
+  end.setUTCMonth(end.getUTCMonth() + (draft.billingInterval === "annual" ? 12 : 1));
+  const newPeriodEnd = new Date(end.getTime() + creditDays * DAY_MS);
+  const lines = [
+    amountMinor === undefined
+      ? `A ${draft.billingInterval} invoice for the new ${draft.plan} term is issued today.`
+      : `An invoice for JOD ${(amountMinor / 1_000).toFixed(3)} (${draft.plan} · ${draft.billingInterval === "annual" ? "annual, saves 20%" : "monthly"}) is issued today.`,
+    ...(creditDays > 0 ? [`${creditDays} unused paid ${creditDays === 1 ? "day" : "days"} from the current term ${creditDays === 1 ? "carries" : "carry"} over.`] : []),
+    `The new term runs until about ${newPeriodEnd.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}.`,
+    "Any older unpaid subscription invoice is voided so nothing is billed twice.",
+  ];
+  return { lines };
+}
+
 function readBillingInterval(field: PlatformGymDetail["subscription"]["billingInterval"]): BillingInterval {
   return field?.state === "available" ? field.value : "monthly";
-}
-
-function readDateInput(field: PlatformData<string>): string {
-  return field.state === "available" ? field.value.slice(0, 10) : "";
-}
-
-function dateInputToIso(value: string): string | undefined {
-  if (!value) return undefined;
-  return `${value}T23:59:59.999Z`;
 }
 
 function billingIntervalLabel(value: BillingInterval): string {

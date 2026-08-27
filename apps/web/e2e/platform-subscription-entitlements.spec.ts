@@ -2,12 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 
 type SubscriptionPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
-function isoDateFromToday(days: number): string {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 /**
  * Return to the platform gym record between tier rounds. History unwinding is
  * unreliable here: the workspace tours coalesce client-side entries and a
@@ -21,16 +15,24 @@ async function returnToPlatformGym(page: Page) {
   await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
 }
 
-async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string, options: { assertDateRequired?: boolean } = {}) {
+async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string, options: { assertBillingPreview?: boolean; cadence?: "Monthly" | "Annual" } = {}) {
   await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
   await page.getByLabel("Gym plan").click();
   await page.getByRole("option", { name: plan, exact: true }).click();
-  await page.getByLabel("Reason for this change").fill(reason);
-  if (options.assertDateRequired) {
-    await page.getByLabel("Membership end date").fill("");
-    await expect(page.getByRole("button", { name: "Save controls", exact: true })).toBeDisabled();
+  if (options.cadence) {
+    // The demo tenant reseeds on a full navigation, so a round that targets
+    // the seeded tier flips the cadence to stay a real, billable save.
+    await page.getByLabel("Billing cadence").click();
+    await page.getByRole("option", { name: new RegExp(options.cadence) }).click();
   }
-  await page.getByLabel("Membership end date").fill(isoDateFromToday(45));
+  if (options.assertBillingPreview) {
+    // The paid boundary is server-derived now: no date input exists, and the
+    // preview explains the invoice the save will issue.
+    await expect(page.getByLabel("Membership end date")).toHaveCount(0);
+    await expect(page.getByText("What happens when you save", { exact: true })).toBeVisible();
+    await expect(page.getByText(/An invoice for JOD .* is issued today\./)).toBeVisible();
+  }
+  await page.getByLabel("Reason for this change").fill(reason);
   await expect(page.getByRole("button", { name: "Save controls", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Save controls", exact: true }).click();
   await expect(page.getByText("Gym subscription controls saved and audited.", { exact: true }).last()).toBeVisible();
@@ -113,7 +115,7 @@ test.describe("RIVET platform subscription entitlements", () => {
     await page.goto("/platform/gyms/forge-fitness");
     await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
 
-    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertDateRequired: true });
+    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertBillingPreview: true });
 
     // The platform mutation response is consumed by the active gym session
     // without a logout or page reload. The navigation and route gate must
@@ -131,7 +133,7 @@ test.describe("RIVET platform subscription entitlements", () => {
 
     await returnToPlatformGym(page);
 
-    await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.");
+    await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.", { cadence: "Annual" });
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
