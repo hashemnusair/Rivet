@@ -2,6 +2,42 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Platform admin console production pass — 27 August 2026
+
+- Release `034415f` (CI run `33062534767` green, Vercel deploy verified live
+  with an authenticated platform-admin session) makes the gym detail page
+  production-honest:
+  - **Archive dialog fixed.** The confirm UI was rendered without
+    `DialogContent`, so the header/body/footer painted inline on the page
+    permanently and the Archive button opened nothing. It is now a real
+    modal (typed gym-name confirmation + reason, danger action), and the
+    unit test asserts the closed→open→confirm flow instead of indexing
+    duplicate buttons.
+  - **Recurring amount is now derived**, not absent: the live plan catalog
+    price × the tenant's billing interval (annual = monthly × 12 × 0.8 via
+    the shared `annualPrice` helper exported from
+    `subscriptionReconciliation.ts`). Verified live: "Recurring amount
+    JOD 500.000" on elias test gym 1.
+  - **Invoices are now real**: platform invoices scoped to the tenant
+    replace the permanent "not configured" placeholder ("Invoices 0
+    recorded" live today, honestly empty).
+  - MockGymOSApi mirrors both derivations; `platformGymDetail.test.ts`
+    covers the new source fields.
+- Read-only production walk of the whole console with zero console errors:
+  overview KPIs live (MRR JOD 579.000, 4 gyms, audit trail), gyms
+  directory, gym detail, applications, billing (empty-honest ledger),
+  pricing catalog (annual math correct on all four tiers), support inbox
+  (real resolved case with thread).
+- Two open findings from the walk, not yet acted on:
+  - Application "Test 123" (Aug 8) shows **"Provisioning needs attention —
+    Clerk organization request failed (403)"** with a Retry provisioning
+    control. Retrying is a production write (creates the Clerk org and
+    emails the applicant) and awaits an owner decision.
+  - That Aug 8 application shows decision email **SENT**, while the Aug 11
+    application shows email **NOT CONFIGURED** — the Resend sender
+    configuration regressed between those dates and should be re-checked in
+    the Convex prod env / Resend dashboard.
+
 ## Operations workspace simplification — 27 August 2026
 
 - Release `237dc71` (CI run `33025029459` green, Vercel deploy verified live
