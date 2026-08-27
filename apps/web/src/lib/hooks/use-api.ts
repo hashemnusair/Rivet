@@ -71,14 +71,17 @@ export function useApiMutation<TData, TVariables = void>(
     successMessage?: string | ((data: TData) => string);
   },
 ) {
-  const { successMessage, ...rest } = options ?? {};
+  // onSuccess/onError must be destructured out: leaving them in the spread
+  // would overwrite these wrappers and silently drop the toasts whenever a
+  // caller passes both a successMessage and its own callback.
+  const { successMessage, onSuccess, onError, ...rest } = options ?? {};
   return useMutation<TData, Error, TVariables>({
     mutationFn: (variables) => fn(getApi(), variables),
     onSuccess: (data, variables, onMutateResult, context) => {
       if (successMessage) {
         toast.success(typeof successMessage === "function" ? successMessage(data) : successMessage);
       }
-      options?.onSuccess?.(data, variables, onMutateResult, context);
+      onSuccess?.(data, variables, onMutateResult, context);
     },
     onError: (error, variables, onMutateResult, context) => {
       if (isApiError(error)) {
@@ -86,7 +89,7 @@ export function useApiMutation<TData, TVariables = void>(
       } else {
         toast.error("Something went wrong. Please try again.");
       }
-      options?.onError?.(error, variables, onMutateResult, context);
+      onError?.(error, variables, onMutateResult, context);
     },
     ...rest,
   });

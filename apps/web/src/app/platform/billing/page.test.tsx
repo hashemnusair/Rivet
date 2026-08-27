@@ -82,6 +82,22 @@ describe("BillingPage", () => {
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   });
 
+  it("opens the billing wizard on the tenant a gym page deep-links with ?bill=", async () => {
+    window.history.replaceState({}, "", "/platform/billing?bill=gym-1");
+    const enriched = snapshot([]);
+    enriched.gyms = [{ ...enriched.gyms[0]!, isProvisioned: true, billingInterval: "monthly", currentPeriodEndsAt: "2026-09-15T10:00:00.000Z" }];
+    enriched.plans = [{ name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" }] as PlatformSnapshot["plans"];
+    state.snapshot = enriched;
+    render(<BillingPage />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Bill a gym" });
+    expect(within(dialog).getByText(/is currently/)).toHaveTextContent("Northline Strength is currently active on Growth · monthly.");
+    // The subscriptions section is the on-page home for the same actions
+    // (aria-hidden while the modal wizard is open, hence hidden queries).
+    expect(screen.getByRole("heading", { name: "Gym subscriptions", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Northline Strength/, hidden: true })).toHaveTextContent("Growth · monthly");
+  });
+
   it("waits for the requested invoice row before focusing it", async () => {
     window.history.replaceState({}, "", "/platform/billing?invoice=INV-2");
     const view = render(<BillingPage />);

@@ -142,6 +142,13 @@ describe("Bill a gym wizard", () => {
     });
   });
 
+  it("opens directly on the plan step when a gym is preselected", () => {
+    render(<BillGymWizard open onOpenChange={vi.fn()} gyms={gyms} plans={plans} initialGymId="gym-suspended" />);
+
+    expect(screen.queryByRole("listbox", { name: "Billable gyms" })).not.toBeInTheDocument();
+    expect(screen.getByText(/is currently/)).toHaveTextContent("Iron Temple is currently suspended on Growth · monthly.");
+  });
+
   it("refuses to bill an active gym for the exact plan and cadence it already has", async () => {
     const user = userEvent.setup();
     renderWizard();

@@ -226,37 +226,53 @@ test.describe("RIVET platform administration", () => {
     await expect(page.locator("body")).not.toContainText("Last active today");
   });
 
-  test("keeps subscription shortcuts as an unsaved draft until an audited save", async ({ page }) => {
+  test("never suspends without a reasoned confirmation and leaves gym pages informational", async ({ page }) => {
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();
+
+    // The gym page is informational: no subscription editing controls exist,
+    // only the deep link into the billing subscription home.
     await page.goto("/platform/gyms/forge-fitness");
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Suspend", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Save controls/i })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toHaveAttribute("href", "/platform/billing?bill=forge-fitness");
 
-    const suspend = page.getByRole("button", { name: "Suspend", exact: true });
-    await expect(suspend).toBeVisible();
-    await suspend.click();
-
-    await expect(page.getByRole("status")).toContainText("Unsaved changes");
-    await expect(page.getByLabel("Subscription status")).toContainText("Suspended");
-    await expect(suspend).toBeVisible();
-    await expect(page.getByRole("button", { name: /Save controls/i })).toBeDisabled();
-
-    await page.getByRole("button", { name: /Cancel changes/i }).click();
-    await expect(page.getByRole("status")).toHaveCount(0);
-    await expect(page.getByLabel("Subscription status")).toContainText("Active");
+    // On billing, suspension demands a reason and dismissing the dialog
+    // writes nothing.
+    await page.goto("/platform/billing");
+    const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
+    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
+    await expect(dialog.getByRole("button", { name: "Suspend gym", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Keep as is", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(forgeRow).toContainText("active");
   });
 
   test("suppresses a suspended gym from public surfaces while retaining the authorized platform record", async ({ page }) => {
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();
-    await page.goto("/platform/gyms/forge-fitness");
+    // Subscription actions live on the billing page; gym pages stay
+    // informational.
+    await page.goto("/platform/billing");
 
-    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Suspend", exact: true }).click();
-    await page.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
-    await page.getByRole("button", { name: "Save controls", exact: true }).click();
+    const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
+    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    const suspendDialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
+    await suspendDialog.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
+    await suspendDialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
 
-    await expect(page.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+    await expect(page.getByText("Subscription status saved and audited.", { exact: true }).last()).toBeVisible();
+    await expect(forgeRow.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
+
+    // The gym's informational record reflects the audited mutation live in
+    // the same session: the timeline gains the audit entry and the facts card
+    // flips to suspended.
+    await forgeRow.getByRole("link", { name: "Forge Fitness Club", exact: true }).click();
+    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
     await expect(page.getByText(/Updated Forge Fitness Club subscription: active → suspended/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toBeVisible();
 
     // The authorized platform directory retains the tenant for audit and
     // restoration, even though its public listing is now suppressed.

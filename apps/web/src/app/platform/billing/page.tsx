@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, CreditCard, FilePlus2, Landmark, Receipt, Send, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BillGymWizard } from "./bill-gym-wizard";
+import { GymSubscriptions } from "./gym-subscriptions";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import type { CreatePlatformInvoiceInput, PlatformBillingInvoice, RecordPlatformInvoicePaymentInput } from "@/lib/api/GymOSApi";
@@ -24,8 +25,19 @@ export default function BillingPage() {
   const overview = platformSnapshot?.overview;
   const [createOpen, setCreateOpen] = useState(false);
   const [billWizardOpen, setBillWizardOpen] = useState(false);
+  const [billWizardGymId, setBillWizardGymId] = useState<string>();
   const [action, setAction] = useState<InvoiceAction>();
   const [focusedInvoiceId, setFocusedInvoiceId] = useState<string>();
+  const requestedBillGymId = searchParams.get("bill")?.trim() || undefined;
+
+  // A gym page's "Manage subscription" link lands here with ?bill=<gymId>;
+  // open the wizard on that tenant once the snapshot can resolve it.
+  useEffect(() => {
+    if (!requestedBillGymId || !platformSnapshot) return;
+    if (!platformSnapshot.gyms.some((gym) => gym.id === requestedBillGymId && gym.isProvisioned === true && !gym.isArchived)) return;
+    setBillWizardGymId(requestedBillGymId);
+    setBillWizardOpen(true);
+  }, [requestedBillGymId, platformSnapshot]);
 
   useEffect(() => {
     if (platformSnapshot) setLocalInvoices(platformSnapshot.invoices);
@@ -106,11 +118,13 @@ export default function BillingPage() {
           <div><p className="eyebrow">Payments control</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Billing & invoices</h1><p className="mt-2 text-[12.5px] text-ink-2">Automatic subscription renewals are invoiced in the platform ledger; collections are confirmed manually.</p></div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => downloadInvoices(invoices)} disabled={invoices.length === 0}><ArrowDownToLine /> Export ledger</Button>
-            <Button variant="signal" onClick={() => setBillWizardOpen(true)} disabled={!platformSnapshot}><Receipt /> Bill a gym</Button>
+            <Button variant="signal" onClick={() => { setBillWizardGymId(undefined); setBillWizardOpen(true); }} disabled={!platformSnapshot}><Receipt /> Bill a gym</Button>
           </div>
         </div>
 
-        <BillGymWizard open={billWizardOpen} onOpenChange={setBillWizardOpen} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} />
+        <BillGymWizard open={billWizardOpen} onOpenChange={(open) => { setBillWizardOpen(open); if (!open) setBillWizardGymId(undefined); }} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} initialGymId={billWizardGymId} />
+
+        <GymSubscriptions gyms={platformSnapshot?.gyms ?? []} onBill={(gymId) => { setBillWizardGymId(gymId); setBillWizardOpen(true); }} />
 
         <section className="mt-7 border border-line bg-surface p-5" aria-labelledby="billing-policy-heading">
           <div className="flex items-start gap-3">

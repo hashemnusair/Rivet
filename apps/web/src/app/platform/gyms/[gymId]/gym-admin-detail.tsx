@@ -1,20 +1,16 @@
 "use client";
 
-import { Archive, ArrowLeft, Ban, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Receipt, Users } from "lucide-react";
+import { Archive, ArrowLeft, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Receipt, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
-import { getApi } from "@/lib/api/client";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformSaasPlan } from "@/lib/api/GymOSApi";
-import { subscriptionBillingLines } from "@/lib/platform/subscription-billing";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
 import { Switch } from "@/components/ui/switch";
 import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
@@ -25,66 +21,39 @@ import { formatMoney } from "@/lib/utils/money";
 
 type GymArchiveApi = { archivePlatformGym?: (input: ArchivePlatformGymInput) => Promise<void> };
 
+/**
+ * Informational gym record. Subscription work — plan, billing, reactivation,
+ * suspension, cancellation — deliberately lives on the Billing page; this
+ * page keeps the facts, the marketplace listing switch, and archiving.
+ */
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const router = useRouter();
   const detailQuery = useRealtimeApiQuery({ queryKey: qk.platformGymDetail(gymId), query: (api) => api.getPlatformGymDetail(gymId), subscribe: (api, onValue, onError) => api.subscribePlatformGymDetail(gymId, onValue, onError), enabled: Boolean(gymId) });
   const invalidate = useInvalidate();
   const detail = detailQuery.data;
   const organizationAvailable = detail?.organization.state === "available";
-  const [status, setStatus] = useState<PlatformGymDetail["controls"]["status"]>();
-  const [plan, setPlan] = useState<PlatformGymDetail["controls"]["plan"]>();
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [isPublic, setIsPublic] = useState(false);
-  const [reason, setReason] = useState("");
-  const [planCatalog, setPlanCatalog] = useState<PlatformSaasPlan[]>([]);
+  const [listingReason, setListingReason] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string>();
-  const editing = useRef(false);
 
   useEffect(() => {
-    if (!detail || editing.current) return;
-    setStatus(detail.controls.status);
-    setPlan(detail.controls.plan);
-    setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
+    if (!detail) return;
     setIsPublic(detail.organization.state === "available" && normalizePublicListing(detail.controls.isPublic, detail.controls.status));
   }, [detail]);
 
-  useEffect(() => {
-    // The billing preview reads the same public catalog as the landing page,
-    // so the projected invoice always matches what the server will issue.
-    let cancelled = false;
-    getApi().listPublicSaasPlans().then((plans) => { if (!cancelled) setPlanCatalog(plans); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  const listingDirty = detail && organizationAvailable ? isPublic !== detail.controls.isPublic : false;
 
-  const dirty = detail && organizationAvailable ? subscriptionDraftIsDirty(detail, {
-    status,
-    plan,
-    billingInterval,
-    isPublic,
-  }) : false;
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [dirty]);
-
-  const update = useApiMutation((api) => {
-    if (!organizationAvailable) throw new Error("Subscription controls are unavailable until this gym is provisioned.");
-    return api.updatePlatformGym({ gymId, status, plan, billingInterval, isPublic: normalizePublicListing(isPublic, status), reason: reason.trim() });
+  const saveListing = useApiMutation((api) => {
+    if (!organizationAvailable) throw new Error("The public listing is unavailable until this gym is provisioned.");
+    return api.updatePlatformGym({ gymId, isPublic: normalizePublicListing(isPublic, detail?.controls.status), reason: listingReason.trim() });
   }, {
     onSuccess: async () => {
-      editing.current = false;
       await invalidate([qk.platformGymDetail(gymId)]);
-      setReason("");
-      toast.success("Gym subscription controls saved and audited.");
+      setListingReason("");
+      toast.success("Public listing saved and audited.");
     },
   });
 
@@ -109,46 +78,13 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
     return <div className="space-y-5 p-6 sm:p-8" role="status" aria-label="Loading gym detail"><Skeleton className="h-4 w-24" /><Skeleton className="h-20 w-full" /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div></div>;
   }
 
-  const edit = <T,>(setter: (value: T) => void, value: T) => { editing.current = true; setter(value); };
-  const cancelDraft = () => {
-    editing.current = false;
-    setStatus(detail.controls.status);
-    setPlan(detail.controls.plan);
-    setBillingInterval(readBillingInterval(detail.subscription.billingInterval));
-    setIsPublic(detail.organization.state === "available" && detail.controls.isPublic);
-    setReason("");
-  };
-  const draftStatus = status ?? detail.controls.status;
-  const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(draftStatus);
-  // Keep the shortcut label tied to the persisted record. The selector and
-  // listing switch intentionally show the local draft, but the shortcut must
-  // not imply that a restore/suspension has already been written.
-  const statusAction = detail.controls.status === "suspended" || detail.controls.status === "cancelled"
-    ? { label: detail.controls.status === "cancelled" ? "Reactivate" : "Restore access", next: "active" as const }
-    : { label: "Suspend", next: "suspended" as const };
+  const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(detail.controls.status);
   const marketplaceProfileAvailable = organizationAvailable && isPublicSubscriptionStatus(detail.controls.status) && detail.controls.isPublic;
-  const editStatus = (next: PlatformGymDetail["controls"]["status"]) => {
-    if (!organizationAvailable) return;
-    editing.current = true;
-    setStatus(next);
-    if (!isPublicSubscriptionStatus(next)) setIsPublic(false);
-  };
-  const materialSubscriptionChange = detail ? subscriptionMaterialChange(detail, { status, plan, billingInterval }) : false;
-  const billingPreview = materialSubscriptionChange && plan
-    ? subscriptionBillingPreview(detail, { status: draftStatus, plan, billingInterval }, planCatalog)
-    : undefined;
-  const saveControls = () => {
-    if (!detail || !organizationAvailable || !status || !plan) return;
-    update.mutate();
-  };
-  const protectNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (dirty && !window.confirm("Discard the unsaved subscription changes?")) event.preventDefault();
-  };
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
-        <Link href="/platform/gyms" onClick={protectNavigation} className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5 rtl:rotate-180" />All gyms</Link>
+        <Link href="/platform/gyms" className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5 rtl:rotate-180" />All gyms</Link>
 
         {detailQuery.isBackgroundError || detailQuery.streamState === "fallback" ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status" aria-live="polite">
@@ -166,46 +102,81 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`} onClick={protectNavigation}>Marketplace profile <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="This gym is hidden from public discovery">Marketplace profile unavailable <ExternalLink /></Button>}
-            <Button variant={statusAction.next === "active" ? "primary" : "danger"} onClick={() => editStatus(statusAction.next)} disabled={!organizationAvailable} title={!organizationAvailable ? "Subscription controls are unavailable until this gym is provisioned" : undefined}><Ban />{statusAction.label}</Button>
+            {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Marketplace profile <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="This gym is hidden from public discovery">Marketplace profile unavailable <ExternalLink /></Button>}
+            {organizationAvailable
+              ? <Button asChild variant="signal"><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />Manage subscription</Link></Button>
+              : <Button variant="signal" disabled title="Subscription management is unavailable until this gym is provisioned"><Receipt />Manage subscription</Button>}
+          </div>
+        </div>
+
+        {!organizationAvailable ? <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so subscription and listing changes are unavailable. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
+          <section className="border border-line bg-surface">
+            <div className="border-b border-line px-5 py-4"><p className="eyebrow">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div>
+            <div className="divide-y divide-line">
+              {detail.branches.state === "available" && detail.branches.value.length > 0 ? detail.branches.value.map((branch) => (
+                <div key={branch.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-3"><MapPin className="size-3" />{branch.address || "Not available"}</p><p className="mt-1 text-[10.5px] text-ink-3">Code {branch.code} · {branch.status}</p></div>
+                  <p className="text-[11px] text-ink-3">Branch actions are not configured</p>
+                </div>
+              )) : <UnavailableBlock field={detail.branches} empty="No branches recorded" />}
+            </div>
+            <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-5">
+              <Usage icon={<Users />} label="Active staff" field={detail.usage.activeStaffCount} />
+              <Usage icon={<Users />} label="Staff plan limit" field={detail.usage.staffLimit} />
+              <Usage icon={<Building2 />} label="Storage" field={detail.usage.storage} />
+              <Usage icon={<CalendarClock />} label="Automation rules" field={detail.usage.automationRuleCount} />
+              <Usage icon={<CreditCard />} label="Payment records" field={detail.usage.paymentTransactionCount} />
+            </div>
+          </section>
+
+          <div className="grid gap-5">
+            <section className="border border-line bg-surface p-5">
+              <p className="eyebrow">Account owner</p>
+              {detail.owner.state === "available" ? <><h2 className="mt-2 text-[17px] font-semibold">{detail.owner.value.name}</h2><div className="mt-5 grid gap-3 text-[11.5px] text-ink-2"><p className="flex items-center gap-2"><Mail className="size-3.5 text-ink-3" />{detail.owner.value.email}</p><p className="flex items-center gap-2"><Phone className="size-3.5 text-ink-3" />{detail.owner.value.phone || "Not available"}</p></div></> : <UnavailableValue state={detail.owner.state} className="mt-3" />}
+            </section>
+            <section className="night-surface bg-night p-5 text-night-ink">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="eyebrow-night">Subscription facts</p>
+                <Link href={`/platform/billing?bill=${detail.id}`} className="text-[10.5px] text-night-ink-3 underline-offset-2 hover:text-night-ink hover:underline">Manage in Billing</Link>
+              </div>
+              <dl className="mt-5 grid gap-3 text-[12px]">
+                <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
+                <FactRow label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></FactRow>
+                <FactRow label="Status"><FieldValue field={detail.subscription.status} render={statusLabel} /></FactRow>
+                <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
+                <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
+                <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></FactRow>
+                <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} /></FactRow>
+                <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
+                <FactRow label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></FactRow>
+              </dl>
+            </section>
           </div>
         </div>
 
         <section className="mt-5 border border-line bg-surface p-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div><p className="eyebrow">Platform controls</p><h2 className="mt-1 text-[17px] font-semibold">Subscription state</h2><p className="mt-1 text-[11.5px] text-ink-3">{organizationAvailable ? "Changes update the tenant record, public directory state, and immutable platform audit trail." : "This directory row is retained for audit and cleanup, but is not linked to a provisioned tenant. Subscription changes are unavailable."}</p></div>
-            <Button variant="signal" onClick={saveControls} loading={update.isPending} disabled={!organizationAvailable || !dirty || !status || !plan || !reason.trim()}><Check />Save controls</Button>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Marketplace</p>
+              <h2 className="mt-1 text-[16px] font-semibold">Public directory listing</h2>
+              <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while this subscription is not active or in trial. Reactivate it from the Billing page first." : "Already suppressed because this directory row is not provisioned."}</p>
+            </div>
+            <Switch checked={publicListingAllowed && isPublic} onCheckedChange={setIsPublic} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
           </div>
-          {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked, so plan, status, lifecycle dates, public visibility, and save actions are disabled. Use the applications/provisioning workflow to resolve this record.</p></div> : null}
-          {dirty ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning" role="status"><span><strong>Unsaved changes.</strong> Add a reason, then save to apply and audit them.</span><Button variant="secondary" size="sm" onClick={cancelDraft}>Cancel changes</Button></div> : null}
-          <fieldset disabled={!organizationAvailable} className="mt-5 min-w-0">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <label className="grid gap-1.5 text-[12px] font-medium">Plan<Select value={plan ?? ""} onValueChange={(value) => edit(setPlan, value as PlatformGymDetail["controls"]["plan"])}><SelectTrigger aria-label="Gym plan" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Starter">Starter</SelectItem><SelectItem value="Growth">Growth</SelectItem><SelectItem value="Pro">Pro</SelectItem><SelectItem value="Enterprise">Enterprise</SelectItem></SelectContent></Select></label>
-              <label className="grid gap-1.5 text-[12px] font-medium">Subscription status<Select value={status ?? ""} onValueChange={(value) => editStatus(value as PlatformGymDetail["controls"]["status"])}><SelectTrigger aria-label="Subscription status" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent>{detail.controls.status === "trial" ? <SelectItem value="trial">Trial</SelectItem> : null}<SelectItem value="active">Active</SelectItem><SelectItem value="overdue">Past due</SelectItem><SelectItem value="suspended">Suspended</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></label>
-              <label className="grid gap-1.5 text-[12px] font-medium">Billing cadence<Select value={billingInterval} onValueChange={(value) => edit(setBillingInterval, value as BillingInterval)}><SelectTrigger aria-label="Billing cadence" disabled={!organizationAvailable}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="annual">Annual · saves 20%</SelectItem></SelectContent></Select></label>
+          {listingDirty ? (
+            <div className="mt-4 grid gap-3 border-t border-line pt-4">
+              <label className="grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={listingReason} onChange={(event) => setListingReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={() => { setIsPublic(detail.organization.state === "available" && detail.controls.isPublic); setListingReason(""); }}>Cancel</Button>
+                <Button variant="signal" size="sm" loading={saveListing.isPending} disabled={!listingReason.trim()} onClick={() => saveListing.mutate()}><Check />Save listing</Button>
+              </div>
             </div>
-            {billingPreview ? (
-              <div className="mt-4 border border-signal/40 bg-signal-bg/60 px-4 py-3 text-[11.5px] leading-relaxed" role="note" aria-label="Billing preview">
-                <p className="flex items-start gap-2 font-semibold"><Receipt className="mt-0.5 size-3.5 shrink-0" aria-hidden />What happens when you save</p>
-                <ul className="mt-2 grid gap-1 text-ink-2">
-                  {billingPreview.lines.map((line) => <li key={line}>{line}</li>)}
-                </ul>
-              </div>
-            ) : (
-              <div className="mt-4 border border-line bg-sunken/60 px-4 py-3 text-[10.5px] leading-relaxed text-ink-2" role="note">
-                <p className="flex items-start gap-2 font-medium"><CalendarClock className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Billing runs itself: changing the plan, status, or cadence starts the new paid term today, issues its invoice, and carries any unused paid days forward automatically.</p>
-              </div>
-            )}
-            <label className="mt-4 grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" disabled={!organizationAvailable} /></label>
-            <div className="mt-4 flex items-start justify-between gap-4 border-t border-line pt-4">
-              <div>
-                <p className="text-[12px] font-medium">Public directory listing</p>
-                <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while this subscription is not active or in trial." : "Already suppressed because this directory row is not provisioned."}</p>
-                {!publicListingAllowed ? <p className="mt-2 flex items-start gap-1.5 text-[10.5px] text-warning"><CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden />{organizationAvailable ? "Save controls to persist this listing as hidden from public discovery." : "Complete the provisioning workflow before managing this listing; no save is available for cleanup-only rows."}</p> : null}
-              </div>
-              <Switch checked={publicListingAllowed && isPublic} onCheckedChange={(value) => edit(setIsPublic, value)} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
-            </div>
-          </fieldset>
+          ) : null}
         </section>
 
         <section className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-danger/30 bg-danger-bg p-5">
@@ -235,51 +206,6 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
-          <section className="border border-line bg-surface">
-            <div className="border-b border-line px-5 py-4"><p className="eyebrow">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div>
-            <div className="divide-y divide-line">
-              {detail.branches.state === "available" && detail.branches.value.length > 0 ? detail.branches.value.map((branch) => (
-                <div key={branch.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center">
-                  <div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-3"><MapPin className="size-3" />{branch.address || "Not available"}</p><p className="mt-1 text-[10.5px] text-ink-3">Code {branch.code} · {branch.status}</p></div>
-                  <p className="text-[11px] text-ink-3">Branch actions are not configured</p>
-                </div>
-              )) : <UnavailableBlock field={detail.branches} empty="No branches recorded" />}
-            </div>
-            <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-5">
-              <Usage icon={<Users />} label="Active staff" field={detail.usage.activeStaffCount} />
-              <Usage icon={<Users />} label="Staff plan limit" field={detail.usage.staffLimit} />
-              <Usage icon={<Building2 />} label="Storage" field={detail.usage.storage} />
-              <Usage icon={<CalendarClock />} label="Automation rules" field={detail.usage.automationRuleCount} />
-              <Usage icon={<CreditCard />} label="Payment records" field={detail.usage.paymentTransactionCount} />
-            </div>
-          </section>
-
-          <div className="grid gap-5">
-            <section className="border border-line bg-surface p-5">
-              <p className="eyebrow">Account owner</p>
-              {detail.owner.state === "available" ? <><h2 className="mt-2 text-[17px] font-semibold">{detail.owner.value.name}</h2><div className="mt-5 grid gap-3 text-[11.5px] text-ink-2"><p className="flex items-center gap-2"><Mail className="size-3.5 text-ink-3" />{detail.owner.value.email}</p><p className="flex items-center gap-2"><Phone className="size-3.5 text-ink-3" />{detail.owner.value.phone || "Not available"}</p></div></> : <UnavailableValue state={detail.owner.state} className="mt-3" />}
-            </section>
-            <section className="night-surface bg-night p-5 text-night-ink">
-              <p className="eyebrow-night">Subscription facts</p>
-              <dl className="mt-5 grid gap-3 text-[12px]">
-                <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
-                <FactRow label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></FactRow>
-                <FactRow label="Status"><FieldValue field={detail.subscription.status} render={statusLabel} /></FactRow>
-                <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
-                <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></FactRow>
-                <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} /></FactRow>
-                <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
-                <FactRow label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></FactRow>
-              </dl>
-            </section>
-          </div>
-        </div>
 
         <section className="mt-5 border border-line bg-surface">
           <div className="border-b border-line px-5 py-4"><p className="eyebrow">Account activity</p><h2 className="mt-1 text-[17px] font-semibold">Platform timeline</h2></div>
@@ -312,60 +238,6 @@ function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["statu
 
 function normalizePublicListing(isPublic: boolean, status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
   return isPublic && isPublicSubscriptionStatus(status);
-}
-
-export function subscriptionDraftIsDirty(
-  detail: PlatformGymDetail,
-  draft: {
-    status: PlatformGymDetail["controls"]["status"] | undefined;
-    plan: PlatformGymDetail["controls"]["plan"] | undefined;
-    billingInterval: BillingInterval;
-    isPublic: boolean;
-  },
-): boolean {
-  return draft.status !== detail.controls.status
-    || draft.plan !== detail.controls.plan
-    || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval)
-    || draft.isPublic !== detail.controls.isPublic;
-}
-
-function subscriptionMaterialChange(
-  detail: PlatformGymDetail,
-  draft: Pick<Parameters<typeof subscriptionDraftIsDirty>[1], "status" | "plan" | "billingInterval">,
-): boolean {
-  return draft.status !== detail.controls.status
-    || draft.plan !== detail.controls.plan
-    || draft.billingInterval !== readBillingInterval(detail.subscription.billingInterval);
-}
-
-/**
- * Situation-aware preview for the inline controls. Non-active drafts explain
- * their consequence; active drafts delegate to the shared billing projection
- * that mirrors the server's invoice-and-credit rules.
- */
-export function subscriptionBillingPreview(
-  detail: PlatformGymDetail,
-  draft: { status: PlatformGymDetail["controls"]["status"] | undefined; plan: PlatformGymDetail["controls"]["plan"]; billingInterval: BillingInterval },
-  planCatalog: PlatformSaasPlan[],
-  now = Date.now(),
-): { lines: string[] } {
-  if (draft.status === "suspended") return { lines: ["Access is suspended immediately and the gym leaves public discovery.", "No invoice is issued; the paid-through date stays on record."] };
-  if (draft.status === "cancelled") return { lines: ["The subscription is cancelled and the gym leaves public discovery.", "No invoice is issued."] };
-  if (draft.status !== "active") return { lines: ["No billing change: invoices are only issued when the subscription is active."] };
-  return {
-    lines: subscriptionBillingLines({
-      currentStatus: detail.controls.status,
-      currentPeriodEndsAt: detail.subscription.currentPeriodEndsAt.state === "available" ? detail.subscription.currentPeriodEndsAt.value : undefined,
-      plan: draft.plan,
-      billingInterval: draft.billingInterval,
-      priceMinor: planCatalog.find((item) => item.name === draft.plan)?.priceMinor,
-      now,
-    }),
-  };
-}
-
-function readBillingInterval(field: PlatformGymDetail["subscription"]["billingInterval"]): BillingInterval {
-  return field?.state === "available" ? field.value : "monthly";
 }
 
 function billingIntervalLabel(value: BillingInterval): string {

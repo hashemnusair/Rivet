@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Receipt, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,11 +26,13 @@ const STEPS: Array<{ key: Step; label: string }> = [
  * subscription-change mutation the gym detail page uses, so the server keeps
  * owning every date, credit, and invoice.
  */
-export function BillGymWizard({ open, onOpenChange, gyms, plans }: {
+export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gyms: MarketplaceGym[];
   plans: PlatformSaasPlan[];
+  /** Skip the gym step and open directly on this tenant's plan step. */
+  initialGymId?: string;
 }) {
   const [step, setStep] = useState<Step>("gym");
   const [search, setSearch] = useState("");
@@ -62,6 +64,17 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans }: {
     setCadence("monthly");
     setReason("");
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const preselected = initialGymId ? billableGyms.find((item) => item.id === initialGymId) : undefined;
+    if (preselected) {
+      setGymId(preselected.id);
+      setPlan(preselected.rivetPlan);
+      setCadence(preselected.billingInterval ?? "monthly");
+      setStep("plan");
+    }
+  }, [open, initialGymId, billableGyms]);
 
   const close = (next: boolean) => {
     if (!next) reset();

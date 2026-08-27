@@ -2,6 +2,34 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Billing owns subscriptions; gym pages are informational — 27 August 2026
+
+- Per the owner's direction, every subscription action now lives on the
+  Billing page and the gym detail page is purely informational.
+  - Billing gained a **Gym subscriptions** section: every provisioned tenant
+    with live plan · cadence, status badge, and paid-through date, plus
+    per-row actions — **Change plan** / **Reactivate & bill** (opens the
+    billing wizard preselected on that tenant at the plan step) and
+    **Suspend** / **Cancel** (reasoned confirmation dialogs that promise "no
+    invoice is issued; the paid-through date stays on record").
+  - The gym detail page lost the plan/status/cadence editing card and the
+    Suspend header button. It keeps identity, branches, usage, owner, the
+    read-only subscription facts, the platform timeline, archiving, and a
+    standalone **Public directory listing** card (toggle + audited reason).
+    Both "Manage subscription" and the facts card's "Manage in Billing" link
+    deep-link to `/platform/billing?bill=<gymId>`, which auto-opens the
+    wizard on that tenant.
+- Unit suite still 886 (info-only detail tests, a Gym subscriptions suite,
+  wizard preselect, and the deep-link test replaced the removed editing
+  tests). The platform entitlements and public-experience Playwright specs
+  were rewritten to drive tier changes and suspension from the billing page;
+  the staging provisioning spec's cleanup helper now suspends from billing
+  too. Verified end-to-end in the mock browser: suspend from the table →
+  row flips to "Reactivate & bill" → wizard reactivation billed a fresh
+  month (paid through 27 Sept 2026, no credit from a suspended state) with
+  the Subscription change invoice in the ledger, and the gym page renders
+  info-only with working deep links.
+
 ## "Bill a gym" guided walkthrough — 27 August 2026
 
 - The billing page gained a **Bill a gym** wizard (three steps: choose gym →

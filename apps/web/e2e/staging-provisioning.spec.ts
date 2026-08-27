@@ -46,14 +46,12 @@ test.describe("staged provisioning", () => {
       gymUrl = platform.url();
       cleanupEntry = cleanup.plan({ targetType: "provisioned_gym", targetId: gymUrl.split("/").at(-1), action: "suspend", reason: "Disposable provisioning journey workspace" });
 
-      await platform.getByRole("button", { name: "Suspend", exact: true }).click();
-      await platform.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
-      await platform.getByRole("button", { name: "Save controls", exact: true }).click();
-      await expect(platform.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+      const suspendedInline = await suspendGymFromBilling(platform, gymName);
+      if (!suspendedInline) throw new Error("The provisioned staging gym could not be suspended from the billing page.");
       cleanup.complete(cleanupEntry);
     } finally {
       if (gymUrl && cleanupEntry !== undefined) {
-        const suspended = await suspendGym(platform, gymUrl);
+        const suspended = await suspendGymFromBilling(platform, gymName);
         if (suspended) cleanup.complete(cleanupEntry);
         else cleanup.fail(cleanupEntry, "Provisioned staging gym could not be suspended");
       }
@@ -64,16 +62,21 @@ test.describe("staged provisioning", () => {
   });
 });
 
-async function suspendGym(page: import("@playwright/test").Page, gymUrl: string): Promise<boolean> {
+/** Subscription actions live on the billing page; a second call is a no-op
+ * when the row already offers reactivation instead of suspension. */
+async function suspendGymFromBilling(page: import("@playwright/test").Page, gymName: string): Promise<boolean> {
   try {
-    await page.goto(gymUrl, { waitUntil: "domcontentloaded" });
-    const suspend = page.getByRole("button", { name: "Suspend", exact: true });
+    await page.goto("/platform/billing", { waitUntil: "domcontentloaded" });
+    const row = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: new RegExp(gymName) });
+    await expect(row).toBeVisible();
+    const suspend = row.getByRole("button", { name: "Suspend", exact: true });
     if (await suspend.count()) {
       await suspend.click();
-      await page.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
-      await page.getByRole("button", { name: "Save controls", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: /Suspend .*\?/ });
+      await dialog.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
+      await dialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
     }
-    await expect(page.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
     return true;
   } catch {
     return false;

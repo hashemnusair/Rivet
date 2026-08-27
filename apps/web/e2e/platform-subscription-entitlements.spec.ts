@@ -3,40 +3,43 @@ import { expect, test, type Page } from "@playwright/test";
 type SubscriptionPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
 /**
- * Return to the platform gym record between tier rounds. History unwinding is
- * unreliable here: the workspace tours coalesce client-side entries and a
- * back-restored document re-enters the console at its root. Reloading the
- * record mirrors the test's opening navigation instead. Each tier round stays
- * reload-free between the platform save and the gym-workspace observation,
- * which is the realtime entitlement contract this suite proves.
+ * Return to the billing subscription controls between tier rounds. History
+ * unwinding is unreliable here: the workspace tours coalesce client-side
+ * entries and a back-restored document re-enters the console at its root.
+ * Reloading billing mirrors the test's opening navigation instead. Each tier
+ * round stays reload-free between the platform save and the gym-workspace
+ * observation, which is the realtime entitlement contract this suite proves.
  */
-async function returnToPlatformGym(page: Page) {
-  await page.goto("/platform/gyms/forge-fitness");
-  await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+async function returnToBilling(page: Page) {
+  await page.goto("/platform/billing");
+  await expect(page.getByRole("heading", { name: "Gym subscriptions", exact: true })).toBeVisible();
 }
 
-async function openGymSubscriptionEditor(page: Page, plan: SubscriptionPlan, reason: string, options: { assertBillingPreview?: boolean; cadence?: "Monthly" | "Annual" } = {}) {
-  await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
-  await page.getByLabel("Gym plan").click();
-  await page.getByRole("option", { name: plan, exact: true }).click();
+async function changeSubscriptionFromBilling(page: Page, plan: SubscriptionPlan, reason: string, options: { assertBillingPreview?: boolean; cadence?: "Monthly" | "Annual" } = {}) {
+  await expect(page).toHaveURL(/\/platform\/billing$/);
+  // Subscription work lives on the billing page; gym pages are informational.
+  // Scope to the subscriptions section: after a save, the invoice ledger
+  // below also contains rows naming the gym.
+  const subscriptions = page.locator('section[aria-labelledby="gym-subscriptions-heading"]');
+  const row = subscriptions.getByRole("row", { name: /Forge Fitness Club/ });
+  await row.getByRole("button", { name: /Change plan|Reactivate & bill/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Bill a gym" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("radio", { name: new RegExp(`^${plan} `) }).click();
   if (options.cadence) {
     // The demo tenant reseeds on a full navigation, so a round that targets
     // the seeded tier flips the cadence to stay a real, billable save.
-    await page.getByLabel("Billing cadence").click();
-    await page.getByRole("option", { name: new RegExp(options.cadence) }).click();
+    await dialog.getByRole("radio", { name: new RegExp(options.cadence) }).click();
   }
+  await dialog.getByRole("button", { name: /Review/ }).click();
   if (options.assertBillingPreview) {
-    // The paid boundary is server-derived now: no date input exists, and the
-    // preview explains the invoice the save will issue.
-    await expect(page.getByLabel("Membership end date")).toHaveCount(0);
-    await expect(page.getByText("What happens when you save", { exact: true })).toBeVisible();
-    await expect(page.getByText(/An invoice for JOD .* is issued today\./)).toBeVisible();
+    await expect(dialog.getByText("What happens when you save", { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/An invoice for JOD .* is issued today\./)).toBeVisible();
   }
-  await page.getByLabel("Reason for this change").fill(reason);
-  await expect(page.getByRole("button", { name: "Save controls", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Save controls", exact: true }).click();
-  await expect(page.getByText("Gym subscription controls saved and audited.", { exact: true }).last()).toBeVisible();
-  await expect(page.getByLabel("Gym plan")).toContainText(plan);
+  await dialog.getByLabel("Reason for this change").fill(reason);
+  await dialog.getByRole("button", { name: /Confirm & bill/ }).click();
+  await expect(page.getByText("Subscription saved. The term invoice is now in the ledger below.", { exact: true }).last()).toBeVisible();
+  await expect(row).toContainText(plan);
 }
 
 async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth") {
@@ -112,10 +115,9 @@ test.describe("RIVET platform subscription entitlements", () => {
 
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();
-    await page.goto("/platform/gyms/forge-fitness");
-    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+    await returnToBilling(page);
 
-    await openGymSubscriptionEditor(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertBillingPreview: true });
+    await changeSubscriptionFromBilling(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertBillingPreview: true });
 
     // The platform mutation response is consumed by the active gym session
     // without a logout or page reload. The navigation and route gate must
@@ -124,16 +126,16 @@ test.describe("RIVET platform subscription entitlements", () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectRestrictedWorkspace(page, "Starter");
 
-    await returnToPlatformGym(page);
-    await openGymSubscriptionEditor(page, "Growth", "Verify Growth operations access boundary.");
+    await returnToBilling(page);
+    await changeSubscriptionFromBilling(page, "Growth", "Verify Growth operations access boundary.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectRestrictedWorkspace(page, "Growth");
 
-    await returnToPlatformGym(page);
+    await returnToBilling(page);
 
-    await openGymSubscriptionEditor(page, "Pro", "Restore Pro access and verify immediate module unlocks.", { cadence: "Annual" });
+    await changeSubscriptionFromBilling(page, "Pro", "Restore Pro access and verify immediate module unlocks.", { cadence: "Annual" });
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -142,9 +144,9 @@ test.describe("RIVET platform subscription entitlements", () => {
     // Pro and Enterprise both expose the complete five-pillar workspace. The
     // second transition proves the fourth tier does not accidentally lose the
     // reporting link while the catalog expands.
-    await returnToPlatformGym(page);
+    await returnToBilling(page);
 
-    await openGymSubscriptionEditor(page, "Enterprise", "Verify Enterprise retains every workspace module.");
+    await changeSubscriptionFromBilling(page, "Enterprise", "Verify Enterprise retains every workspace module.");
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);

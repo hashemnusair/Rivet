@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformGymDetail } from "@/lib/api/GymOSApi";
 import GymAdminDetail from "./gym-admin-detail";
@@ -15,15 +14,10 @@ const state = vi.hoisted(() => ({
   mutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
   api: { updatePlatformGym: vi.fn(), archivePlatformGym: vi.fn() },
-  listPublicSaasPlans: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
-}));
-
-vi.mock("@/lib/api/client", () => ({
-  getApi: () => ({ listPublicSaasPlans: state.listPublicSaasPlans }),
 }));
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
@@ -83,46 +77,32 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
   };
 }
 
-describe("Gym admin detail subscription controls", () => {
+describe("Gym admin detail (informational record)", () => {
   beforeEach(() => {
     state.query = { data: detail(), isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     state.mutate.mockReset();
     state.invalidate.mockClear();
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
     state.api.archivePlatformGym.mockReset().mockResolvedValue(undefined);
-    state.listPublicSaasPlans.mockReset().mockResolvedValue([
-      { name: "Starter", priceMinor: 79_000 },
-      { name: "Growth", priceMinor: 149_000 },
-      { name: "Pro", priceMinor: 249_000 },
-      { name: "Enterprise", priceMinor: 500_000 },
-    ]);
     Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", { configurable: true, value: () => false });
     Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: () => undefined });
     Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", { configurable: true, value: () => undefined });
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
   });
 
-  it("owns every lifecycle date on the server and explains the automatic billing", () => {
+  it("keeps the page informational and routes subscription work to the billing page", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
-    expect(screen.queryByLabelText("Trial ends")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Subscription started")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Cancelled on")).not.toBeInTheDocument();
-    // The paid boundary is server-derived; there is no date to type anymore.
+    // No subscription editing controls live here anymore.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Suspend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save controls" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Membership end date")).not.toBeInTheDocument();
-    expect(screen.getByText(/Billing runs itself/)).toBeInTheDocument();
-    expect(screen.getByText("Trial ends")).toBeInTheDocument();
-    expect(screen.getByText("Period ends")).toBeInTheDocument();
-    expect(screen.getAllByText("Billing cadence").length).toBeGreaterThanOrEqual(2);
-  });
 
-  it("does not offer a new trial to an established active gym", async () => {
-    const user = userEvent.setup();
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    await user.click(screen.getByRole("combobox", { name: "Subscription status" }));
-
-    expect(screen.queryByRole("option", { name: "Trial" })).not.toBeInTheDocument();
+    // The facts stay, and both entry points deep-link into billing.
+    expect(screen.getByText("Subscription facts")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Manage subscription/ })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
+    expect(screen.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
   });
 
   it("renders the canonical logo and keeps initials as the missing-logo fallback", () => {
@@ -143,99 +123,38 @@ describe("Gym admin detail subscription controls", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Cleanup-only record");
-    expect(screen.getByRole("button", { name: "Suspend" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Manage subscription/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Marketplace profile unavailable" })).toBeDisabled();
     expect(screen.getByText("Already suppressed because this directory row is not provisioned.")).toBeInTheDocument();
-    expect(screen.getByText(/no save is available for cleanup-only rows/i)).toBeInTheDocument();
-    expect(screen.getAllByRole("combobox").every((control) => (control as HTMLButtonElement).disabled)).toBe(true);
     expect(screen.getByLabelText("Public directory listing")).toBeDisabled();
     expect(screen.getByLabelText("Public directory listing")).not.toBeChecked();
-    expect(screen.getByRole("button", { name: "Save controls" })).toBeDisabled();
   });
 
-  it("suppresses the public listing when an operator suspends a gym", () => {
+  it("saves an audited public-listing change without touching the subscription", async () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
-    expect(screen.getByRole("switch", { name: "Public directory listing" })).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
-
-    expect(screen.getByRole("button", { name: "Suspend" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Restore access" })).not.toBeInTheDocument();
     const listingSwitch = screen.getByRole("switch", { name: "Public directory listing" });
-    expect(listingSwitch).not.toBeChecked();
-    expect(listingSwitch).toBeDisabled();
-    expect(screen.getByText("Suppressed while this subscription is not active or in trial.")).toBeInTheDocument();
+    expect(listingSwitch).toBeChecked();
+    fireEvent.click(listingSwitch);
+
+    const save = screen.getByRole("button", { name: "Save listing" });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Hide from the marketplace during rebrand." } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-1", isPublic: false, reason: "Hide from the marketplace during rebrand." });
   });
 
-  it("surfaces a stale public flag on an already suspended record for audited repair", () => {
-    state.query = { data: detail({ status: "suspended", isPublic: true }), isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    expect(screen.getByRole("switch", { name: "Public directory listing" })).not.toBeChecked();
-    expect(screen.getByRole("switch", { name: "Public directory listing" })).toBeDisabled();
-    expect(screen.getByText("Unsaved changes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save controls" })).toBeDisabled();
-  });
-
-  it("does not offer a dead marketplace link for a hidden suspended gym", () => {
+  it("shows a suppressed, locked listing for a suspended gym and points at billing to reactivate", () => {
     state.query = { data: detail({ status: "suspended", isPublic: false }), isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     render(<GymAdminDetail gymId="gym-1" />);
 
+    const listingSwitch = screen.getByRole("switch", { name: "Public directory listing" });
+    expect(listingSwitch).not.toBeChecked();
+    expect(listingSwitch).toBeDisabled();
+    expect(screen.getByText(/Reactivate it from the Billing page first/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Marketplace profile unavailable" })).toBeDisabled();
-    expect(screen.queryByRole("link", { name: /Marketplace profile/i })).not.toBeInTheDocument();
-  });
-
-  it("sends an explicit hidden listing when saving a suspension and previews the consequence", () => {
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
-    expect(screen.getByText(/Access is suspended immediately/)).toBeInTheDocument();
-    expect(screen.getByText(/No invoice is issued; the paid-through date stays on record/)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Account requested a temporary pause." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
-
-    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(input).toMatchObject({ gymId: "gym-1", status: "suspended", isPublic: false, reason: "Account requested a temporary pause." });
-    expect(input.currentPeriodEndsAt).toBeUndefined();
-  });
-
-  it("submits an annual billing cadence change and previews the interval-correct invoice", async () => {
-    const user = userEvent.setup();
-    const future = detail();
-    future.subscription.currentPeriodEndsAt = available(new Date(Date.now() + 16 * 86_400_000).toISOString());
-    state.query = { data: future, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    await user.click(screen.getByRole("combobox", { name: "Billing cadence" }));
-    await user.click(screen.getByRole("option", { name: /Annual/ }));
-
-    // Preview mirrors the server: annual = monthly × 12 × 0.8, and the
-    // unused paid days on the current term carry into the new one.
-    expect(await screen.findByText(/JOD 1430\.400/)).toBeInTheDocument();
-    expect(screen.getByText(/16 unused paid days from the current term carry over/)).toBeInTheDocument();
-    expect(screen.getByText(/older unpaid subscription invoice is voided/)).toBeInTheDocument();
-
-    await user.type(screen.getByPlaceholderText("Required for the immutable platform audit trail"), "Approved annual billing.");
-    await user.click(screen.getByRole("button", { name: "Save controls" }));
-
-    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(input).toMatchObject({ gymId: "gym-1", billingInterval: "annual", reason: "Approved annual billing." });
-    expect(input.currentPeriodEndsAt).toBeUndefined();
-  });
-
-  it("omits a historical cancellation date when reactivating a cancelled gym", () => {
-    const cancelled = detail({ status: "cancelled", isPublic: false });
-    cancelled.subscription.cancelledAt = available("2026-08-01T00:00:00.000Z");
-    state.query = { data: cancelled, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
-    render(<GymAdminDetail gymId="gym-1" />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
-    fireEvent.change(screen.getByPlaceholderText("Required for the immutable platform audit trail"), { target: { value: "Reactivated after billing review." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save controls" }));
-
-    const input = state.api.updatePlatformGym.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(input).toMatchObject({ status: "active", reason: "Reactivated after billing review." });
-    expect(input).not.toHaveProperty("cancelledAt");
   });
 
   it("archives only through a confirmation dialog with an exact gym name and reason", () => {
