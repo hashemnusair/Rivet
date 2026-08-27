@@ -146,7 +146,7 @@ test.describe("RIVET gym applications", () => {
     await expect(page).toHaveURL(/\/dashboard/);
 
     await page.getByRole("button", { name: "Demo controls" }).click();
-    await expect(page.getByRole("heading", { name: /Good morning/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening)/i })).toBeVisible();
     await page.waitForTimeout(300);
     await page.getByRole("switch", { name: "Fail next public subscription" }).click();
 
