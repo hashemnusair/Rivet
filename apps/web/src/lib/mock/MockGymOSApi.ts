@@ -83,6 +83,7 @@ import {
 } from "./store";
 
 const TZ = "Asia/Amman";
+const PREVIEW_BEHAVIOR_STORAGE_KEY = "rivet.demo.behavior";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
 const MOCK_EQUIPMENT_ASSET_STATUSES: readonly T.EquipmentAssetStatus[] = ["active", "maintenance", "retired", "replaced"];
 const MOCK_EQUIPMENT_ISSUE_SEVERITIES: readonly T.EquipmentIssueSeverity[] = ["low", "medium", "high", "critical"];
@@ -90,6 +91,43 @@ const MOCK_EQUIPMENT_ISSUE_STATUSES: readonly T.EquipmentIssueStatus[] = ["open"
 const MOCK_EQUIPMENT_SAFETY_STATUSES: readonly T.EquipmentIssue["safetyStatus"][] = ["unknown", "safe_to_operate", "out_of_service"];
 const MOCK_EQUIPMENT_WORK_ORDER_STATUSES: readonly T.EquipmentWorkOrder["status"][] = ["draft", "approved", "in_progress", "completed", "cancelled"];
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
+
+function previewBehaviorStorage(): Storage | undefined {
+  if (typeof window === "undefined" || process.env.VITEST === "true" || Boolean(process.env.VITEST_WORKER_ID)) return undefined;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function readPreviewBehavior(): MockBehavior {
+  const storage = previewBehaviorStorage();
+  if (!storage) return { ...DEFAULT_BEHAVIOR };
+  try {
+    const raw = storage.getItem(PREVIEW_BEHAVIOR_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_BEHAVIOR };
+    const parsed = JSON.parse(raw) as Partial<MockBehavior>;
+    return {
+      latencyMs: typeof parsed.latencyMs === "number" && Number.isFinite(parsed.latencyMs) ? Math.max(0, parsed.latencyMs) : DEFAULT_BEHAVIOR.latencyMs,
+      failNextRequest: parsed.failNextRequest === true,
+      failNextPublicSubscription: parsed.failNextPublicSubscription === true,
+      forceEmptyLists: parsed.forceEmptyLists === true,
+    };
+  } catch {
+    return { ...DEFAULT_BEHAVIOR };
+  }
+}
+
+function persistPreviewBehavior(behavior: MockBehavior): void {
+  const storage = previewBehaviorStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(PREVIEW_BEHAVIOR_STORAGE_KEY, JSON.stringify(behavior));
+  } catch {
+    // Preview diagnostics must never make the actual adapter fail.
+  }
+}
 
 function exactCostTotal(unitCost: T.Money | undefined, quantity: number): T.Money | undefined {
   if (!unitCost || !Number.isSafeInteger(unitCost.amount) || unitCost.amount < 0 || !Number.isSafeInteger(quantity) || quantity < 0) return undefined;
@@ -594,7 +632,7 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
-  private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
+  private behavior: MockBehavior = readPreviewBehavior();
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private archivedGymIds = new Set<string>();
@@ -709,8 +747,8 @@ export class MockGymOSApi implements GymOSApi {
       ?? (this.db.brand.logoAssetId ? safeMockLogoUrl(this.mediaAssets.get(this.db.brand.logoAssetId), organizationId) : undefined);
   }
 
-  listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => publicMarketplaceGyms(this.platformGyms
+  private readMarketplaceGyms(): MarketplaceGym[] {
+    return publicMarketplaceGyms(this.platformGyms
       .filter((gym) => this.isProvisionedGym(gym) && !this.archivedGymIds.has(gym.id))
       .map((gym) => {
         const cloned = cloneMarketplaceGym(gym);
@@ -720,12 +758,16 @@ export class MockGymOSApi implements GymOSApi {
         delete cloned.archivedAt;
         delete cloned.archiveReason;
         return cloned;
-      })));
+      }));
+  }
+
+  listMarketplaceGyms(): Promise<MarketplaceGym[]> {
+    return this.respond(() => this.readMarketplaceGyms());
   }
 
   async subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
-      onValue(await this.listMarketplaceGyms());
+      onValue(await this.respond(() => this.readMarketplaceGyms(), "public"));
       this.marketplaceSubscribers.set(onValue, onError);
     } catch (error) {
       onError?.(error);
@@ -1181,7 +1223,7 @@ export class MockGymOSApi implements GymOSApi {
 
   async subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
-      onValue(this.platformPlans.map((plan) => ({ ...plan })));
+      onValue(await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public"));
       this.publicPlanSubscribers.set(onValue, onError);
     } catch (error) {
       onError?.(error);
@@ -2180,6 +2222,7 @@ export class MockGymOSApi implements GymOSApi {
 
   setBehavior(behavior: Partial<MockBehavior>): void {
     this.behavior = { ...this.behavior, ...behavior };
+    persistPreviewBehavior(this.behavior);
   }
 
   getBehavior(): MockBehavior {
@@ -2243,11 +2286,17 @@ export class MockGymOSApi implements GymOSApi {
     return Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]).then(() => undefined);
   }
 
-  private async respond<R>(fn: () => R | Promise<R>): Promise<R> {
+  private async respond<R>(fn: () => R | Promise<R>, scope: "general" | "public" = "general"): Promise<R> {
     const latency = this.behavior.latencyMs;
     if (latency > 0) await new Promise((r) => setTimeout(r, latency));
-    if (this.behavior.failNextRequest) {
+    const shouldFail = this.behavior.failNextRequest || (scope === "public" && this.behavior.failNextPublicSubscription);
+    if (shouldFail) {
       this.behavior.failNextRequest = false;
+      // Keep the public stream degraded until the visitor presses Retry (or
+      // disables the preview control). React Strict Mode mounts effects twice
+      // in development, and a one-shot failure would otherwise disappear
+      // before the public UI can exercise its recovery state.
+      persistPreviewBehavior(this.behavior);
       throw ApiError.of(ERR.FORCED_FAILURE, "Simulated failure (demo controls). Disable “Fail next request” and retry.");
     }
     return await fn();
@@ -2261,7 +2310,7 @@ export class MockGymOSApi implements GymOSApi {
   private async emitMarketplaceSubscribers(): Promise<void> {
     if (this.marketplaceSubscribers.size === 0) return;
     try {
-      const gyms = await this.listMarketplaceGyms();
+      const gyms = await this.respond(() => this.readMarketplaceGyms(), "public");
       for (const onValue of this.marketplaceSubscribers.keys()) onValue(gyms);
     } catch (error) {
       for (const onError of this.marketplaceSubscribers.values()) onError?.(error);
@@ -2291,7 +2340,7 @@ export class MockGymOSApi implements GymOSApi {
   private async emitPublicPlanSubscribers(): Promise<void> {
     if (this.publicPlanSubscribers.size === 0) return;
     try {
-      const plans = this.platformPlans.map((plan) => ({ ...plan }));
+      const plans = await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public");
       for (const onValue of this.publicPlanSubscribers.keys()) onValue(plans);
     } catch (error) {
       for (const onError of this.publicPlanSubscribers.values()) onError?.(error);

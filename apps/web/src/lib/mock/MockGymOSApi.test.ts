@@ -606,6 +606,17 @@ describe("platform subscription controls", () => {
     unsubscribe();
   });
 
+  it("can fail the next public subscription without consuming a general request failure", async () => {
+    api.setBehavior({ failNextPublicSubscription: true });
+    const errors: unknown[] = [];
+    const unsubscribe = await api.subscribePublicSaasPlans(() => undefined, (error) => errors.push(error));
+
+    expect(errors).toEqual([expect.objectContaining({ code: ERR.FORCED_FAILURE })]);
+    expect(api.getBehavior().failNextPublicSubscription).toBe(true);
+    unsubscribe();
+    api.setBehavior({ failNextPublicSubscription: false });
+  });
+
   it("returns target-scoped tenant facts and explicit provider gaps", async () => {
     const forge = await api.getPlatformGymDetail("forge-fitness");
     expect(forge.organization).toMatchObject({ state: "available", value: { name: "Forge Fitness Club" } });

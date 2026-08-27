@@ -8,7 +8,7 @@ import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
-import { refreshFailureState } from "@/lib/public/experience-refresh";
+import { refreshFailureState, startExperienceSubscription } from "@/lib/public/experience-refresh";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -139,6 +139,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   }, [convexMode, customer, registered]);
 
   const retryExperience = useCallback(() => {
+    // ConvexGymOSApi intentionally ignores mock behavior controls. In the
+    // preview adapter this clears an injected public-stream degradation before
+    // the fresh subscriptions below are created.
+    getApi().setBehavior({ failNextPublicSubscription: false });
     setExperienceAttempt((attempt) => attempt + 1);
   }, []);
 
@@ -195,59 +199,72 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // including edits made by an administrator while a public page is open.
   useEffect(() => {
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
+    catalogReadyRef.current = false;
     const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
     const platformIdentity = identity.status === "ready" && identity.platformAdmin;
     const onError = (error: unknown) => {
       if (cancelled) return;
+      catalogReadyRef.current = false;
       const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh its live pricing catalog.";
-      const failure = refreshFailureState(catalogReadyRef.current, message);
+      const failure = refreshFailureState(experienceHydratedRef.current, message);
       setExperienceError(failure.message);
       setExperienceRefreshing(failure.showStaleNotice);
       setExperienceStatus(failure.status);
-      if (!catalogReadyRef.current && !platformIdentity) setExperienceReady(false);
+      if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
     };
-    void getApi().subscribePublicSaasPlans((plans) => {
-      if (cancelled) return;
-      setSaasPlans(plans);
-      catalogReadyRef.current = true;
-      if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
-    }, onError).then((disposer) => {
-      if (cancelled) disposer();
-      else unsubscribe = disposer;
-    }).catch(onError);
-    return () => { cancelled = true; unsubscribe?.(); };
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+    const canMarkPublicReady = !memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready" || identity.status === "demo");
+    const dispose = startExperienceSubscription<PlatformSaasPlan[]>({
+      subscribe: (onValue, onSubscribeError) => getApi().subscribePublicSaasPlans(onValue, onSubscribeError),
+      label: "live pricing catalog",
+      onValue: (plans) => {
+        if (cancelled) return;
+        setSaasPlans(plans);
+        catalogReadyRef.current = true;
+        if (canMarkPublicReady) markPublicExperienceReady();
+      },
+      onError,
+    });
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [convexMode, experienceAttempt, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // Public discovery is a live projection too: profile publication, trainer
   // visibility, package pricing, subscription eligibility, and branch counts
   // update without asking visitors to refresh the page.
   useEffect(() => {
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
+    marketplaceReadyRef.current = false;
     const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
     const platformIdentity = identity.status === "ready" && identity.platformAdmin;
-    void getApi().subscribeMarketplaceGyms((gyms) => {
+    const onError = (error: unknown) => {
       if (cancelled) return;
-      setMarketplaceGyms(gyms);
-      marketplaceReadyRef.current = true;
-      if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
-    }, (error) => {
-      if (cancelled) return;
-      const message = error instanceof Error ? error.message : "RIVET could not refresh the gym directory.";
-      const failure = refreshFailureState(marketplaceReadyRef.current, message);
+      marketplaceReadyRef.current = false;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh the gym directory.";
+      const failure = refreshFailureState(experienceHydratedRef.current, message);
       setExperienceError(failure.message);
       setExperienceRefreshing(failure.showStaleNotice);
       setExperienceStatus(failure.status);
-      if (!marketplaceReadyRef.current) setExperienceReady(false);
-    }).then((disposer) => {
-      if (cancelled) disposer();
-      else unsubscribe = disposer;
-    }).catch((error: unknown) => {
-      if (!cancelled) setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
+      if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
+    };
+    const canMarkPublicReady = !memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready" || identity.status === "demo");
+    const dispose = startExperienceSubscription<MarketplaceGym[]>({
+      subscribe: (onValue, onSubscribeError) => getApi().subscribeMarketplaceGyms(onValue, onSubscribeError),
+      label: "live gym directory",
+      onValue: (gyms) => {
+        if (cancelled) return;
+        setMarketplaceGyms(gyms);
+        marketplaceReadyRef.current = true;
+        if (canMarkPublicReady) markPublicExperienceReady();
+      },
+      onError,
     });
-    return () => { cancelled = true; unsubscribe?.(); };
-  }, [convexMode, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [convexMode, experienceAttempt, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider

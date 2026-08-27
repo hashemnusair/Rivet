@@ -1006,6 +1006,8 @@ export interface MockBehavior {
   latencyMs: number;
   /** fail the next request with FORCED_FAILURE */
   failNextRequest: boolean;
+  /** fail the next public catalog or marketplace subscription */
+  failNextPublicSubscription: boolean;
   /** return empty pages for list endpoints */
   forceEmptyLists: boolean;
 }
@@ -1013,5 +1015,6 @@ export interface MockBehavior {
 export const DEFAULT_BEHAVIOR: MockBehavior = {
   latencyMs: 120,
   failNextRequest: false,
+  failNextPublicSubscription: false,
   forceEmptyLists: false,
 };

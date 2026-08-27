@@ -139,6 +139,29 @@ test.describe("RIVET member experience", () => {
 });
 
 test.describe("RIVET gym applications", () => {
+  test("recovers the public network after a preview live-subscription failure", async ({ page }) => {
+    await page.goto("/login/gym");
+    await page.getByRole("radio", { name: /Omar Al-Khatib/i }).click();
+    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    await page.getByRole("button", { name: "Demo controls" }).click();
+    await expect(page.getByRole("heading", { name: /Good morning/i })).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.getByRole("switch", { name: "Fail next public subscription" }).click();
+
+    // Preview behavior is intentionally session-scoped, so this cold public
+    // navigation exercises the same first-snapshot failure path a visitor can
+    // hit after a deployment refresh.
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText(/Showing the last known RIVET data/i)).toBeVisible();
+
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i }).first()).toBeVisible();
+    await expect(page.getByText(/Showing the last known RIVET data/i)).toHaveCount(0);
+  });
+
   test("shows four tiers, annual savings, and carries pricing selection into the application", async ({ page }) => {
     await page.goto("/#pricing");
     const pricing = page.locator("#pricing");

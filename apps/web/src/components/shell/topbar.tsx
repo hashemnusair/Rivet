@@ -158,7 +158,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             variant="ghost"
             size="icon-sm"
             aria-label="Demo controls"
-            className={cn((behavior.failNextRequest || behavior.forceEmptyLists || behavior.latencyMs !== 120) && "text-signal")}
+            className={cn((behavior.failNextRequest || behavior.failNextPublicSubscription || behavior.forceEmptyLists || behavior.latencyMs !== 120) && "text-signal")}
           >
             <Beaker />
           </Button>
@@ -198,6 +198,17 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
                 checked={behavior.failNextRequest}
                 onCheckedChange={(v) => setBehavior({ failNextRequest: v })}
                 aria-label="Fail next request"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 cursor-pointer">
+              <div>
+                <p className="text-[13px] font-medium">Fail next public subscription</p>
+                <p className="text-[12px] text-ink-3">Public streams stay degraded until Retry or this control is disabled.</p>
+              </div>
+              <Switch
+                checked={behavior.failNextPublicSubscription}
+                onCheckedChange={(v) => setBehavior({ failNextPublicSubscription: v })}
+                aria-label="Fail next public subscription"
               />
             </label>
             <label className="flex items-center justify-between gap-3 cursor-pointer">
