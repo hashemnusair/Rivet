@@ -115,7 +115,23 @@ function publicMarketplaceRows(value: unknown): MarketplaceGym[] {
 
 function errorFromConvex(error: unknown): ApiError {
   const candidate = error as { data?: unknown; message?: unknown };
-  const payload = isRecord(candidate?.data) ? candidate.data : undefined;
+  let payload = isRecord(candidate?.data) ? candidate.data : undefined;
+  // Convex ACTION failures arrive without structured data: the server error
+  // string embeds the ConvexError JSON followed by a stack trace. Extract it
+  // so operators see the domain message, never a raw "Uncaught ConvexError"
+  // blob.
+  if (!payload && typeof candidate?.message === "string") {
+    const embedded = candidate.message.match(/ConvexError:\s*(\{[\s\S]*?\})(?:\s+at\s|\s*$)/);
+    if (embedded) {
+      try {
+        const parsed: unknown = JSON.parse(embedded[1]!);
+        if (isRecord(parsed)) payload = parsed;
+      } catch {
+        // A truncated stack keeps the JSON unreadable; fall through to the
+        // generic mapping below.
+      }
+    }
+  }
   const nested = payload && isRecord(payload.error) ? payload.error : payload;
   const message = typeof candidate?.message === "string" ? candidate.message : "Convex request failed.";
   const code = nested && typeof nested.code === "string" ? nested.code : inferCode(message);

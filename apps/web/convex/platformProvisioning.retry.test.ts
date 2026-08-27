@@ -237,6 +237,36 @@ describe("gym provisioning retry convergence", () => {
     expect(finalState.application).toMatchObject({ clerkInvitationId: "replacement-provider-id", clerkInvitationStatus: "pending", provisioningStatus: "completed" });
   });
 
+  it("rejects a permanently failed application to clear the operator queue", async () => {
+    const t = convexTest(schema, modules);
+    const applicationId = "20000000-0000-4a00-8a00-000000000778";
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("users", { publicId: "platform-deadend", authSubject: "clerk-platform-deadend", email: "platform@deadend.example", fullName: "Platform Deadend", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("gymApplications", { publicId: applicationId, applicationKey: "owner@deadend.example::dead-gym", gymName: "Dead End Gym", ownerName: "Dead End Owner", email: "owner@deadend.example", contactNumber: "+962790000778", plan: "Starter", status: "approved", notificationStatus: "sent", provisioningStatus: "failed", provisioningOutcome: "permanent", provisioningError: "The application owner email belongs to a platform administrator.", submittedAt: now, updatedAt: now });
+    });
+    const platform = t.withIdentity({ subject: "clerk-platform-deadend" });
+
+    // Rejection requires the audit reason even on the dead-end path.
+    await expect(platform.mutation(internal.gymApplications.reviewRecord, { applicationId, decision: "rejected", correlationId: "cor-deadend-1" }))
+      .rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+
+    await platform.mutation(internal.gymApplications.reviewRecord, { applicationId, decision: "rejected", note: "Applicant is a platform administrator; the workspace can never provision.", correlationId: "cor-deadend-2" });
+    const state = await t.run(async (ctx) => await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", applicationId)).unique());
+    expect(state).toMatchObject({ status: "rejected" });
+    expect(state?.provisioningStatus).toBeUndefined();
+    expect(state?.provisioningError).toBeUndefined();
+
+    // A successfully provisioned approval stays immutable.
+    const provisionedId = "20000000-0000-4a00-8a00-000000000779";
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("gymApplications", { publicId: provisionedId, applicationKey: "owner2@deadend.example::live-gym", gymName: "Live Gym", ownerName: "Live Owner", email: "owner2@deadend.example", contactNumber: "+962790000779", plan: "Starter", status: "approved", notificationStatus: "sent", provisioningStatus: "completed", provisionedOrganizationId: "org-live", submittedAt: now, updatedAt: now });
+    });
+    await expect(platform.mutation(internal.gymApplications.reviewRecord, { applicationId: provisionedId, decision: "rejected", note: "Should not be possible.", correlationId: "cor-deadend-3" }))
+      .rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+  });
+
   it("persists a begin-time Clerk identity conflict as permanent", async () => {
     const t = convexTest(schema, modules);
     const applicationId = "20000000-0000-4a00-8a00-000000000782";

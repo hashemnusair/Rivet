@@ -299,7 +299,10 @@ export default function PlatformApplicationsPage() {
 }
 
 function ApplicationDetail({ application, note, setNote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
-  const finalized = application.status === "approved" || application.status === "rejected";
+  // An approved application whose provisioning failed permanently and
+  // created no workspace can still be rejected to clear the queue.
+  const provisioningDeadEnd = application.status === "approved" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
+  const finalized = (application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected";
   const noteDirty = note.trim() !== (application.reviewNotes ?? "");
   return (
     <article className="flex min-w-0 flex-col">
@@ -322,7 +325,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
 
         <aside className="space-y-5 border-t border-line pt-5 xl:border-s xl:border-t-0 xl:ps-5 xl:pt-0">
           <section><p className="eyebrow">Email delivery</p><div className="mt-3 space-y-3"><DeliveryRow label="Received confirmation" status={application.notificationStatus} /><DeliveryRow label="Decision email" status={application.reviewNotificationStatus} /></div></section>
-          {!finalized ? <section className="border-t border-line pt-5"><p className="eyebrow">Decision</p><div className="mt-3 grid gap-2"><Button variant="secondary" onClick={() => void onReview("under_review")} loading={busyDecision === "under_review"} disabled={Boolean(busyDecision) || application.status === "under_review"}><Clock3 />Mark under review</Button><Button variant="signal" onClick={() => void onReview("approved")} loading={busyDecision === "approved"} disabled={Boolean(busyDecision)}><Check />Approve application</Button><Button variant="danger" onClick={() => void onReview("rejected")} loading={busyDecision === "rejected"} disabled={Boolean(busyDecision)}><X />Reject application</Button></div></section> : null}
+          {!finalized ? <section className="border-t border-line pt-5"><p className="eyebrow">Decision</p>{provisioningDeadEnd ? <p className="mt-2 text-[11px] text-ink-2">Provisioning failed permanently, so this application can only be rejected (add the reason below).</p> : null}<div className="mt-3 grid gap-2">{!provisioningDeadEnd ? <><Button variant="secondary" onClick={() => void onReview("under_review")} loading={busyDecision === "under_review"} disabled={Boolean(busyDecision) || application.status === "under_review"}><Clock3 />Mark under review</Button><Button variant="signal" onClick={() => void onReview("approved")} loading={busyDecision === "approved"} disabled={Boolean(busyDecision)}><Check />Approve application</Button></> : null}<Button variant="danger" onClick={() => void onReview("rejected")} loading={busyDecision === "rejected"} disabled={Boolean(busyDecision)}><X />Reject application</Button></div></section> : null}
           <section className="border-t border-line pt-5 text-[10.5px] leading-relaxed text-ink-3"><p>Provisioning creates the tenant, first branch, role definitions, subscription assignment, and owner invitation in one audited workflow.</p></section>
         </aside>
       </div>

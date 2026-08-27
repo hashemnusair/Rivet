@@ -1363,10 +1363,20 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const application = this.gymApplications.find((item) => item.id === input.applicationId);
       if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
-      if (application.status === "approved" || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
+      // Parity with Convex: a permanently failed, never-provisioned approval
+      // may still be rejected to clear the operator queue.
+      const provisioningDeadEnd = application.status === "approved" && input.decision === "rejected" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
+      if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
       if (input.decision === "rejected" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Add a reason before rejecting an application.", { fieldErrors: { note: ["Required when rejecting an application"] } });
       const now = nowISO();
       application.status = input.decision;
+      if (provisioningDeadEnd) {
+        application.provisioningStatus = undefined;
+        application.provisioningCheckpoint = undefined;
+        application.provisioningOutcome = undefined;
+        application.provisioningError = undefined;
+        application.provisioningStartedAt = undefined;
+      }
       application.updatedAt = now;
       application.reviewedBy = this.actor().name;
       application.reviewNotes = input.note?.trim() || undefined;

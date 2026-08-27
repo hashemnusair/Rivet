@@ -2,6 +2,23 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Dead-end applications + readable action errors — 27 August 2026
+
+- Retrying Test 123 revealed the real, current blocker is no longer Clerk:
+  provisioning refuses because **the applicant email belongs to a platform
+  administrator** (a correct guard — admin accounts cannot own gym
+  workspaces). Two defects fixed around it:
+  - Convex **action** failures used to surface as a raw "Uncaught
+    ConvexError {json} at …" blob rendered into the page;
+    `errorFromConvex` now extracts the embedded ConvexError JSON from action
+    error strings, so operators see the domain message.
+  - An approved application whose provisioning failed permanently (and
+    provisioned nothing) was stuck forever, pinning the overview's
+    provisioning-failure counter. `reviewRecord` (+ mock and UI) now allows
+    exactly that state to be **rejected**, clearing its provisioning flags;
+    successfully provisioned approvals stay immutable. Covered by a new
+    provisioning-retry test (suite 888).
+
 ## Convex bandwidth pass + production config findings — 27 August 2026
 
 - **Indexed point lookups replace full-table scans.** `domainRecords` gained

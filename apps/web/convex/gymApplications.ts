@@ -261,7 +261,15 @@ export const reviewRecord = internalMutation({
       .withIndex("by_public_id", (q) => q.eq("publicId", args.applicationId))
       .unique();
     if (!application) domainError("NOT_FOUND", "Gym application not found.", { correlationId: args.correlationId });
-    if (application.status === "approved" || application.status === "rejected") {
+    // An approved application whose provisioning failed permanently and
+    // created no workspace is a dead end; rejecting it is the only way to
+    // clear it from the operator queue. Every other finalized state stays
+    // immutable.
+    const provisioningDeadEnd = application.status === "approved"
+      && args.decision === "rejected"
+      && application.provisioningStatus === "failed"
+      && !application.provisionedOrganizationId;
+    if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") {
       domainError("VALIDATION_ERROR", "This gym application has already been finalized.", { correlationId: args.correlationId });
     }
 
@@ -283,6 +291,15 @@ export const reviewRecord = internalMutation({
       reviewedAt: args.decision === "under_review" ? undefined : now,
       reviewedBy: admin.user.fullName,
       reviewNotes: nextReviewNotes,
+      // Rejecting a provisioning dead end clears the failure so the operator
+      // queue and overview stop flagging an application that can never ship.
+      ...(provisioningDeadEnd ? {
+        provisioningStatus: undefined,
+        provisioningCheckpoint: undefined,
+        provisioningOutcome: undefined,
+        provisioningError: undefined,
+        provisioningStartedAt: undefined,
+      } : {}),
       updatedAt: now,
     });
     await ctx.db.insert("platformAuditEvents", {
