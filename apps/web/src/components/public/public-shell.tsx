@@ -41,7 +41,7 @@ export function PublicHeader() {
     <header className="sticky top-0 z-50 border-b border-ink/10 bg-paper/90 backdrop-blur-md">
       <div className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
         <Link href="/" className="flex items-center" aria-label="RIVET home">
-          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={132} height={34} style={{ height: "auto" }} priority />
+          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={132} height={34} priority />
         </Link>
 
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
@@ -170,7 +170,7 @@ export function PublicFooter() {
     <footer className="night-surface bg-night text-night-ink">
       <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] lg:px-12">
         <div>
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={35} style={{ height: "auto" }} />
+            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
             The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.
           </p>
@@ -289,7 +289,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} style={{ height: "auto" }} priority />
+            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} priority />
             {customerSignedIn ? (
               <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
                 Member

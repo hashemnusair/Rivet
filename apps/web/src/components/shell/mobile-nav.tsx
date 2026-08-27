@@ -50,7 +50,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
 
           {/* Brand + close */}
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
-            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={{ height: "auto" }} priority unoptimized={Boolean(brandLogo)} />
+            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto" } : undefined} priority unoptimized={Boolean(brandLogo)} />
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
               aria-label="Close navigation"

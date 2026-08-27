@@ -45,7 +45,7 @@ export function Sidebar() {
           {sidebarCollapsed ? (
             <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
-            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={{ height: "auto" }} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto" } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           )}
         </Link>
       </div>
