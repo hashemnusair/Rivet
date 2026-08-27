@@ -2,6 +2,33 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Convex bandwidth pass + production config findings — 27 August 2026
+
+- **Indexed point lookups replace full-table scans.** `domainRecords` gained
+  a global `by_entity_type_public_id` index; every platform lookup that used
+  to `collect()` a whole entity table and `.find()` in JS now reads one row:
+  marketplace gyms by id (owner-recipient emails, gym.update, archive,
+  profile publish, invoice payment), platform invoices by id (issue /
+  past-due / payment / void), and customer memberships by id (two member-app
+  paths). The gym-detail invoice list and the manual-invoice cycle check now
+  scope by `by_organization_type` instead of scanning every tenant's
+  invoices. These scans grew with the invoice/membership tables, so this
+  directly cuts the DB-bandwidth overage seen on the Convex Starter usage
+  screen.
+- **Production config findings** (from a names-only env listing):
+  `RIVET_OPERATIONAL_EMAIL_LIVE` and
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` are both unset in production.
+  All operational email is therefore suppressed (the Resend keys themselves
+  are present — this, not a provider regression, explains the Aug 8→11
+  SENT→NOT CONFIGURED flip), and the hourly renewal clock exits without
+  running, so T−3 invoices/grace/suspension have never executed live. Both
+  are owner decisions to enable (Convex dashboard → prod deployment →
+  Environment Variables).
+- Test 123's provisioning failure is a bare Clerk 403 on the
+  organization-creation POST with no error payload — an instance/plan-level
+  organizations restriction is the likely cause; a console retry is the
+  next diagnostic.
+
 ## Reviewed public pages + console cleanup — 27 August 2026
 
 - **Public-page governance:** a gym's first publish stays self-serve; after

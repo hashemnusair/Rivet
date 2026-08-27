@@ -636,7 +636,7 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
 }
 
 async function platformGymOwnerRecipient(ctx: MutationCtx, gymId: string): Promise<{ organization: Organization; user: User } | null> {
-  const listing = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((record) => record.publicId === gymId);
+  const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
   const targetOrganizationId = optionalString(data(listing?.data).targetOrganizationId);
   const organization = targetOrganizationId ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique() : null;
   if (!organization) return null;
@@ -3283,8 +3283,8 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const customerMembership = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
-    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const membershipRecord = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "customerMembership").eq("publicId", membershipId)).unique();
+  const customerMembership = membershipRecord && belongsToAuthenticatedCustomer(data(membershipRecord.data), userId, optionalString(profile?.id)) ? membershipRecord : null;
   if (!customerMembership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(customerMembership.organizationId);
   if (!organization || organization.status === "suspended" || organization.status === "cancelled") domainError("NOT_FOUND", "Membership not found.");
@@ -3717,8 +3717,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
         recurringAmountMinor = billingInterval(organization.billingInterval) === "annual" ? annualPrice(configuredPrice) : configuredPrice;
       }
-      invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect())
-        .filter((row) => row.organizationId === organization._id)
+      invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
 
       // Public-page review facts: after the first self-serve publish, tenant
@@ -5259,8 +5258,8 @@ async function customerPtContext(ctx: ReadContext, membershipId: string) {
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const projection = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
-    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const projectionRecord = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "customerMembership").eq("publicId", membershipId)).unique();
+  const projection = projectionRecord && belongsToAuthenticatedCustomer(data(projectionRecord.data), userId, optionalString(profile?.id)) ? projectionRecord : null;
   if (!projection) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(projection.organizationId);
   if (!organization || !["trial", "active", "past_due"].includes(organization.status)) domainError("NOT_FOUND", "Membership not found.");
@@ -5632,7 +5631,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (typeof input.confirmation !== "string") {
       domainError("VALIDATION_ERROR", "Type the gym name exactly to confirm archiving.", { correlationId: admin.correlationId, fieldErrors: { confirmation: ["Must match the gym name exactly"] } });
     }
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
     const current = data(record.data);
     const gymName = optionalString(current.name);
@@ -5717,7 +5716,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
     }
     if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
     const targetOrganizationId = optionalString(current.targetOrganizationId);
@@ -6006,7 +6005,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const gymId = recordId(input.gymId);
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
     const current = data(record.data);
     const targetOrganizationId = optionalString(current.targetOrganizationId);
@@ -6166,7 +6165,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
     if (gymRecord.organizationId !== organization._id) domainError("CONFIGURATION_ERROR", "The gym directory record is linked to a different organization.", { correlationId: admin.correlationId });
     if (cycleKey) {
-      const existingCycle = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect())
+      const existingCycle = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .find((row) => {
           const existing = data(row.data);
           return stringValue(existing.gymId) === gymId && stringValue(existing.cycleKey) === cycleKey && stringValue(existing.status) !== "void";
@@ -6215,7 +6214,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment", "platform.invoice.void"].includes(operation)) {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const invoiceId = recordId(input.invoiceId);
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).find((row) => row.publicId === invoiceId);
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
     if (!record) domainError("NOT_FOUND", "Invoice not found.", { correlationId: admin.correlationId });
     const current = data(record.data);
     const status = stringValue(current.status);
