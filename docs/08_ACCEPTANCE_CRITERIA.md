@@ -1,17 +1,32 @@
 # 08 — Acceptance Criteria
 
+## Current implementation and evidence boundary — 28 August 2026
+
+The approved runtime for this repository is Next.js App Router + Clerk +
+Convex + Vercel, with `GymOSApi` as the page-facing boundary and
+`ConvexGymOSApi`/`MockGymOSApi` as the implementations. The older FastAPI,
+PostgreSQL, Redis, and worker assumptions below are superseded. Credential-free
+repository evidence is current and recorded in `CURRENT_STATE.md`; authenticated
+isolated staging, provider configuration, and Production acceptance remain open
+where marked.
+
+The current local gate is: 148 Vitest files / 913 tests, 14 repository safety
+tests, application and Convex typechecks, lint plus secret-output audit, a
+51-route Next production build, and 39 passed / 14 explicitly skipped
+credential-gated Playwright journeys.
+
 ## A. Frontend pass
 
 ### General
 
-- [ ] Runs locally without external services or secrets.
-- [ ] Build, lint, type-check, and tests pass.
-- [ ] Role switcher demonstrates owner, manager, salesperson, and receptionist experiences.
-- [ ] Two branches and connected realistic seed data exist.
-- [ ] Loading, empty, error, forbidden, and not-found states are reviewable.
-- [ ] RTL layout can be toggled or otherwise demonstrated.
-- [ ] All data access uses the typed client interface.
-- [ ] Mutations update mock state and related totals/timelines.
+- [x] Runs in sanctioned credential-free preview/test mode without external services or secrets.
+- [x] Build, lint, type-check, and tests pass in the current local gate.
+- [x] Role-routing coverage exercises owner, manager, salesperson, receptionist, trainer, auditor, member, and platform administrator destinations.
+- [x] Two branches and connected realistic mock seed data exist.
+- [x] Loading, empty, error, timeout, retry, forbidden, and not-found states are reviewable.
+- [x] RTL layout can be toggled or otherwise demonstrated.
+- [x] All page data access uses the typed `GymOSApi` interface.
+- [x] Mutations update mock state and related totals/timelines where the workflow is implemented.
 
 ### Owner/manager
 
@@ -30,11 +45,11 @@
 
 ### CRM
 
-- [ ] Work a new lead.
-- [ ] Log contact outcome.
-- [ ] Schedule and complete follow-up.
-- [ ] Convert a lead to a member.
-- [ ] Work expiring/expired renewal queues.
+- [x] Work a new lead, including a valid phone-only lead and normalized optional email.
+- [x] Log contact outcome and preserve it in the lead timeline.
+- [x] Schedule and complete follow-up/trial outcomes, including cancellation and no-show.
+- [x] Convert a lead to a member through the supported sale path.
+- [x] Work expiring/expired renewal queues in the credential-free workflow.
 
 ### Reception
 
@@ -61,11 +76,11 @@
 
 ### Platform
 
-- [ ] Local web, API, database, Redis, and worker startup is documented.
-- [ ] Migrations run from a fresh database.
-- [ ] Seed command recreates the approved demo scenario.
-- [ ] Health/readiness endpoints work.
-- [ ] Structured request/job logging exists.
+- [x] Local Next.js web and Convex/mock preview startup is documented.
+- [x] Convex schema/code generation and TypeScript checks replace the former database-migration acceptance assumption.
+- [x] Mock reset and the explicit development/preview seed workflow recreate the approved demo scenario; Production seeding is prohibited.
+- [ ] Provider health/readiness and exact-target Production checks are complete.
+- [x] Redacted Convex correlation logging and repository secret-output auditing are covered; provider observability remains an operator gate.
 
 ### Authentication and tenancy
 
@@ -91,19 +106,24 @@
 
 ### Integration
 
-- [ ] `HttpGymOSApi` implements the approved frontend interface.
-- [ ] No page directly embeds backend-specific fetch logic.
-- [ ] Form validation errors map correctly.
-- [ ] Mock mode remains available or is cleanly removable.
+- [x] `ConvexGymOSApi` implements the approved `GymOSApi` interface.
+- [x] No page directly embeds backend-specific data-access logic.
+- [x] Form validation and Convex domain errors map to actionable UI states.
+- [x] `MockGymOSApi` remains an explicit preview/test implementation; Production builds fail closed to Convex.
 
 ### Tests
 
-- [ ] Unit tests cover money, membership, check-in, permission, and automation logic.
-- [ ] Integration tests cover transactions, constraints, audit, and tenant isolation.
-- [ ] End-to-end tests cover the six workflows listed in the backend task.
-- [ ] CI runs build, lint, type-check, migrations check, and tests.
+- [x] Unit tests cover money, membership, check-in, permission, CRM progression, public recovery, and automation logic.
+- [x] Convex handler tests cover transactions, validation, audit, authorization, and tenant isolation for implemented domains.
+- [x] Credential-free Playwright covers the implemented role, public, CRM, finance, operations, and platform journeys; 14 staging/Convex journeys remain explicitly credential-gated.
+- [x] CI runs frozen install, build, lint, typechecks, production dependency audit, repository diff/clean-worktree checks, tests, credential-free Playwright, and optional credential-gated Convex code generation.
 
 ## C. Product-level release gate
+
+The following is an authenticated business and release acceptance sequence,
+not a claim closed by local mock coverage. Keep it open until an approved
+isolated staging or Production run records the exact target, identities,
+cleanup, and provider evidence.
 
 Do not call the MVP complete until a seeded or pilot organization can perform this full sequence:
 

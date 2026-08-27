@@ -1,16 +1,64 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 24 August 2026 for the subscription, retail, and translation deployment
-release. This is the single canonical backlog for
+Updated 28 August 2026 for the repository-hardening sprint. This is the single
+canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
 production-verification findings, deferred work, and closure evidence. It
 consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current release index — 24 August 2026
+## Current release index — 28 August 2026
 
-Historical release sections below remain for traceability. The categories here are the canonical active list for this release; do not duplicate these items in a new backlog.
+The implementation tip for this sprint is `e06bb8b`, pending the final
+documentation commit and push. The verified credential-free gate is 148 Vitest
+files / 913 tests, 14 repository safety tests, both TypeScript checks, lint and
+secret-output audit, a 51-route production build, 39 passed / 14 explicitly
+skipped credential-gated Playwright journeys, `pnpm audit --prod` with no
+known vulnerabilities, and a clean worktree. The 14 skipped journeys remain
+open staging/Convex evidence, not failures.
+
+### Completed repository slices
+
+- [x] Upgrade the matching Next.js and Next ESLint packages to the current
+  compatible patch and remove the old production vulnerability chain with a
+  regenerated lockfile.
+- [x] Make public catalog and marketplace retry create fresh listeners, bound
+  first snapshots with timeouts, retain the last good snapshot, preserve safe
+  fallback plans, and recover after timeout or subscription failure.
+- [x] Normalize/validate lead identity, enforce tenant-safe active lead-owner
+  assignment, add audited contact correction, and project CRM progression from
+  persisted timeline/trial/offer/conversion/loss facts across Convex, mock,
+  lead detail, board counts, and dashboard funnel projections.
+- [x] Add credential-free mock-browser role-routing coverage for member, gym
+  staff, platform administrator, forbidden URLs, sign-out, cold refresh,
+  unavailable access, and wrong-dashboard flashes.
+- [x] Restore credential-free Playwright and repository safety gates in CI;
+  keep Convex codegen credential-gated and do not add a Production deploy.
+- [x] Remove the RIVET glyph and lockup image aspect-ratio warnings, and make
+  billing deep-link focus deterministic.
+
+### Open external and product gates
+
+- [ ] Run the exact-target Convex Production dry run/deploy only after owner
+  approval; verify Production health and aggregate checks afterward.
+- [ ] Run the credentialed isolated staging journeys, including the 14
+  credential-gated browser journeys, with disposable identities and cleanup.
+- [ ] Complete authenticated Production acceptance and any approved writes;
+  this sprint performed no Production data mutation.
+- [ ] Decide provider/product policy and activation for operational email,
+  subscription reconciliation, messaging, packaging, accounting, and billing.
+- [ ] Resolve Convex capacity/billing, backups/recovery, WAF, monitoring, and
+  operator ownership before pilot expansion.
+- [ ] Keep Arabic/final performance work and supplier marketplaces,
+  autonomous purchasing, statutory accounting, WhatsApp/SMS, and other
+  separately scoped features outside this sprint.
+
+## Historical release index — 24 August 2026
+
+The release sections below remain for chronological traceability. Their
+historical deployment evidence must not be read as evidence that the current
+repository-hardening head is deployed to Convex or Vercel Production.
 
 ### Release blockers
 
@@ -60,13 +108,14 @@ Historical release sections below remain for traceability. The categories here a
 
 - [ ] Keep supplier marketplaces, supplier portals, autonomous purchasing/replacement, adaptive music, digital advertising, demographic targeting, hardware integrations, and statutory/tax/e-invoicing claims out of this release. Reconsider only as separate scoped work.
 
-### Pre-launch cleanup
+### Pre-launch cleanup from the historical release index
 
 - [ ] Complete credentialed staging bodies and cleanup evidence for the registered journeys listed under TODO-012, plus realistic-volume/concurrency proof under TODO-007.
 - [ ] Close the remaining deployed read-only Production verification items in the issue sections below without mutating real gym data.
-- [ ] Upgrade the pinned GitHub Actions that still target Node.js 20. Current
-  runners force `actions/checkout@v4`, `actions/setup-node@v4`, and
-  `pnpm/action-setup@v4` onto Node.js 24 and emit a deprecation warning.
+- [x] Upgrade the pinned GitHub Actions from the historical v4 pins. The
+  current workflow uses `actions/checkout@v7`, `actions/setup-node@v7`, and
+  `pnpm/action-setup@v6`; the remaining cleanup items are tracked in the
+  current release index above.
 
 ### Final Arabic and optimization pass
 
@@ -345,7 +394,26 @@ The hardcoded two-branch copy is replaced by `dashboardScopeDescription`, which 
 
 The lead schema, API contract, persistence layer, detail screen, and duplicate-conversion checks support an optional email address, but the **New lead** dialog never renders an email input. A phone-only lead is valid and must remain supported, but staff currently have no way to capture an email when the prospect provides one. This weakens identity matching and prevents future email follow-up without editing the record elsewhere. The owner selector also appeared blank during Production testing even though the current gym owner was silently assigned and later appeared on the lead card; its option query only requests active salespeople and therefore cannot render the selected owner identity.
 
-The dialog now keeps the current actor visible as an owner, includes active staff beyond salespeople when the caller can read them, and provides a real **Unassigned** choice. Server-side role/assignment authorization and the full email-field test matrix remain open.
+The dialog now keeps the current actor visible as an owner, includes active
+staff beyond salespeople when the caller can read them, and provides a real
+**Unassigned** choice. The current contract is now enforced at the Convex
+boundary and mirrored by the mock adapter and frontend validation.
+
+### Implementation status
+
+- [x] Optional email is trimmed, lowercased, blank-to-undefined, and rejected
+  when malformed; phone-only leads remain valid.
+- [x] Normalized identity is preserved through lead detail and member
+  conversion, and duplicate matching remains tenant-safe.
+- [x] Owner assignment consistently accepts only active same-tenant owner,
+  manager, or sales users, rejects inactive/foreign/unknown or
+  receptionist/trainer-only targets, and preserves explicit **Unassigned**.
+- [x] Contact correction for name, phone, and optional email is authorized,
+  validated, audited with before/after facts, and recorded as a non-pipeline
+  timeline fact with clear UI dirty/success/error states.
+- [x] Convex, mock, adapter, component, authorization, audit, duplicate, and
+  browser coverage includes invalid email, self-assignment, invalid roles,
+  cross-tenant targets, conversion, and phone-only leads.
 
 ### Completion criteria
 
@@ -395,8 +463,12 @@ After a Production lead moved directly from **Contacted** to **Offer sent**, the
 
 - [x] Lead detail milestones now derive completed, current, skipped, and pending states from timeline, trial-booking, conversion, and delivered-offer facts rather than enum position alone.
 - [x] Skipped trial milestones are visibly marked and announced to assistive technology; direct contact → offer paths no longer fabricate a trial history.
-- [x] Added pure unit coverage for skipped-trial, completed-trial, and new-lead states plus a browser assertion in the CRM offer journey.
-- [ ] Board counts, dashboard funnel semantics, and all historical stage transitions still need a shared event-backed contract and production visual verification.
+- [x] Added pure unit coverage for skipped-trial, completed-trial, no-show,
+  cancelled-trial, manual/accepted/declined-offer, lost, converted, and
+  ordinal-only states plus browser assertions in the CRM journey.
+- [x] Board counts and dashboard funnel semantics now consume the same shared
+  event-backed facts. Credentialed Production visual verification remains an
+  external release gate, not a code gap.
 
 ### Completion criteria
 
@@ -619,14 +691,20 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### BUG-009 — Login and role-routing regressions need permanent browser coverage
 
-- Status: **Needs verification against current head**.
-- Evidence: earlier browser reports described admin/team sessions flickering through member pages, an extra “Access platform” step, and role errors before reaching the correct dashboard. Recent tests cover sign-out transition and role restrictions, but not every Clerk identity-to-destination path.
+- Status: **Resolved in the credential-free browser matrix; credentialed
+  provider acceptance remains open**.
+- Evidence: `apps/web/e2e/role-routing.spec.ts` covers member, owner, manager,
+  sales, reception, trainer, auditor, and platform-admin destinations, direct
+  forbidden routes, sign-out, cold refresh, unavailable-gym recovery, and
+  wrong-dashboard flash prevention. The local matrix passed 7/7 tests.
 - Risk: a valid gym owner, platform admin, or member can land on the wrong surface or see a misleading role error.
-- Fix/acceptance: add trusted/mock browser tests for member → member dashboard, gym staff → gym dashboard, platform admin → platform console, forbidden direct URLs, sign-out → login, and cold-refresh hydration. Assert no intermediate wrong-dashboard content is visible.
+- Fix/acceptance: retain the matrix in CI using the sanctioned mock seam; run
+  the provider-backed role and two-tenant acceptance only in isolated staging.
 
 ### BUG-010 — Public gym application can fail closed with no selectable plan catalog
 
-- Status: **Fallback implemented in `9931a4a`; Production verification remains pending**.
+- Status: **Fallback and credential-free timeout/retry recovery implemented;
+  Production verification remains pending**.
 - Evidence: a browser run on `/signup` showed “Plans are not available yet” and disabled the application action, even though the UI is designed to show the public catalog. The page now keeps approved launch defaults selectable while the Convex experience provider is loading or in an error state.
 - Risk: a temporary public catalog/Convex read failure blocks every new gym application instead of preserving a usable application path and clearly reporting the degraded dependency.
 - Fix/acceptance: verify the live `public.catalog` query and the default-plan fallback in both Development and Production. If the catalog is unavailable, keep the approved fallback plans selectable when safe, show a non-blocking “catalog temporarily unavailable” notice, and add a retry/telemetry path. Add a browser test for catalog success, empty, timeout, and recovery.
@@ -635,7 +713,11 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 - [x] Centralized the approved Starter/Growth/Pro launch defaults and resolve them whenever the live catalog is empty.
 - [x] Kept the application form and submit action usable during loading/error states, with a visible degraded-catalog message and retry control.
-- [x] Added focused success/fallback resolver coverage; live catalog timeout/recovery and Production browser verification remain open.
+- [x] Added bounded first-snapshot timeout, fresh-listener retry, timer/listener
+  cleanup, stale-snapshot retention, successful-recovery reset, and focused
+  component/helper plus public-browser recovery coverage.
+- [ ] Verify live catalog timeout/recovery and the Production browser path after
+  provider-backed release closure.
 
 ### BUG-011 — Provisioning retry/idempotency after an external Clerk failure needs fault-injection coverage
 
@@ -756,7 +838,8 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 
 ### TODO-005 — Error handling can silently hide background failures
 
-- Status: **Implemented locally; credentialed offline/reconnect browser verification remains open**.
+- Status: **Implemented locally; credentialed offline/reconnect browser
+  verification remains open**.
 - Evidence: provider/background refresh code contains deliberate `.catch(() => undefined)` paths for some snapshots and refreshes.
 - Risk: the UI can remain stale without a visible retry or diagnostic state, especially when Convex or Clerk is temporarily unavailable.
 - Fix/acceptance: classify expected unauthenticated/empty cases separately from network/configuration failures; preserve the last good data, surface a non-blocking stale/retry indicator, and log redacted correlation context server-side. Add offline/reconnect tests.
@@ -769,6 +852,9 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - [x] `useRealtimeApiQuery` now preserves the last good cache snapshot, switches to bounded polling only after stream failure, stops polling after recovery, and disposes the previous subscription on tenant/branch/route/record key changes.
 - [x] Add redacted server-side correlation logging at the shared Convex domain boundary; logs include only operation, correlation ID, safe error name, and safe error code.
 - [x] Add unit coverage for last-snapshot retention, listener disposal while offline, and immediate reconnect after `online`.
+- [x] Public catalog and marketplace subscriptions now share the same bounded
+  first-snapshot timeout/retry/disposal contract; retry and stale-state
+  recovery are covered in the public browser suite.
 - [ ] Run the browser offline/reconnect journey against isolated staging and verify no duplicate listeners or stale full-screen loading state.
 
 ## P1 — Security, finance, and audit hardening
@@ -960,3 +1046,7 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | BUG-020 through BUG-024 reviewed Settings/media hardening | 2026-08-12 | backend `a58166b` + matching Phase 2 release | Backend exact-target Convex Production dry run was additive with no index deletion; deploy and health check passed. Local gates passed: both typechecks, Convex codegen, zero-warning lint, 71 files / 400 tests, 41-route Production build, 24 Playwright passes with 4 credential-gated staging skips, and diff check. Persisted media expiry/promotion/deletion and direct email-set mutation coverage pass; deployed frontend read-only verification remains required. No Production tenant/product data or external email was mutated. |
 | PT, CMS, member experience, and staging-body completion | 2026-08-14 | `a374f0e` | 83 test files / 453 tests, both typechecks, Convex codegen, zero-warning lint, production build, 24 local Playwright passes, and GitHub Actions push run `31761445414` passed. Vercel Production deployment status `36Zjw9Q6wAAoXjnQW8Epc5Cdksr7` completed. Convex Production `descriptive-meerkat-589` exact-target dry run/deploy reported no index deletions, added only the two profile-event indexes, and health returned `ok`. Staging run `31761753434` passed smoke, membership lifecycle, realtime, and owner settings with cleanup; functional bodies stopped before writes at the missing manager storage secret. |
 | PT package volume-pricing correction | 2026-08-14 | `11504b9` | Replaced the fixed 12/20/30 selector with one numeric sessions field, added deterministic suggested totals and an explicit price-per-session tracker, and aligned mock/test fixtures to 12/JOD 240, 20/JOD 300, and 30/JOD 400. Local gates passed with 83 files / 454 tests and 24 Playwright passes with 14 staging-gated skips. GitHub Actions run `31803917097` passed generated-code verification, typecheck/lint/unit/build, and preview Playwright; Vercel Production deployment status `AjxuxEW8m2qGgf3hVj3K7vYU9ovU` completed. No Convex deploy or Production product-data mutation was performed. |
+| BUG-009 role-routing coverage | 2026-08-28 | `5ab98c3`, `98d1f14` | Credential-free role-routing matrix passed 7/7 focused tests and the final full Playwright run passed 39 journeys with 14 explicit staging/Convex skips. It covers member, gym-staff, platform-admin, direct-forbidden, sign-out, cold-refresh, unavailable-access, and wrong-dashboard transitions. Provider-backed role acceptance remains open. |
+| BUG-010 / TODO-005 public recovery | 2026-08-28 | `8703b6a` | Public catalog and marketplace retry/timeout/disposal behavior, stale-snapshot retention, fallback plans, and successful recovery passed focused helper/component tests and the public browser recovery journey; the final full browser run passed 39/39 credential-free journeys. Live provider and isolated-staging verification remain open. |
+| CRM identity and event progression | 2026-08-28 | `42c3e79`, `bdbb1f4`, `fb16a69` | Convex, mock, adapter, component, authorization, audit, duplicate-detection, progression, and browser coverage passed within the final 148-file / 913-test Vitest gate. Lead facts now drive detail, board, and dashboard progression; Production/staging acceptance remains open. |
+| Repository-hardening dependency, CI, image, and billing safety | 2026-08-28 | `d499e01`, `6d61979`, `49c58b4`, `4a0d63a`, `e06bb8b` | Next production audit reports no known vulnerabilities; CI includes audit/diff/clean-worktree and credential-free Playwright; RIVET image aspect warnings are gone; billing deep-link focus is deterministic. No provider configuration or Production data was changed. |

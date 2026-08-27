@@ -2,7 +2,7 @@
   "name": "rivet-gymos",
   "private": true,
   "version": "0.1.0",
-  "description": "RIVET (working title GymOS) — revenue and operations OS for gyms. Pass 1: frontend.",
+  "description": "RIVET (working title GymOS) — multi-tenant revenue and operations OS for gyms, built with Next.js, Convex, Clerk, and Vercel.",
   "scripts": {
     "dev": "pnpm --filter web dev",
     "dev:full": "pnpm --filter web dev:full",

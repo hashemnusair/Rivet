@@ -1,7 +1,8 @@
 # RIVET engineering handoff plan
 
-Last updated: 26 August 2026  
-Handoff baseline: `main` at `4b8bcc4716bcf0dd37f709004887c6c8525d91b3`
+Last updated: 28 August 2026
+Handoff baseline: implementation tip `e06bb8b`; the documentation commit is
+the final sprint handoff and its pushed SHA is recorded in the release report.
 
 ## Purpose
 
@@ -20,7 +21,9 @@ and the complete chronological implementation record is
 
 ## Current state at handoff
 
-- `main` and `origin/main` matched at `4b8bcc4` when this handoff was written.
+- The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The
+  implementation tip is `e06bb8b`; final synchronization must confirm whether
+  `origin/main` advanced before the documentation commit is pushed.
 - The web application uses Next.js, Clerk, and Convex through the existing
   `GymOSApi` boundary. Production must use Convex and fail closed when required
   configuration is missing.
@@ -32,7 +35,8 @@ and the complete chronological implementation record is
   `/finance/income-statement`, `/finance/balance-sheet`, and
   `/finance/cash-flow`. The figures are generated from posted journal facts,
   not frontend placeholders.
-- Commit `4b8bcc4` adds durable accounting-source coverage evidence, conditional
+- The preceding accounting commit `4b8bcc4` added durable accounting-source
+  coverage evidence, conditional
   and deduplicated report warnings, membership revenue recognition, and
   equipment depreciation policies. The source queue stores scope, candidate
   digest, and projection fingerprints so a report only claims completeness
@@ -47,26 +51,36 @@ and the complete chronological implementation record is
 - Native Arabic fields, RTL layout support, and IBM Plex Sans Arabic remain.
   The paid General Translation integration has been removed and is not a
   deployment dependency.
-- No Convex Production deploy or Vercel Production success is claimed for
-  `4b8bcc4`. A Git push may trigger Vercel, but its result must be checked
-  separately. Convex deployment is deliberately separate.
+- This sprint added public listener retry/timeout recovery, event-backed CRM
+  identity/assignment/progression, credential-free role-routing browser
+  coverage, CI Playwright and clean-worktree gates, the Next dependency-chain
+  repair, and RIVET image aspect-ratio fixes. Production remains Convex-backed
+  and fail-closed; the mock adapter is preview/test infrastructure only.
+- No Convex Production deploy, Vercel Production success, provider/configuration
+  change, credentialed staging run, or Production data mutation is claimed for
+  this sprint. Vercel and GitHub Actions must be checked against the exact
+  pushed SHA.
 
-## Local validation evidence for `4b8bcc4`
+## Local validation evidence for implementation tip `e06bb8b`
 
-The accounting change passed:
+The complete credential-free repository gate passed:
 
-- focused financial tests: 5 files / 45 tests;
-- complete Vitest suite: 142 files / 867 tests;
+- frozen lockfile install;
+- complete Vitest suite: 148 files / 913 tests;
+- repository deployment-safety suite: 14 tests;
 - application TypeScript and Convex TypeScript checks;
 - full ESLint and secret-output audit;
-- Next.js Production build with 51 generated static pages;
+- Next.js Production build with 51 route entries;
+- full Playwright suite: 39 passed, 14 explicit staging/Convex credential-gated
+  skips, and 0 failures;
+- `pnpm audit --prod`: no known vulnerabilities;
 - `git diff --check`;
-- focused statement UI regression after the final warning-copy adjustment:
-  12/12 tests.
+- clean worktree after generated types, build, and Playwright.
 
-No Playwright run is part of this handoff or required by the repository's push
-workflow. Browser acceptance is manual unless the owner explicitly requests a
-separate browser-testing scope.
+The 14 skipped browser journeys require explicit isolated staging/Convex
+credentials and remain non-Production evidence. The local browser run also
+emits expected development-preview Clerk, `NO_COLOR`, and occasional Next Fast
+Refresh messages; no application failure or RIVET image aspect warning remains.
 
 ## What is complete versus what is not
 

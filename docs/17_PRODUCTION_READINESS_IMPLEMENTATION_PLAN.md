@@ -2,15 +2,19 @@
 
 Status: implementation plan; no product code or production data is changed by this document.
 
-## Latest local implementation status — 25 August 2026
+## Latest local implementation status — 28 August 2026
 
-The current uncommitted working tree has implemented the planned P0/P1 slices
-for explicit branch scope, retail finance/accounting, invitation and
+The committed repository-hardening sprint implementation tip is `e06bb8b`,
+after starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The planned
+P0/P1 slices include explicit branch scope, retail finance/accounting,
+invitation and
 multi-org security, public media and abuse controls, production fail-closed
 configuration, provisioning retry preservation, real Clerk customer signup,
 atomic inventory transfers, and truthful deferred handling for Facilities and
-Automations. The primary Operations scope is Inventory, Checkout, and
-Machines.
+Automations. This sprint also adds public recovery, CRM identity/progression,
+permanent role-routing browser coverage, CI browser/repository safety gates,
+the Next production dependency repair, and RIVET image warning fixes. The
+primary Operations scope is Inventory, Checkout, and Machines.
 
 The final independent security review also fixed required upload-intent and
 storage ownership checks, member-photo branch authorization, authorization
@@ -18,22 +22,25 @@ before purchase-order and PT idempotent replay responses, and strict Clerk
 invitation/application/workspace metadata matching. External edge/IP/device
 rate limiting and provider-backed/Production verification remain open.
 
-Credential-free local validation passed: **136 Vitest files / 828 tests**,
-**14 Node deployment-safety tests**, application and Convex TypeScript checks,
-full lint and secret-output audit, the production Next build, and
+Credential-free local validation passed: **148 Vitest files / 913 tests**,
+**14 repository safety tests**, application and Convex TypeScript checks, full
+lint and secret-output audit, the production Next build with **51 route
+entries**, full Playwright with **39 passes / 14 explicit credential-gated
+skips / 0 failures**, `pnpm audit --prod` with no known vulnerabilities, and
 `git diff --check`.
 
-This is local working-tree evidence, not a deployment claim. No Playwright run,
-commit/push, Convex Production deploy, or Vercel Production deploy was
-performed. Live provider-backed invitation/signup verification and Production
-smoke, rollback, capacity/headroom, and backup/recovery gates remain to be
-completed before a live release claim.
+This is repository evidence, not a deployment claim. No Convex Production
+deploy, Vercel Production deployment check, provider/configuration change,
+credentialed staging run, or Production data mutation was performed in this
+sprint. The 14 skipped browser journeys require explicit isolated credentials;
+live provider-backed invitation/signup verification and Production smoke,
+rollback, capacity/headroom, and backup/recovery gates remain open.
 
 This plan converts the repository-wide readiness audit into an ordered engineering and verification program. It is intentionally specific about boundaries, evidence, migrations, and stop conditions because RIVET handles tenant access, member personal data, inventory, payments, receipts, cash drawers, and financial history.
 
 ## Executive summary
 
-RIVET has moved beyond a screen-level prototype. The repository contains a substantial Convex-backed multi-tenant application with Clerk identity, branch-scoped operations, subscription administration, CRM, reception, payments, receipts, shifts, accounting, PT, media, support, audit, and a production-shaped mock adapter. The latest local working-tree baseline is strong: 136 Vitest files and 828 passing tests, 14 Node deployment-safety tests, application and Convex TypeScript checks, full lint and secret-output checks, and a production Next build all pass.
+RIVET has moved beyond a screen-level prototype. The repository contains a substantial Convex-backed multi-tenant application with Clerk identity, branch-scoped operations, subscription administration, CRM, reception, payments, receipts, shifts, accounting, PT, media, support, audit, and a production-shaped mock adapter. The current credential-free gate is strong: 148 Vitest files and 913 passing tests, 14 repository safety tests, application and Convex TypeScript checks, full lint and secret-output checks, a 51-route production Next build, and 39 passed / 14 explicitly skipped credential-gated Playwright journeys.
 
 The remaining work is not another broad redesign. It is a correctness and proof phase. The highest risks are silent branch selection, incomplete retail refund/accounting behavior, invitation and production fail-closed boundaries, provisioning retry safety, and the absence of credential-complete two-tenant staging evidence. These issues can create the wrong operational record, expose data, misstate cash or profit, or make a successful deployment look functional while still using a preview path.
 
@@ -45,7 +52,9 @@ Implementation must proceed in this order. The Convex target check and dry run h
 4. Make provisioning retries preserve authoritative state.
 5. Replace the customer signup preview with a real Clerk signup flow.
 6. Verify the exact Convex target and operator shell, run the guarded dry run, and clear capacity/backup gates before staging; do not deploy Production yet.
-7. Run authenticated, isolated, two-tenant/two-branch staging acceptance without reintroducing Playwright to CI.
+7. Run authenticated, isolated, two-tenant/two-branch staging acceptance; keep
+   the credential-free Playwright suite as a permanent CI gate while
+   credentialed staging journeys remain local-only.
 8. Enable and verify platform subscription reconciliation in isolated staging, separately from member renewal jobs.
 9. Deploy the current Convex backend through the guarded wrapper strictly after staging passes, then verify the target and health.
 10. Decide and then implement the remaining P1 operational/provider surfaces: inventory transfers, automations, facilities, email, CRM offers, platform branch administration, and Arabic/RTL completion.
@@ -59,7 +68,7 @@ The plan starts from the current repository rather than the original MVP checkli
 
 ### Audit scope and evidence boundary
 
-This readiness review began against commit `fca26086af9ce603e2cac8ca1fbd7e32424953ce` on **2026-08-25**. The earlier 128 test files / 743 passing tests was the baseline for that audit; the latest working-tree evidence is recorded above as 136 Vitest files / 828 tests plus 14 Node deployment-safety tests. All of these are local/repository evidence and are not a claim that the current SHA is deployed to Convex Production. CI, Vercel, isolated staging, and Production evidence must be recorded separately against the exact SHA and target. This plan makes no claim that the current Convex backend is live.
+This readiness review began against commit `fca26086af9ce603e2cac8ca1fbd7e32424953ce` on **2026-08-25**. The earlier 128 test files / 743 passing tests and the intermediate 136 files / 828 tests are historical audit baselines; current evidence is recorded above as 148 Vitest files / 913 tests plus 14 repository safety tests. All of these are local/repository evidence and are not a claim that the current SHA is deployed to Convex Production. CI, Vercel, isolated staging, and Production evidence must be recorded separately against the exact SHA and target. This plan makes no claim that the current Convex backend is live.
 
 ### Already substantial
 
@@ -70,7 +79,9 @@ This readiness review began against commit `fca26086af9ce603e2cac8ca1fbd7e324249
 - Management reporting and ledger primitives, with append-only financial/audit facts and history-preserving archive/deletion rules.
 - Media upload/finalization authorization, sanitized public assets, brand/profile work, operational email queue primitives, automation command primitives, and native Arabic fields/RTL readiness.
 - Realtime seams and failure/stale-snapshot handling on several important surfaces.
-- Secret-safe Convex deployment and environment-name wrappers, production build validation, generated-code checks, and CI static gates.
+- Secret-safe Convex deployment and environment-name wrappers, production build
+  validation, generated-code checks, CI repository gates, and credential-free
+  Playwright coverage.
 
 ### Current evidence limits
 
@@ -78,7 +89,9 @@ This readiness review began against commit `fca26086af9ce603e2cac8ca1fbd7e324249
 - The latest Operations release includes backend changes whose Convex Production deployment is a separate release gate; confirm the exact current head and deployment before claiming it is live.
 - Credentialed staging identities and provider configuration are not assumed to exist.
 - Live operational email, WhatsApp, SMS, supplier messaging, and payment providers remain disabled unless separately approved and evidenced.
-- Playwright is not a release gate in CI. Existing local browser/E2E assets may be retained only as optional tooling until their ownership and maintenance decision is made.
+- Credential-free Playwright is a CI release gate in mock/preview mode;
+  credentialed Clerk/Convex staging journeys remain separate and are not
+  Production evidence.
 - A Convex capacity/free-plan warning is an unresolved hard pre-pilot gate; no pilot or live provider activation is approved until headroom or billing resolution is evidenced.
 
 ## Guiding rules
@@ -94,7 +107,9 @@ This readiness review began against commit `fca26086af9ce603e2cac8ca1fbd7e324249
 9. Provider absence or provider failure is shown as unavailable/failed, never as sent, paid, delivered, or connected.
 10. No Production mutation, invitation, email recipient, data cleanup, schema migration, or provider activation occurs without explicit approval for the exact target and action.
 11. Every implementation slice adds focused tests, updates the current-state/release documentation, and records what was actually verified.
-12. No Playwright job is added to CI. Browser evidence may use the approved in-app browser/manual route or an explicitly isolated local tool, but static CI remains the release floor.
+12. CI runs the sanctioned credential-free Playwright suite without Production
+    credentials. Browser evidence from credential-gated staging journeys still
+    requires the approved isolated target and cleanup record.
 
 ## Cross-cutting immutable audit contract
 
@@ -168,7 +183,10 @@ No data migration. Do not rewrite historical documentation; add a dated/current-
 
 #### Tests and evidence
 
-Use the repository’s normal `pnpm` wrappers. Do not print secrets or run value-bearing Convex environment inspection. CI must remain static plus optional credential-gated codegen; no Playwright job is required.
+Use the repository’s normal `pnpm` wrappers. Do not print secrets or run
+value-bearing Convex environment inspection. CI includes the static gate, the
+credential-free Playwright job, repository safety assertions, and optional
+credential-gated Convex codegen; it has no Production deploy step.
 
 #### Acceptance criteria
 
@@ -636,13 +654,17 @@ A release can pass local tests while wrong users enter a gym, cross-tenant ident
 - Exercise the role matrix across both gyms: platform admin, owner, manager, receptionist, salesperson, trainer, auditor, authenticated customer, and gym member, including inactive/deactivated states where applicable.
 - Verify direct protected URLs return the correct redirect/forbidden state and no sensitive SSR HTML/network payload.
 - Test offline/reconnect or stale snapshot behavior where realtime is used.
-- Use the approved in-app browser/manual/browser-client route. Do not add a Playwright CI gate; local legacy E2E files are optional and must not be called Production evidence.
+- Use the approved in-app browser/manual/browser-client route for
+  credentialed staging or Production evidence. The credential-free Playwright
+  suite is a permanent CI gate for preview behavior, but it must not be called
+  Production evidence.
 - Cleanup only disposable records, restore changed settings, and retain redacted evidence.
 
 #### Likely files/modules
 
 - `apps/web/e2e/` existing journey definitions and staging harness
-- `.github/workflows/ci.yml` only for non-browser/static or explicitly credential-gated checks
+- `.github/workflows/ci.yml` for static, credential-free browser, and explicitly
+  credential-gated codegen checks
 - `apps/web/convex/*` boundary tests
 - `src/lib/hooks/use-realtime-api.ts`
 - protected layouts: `src/app/(app)/layout.tsx`, `src/app/platform/layout.tsx`, `src/app/customer/layout.tsx`
@@ -1092,7 +1114,7 @@ Stop before supervised Production work if backup/export, exact target, operator 
 | Read-only Production verification | Correct deployment and runtime health | URL/target, health, errors, aggregate projections | Before live claims |
 | Accessibility/RTL/mobile | Operator usability | Keyboard, focus, touch, zoom, Arabic/RTL, receipt print | P2 gate |
 | Performance/read shape | Bounded reads and latency | Large fixtures, pagination, subscriptions, reports | P2 gate |
-| CI static | Repeatable repository hygiene | Typecheck, Convex typecheck/codegen, lint, tests, build, secret audit | Required on push |
+| CI repository + browser | Repeatable repository hygiene and credential-free role/public regression coverage | Typecheck, Convex typecheck/codegen, lint, tests, build, audit, diff/clean-worktree checks, mock Playwright | Required on push |
 
 ### Standard credential-free commands
 
@@ -1146,7 +1168,8 @@ The production build must run the environment validator. Do not add a secret to 
 
 - Confirm Vercel Production built the intended commit and uses the selected Production Convex URL and production Clerk classes.
 - Check public site, protected direct-route redirects/HTML, security headers, and no mock/demo state.
-- Keep CI static/codegen gates. Do not reintroduce Playwright to CI.
+- Keep CI static, credential-free browser, and optional codegen gates. Do not add
+  credentialed staging writes or a Production deploy to CI.
 
 ### Stage 6 — Supervised pilot
 
@@ -1209,7 +1232,9 @@ The readiness program is complete only when:
 - Provider delivery states are truthful; disabled providers are not described as active.
 - The agreed Automations, Facilities, CRM offers, platform branches, inventory transfer, and Arabic scope is either implemented and tested or clearly deferred without dead links.
 - Performance, accessibility, mobile, RTL, observability, backup/rollback, and support runbooks are reviewed.
-- CI remains static/codegen/build/test based and does not depend on Playwright.
+- CI includes static/codegen/build/test gates plus the credential-free mock
+  Playwright suite; it does not depend on credentialed staging or Production
+  credentials.
 - `CURRENT_STATE.md`, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, this plan, and any decision log accurately distinguish code, staging, Production, and deferred evidence.
 
 ## First implementation slice that can begin without external credentials

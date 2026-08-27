@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-26 for the Management Ledger, subscription, retail, provider-removal, and
-Operations branch/equipment working-tree update.
+Last reviewed: 2026-08-28 for the repository-hardening sprint, public
+recovery, CRM integrity, role-routing, CI, and image-warning updates.
 
 ## Purpose
 
@@ -13,6 +13,33 @@ This is the orientation and release-control document for RIVET. Use it to answer
 4. What must be verified before a real gym is invited?
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
+
+## Current repository state — 28 August 2026
+
+- The approved topology is Next.js App Router on Vercel, Clerk for identity,
+  and Convex for tenant/branch-scoped data and business rules. `GymOSApi` is
+  the page-facing boundary; `ConvexGymOSApi` is the Production implementation
+  and `MockGymOSApi` is explicit preview/test infrastructure. The former
+  FastAPI/PostgreSQL/Redis topology is not an implementation requirement.
+- The repository-hardening sprint implementation tip is `e06bb8b`, after
+  starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The local gate
+  passed with 148 Vitest files / 913 tests, 14 repository safety tests, both
+  TypeScript checks, lint and secret-output audit, a 51-route build, 39 passed
+  and 14 explicitly skipped credential-gated Playwright journeys, no known
+  production audit vulnerabilities, and a clean generated-output worktree.
+- Public catalog/marketplace subscriptions now have fresh-listener retry,
+  bounded first-snapshot timeouts, last-good-snapshot retention, and approved
+  fallback plans. CRM contact normalization/correction, owner validation,
+  audit facts, event-backed progression projections, and permanent
+  credential-free role-routing browser coverage are implemented and tested.
+- CI runs the credential-free Playwright suite with the sanctioned mock preview
+  mode, while 14 staging/Convex journeys remain skipped unless explicit
+  isolated credentials are supplied. It also audits production dependencies,
+  checks diffs, and asserts a clean worktree after build and browser tests.
+- This sprint did not deploy Convex, change Production provider configuration,
+  enable a provider or job, run credentialed staging, or mutate Production
+  data. GitHub Actions and the matching Vercel deployment remain exact-SHA
+  post-push checks; the final sprint handoff must record both results.
 
 ### Management Ledger accounting completeness — 26 August 2026 (working-tree update)
 
@@ -80,7 +107,7 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current release posture
 
-### Latest local implementation status — 25 August 2026
+### Historical implementation status — 25 August 2026
 
 The current working tree contains the implemented P0/P1 readiness slices:
 explicit branch scope with read-only **All branches**, retail
@@ -107,14 +134,16 @@ performed, no commit/push was made, and no Convex or Vercel Production deploy
 was performed. Live provider-backed invitation/signup checks and Production
 smoke, rollback, capacity/headroom, and backup/recovery gates remain open.
 
-- Current `main` is `fe86322251f5429c4f27162a0c99229ae3506a23`. It contains the
+- At that historical snapshot, `main` was
+  `fe86322251f5429c4f27162a0c99229ae3506a23`. It contained the
   default-off platform-subscription reconciliation, aggregate impact preview,
   retail refund/void recovery, and the final paid-translation-provider removal.
   The earlier Production deployment at
   `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` remains valid historical evidence
   for the subscription and retail release only; it predates this removal and
   must not be treated as verification of the current provider-free build.
-- The provider-removal commit is not yet verified in Vercel Production. The
+- The provider-removal commit was not yet verified in Vercel Production at
+  that snapshot. The
   normal Vercel build now validates the Convex/Clerk configuration and runs
   Next.js without a paid translation runtime, compiler, catalog publisher, or
   `RIVET_TRANSLATE_BUILD` switch. Native Arabic fields, IBM Plex Sans Arabic,
@@ -127,11 +156,11 @@ smoke, rollback, capacity/headroom, and backup/recovery gates remain open.
   returned `enabled: false` with zero writes, and `health:check` returned
   `status: ok`. Keep `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` absent until a
   separately approved enablement decision.
-- Browser and staging journeys remain local-only under the current CI policy.
-  The 31-journey / 14-credential-gated-skip result belongs to the prior
-  release-closure evidence; no browser journey was run for this provider-removal
-  pass. Available Production Chrome sessions had expired, so authenticated
-  acceptance remains open.
+- At the time of this provider-removal pass, browser and staging journeys were
+  local-only under the then-current CI policy. The 31-journey /
+  14-credential-gated-skip result belongs to that prior release-closure
+  evidence; the current CI/browser posture is recorded above and in Phase C.
+  Authenticated staging and Production acceptance remain open.
 
 - The application is a release candidate, not a blank scaffold. The current
   release also retains Elias's four-tier subscription/live-entitlement work,
@@ -271,6 +300,7 @@ flowchart LR
     GH["GitHub main"] --> CI["GitHub Actions"]
     GH --> V["Vercel production"]
     CI --> STATIC["Static checks + production build"]
+    CI --> BROWSER["Credential-free mock Playwright"]
     CI --> CODEGEN["Convex codegen (credential-gated)"]
     V --> WEB["Next.js application"]
     WEB --> CLERK["Clerk production identity"]
@@ -769,12 +799,25 @@ After Phase A is reported complete, the release agent should:
 
 ### Phase C — Current-head CI verification
 
-The `GymOS CI` workflow on current `main` runs the static quality gate on pushes, pull requests, and manual dispatch:
+The `GymOS CI` workflow on current `main` runs the repository and browser gates
+on pushes, pull requests, and manual dispatch:
 
 1. Frozen dependency installation, web and Convex typechecks, lint, unit/component tests, and the production build.
-2. Credential-gated Convex code generation and generated-file verification when `CONVEX_DEPLOY_KEY` is configured; otherwise an explicit skip notice is reported.
+2. Production dependency audit, `git diff --check`, and a clean-worktree
+   assertion after the build.
+3. The credential-free Playwright suite in sanctioned mock/preview mode, with
+   the browser/system dependencies it needs installed in the job, followed by
+   its own diff and clean-worktree assertions.
+4. Credential-gated Convex code generation and generated-file verification when
+   `CONVEX_DEPLOY_KEY` is configured; otherwise an explicit skip notice is
+   reported.
 
-No browser journeys, staging writes, or Clerk session secrets are used by GitHub Actions. If an isolated staging journey is needed, run the local commands in `README.md` with disposable Development Clerk/Convex data and the required cleanup.
+No staging writes, Production credentials, or Clerk session secrets are used by
+the credential-free browser job. The 14 staging/Convex journeys remain
+explicitly skipped unless their local/isolated credentials and switches are
+provided. If an isolated staging journey is needed, run the local commands in
+`README.md` with disposable Development Clerk/Convex data and the required
+cleanup.
 
 ### Phase D — Supervised production onboarding
 
@@ -841,8 +884,9 @@ route loading. Report every mismatch and stop before mutations if environments
 appear crossed.
 
 If Phase B is clean, run the manual GitHub GymOS CI workflow on current main and
-wait for the static checks, production build, and credential-gated Convex codegen
-check to complete. Do not expect browser journeys or staging writes from CI.
+wait for the repository gates, credential-free Playwright job, and
+credential-gated Convex codegen check to complete. Do not expect staging writes
+or Production credentials from CI.
 
 Then prepare the supervised Production onboarding checklist from Phase D. Do
 not submit an application, provision a tenant, send invitations, or clean up

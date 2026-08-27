@@ -84,7 +84,7 @@ The trusted smoke is the production-shaped check: Playwright reuses a signed-in 
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
 ```
 
-The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026. Browser and staging journeys remain local-only; GitHub Actions runs static checks, the production build, and credential-gated Convex code generation.
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026. The regular credential-free mock browser suite runs in GitHub Actions; trusted Clerk/Convex smoke and mutating staging journeys remain local-only and credential-gated.
 
 The full operational write check is separate and explicitly mutating: it creates one disposable member in the isolated staging deployment, verifies member → membership → card payment → check-in → timeline/audit, and archives that member in cleanup. Run it only when you intend to exercise staging writes:
 
@@ -197,9 +197,9 @@ Outbound automation delivery is sandbox/log based until an approved provider is 
 
 ## CI
 
-`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, and credential-gated Convex code generation. Codegen reports an explicit notice when its deploy key is unavailable. Browser and staging journeys are not run by GitHub Actions or Vercel; they remain available only through the local commands above.
+`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint plus secret-output audit, unit/component tests, production build, production dependency audit, diff/clean-worktree checks, the credential-free mock Playwright suite, and credential-gated Convex code generation. Codegen reports an explicit notice when its deploy key is unavailable. The 14 staging/Convex journeys remain skipped unless their explicit isolated credentials and switches are set; no staging writes or Production deploy step is present.
 
-After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/codegen checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment after merge. Application deployment remains separate from Convex data migrations.
+After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the repository plus credential-free browser/codegen checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment against the exact pushed SHA. Application deployment remains separate from Convex data migrations.
 
 ## Product boundaries
 

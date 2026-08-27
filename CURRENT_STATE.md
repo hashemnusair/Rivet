@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## Current release summary — repository-hardening sprint — 28 August 2026
+
+- The implementation tip for this sprint is `e06bb8b`. It includes the
+  production Next dependency-chain repair, public experience retry/timeout
+  recovery, CRM identity/assignment and event-backed progression hardening,
+  permanent credential-free role-routing coverage, CI browser and repository
+  safety gates, deterministic billing deep-link focus, and RIVET image warning
+  fixes. The documentation reconciliation commit follows this implementation
+  sequence; the final pushed SHA is recorded in the final handoff report.
+- The starting SHA was `e1cac31127a94659ad95f1e0f5f45f536678fa6f`, and no partner
+  commits arrived during the implementation pass before the final
+  synchronization check. `FRONTEND_HANDOFF.md` remains unchanged.
+- The verified credential-free local gate passed with frozen install, web and
+  Convex typechecks, lint plus secret-output audit, **148 Vitest files / 913
+  tests**, **14 repository safety tests**, the Next production build with **51
+  route entries**, **39 Playwright passes / 14 explicit credential-gated
+  skips / 0 failures**, `pnpm audit --prod` reporting **no known
+  vulnerabilities**, and `git diff --check`. The prior documented Vitest
+  baseline was 888 tests; no tests were silently removed.
+- The public retry path now recreates live listeners, bounds first snapshots,
+  keeps the last good data on later failures, and retains approved fallback
+  plans. CRM contact edits, owner assignment, immutable audit facts, and
+  persisted progression facts are aligned across Convex, mock, adapter, UI,
+  projections, and browser coverage. CI now runs the credential-free browser
+  suite without Production credentials and asserts a clean worktree.
+- The approved runtime is Next.js App Router + Clerk + Convex + Vercel behind
+  the `GymOSApi` boundary. Mock mode is explicit preview/test infrastructure;
+  Production remains Convex-backed and fail-closed. No Convex deployment,
+  Production provider/configuration change, credentialed staging run, or
+  Production data mutation is part of this sprint. GitHub Actions and the
+  matching Vercel deployment must be checked against the exact pushed SHA.
+- Remaining gates are the exact-target Convex Production dry run/deploy,
+  Production health and aggregate checks, credentialed isolated staging,
+  provider/product decisions, operational-email and subscription-reconciliation
+  activation, capacity/backups/recovery/WAF/monitoring ownership, and the
+  deferred Arabic/final-performance and separately scoped feature work.
+
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
 ## Dead-end applications + readable action errors — 27 August 2026
