@@ -105,11 +105,11 @@ function gymCountsDetail(counts: { trial: number; past_due: number; suspended: n
 /** Only work that actually needs the operator; quiet when there is none. */
 function AttentionStrip({ overview }: { overview: NonNullable<ReturnType<typeof useExperience>["platformSnapshot"]>["overview"] }) {
   const items = [
-    { count: overview.pendingApplications, label: "applications awaiting review", href: "/platform/applications" },
-    { count: overview.provisioningFailures, label: "provisioning failures", href: "/platform/applications" },
-    { count: overview.trialsExpiringSoon, label: "trials ending within 14 days", href: "/platform/gyms" },
-    { count: overview.pastDueAccounts, label: "past-due gym accounts", href: "/platform/billing" },
-  ].filter((item) => item.count > 0);
+    { count: overview.pendingApplications, one: "application awaiting review", many: "applications awaiting review", href: "/platform/applications" },
+    { count: overview.provisioningFailures, one: "provisioning failure", many: "provisioning failures", href: "/platform/applications" },
+    { count: overview.trialsExpiringSoon, one: "trial ending within 14 days", many: "trials ending within 14 days", href: "/platform/gyms" },
+    { count: overview.pastDueAccounts, one: "past-due gym account", many: "past-due gym accounts", href: "/platform/billing" },
+  ].filter((item) => item.count > 0).map((item) => ({ ...item, label: item.count === 1 ? item.one : item.many }));
   if (items.length === 0) return <p className="mt-3 border border-line bg-surface px-4 py-3 text-[11.5px] text-ink-3">Nothing needs your attention right now.</p>;
   return (
     <section className="mt-3 flex flex-wrap gap-2" aria-label="Needs attention">
