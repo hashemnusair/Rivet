@@ -8,6 +8,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
+import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
+import { leadStageProgress } from "@/lib/crm/lead-stage-progress";
 import type { MembershipPlan, TrialBookingStatus, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -115,9 +117,14 @@ export default function LeadDetailPageClient() {
 
   const lead = leadQuery.data;
   const trialStatus = lead.trialBooking?.status;
-  const trialDone = trialStatus === "completed" || trialStatus === "converted";
-  const saleDone = lead.stage === "won" && Boolean(lead.convertedMemberId);
-  const saleFailed = lead.stage === "lost";
+  const progressFacts = lead.progressFacts ?? deriveLeadProgressFacts(lead);
+  const progression = leadStageProgress(lead);
+  const trialMilestone = progression.find((item) => item.stage === "trial_completed");
+  const saleMilestone = progression.find((item) => item.stage === "won");
+  const trialDone = progressFacts.hasTrialCompletion && Boolean(trialMilestone);
+  const saleDone = progressFacts.hasConversion && Boolean(saleMilestone);
+  const saleFailed = progressFacts.hasLoss;
+  const trialStopped = progressFacts.hasTrialNoShow || progressFacts.hasTrialCancellation;
 
   return (
     <div className="space-y-4">
@@ -141,8 +148,8 @@ export default function LeadDetailPageClient() {
           ) : null}
         </div>
 
-        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress">
-          <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStatus === "no_show" || trialStatus === "cancelled" ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : "Not booked"} />
+        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Event-backed sales progress" data-testid="lead-stage-progress">
+          <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : progressFacts.hasTrialBooking ? "Booked" : "Not booked"} />
           <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Membership sold" : saleFailed ? "Not sold" : trialDone ? "Ready" : "After trial"} />
           <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
         </ol>

@@ -1,3 +1,5 @@
+import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
+
 /**
  * RIVET / GymOS domain types.
  *
@@ -1301,6 +1303,7 @@ export interface LeadSummary extends Lead {
   lastContactOutcome?: string;
   lastContactAt?: ISODateTime;
   overdue: boolean;
+  progressFacts?: LeadProgressFacts;
 }
 
 export type TrialBookingStatus =

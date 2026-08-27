@@ -124,4 +124,63 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(cleared).not.toHaveProperty("email");
     await expectCode(owner.mutation(api.domain.mutate, operation("leads.update_contact", { leadId: "crm-integrity-lead", fullName: "Corrected Lead", phone: "+962790001009", email: "bad" })), "VALIDATION_ERROR");
   });
+
+  it("projects persisted CRM events into summaries and the dashboard funnel", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").collect()).find((item) => item.publicId === "crm-integrity-org-a");
+      if (!organization) throw new Error("CRM integrity organization missing");
+      const branch = (await ctx.db.query("branches").collect()).find((item) => item.publicId === "crm-integrity-branch-a");
+      if (!branch) throw new Error("CRM integrity branch missing");
+      const lead = (await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "lead").eq("publicId", "crm-integrity-lead")).unique());
+      if (!lead) throw new Error("CRM integrity lead missing");
+      const now = Date.now();
+      await ctx.db.patch(lead._id, { data: { ...lead.data, stage: "offer_sent" }, updatedAt: now });
+      const event = async (publicId: string, type: string, meta?: Record<string, string>) => {
+        await ctx.db.insert("domainRecords", {
+          organizationId: organization._id,
+          entityType: "timeline",
+          publicId,
+          branchId: branch._id,
+          leadPublicId: "crm-integrity-lead",
+          createdAt: now,
+          updatedAt: now,
+          data: { id: publicId, organizationId: "crm-integrity-org-a", branchId: "crm-integrity-branch-a", leadId: "crm-integrity-lead", type, title: type, occurredAt: new Date(now).toISOString(), meta },
+        });
+      };
+      await event("crm-integrity-attempt", "call_attempt", { outcome: "answered_interested" });
+      await event("crm-integrity-trial-confirmed", "trial_confirmed");
+      await event("crm-integrity-trial-completed", "trial_completed");
+      await event("crm-integrity-offer-sent", "offer_sent");
+      await ctx.db.insert("domainRecords", {
+        organizationId: organization._id,
+        entityType: "trialBooking",
+        publicId: "crm-integrity-trial",
+        branchId: branch._id,
+        leadPublicId: "crm-integrity-lead",
+        createdAt: now,
+        updatedAt: now,
+        data: { id: "crm-integrity-trial", leadId: "crm-integrity-lead", status: "completed", preferredDate: "2026-08-28", preferredTime: "18:00" },
+      });
+      await ctx.db.insert("domainRecords", {
+        organizationId: organization._id,
+        entityType: "offer",
+        publicId: "crm-integrity-offer",
+        branchId: branch._id,
+        leadPublicId: "crm-integrity-lead",
+        createdAt: now,
+        updatedAt: now,
+        data: { id: "crm-integrity-offer", leadId: "crm-integrity-lead", planId: "plan-1", planName: "Monthly", price: { amount: 40_000, currency: "JOD" }, status: "sent", createdAt: new Date(now).toISOString() },
+      });
+    });
+
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const detail = await owner.query(api.domain.query, operation("leads.get", { leadId: "crm-integrity-lead" })) as { progressFacts: Record<string, boolean> };
+    expect(detail.progressFacts).toMatchObject({ hasAttempt: true, hasContact: true, hasTrialBooking: true, hasTrialCompletion: true, hasOfferDelivery: true, hasConversion: false, hasLoss: false });
+
+    const dashboard = await owner.query(api.domain.query, operation("dashboard")) as { kpis: { activeLeads: number }; funnel: Array<{ stage: string; count: number }> };
+    expect(dashboard.kpis.activeLeads).toBe(1);
+    expect(Object.fromEntries(dashboard.funnel.map((item) => [item.stage, item.count]))).toMatchObject({ new: 1, attempted: 1, contacted: 1, trial_booked: 1, trial_completed: 1, offer_sent: 1, won: 0, lost: 0 });
+  });
 });

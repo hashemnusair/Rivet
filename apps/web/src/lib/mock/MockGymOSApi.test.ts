@@ -1575,6 +1575,25 @@ describe("CRM", () => {
     expect(() => unsubscribe()).not.toThrow();
   });
 
+  it("projects persisted CRM activity into lead summaries and the dashboard funnel", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Event Projection Lead", phone: "+962 79 900 0450", email: "event-projection@example.com", branchId: session.branches[0]!.id, source: "walk_in" });
+    await api.logContactAttempt(lead.id, { outcome: "answered_interested", stage: "contacted" });
+    const scheduled = await api.scheduleLeadTrial(lead.id, { preferredDate: addDays(todayISODate(), 1), preferredTime: "18:00" });
+    await api.updateTrialBooking(scheduled.trialBooking!.id, { status: "completed" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const offer = await api.createOffer({ leadId: lead.id, planId: plan.id, price: plan.basePrice });
+    await api.markOfferDelivered(offer.id, { channel: "manual", reference: "manual-projection-test" });
+
+    const detail = await api.getLead(lead.id);
+    expect(detail.progressFacts).toMatchObject({ hasAttempt: true, hasContact: true, hasTrialBooking: true, hasTrialCompletion: true, hasOfferDelivery: true, hasConversion: false, hasLoss: false });
+    const dashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    const funnel = new Map(dashboard.funnel.map((item) => [item.stage, item.count]));
+    expect(funnel.get("trial_completed")).toBeGreaterThan(0);
+    expect(funnel.get("offer_sent")).toBeGreaterThan(0);
+    expect(funnel.get("won")).toBeLessThanOrEqual(funnel.get("offer_sent") ?? 0);
+  });
+
   it("logs a contact attempt, moves the stage and schedules the next follow-up", async () => {
     const leads = await api.listLeads({ pageSize: 20 });
     const lead = leads.items.find((l) => l.stage === "new")!;

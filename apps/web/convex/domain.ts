@@ -50,6 +50,7 @@ import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 import { automationAttentionHref } from "./automations";
+import { deriveLeadProgressFacts, leadProgressStageCompleted } from "../src/lib/crm/lead-progression";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -1672,12 +1673,34 @@ async function toMembershipDetail(ctx: MutationCtx | QueryCtx, actor: ActorConte
 async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(value.branchId));
   const owner = optionalString(value.ownerId) ? await userByPublicId(ctx, actor.organization._id, stringValue(value.ownerId)) : null;
-  const attempts = (await recordsOf(ctx, actor, "timeline"))
+  const [timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
+    recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "offer"),
+    recordsOf(ctx, actor, "trialBooking"),
+  ]);
+  const leadId = stringValue(value.id);
+  const activities = timelineRecords
     .map((record) => data(record.data))
-    .filter((event) => event.leadId === value.id && event.type === "call_attempt")
+    .filter((event) => event.leadId === leadId);
+  const attempts = activities
+    .filter((event) => event.type === "call_attempt")
     .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
+  const offers = offerRecords
+    .map((record) => offerProjection(data(record.data)))
+    .filter((offer) => offer.leadId === leadId);
+  const trialBooking = trialBookingRecords
+    .map((record) => data(record.data))
+    .find((booking) => booking.leadId === leadId);
+  const progressFacts = deriveLeadProgressFacts({
+    stage: optionalString(value.stage),
+    lostReason: optionalString(value.lostReason),
+    convertedMemberId: optionalString(value.convertedMemberId),
+    activities,
+    offers,
+    trialBooking,
+  });
   const nextFollowUpAt = optionalString(value.nextFollowUpAt);
-  const open = value.stage !== "won" && value.stage !== "lost";
+  const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
   return {
     ...value,
     branchName: branch?.name ?? "—",
@@ -1685,6 +1708,7 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
     lastContactOutcome: attempts[0] ? optionalString(data(attempts[0].meta).outcome) : undefined,
     lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
     overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
+    progressFacts,
   };
 }
 
@@ -1696,29 +1720,64 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
  * mapper above.
  */
 async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
-  const [branches, users, memberships, timelineRecords] = await Promise.all([
+  const [branches, users, memberships, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
     ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("users").collect(),
     ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "offer"),
+    recordsOf(ctx, actor, "trialBooking"),
   ]);
   const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
   const activeUserIds = new Set(memberships.filter((membership) => membership.active).map((membership) => membership.userId));
   const ownerNames = new Map(users.filter((user) => activeUserIds.has(user._id)).map((user) => [publicUserId(user), user.fullName]));
   const attemptsByLead = new Map<string, Data[]>();
+  const activitiesByLead = new Map<string, Data[]>();
   for (const record of timelineRecords) {
     const event = data(record.data);
     const leadId = optionalString(event.leadId);
-    if (!leadId || event.type !== "call_attempt") continue;
-    const attempts = attemptsByLead.get(leadId) ?? [];
-    attempts.push(event);
-    attemptsByLead.set(leadId, attempts);
+    if (!leadId) continue;
+    const activities = activitiesByLead.get(leadId) ?? [];
+    activities.push(event);
+    activitiesByLead.set(leadId, activities);
+    if (event.type === "call_attempt") {
+      const attempts = attemptsByLead.get(leadId) ?? [];
+      attempts.push(event);
+      attemptsByLead.set(leadId, attempts);
+    }
   }
   for (const attempts of attemptsByLead.values()) attempts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const offersByLead = new Map<string, Data[]>();
+  for (const record of offerRecords) {
+    const offer = offerProjection(data(record.data));
+    const leadId = optionalString(offer.leadId);
+    if (!leadId) continue;
+    const offers = offersByLead.get(leadId) ?? [];
+    offers.push(offer);
+    offersByLead.set(leadId, offers);
+  }
+  const trialBookingByLead = new Map<string, Data>();
+  for (const record of trialBookingRecords) {
+    const booking = data(record.data);
+    const leadId = optionalString(booking.leadId);
+    if (leadId) trialBookingByLead.set(leadId, booking);
+  }
   return values.map((value) => {
-    const attempts = attemptsByLead.get(stringValue(value.id)) ?? [];
+    const leadId = stringValue(value.id);
+    const attempts = attemptsByLead.get(leadId) ?? [];
+    const activities = activitiesByLead.get(leadId) ?? [];
+    const offers = offersByLead.get(leadId) ?? [];
+    const trialBooking = trialBookingByLead.get(leadId);
+    const progressFacts = deriveLeadProgressFacts({
+      stage: optionalString(value.stage),
+      lostReason: optionalString(value.lostReason),
+      convertedMemberId: optionalString(value.convertedMemberId),
+      activities,
+      offers,
+      trialBooking,
+    });
     const nextFollowUpAt = optionalString(value.nextFollowUpAt);
-    const open = value.stage !== "won" && value.stage !== "lost";
+    const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
     return {
       ...value,
       branchName: branchNames.get(stringValue(value.branchId)) ?? "—",
@@ -1726,6 +1785,7 @@ async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Da
       lastContactOutcome: attempts[0] ? optionalString(data(attempts[0].meta).outcome) : undefined,
       lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
       overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
+      progressFacts,
     };
   });
 }
@@ -8520,13 +8580,65 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
     { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
   );
-  const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
-  const memberships = (await membershipRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
-  const leads = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter(inBranch);
-  const tasks = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data)).filter(inBranch);
-  const checkins = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
+  const [memberRows, membershipRows, leadRows, taskRows, checkinRows, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
+    memberRecords(ctx, actor),
+    membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "lead"),
+    recordsOf(ctx, actor, "task"),
+    recordsOf(ctx, actor, "checkIn"),
+    recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "offer"),
+    recordsOf(ctx, actor, "trialBooking"),
+  ]);
+  const members = memberRows.map((record) => data(record.data)).filter(inBranch);
+  const memberships = membershipRows.map((record) => data(record.data)).filter(inBranch);
+  const leads = leadRows.map((record) => data(record.data)).filter(inBranch);
+  const tasks = taskRows.map((record) => data(record.data)).filter(inBranch);
+  const checkins = checkinRows.map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
+  const activitiesByLead = new Map<string, Data[]>();
+  for (const record of timelineRecords) {
+    const event = data(record.data);
+    const leadId = optionalString(event.leadId);
+    if (!leadId) continue;
+    const activities = activitiesByLead.get(leadId) ?? [];
+    activities.push(event);
+    activitiesByLead.set(leadId, activities);
+  }
+  const offersByLead = new Map<string, Data[]>();
+  for (const record of offerRecords) {
+    const offer = offerProjection(data(record.data));
+    const leadId = optionalString(offer.leadId);
+    if (!leadId) continue;
+    const offers = offersByLead.get(leadId) ?? [];
+    offers.push(offer);
+    offersByLead.set(leadId, offers);
+  }
+  const trialBookingByLead = new Map<string, Data>();
+  for (const record of trialBookingRecords) {
+    const booking = data(record.data);
+    const leadId = optionalString(booking.leadId);
+    if (leadId) trialBookingByLead.set(leadId, booking);
+  }
+  const progressFactsByLead = new Map(leads.map((lead) => {
+    const leadId = stringValue(lead.id);
+    return [leadId, deriveLeadProgressFacts({
+      stage: optionalString(lead.stage),
+      lostReason: optionalString(lead.lostReason),
+      convertedMemberId: optionalString(lead.convertedMemberId),
+      activities: activitiesByLead.get(leadId),
+      offers: offersByLead.get(leadId),
+      trialBooking: trialBookingByLead.get(leadId),
+    })] as const;
+  }));
+  const leadHasProgressFact = (lead: Data, stage: string): boolean => {
+    const facts = progressFactsByLead.get(stringValue(lead.id));
+    return facts ? leadProgressStageCompleted(facts, stage) : false;
+  };
   const outstanding = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
-  const activeLeads = leads.filter((lead) => !["won", "lost"].includes(stringValue(lead.stage))).length;
+  const activeLeads = leads.filter((lead) => {
+    const facts = progressFactsByLead.get(stringValue(lead.id));
+    return facts && !facts.hasConversion && !facts.hasLoss;
+  }).length;
   const overdue = tasks.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow()).length;
   const renewals = memberships.filter((membership) => { const status = statusOfMembership(membership, today); const days = diffDays(today, stringValue(membership.endDate)); return (status === "expiring" || status === "active") && days <= 7 && days >= 0; }).length;
   const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !memberships.some((other) => other.previousMembershipId === membership.id)).length;
@@ -8534,10 +8646,10 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const branchRows = await accessibleBranches(ctx, actor);
   const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && ["payment", "retail_sale"].includes(stringValue(payment.type))).reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
   const funnelStages = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
-  const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => lead.stage === stage).length }));
+  const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => leadHasProgressFact(lead, stage)).length }));
   const organizationMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
-  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && ["payment", "retail_sale"].includes(stringValue(payment.type)) && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
+  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && ["payment", "retail_sale"].includes(stringValue(payment.type)) && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && progressFactsByLead.get(stringValue(lead.id))?.hasConversion).length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
   const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));
@@ -8545,7 +8657,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     .filter((event) => event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId))
     .slice(0, 8)
     .map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "approval", title: event.summary, detail: event.reason ?? "Review required", actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: "warning", occurredAt: utcIso(event.occurredAt) }));
-  const timeline = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
+  const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
   return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
 }
 

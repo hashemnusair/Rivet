@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
+import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
@@ -32,9 +33,10 @@ const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; label: string; hint: str
 ];
 
 function pipelineColumn(lead: LeadSummary): PipelineColumn {
-  if (lead.stage === "won") return "sold";
-  if (lead.stage === "lost") return "not_sold";
-  if (lead.stage === "attempted") return "no_answer";
+  const facts = lead.progressFacts ?? deriveLeadProgressFacts(lead);
+  if (facts.hasConversion) return "sold";
+  if (facts.hasLoss) return "not_sold";
+  if (facts.hasAttempt && lead.lastContactOutcome === "no_answer") return "no_answer";
   return "trial";
 }
 

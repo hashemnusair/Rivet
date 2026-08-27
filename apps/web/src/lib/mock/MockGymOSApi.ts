@@ -56,6 +56,7 @@ import {
 } from "@/lib/domain/workspace-modules";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
+import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
@@ -2856,7 +2857,8 @@ export class MockGymOSApi implements GymOSApi {
     const branch = this.db.branches.find((b) => b.id === lead.branchId);
     const attempts = this.db.activities.filter((a) => a.leadId === lead.id && a.type === "call_attempt");
     const last = attempts[0];
-    const open = lead.stage !== "won" && lead.stage !== "lost";
+    const progressFacts = this.leadProgressFacts(lead);
+    const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
     return {
       ...lead,
       ownerName: owner?.name,
@@ -2864,7 +2866,19 @@ export class MockGymOSApi implements GymOSApi {
       lastContactOutcome: last?.meta?.outcome ? String(last.meta.outcome) : undefined,
       lastContactAt: last?.occurredAt,
       overdue: open && Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < nowISO()),
+      progressFacts,
     };
+  }
+
+  private leadProgressFacts(lead: T.Lead) {
+    return deriveLeadProgressFacts({
+      stage: lead.stage,
+      lostReason: lead.lostReason,
+      convertedMemberId: lead.convertedMemberId,
+      activities: this.db.activities.filter((activity) => activity.leadId === lead.id),
+      offers: this.db.offers.filter((offer) => offer.leadId === lead.id).map((offer) => this.projectOffer(offer)),
+      trialBooking: this.trialBookings.find((booking) => booking.leadId === lead.id),
+    });
   }
 
   private retailPaymentProjection(sale: T.RetailSale): T.RetailPayment {
@@ -3103,7 +3117,11 @@ export class MockGymOSApi implements GymOSApi {
       const overdueTasks = openTasks.filter((t) => t.dueAt < nowISO());
 
       const leads = this.db.leads.filter((l) => inBranch(l));
-      const activeLeads = leads.filter((l) => l.stage !== "won" && l.stage !== "lost").length;
+      const progressFactsByLead = new Map(leads.map((lead) => [lead.id, this.leadProgressFacts(lead)] as const));
+      const activeLeads = leads.filter((lead) => {
+        const facts = progressFactsByLead.get(lead.id);
+        return facts && !facts.hasConversion && !facts.hasLoss;
+      }).length;
 
       const checkInsToday = this.db.checkIns.filter((c) => inBranch(c) && dayOf(c.occurredAt) === today && c.decision !== "blocked").length;
 
@@ -3143,7 +3161,10 @@ export class MockGymOSApi implements GymOSApi {
       const funnel: T.FunnelStage[] = funnelOrder.map((stage) => ({
         stage,
         label: funnelLabels[stage],
-        count: leads.filter((l) => l.stage === stage).length,
+        count: leads.filter((lead) => {
+          const facts = progressFactsByLead.get(lead.id);
+          return facts ? leadProgressStageCompleted(facts, stage) : false;
+        }).length,
       }));
 
       const leaderboard: T.SalespersonStat[] = this.db.users
@@ -3159,7 +3180,7 @@ export class MockGymOSApi implements GymOSApi {
             revenueCollected: money(collected),
             newSales: sold.filter((m) => !m.previousMembershipId).length,
             renewals: sold.filter((m) => m.previousMembershipId).length,
-            leadsConverted: this.db.leads.filter((l) => l.ownerId === u.id && l.stage === "won").length,
+            leadsConverted: leads.filter((lead) => lead.ownerId === u.id && progressFactsByLead.get(lead.id)?.hasConversion).length,
             followUpsCompleted: this.db.tasks.filter((t) => t.ownerId === u.id && t.status === "completed" && dayOf(t.completedAt ?? t.createdAt) >= monthStart).length,
             overdueFollowUps: overdueTasks.filter((t) => t.ownerId === u.id).length,
           };
