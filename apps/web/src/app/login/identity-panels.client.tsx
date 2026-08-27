@@ -165,7 +165,7 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
   );
 }
 
-function UnavailableGymEntry() {
+export function UnavailableGymEntry() {
   return (
     <NotEntitled
       title="Your gym workspace is unavailable"

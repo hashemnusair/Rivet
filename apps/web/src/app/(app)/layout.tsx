@@ -11,10 +11,12 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
+import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
+  const { customerSignedIn, platformAdminSignedIn } = useExperience();
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const identity = useRivetIdentity();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -22,6 +24,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
   const convexMode = isConvexMode();
+  const previewMemberSignedIn = DEMO_AUTH_BYPASS && customerSignedIn;
+  const previewPlatformAdminSignedIn = DEMO_AUTH_BYPASS && platformAdminSignedIn;
 
   // In Convex mode the session was hydrated from the authenticated identity;
   // mock mode retains its deterministic persona bootstrap for preview tests.
@@ -60,11 +64,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
+    if (previewPlatformAdminSignedIn) {
+      router.replace("/platform");
+      return;
+    }
+    if (previewMemberSignedIn) {
+      router.replace("/customer/my-gyms");
+      return;
+    }
     // A valid account that opened the wrong protected area should go directly
     // to its real destination. Routing through /login caused the visible
     // dashboard → login → platform flash reported in production.
     if (identityDestination && identityDestination.area !== "gym") router.replace(identityDestination.href);
-  }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, sessionLoading, router]);
+  }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, previewMemberSignedIn, previewPlatformAdminSignedIn, sessionLoading, router]);
 
   if (!identityReady || sessionLoading || identityStillResolving || !identitySignedIn || !signedIn) {
     return (

@@ -26,7 +26,7 @@ import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-import { IdentityPanel } from "./identity-panels.client";
+import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
@@ -101,6 +101,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   const { signIn, sessionLoading } = useApp();
   const { customers, experienceReady, signInCustomer, signInPlatformAdmin } = useExperience();
   const [loading, setLoading] = useState(false);
+  const unavailablePreview = DEMO_AUTH_BYPASS && audience === "staff" && searchParams.get("preview") === "unavailable-gym";
 
   // Preview controls must not be interactive before the client providers have
   // restored their browser state. Otherwise a cold server-rendered page can
@@ -170,7 +171,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 
         {!identityReady && audience !== "account" ? <LoginLoading /> : null}
 
-        {identityReady && DEMO_AUTH_BYPASS ? accounts : null}
+        {identityReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
 
         {!DEMO_AUTH_BYPASS && audience === "account" ? (
           !clerkLoaded || !clerkSignedIn ? (
