@@ -2,6 +2,27 @@
 
 See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
 
+## Operations workspace simplification — 27 August 2026
+
+- Release `237dc71` (CI run `33025029459` green, Vercel deploy verified live
+  with an authenticated owner session) simplifies the operations surface
+  without changing any server contract, permission gate, or audit behavior:
+  - Inventory gains a search box; each row gains **Sell** (jumps into the
+    Checkout tab with the item already in the sale via the existing
+    preselect seam) and **Reorder** (opens a purchase-order draft with that
+    product preselected, emphasized on low-stock rows). The per-row
+    permanent-delete button was removed — deletion stays behind Edit where
+    the typed confirmation lives. The Purchase orders button shows its open
+    count.
+  - Checkout reorders to desk flow: items first with an autofocused search,
+    then customer, then payment.
+  - Equipment stats compress to one three-across row on every screen, and
+    open issues/work orders sort above closed history.
+- Covered by three new unit tests (suite now 875) plus the existing
+  operations Playwright spec; verified in mock-mode browser (Sell → checkout
+  preselection observed) and live on Production (search box, Sell/Reorder
+  row actions with a branch selected, row delete gone).
+
 ## Ledger tutorial on the statements hub — 27 August 2026
 
 - `/finance` gained a "How the ledger works" button under the three
