@@ -4,7 +4,7 @@ Status: implementation plan; no product code or production data is changed by th
 
 ## Latest local implementation status — 28 August 2026
 
-The committed repository-hardening sprint implementation tip is `e06bb8b`,
+The committed repository-hardening sprint final pushed SHA is `4ce643c`,
 after starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The planned
 P0/P1 slices include explicit branch scope, retail finance/accounting,
 invitation and
@@ -29,10 +29,15 @@ entries**, full Playwright with **39 passes / 14 explicit credential-gated
 skips / 0 failures**, `pnpm audit --prod` with no known vulnerabilities, and
 `git diff --check`.
 
-This is repository evidence, not a deployment claim. No Convex Production
-deploy, Vercel Production deployment check, provider/configuration change,
-credentialed staging run, or Production data mutation was performed in this
-sprint. The 14 skipped browser journeys require explicit isolated credentials;
+GitHub Actions [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
+passed for the exact SHA. Vercel Production deployment
+[`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
+is `READY` for the same SHA, and the canonical site returned HTTP 200.
+
+This is repository and web-deployment evidence, not a Convex deployment claim.
+No Convex Production deploy, provider/configuration change, credentialed
+staging run, or Production data mutation was performed in this sprint. The 14
+skipped browser journeys require explicit isolated credentials;
 live provider-backed invitation/signup verification and Production smoke,
 rollback, capacity/headroom, and backup/recovery gates remain open.
 

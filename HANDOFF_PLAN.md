@@ -1,8 +1,8 @@
 # RIVET engineering handoff plan
 
 Last updated: 28 August 2026
-Handoff baseline: implementation tip `e06bb8b`; the documentation commit is
-the final sprint handoff and its pushed SHA is recorded in the release report.
+Handoff baseline: final sprint SHA `4ce643c`; GitHub Actions and Vercel
+verification are recorded below.
 
 ## Purpose
 
@@ -21,9 +21,9 @@ and the complete chronological implementation record is
 
 ## Current state at handoff
 
-- The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The
-  implementation tip is `e06bb8b`; final synchronization must confirm whether
-  `origin/main` advanced before the documentation commit is pushed.
+- The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f` and the final
+  pushed SHA is `4ce643c`. No partner commits arrived after the starting SHA
+  before the final synchronization checks.
 - The web application uses Next.js, Clerk, and Convex through the existing
   `GymOSApi` boundary. Production must use Convex and fail closed when required
   configuration is missing.
@@ -56,12 +56,14 @@ and the complete chronological implementation record is
   coverage, CI Playwright and clean-worktree gates, the Next dependency-chain
   repair, and RIVET image aspect-ratio fixes. Production remains Convex-backed
   and fail-closed; the mock adapter is preview/test infrastructure only.
-- No Convex Production deploy, Vercel Production success, provider/configuration
-  change, credentialed staging run, or Production data mutation is claimed for
-  this sprint. Vercel and GitHub Actions must be checked against the exact
-  pushed SHA.
+- No Convex Production deploy, provider/configuration change, credentialed
+  staging run, or Production data mutation was performed in this sprint.
+  GitHub Actions [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
+  passed for `4ce643c`, and Vercel Production deployment
+  [`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
+  is `READY` for that exact SHA; the canonical site returned HTTP 200.
 
-## Local validation evidence for implementation tip `e06bb8b`
+## Local validation evidence for final sprint SHA `4ce643c`
 
 The complete credential-free repository gate passed:
 

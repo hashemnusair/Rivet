@@ -2,13 +2,13 @@
 
 ## Current release summary — repository-hardening sprint — 28 August 2026
 
-- The implementation tip for this sprint is `e06bb8b`. It includes the
+- The final pushed SHA for this sprint is `4ce643c`. It includes the
   production Next dependency-chain repair, public experience retry/timeout
   recovery, CRM identity/assignment and event-backed progression hardening,
   permanent credential-free role-routing coverage, CI browser and repository
-  safety gates, deterministic billing deep-link focus, and RIVET image warning
-  fixes. The documentation reconciliation commit follows this implementation
-  sequence; the final pushed SHA is recorded in the final handoff report.
+  safety gates, deterministic billing deep-link focus, RIVET image warning
+  fixes, and the focused browser-assertion follow-up required by the first
+  hosted run.
 - The starting SHA was `e1cac31127a94659ad95f1e0f5f45f536678fa6f`, and no partner
   commits arrived during the implementation pass before the final
   synchronization check. `FRONTEND_HANDOFF.md` remains unchanged.
@@ -29,8 +29,11 @@
   the `GymOSApi` boundary. Mock mode is explicit preview/test infrastructure;
   Production remains Convex-backed and fail-closed. No Convex deployment,
   Production provider/configuration change, credentialed staging run, or
-  Production data mutation is part of this sprint. GitHub Actions and the
-  matching Vercel deployment must be checked against the exact pushed SHA.
+  Production data mutation is part of this sprint. GitHub Actions run
+  [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
+  passed for the exact SHA, and Vercel Production deployment
+  [`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
+  is `READY` for the same SHA; the canonical site returned HTTP 200.
 - Remaining gates are the exact-target Convex Production dry run/deploy,
   Production health and aggregate checks, credentialed isolated staging,
   provider/product decisions, operational-email and subscription-reconciliation
