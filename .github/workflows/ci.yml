@@ -20,13 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -42,6 +42,41 @@ jobs:
         run: pnpm test
       - name: Production build
         run: pnpm build
+      - name: Production dependency audit
+        run: pnpm audit --prod
+      - name: Check patch formatting
+        run: git diff --check
+      - name: Assert clean worktree after build
+        run: test -z "$(git status --porcelain=v1)"
+
+  browser:
+    name: Credential-free Playwright
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
+      NEXT_PUBLIC_DATA_MODE: mock
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium and required system dependencies
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Run credential-free browser suite
+        run: pnpm test:e2e
+      - name: Check patch formatting
+        run: git diff --check
+      - name: Assert clean worktree after Playwright
+        run: test -z "$(git status --porcelain=v1)"
 
   convex-codegen:
     name: Convex generated code check (credential-gated)
@@ -50,13 +85,13 @@ jobs:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
