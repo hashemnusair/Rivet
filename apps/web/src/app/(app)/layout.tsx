@@ -24,8 +24,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
   const convexMode = isConvexMode();
-  const previewMemberSignedIn = DEMO_AUTH_BYPASS && customerSignedIn;
-  const previewPlatformAdminSignedIn = DEMO_AUTH_BYPASS && platformAdminSignedIn;
+  // The platform preview can leave a valid gym session mounted while an
+  // operator follows the platform sidebar back to the gym workspace. Only
+  // redirect an unbound protected route; never treat the platform flag as a
+  // reason to discard an existing gym session.
+  const previewMemberSignedIn = DEMO_AUTH_BYPASS && customerSignedIn && !signedIn;
+  const previewPlatformAdminSignedIn = DEMO_AUTH_BYPASS && platformAdminSignedIn && !signedIn;
 
   // In Convex mode the session was hydrated from the authenticated identity;
   // mock mode retains its deterministic persona bootstrap for preview tests.
