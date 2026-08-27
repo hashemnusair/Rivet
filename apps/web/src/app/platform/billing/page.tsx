@@ -57,9 +57,16 @@ export default function BillingPage() {
       return;
     }
     setFocusedInvoiceId(requestedInvoiceId);
-    const frame = window.requestAnimationFrame(() => document.getElementById(`platform-invoice-${requestedInvoiceId}`)?.scrollIntoView?.({ block: "center" }));
-    return () => window.cancelAnimationFrame(frame);
   }, [invoices, requestedInvoiceId]);
+
+  // Focus only after the state update above has committed the requested row.
+  // Scheduling from the discovery effect could race the first render after a
+  // live snapshot arrived, leaving the row highlighted but not brought into
+  // view on a cold deep link.
+  useEffect(() => {
+    if (!requestedInvoiceId || focusedInvoiceId !== requestedInvoiceId) return;
+    document.getElementById(`platform-invoice-${requestedInvoiceId}`)?.scrollIntoView?.({ block: "center" });
+  }, [focusedInvoiceId, requestedInvoiceId]);
 
   const replaceInvoice = useCallback((updated: PlatformBillingInvoice) => {
     setLocalInvoices((current) => {
