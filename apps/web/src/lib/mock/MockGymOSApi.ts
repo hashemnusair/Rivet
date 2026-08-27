@@ -59,6 +59,7 @@ import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/l
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
+import { isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail } from "@/lib/utils/contact";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -2526,6 +2527,14 @@ export class MockGymOSApi implements GymOSApi {
     return currentUser(this.db);
   }
 
+  private validateLeadOwner(ownerId: T.UUID): void {
+    const owner = this.db.users.find((user) => user.id === ownerId && user.organizationId === this.db.organization.id);
+    if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+    if (owner.status !== "active" || !["owner", "manager", "salesperson"].includes(owner.role)) {
+      throw ApiError.of(ERR.VALIDATION, "Leads can only be assigned to active owner, manager, or sales staff.");
+    }
+  }
+
   /**
    * Resolve PT order ownership and branch scope before idempotent replays.
    * Mock mode mirrors Convex: a known key is not an authorization token, but
@@ -4702,22 +4711,28 @@ export class MockGymOSApi implements GymOSApi {
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.write");
+      const fullName = normalizeLeadName(input.fullName);
+      const phone = normalizeLeadPhone(input.phone);
+      const email = normalizeOptionalEmail(input.email);
+      if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
+      if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
+      if (!isValidOptionalEmail(input.email)) throw ApiError.of(ERR.VALIDATION, "Enter a valid email address.", { fieldErrors: { email: ["Enter a valid email"] } });
       const requestedOwnerId = input.ownerId;
-      if (requestedOwnerId && requestedOwnerId !== "unassigned" && requestedOwnerId !== this.actor().id) {
-        this.require("crm.assign");
-        const owner = this.db.users.find((user) => user.id === requestedOwnerId && user.status === "active");
-        if (!owner || !["owner", "manager", "salesperson"].includes(owner.role)) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+      const ownerId = requestedOwnerId === "unassigned" ? undefined : requestedOwnerId ?? this.actor().id;
+      if (ownerId) {
+        if (ownerId !== this.actor().id) this.require("crm.assign");
+        this.validateLeadOwner(ownerId);
       }
       const lead: T.Lead = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
         branchId: input.branchId,
-        fullName: input.fullName.trim(),
-        phone: input.phone.trim(),
-        email: input.email?.trim().toLowerCase() || undefined,
+        fullName,
+        phone,
+        email,
         stage: "new",
         source: input.source,
-        ownerId: input.ownerId === "unassigned" ? undefined : input.ownerId ?? this.actor().id,
+        ownerId,
         expectedValue: input.expectedValue,
         nextFollowUpAt: input.nextFollowUpAt,
         createdAt: nowISO(),
@@ -4755,8 +4770,36 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
-      if (input.ownerId && input.ownerId !== lead.ownerId) this.require("crm.assign");
-      Object.assign(lead, input, { updatedAt: nowISO() });
+      if (input.ownerId !== undefined) {
+        const ownerId = input.ownerId === "unassigned" ? undefined : input.ownerId;
+        if (ownerId && ownerId !== lead.ownerId) this.require("crm.assign");
+        if (ownerId) this.validateLeadOwner(ownerId);
+        Object.assign(lead, { ...input, ownerId }, { updatedAt: nowISO() });
+      } else {
+        Object.assign(lead, input, { updatedAt: nowISO() });
+      }
+      return this.getLeadSync(leadId);
+    });
+  }
+
+  updateLeadContact(leadId: T.UUID, input: T.UpdateLeadContactInput): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const lead = this.db.leads.find((item) => item.id === leadId);
+      if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const fullName = normalizeLeadName(input.fullName);
+      const phone = normalizeLeadPhone(input.phone);
+      const email = normalizeOptionalEmail(input.email);
+      if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
+      if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
+      if (!isValidOptionalEmail(input.email)) throw ApiError.of(ERR.VALIDATION, "Enter a valid email address.", { fieldErrors: { email: ["Enter a valid email"] } });
+      const before = { fullName: lead.fullName, phone: lead.phone, email: lead.email ?? null };
+      const after = { fullName, phone, email: email ?? null };
+      const changedFields = Object.entries(after).filter(([field, value]) => before[field as keyof typeof before] !== value).map(([field]) => field);
+      if (changedFields.length === 0) return this.getLeadSync(leadId);
+      Object.assign(lead, { fullName, phone, email, updatedAt: nowISO() });
+      this.audit({ category: "crm", action: "lead.contact.update", entityType: "lead", entityId: lead.id, entityLabel: fullName, summary: "Lead contact details corrected", before, after });
+      this.activity({ leadId, type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: this.actor().id, actorName: this.actor().name, meta: { fields: changedFields.join(",") } });
       return this.getLeadSync(leadId);
     });
   }

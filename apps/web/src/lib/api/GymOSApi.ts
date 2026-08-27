@@ -845,6 +845,7 @@ export interface GymOSApi {
   subscribeLead(leadId: UUID, onValue: (lead: LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;
+  updateLeadContact(leadId: UUID, input: import("@/lib/domain/types").UpdateLeadContactInput): Promise<LeadDetail>;
   logContactAttempt(leadId: UUID, input: ContactAttemptInput): Promise<LeadDetail>;
   updateTrialBooking(
     bookingId: UUID,

@@ -103,6 +103,8 @@ const DEFAULT_NOTIFICATIONS = {
 };
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const LEAD_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LEAD_PHONE_PATTERN = /^\+?[\d\s()-]{9,18}$/;
 const ZONE_KINDS = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"] as const;
 
 function normalizedTrialWindow(value: Data): Data {
@@ -232,6 +234,27 @@ function stringValue(value: unknown, fallback = ""): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizedLeadEmail(value: unknown, actor: ActorContext): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") domainError("VALIDATION_ERROR", "Email must be a string.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
+  const email = value.trim().toLowerCase();
+  if (!email) return undefined;
+  if (email.length > 254 || !LEAD_EMAIL_PATTERN.test(email)) domainError("VALIDATION_ERROR", "Enter a valid email address.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
+  return email;
+}
+
+function normalizedLeadName(value: unknown, actor: ActorContext): string {
+  const fullName = stringValue(value).trim();
+  if (fullName.length < 3 || fullName.length > 120) domainError("VALIDATION_ERROR", "Full name must be between 3 and 120 characters.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Enter a full name"] } });
+  return fullName;
+}
+
+function normalizedLeadPhone(value: unknown, actor: ActorContext): string {
+  const phone = stringValue(value).trim();
+  if (!LEAD_PHONE_PATTERN.test(phone)) domainError("VALIDATION_ERROR", "Enter a valid phone number.", { correlationId: actor.correlationId, fieldErrors: { phone: ["Enter a valid phone"] } });
+  return phone;
 }
 
 function numberValue(value: unknown, fallback = 0): number {
@@ -1716,6 +1739,19 @@ async function userByPublicId(ctx: ReadContext, organizationId: Id<"organization
     .withIndex("by_organization_user", (q) => q.eq("organizationId", organizationId).eq("userId", user._id))
     .unique();
   return membership?.active ? user : null;
+}
+
+async function assertLeadOwner(ctx: ReadContext, actor: ActorContext, ownerId: string): Promise<void> {
+  const owner = (await ctx.db.query("users").collect()).find((candidate) => publicUserId(candidate) === ownerId);
+  if (!owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+  const membership = await ctx.db
+    .query("organizationMemberships")
+    .withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", owner._id))
+    .unique();
+  if (!membership) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+  if (organizationUserStatus(owner, membership) !== "active" || !["owner", "manager", "sales"].includes(membership.role)) {
+    domainError("VALIDATION_ERROR", "Leads can only be assigned to active owner, manager, or sales staff.", { correlationId: actor.correlationId });
+  }
 }
 
 /**
@@ -7457,16 +7493,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const branchId = recordId(input.branchId);
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      const requestedOwnerId = optionalString(input.ownerId);
+      const fullName = normalizedLeadName(input.fullName, actor);
+      const phone = normalizedLeadPhone(input.phone, actor);
+      const email = normalizedLeadEmail(input.email, actor);
+      const requestedOwnerId = input.ownerId === undefined ? undefined : input.ownerId === "unassigned" ? "unassigned" : recordId(input.ownerId);
       const ownerId: string | undefined = requestedOwnerId === "unassigned" ? undefined : requestedOwnerId ?? publicUserId(actor.user);
-      if (ownerId && ownerId !== publicUserId(actor.user)) {
-        requirePermission(actor, "crm.assign");
-        const owner = await userByPublicId(ctx, actor.organization._id, ownerId);
-        if (!owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
-        const ownerMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", owner._id)).unique();
-        if (!ownerMembership || !ownerMembership.active || !["owner", "manager", "sales"].includes(ownerMembership.role)) domainError("VALIDATION_ERROR", "Leads can only be assigned to active owner, manager, or sales staff.", { correlationId: actor.correlationId });
-      }
-      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName: stringValue(input.fullName).trim(), phone: stringValue(input.phone).trim(), email: optionalString(input.email), stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
+      if (ownerId && ownerId !== publicUserId(actor.user)) requirePermission(actor, "crm.assign");
+      if (ownerId) await assertLeadOwner(ctx, actor, ownerId);
+      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName, phone, email, stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
       await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities: [], offers: [] };
     }
@@ -7474,11 +7508,39 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const current = data(record.data);
-      if (input.ownerId && input.ownerId !== current.ownerId) requirePermission(actor, "crm.assign");
       const patch: Data = { ...input, updatedAt: isoNow() };
       delete patch.leadId;
+      if (Object.prototype.hasOwnProperty.call(input, "ownerId")) {
+        const requestedOwnerId = input.ownerId === "unassigned" ? undefined : recordId(input.ownerId);
+        if (requestedOwnerId && requestedOwnerId !== current.ownerId) requirePermission(actor, "crm.assign");
+        if (requestedOwnerId) await assertLeadOwner(ctx, actor, requestedOwnerId);
+        patch.ownerId = requestedOwnerId;
+      }
       const updated = await patchRecord(ctx, actor, record, patch);
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities: [], offers: [] };
+    }
+    case "leads.update_contact": {
+      requirePermission(actor, "crm.write");
+      const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      const current = data(record.data);
+      const fullName = normalizedLeadName(input.fullName, actor);
+      const phone = normalizedLeadPhone(input.phone, actor);
+      const email = normalizedLeadEmail(input.email, actor);
+      const currentEmail = typeof current.email === "string" ? current.email.trim().toLowerCase() || null : null;
+      const before = { fullName: stringValue(current.fullName), phone: stringValue(current.phone), email: currentEmail };
+      const after = { fullName, phone, email: email ?? null };
+      const changedFields = Object.entries(after).filter(([field, value]) => before[field as keyof typeof before] !== value).map(([field]) => field);
+      if (changedFields.length === 0) {
+        const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+        const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+        return { ...(await toLeadSummary(ctx, actor, current)), notes: optionalString(current.notes), activities, offers };
+      }
+      const updated = await patchRecord(ctx, actor, record, { fullName, phone, email, updatedAt: isoNow() });
+      await insertAudit(ctx, actor, { category: "crm", action: "lead.contact.update", entityType: "lead", entityId: record.publicId, entityLabel: fullName, summary: "Lead contact details corrected", before, after, branchId: optionalString(current.branchId) });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
+      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+      return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities, offers };
     }
     case "leads.contact": {
       requirePermission(actor, "crm.write");

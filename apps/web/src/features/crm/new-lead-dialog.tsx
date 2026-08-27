@@ -10,6 +10,7 @@ import { qk } from "@/lib/api/keys";
 import type { LeadSource } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { isValidLeadPhone, isValidOptionalEmail, normalizeOptionalEmail } from "@/lib/utils/contact";
 import { fromMajor } from "@/lib/utils/money";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -20,8 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const schema = z.object({
   fullName: z.string().min(3, "Name is required"),
-  phone: z.string().min(9, "Phone is required").regex(/^\+?[\d\s()-]{9,18}$/, "Enter a valid phone"),
-  email: z.string().email("Invalid email").or(z.literal("")).optional(),
+  phone: z.string().refine((value) => isValidLeadPhone(value), "Enter a valid phone"),
+  email: z.string().refine((value) => isValidOptionalEmail(value), "Invalid email").optional(),
   branchId: z.string().min(1, "Choose a branch"),
   source: z.enum(["instagram", "walk_in", "referral", "whatsapp", "google", "phone_call", "other"]),
   ownerId: z.string().optional(),
@@ -43,11 +44,13 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const usersQuery = useApiQuery(qk.users({ status: "active" }), (api) => api.listUsers({ status: "active", pageSize: 50 }));
   const ownerOptions = useMemo(() => {
     const candidates = [
-      ...(session?.user ? [{ id: session.user.id, name: session.user.name }] : []),
-      ...(usersQuery.data?.items ?? []).map((user) => ({ id: user.id, name: user.name })),
+      ...(session?.user ? [{ id: session.user.id, name: session.user.name, role: session.roles[0] }] : []),
+      ...(usersQuery.data?.items ?? []).map((user) => ({ id: user.id, name: user.name, role: user.role })),
     ];
-    return candidates.filter((user, index) => candidates.findIndex((candidate) => candidate.id === user.id) === index);
-  }, [session?.user, usersQuery.data?.items]);
+    return candidates
+      .filter((user) => user.role === "owner" || user.role === "manager" || user.role === "salesperson")
+      .filter((user, index) => candidates.findIndex((candidate) => candidate.id === user.id) === index);
+  }, [session?.roles, session?.user, usersQuery.data?.items]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -90,7 +93,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       api.createLead({
         fullName: v.fullName,
         phone: v.phone,
-        email: v.email?.trim().toLowerCase() || undefined,
+        email: normalizeOptionalEmail(v.email),
         branchId: v.branchId,
         source: v.source as LeadSource,
         ownerId: v.ownerId || "unassigned",

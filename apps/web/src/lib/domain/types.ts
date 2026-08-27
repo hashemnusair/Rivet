@@ -1340,6 +1340,12 @@ export interface LeadDetail extends LeadSummary {
   trialBooking?: LeadTrialBooking;
 }
 
+export interface UpdateLeadContactInput {
+  fullName: string;
+  phone: string;
+  email?: string;
+}
+
 export interface Offer {
   id: UUID;
   leadId?: UUID;
@@ -1393,8 +1399,8 @@ export interface CreateLeadInput {
 }
 
 export type UpdateLeadInput = Partial<
-  Pick<Lead, "stage" | "ownerId" | "expectedValue" | "nextFollowUpAt" | "lostReason">
->;
+  Pick<Lead, "stage" | "expectedValue" | "nextFollowUpAt" | "lostReason">
+> & { ownerId?: UUID | "unassigned" };
 
 export interface ConvertLeadInput {
   homeBranchId: UUID;
@@ -1515,6 +1521,7 @@ export type TimelineEventType =
   | "trial_completed"
   | "trial_no_show"
   | "trial_cancelled"
+  | "lead_contact_updated"
   | "lead_converted"
   | "pt_credit_granted"
   | "pt_package_requested"

@@ -976,6 +976,13 @@ describe("lead capture", () => {
     expect(lead.email).toBe("prospect@example.com");
     expect(lead.ownerId).toBeUndefined();
     expect(lead.ownerName).toBeUndefined();
+    await expect(api.createLead({
+      fullName: "Malformed Lead Email",
+      phone: "+962 79 555 1301",
+      email: "not-an-email",
+      branchId: session.branches[0]!.id,
+      source: "phone_call",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
   it("requires assignment permission when choosing another staff owner", async () => {
@@ -989,6 +996,23 @@ describe("lead capture", () => {
       source: "phone_call",
       ownerId: salesperson.id,
     })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+
+  it("validates self and target roles, and records audited contact corrections", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Contact Correction Lead", phone: "+962 79 555 1302", email: "old@example.com", branchId: session.branches[0]!.id, source: "walk_in" });
+    const internals = api as unknown as { db: MockDb };
+    const receptionist = internals.db.users.find((user) => user.role === "receptionist" && user.status === "active");
+    expect(receptionist).toBeDefined();
+    await expect(api.updateLead(lead.id, { ownerId: receptionist!.id })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updateLead(lead.id, { ownerId: lead.ownerId })).resolves.toMatchObject({ ownerId: lead.ownerId });
+
+    const updated = await api.updateLeadContact(lead.id, { fullName: "  Corrected Contact Lead ", phone: " +962 79 555 1309 ", email: " NEW@EXAMPLE.COM " });
+    expect(updated).toMatchObject({ fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "new@example.com", stage: "new" });
+    expect(updated.activities).toContainEqual(expect.objectContaining({ type: "lead_contact_updated", body: "Contact details were updated; pipeline status was unchanged." }));
+    expect(updated.activities).not.toContainEqual(expect.objectContaining({ type: "call_attempt" }));
+    expect((await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Contact Correction Lead", phone: "+962 79 555 1302", email: "old@example.com" }, after: { fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "new@example.com" } }));
+    await expect(api.updateLeadContact(lead.id, { fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "bad" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 });
 

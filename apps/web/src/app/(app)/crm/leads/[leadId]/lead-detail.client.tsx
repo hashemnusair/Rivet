@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
+import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
@@ -42,6 +43,8 @@ export default function LeadDetailPageClient() {
   const [trialDate, setTrialDate] = useState(() => addDays(todayISODate(), 1));
   const [trialTime, setTrialTime] = useState("18:00");
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [contactEditOpen, setContactEditOpen] = useState(false);
+  const { session } = useApp();
 
   const leadQuery = useRealtimeApiQuery({
     queryKey: qk.lead(leadId),
@@ -230,7 +233,10 @@ export default function LeadDetailPageClient() {
           ) : null}
 
           <section className="panel p-4">
-            <h2 className="mb-3 font-display text-[14px] font-semibold">Contact</h2>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-display text-[14px] font-semibold">Contact</h2>
+              {session?.permissions.includes("crm.write") ? <Button variant="secondary" size="sm" onClick={() => setContactEditOpen(true)}>Edit contact</Button> : null}
+            </div>
             <dl className="space-y-2 text-[12.5px]">
               <ContextRow label="Phone"><span dir="ltr">{lead.phone}</span></ContextRow>
               <ContextRow label="Email">{lead.email ?? "—"}</ContextRow>
@@ -248,6 +254,7 @@ export default function LeadDetailPageClient() {
       </div>
 
       <CompleteSaleDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} branchId={lead.branchId} open={saleOpen} onOpenChange={setSaleOpen} />
+      <EditLeadContactDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} email={lead.email} open={contactEditOpen} onOpenChange={setContactEditOpen} />
 
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(next) => { if (!next) { setTrialOutcome(undefined); setTrialNote(""); } }}>
         <DialogContent>

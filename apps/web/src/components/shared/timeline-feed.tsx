@@ -51,6 +51,7 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
   trial_completed: { icon: CheckCircle2, tone: "text-success-deep" },
   trial_no_show: { icon: CircleDot, tone: "text-warning-deep" },
   trial_cancelled: { icon: CircleDot, tone: "text-danger" },
+  lead_contact_updated: { icon: PhoneCall, tone: "text-warning-deep" },
   lead_converted: { icon: UserCheck, tone: "text-success-deep" },
   automation: { icon: Zap, tone: "text-ink-3" },
   pt_credit_granted: { icon: PlusCircle, tone: "text-success-deep" },

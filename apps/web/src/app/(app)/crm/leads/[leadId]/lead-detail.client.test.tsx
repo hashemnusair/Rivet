@@ -93,6 +93,28 @@ describe("CRM lead workflow language and transitions", () => {
     await waitFor(async () => expect((await api.getLead(leadId)).trialBooking?.status).toBe("cancelled"));
   });
 
+  it("edits contact identity without changing the lead stage and reports unsaved state", async () => {
+    const api = new MockGymOSApi();
+    const leadId = await prepareLead(api);
+    await api.updateLeadContact(leadId, { fullName: "Original Contact", phone: "+962790000097", email: "original@example.com" });
+    renderLead(api);
+
+    await screen.findByRole("heading", { name: "Original Contact" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit contact" }));
+    await screen.findByRole("dialog", { name: "Edit lead contact" });
+    await user.clear(screen.getByRole("textbox", { name: "Full name" }));
+    await user.type(screen.getByRole("textbox", { name: "Full name" }), "Corrected Contact");
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("Unsaved contact changes");
+    await user.clear(screen.getByRole("textbox", { name: "Email" }));
+    await user.type(screen.getByRole("textbox", { name: "Email" }), "  UPDATED@EXAMPLE.COM ");
+    await user.click(screen.getByRole("button", { name: "Save contact" }));
+
+    await waitFor(async () => expect(await api.getLead(leadId)).toMatchObject({ fullName: "Corrected Contact", email: "updated@example.com", stage: "trial_booked" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit lead contact" })).not.toBeInTheDocument());
+    expect((await api.getLead(leadId)).activities).toContainEqual(expect.objectContaining({ type: "lead_contact_updated" }));
+  });
+
   it("uses the selected sale language and navigates directly with a stable pending state", async () => {
     const api = new MockGymOSApi();
     await prepareLead(api, "completed");
