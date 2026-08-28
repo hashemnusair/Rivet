@@ -1,7 +1,7 @@
 # RIVET engineering handoff plan
 
 Last updated: 28 August 2026
-Handoff baseline: final sprint SHA `4ce643c`; GitHub Actions and Vercel
+Handoff baseline: final application/code verification tip `3c99fc7`; GitHub Actions and Vercel
 verification are recorded below.
 
 ## Purpose
@@ -22,7 +22,8 @@ and the complete chronological implementation record is
 ## Current state at handoff
 
 - The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f` and the final
-  pushed SHA is `4ce643c`. No partner commits arrived after the starting SHA
+  application/code verification tip is `3c99fc7`; the final pushed history
+  also includes this documentation reconciliation. No partner commits arrived after the starting SHA
   before the final synchronization checks.
 - The web application uses Next.js, Clerk, and Convex through the existing
   `GymOSApi` boundary. Production must use Convex and fail closed when required
@@ -58,12 +59,12 @@ and the complete chronological implementation record is
   and fail-closed; the mock adapter is preview/test infrastructure only.
 - No Convex Production deploy, provider/configuration change, credentialed
   staging run, or Production data mutation was performed in this sprint.
-  GitHub Actions [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
-  passed for `4ce643c`, and Vercel Production deployment
-  [`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
-  is `READY` for that exact SHA; the canonical site returned HTTP 200.
+  GitHub Actions [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+  passed for `3c99fc7`, and Vercel Production deployment
+  [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+  is `READY` for that exact tip; the canonical site returned HTTP 200.
 
-## Local validation evidence for final sprint SHA `4ce643c`
+## Local validation evidence for final application/code tip `3c99fc7`
 
 The complete credential-free repository gate passed:
 

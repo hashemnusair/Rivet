@@ -2,7 +2,9 @@
 
 ## Current release summary — repository-hardening sprint — 28 August 2026
 
-- The final pushed SHA for this sprint is `4ce643c`. It includes the
+- The final application/code verification tip for this sprint is `3c99fc7`.
+  The final pushed history also includes this documentation reconciliation.
+  It includes the
   production Next dependency-chain repair, public experience retry/timeout
   recovery, CRM identity/assignment and event-backed progression hardening,
   permanent credential-free role-routing coverage, CI browser and repository
@@ -30,10 +32,10 @@
   Production remains Convex-backed and fail-closed. No Convex deployment,
   Production provider/configuration change, credentialed staging run, or
   Production data mutation is part of this sprint. GitHub Actions run
-  [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
-  passed for the exact SHA, and Vercel Production deployment
-  [`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
-  is `READY` for the same SHA; the canonical site returned HTTP 200.
+  [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+  passed for the final application/code tip `3c99fc7`, and Vercel Production
+  deployment [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+  is `READY` for that exact tip; the canonical site returned HTTP 200.
 - Remaining gates are the exact-target Convex Production dry run/deploy,
   Production health and aggregate checks, credentialed isolated staging,
   provider/product decisions, operational-email and subscription-reconciliation

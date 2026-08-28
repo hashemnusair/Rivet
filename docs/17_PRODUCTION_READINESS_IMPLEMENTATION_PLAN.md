@@ -4,7 +4,9 @@ Status: implementation plan; no product code or production data is changed by th
 
 ## Latest local implementation status — 28 August 2026
 
-The committed repository-hardening sprint final pushed SHA is `4ce643c`,
+The committed repository-hardening sprint final application/code verification
+tip is `3c99fc7`; the final pushed history also includes this documentation
+reconciliation,
 after starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The planned
 P0/P1 slices include explicit branch scope, retail finance/accounting,
 invitation and
@@ -29,10 +31,10 @@ entries**, full Playwright with **39 passes / 14 explicit credential-gated
 skips / 0 failures**, `pnpm audit --prod` with no known vulnerabilities, and
 `git diff --check`.
 
-GitHub Actions [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
-passed for the exact SHA. Vercel Production deployment
-[`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
-is `READY` for the same SHA, and the canonical site returned HTTP 200.
+GitHub Actions [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+passed for the exact application/code tip. Vercel Production deployment
+[`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+is `READY` for the same tip, and the canonical site returned HTTP 200.
 
 This is repository and web-deployment evidence, not a Convex deployment claim.
 No Convex Production deploy, provider/configuration change, credentialed

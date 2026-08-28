@@ -10,14 +10,15 @@ values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 28 August 2026
 
-The final pushed SHA for this sprint is `4ce643c`. The verified
+The final application/code verification tip for this sprint is `3c99fc7`;
+the final pushed history also includes this documentation reconciliation. The verified
 credential-free gate is 148 Vitest files / 913 tests, 14 repository safety
 tests, both TypeScript checks, lint and secret-output audit, a 51-route
 production build, 39 passed / 14 explicitly skipped credential-gated
 Playwright journeys, `pnpm audit --prod` with no known vulnerabilities, and a
-clean worktree. GitHub Actions [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
-passed for that exact SHA, and Vercel Production deployment
-[`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
+clean worktree. GitHub Actions [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+passed for that exact tip, and Vercel Production deployment
+[`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
 is `READY`; the canonical site returned HTTP 200. The 14 skipped journeys
 remain open staging/Convex evidence, not failures. This sprint did not deploy
 Convex or mutate Production data.
@@ -638,7 +639,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 ### BUG-001 — Current-head Convex/Clerk/Vercel alignment is not fully verified
 
 - Status: **The current Vercel/CI head is verified; exact Production Convex code, active gym-owner routing, and value-level provider configuration checks remain open**.
-- Evidence: this sprint's final SHA `4ce643c` passed GitHub Actions run `33125834826`, and Vercel Production deployment `dpl_B5VfvBVucab65boZ1SdxPYqtusBX` is `READY` for that exact SHA. Prior exact-target Convex dry-run/deploy evidence remains historical; this sprint did not deploy Convex. Platform-admin routes passed in the credential-free browser suite, and the unavailable owner boundary was verified in mock preview without console errors or a member bootstrap.
+- Evidence: this sprint's final application/code tip `3c99fc7` passed GitHub Actions run `33127740606`, and Vercel Production deployment `dpl_28TJU394KFMmiE1bxddpZj2TVMc5` is `READY` for that exact tip. Prior exact-target Convex dry-run/deploy evidence remains historical; this sprint did not deploy Convex. Platform-admin routes passed in the credential-free browser suite, and the unavailable owner boundary was verified in mock preview without console errors or a member bootstrap.
 - Risk: alignment can regress after credential, domain, deployment, build, or environment-scope changes.
 - Fix/acceptance: complete the active gym-owner read-only acceptance pass after an authorized test-gym restoration or with another active owner, plus the remaining value-free provider/configuration checklist. Never seed Production as a shortcut.
 
@@ -1053,4 +1054,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | BUG-009 role-routing coverage | 2026-08-28 | `5ab98c3`, `98d1f14` | Credential-free role-routing matrix passed 7/7 focused tests and the final full Playwright run passed 39 journeys with 14 explicit staging/Convex skips. It covers member, gym-staff, platform-admin, direct-forbidden, sign-out, cold-refresh, unavailable-access, and wrong-dashboard transitions. Provider-backed role acceptance remains open. |
 | BUG-010 / TODO-005 public recovery | 2026-08-28 | `8703b6a` | Public catalog and marketplace retry/timeout/disposal behavior, stale-snapshot retention, fallback plans, and successful recovery passed focused helper/component tests and the public browser recovery journey; the final full browser run passed 39/39 credential-free journeys. Live provider and isolated-staging verification remain open. |
 | CRM identity and event progression | 2026-08-28 | `42c3e79`, `bdbb1f4`, `fb16a69` | Convex, mock, adapter, component, authorization, audit, duplicate-detection, progression, and browser coverage passed within the final 148-file / 913-test Vitest gate. Lead facts now drive detail, board, and dashboard progression; Production/staging acceptance remains open. |
-| Repository-hardening dependency, CI, image, and billing safety | 2026-08-28 | `d499e01`, `6d61979`, `49c58b4`, `4a0d63a`, `e06bb8b`, `4ce643c` | Next production audit reports no known vulnerabilities; CI includes audit/diff/clean-worktree and credential-free Playwright; RIVET image aspect warnings are gone; billing deep-link focus is deterministic; the final hosted browser gate passed after the focused assertion follow-up. No provider configuration or Production data was changed. |
+| Repository-hardening dependency, CI, image, and billing safety | 2026-08-28 | `d499e01`, `6d61979`, `49c58b4`, `4a0d63a`, `e06bb8b`, `4ce643c`, `3c99fc7` | Next production audit reports no known vulnerabilities; CI includes audit/diff/clean-worktree and credential-free Playwright; RIVET image aspect warnings are gone; billing deep-link focus is deterministic; the final hosted browser gate passed after the focused assertion follow-up. No provider configuration or Production data was changed. |

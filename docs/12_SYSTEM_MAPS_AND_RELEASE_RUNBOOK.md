@@ -21,7 +21,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   the page-facing boundary; `ConvexGymOSApi` is the Production implementation
   and `MockGymOSApi` is explicit preview/test infrastructure. The former
   FastAPI/PostgreSQL/Redis topology is not an implementation requirement.
-- The repository-hardening sprint final pushed SHA is `4ce643c`, after
+- The repository-hardening sprint final application/code verification tip is
+  `3c99fc7`; the final pushed history also includes this documentation
+  reconciliation, after
   starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The local gate
   passed with 148 Vitest files / 913 tests, 14 repository safety tests, both
   TypeScript checks, lint and secret-output audit, a 51-route build, 39 passed
@@ -38,10 +40,10 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   checks diffs, and asserts a clean worktree after build and browser tests.
 - This sprint did not deploy Convex, change Production provider configuration,
   enable a provider or job, run credentialed staging, or mutate Production
-  data. GitHub Actions run [33125834826](https://github.com/hashemnusair/Rivet/actions/runs/33125834826)
-  passed for `4ce643c`, and Vercel Production deployment
-  [`dpl_B5VfvBVucab65boZ1SdxPYqtusBX`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_B5VfvBVucab65boZ1SdxPYqtusBX)
-  is `READY` for that exact SHA; the canonical site returned HTTP 200.
+  data. GitHub Actions run [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+  passed for `3c99fc7`, and Vercel Production deployment
+  [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+  is `READY` for that exact tip; the canonical site returned HTTP 200.
 
 ### Management Ledger accounting completeness — 26 August 2026 (working-tree update)
 
