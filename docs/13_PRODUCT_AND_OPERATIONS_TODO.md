@@ -1,6 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 28 August 2026 for the repository-hardening sprint. This is the single
+Updated 29 August 2026 for the Production backend and deployment-path closure.
+This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
 production-verification findings, deferred work, and closure evidence. It
@@ -8,7 +9,28 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current release index — 28 August 2026
+## Current release index — 29 August 2026
+
+### Production closure completed on 29 August
+
+- [x] Synchronize `main` with GitHub and confirm exact head `d06021e`; no new
+  partner commit or unmerged non-Arabic partner slice was present.
+- [x] Select exact Convex Production `descriptive-meerkat-589`, run the guarded
+  dry run and deploy, verify no index deletion or destructive migration, and
+  confirm `health:check` returns `ok`.
+- [x] Run the aggregate renewal audit and read-only subscription preview.
+  Renewal counts were all zero; the preview processed five organizations,
+  found two eligible boundaries, projected zero invoice/past-due/suspension
+  actions, and reported reconciliation disabled.
+- [x] Remove backend deployment from the Vercel build path. `rivet-web` now
+  runs `pnpm build`; the redundant Production `CONVEX_DEPLOY_KEY` was removed.
+  Clean redeploy `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh` built exact head
+  `d06021e`, generated 51 pages, reached `READY`, and produced no initial error
+  or HTTP-500 logs.
+- [x] Read the public landing, gym directory, and one gym detail in Production
+  without console errors. Two test gyms remain publicly listed; resolve their
+  exact publication/content state before launch without deleting tenant
+  history blindly.
 
 The final application/code verification tip for this sprint is `3c99fc7`;
 the final pushed history also includes this documentation reconciliation. The verified
@@ -45,8 +67,9 @@ Convex or mutate Production data.
 
 ### Open external and product gates
 
-- [ ] Run the exact-target Convex Production dry run/deploy only after owner
-  approval; verify Production health and aggregate checks afterward.
+- [x] Run the exact-target Convex Production dry run/deploy only after owner
+  approval; Production health, renewal aggregate, and subscription preview
+  checks passed on 29 August.
 - [ ] Run the credentialed isolated staging journeys, including the 14
   credential-gated browser journeys, with disposable identities and cleanup.
 - [ ] Complete authenticated Production acceptance and any approved writes;

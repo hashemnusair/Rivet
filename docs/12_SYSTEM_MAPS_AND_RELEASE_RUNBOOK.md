@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-28 for the repository-hardening sprint, public
-recovery, CRM integrity, role-routing, CI, and image-warning updates.
+Last reviewed: 2026-08-29 for the exact-target Production backend closure,
+Vercel deploy-path correction, and public read-only acceptance.
 
 ## Purpose
 
@@ -14,7 +14,31 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
-## Current repository state — 28 August 2026
+## Current repository state — 29 August 2026
+
+### Production release closure — 29 August 2026
+
+- `main` and `origin/main` matched at `d06021e` after a fresh fetch. Convex
+  Production was explicitly selected as `descriptive-meerkat-589` with the
+  local Development key suppressed. The guarded dry run and deploy completed
+  schema validation, reported no deleted indexes, and deployed the current
+  functions without a destructive migration.
+- `health:check` returned `ok`. `renewalJobs.releaseAudit` returned zero rows in
+  all four categories. `subscriptionReconciliation.preview` processed five
+  organizations, found two eligible boundaries, projected zero invoice,
+  past-due, or suspension actions, and reported `enabled: false`. Operational
+  email and subscription reconciliation remain default-off.
+- The Vercel project-level Build Command was corrected from the legacy raw
+  Convex deploy hook to `pnpm build`. The Production `CONVEX_DEPLOY_KEY` was
+  removed from Vercel after the authenticated operator path was proven. Fresh
+  Production deployment `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh` built exact head
+  `d06021e` with 51 pages and no Convex deploy command; it is `READY`, canonical
+  aliases resolve, and initial error/HTTP-500 scans were empty.
+- Public landing, directory, and gym-detail reads completed without page or
+  console errors. Two test gyms are publicly listed, and one exposes
+  disposable-verification copy and test membership data. Exact-target content
+  cleanup or unpublishing is required before launch. No tenant record was
+  changed during this read-only verification.
 
 - The approved topology is Next.js App Router on Vercel, Clerk for identity,
   and Convex for tenant/branch-scoped data and business rules. `GymOSApi` is
@@ -701,14 +725,16 @@ Complete this phase before asking an agent to run staging or production checks. 
 #### A1. Convex Production
 
 - [x] Confirm the selected deployment is Production, not the linked development deployment.
-- [ ] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
-- [x] Confirm the current safety-gated schema/functions are deployed for commit `1e01163` or later. Deployed from `2323dd6` on 23 August 2026.
+- [x] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
+- [x] Confirm the current safety-gated schema/functions are deployed. Exact
+  repository head `d06021e` was deployed through the guarded operator path on
+  29 August 2026.
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.
 - [ ] Confirm `RIVET_PUBLIC_REQUEST_PEPPER` exists in Convex and Vercel Production, is at least 32 characters with mixed character classes, and is not the local fallback.
-- [ ] Confirm `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset or `0` in Production.
-- [ ] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
+- [x] Confirm `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset or `0` in Production.
+- [x] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
 - [ ] Confirm `RESEND_API_KEY` exists.
 - [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
@@ -735,20 +761,20 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A4. Vercel Production and Preview
 
-- [ ] Confirm project `rivet-web` has root directory `apps/web`.
-- [ ] Confirm the effective Production build runs `pnpm build`.
-- [ ] Align the project-level Build Command with `pnpm build` so the dashboard does not show the legacy Convex deploy command.
-- [ ] Confirm Production `NEXT_PUBLIC_DATA_MODE=convex`.
-- [ ] Confirm the Production Convex URL and site URL point to the selected Production deployment.
+- [x] Confirm project `rivet-web` has root directory `apps/web`.
+- [x] Confirm the effective Production build runs `pnpm build`.
+- [x] Align the project-level Build Command with `pnpm build` so the dashboard does not show the legacy Convex deploy command.
+- [x] Confirm Production `NEXT_PUBLIC_DATA_MODE=convex`.
+- [x] Confirm the Production Convex URL and site URL point to the selected Production deployment.
 - [ ] Confirm Production Clerk variables are live/production values.
-- [ ] Confirm `NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com`.
+- [x] Confirm `NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com`.
 - [ ] Separate Preview Clerk values from Production: use a Development pair or remove them when Preview remains mock-only.
-- [ ] Decide the trusted Convex Production deployment path. If Vercel no longer deploys Convex, remove `CONVEX_DEPLOY_KEY` from Vercel after the replacement operator path is documented and tested.
+- [x] Use the authenticated, exact-target `pnpm convex:deploy` operator path. Vercel no longer deploys Convex, and its Production `CONVEX_DEPLOY_KEY` was removed after the replacement path passed a dry run, deploy, health check, and aggregate audits.
 
 #### A5. GitHub
 
 - [ ] Keep the optional `CONVEX_DEPLOY_KEY` tied to the isolated deployment used for generated-code verification; never use a Production key in GitHub Actions.
-- [ ] Confirm the latest ordinary `main` workflow is green.
+- [x] Confirm the latest ordinary `main` workflow is green.
 - [ ] After release verification, protect `main` with pull requests and required static/codegen checks.
 
 #### Operator completion report

@@ -1,8 +1,8 @@
 # RIVET engineering handoff plan
 
-Last updated: 28 August 2026
-Handoff baseline: final application/code verification tip `3c99fc7`; GitHub Actions and Vercel
-verification are recorded below.
+Last updated: 29 August 2026
+Handoff baseline: `main` at `d06021ebb2b013957efbc00127288c223be4ebb3`;
+current Convex and Vercel Production verification is recorded below.
 
 ## Purpose
 
@@ -20,6 +20,23 @@ and the complete chronological implementation record is
 [`FRONTEND_HANDOFF.md`](FRONTEND_HANDOFF.md) as a frozen historical artifact.
 
 ## Current state at handoff
+
+- Convex Production `descriptive-meerkat-589` received the current backend
+  through the guarded `pnpm convex:deploy` dry-run/deploy flow on 29 August.
+  Schema validation passed, no indexes were deleted, and post-deploy health was
+  `ok`. The renewal aggregate audit returned four zero-count categories. The
+  subscription preview processed five organizations, found two eligible
+  boundaries, and projected zero invoice, past-due, or suspension actions;
+  reconciliation remains disabled.
+- Vercel `rivet-web` now builds with `pnpm build`, not the legacy raw Convex
+  deploy hook. Its Production `CONVEX_DEPLOY_KEY` was removed after the exact
+  operator path was proven. A clean redeploy from `d06021e`,
+  `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh`, is `READY`, generated 51 pages, and had
+  no initial runtime errors or HTTP 500s.
+- Public read-only verification passed for the landing page, directory, and
+  one gym detail. Two test gyms remain publicly listed, including disposable
+  verification copy. Resolve those exact test tenants before launch. The
+  signed-in active-owner/platform pass and isolated staging suite remain open.
 
 - The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f` and the final
   application/code verification tip is `3c99fc7`; the final pushed history
@@ -57,8 +74,11 @@ and the complete chronological implementation record is
   coverage, CI Playwright and clean-worktree gates, the Next dependency-chain
   repair, and RIVET image aspect-ratio fixes. Production remains Convex-backed
   and fail-closed; the mock adapter is preview/test infrastructure only.
-- No Convex Production deploy, provider/configuration change, credentialed
-  staging run, or Production data mutation was performed in this sprint.
+- The repository-hardening sprint itself performed no Convex Production deploy
+  or provider change. The subsequent 29 August release closure deployed the
+  current backend, decoupled Vercel from backend deploys, and verified a clean
+  frontend redeploy. It performed no Production product-data mutation and no
+  credentialed staging run.
   GitHub Actions [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
   passed for `3c99fc7`, and Vercel Production deployment
   [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)

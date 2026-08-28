@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## Production backend and deployment-path closure — 29 August 2026
+
+- `main` and `origin/main` matched at `d06021ebb2b013957efbc00127288c223be4ebb3`
+  after a fresh fetch. No new partner commit or unmerged non-Arabic partner
+  slice was found; Five Pillars and the landing refresh are already contained
+  in `main`. `arabic-localisation` remains deliberately unmerged.
+- Convex Production was selected explicitly as `descriptive-meerkat-589` with
+  the checkout's Development deploy key suppressed. The names-only check
+  reached the expected Production environment. The guarded dry run and deploy
+  both completed schema validation and reported no deleted indexes; the dry
+  run proposed no destructive migration. The current backend functions are
+  deployed to `https://descriptive-meerkat-589.eu-west-1.convex.cloud`.
+- Post-deploy `health:check` returned `status: ok`. The aggregate-only
+  `renewalJobs.releaseAudit` returned zero deliveries, delivery events,
+  renewal timeline facts, and staff call tasks. The read-only subscription
+  preview processed five organizations, found two eligible boundaries, and
+  projected zero invoices, past-due transitions, or suspensions. Reconciliation
+  reported `enabled: false`; `RIVET_OPERATIONAL_EMAIL_LIVE` and
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` remain absent.
+- Vercel project `rivet-web` still had the legacy raw
+  `npx convex deploy ... --cmd 'pnpm build'` Build Command. It was replaced
+  with `pnpm build`, and the now-redundant Production `CONVEX_DEPLOY_KEY` was
+  removed from Vercel. The authenticated, exact-target operator flow through
+  `pnpm convex:deploy` is now the only tested Production backend release path.
+- A clean Production redeploy from exact repository head `d06021e` passed
+  without the Vercel Convex key. Deployment
+  [`dpl_8thJP5sjVUgH9YZREpQjgerpUbfh`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/8thJP5sjVUgH9YZREpQjgerpUbfh)
+  is `READY`; its build log shows `pnpm build`, 51 generated pages, and no
+  Convex deploy command. The canonical aliases return successfully, and the
+  first post-deploy error and HTTP-500 scans were empty.
+- Public read-only acceptance loaded the landing page, gym directory, and a
+  gym detail without console warnings or errors. Production currently exposes
+  two test gyms; the first includes disposable-verification copy and test
+  membership data. Those exact tenants must be unpublished, archived, or
+  converted to approved pilot content before public launch. No Production
+  product data was mutated during this closure.
+- Remaining release gates are the signed-in active-owner/platform acceptance,
+  isolated credentialed staging and cleanup evidence, a current backup,
+  resolution of the Convex above-Free-plan-limit warning, monitoring/WAF
+  ownership, and the documented product/provider decisions. Arabic and final
+  performance work remain deferred.
+
 ## Current release summary — repository-hardening sprint — 28 August 2026
 
 - The final application/code verification tip for this sprint is `3c99fc7`.
