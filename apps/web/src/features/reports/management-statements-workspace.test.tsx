@@ -137,6 +137,7 @@ describe("ManagementStatementPage", () => {
   });
 
   it("shows each report warning once in one completeness panel", async () => {
+    searchParamsMock.value = new URLSearchParams("from=2026-07-31&to=2026-08-29");
     const originalGetIncomeStatement = MockGymOSApi.prototype.getIncomeStatement;
     vi.spyOn(MockGymOSApi.prototype, "getIncomeStatement").mockImplementation(function (this: MockGymOSApi, input) {
       return originalGetIncomeStatement.call(this, input).then((report) => ({
