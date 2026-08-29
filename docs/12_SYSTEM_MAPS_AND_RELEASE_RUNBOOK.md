@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
 Last reviewed: 2026-08-29 for the exact-target Production backend closure,
-active-owner acceptance, and public gym-detail loading repair.
+active-owner/platform acceptance, public cleanup, and recovery export.
 
 ## Purpose
 
@@ -15,6 +15,29 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current repository state — 29 August 2026
+
+### Platform closure and recovery artifact — 29 August 2026
+
+- `main` and `origin/main` matched at `04b1f0f` after a fresh fetch with no new
+  partner work before this release-record update. Read-only Production
+  platform-owner acceptance passed for Overview, Applications, Gyms, Pricing
+  & entitlements, Billing, and Support without page or console errors.
+- The explicitly approved Hashem Test listing change was saved with an
+  immutable audit reason. The hidden state persisted after reload, public
+  discovery retained Elias Test but no longer returned Hashem Test, and the
+  hidden tenant's direct URL returned not-found without QA-content leakage.
+  No tenant history was archived or deleted.
+- The obsolete Production deploy key `vercel-production` was revoked after its
+  Vercel consumer had already been removed. `rivet_prod_cli` remains for the
+  trusted operator flow, and the documented non-Production GitHub credential
+  was not changed.
+- The Free plan disables Convex's managed **Backup Now** control. No purchase
+  or PAYG change was made. The supported CLI instead created an exact-target
+  snapshot export of `descriptive-meerkat-589`, including file storage, at
+  `/Users/hashemnusair/Documents/RIVET Production Backups/rivet-production-descriptive-meerkat-589-2026-08-29.zip`.
+  The local artifact is mode `0600`, passed ZIP integrity verification, and has
+  SHA-256 `bd11a9f179bb3674164a4cb9c5f598d92ce38b76edad75b674105c08dc20cbb4`.
+  Keep it outside source control and treat it as sensitive Production data.
 
 ### Active-owner acceptance and public-profile repair — 29 August 2026
 

@@ -1,7 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 29 August 2026 for Production backend closure, active-owner acceptance,
-and the public gym-detail loading repair.
+Updated 29 August 2026 for Production backend closure, owner/platform
+acceptance, public QA cleanup, and the current recovery export.
 This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
@@ -14,6 +14,18 @@ values, applicant details, and provider credentials out of this file.
 
 ### Production closure completed on 29 August
 
+- [x] Run current-head platform-owner acceptance for Overview, Applications,
+  Gyms, Pricing & entitlements, Billing, and Support without page or console
+  errors.
+- [x] With explicit platform-owner approval, hide exact Hashem Test from public
+  discovery through the audited listing control. Verify persistence after
+  reload, absence from discovery, direct-URL not-found behavior, continued
+  Elias Test visibility, and preservation of tenant history.
+- [x] Revoke the obsolete `vercel-production` Convex deploy key while retaining
+  `rivet_prod_cli` and the documented non-Production GitHub credential.
+- [x] Create an exact-target snapshot export of Convex Production, including
+  file storage, without purchasing a plan. Store it outside source control at
+  mode `0600`, verify ZIP integrity, and record its checksum in the runbook.
 - [x] Re-fetch GitHub and confirm `main` and `origin/main` at exact head
   `fb43a14`; no newer partner commit or unmerged non-Arabic slice was present.
 - [x] Run read-only active-owner acceptance against the intended `elias test
@@ -85,13 +97,11 @@ Convex or mutate Production data.
   checks passed on 29 August.
 - [ ] Run the credentialed isolated staging journeys, including the 14
   credential-gated browser journeys, with disposable identities and cleanup.
-- [ ] Complete current-head platform-administrator and authenticated mobile
-  Production acceptance. Active-owner desktop acceptance is complete; no
-  Production data mutation was performed.
-- [ ] With explicit platform-operator approval, hide the separate Hashem Test
-  QA tenant from public discovery without deleting its historical records.
+- [ ] Complete authenticated mobile Production acceptance. Active-owner desktop
+  and platform-owner desktop acceptance are complete.
 - [ ] Resolve Convex Production database I/O (1.65 GB used against the 1 GB
-  Free-plan allowance) and create/verify a current backup before pilot writes.
+  Free-plan allowance). A current exact-target snapshot export now exists, but
+  the operator intentionally deferred any plan or PAYG purchase.
 - [ ] Decide provider/product policy and activation for operational email,
   subscription reconciliation, messaging, packaging, accounting, and billing.
 - [ ] Resolve Convex capacity/billing, backups/recovery, WAF, monitoring, and

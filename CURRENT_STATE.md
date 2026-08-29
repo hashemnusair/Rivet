@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## Platform closure, QA-listing cleanup, and Production export — 29 August 2026
+
+- A fresh fetch found no newer partner work; `main` and `origin/main` matched at
+  `04b1f0ffa1c751af86d4d3d279b72a0dc5b819b8` before this release-record
+  update.
+- Current-head read-only platform-owner acceptance passed for Overview,
+  Applications, Gyms, Pricing & entitlements, Billing, and Support. All routes
+  loaded under the Production platform identity with no page or console
+  errors.
+- With explicit operator approval, the exact historical **Hashem Test** QA
+  tenant (`5fb83293-ee76-405e-a336-901347b600eb`) was removed from public
+  discovery through the audited listing control. The hidden state survived an
+  admin reload, the tenant disappeared from `/customer/discover`, and its
+  direct public URL returned **Gym not found** without exposing disposable QA
+  copy. Its organization, subscription, payment, audit, and other historical
+  records were preserved. **Elias Test** remained publicly visible and was not
+  mutated.
+- The obsolete Convex Production deploy key named `vercel-production` was
+  revoked after Vercel's deploy environment and build path had already been
+  decoupled from Convex deployment. The separate `rivet_prod_cli` operator key
+  remains. The GitHub `CONVEX_DEPLOY_KEY` is the documented non-Production
+  generated-code/staging credential and was not changed.
+- Convex disables **Backup Now** on the Free plan. The operator explicitly
+  declined a plan purchase for now, so no billing or PAYG change was made.
+  Instead, an exact-target snapshot export of Production
+  `descriptive-meerkat-589`, including file storage, was created through the
+  authenticated CLI and downloaded outside the repository to
+  `/Users/hashemnusair/Documents/RIVET Production Backups/rivet-production-descriptive-meerkat-589-2026-08-29.zip`.
+  The ZIP passed an integrity test, is mode `0600`, is 502,886 bytes, and has
+  SHA-256 `bd11a9f179bb3674164a4cb9c5f598d92ce38b76edad75b674105c08dc20cbb4`.
+- Remaining launch gates are Convex capacity/service-interruption risk (August
+  database I/O remains above the Free allowance), the 14 isolated credentialed
+  staging journeys and cleanup evidence, authenticated mobile verification,
+  monitoring/WAF/recovery ownership, Clerk signup/MFA policy, and the documented
+  product/provider decisions. Arabic and final measured performance work remain
+  last.
+
 ## Active-owner Production acceptance and public-detail repair — 29 August 2026
 
 - A fresh fetch confirmed `main` and `origin/main` match at

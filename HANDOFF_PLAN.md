@@ -1,7 +1,7 @@
 # RIVET engineering handoff plan
 
 Last updated: 29 August 2026
-Handoff baseline: `main` at `fb43a14cdcd65fc47c79f410c0b5aeb0949597d8`;
+Handoff baseline: `main` at `04b1f0ffa1c751af86d4d3d279b72a0dc5b819b8`;
 current Convex and Vercel Production verification is recorded below.
 
 ## Purpose
@@ -21,6 +21,22 @@ and the complete chronological implementation record is
 
 ## Current state at handoff
 
+- Current-head platform-owner acceptance passed for Overview, Applications,
+  Gyms, Pricing & entitlements, Billing, and Support with no page or console
+  errors. The previously completed active-owner acceptance used Elias Test.
+- With explicit approval, Hashem Test was hidden through the audited platform
+  listing control. The state persisted after reload, public discovery retained
+  Elias Test but no longer listed Hashem Test, and the hidden tenant's direct
+  URL returned not-found without leaking its disposable QA content. Historical
+  tenant records were preserved.
+- The obsolete `vercel-production` Convex deploy key was revoked; the separate
+  `rivet_prod_cli` operator key and documented non-Production GitHub credential
+  remain. No provider or job was enabled.
+- Convex's provider-managed backup button is unavailable on the Free plan, and
+  no plan/PAYG purchase was made. An exact-target Production snapshot export,
+  including file storage, was downloaded outside the repository at mode `0600`
+  and passed ZIP integrity verification. Its path and checksum are recorded in
+  `CURRENT_STATE.md` and the release runbook.
 - Authenticated active-owner acceptance passed against the intended
   `elias test gym 1` Production tenant for dashboard, Operations/inventory,
   retail checkout readiness, Finance/statements/controls, a completed receipt,
@@ -34,13 +50,11 @@ and the complete chronological implementation record is
   deployment `dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj` is `READY`. The canonical
   Elias Test profile loaded without console errors.
 - Elias Test is the intended pilot/test tenant. The separate Hashem Test QA
-  tenant is publicly visible with disposable-verification content; hide it
-  through an explicitly approved, reversible platform-admin action without
-  deleting its historical records.
+  tenant is now hidden without deleting its historical records.
 - Convex Production August database I/O is 1.65 GB against the 1 GB Free-plan
-  allowance, and no current dashboard backup exists. Capacity/billing and a
-  fresh backup are launch gates. Clerk Production is live; open public sign-up
-  and disabled MFA remain explicit product/security decisions.
+  allowance. The current export closes the immediate recovery-artifact gap,
+  while capacity/billing remains a launch gate. Clerk Production is live; open
+  public sign-up and disabled MFA remain explicit product/security decisions.
 - Convex Production `descriptive-meerkat-589` received the current backend
   through the guarded `pnpm convex:deploy` dry-run/deploy flow on 29 August.
   Schema validation passed, no indexes were deleted, and post-deploy health was
@@ -54,9 +68,8 @@ and the complete chronological implementation record is
   `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh`, is `READY`, generated 51 pages, and had
   no initial runtime errors or HTTP 500s.
 - Public read-only verification passed for the landing page, directory, and
-  gym details. The signed-in active-owner pass is now complete; the platform
-  pass, exact Hashem Test publication action, and isolated staging suite remain
-  open.
+  gym details. The signed-in active-owner and platform passes are complete and
+  Hashem Test is hidden; authenticated mobile and isolated staging remain open.
 
 - The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f` and the final
   application/code verification tip is `3c99fc7`; the final pushed history
