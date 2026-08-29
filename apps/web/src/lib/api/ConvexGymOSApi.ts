@@ -113,6 +113,30 @@ function publicMarketplaceRows(value: unknown): MarketplaceGym[] {
   return publicMarketplaceGyms(rows);
 }
 
+/**
+ * Keep the web release compatible with the previous dashboard projection
+ * while Convex is deployed separately. The empty queue is intentionally
+ * honest: it exposes no guessed work and disappears as soon as the newer
+ * server projection is available.
+ */
+function dashboardWithTodayQueue(dashboard: T.DashboardData): T.DashboardData {
+  if (dashboard.todayQueue) return dashboard;
+
+  return {
+    ...dashboard,
+    todayQueue: {
+      generatedAt: new Date().toISOString(),
+      items: [],
+      totalItems: 0,
+      urgentItems: 0,
+      highPriorityItems: 0,
+      kindCounts: {},
+      overdueItems: 0,
+      overdueKindCounts: {},
+    },
+  };
+}
+
 function errorFromConvex(error: unknown): ApiError {
   const candidate = error as { data?: unknown; message?: unknown };
   let payload = isRecord(candidate?.data) ? candidate.data : undefined;
@@ -405,8 +429,12 @@ export class ConvexGymOSApi implements GymOSApi {
   setNotificationRead(notificationId: string, read: boolean): Promise<OperationalNotification> { return this.mutate("notifications.read", { notificationId, read }); }
   async markAllNotificationsRead(): Promise<void> { await this.mutate("notifications.readAll", {}); }
 
-  getDashboard(query: DashboardQuery): Promise<T.DashboardData> { return this.query("dashboard", query); }
-  subscribeDashboard(query: DashboardQuery, onValue: (dashboard: T.DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("dashboard", query, onValue, onError); }
+  async getDashboard(query: DashboardQuery): Promise<T.DashboardData> {
+    return dashboardWithTodayQueue(await this.query("dashboard", query));
+  }
+  subscribeDashboard(query: DashboardQuery, onValue: (dashboard: T.DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeQuery<T.DashboardData>("dashboard", query, (dashboard) => onValue(dashboardWithTodayQueue(dashboard)), onError);
+  }
   listMembers(query: MemberListQuery): Promise<T.Page<T.MemberSummary>> { return this.query("members.list", query); }
   getMember(memberId: T.UUID): Promise<T.MemberDetail> { return this.query("members.get", { memberId }); }
   subscribeMember(memberId: T.UUID, onValue: (member: T.MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("members.get", { memberId }, onValue, onError); }

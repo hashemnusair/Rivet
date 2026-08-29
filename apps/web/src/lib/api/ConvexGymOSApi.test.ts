@@ -125,6 +125,49 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("keeps dashboard reads safe while the Today projection is deployed separately", async () => {
+    const legacyDashboard = {
+      kpis: {},
+      revenueSeries: [],
+      branchRevenue: [],
+      funnel: [],
+      leaderboard: [],
+      alerts: [],
+      recentActivity: [],
+    };
+    const api = new ConvexGymOSApi(transportFor({ query: legacyDashboard }));
+
+    await expect(api.getDashboard({ from: "2026-08-29", to: "2026-08-29" })).resolves.toMatchObject({
+      todayQueue: {
+        items: [],
+        totalItems: 0,
+        urgentItems: 0,
+        highPriorityItems: 0,
+        kindCounts: {},
+        overdueItems: 0,
+        overdueKindCounts: {},
+      },
+    });
+
+    const values: unknown[] = [];
+    const stop = vi.fn();
+    const subscribedApi = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, _args, onValue) => {
+        onValue(legacyDashboard);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await subscribedApi.subscribeDashboard(
+      { from: "2026-08-29", to: "2026-08-29" },
+      (dashboard) => values.push(dashboard.todayQueue),
+    );
+    expect(values).toEqual([expect.objectContaining({ items: [], totalItems: 0 })]);
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it("normalizes the public Convex projection without reviving non-operational rows", async () => {
     const publicRow = {
       id: "live-gym",
