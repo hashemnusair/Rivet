@@ -328,11 +328,15 @@ test.describe("sensitive actions are audited", () => {
     await page.getByRole("option", { name: "Forge — Abdoun" }).click();
     await page.getByLabel("Membership status filter").click();
     await page.getByRole("option", { name: /^Expired$/ }).click();
-    const number = await page.getByTestId("member-row").first().locator("p.font-mono").first().innerText();
+    await expect(page).toHaveURL(/membership=expired/);
+    const expiredRow = page.getByTestId("member-row").first();
+    await expect(expiredRow).toContainText("Expired");
+    const memberNumber = await expiredRow.locator("p.font-mono").first().innerText();
+    const phone = await expiredRow.locator('td[dir="ltr"]').first().innerText();
 
     await page.getByRole("link", { name: "Reception", exact: true }).click();
     await expect(page).toHaveURL(/\/reception/);
-    await page.getByTestId("reception-search").fill(number.trim());
+    await page.getByTestId("reception-search").fill(phone.trim());
     await expect(page.getByTestId("checkin-verdict")).toHaveAttribute("data-decision", "blocked");
 
     await page.getByTestId("override-checkin").click();
@@ -360,7 +364,7 @@ test.describe("sensitive actions are audited", () => {
     const row = page
       .getByRole("button", { expanded: false })
       .filter({ hasText: /override/i })
-      .filter({ hasText: number.trim() })
+      .filter({ hasText: memberNumber.trim() })
       .first();
     await expect(row).toBeVisible();
     await row.click();
