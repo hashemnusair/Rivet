@@ -42,6 +42,18 @@ export const qk = {
   managementReports: (params?: unknown) => ["managementReports", params] as const,
   branches: ["branches"] as const,
   users: (params?: unknown) => ["users", params] as const,
+  savedViews: (surface: string) => ["savedViews", surface] as const,
+  bulkJobs: ["bulkJobs"] as const,
+  duplicateCases: (status?: string) => ["duplicateCases", status ?? "open"] as const,
+  onboarding: (audience: string) => ["onboarding", audience] as const,
+  customerFinance: (params?: unknown) => ["customerFinance", params] as const,
+  customerReceipt: (id: string) => ["customerReceipts", id] as const,
+  pushSubscriptions: ["pushSubscriptions"] as const,
+  automationMonitoring: ["automationMonitoring"] as const,
+  exports: ["exports"] as const,
+  workspaceSearch: (query: string) => ["workspaceSearch", query] as const,
+  workspaceRecents: ["workspaceRecents"] as const,
+  workspacePins: ["workspacePins"] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */
@@ -65,4 +77,14 @@ export const INVALIDATE_ALL = [
   "approvals",
   "finance",
   "managementReports",
+  "savedViews",
+  "bulkJobs",
+  "duplicateCases",
+  "onboarding",
+  "customerFinance",
+  "customerReceipts",
+  "exports",
+  "workspaceSearch",
+  "workspaceRecents",
+  "workspacePins",
 ] as const;

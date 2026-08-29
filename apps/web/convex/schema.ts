@@ -803,6 +803,78 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
 
+  userSavedViews: defineTable({
+    organizationId: v.id("organizations"),
+    userId: v.id("users"),
+    publicId: v.string(),
+    surface: v.union(v.literal("members"), v.literal("leads"), v.literal("customer_finance")),
+    name: v.string(),
+    state: v.any(),
+    isDefault: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_user_surface", ["organizationId", "userId", "surface"]),
+
+  userOnboardingProgress: defineTable({
+    userId: v.id("users"),
+    organizationId: v.optional(v.id("organizations")),
+    audience: v.union(v.literal("owner"), v.literal("staff"), v.literal("member")),
+    version: v.number(),
+    completedStepKeys: v.array(v.string()),
+    dismissedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_audience", ["userId", "audience"])
+    .index("by_user_organization_audience", ["userId", "organizationId", "audience"]),
+
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    publicId: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    label: v.string(),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_user", ["userId"])
+    .index("by_user_endpoint", ["userId", "endpoint"]),
+
+  recentWorkspaceItems: defineTable({
+    userId: v.id("users"),
+    organizationId: v.optional(v.id("organizations")),
+    kind: v.union(v.literal("member"), v.literal("lead"), v.literal("receipt"), v.literal("page")),
+    entityPublicId: v.string(),
+    title: v.string(),
+    subtitle: v.optional(v.string()),
+    href: v.string(),
+    viewedAt: v.number(),
+  })
+    .index("by_user_organization_viewed", ["userId", "organizationId", "viewedAt"])
+    .index("by_user_organization_entity", ["userId", "organizationId", "kind", "entityPublicId"]),
+
+  pinnedWorkspaceItems: defineTable({
+    userId: v.id("users"),
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    targetKey: v.string(),
+    kind: v.union(v.literal("action"), v.literal("saved_view")),
+    label: v.string(),
+    href: v.string(),
+    position: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_user_organization", ["userId", "organizationId"])
+    .index("by_user_organization_target", ["userId", "organizationId", "targetKey"]),
+
   operationalNotifications: defineTable({
     publicId: v.string(),
     recipientUserId: v.id("users"),
