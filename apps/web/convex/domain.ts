@@ -2011,14 +2011,17 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
   const branchId = optionalString(input.branchId);
   const from = optionalString(input.from);
   const to = optionalString(input.to);
+  const approvalStatus = optionalString(input.approvalStatus);
+  if (approvalStatus && !["pending", "approved", "rejected"].includes(approvalStatus)) {
+    domainError("VALIDATION_ERROR", "Audit approval status is invalid.", { correlationId: actor.correlationId });
+  }
   const branch = branchId ? await branchByPublicId(ctx, actor.organization._id, branchId) : null;
   rows = rows.filter((row) =>
     (!category || row.category === category) &&
     (!actorId || row.actorPublicId === actorId) &&
     (!entityId || row.entityPublicId === entityId) &&
     (!branch || row.branchId === branch._id || row.destinationBranchId === branch._id) &&
-    (!from || row.occurredAt >= new Date(from).getTime()) &&
-    (!to || row.occurredAt <= new Date(`${to}T23:59:59.999Z`).getTime()) &&
+    instantFallsInTenantDateRange(row.occurredAt, actor.organization.timezone || TZ_FALLBACK, from, to) &&
     matchesSearch([row.summary, row.entityLabel, row.actorName, row.action], optionalString(input.search)),
   );
   const mapped = await Promise.all(rows.map(async (row) => ({
@@ -2042,7 +2045,10 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     correlationId: row.correlationId,
     occurredAt: utcIso(row.occurredAt),
   })));
-  return page(mapped, input);
+  const filtered = approvalStatus
+    ? mapped.filter((row) => row.approvalStatus === approvalStatus)
+    : mapped;
+  return page(filtered, input);
 }
 
 async function publicBranchIdFromId(ctx: ReadContext, organizationId: Id<"organizations">, id: Id<"branches">): Promise<string> {

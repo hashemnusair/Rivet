@@ -55,9 +55,16 @@ describe("Convex finance and reconciliation lifecycle", () => {
 
     const closedPositive = await reception.mutation(api.domain.mutate, operation("shifts.close", { shiftId: shiftOne.id, countedCash: { amount: 17_000, currency: "JOD" }, varianceExplanation: "Two dinars found above the expected drawer total" })) as Shift;
     expect(closedPositive).toMatchObject({ variance: { amount: 2_000 }, varianceApprovalStatus: "pending" });
+    const pendingAudit = await manager.query(api.domain.query, operation("audit.list", { approvalStatus: "pending", pageSize: 1 })) as { items: Array<{ approvalStatus?: string }>; totalItems: number };
+    expect(pendingAudit.totalItems).toBeGreaterThan(0);
+    expect(pendingAudit.items).toHaveLength(1);
+    expect(pendingAudit.items.every((event) => event.approvalStatus === "pending")).toBe(true);
     await expectCode(manager.mutation(api.domain.mutate, operation("shifts.review", { shiftId: shiftOne.id, decision: "approved" })), "VALIDATION_ERROR");
     const approved = await manager.mutation(api.domain.mutate, operation("shifts.review", { shiftId: shiftOne.id, decision: "approved", note: "Count sheet and drawer recount both confirm the positive variance" })) as Shift;
     expect(approved.varianceApprovalStatus).toBe("approved");
+    const approvedAudit = await manager.query(api.domain.query, operation("audit.list", { approvalStatus: "approved", pageSize: 1 })) as { items: Array<{ approvalStatus?: string }>; totalItems: number };
+    expect(approvedAudit.totalItems).toBeGreaterThan(0);
+    expect(approvedAudit.items.every((event) => event.approvalStatus === "approved")).toBe(true);
 
     const shiftTwo = await reception.mutation(api.domain.mutate, operation("shifts.open", { branchId: "finance-branch", openingFloat: { amount: 5_000, currency: "JOD" } })) as Shift;
     await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: cash.payment.id, amount: { amount: 4_000, currency: "JOD" }, reason: "Approved cash service refund", idempotencyKey: "finance-cash-refund" }));

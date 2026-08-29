@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -53,6 +53,9 @@ export default function NewMemberPage() {
   const invalidate = useInvalidate();
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
   const [checkingDupes, setCheckingDupes] = useState(false);
+  const [duplicateCheckError, setDuplicateCheckError] = useState<string | null>(null);
+  const [duplicateCheckOverride, setDuplicateCheckOverride] = useState(false);
+  const duplicateCheckRequest = useRef(0);
   const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? "";
 
   const form = useForm<FormValues>({
@@ -107,16 +110,34 @@ export default function NewMemberPage() {
     const phone = form.getValues("phone");
     const email = form.getValues("email");
     if (!phone && !email) return;
+    const request = ++duplicateCheckRequest.current;
     setCheckingDupes(true);
+    setDuplicateCheckError(null);
+    setDuplicateCheckOverride(false);
+    setDuplicates([]);
     try {
       const matches = await getApi().checkMemberDuplicates({ phone: phone || undefined, email: email || undefined });
+      if (request !== duplicateCheckRequest.current) return;
       setDuplicates(matches);
+    } catch {
+      if (request !== duplicateCheckRequest.current) return;
+      setDuplicateCheckError("RIVET could not check for an existing member. Retry before saving, or explicitly continue without the pre-check.");
     } finally {
-      setCheckingDupes(false);
+      if (request === duplicateCheckRequest.current) setCheckingDupes(false);
     }
   };
 
+  const contactChanged = () => {
+    duplicateCheckRequest.current += 1;
+    setCheckingDupes(false);
+    setDuplicateCheckError(null);
+    setDuplicateCheckOverride(false);
+    setDuplicates([]);
+  };
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const phoneField = form.register("phone");
+  const emailField = form.register("email");
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) router.push("/members"); }}>
@@ -164,6 +185,10 @@ export default function NewMemberPage() {
       <form
         onSubmit={form.handleSubmit(async (values) => {
           setErrorMsg(null);
+          if (duplicateCheckError && !duplicateCheckOverride) {
+            setErrorMsg("Retry the duplicate check or choose “Continue without pre-check” before saving.");
+            return;
+          }
           try {
             const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
             if (!selectedBranchId) {
@@ -187,10 +212,23 @@ export default function NewMemberPage() {
               <Input dir="rtl" placeholder="ليان المصري" {...form.register("fullNameAr")} />
             </Field>
             <Field label="Phone" required error={form.formState.errors.phone?.message}>
-              <Input dir="ltr" placeholder="+962 79 …" data-testid="member-phone" {...form.register("phone", { onBlur: checkDuplicates })} />
+              <Input
+                dir="ltr"
+                placeholder="+962 79 …"
+                data-testid="member-phone"
+                {...phoneField}
+                onChange={(event) => { void phoneField.onChange(event); contactChanged(); }}
+                onBlur={(event) => { void phoneField.onBlur(event); void checkDuplicates(); }}
+              />
             </Field>
             <Field label="Email" error={form.formState.errors.email?.message}>
-              <Input type="email" placeholder="name@example.com" {...form.register("email", { onBlur: checkDuplicates })} />
+              <Input
+                type="email"
+                placeholder="name@example.com"
+                {...emailField}
+                onChange={(event) => { void emailField.onChange(event); contactChanged(); }}
+                onBlur={(event) => { void emailField.onBlur(event); void checkDuplicates(); }}
+              />
             </Field>
             <Field label="Gender">
               <Controller
@@ -214,6 +252,17 @@ export default function NewMemberPage() {
             </Field>
           </div>
           {checkingDupes ? <p className="mt-2 text-[12px] text-ink-3">Checking for duplicates…</p> : null}
+          {duplicateCheckError ? (
+            <div role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-3 text-[12.5px] text-warning-deep">
+              <p>{duplicateCheckError}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={() => { void checkDuplicates(); }}>Retry check</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setDuplicateCheckOverride(true)} disabled={duplicateCheckOverride}>
+                  {duplicateCheckOverride ? "Continuing without pre-check" : "Continue without pre-check"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="panel p-5">

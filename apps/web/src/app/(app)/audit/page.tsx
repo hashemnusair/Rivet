@@ -6,6 +6,7 @@ import { Suspense, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { AuditQuery } from "@/lib/api/GymOSApi";
 import { useApiQuery } from "@/lib/hooks/use-api";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import type { AuditCategory, AuditEvent } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
 import { DateTimeText } from "@/components/shared/data-display";
@@ -41,27 +42,25 @@ function AuditPageInner() {
   const [actorId, setActorId] = useState("all");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const debouncedSearch = useDebouncedValue(search, 250);
 
-  const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 30 }));
+  const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 100 }));
 
   const query: AuditQuery = useMemo(
     () => ({
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       category: category === "all" ? undefined : (category as AuditCategory),
+      approvalStatus: approval === "all" ? undefined : (approval as NonNullable<AuditQuery["approvalStatus"]>),
       actorId: actorId === "all" ? undefined : actorId,
       page,
       pageSize: 20,
     }),
-    [search, category, actorId, page],
+    [debouncedSearch, category, approval, actorId, page],
   );
 
   const { data, isLoading, isError, error, refetch } = useApiQuery(qk.audit(query), (api) => api.listAuditEvents(query));
 
-  const items = useMemo(() => {
-    let rows = data?.items ?? [];
-    if (approval === "pending") rows = rows.filter((r) => r.approvalStatus === "pending");
-    return rows;
-  }, [data, approval]);
+  const items = data?.items ?? [];
 
   if (isError && isApiError(error) && error.code === "FORBIDDEN") {
     return <ForbiddenState description="The audit log requires the audit.read permission — owner, manager and auditor roles have it." />;
@@ -102,13 +101,15 @@ function AuditPageInner() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={approval} onValueChange={setApproval}>
+        <Select value={approval} onValueChange={(value) => { setApproval(value); setPage(1); }}>
           <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Approval filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Any state</SelectItem>
             <SelectItem value="pending">Pending approval</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
       </div>

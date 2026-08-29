@@ -7209,12 +7209,12 @@ export class MockGymOSApi implements GymOSApi {
       let items = [...this.db.audits];
       if (branchId) items = items.filter((a) => (!a.branchId && !a.destinationBranchId) || a.branchId === branchId || a.destinationBranchId === branchId);
       if (query.category) items = items.filter((a) => a.category === query.category);
+      if (query.approvalStatus) items = items.filter((a) => a.approvalStatus === query.approvalStatus);
       if (query.actorId) items = items.filter((a) => a.actorId === query.actorId);
       if (query.entityId) items = items.filter((a) => a.entityId === query.entityId);
       const auditFrom = query.from;
       const auditTo = query.to;
-      if (auditFrom) items = items.filter((a) => a.occurredAt >= auditFrom);
-      if (auditTo) items = items.filter((a) => a.occurredAt <= `${auditTo}T23:59:59.999Z`);
+      if (auditFrom || auditTo) items = items.filter((a) => instantFallsInTenantDateRange(a.occurredAt, this.db.organization.timezone, auditFrom, auditTo));
       items = items.filter((a) => this.matchesSearch([a.summary, a.entityLabel, a.actorName, a.action], query.search));
       return paginate(this.maybeEmpty(items), query);
     });

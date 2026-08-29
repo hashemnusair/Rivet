@@ -195,6 +195,7 @@ export interface ExecutionQuery extends ListQuery {
 
 export interface AuditQuery extends ListQuery {
   category?: AuditCategory;
+  approvalStatus?: "pending" | "approved" | "rejected";
   actorId?: UUID;
   entityId?: UUID;
   branchId?: UUID;

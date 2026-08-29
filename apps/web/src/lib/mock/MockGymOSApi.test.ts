@@ -772,6 +772,11 @@ describe("tenant/branch scoping and authorization", () => {
     const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
     expect(pendingRefund).toBeDefined();
 
+    const pendingPage = await api.listAuditEvents({ approvalStatus: "pending", pageSize: 1 });
+    expect(pendingPage.totalItems).toBeGreaterThan(1);
+    expect(pendingPage.items).toHaveLength(1);
+    expect(pendingPage.items.every((event) => event.approvalStatus === "pending")).toBe(true);
+
     await api.switchDemoRole("salesperson");
     await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
 
@@ -779,6 +784,9 @@ describe("tenant/branch scoping and authorization", () => {
     await api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" });
     const reviewed = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
     expect(reviewed.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("approved");
+    const approvedPage = await api.listAuditEvents({ approvalStatus: "approved", pageSize: 1 });
+    expect(approvedPage.totalItems).toBeGreaterThan(0);
+    expect(approvedPage.items.every((event) => event.approvalStatus === "approved")).toBe(true);
   });
 
   it("keeps approval results inside the actor's branch scope", async () => {

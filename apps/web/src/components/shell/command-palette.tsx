@@ -37,6 +37,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const [members, setMembers] = useState<MemberSummary[]>([]);
   const [leads, setLeads] = useState<LeadSummary[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -54,15 +56,18 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       setQuery("");
       setMembers([]);
       setLeads([]);
+      setSearchError(null);
       return;
     }
     if (query.trim().length < 2) {
       setMembers([]);
       setLeads([]);
+      setSearchError(null);
       return;
     }
     let cancelled = false;
     setSearching(true);
+    setSearchError(null);
     const api = getApi();
     const t = setTimeout(async () => {
       try {
@@ -77,6 +82,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         if (!cancelled) {
           setMembers([]);
           setLeads([]);
+          setSearchError("RIVET could not search members and leads. Check the connection and try again.");
         }
       } finally {
         if (!cancelled) setSearching(false);
@@ -86,7 +92,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query, open, canAny]);
+  }, [query, open, canAny, searchAttempt]);
 
   if (!signedIn) return null;
 
@@ -127,8 +133,12 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <ArrowRight className="size-4 text-ink-3" aria-hidden />
           <Command.Input
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(value) => {
+              setQuery(value);
+              setSearchError(null);
+            }}
             placeholder="Search members by name, phone or number — or jump to a page…"
+            aria-label="Search RIVET"
             className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4"
             autoFocus
           />
@@ -137,7 +147,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           {query.trim().length >= 2 ? (
             <>
               {searching ? <p className="px-3 py-2 text-[12.5px] text-ink-3">Searching…</p> : null}
-              {!searching && members.length === 0 && leads.length === 0 ? (
+              {!searching && searchError ? (
+                <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger">
+                  <p>{searchError}</p>
+                  <button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => setSearchAttempt((attempt) => attempt + 1)}>Retry search</button>
+                </div>
+              ) : null}
+              {!searching && !searchError && members.length === 0 && leads.length === 0 ? (
                 <p className="px-3 py-6 text-center text-[13px] text-ink-3">
                   No members or leads match “{query}”.
                 </p>
