@@ -22,4 +22,13 @@ describe("member PWA manifest", () => {
       expect(path.startsWith(scope)).toBe(true);
     }
   });
+
+  it("offers shortcuts for entry, payments, memberships, and PT", () => {
+    expect(manifest().shortcuts?.map((shortcut) => shortcut.url)).toEqual([
+      "/customer/my-gyms",
+      "/customer/my-gyms?entry=1",
+      "/customer/finance",
+      "/customer/my-gyms?section=pt",
+    ]);
+  });
 });

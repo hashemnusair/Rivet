@@ -513,6 +513,21 @@ describe("exported Convex customer ownership boundaries", () => {
     await expectCode(customer.query(api.domain.query, operation("onboarding.get", { audience: "owner" })), "FORBIDDEN");
   });
 
+  it("stores explicit per-device push consent without exposing subscription secrets", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customer = t.withIdentity({ subject: "clerk-customer-a" });
+    const staff = t.withIdentity({ subject: "clerk-staff" });
+    const saved = await customer.mutation(api.domain.mutate, operation("push.subscribe", { endpoint: "https://push.example.test/member-a", p256dh: "public-key-material-123456", auth: "auth-material-123", label: "Test phone" })) as { id: string; label: string; endpoint?: string; auth?: string };
+    expect(saved).toMatchObject({ label: "Test phone" });
+    expect(saved).not.toHaveProperty("endpoint");
+    expect(saved).not.toHaveProperty("auth");
+    expect(await customer.query(api.domain.query, operation("push.list"))).toEqual([expect.objectContaining({ id: saved.id, label: "Test phone" })]);
+    await customer.mutation(api.domain.mutate, operation("push.revoke", { subscriptionId: saved.id }));
+    expect(await customer.query(api.domain.query, operation("push.list"))).toEqual([]);
+    await expectCode(staff.query(api.domain.query, operation("push.list")), "FORBIDDEN");
+  });
+
   it("resolves published gym branding in the authenticated member experience", async () => {
     const t = convexTest(schema, modules);
     await seedFixtures(t);

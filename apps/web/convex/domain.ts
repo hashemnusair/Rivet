@@ -4078,6 +4078,44 @@ async function updateOnboardingProgressMutation(ctx: MutationCtx, input: Data, r
   return await onboardingExperience(ctx, { audience }, request);
 }
 
+function pushSubscriptionView(row: Doc<"pushSubscriptions">): Data {
+  return { id: row.publicId, label: row.label, createdAt: utcIso(row.createdAt), updatedAt: utcIso(row.updatedAt) };
+}
+
+async function listMemberPushSubscriptions(ctx: ReadContext): Promise<Data[]> {
+  const { user } = await requireMember(ctx);
+  const rows = await ctx.db.query("pushSubscriptions").withIndex("by_user", (q) => q.eq("userId", user._id)).collect();
+  return rows.filter((row) => !row.revokedAt).sort((left, right) => right.updatedAt - left.updatedAt).map(pushSubscriptionView);
+}
+
+async function saveMemberPushSubscription(ctx: MutationCtx, input: Data): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  const endpoint = stringValue(input.endpoint).trim();
+  const p256dh = stringValue(input.p256dh).trim();
+  const auth = stringValue(input.auth).trim();
+  const label = stringValue(input.label, "This device").trim().slice(0, 80) || "This device";
+  if (!endpoint.startsWith("https://") || endpoint.length > 2_000 || p256dh.length < 16 || p256dh.length > 500 || auth.length < 8 || auth.length > 500) domainError("VALIDATION_ERROR", "The browser push subscription is invalid.");
+  const existing = await ctx.db.query("pushSubscriptions").withIndex("by_user_endpoint", (q) => q.eq("userId", user._id).eq("endpoint", endpoint)).unique();
+  const now = Date.now();
+  if (existing) {
+    await ctx.db.patch(existing._id, { p256dh, auth, label, revokedAt: undefined, updatedAt: now });
+    return pushSubscriptionView({ ...existing, p256dh, auth, label, revokedAt: undefined, updatedAt: now });
+  }
+  const publicId = newPublicId();
+  const id = await ctx.db.insert("pushSubscriptions", { userId: user._id, publicId, endpoint, p256dh, auth, label, createdAt: now, updatedAt: now });
+  const created = await ctx.db.get(id);
+  if (!created) domainError("INTERNAL_ERROR", "Push subscription could not be saved.");
+  return pushSubscriptionView(created);
+}
+
+async function revokeMemberPushSubscription(ctx: MutationCtx, input: Data): Promise<void> {
+  const { user } = await requireMember(ctx);
+  const publicId = recordId(input.subscriptionId);
+  const row = await ctx.db.query("pushSubscriptions").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique();
+  if (!row || row.userId !== user._id || row.revokedAt) domainError("NOT_FOUND", "Push subscription not found.");
+  await ctx.db.patch(row._id, { revokedAt: Date.now(), updatedAt: Date.now() });
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4105,6 +4143,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
 
   if (operation === "onboarding.get") return await onboardingExperience(ctx, input, request);
+  if (operation === "push.list") return await listMemberPushSubscriptions(ctx);
 
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
@@ -6198,6 +6237,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   if (operation === "onboarding.update") return await updateOnboardingProgressMutation(ctx, input, request);
+  if (operation === "push.subscribe") return await saveMemberPushSubscription(ctx, input);
+  if (operation === "push.revoke") return await revokeMemberPushSubscription(ctx, input);
 
   if (operation === "public.offer.respond") {
     const token = stringValue(input.token).trim();

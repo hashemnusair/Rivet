@@ -133,6 +133,8 @@ import type {
   MergeMemberInput,
   OnboardingAudience,
   OnboardingExperience,
+  PushSubscriptionInput,
+  PushSubscriptionSummary,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -760,6 +762,9 @@ export interface GymOSApi {
   mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;
   getOnboardingExperience(audience: OnboardingAudience): Promise<OnboardingExperience>;
   updateOnboardingProgress(input: { audience: OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<OnboardingExperience>;
+  listPushSubscriptions(): Promise<PushSubscriptionSummary[]>;
+  savePushSubscription(input: PushSubscriptionInput): Promise<PushSubscriptionSummary>;
+  revokePushSubscription(subscriptionId: UUID): Promise<void>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;

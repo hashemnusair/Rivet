@@ -692,6 +692,7 @@ export class MockGymOSApi implements GymOSApi {
   private bulkIdempotency = new Map<string, { signature: string; job: import("@/lib/domain/qol").BulkOperationJob }>();
   private duplicateResolutions = new Map<string, { status: import("@/lib/domain/qol").DuplicateCaseStatus; reason: string; survivingMemberId?: string; updatedAt: string }>();
   private onboardingProgress = new Map<import("@/lib/domain/qol").OnboardingAudience, import("@/lib/domain/qol").OnboardingProgress>();
+  private pushSubscriptions: import("@/lib/domain/qol").PushSubscriptionSummary[] = [];
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -1205,6 +1206,9 @@ export class MockGymOSApi implements GymOSApi {
       return await this.getOnboardingExperience(input.audience);
     });
   }
+  listPushSubscriptions(): Promise<import("@/lib/domain/qol").PushSubscriptionSummary[]> { return this.respond(() => this.pushSubscriptions.map((item) => ({ ...item }))); }
+  savePushSubscription(input: import("@/lib/domain/qol").PushSubscriptionInput): Promise<import("@/lib/domain/qol").PushSubscriptionSummary> { return this.respond(() => { const now = nowISO(); const existing = this.pushSubscriptions.find((item) => item.label === (input.label ?? "This device")); if (existing) { existing.updatedAt = now; return { ...existing }; } const item = { id: mockUuid(), label: input.label ?? "This device", createdAt: now, updatedAt: now }; this.pushSubscriptions.push(item); return { ...item }; }); }
+  revokePushSubscription(subscriptionId: T.UUID): Promise<void> { return this.respond(() => { const index = this.pushSubscriptions.findIndex((item) => item.id === subscriptionId); if (index < 0) throw ApiError.of(ERR.NOT_FOUND, "Push subscription not found."); this.pushSubscriptions.splice(index, 1); }); }
 
   async subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {

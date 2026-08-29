@@ -23,6 +23,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
+import { MemberPwaManager } from "@/components/pwa/member-pwa";
 
 const MARKETING_NAV = [
   { href: "/#product", label: "Product" },
@@ -288,6 +289,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
   return (
     <div className={cn("flex min-h-dvh flex-col bg-paper", customerSignedIn && "member-app-shell sm:pb-0")}>
+      {customerSignedIn ? <MemberPwaManager /> : null}
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
