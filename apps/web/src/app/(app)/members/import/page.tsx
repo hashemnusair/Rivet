@@ -2,7 +2,7 @@
 
 import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { MemberImportCommitResult, MemberImportPreview } from "@/lib/api/GymOSApi";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -33,13 +33,16 @@ export default function MemberImportPage() {
   const [result, setResult] = useState<MemberImportCommitResult>();
   const [committing, setCommitting] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [fileSize, setFileSize] = useState(0);
   const [fileError, setFileError] = useState("");
+  const [draggingFile, setDraggingFile] = useState(false);
+  const [showCsvText, setShowCsvText] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [branchId, setBranchId] = useState("");
   useEffect(() => {
-    const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
-    setBranchId((current) => visibleBranchId(session?.branches, current) ?? activeBranchId ?? "");
+    const defaultBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? session?.branches[0]?.id;
+    setBranchId((current) => visibleBranchId(session?.branches, current) ?? defaultBranchId ?? "");
   }, [session?.activeBranchId, session?.branches]);
   useEffect(() => {
     if (preview && preview.branchId !== visibleBranchId(session?.branches, branchId)) {
@@ -76,11 +79,27 @@ export default function MemberImportPage() {
     try {
       setCsv(await file.text());
       setFileName(file.name);
+      setFileSize(file.size);
+      setShowCsvText(false);
       setPreview(undefined);
       setResult(undefined);
     } catch {
       setFileError("RIVET could not read this file. Export a fresh CSV and try again.");
     }
+  };
+
+  const dropFile = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDraggingFile(false);
+    void loadFile(event.dataTransfer.files[0]);
+  };
+
+  const updateCsvText = (value: string) => {
+    setCsv(value);
+    setFileName("");
+    setFileSize(0);
+    setPreview(undefined);
+    setResult(undefined);
   };
 
   const commit = async () => {
@@ -128,78 +147,96 @@ export default function MemberImportPage() {
         }
       />
 
-      <section className="panel space-y-4 p-5">
-        <div className="flex items-start gap-3">
+      <section className="panel overflow-hidden">
+        <header className="flex items-start gap-3 border-b border-line px-5 py-4">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-sunken text-ink-2">
             <FileUp className="size-4" aria-hidden />
           </div>
           <div>
-            <h2 className="font-display text-[15px] font-semibold text-ink">CSV source</h2>
-            <p className="mt-1 text-[12.5px] text-ink-2">Export any CRM, Excel workbook, or Google Sheet as CSV. Required columns: full_name and phone. Email is optional.</p>
+            <h2 className="font-display text-[15px] font-semibold text-ink">Upload a member list</h2>
+            <p className="mt-1 max-w-3xl text-[12.5px] text-ink-2">Export the list from Excel, Google Sheets, or another system as a CSV file. RIVET checks every member before adding anyone.</p>
           </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-surface px-4 text-start transition-colors hover:border-ink/30 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-white"><FileSpreadsheet className="size-4" aria-hidden /></span>
-            <span><span className="block text-[13px] font-medium text-ink">Choose CSV file</span><span className="mt-0.5 block text-[11.5px] text-ink-3">Up to 2 MB</span></span>
-          </button>
-          <div className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-sunken/40 px-4">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface font-mono text-[12px] text-ink-2">+{session?.organization.phoneCountryCallingCode ?? "962"}</span>
-            <span><span className="block text-[13px] font-medium text-ink">Local-number default</span><span className="mt-0.5 block text-[11.5px] leading-4 text-ink-3">International + or 00 numbers stay unchanged.</span></span>
-          </div>
-          <div className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-sunken/40 px-4">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink-2"><CheckCircle2 className="size-4" aria-hidden /></span>
-            <span><span className="block text-[13px] font-medium text-ink">Safe preview first</span><span className="mt-0.5 block text-[11.5px] leading-4 text-ink-3">Duplicates and invalid rows are skipped.</span></span>
-          </div>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="sr-only"
-          aria-label="Choose member CSV file"
-          onChange={(event) => { void loadFile(event.target.files?.[0]); event.target.value = ""; }}
-        />
-        {fileName ? <p className="text-[12px] text-success-deep" role="status">Loaded {fileName}</p> : null}
-        {fileError ? <p className="text-[12px] text-danger" role="alert">{fileError}</p> : null}
-        <div className="grid gap-3 md:grid-cols-[1fr_220px]">
-          <label className="space-y-1.5">
-            <span className="eyebrow">Review or paste CSV</span>
-            <Textarea
-              rows={10}
-              value={csv}
-              onChange={(event) => setCsv(event.target.value)}
-              placeholder={SAMPLE_CSV}
-              aria-label="Member CSV content"
-              className="font-mono text-[12px]"
-            />
-          </label>
-          <div className="space-y-3 rounded-md border border-line bg-sunken/50 p-3">
-            <p className="eyebrow">Import destination</p>
+        </header>
+
+        <div className="space-y-5 p-5">
+          <div className="grid items-end gap-4 md:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             <label className="space-y-1.5">
-              <span className="text-[12px] text-ink-2">Choose one branch. Imports cannot use All branches.</span>
+              <span className="text-[12.5px] font-medium text-ink">Add members to</span>
               <Select value={branchId || "none"} onValueChange={(value) => { setBranchId(value === "none" ? "" : value); setPreview(undefined); setResult(undefined); }}>
-                <SelectTrigger aria-label="Import destination branch">
-                  <SelectValue placeholder="Choose branch" />
+                <SelectTrigger aria-label="Member home branch">
+                  <SelectValue placeholder="Choose a branch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Choose branch</SelectItem>
+                  <SelectItem value="none">Choose a branch</SelectItem>
                   {session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </label>
-            <Button className="w-full" onClick={runPreview} disabled={!branchId || !csv.trim()} loading={previewMutation.isPending}>
-              <Upload /> Preview rows
+            <p className="rounded-md bg-sunken px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+              Local phone numbers use <strong className="font-medium text-ink">+{session?.organization.phoneCountryCallingCode ?? "962"}</strong>. Numbers that already begin with <span className="font-mono">+</span> or <span className="font-mono">00</span> keep their country code.
+            </p>
+          </div>
+
+          <div
+            className={`flex min-h-52 flex-col items-center justify-center rounded-lg border border-dashed px-6 py-8 text-center transition-colors ${draggingFile ? "border-[var(--tenant-brand-primary)] bg-sunken" : "border-line-2 bg-surface"}`}
+            onDragEnter={(event) => { event.preventDefault(); setDraggingFile(true); }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false); }}
+            onDrop={dropFile}
+          >
+            <div className="flex size-11 items-center justify-center rounded-md bg-sunken text-ink-2">
+              <FileSpreadsheet className="size-5" aria-hidden />
+            </div>
+            <h3 className="mt-3 text-[14px] font-semibold text-ink">{fileName || "Drop your CSV file here"}</h3>
+            <p className="mt-1 text-[12px] text-ink-3">
+              {fileName ? `${Math.max(1, Math.ceil(fileSize / 1024)).toLocaleString()} KB · ready to review` : "CSV only · up to 2 MB · maximum 10,000 members"}
+            </p>
+            <Button type="button" variant={fileName ? "secondary" : "primary"} className="mt-4" onClick={() => fileInputRef.current?.click()}>
+              <Upload /> {fileName ? "Replace file" : "Choose CSV file"}
             </Button>
-            <Button variant="ghost" className="w-full" onClick={() => setCsv(SAMPLE_CSV)}>
-              Use sample CSV
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="sr-only"
+              aria-label="Choose member CSV file"
+              onChange={(event) => { void loadFile(event.target.files?.[0]); event.target.value = ""; }}
+            />
+          </div>
+
+          {fileError ? <p className="text-[12px] text-danger" role="alert">{fileError}</p> : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowCsvText((current) => !current)}>
+              {showCsvText ? "Hide CSV text" : csv ? "Review CSV text" : "Paste CSV instead"}
             </Button>
-            <Button asChild variant="ghost" className="w-full">
-              <a href={TEMPLATE_DOWNLOAD} download="rivet-member-import-template.csv"><Download /> Download template</a>
+            <Button asChild variant="ghost" size="sm">
+              <a href={TEMPLATE_DOWNLOAD} download="rivet-member-import-template.csv"><Download /> Download CSV template</a>
+            </Button>
+          </div>
+
+          {showCsvText ? (
+            <label className="block space-y-1.5">
+              <span className="text-[12.5px] font-medium text-ink">CSV text</span>
+              <span className="block text-[11.5px] text-ink-3">Required columns: full_name and phone. Email is optional.</span>
+            <Textarea
+              rows={7}
+              value={csv}
+              onChange={(event) => updateCsvText(event.target.value)}
+              placeholder={SAMPLE_CSV}
+              aria-label="Member CSV content"
+              className="font-mono text-[12px]"
+            />
+            </label>
+          ) : null}
+
+          <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-3xl text-[11.5px] leading-5 text-ink-3">Imported members are not opted into marketing. An authorized employee can record their preference later.</p>
+            <Button className="shrink-0" onClick={runPreview} disabled={!branchId || !csv.trim()} loading={previewMutation.isPending}>
+              <CheckCircle2 /> Review members
             </Button>
           </div>
         </div>
-        <p className="text-[11.5px] leading-5 text-ink-3">Imported marketing consent remains unknown, so RIVET will not send marketing messages until the member or an authorized employee records an explicit preference. Service messages follow their own operational rules.</p>
       </section>
 
       {preview ? (
@@ -210,7 +247,7 @@ export default function MemberImportPage() {
               <p className="mt-1 text-[12.5px] text-ink-2">{preview.totalRows} rows · {preview.validRows} ready · {preview.duplicateRows} duplicates · {preview.errorRows} invalid</p>
             </div>
             <Button onClick={commit} disabled={validRows.length === 0 || committing || result?.status === "completed"} loading={committing}>
-              {committing ? "Committing…" : result?.status === "completed" ? "Import complete" : `Commit ${validRows.length} valid rows`}
+              {committing ? "Importing…" : result?.status === "completed" ? "Import complete" : `Import ${validRows.length} ${validRows.length === 1 ? "member" : "members"}`}
             </Button>
           </div>
           <div className="overflow-x-auto">
@@ -221,7 +258,7 @@ export default function MemberImportPage() {
                   <th className="px-3 py-2 text-start font-medium">Member</th>
                   <th className="px-3 py-2 text-start font-medium">Phone</th>
                   <th className="px-3 py-2 text-start font-medium">Email</th>
-                  <th className="px-5 py-2 text-start font-medium">Decision</th>
+                  <th className="px-5 py-2 text-start font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -233,7 +270,7 @@ export default function MemberImportPage() {
                     <td className="px-3 py-3 text-ink-2">{row.email || "—"}</td>
                     <td className="px-5 py-3">
                       <span className={row.status === "valid" ? "text-success-deep" : row.status === "duplicate" ? "text-warning-deep" : "text-danger"}>
-                        {row.status}
+                        {row.status === "valid" ? "Ready" : row.status === "duplicate" ? "Duplicate" : row.status === "invalid" ? "Needs attention" : "Skipped"}
                       </span>
                       {row.errors.length > 0 ? <span className="ms-2 text-[11px] text-ink-3">{row.errors.join("; ")}</span> : null}
                     </td>
