@@ -1541,7 +1541,16 @@ async function listFacilityTasks(ctx: QueryCtx, actor: ActorContext, input: Data
   await requireOperations(ctx, actor);
   const branch = input.branchId ? await branchByPublicId(ctx, actor, optionalText(input.branchId)) : undefined;
   const zone = input.zoneId ? await zoneByPublicId(ctx, actor, optionalText(input.zoneId), branch) : undefined;
-  let rows = await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  let rows = zone
+    ? await ctx.db.query("facilityTasks").withIndex("by_zone", (q) => q.eq("organizationId", actor.organization._id).eq("zoneId", zone._id)).collect()
+    : branch
+      ? await ctx.db.query("facilityTasks").withIndex("by_branch_status", (q) => {
+        const scoped = q.eq("organizationId", actor.organization._id).eq("branchId", branch._id);
+        return input.status ? scoped.eq("status", input.status) : scoped;
+      }).collect()
+      : input.status
+        ? await ctx.db.query("facilityTasks").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", input.status)).collect()
+        : await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   rows = rows.filter((row) => (!branch || row.branchId === branch._id) && (!zone || row.zoneId === zone._id) && (!input.status || row.status === input.status) && (!input.kind || row.kind === input.kind) && (actor.branchScope === "all" || actor.branchIds.includes(row.branchId))).sort((left, right) => right.updatedAt - left.updatedAt);
   return await Promise.all(rows.map((row) => facilityView(ctx, actor, row)));
 }

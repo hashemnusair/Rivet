@@ -940,10 +940,26 @@ async function recordsOfBranch(ctx: ReadContext, actor: ActorContext, entityType
 }
 
 async function recordsOfMember(ctx: ReadContext, organizationId: Id<"organizations">, memberPublicId: string, entityType: string): Promise<DomainRecord[]> {
-  return await ctx.db
+  const indexed = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_member_type", (q) => q.eq("organizationId", organizationId).eq("memberPublicId", memberPublicId).eq("entityType", entityType))
     .collect();
+  if (indexed.length > 0) return indexed;
+  // Compatibility for records created before relationship keys were added.
+  // Current writes always populate the index, so established tenants leave
+  // this fallback naturally as their operational history rolls forward.
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+    .filter((record) => optionalString(data(record.data).memberId) === memberPublicId);
+}
+
+async function recordsOfLead(ctx: ReadContext, organizationId: Id<"organizations">, leadPublicId: string, entityType: string): Promise<DomainRecord[]> {
+  const indexed = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_lead_type", (q) => q.eq("organizationId", organizationId).eq("leadPublicId", leadPublicId).eq("entityType", entityType))
+    .collect();
+  if (indexed.length > 0) return indexed;
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+    .filter((record) => optionalString(data(record.data).leadId) === leadPublicId);
 }
 
 async function recordOf(ctx: ReadContext, actor: ActorContext, entityType: string, id: string): Promise<DomainRecord> {
@@ -1428,7 +1444,7 @@ async function paymentRecords(ctx: ReadContext, actor: ActorContext): Promise<Do
 
 async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data | undefined> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const terms = (await membershipRecords(ctx, actor))
+  const terms = (await recordsOfMember(ctx, actor.organization._id, memberId, "membership"))
     .map((record) => data(record.data))
     .filter((membership) => membership.memberId === memberId)
     .map((membership) => ({ membership, status: statusOfMembership(membership, today) }));
@@ -1438,7 +1454,7 @@ async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId
 
 async function outstandingForMember(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const total = (await chargeRecords(ctx, actor))
+  const total = (await recordsOfMember(ctx, actor.organization._id, memberId, "charge"))
     .map((record) => data(record.data))
     .filter((charge) => charge.memberId === memberId)
     .reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
@@ -1449,11 +1465,11 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
   const membership = await currentMembership(ctx, actor, stringValue(value.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const outstandingCharges = (await chargeRecords(ctx, actor))
+  const outstandingCharges = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "charge"))
     .map((record) => data(record.data))
     .filter((charge) => charge.memberId === value.id && collectibleOutstandingValue(charge, today) > 0)
     .map((charge) => chargeProjection(charge, today));
-  const checkins = (await recordsOf(ctx, actor, "checkIn"))
+  const checkins = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
     .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked")
     .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
@@ -1568,10 +1584,10 @@ async function recordOfOptional(ctx: ReadContext, actor: ActorContext, entityTyp
 
 async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const summary = await toMemberSummary(ctx, actor, value);
-  const checkins = (await recordsOf(ctx, actor, "checkIn"))
+  const checkins = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
     .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked");
-  const payments = (await paymentRecords(ctx, actor))
+  const payments = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "payment"))
     .map((record) => data(record.data))
     .filter((payment) => payment.memberId === value.id && payment.status !== "voided")
     .reduce((sum, payment) => sum + amountOf(payment.amount), 0);
@@ -1737,9 +1753,9 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(value.branchId));
   const owner = optionalString(value.ownerId) ? await userByPublicId(ctx, actor.organization._id, stringValue(value.ownerId)) : null;
   const [timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
-    recordsOf(ctx, actor, "timeline"),
-    recordsOf(ctx, actor, "offer"),
-    recordsOf(ctx, actor, "trialBooking"),
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "timeline"),
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "offer"),
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "trialBooking"),
   ]);
   const leadId = stringValue(value.id);
   const activities = timelineRecords
@@ -4160,7 +4176,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const memberId = recordId(input.memberId);
       await recordOf(ctx, actor, "member", memberId);
-      let events = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === memberId);
+      let events = (await recordsOfMember(ctx, actor.organization._id, memberId, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === memberId);
       if (Array.isArray(input.types)) events = events.filter((event) => arrayValue(input.types).includes(event.type));
       events.sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
       return page(events, input);
@@ -4232,8 +4248,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "crm.read");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const leadId = stringValue(data(lead.data).id);
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((record) => offerProjection(data(record.data))).filter((offer) => offer.leadId === leadId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((record) => offerProjection(data(record.data))).filter((offer) => offer.leadId === leadId);
       const trialBooking = await linkedTrialBooking(ctx, actor, leadId);
       return { ...(await toLeadSummary(ctx, actor, data(lead.data))), notes: optionalString(data(lead.data).notes), activities, offers, ...(trialBooking ? { trialBooking: data(trialBooking.data) } : {}) };
     }
@@ -7721,15 +7737,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const after = { fullName, phone, email: email ?? null };
       const changedFields = Object.entries(after).filter(([field, value]) => before[field as keyof typeof before] !== value).map(([field]) => field);
       if (changedFields.length === 0) {
-        const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
-        const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+        const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+        const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
         return { ...(await toLeadSummary(ctx, actor, current)), notes: optionalString(current.notes), activities, offers };
       }
       const updated = await patchRecord(ctx, actor, record, { fullName, phone, email, updatedAt: isoNow() });
       await insertAudit(ctx, actor, { category: "crm", action: "lead.contact.update", entityType: "lead", entityId: record.publicId, entityLabel: fullName, summary: "Lead contact details corrected", before, after, branchId: optionalString(current.branchId) });
       await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities, offers };
     }
     case "leads.contact": {
@@ -7767,7 +7783,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           branchId: optionalString(current.branchId),
         });
       }
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers: [] };
     }
     case "trials.schedule_for_lead": {
@@ -7815,8 +7831,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
       await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
       await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: booking };
     }
     case "trials.update": {
@@ -7878,8 +7894,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
         });
       }
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: updatedBooking };
     }
     case "offers.create": {
@@ -8996,11 +9012,11 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     const workspace = await workspaceAccessData(ctx, actor);
     const operationsEnabled = arrayValue(workspace.modules).map(data).some((module) => module.key === "operations" && module.entitled === true && module.enabled === true);
     if (operationsEnabled) {
-      const facilityRows = await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+      const facilityRows = (await Promise.all((["open", "in_progress", "blocked"] as const).map((status) => ctx.db.query("facilityTasks").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", status)).collect()))).flat();
       for (const task of facilityRows) {
         if (actor.branchScope === "selected" && !actor.branchIds.includes(task.branchId)) continue;
         const taskBranchId = await publicBranchIdFromId(ctx, actor.organization._id, task.branchId);
-        if (!queueBranchVisible(taskBranchId) || !["open", "in_progress", "blocked"].includes(task.status)) continue;
+        if (!queueBranchVisible(taskBranchId)) continue;
         const dueAt = task.dueAt ? utcIso(task.dueAt) : undefined;
         const dueToday = dueAt ? businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) <= today : false;
         if (!dueToday && !["high", "critical"].includes(task.severity)) continue;
@@ -9012,7 +9028,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
           detail: `${task.kind} · ${task.status.replaceAll("_", " ")}`,
           branchName: branchNameById.get(taskBranchId),
           dueAt,
-          href: "/operations",
+          href: `/operations?tab=facilities&branch=${encodeURIComponent(taskBranchId)}`,
           action: { kind: "navigate", label: "Open" },
         });
       }

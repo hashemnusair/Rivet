@@ -386,6 +386,34 @@ describe("daily operations typed contracts", () => {
     expect(recommendation.rationale.join(" ")).toMatch(/replacement estimate|repair cost|purchase date|useful life/i);
   });
 
+  it("keeps indexed facility working sets correct at realistic branch volume", async () => {
+    const { owner, manager, t } = await seeded();
+    const zoneA = await owner.mutation(api.domain.mutate, operation("zones.upsert", { branchId: "operations-branch-a", code: "FLOOR-A", name: "Main floor", kind: "floor" })) as { id: string };
+    const zoneB = await owner.mutation(api.domain.mutate, operation("zones.upsert", { branchId: "operations-branch-b", code: "FLOOR-B", name: "Second floor", kind: "floor" })) as { id: string };
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization!._id)).collect();
+      const zones = await ctx.db.query("zones").withIndex("by_organization", (q) => q.eq("organizationId", organization!._id)).collect();
+      const branchByPublicId = new Map(branches.map((branch) => [branch.publicId, branch._id]));
+      const zoneByPublicId = new Map(zones.map((zone) => [zone.publicId, zone._id]));
+      const statuses = ["open", "in_progress", "blocked"] as const;
+      const now = Date.now();
+      for (let index = 0; index < 600; index += 1) {
+        const branchPublicId = index % 2 === 0 ? "operations-branch-a" : "operations-branch-b";
+        const zonePublicId = branchPublicId === "operations-branch-a" ? zoneA.id : zoneB.id;
+        await ctx.db.insert("facilityTasks", { organizationId: organization!._id, publicId: `scale-facility-${index}`, branchId: branchByPublicId.get(branchPublicId)!, zoneId: zoneByPublicId.get(zonePublicId)!, kind: index % 5 === 0 ? "incident" : "cleaning", severity: index % 10 === 0 ? "critical" : "medium", status: statuses[index % statuses.length]!, title: `Scale task ${index}`, financialPostingStatus: "not_posted", createdAt: now - index, updatedAt: now - index });
+      }
+    });
+
+    const branchOpen = await manager.query(api.domain.query, operation("operations.facility_tasks.list", { branchId: "operations-branch-a", status: "open" })) as Array<{ id: string; status: string; branchId: string }>;
+    expect(branchOpen).toHaveLength(100);
+    expect(branchOpen.every((task) => task.branchId === "operations-branch-a" && task.status === "open")).toBe(true);
+    const organizationBlocked = await owner.query(api.domain.query, operation("operations.facility_tasks.list", { status: "blocked" })) as Array<{ status: string }>;
+    expect(organizationBlocked).toHaveLength(200);
+    expect(organizationBlocked.every((task) => task.status === "blocked")).toBe(true);
+  });
+
   it("keeps posted operational source facts immutable and audits inventory adjustments", async () => {
     const { owner, t } = await seeded();
     const zoneA = await owner.mutation(api.domain.mutate, operation("zones.upsert", { branchId: "operations-branch-a", code: "POSTED-A", name: "Posted A", kind: "weights" })) as { id: string };

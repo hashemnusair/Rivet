@@ -524,6 +524,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_organization", ["organizationId"])
+    .index("by_organization_status", ["organizationId", "status"])
     .index("by_branch_status", ["organizationId", "branchId", "status"])
     .index("by_zone", ["organizationId", "zoneId"])
     .index("by_public_id", ["organizationId", "publicId"]),
