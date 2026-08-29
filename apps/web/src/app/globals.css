@@ -236,6 +236,15 @@
     line-height: 1.45;
   }
 
+  /* Mouse-dense controls remain compact on office laptops, while the same
+     controls meet a practical 44px target on reception tablets and phones. */
+  @media (pointer: coarse) {
+    [data-touch-target] {
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+    }
+  }
+
   /* Playwright deliberately uses seeded personas instead of Clerk sessions.
      Clerk's development-key notice is mounted outside the app tree and can
      intercept clicks, so hide only that external surface for the explicit,

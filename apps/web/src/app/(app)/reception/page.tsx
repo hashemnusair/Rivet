@@ -50,9 +50,9 @@ export default function ReceptionPage() {
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query, 180);
   const [result, setResult] = useState<CheckInResult | null>(null);
+  const [recentPage, setRecentPage] = useState(1);
   const [dialog, setDialog] = useState<"override" | "collect" | "renew" | "openShift" | "closeShift" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Gate on the live *and* debounced query. Checking only the debounced value
   // would keep the previous member's verdict on screen for one debounce window
@@ -74,7 +74,7 @@ export default function ReceptionPage() {
   });
 
   const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
-  const recentInput = { branchId, date: today, acceptedOnly: true, pageSize: 100 } as const;
+  const recentInput = { branchId, date: today, acceptedOnly: true, page: recentPage, pageSize: 25 } as const;
   const recentQuery = useRealtimeApiQuery({
     queryKey: qk.checkIns(recentInput),
     query: (api) => api.listRecentCheckIns(recentInput),
@@ -97,24 +97,18 @@ export default function ReceptionPage() {
     focusInput();
   }, [focusInput]);
 
-  /** After a decision is recorded, hold it briefly then reset for the next person. */
+  /** A recorded verdict remains visible until staff explicitly starts the next lane. */
   const resetLane = useCallback(() => {
-    if (clearTimer.current) clearTimeout(clearTimer.current);
-    clearTimer.current = null;
     setResult(null);
     setQuery("");
     focusInput();
   }, [focusInput]);
 
-  useEffect(() => () => (clearTimer.current ? clearTimeout(clearTimer.current) : undefined), []);
-
   const checkIn = useApiMutation((api) => api.createCheckIn({ memberId: preview!.member!.id, branchId: branchId!, source: query.trim().startsWith("rivet-pass.") ? "qr" : "search", ...(query.trim().startsWith("rivet-pass.") ? { entryPassToken: query.trim() } : {}) }), {
     onSuccess: async (res) => {
       setResult(res);
+      setRecentPage(1);
       await invalidate();
-      if (res.decision !== "blocked") {
-        clearTimer.current = setTimeout(resetLane, 3200);
-      }
     },
   });
 
@@ -194,7 +188,6 @@ export default function ReceptionPage() {
               ref={inputRef}
               value={query}
               onChange={(e) => {
-                if (clearTimer.current) clearTimeout(clearTimer.current);
                 setResult(null);
                 setQuery(e.target.value);
               }}
@@ -322,6 +315,22 @@ export default function ReceptionPage() {
                 ))
               )}
             </ul>
+            {recentQuery.data && recentQuery.data.totalPages > 1 ? (
+              <div className="flex items-center justify-between gap-2 border-t border-night-line px-4 py-2.5 text-[11px] text-night-ink-3">
+                <span className="tabular" dir="ltr">
+                  {(recentQuery.data.page - 1) * recentQuery.data.pageSize + 1}–{Math.min(recentQuery.data.totalItems, recentQuery.data.page * recentQuery.data.pageSize)} of {recentQuery.data.totalItems}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page <= 1} onClick={() => setRecentPage((page) => Math.max(1, page - 1))} aria-label="Previous check-in page">
+                    Previous
+                  </Button>
+                  <span className="min-w-10 text-center tabular" dir="ltr">{recentQuery.data.page}/{recentQuery.data.totalPages}</span>
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page >= recentQuery.data.totalPages} onClick={() => setRecentPage((page) => page + 1)} aria-label="Next check-in page">
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </aside>
       </div>
@@ -336,7 +345,7 @@ export default function ReceptionPage() {
           actorName={session?.user.name ?? "you"}
           onOverridden={(res) => {
             setResult(res);
-            clearTimer.current = setTimeout(resetLane, 3200);
+            setRecentPage(1);
           }}
         />
       ) : null}

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MemberSummary } from "@/lib/domain/types";
@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 afterEach(() => {
+  vi.useRealTimers();
   resetApiForTests();
   vi.clearAllMocks();
 });
@@ -146,6 +147,25 @@ describe("reception console — allowed", () => {
     const recent = await api.listRecentCheckIns({ pageSize: 5 });
     expect(recent.items[0]!.memberId).toBe(member.id);
     expect(recent.items[0]!.decision).toBe("allowed");
+  });
+
+  it("keeps the recorded verdict visible until staff deliberately moves on", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => m.membershipStatus === "active" && m.outstanding.amount === 0,
+    );
+
+    await renderWithApp(<ReceptionPage />, { role: "receptionist" });
+    const user = await lookup(member.memberNumber);
+    await user.click(await screen.findByTestId("confirm-checkin"));
+    await screen.findByTestId("next-member");
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(10_000));
+    vi.useRealTimers();
+
+    expect(screen.getByText(/checked in ·/i)).toBeInTheDocument();
+    expect(screen.getByTestId("reception-search")).toHaveValue(member.memberNumber);
   });
 
   it("clears the lane for the next member", async () => {

@@ -48,6 +48,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
+        data-touch-target
         ref={ref}
         disabled={asChild ? undefined : disabled || loading}
         aria-busy={loading || undefined}

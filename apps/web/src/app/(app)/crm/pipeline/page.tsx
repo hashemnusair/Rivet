@@ -333,20 +333,20 @@ function LeadCard({
         </p>
       ) : null}
       <div className="flex items-center gap-1 border-t border-line px-2 py-1.5">
-        <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">
+        <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">
           <PhoneCall className="size-3.5" aria-hidden /> Call
         </a>
         {actionable && column !== "no_answer" ? (
-          <button type="button" className="min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>
+          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>
             No answer
           </button>
         ) : null}
         {actionable ? (
-          <button type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
+          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
             Not sold…
           </button>
         ) : (
-          <Link href={`/crm/leads/${lead.id}`} className="ms-auto inline-flex min-h-8 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">View</Link>
+          <Link data-touch-target href={`/crm/leads/${lead.id}`} className="ms-auto inline-flex min-h-8 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">View</Link>
         )}
       </div>
     </article>
@@ -388,14 +388,14 @@ function LeadListView({ leads, onNoAnswer, onNotSold }: { leads: LeadSummary[]; 
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5">
                   <div className="flex items-center justify-end gap-1">
-                    <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Call</a>
+                    <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Call</a>
                     {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? (
                       <>
-                        {pipelineColumn(lead) !== "no_answer" ? <button type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
-                        <button type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={() => onNotSold(lead)}>Not sold…</button>
+                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
+                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={() => onNotSold(lead)}>Not sold…</button>
                       </>
                     ) : null}
-                    <Link href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Open</Link>
+                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Open</Link>
                   </div>
                 </td>
               </tr>
