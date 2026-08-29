@@ -59,6 +59,7 @@ import {
   phoneSearchMatches,
 } from "../src/lib/utils/contact";
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
+import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -8635,21 +8636,27 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
     { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
   );
-  const [memberRows, membershipRows, leadRows, taskRows, checkinRows, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
+  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
     memberRecords(ctx, actor),
     membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "plan"),
     recordsOf(ctx, actor, "lead"),
     recordsOf(ctx, actor, "task"),
     recordsOf(ctx, actor, "checkIn"),
+    chargeRecords(ctx, actor),
+    recordsOf(ctx, actor, "shift"),
     recordsOf(ctx, actor, "timeline"),
     recordsOf(ctx, actor, "offer"),
     recordsOf(ctx, actor, "trialBooking"),
   ]);
   const members = memberRows.map((record) => data(record.data)).filter(inBranch);
   const memberships = membershipRows.map((record) => data(record.data)).filter(inBranch);
+  const plans = planRows.map((record) => data(record.data));
   const leads = leadRows.map((record) => data(record.data)).filter(inBranch);
   const tasks = taskRows.map((record) => data(record.data)).filter(inBranch);
   const checkins = checkinRows.map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
+  const charges = chargeRows.map((record) => data(record.data));
+  const shifts = shiftRows.map((record) => data(record.data)).filter(inBranch);
   const activitiesByLead = new Map<string, Data[]>();
   for (const record of timelineRecords) {
     const event = data(record.data);
@@ -8689,7 +8696,13 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     const facts = progressFactsByLead.get(stringValue(lead.id));
     return facts ? leadProgressStageCompleted(facts, stage) : false;
   };
-  const outstanding = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  const memberById = new Map(members.map((member) => [stringValue(member.id), member]));
+  const outstanding = charges
+    .filter((charge) => {
+      const member = memberById.get(stringValue(charge.memberId));
+      return member ? inBranch(member) : !branchId;
+    })
+    .reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
   const activeLeads = leads.filter((lead) => {
     const facts = progressFactsByLead.get(stringValue(lead.id));
     return facts && !facts.hasConversion && !facts.hasLoss;
@@ -8712,8 +8725,186 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     .filter((event) => event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId))
     .slice(0, 8)
     .map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "approval", title: event.summary, detail: event.reason ?? "Review required", actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: "warning", occurredAt: utcIso(event.occurredAt) }));
+  const branchNameById = new Map(branchRows.map((branch) => [publicBranchId(branch), branch.name]));
+  const leadById = new Map(leads.map((lead) => [stringValue(lead.id), lead]));
+  const planById = new Map(plans.map((plan) => [stringValue(plan.id), plan]));
+  const actorPublicId = publicUserId(actor.user);
+  const role = frontendRole(actor.role);
+  const canManageTeam = actor.role === "owner" || actor.role === "manager";
+  const queueBranchVisible = (candidateBranchId?: string) => !branchId || !candidateBranchId || candidateBranchId === branchId;
+  const queueItems: Array<Data & TodayQueueSortableItem> = [];
+
+  if (hasPermission(actor, "crm.read")) {
+    for (const task of tasks) {
+      if (stringValue(task.status, "open") !== "open") continue;
+      const taskBranchId = task.memberId
+        ? optionalString(memberById.get(stringValue(task.memberId))?.homeBranchId)
+        : task.leadId
+          ? optionalString(leadById.get(stringValue(task.leadId))?.branchId)
+          : undefined;
+      if (!queueBranchVisible(taskBranchId)) continue;
+      if (!canManageTeam && role !== "auditor" && stringValue(task.ownerId) !== actorPublicId) continue;
+      const dueAt = stringValue(task.dueAt);
+      if (businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
+      const overdueTask = dueAt < isoNow();
+      const canComplete = hasPermission(actor, "crm.write") && (canManageTeam || stringValue(task.ownerId) === actorPublicId);
+      queueItems.push({
+        id: `task:${stringValue(task.id)}`,
+        kind: "follow_up",
+        priority: overdueTask && stringValue(task.priority) === "high" ? "urgent" : overdueTask ? "high" : stringValue(task.priority) === "high" ? "high" : "normal",
+        title: stringValue(task.title),
+        detail: `${stringValue(task.subjectName)} · ${stringValue(task.ownerName)}`,
+        subjectName: stringValue(task.subjectName),
+        branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
+        dueAt,
+        href: task.leadId ? `/crm/leads/${stringValue(task.leadId)}` : task.memberId ? `/members/${stringValue(task.memberId)}` : "/crm/queues",
+        action: canComplete
+          ? { kind: "complete_task", label: "Done", taskId: stringValue(task.id) }
+          : { kind: "navigate", label: "Open" },
+      });
+    }
+
+    const renewedIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+    for (const membership of memberships) {
+      const membershipId = stringValue(membership.id);
+      const homeBranchId = optionalString(membership.homeBranchId);
+      if (renewedIds.has(membershipId) || !queueBranchVisible(homeBranchId)) continue;
+      const member = memberById.get(stringValue(membership.memberId));
+      if (!member || stringValue(member.status) !== "active") continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const daysUntilExpiry = diffDays(today, stringValue(membership.endDate));
+      const membershipStatus = statusOfMembership(membership, today);
+      if (daysUntilExpiry < 0 || daysUntilExpiry > 7 || !["active", "expiring"].includes(membershipStatus)) continue;
+      const planName = stringValue(planById.get(stringValue(membership.planId))?.name, "Membership");
+      queueItems.push({
+        id: `renewal:${membershipId}`,
+        kind: "renewal",
+        priority: daysUntilExpiry <= 2 ? "high" : "normal",
+        title: `Renew ${stringValue(member.fullName)}`,
+        detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
+        subjectName: stringValue(member.fullName),
+        branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
+        dueAt: `${stringValue(membership.endDate)}T20:59:59.999Z`,
+        href: `/members/${stringValue(member.id)}?action=renew`,
+        action: { kind: "navigate", label: hasPermission(actor, "memberships.sell") ? "Renew" : "Open" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "payments.collect") || hasPermission(actor, "reports.financial.read")) {
+    for (const member of members) {
+      const memberId = stringValue(member.id);
+      const homeBranchId = optionalString(member.homeBranchId);
+      if (stringValue(member.status) !== "active" || !queueBranchVisible(homeBranchId)) continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const amount = charges.filter((charge) => stringValue(charge.memberId) === memberId).reduce((total, charge) => total + collectibleOutstandingValue(charge, today), 0);
+      if (amount <= 0) continue;
+      queueItems.push({
+        id: `balance:${memberId}`,
+        kind: "outstanding_balance",
+        priority: "high",
+        title: `Collect from ${stringValue(member.fullName)}`,
+        detail: "Outstanding member balance",
+        subjectName: stringValue(member.fullName),
+        branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
+        amount: money(amount, actor.organization.currency),
+        href: `/members/${memberId}?action=collect`,
+        action: { kind: "navigate", label: hasPermission(actor, "payments.collect") ? "Collect" : "Open" },
+      });
+    }
+  }
+
+  if (["owner", "manager", "receptionist", "auditor"].includes(role)) {
+    const latestBlockedByMember = new Map<string, Data>();
+    for (const checkin of checkins) {
+      if (stringValue(checkin.decision) !== "blocked" || businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== today) continue;
+      const memberId = stringValue(checkin.memberId);
+      const existing = latestBlockedByMember.get(memberId);
+      if (!existing || stringValue(existing.occurredAt) < stringValue(checkin.occurredAt)) latestBlockedByMember.set(memberId, checkin);
+    }
+    for (const checkin of latestBlockedByMember.values()) {
+      const checkinBranchId = optionalString(checkin.branchId);
+      queueItems.push({
+        id: `access:${stringValue(checkin.memberId)}`,
+        kind: "access_denial",
+        priority: "urgent",
+        title: `Resolve entry for ${stringValue(checkin.memberName)}`,
+        detail: arrayValue(checkin.reasonCodes).map((reason) => stringValue(reason).toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry blocked",
+        subjectName: stringValue(checkin.memberName),
+        branchName: checkinBranchId ? branchNameById.get(checkinBranchId) : undefined,
+        occurredAt: stringValue(checkin.occurredAt),
+        href: `/members/${stringValue(checkin.memberId)}`,
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "audit.read")) {
+    for (const event of audits) {
+      const eventBranchId = event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined;
+      if (event.approvalStatus !== "pending" || reviewedApprovalIds.has(event.publicId) || !queueBranchVisible(eventBranchId) || event.action === "shift.close_variance") continue;
+      queueItems.push({
+        id: `approval:${event.publicId}`,
+        kind: "approval",
+        priority: "high",
+        title: event.summary,
+        detail: `${event.entityLabel} · ${event.actorName}`,
+        branchName: eventBranchId ? branchNameById.get(eventBranchId) : undefined,
+        occurredAt: utcIso(event.occurredAt),
+        href: "/audit?approval=pending",
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "reconciliation.read")) {
+    for (const shift of shifts) {
+      const shiftBranchId = optionalString(shift.branchId);
+      if (!queueBranchVisible(shiftBranchId) || stringValue(shift.status) !== "closed" || stringValue(shift.varianceApprovalStatus) !== "pending" || amountOf(shift.variance) === 0) continue;
+      queueItems.push({
+        id: `variance:${stringValue(shift.id)}`,
+        kind: "cash_variance",
+        priority: "urgent",
+        title: `Review ${shiftBranchId ? branchNameById.get(shiftBranchId) ?? "branch" : "branch"} cash variance`,
+        detail: `Closed shift opened by ${stringValue(shift.openedByName)}`,
+        branchName: shiftBranchId ? branchNameById.get(shiftBranchId) : undefined,
+        occurredAt: optionalString(shift.closedAt),
+        amount: money(amountOf(shift.variance), stringValue(data(shift.variance).currency, actor.organization.currency)),
+        href: "/payments/shifts",
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "operations.manage")) {
+    const workspace = await workspaceAccessData(ctx, actor);
+    const operationsEnabled = arrayValue(workspace.modules).map(data).some((module) => module.key === "operations" && module.entitled === true && module.enabled === true);
+    if (operationsEnabled) {
+      const facilityRows = await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+      for (const task of facilityRows) {
+        if (actor.branchScope === "selected" && !actor.branchIds.includes(task.branchId)) continue;
+        const taskBranchId = await publicBranchIdFromId(ctx, actor.organization._id, task.branchId);
+        if (!queueBranchVisible(taskBranchId) || !["open", "in_progress", "blocked"].includes(task.status)) continue;
+        const dueAt = task.dueAt ? utcIso(task.dueAt) : undefined;
+        const dueToday = dueAt ? businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) <= today : false;
+        if (!dueToday && !["high", "critical"].includes(task.severity)) continue;
+        queueItems.push({
+          id: `facility:${task.publicId}`,
+          kind: "facility_task",
+          priority: task.severity === "critical" || task.status === "blocked" ? "urgent" : task.severity === "high" ? "high" : "normal",
+          title: task.title,
+          detail: `${task.kind} · ${task.status.replaceAll("_", " ")}`,
+          branchName: branchNameById.get(taskBranchId),
+          dueAt,
+          href: "/operations",
+          action: { kind: "navigate", label: "Open" },
+        });
+      }
+    }
+  }
+  const todayQueue = finalizeTodayQueue(queueItems, isoNow());
   const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
-  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
+  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };
 }
 
 export const query = convexQuery({

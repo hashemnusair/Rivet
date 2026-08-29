@@ -45,6 +45,44 @@ describe("session and role switching", () => {
     expect(session.permissions).toContain("settings.manage");
   });
 
+  it("builds a role-safe Today queue with only authorized actions", async () => {
+    const internals = api as unknown as { db: MockDb };
+    const owner = await api.getSession();
+    const member = internals.db.members.find((candidate) => candidate.homeBranchId === owner.branches[0]!.id);
+    if (!member) throw new Error("seed should contain a member in the first branch");
+    internals.db.tasks.unshift({
+      id: "today-owner-task",
+      organizationId: owner.organization.id,
+      type: "follow_up",
+      title: "Resolve the owner follow-up",
+      ownerId: owner.user.id,
+      ownerName: owner.user.name,
+      dueAt: new Date(Date.now() - 60_000).toISOString(),
+      priority: "high",
+      status: "open",
+      memberId: member.id,
+      subjectName: member.fullName,
+      createdById: owner.user.id,
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+    });
+
+    const ownerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(ownerDashboard.todayQueue.items).toContainEqual(expect.objectContaining({
+      id: "task:today-owner-task",
+      priority: "urgent",
+      action: { kind: "complete_task", label: "Done", taskId: "today-owner-task" },
+    }));
+
+    await api.switchDemoRole("receptionist");
+    const receptionDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(receptionDashboard.todayQueue.items.every((item) => !["approval", "cash_variance", "facility_task"].includes(item.kind))).toBe(true);
+    expect(receptionDashboard.todayQueue.items.every((item) => item.action.kind !== "complete_task")).toBe(true);
+
+    await api.switchDemoRole("trainer");
+    const trainerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(trainerDashboard.todayQueue).toMatchObject({ totalItems: 0, items: [] });
+  });
+
   it("swaps the permission set when the demo role changes", async () => {
     const reception = await api.switchDemoRole("receptionist");
     expect(reception.roles).toEqual(["receptionist"]);

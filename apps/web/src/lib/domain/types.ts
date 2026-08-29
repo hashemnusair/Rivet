@@ -2462,6 +2462,51 @@ export interface DashboardAlert {
   occurredAt: ISODateTime;
 }
 
+export type TodayQueueKind =
+  | "follow_up"
+  | "renewal"
+  | "outstanding_balance"
+  | "access_denial"
+  | "approval"
+  | "cash_variance"
+  | "facility_task";
+
+export type TodayQueuePriority = "urgent" | "high" | "normal";
+
+export interface TodayQueueAction {
+  kind: "navigate" | "complete_task";
+  label: string;
+  taskId?: UUID;
+}
+
+/**
+ * A role-safe unit of work for the dashboard. The backend chooses what the
+ * actor may see and do; the client only renders the supplied action.
+ */
+export interface TodayQueueItem {
+  id: string;
+  kind: TodayQueueKind;
+  priority: TodayQueuePriority;
+  title: string;
+  detail: string;
+  href: string;
+  action: TodayQueueAction;
+  subjectName?: string;
+  branchName?: string;
+  dueAt?: ISODateTime;
+  occurredAt?: ISODateTime;
+  amount?: Money;
+}
+
+export interface TodayQueueData {
+  generatedAt: ISODateTime;
+  items: TodayQueueItem[];
+  totalItems: number;
+  urgentItems: number;
+  highPriorityItems: number;
+  kindCounts: Partial<Record<TodayQueueKind, number>>;
+}
+
 export interface DashboardData {
   kpis: DashboardKpis;
   revenueSeries: RevenuePoint[]; // last 30 days
@@ -2469,6 +2514,7 @@ export interface DashboardData {
   funnel: FunnelStage[];
   leaderboard: SalespersonStat[];
   alerts: DashboardAlert[];
+  todayQueue: TodayQueueData;
   recentActivity: TimelineEvent[];
 }
 

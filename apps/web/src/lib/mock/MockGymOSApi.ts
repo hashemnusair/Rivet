@@ -57,6 +57,7 @@ import {
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
+import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
@@ -3204,6 +3205,174 @@ export class MockGymOSApi implements GymOSApi {
 
       const alerts = this.buildAlerts(branchId);
 
+      const actor = this.actor();
+      const role = currentRole(this.db);
+      const permissions = permissionsFor(this.db, role);
+      const canManageTeam = role === "owner" || role === "manager";
+      const branchNameById = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
+      const memberById = new Map(this.db.members.map((member) => [member.id, member]));
+      const leadById = new Map(this.db.leads.map((lead) => [lead.id, lead]));
+      const queueBranchVisible = (candidateBranchId?: T.UUID) => !branchId || !candidateBranchId || candidateBranchId === branchId;
+      const queueItems: T.TodayQueueItem[] = [];
+
+      if (permissions.includes("crm.read")) {
+        for (const task of openTasks) {
+          const taskBranchId = task.memberId
+            ? memberById.get(task.memberId)?.homeBranchId
+            : task.leadId
+              ? leadById.get(task.leadId)?.branchId
+              : undefined;
+          if (!queueBranchVisible(taskBranchId)) continue;
+          if (!canManageTeam && role !== "auditor" && task.ownerId !== actor.id) continue;
+          const dueDate = todayISODate(TZ, new Date(task.dueAt));
+          if (dueDate > today) continue;
+          const overdue = task.dueAt < nowISO();
+          const href = task.leadId ? `/crm/leads/${task.leadId}` : task.memberId ? `/members/${task.memberId}` : "/crm/queues";
+          const canComplete = permissions.includes("crm.write") && (canManageTeam || task.ownerId === actor.id);
+          queueItems.push({
+            id: `task:${task.id}`,
+            kind: "follow_up",
+            priority: overdue && task.priority === "high" ? "urgent" : overdue ? "high" : task.priority === "high" ? "high" : "normal",
+            title: task.title,
+            detail: `${task.subjectName} · ${task.ownerName}`,
+            subjectName: task.subjectName,
+            branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
+            dueAt: task.dueAt,
+            href,
+            action: canComplete
+              ? { kind: "complete_task", label: "Done", taskId: task.id }
+              : { kind: "navigate", label: "Open" },
+          });
+        }
+
+        const renewedIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
+        for (const membership of this.db.memberships) {
+          if (renewedIds.has(membership.id) || !queueBranchVisible(membership.homeBranchId)) continue;
+          const member = memberById.get(membership.memberId);
+          if (!member || member.status !== "active") continue;
+          if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+          const daysUntilExpiry = diffDays(today, membership.endDate);
+          const status = this.membershipStatusOf(membership);
+          if (daysUntilExpiry < 0 || daysUntilExpiry > 7 || !["active", "expiring"].includes(status)) continue;
+          const planName = this.db.plans.find((plan) => plan.id === membership.planId)?.name ?? "Membership";
+          queueItems.push({
+            id: `renewal:${membership.id}`,
+            kind: "renewal",
+            priority: daysUntilExpiry <= 2 ? "high" : "normal",
+            title: `Renew ${member.fullName}`,
+            detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
+            subjectName: member.fullName,
+            branchName: branchNameById.get(membership.homeBranchId),
+            dueAt: `${membership.endDate}T20:59:59.999Z`,
+            href: `/members/${member.id}?action=renew`,
+            action: { kind: "navigate", label: permissions.includes("memberships.sell") ? "Renew" : "Open" },
+          });
+        }
+      }
+
+      if (permissions.includes("payments.collect") || permissions.includes("reports.financial.read")) {
+        for (const member of this.db.members) {
+          if (member.status !== "active" || !queueBranchVisible(member.homeBranchId)) continue;
+          if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+          const amount = this.db.charges
+            .filter((charge) => charge.memberId === member.id)
+            .reduce((total, charge) => total + collectibleOutstandingMinor(charge, today), 0);
+          if (amount <= 0) continue;
+          queueItems.push({
+            id: `balance:${member.id}`,
+            kind: "outstanding_balance",
+            priority: "high",
+            title: `Collect from ${member.fullName}`,
+            detail: "Outstanding member balance",
+            subjectName: member.fullName,
+            branchName: branchNameById.get(member.homeBranchId),
+            amount: money(amount, this.db.organization.currency),
+            href: `/members/${member.id}?action=collect`,
+            action: { kind: "navigate", label: permissions.includes("payments.collect") ? "Collect" : "Open" },
+          });
+        }
+      }
+
+      if (["owner", "manager", "receptionist", "auditor"].includes(role)) {
+        const latestBlockedByMember = new Map<T.UUID, T.CheckInSummary>();
+        for (const checkIn of this.db.checkIns) {
+          if (checkIn.decision !== "blocked" || !queueBranchVisible(checkIn.branchId) || dayOf(checkIn.occurredAt) !== today) continue;
+          const existing = latestBlockedByMember.get(checkIn.memberId);
+          if (!existing || existing.occurredAt < checkIn.occurredAt) latestBlockedByMember.set(checkIn.memberId, checkIn);
+        }
+        for (const checkIn of latestBlockedByMember.values()) {
+          queueItems.push({
+            id: `access:${checkIn.memberId}`,
+            kind: "access_denial",
+            priority: "urgent",
+            title: `Resolve entry for ${checkIn.memberName}`,
+            detail: checkIn.reasonCodes.map((reason) => reason.toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry blocked",
+            subjectName: checkIn.memberName,
+            branchName: branchNameById.get(checkIn.branchId),
+            occurredAt: checkIn.occurredAt,
+            href: `/members/${checkIn.memberId}`,
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      if (permissions.includes("audit.read")) {
+        for (const event of this.db.audits.filter((audit) => audit.approvalStatus === "pending" && queueBranchVisible(audit.branchId))) {
+          if (event.action === "shift.close_variance") continue;
+          queueItems.push({
+            id: `approval:${event.id}`,
+            kind: "approval",
+            priority: "high",
+            title: event.summary,
+            detail: `${event.entityLabel} · ${event.actorName}`,
+            branchName: event.branchId ? branchNameById.get(event.branchId) : undefined,
+            occurredAt: event.occurredAt,
+            href: "/audit?approval=pending",
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      if (permissions.includes("reconciliation.read")) {
+        for (const shift of this.db.shifts) {
+          if (!queueBranchVisible(shift.branchId) || shift.status !== "closed" || shift.varianceApprovalStatus !== "pending" || !shift.variance || shift.variance.amount === 0) continue;
+          queueItems.push({
+            id: `variance:${shift.id}`,
+            kind: "cash_variance",
+            priority: "urgent",
+            title: `Review ${branchNameById.get(shift.branchId) ?? "branch"} cash variance`,
+            detail: `Closed by ${shift.closedById ? this.db.users.find((user) => user.id === shift.closedById)?.name ?? shift.openedByName : shift.openedByName}`,
+            branchName: branchNameById.get(shift.branchId),
+            occurredAt: shift.closedAt,
+            amount: shift.variance,
+            href: "/payments/shifts",
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      const operationsEnabled = this.workspaceAccess().modules.some((module) => module.key === "operations" && module.entitled && module.enabled);
+      if (operationsEnabled && permissions.includes("operations.manage")) {
+        for (const task of this.db.facilityTasks) {
+          if (!queueBranchVisible(task.branchId) || !["open", "in_progress", "blocked"].includes(task.status)) continue;
+          const dueToday = task.dueAt ? todayISODate(TZ, new Date(task.dueAt)) <= today : false;
+          if (!dueToday && !["high", "critical"].includes(task.severity)) continue;
+          queueItems.push({
+            id: `facility:${task.id}`,
+            kind: "facility_task",
+            priority: task.severity === "critical" || task.status === "blocked" ? "urgent" : task.severity === "high" ? "high" : "normal",
+            title: task.title,
+            detail: `${task.zoneName} · ${task.status.replaceAll("_", " ")}`,
+            branchName: branchNameById.get(task.branchId),
+            dueAt: task.dueAt,
+            href: "/operations",
+            action: { kind: "navigate", label: "Open" },
+          });
+        }
+      }
+
+      const todayQueue = finalizeTodayQueue(queueItems, nowISO());
+
       const recentActivity = this.db.activities
         .filter((a) => !a.leadId)
         .slice(0, 14);
@@ -3226,6 +3395,7 @@ export class MockGymOSApi implements GymOSApi {
         funnel,
         leaderboard,
         alerts,
+        todayQueue,
         recentActivity,
       };
     });
