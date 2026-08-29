@@ -693,6 +693,7 @@ export class MockGymOSApi implements GymOSApi {
   private duplicateResolutions = new Map<string, { status: import("@/lib/domain/qol").DuplicateCaseStatus; reason: string; survivingMemberId?: string; updatedAt: string }>();
   private onboardingProgress = new Map<import("@/lib/domain/qol").OnboardingAudience, import("@/lib/domain/qol").OnboardingProgress>();
   private pushSubscriptions: import("@/lib/domain/qol").PushSubscriptionSummary[] = [];
+  private exportJobs: import("@/lib/domain/qol").ExportJob[] = [];
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -7762,6 +7763,32 @@ export class MockGymOSApi implements GymOSApi {
 
   subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeOnce(() => this.listOperationalEmailDeliveries(query), onValue, onError);
+  }
+
+  requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> {
+    return this.respond(() => {
+      const now = nowISO();
+      const existing = this.exportJobs.find((job) => job.id === input.idempotencyKey);
+      if (existing) return { ...existing };
+      const rows = input.kind === "members" ? this.db.members : input.kind === "leads" ? this.db.leads : input.kind === "payments" ? this.db.payments : [];
+      const content = `record_type,data_json\n${rows.map((row) => `${input.kind},"${JSON.stringify(row).replaceAll('"', '""')}"`).join("\n")}`;
+      const job: import("@/lib/domain/qol").ExportJob = { id: input.idempotencyKey, kind: input.kind, status: "completed", fileName: `rivet-${input.kind}-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: rows.length, content, timezone: this.db.organization.timezone, branchScope: "all branches", filters: input.filters, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      this.exportJobs.unshift(job);
+      return { ...job };
+    });
+  }
+
+  listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> {
+    return this.respond(() => this.exportJobs.map((job) => ({ ...job })));
+  }
+
+  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> {
+    return this.respond(() => {
+      const now = nowISO();
+      const profile = CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId);
+      const content = `record_type,data_json\nprofile,"${JSON.stringify(profile ?? {}).replaceAll('"', '""')}"`;
+      return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: 1, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+    });
   }
 
   // -------------------------------------------------------------------------

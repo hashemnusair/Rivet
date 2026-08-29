@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   CircleHelp,
   Dumbbell,
+  Download,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -68,6 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "System",
     items: [
       { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
+      { href: "/exports", label: "Data exports", icon: Download, anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
       { href: "/support", label: "Support", icon: CircleHelp },
       { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
     ],

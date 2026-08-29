@@ -4130,6 +4130,125 @@ async function revokeMemberPushSubscription(ctx: MutationCtx, input: Data): Prom
   await ctx.db.patch(row._id, { revokedAt: Date.now(), updatedAt: Date.now() });
 }
 
+const EXPORT_KINDS = ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const;
+type StaffExportKind = (typeof EXPORT_KINDS)[number];
+
+function staffExportKind(value: unknown, correlationId: string): StaffExportKind {
+  const kind = stringValue(value) as StaffExportKind;
+  if (!EXPORT_KINDS.includes(kind)) domainError("VALIDATION_ERROR", "Choose a supported export dataset.", { correlationId });
+  return kind;
+}
+
+function requireExportPermission(actor: ActorContext, kind: StaffExportKind): void {
+  if (kind === "members") return requirePermission(actor, "members.read");
+  if (kind === "leads") return requirePermission(actor, "crm.read");
+  if (["payments", "membership_liabilities"].includes(kind)) return requirePermission(actor, "reports.financial.read");
+  if (kind === "audit") return requirePermission(actor, "audit.read");
+  if (kind === "personal_training") return requirePermission(actor, "pt.reports.read");
+  return requirePermission(actor, "operations.manage");
+}
+
+function csvCell(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return /[",\r\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
+}
+
+function csvFromRows(rows: Data[], metadata: Data): { content: string; rowCount: number } {
+  const normalized = rows.slice(0, 2_000).map((row) => ({ ...metadata, ...row }));
+  const headers = [...new Set(["export_generated_at", "export_timezone", "export_branch_scope", "export_filters", ...normalized.flatMap((row) => Object.keys(row))])];
+  const header = headers.map(csvCell).join(",");
+  let content = `${header}\r\n`;
+  let rowCount = 0;
+  for (const row of normalized) {
+    const line = `${headers.map((key) => csvCell(row[key])).join(",")}\r\n`;
+    if (content.length + line.length > 750_000) break;
+    content += line;
+    rowCount += 1;
+  }
+  return { content, rowCount };
+}
+
+function exportRecordRow(recordType: string, id: string, value: Data): Data {
+  return { record_type: recordType, record_id: id, ...value };
+}
+
+function exportMatchesFilters(row: Data, filters: Data): boolean {
+  const branchId = optionalString(filters.branchId);
+  if (branchId && ![row.branchId, row.homeBranchId].includes(branchId)) return false;
+  const search = optionalString(filters.search);
+  if (search && !matchesSearch(Object.values(row).map((value) => typeof value === "object" ? JSON.stringify(value) : value), search)) return false;
+  const from = optionalString(filters.from);
+  const to = optionalString(filters.to);
+  const occurred = optionalString(row.occurredAt) ?? optionalString(row.createdAt) ?? optionalString(row.updatedAt);
+  if (from && occurred && occurred < from) return false;
+  if (to && occurred && occurred.slice(0, 10) > to) return false;
+  return true;
+}
+
+async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data): Promise<Data[]> {
+  if (["members", "leads", "payments"].includes(kind)) {
+    const entityType = kind === "members" ? "member" : kind === "leads" ? "lead" : "payment";
+    return (await recordsOf(ctx, actor, entityType)).map((record) => exportRecordRow(entityType, record.publicId, data(record.data))).filter((row) => exportMatchesFilters(row, filters));
+  }
+  if (kind === "membership_liabilities") {
+    return (await recordsOf(ctx, actor, "charge")).map((record) => exportRecordRow("membership_liability", record.publicId, data(record.data))).filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters(row, filters));
+  }
+  if (kind === "audit") {
+    let events = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
+    if (actor.branchScope === "selected") events = events.filter((event) => !event.branchId || actor.branchIds.includes(event.branchId));
+    return events.map((event) => exportRecordRow("audit_event", event.publicId, { actorId: event.actorPublicId, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, correlationId: event.correlationId, occurredAt: utcIso(event.occurredAt) })).filter((row) => exportMatchesFilters(row, filters));
+  }
+  if (kind === "personal_training") {
+    const orders = await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    return orders.map((order) => exportRecordRow("pt_package_order", order.publicId, { memberId: order.memberPublicId, membershipId: order.membershipPublicId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters));
+  }
+  const [products, suppliers, balances, movements, branches] = await Promise.all([
+    ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("suppliers").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("inventoryBalances").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+  ]);
+  const branchPublicIds = new Map(branches.map((branch) => [branch._id, publicBranchId(branch)]));
+  const scoped = <T extends { branchId?: Id<"branches"> }>(rows: T[]) => actor.branchScope === "all" ? rows : rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+  return [
+    ...products.map((row) => exportRecordRow("product", row.publicId, { sku: row.sku, name: row.name, unit: row.unit, reorderPoint: row.reorderPoint, status: row.status, retailPriceMinor: row.retailPriceMinor, retailPriceCurrency: row.retailPriceCurrency })),
+    ...suppliers.map((row) => exportRecordRow("supplier", row.publicId, { name: row.name, contactName: row.contactName, email: row.email, phone: row.phone, status: row.status })),
+    ...scoped(balances).map((row) => exportRecordRow("inventory_balance", row.publicId, { branchId: branchPublicIds.get(row.branchId), productId: String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, totalCostMinor: row.totalCostMinor, totalCostCurrency: row.totalCostCurrency })),
+    ...scoped(movements).map((row) => exportRecordRow("stock_movement", row.publicId, { branchId: branchPublicIds.get(row.branchId), productSku: row.productSku, productName: row.productName, type: row.type, quantityDelta: row.quantityDelta, totalCostMinor: row.totalCostMinor, totalCostCurrency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, referenceId: row.referenceId, occurredAt: utcIso(row.occurredAt) })),
+  ].filter((row) => exportMatchesFilters(row, filters));
+}
+
+function exportJobView(value: Data): Data {
+  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
+}
+
+async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
+  const membershipRecords = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const memberships = membershipRecords.filter((record) => belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const rows: Data[] = [{ record_type: "profile", record_id: optionalString(profile?.id) ?? userId, data: profile ?? { userId } }];
+  const organizations = new Map<string, Organization>();
+  for (const membership of memberships) {
+    rows.push({ record_type: "membership", record_id: membership.publicId, data: data(membership.data) });
+    const organization = await ctx.db.get(membership.organizationId);
+    if (organization) organizations.set(String(organization._id), organization);
+    for (const entityType of ["payment", "charge", "checkin", "timeline"]) {
+      const records = await recordsOfMember(ctx, membership.organizationId, membership.memberPublicId ?? stringValue(data(membership.data).memberId), entityType);
+      rows.push(...records.map((record) => ({ record_type: entityType, record_id: record.publicId, data: data(record.data) })));
+    }
+  }
+  const now = isoNow();
+  const csv = csvFromRows(rows, { export_generated_at: now, export_timezone: "UTC", export_branch_scope: "authenticated member records", export_filters: "{}" });
+  for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
+  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, content: csv.content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4535,6 +4654,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       return await listSavedViews(ctx, actor, stringValue(input.surface));
     case "bulk.jobs":
       return await bulkOperationJobs(ctx, actor);
+    case "exports.list": {
+      const jobs = (await recordsOf(ctx, actor, "exportJob"))
+        .map((record) => data(record.data))
+        .filter((job) => stringValue(job.requestedById) === publicUserId(actor.user))
+        .sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)));
+      return jobs.map(exportJobView);
+    }
     case "duplicates.list":
       return await duplicateCases(ctx, actor, optionalString(input.status));
     case "duplicates.get":
@@ -6293,6 +6419,7 @@ async function insertCustomerPtAudit(ctx: MutationCtx, input: { organization: Or
 }
 
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
     return user._id;
@@ -7442,6 +7569,31 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "exports.request": {
+      const kind = staffExportKind(input.kind, actor.correlationId);
+      requireExportPermission(actor, kind);
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: actor.correlationId });
+      const filters = data(input.filters);
+      const branchId = optionalString(filters.branchId);
+      if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+      const existing = (await recordsOf(ctx, actor, "exportJob")).map((record) => data(record.data)).find((job) => stringValue(job.requestedById) === publicUserId(actor.user) && stringValue(job.idempotencyKey) === idempotencyKey);
+      const requestFingerprint = JSON.stringify({ kind, filters });
+      if (existing) {
+        if (stringValue(existing.requestFingerprint) !== requestFingerprint) domainError("CONFLICT", "This export request key was already used for different filters.", { correlationId: actor.correlationId });
+        return exportJobView(existing);
+      }
+      const generatedAt = isoNow();
+      const branchScope = branchId ? `branch:${branchId}` : actor.branchScope === "all" ? "all accessible branches" : `${actor.branchIds.length} assigned branches`;
+      const rows = await staffExportRows(ctx, actor, kind, filters);
+      const csv = csvFromRows(rows, { export_generated_at: generatedAt, export_timezone: actor.organization.timezone || TZ_FALLBACK, export_branch_scope: branchScope, export_filters: JSON.stringify(filters) });
+      const id = newPublicId();
+      const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
+      const value = { id, kind, status: "completed", fileName, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, content: csv.content, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
+      await insertRecord(ctx, actor, "exportJob", value);
+      await insertAudit(ctx, actor, { category: "settings", action: "data.export", entityType: "data_export", entityId: id, entityLabel: fileName, summary: `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)`, after: { kind, rowCount: csv.rowCount, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
+      return exportJobView(value);
+    }
     case "savedViews.save": {
       const surface = savedViewSurface(input.surface, actor.correlationId);
       const state = savedViewState(input.state, actor.correlationId);

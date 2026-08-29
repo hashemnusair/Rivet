@@ -158,6 +158,11 @@ export interface ExportJob {
   mimeType?: string;
   rowCount?: number;
   downloadUrl?: string;
+  /** Present only on an authorized export response; never exposed through a public URL. */
+  content?: string;
+  timezone?: string;
+  branchScope?: string;
+  filters?: Record<string, unknown>;
   failureMessage?: string;
   createdAt: ISODateTime;
   completedAt?: ISODateTime;

@@ -136,6 +136,8 @@ import type {
   PushSubscriptionInput,
   PushSubscriptionSummary,
   AutomationMonitoringSummary,
+  ExportJob,
+  ExportRequestInput,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -965,6 +967,11 @@ export interface GymOSApi {
   listMessageTemplates(): Promise<MessageTemplate[]>;
   listOperationalEmailDeliveries(query?: ListQuery): Promise<Page<OperationalEmailDelivery>>;
   subscribeOperationalEmailDeliveries(query: ListQuery, onValue: (page: Page<OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+
+  // Data portability
+  requestExport(input: ExportRequestInput): Promise<ExportJob>;
+  listExportJobs(): Promise<ExportJob[]>;
+  requestMemberPersonalDataExport(idempotencyKey: string): Promise<ExportJob>;
 
   // Audit
   listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>;

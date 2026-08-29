@@ -623,6 +623,9 @@ export class ConvexGymOSApi implements GymOSApi {
   listMessageTemplates(): Promise<T.MessageTemplate[]> { return this.query("automations.templates"); }
   listOperationalEmailDeliveries(query: T.ListQuery = {}): Promise<T.Page<T.OperationalEmailDelivery>> { return this.query("operationalEmails.list", query); }
   subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("operationalEmails.list", query, onValue, onError); }
+  requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.request", input); }
+  listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> { return this.query("exports.list"); }
+  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey }); }
   listAuditEvents(query: AuditQuery): Promise<T.Page<T.AuditEvent>> { return this.query("audit.list", query); }
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> { return this.query("settings.get"); }
