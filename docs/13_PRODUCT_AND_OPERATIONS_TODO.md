@@ -77,6 +77,19 @@ values, applicant details, and provider credentials out of this file.
   consent, retention, or legal policy.
 - [ ] Keep Arabic/translation and final measured optimization last.
 
+Release evidence: the application slices are `ea19e03` through `0db74af`,
+with documentation reconciliation at `63d97de`. Both TypeScript checks,
+lint/secret audit, 157 Vitest files / 958 tests, 14 repository-safety tests, the
+51-page build, 41 Playwright passes / 14 explicit credential-gated skips / 0
+failures, clean Production dependency audit, UI-pattern detector, and diff
+check passed. Exact Production Convex `descriptive-meerkat-589` received the
+additive index/functions after a no-deletion dry run and returned health `ok`.
+GitHub Actions run
+[33260137190](https://github.com/hashemnusair/Rivet/actions/runs/33260137190)
+passed all jobs; exact-SHA Vercel deployment
+`dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm` is `READY`. No Production tenant data was
+seeded, imported, rewritten, or deleted by this release.
+
 ### Production closure completed on 29 August
 
 - [x] Run current-head platform-owner acceptance for Overview, Applications,

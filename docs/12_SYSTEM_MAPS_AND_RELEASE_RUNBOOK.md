@@ -41,9 +41,19 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   than broad organization scans. Regression volumes cover 600 facility tasks
   and 25,000 Today candidates; the dashboard returns a bounded ranked set only
   after truthful totals and deduplication are calculated.
-- These changes are committed in `ea19e03` through `0db74af`. The full gate,
-  final partner synchronization, exact Production backend deployment, and
-  hosted release evidence remain required before calling this batch released.
+- These changes are committed in `ea19e03` through `0db74af`, with release
+  documentation at `63d97de`. A final fetch found no newer partner commit.
+  Both TypeScript checks, lint/secret audit, 157 files / 958 Vitest tests, 14
+  repository-safety tests, the 51-page build, 41 Playwright passes / 14
+  explicit credential-gated skips, the clean Production dependency audit,
+  Impeccable detector, and diff check passed.
+- Exact Production Convex `descriptive-meerkat-589` passed the guarded dry run
+  with no deleted indexes; the additive facility-status index and matching
+  functions were deployed, and `health:check` returned `ok`. No tenant records
+  were seeded or changed. GitHub Actions run `33260137190` passed all jobs and
+  exact-SHA Vercel Production deployment
+  `dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm` is `READY`; canonical public surfaces
+  returned successfully.
 
 ### Platform closure and recovery artifact — 29 August 2026
 

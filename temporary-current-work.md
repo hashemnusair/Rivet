@@ -55,10 +55,17 @@ the next product batch, not unfinished work from this sprint.
 - [x] Run a realistic-volume query/index pass. Facility and Today reads now use tenant/branch/status indexes, and member/lead projections use relationship indexes with legacy-row fallbacks. Regression fixtures cover 600 facility tasks and 25,000 Today candidates while preserving truthful counts and the bounded display set.
 - [x] Harden clean-tenant member onboarding with a downloadable CSV template, file or paste review, normalized international contacts, same-file duplicate detection, a 2 MB/10,000-row server boundary, and a preview-before-commit workflow.
 
-Completed locally in five coherent commits from `ea19e03` through `0db74af`.
-Final release-gate, Production deployment, GitHub synchronization, and hosted
-verification evidence will be recorded in the living handoff; this temporary
-file can then be archived or removed.
+Completed and released in five coherent application commits from `ea19e03`
+through `0db74af`, followed by the living-document reconciliation at
+`63d97de`. The final gate passed 157 Vitest files / 958 tests, 14 repository
+safety tests, 51 generated pages, and 41 Playwright passes / 14 explicit
+credential-gated skips / 0 failures. Exact Production Convex
+`descriptive-meerkat-589` passed the guarded dry run, received the additive
+index/functions, and returned `health:check` status `ok`. GitHub Actions run
+`33260137190` passed all three jobs, and exact-SHA Vercel Production deployment
+`dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm` is `READY`. This file is retained only as
+the user-requested temporary work record; the living handoff and canonical
+backlog now contain the authoritative state.
 
 ## Creative low-friction ideas to evaluate
 
@@ -74,8 +81,6 @@ file can then be archived or removed.
 
 ## Deferred launch closure
 
-- Exact-target Convex Production deployment and post-deploy health check for
-  the current feature tip.
 - Credentialed staging and signed-in Production acceptance.
 - Production-provider, email, backup/recovery, monitoring, WAF, capacity, and operator ownership checks.
 - Final pricing, accounting, billing, consent, and provider decisions.

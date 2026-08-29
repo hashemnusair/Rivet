@@ -34,11 +34,28 @@
   remains bounded to 12 ranked results while computing truthful counts before
   truncation. Automated fixtures cover 600 facility tasks and 25,000 Today
   candidates, including deduplication and stable priority ordering.
-- The implementation is committed directly on `main` in five coherent slices:
-  `ea19e03`, `bf2cea8`, `8a05dcd`, `ffebf49`, and `0db74af`.
-  `FRONTEND_HANDOFF.md` remains unchanged. The full release gate, final GitHub
-  synchronization, exact-target Convex deployment, and hosted evidence are in
-  progress and must be recorded before this section is treated as released.
+- The implementation was committed directly on `main` in five coherent slices:
+  `ea19e03`, `bf2cea8`, `8a05dcd`, `ffebf49`, and `0db74af`, followed by the
+  living-document reconciliation at `63d97de`. A final fetch found no newer
+  Elias/partner commit; `main` and `origin/main` matched at `63d97de` after the
+  push. `FRONTEND_HANDOFF.md` remains unchanged.
+- The full local gate passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, **157 Vitest files / 958 tests**, **14 repository-safety
+  tests**, the **51-page** Production build, **41 Playwright passes / 14
+  explicit credential-gated skips / 0 failures**, `pnpm audit --prod` with no
+  known vulnerabilities, the Impeccable UI-pattern detector, and
+  `git diff --check`.
+- The guarded Convex dry run explicitly targeted Production
+  `descriptive-meerkat-589`, proposed no index deletion/destructive migration,
+  and only added `facilityTasks.by_organization_status`. The matching deploy
+  completed and the read-only health check returned `status: ok`; no gym data
+  was seeded, imported, rewritten, or deleted by the release.
+- GitHub Actions run
+  [33260137190](https://github.com/hashemnusair/Rivet/actions/runs/33260137190)
+  passed all three jobs. Exact-SHA Vercel Production deployment
+  [`dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/F2BWHM7DQWmVEaJA8HtwnbUUauQm)
+  is `READY`; the canonical landing, directory, and invalid-token offer shell
+  returned HTTP 200.
 - Next product decisions are real message-provider activation, whether offer
   acceptance may enter payment/membership activation, and approved waiver/
   retention policy. Operator/staging closure remains separate. Arabic through
