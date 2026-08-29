@@ -267,4 +267,19 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(timeline.items.map((item) => item.title)).toEqual(expect.arrayContaining(["Note added", expect.stringContaining("Merged duplicate record")]));
     expect(await owner.query(api.domain.query, operation("duplicates.list", { status: "merged" }))).toEqual([expect.objectContaining({ id: duplicate!.id, survivingMemberId: first.member.id })]);
   });
+
+  it("derives owner readiness from tenant state and stores staff tutorial progress per user", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const sales = t.withIdentity({ subject: "clerk-crm-integrity-sales" });
+    const ownerExperience = await owner.query(api.domain.query, operation("onboarding.get", { audience: "owner" })) as { role: string; tasks: Array<{ key: string; category: string }> };
+    expect(ownerExperience.role).toBe("owner");
+    expect(ownerExperience.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ key: "owner_plan", category: "required" }), expect.objectContaining({ key: "owner_provider", category: "optional" })]));
+    await expectCode(sales.query(api.domain.query, operation("onboarding.get", { audience: "owner" })), "FORBIDDEN");
+    const updated = await sales.mutation(api.domain.mutate, operation("onboarding.update", { audience: "staff", completedStepKey: "staff_role" })) as { progress: { completedStepKeys: string[] } };
+    expect(updated.progress.completedStepKeys).toContain("staff_role");
+    const ownerStaff = await owner.query(api.domain.query, operation("onboarding.get", { audience: "staff" })) as { progress: { completedStepKeys: string[] } };
+    expect(ownerStaff.progress.completedStepKeys).not.toContain("staff_role");
+  });
 });

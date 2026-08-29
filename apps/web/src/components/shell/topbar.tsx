@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Beaker, Building2, Check, ChevronDown, ExternalLink, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
+import { Beaker, Building2, Check, ChevronDown, ExternalLink, GraduationCap, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -294,6 +294,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <DropdownMenuItem onClick={() => router.push("/settings")}>
               <Building2 /> Organization settings
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> Getting started</DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/")}>
               <ExternalLink /> Public site
             </DropdownMenuItem>

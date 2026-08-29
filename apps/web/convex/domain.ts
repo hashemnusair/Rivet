@@ -3986,6 +3986,98 @@ async function duplicateCase(ctx: ReadContext, actor: ActorContext, caseId: stri
   return found;
 }
 
+const ONBOARDING_VERSION = 1;
+
+async function onboardingProgressRecord(ctx: ReadContext, user: User, audience: "owner" | "staff" | "member", organizationId?: Id<"organizations">) {
+  const rows = await ctx.db.query("userOnboardingProgress").withIndex("by_user_audience", (q) => q.eq("userId", user._id).eq("audience", audience)).collect();
+  return rows.find((row) => row.organizationId === organizationId) ?? null;
+}
+
+function onboardingProgressView(record: Doc<"userOnboardingProgress"> | null, audience: "owner" | "staff" | "member"): Data {
+  return { audience, version: ONBOARDING_VERSION, completedStepKeys: record?.completedStepKeys ?? [], dismissedAt: record?.dismissedAt ? utcIso(record.dismissedAt) : undefined, completedAt: record?.completedAt ? utcIso(record.completedAt) : undefined, updatedAt: utcIso(record?.updatedAt ?? Date.now()) };
+}
+
+async function onboardingExperience(ctx: ReadContext, input: Data, request: RequestArgs): Promise<Data> {
+  const audience = stringValue(input.audience) as "owner" | "staff" | "member";
+  if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
+  if (audience === "member") {
+    const { user } = await requireMember(ctx);
+    const progressRecord = await onboardingProgressRecord(ctx, user, audience);
+    const progress = onboardingProgressView(progressRecord, audience);
+    const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
+    const profile = await customerProfileForUser(ctx, publicUserId(user));
+    const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+    const memberships = membershipRows.map((row) => data(row.data)).filter((value) => belongsToAuthenticatedCustomer(value, publicUserId(user), optionalString(profile?.id)));
+    const tasks = [
+      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone) },
+      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0 },
+      { key: "member_entry", title: "Learn the entry QR", description: "See how to create a short-lived front-desk entry pass.", href: "/customer/my-gyms", category: "recommended", complete: completed.has("member_entry") },
+      { key: "member_finance", title: "Find payments and receipts", description: "Know where balances, refunds, and printable receipts live.", href: "/customer/finance", category: "recommended", complete: completed.has("member_finance") },
+      { key: "member_install", title: "Install RIVET", description: "Add the member app to your home screen for quicker access.", href: "/customer/getting-started#install", category: "optional", complete: completed.has("member_install") },
+    ];
+    return { progress, tasks, role: "member" };
+  }
+
+  const actor = await requireActor(ctx, request);
+  if (audience === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Owner onboarding is available only to organization owners.", { correlationId: actor.correlationId });
+  const progressRecord = await onboardingProgressRecord(ctx, actor.user, audience, actor.organization._id);
+  const progress = onboardingProgressView(progressRecord, audience);
+  const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
+  const [branches, plans, members, teamMemberships, settings, listing, shifts] = await Promise.all([
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan")).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member")).collect(),
+    ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    settingsData(ctx, actor),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "marketplaceGym")).first(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "shift")).collect(),
+  ]);
+  const liveProviderReady = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+  const ownerTasks = [
+    { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: Boolean(actor.organization.name && actor.organization.timezone && actor.organization.currency) },
+    { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: branches.some((branch) => branch.active) },
+    { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: arrayValue(settings.paymentMethods).some((method) => booleanValue(data(method).enabled)) },
+    { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/memberships/plans", category: "required", complete: plans.some((row) => stringValue(data(row.data).status, "active") === "active") },
+    { key: "owner_staff", title: "Invite your team", description: "Add managers, sales, reception, or trainers with the right scope.", href: "/settings?section=team", category: "required", complete: teamMemberships.filter((membership) => membership.active).length > 1 },
+    { key: "owner_members", title: "Add or import members", description: "Start with CSV import or create the first live member.", href: "/members/import", category: "required", complete: members.length > 0 },
+    { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front-desk workflow.", href: "/reception", category: "required", complete: shifts.length > 0 },
+    { key: "owner_public_profile", title: "Publish the gym profile", description: "Review what prospective members see in discovery.", href: "/settings/public-profile", category: "recommended", complete: Boolean(listing && booleanValue(data(listing.data).profilePublished, booleanValue(data(listing.data).isPublic))) },
+    { key: "owner_provider", title: "Review provider readiness", description: "Understand which email and messaging features remain unavailable before activation.", href: "/automations", category: "optional", complete: liveProviderReady, unavailableReason: liveProviderReady ? undefined : "Email provider delivery is not configured yet." },
+  ];
+  const staffTasks = [
+    { key: "staff_role", title: "Understand your role", description: `Review what the ${actor.role} role can see and change.`, href: "/getting-started#role", category: "required", complete: completed.has("staff_role") },
+    { key: "staff_navigation", title: "Learn navigation and search", description: "Use the sidebar and ⌘K search to move without losing your place.", href: "/getting-started#navigation", category: "recommended", complete: completed.has("staff_navigation") },
+    { key: "staff_member", title: "Open a member record", description: "Find the timeline, membership, payment, and follow-up actions.", href: "/members", category: "required", complete: completed.has("staff_member") },
+    { key: "staff_tasks", title: "Find your follow-up queue", description: "Review overdue and upcoming work assigned to you.", href: "/crm/queues", category: "required", complete: completed.has("staff_tasks") },
+    { key: "staff_reception", title: "Practice the front desk", description: "Learn check-in and cash-shift rules for your branch.", href: "/reception", category: "recommended", complete: actor.role !== "receptionist" || shifts.length > 0 },
+    { key: "staff_security", title: "Review safe handling", description: "Know why sensitive changes require reasons and leave audit events.", href: "/getting-started#security", category: "recommended", complete: completed.has("staff_security") },
+  ];
+  return { progress, tasks: audience === "owner" ? ownerTasks : staffTasks, role: actor.role, organizationName: actor.organization.name };
+}
+
+async function updateOnboardingProgressMutation(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const audience = stringValue(input.audience) as "owner" | "staff" | "member";
+  const { user } = audience === "member" ? await requireMember(ctx) : await requireAuthenticated(ctx);
+  const actor = audience === "member" ? null : await requireActor(ctx, request);
+  if (audience === "owner" && actor?.role !== "owner") domainError("FORBIDDEN", "Owner onboarding is available only to organization owners.", { correlationId: request.correlationId });
+  if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
+  const organizationId = actor?.organization._id;
+  const existing = await onboardingProgressRecord(ctx, user, audience, organizationId);
+  const currentKeys = existing?.completedStepKeys ?? [];
+  const stepKey = optionalString(input.completedStepKey);
+  const preview = await onboardingExperience(ctx, { audience }, request);
+  const validKeys = new Set(arrayValue(preview.tasks).map((task) => stringValue(data(task).key)));
+  if (stepKey && !validKeys.has(stepKey)) domainError("VALIDATION_ERROR", "Unknown onboarding step.", { correlationId: request.correlationId });
+  const completedStepKeys = booleanValue(input.restart) ? [] : [...new Set([...currentKeys, ...(stepKey ? [stepKey] : [])])];
+  const now = Date.now();
+  const requiredTasks = arrayValue(preview.tasks).map(data).filter((task) => task.category === "required");
+  const allRequiredComplete = requiredTasks.every((task) => booleanValue(task.complete) || completedStepKeys.includes(stringValue(task.key)));
+  const value = { version: ONBOARDING_VERSION, completedStepKeys, dismissedAt: booleanValue(input.restart) ? undefined : booleanValue(input.dismissed) ? now : existing?.dismissedAt, completedAt: allRequiredComplete ? now : undefined, updatedAt: now };
+  if (existing) await ctx.db.patch(existing._id, value);
+  else await ctx.db.insert("userOnboardingProgress", { userId: user._id, organizationId, audience, createdAt: now, ...value });
+  return await onboardingExperience(ctx, { audience }, request);
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4011,6 +4103,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       .slice(0, 100);
     return await Promise.all(notifications.map((notification) => notificationView(ctx, notification)));
   }
+
+  if (operation === "onboarding.get") return await onboardingExperience(ctx, input, request);
 
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
@@ -6102,6 +6196,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const { user } = await requireAuthenticated(ctx);
     return user._id;
   }
+
+  if (operation === "onboarding.update") return await updateOnboardingProgressMutation(ctx, input, request);
 
   if (operation === "public.offer.respond") {
     const token = stringValue(input.token).trim();

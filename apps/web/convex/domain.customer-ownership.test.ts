@@ -499,6 +499,20 @@ describe("exported Convex customer ownership boundaries", () => {
     await expectCode(customerB.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })), "NOT_FOUND");
   });
 
+  it("keeps member onboarding resumable and unavailable to staff identities", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customer = t.withIdentity({ subject: "clerk-customer-a" });
+    const staff = t.withIdentity({ subject: "clerk-staff" });
+    const initial = await customer.query(api.domain.query, operation("onboarding.get", { audience: "member" })) as { tasks: Array<{ key: string; complete: boolean }> };
+    expect(initial.tasks).toContainEqual(expect.objectContaining({ key: "member_entry", complete: false }));
+    const updated = await customer.mutation(api.domain.mutate, operation("onboarding.update", { audience: "member", completedStepKey: "member_entry" })) as { progress: { completedStepKeys: string[] }; tasks: Array<{ key: string; complete: boolean }> };
+    expect(updated.progress.completedStepKeys).toContain("member_entry");
+    expect(updated.tasks).toContainEqual(expect.objectContaining({ key: "member_entry", complete: true }));
+    await expectCode(staff.query(api.domain.query, operation("onboarding.get", { audience: "member" })), "FORBIDDEN");
+    await expectCode(customer.query(api.domain.query, operation("onboarding.get", { audience: "owner" })), "FORBIDDEN");
+  });
+
   it("resolves published gym branding in the authenticated member experience", async () => {
     const t = convexTest(schema, modules);
     await seedFixtures(t);

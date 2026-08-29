@@ -13,6 +13,7 @@ import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
@@ -106,6 +107,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       >
         <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
+        {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
       </div>

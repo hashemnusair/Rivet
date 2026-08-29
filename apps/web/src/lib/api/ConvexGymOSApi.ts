@@ -374,6 +374,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getDuplicateCase(caseId: T.UUID): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.query("duplicates.get", { caseId }); }
   ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.ignore", { caseId, reason }); }
   mergeDuplicateMembers(input: import("@/lib/domain/qol").MergeMemberInput): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.merge", input); }
+  getOnboardingExperience(audience: import("@/lib/domain/qol").OnboardingAudience): Promise<import("@/lib/domain/qol").OnboardingExperience> { return this.query("onboarding.get", { audience }); }
+  updateOnboardingProgress(input: { audience: import("@/lib/domain/qol").OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<import("@/lib/domain/qol").OnboardingExperience> { return this.mutate("onboarding.update", input); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
   previewMarketingPreferenceMigration(): Promise<MarketingPreferenceMigrationPreview> { return this.query("platform.marketingMigration.preview"); }
   applyMarketingPreferenceMigration(input: { migrationId?: string; batchSize?: number; reason: string }): Promise<MarketingPreferenceMigrationProgress> { return this.mutate("platform.marketingMigration.apply", input); }

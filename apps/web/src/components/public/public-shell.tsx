@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
-import { ArrowRight, ChevronDown, Home, LogOut, Menu, MessageSquare, ReceiptText, Search, UserRound, X } from "lucide-react";
+import { ArrowRight, ChevronDown, GraduationCap, Home, LogOut, Menu, MessageSquare, ReceiptText, Search, UserRound, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -22,6 +22,7 @@ import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 
 const MARKETING_NAV = [
   { href: "/#product", label: "Product" },
@@ -245,7 +246,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
 
-  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/") || pathname.startsWith("/customer/finance") || pathname.startsWith("/customer/receipts/") || pathname === "/customer/profile";
+  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/") || pathname.startsWith("/customer/finance") || pathname.startsWith("/customer/receipts/") || pathname === "/customer/profile" || pathname === "/customer/getting-started";
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
@@ -349,6 +350,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                         <ReceiptText /> Payments and receipts
                       </Link>
                     </DropdownMenuItem>
+                    <DropdownMenuItem asChild><Link href="/customer/getting-started"><GraduationCap /> Getting started</Link></DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/customer/my-gyms#communication">
                         <MessageSquare /> Communication settings
@@ -374,6 +376,8 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      {customerSignedIn && customer ? <OnboardingBanner audience="member" /> : null}
 
       <div className="flex-1">{children}</div>
 
@@ -440,6 +444,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     <ReceiptText /> Payments and receipts
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild><Link href="/customer/getting-started"><GraduationCap /> Getting started</Link></DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/customer/my-gyms#communication">
                     <MessageSquare /> Communication settings

@@ -131,6 +131,8 @@ import type {
   DuplicateCase,
   DuplicateCaseStatus,
   MergeMemberInput,
+  OnboardingAudience,
+  OnboardingExperience,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -756,6 +758,8 @@ export interface GymOSApi {
   getDuplicateCase(caseId: UUID): Promise<DuplicateCase>;
   ignoreDuplicateCase(caseId: UUID, reason: string): Promise<DuplicateCase>;
   mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;
+  getOnboardingExperience(audience: OnboardingAudience): Promise<OnboardingExperience>;
+  updateOnboardingProgress(input: { audience: OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<OnboardingExperience>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
