@@ -4,7 +4,8 @@ Updated 29 August 2026 for Production backend closure, owner/platform
 acceptance, public QA cleanup, the current recovery export, the Jordan-first
 workflow-hardening sprint, the unified Today queue, clean-tenant imports,
 international WhatsApp handoffs, branded offers, facilities QR work, and the
-realistic-volume index pass.
+realistic-volume index pass, followed by the file-first import and
+plain-language maintenance repair.
 This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
@@ -60,13 +61,16 @@ values, applicant details, and provider credentials out of this file.
   staff-visible timeline/follow-up facts. Keep payment and membership
   activation out until their product/accounting policy is approved.
 - [x] Give every new tenant a clean-slate onboarding path through preview-first
-  member CSV import. Support file selection, downloadable template, normalized
-  contacts, duplicate review, and independently enforced 2 MB/10,000-row
-  server limits. Imported unknown consent remains suppressed.
-- [x] Add a signed-in Facilities workspace with branch/zone-safe task creation,
-  active/history views, quick presets, one-tap status actions, and downloadable
-  QR shortcuts. The QR opens an authorized prefilled workflow; it is not a
-  public mutation endpoint.
+  member CSV import. The released UI is file-first with drag-and-drop/native
+  selection, selected-file state, a sensible concrete branch default,
+  downloadable template, normalized contacts, duplicate review, secondary raw
+  CSV editing, and independently enforced 2 MB/10,000-row server limits.
+  Imported unknown consent remains suppressed.
+- [x] Add a signed-in **Maintenance** workspace with branch/gym-space-safe task
+  creation, active/history views, quick presets, one-tap status actions, and
+  downloadable QR shortcuts. Owners configure plain-language gym spaces such
+  as Reception, Main floor, Studio, and Locker room under Settings. The QR
+  opens an authorized prefilled workflow; it is not a public mutation endpoint.
 - [x] Run the first realistic-volume query/index pass. Facility status queries
   and member/lead relationship projections are indexed; Today fixtures cover
   25,000 candidates and facility fixtures cover 600 tasks while preserving
@@ -75,6 +79,22 @@ values, applicant details, and provider credentials out of this file.
   WhatsApp/SMS delivery, payment-backed offer checkout, or legally approved
   waiver/document collection. Do not silently infer provider, accounting,
   consent, retention, or legal policy.
+- [ ] Add a flexible onboarding import mapper for gyms whose files do not use
+  RIVET's template headers. Preview automatic column matches, require explicit
+  confirmation for uncertain matches, save an audited import batch, and offer
+  a downloadable rejection report without retaining the original file longer
+  than necessary.
+- [ ] Add import-batch history and safe recovery: counts, creator, branch,
+  timestamp, source filename, row results, resumable chunk state, and a bounded
+  audited undo only for untouched profiles created by that batch.
+- [ ] Decide the separate membership-data migration contract before importing
+  plans, active terms, payment history, outstanding balances, freezes, or
+  opening balances. These affect revenue and accounting and must not be guessed
+  from a generic spreadsheet.
+- [ ] Evaluate the next low-friction maintenance slice with pilot gyms:
+  assignee-aware work, recurring opening/closing checklists, optional photo
+  evidence, and overdue escalation. Keep it out until the real daily owner is
+  clear.
 - [ ] Keep Arabic/translation and final measured optimization last.
 
 Release evidence: the application slices are `ea19e03` through `0db74af`,

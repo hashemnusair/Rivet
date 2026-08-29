@@ -1,5 +1,40 @@
 # GymOS / RIVET current implementation state
 
+## File-first member import and plain-language maintenance — 29 August 2026
+
+- A fresh GitHub fetch started from clean matching `main` and `origin/main` at
+  `59ec0a5`; no newer Elias/partner commit or other non-Arabic slice was
+  waiting. The frozen `FRONTEND_HANDOFF.md` was not changed.
+- Member onboarding is now visibly file-first. The primary flow accepts a real
+  CSV through drag-and-drop or the native file chooser, shows the selected file
+  and size, chooses a sensible concrete branch when the global workspace is in
+  **All branches**, and proceeds through **Review members** and **Import
+  members** language. Raw CSV editing remains available as a secondary option;
+  the old dominant textarea, narrow `Import destination` rail, sample-import
+  trap, and internal `commit` wording are gone.
+- Operations now calls the physical-work surface **Maintenance**, describes it
+  as cleaning, inspections, and incidents, and asks employees **Where in the
+  gym?** instead of exposing facility/area jargon. Existing internal
+  `facilityTask` and `zone` identifiers remain unchanged so history, indexes,
+  authorization, accounting links, and QR URLs stay compatible.
+- Owners now have **Settings → Gym spaces**, which explains that spaces are
+  recognizable places inside one branch—Reception, Main floor, Studio, Locker
+  room, and similar. Owners can add, edit, classify, size, activate, or archive
+  these spaces through the already-audited `zones.upsert` boundary; managers
+  continue to create and complete branch-safe maintenance work.
+- Application commits `4ce9d24` and `234c62e` contain the importer and
+  maintenance slices. Both TypeScript checks, zero-warning lint and the secret
+  audit, **158 Vitest files / 961 tests**, **14 repository-safety tests**, the
+  **51-page** Production build, **43 Playwright passes / 14 explicit
+  credential-gated skips / 0 failures**, `pnpm audit --prod`, the Impeccable
+  pattern detector, rendered desktop inspection, and `git diff --check` passed.
+- This was a frontend and existing-contract release: no Convex schema/function
+  change, provider activation, environment mutation, or Production tenant-data
+  write was required. The next high-value code candidate is a flexible import
+  mapping and batch-report workflow for the messy spreadsheets real gyms will
+  provide. Importing live memberships, opening balances, and historical money
+  must remain behind explicit product/accounting decisions.
+
 ## Clean-tenant engagement, offers, facilities, and scale — 29 August 2026
 
 - RIVET now treats each organization as a clean tenant rather than requiring

@@ -67,6 +67,41 @@ index/functions, and returned `health:check` status `ok`. GitHub Actions run
 the user-requested temporary work record; the living handoff and canonical
 backlog now contain the authoritative state.
 
+## Current UI observation closure
+
+- [x] Replace the oversized raw-CSV editor and awkward `Import destination`
+  rail with a balanced, file-first member onboarding flow.
+- [x] Support real drag-and-drop/native CSV selection, selected-file feedback,
+  concrete-branch defaulting, secondary raw-text editing, and plain
+  **Review members** / **Import members** actions.
+- [x] Rename the customer-facing Facilities surface to **Maintenance** and
+  replace ambiguous **Area** labels with **Gym space** / **Where in the gym?**
+- [x] Add an owner-facing **Settings → Gym spaces** setup surface so the
+  maintenance workflow no longer depends on an unexplained backend concept.
+- [x] Preserve the typed facility/zone backend identifiers and QR compatibility
+  while improving only the product language and completion path.
+
+The application slices are `4ce9d24` and `234c62e`. The full local gate passed
+158 Vitest files / 961 tests, 14 repository-safety tests, 51 generated pages,
+43 Playwright passes / 14 explicit credential-gated skips, both TypeScript
+checks, zero-warning lint and secret audit, a clean Production dependency
+audit, rendered desktop review, the Impeccable detector, and `git diff --check`.
+
+## Candidate next code batch
+
+- [ ] **Messy-file import mapping.** Let an owner upload the CSV they actually
+  have, map unfamiliar headers to member fields, confirm uncertain matches, and
+  download rejected rows instead of editing the original spreadsheet by hand.
+- [ ] **Import history and recovery.** Keep a safe batch record with source
+  filename, counts, row outcomes, resumable progress, and a tightly bounded,
+  audited undo for untouched profiles created by that batch.
+- [ ] **Migration policy first.** Do not import memberships, plan terms,
+  balances, freezes, or financial history until their mapping and accounting
+  rules are explicitly approved.
+- [ ] **Maintenance follow-through.** Validate assignees, recurring
+  opening/closing checklists, photo evidence, and overdue escalation with a
+  pilot gym before committing to the next maintenance feature.
+
 ## Creative low-friction ideas to evaluate
 
 - **Reception mode:** one large search field, recent members, keyboard shortcuts, and a single dominant action based on the result.
