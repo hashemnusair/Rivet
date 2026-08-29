@@ -3,11 +3,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
+const navigation = vi.hoisted(() => ({ search: "" }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
   usePathname: () => "/operations",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
 import { OperationsCommandCenter } from "./operations-command-center";
@@ -16,6 +17,7 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 afterEach(() => resetApiForTests());
 
 beforeEach(() => {
+  navigation.search = "";
   HTMLElement.prototype.scrollIntoView = vi.fn();
   HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
   HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -38,7 +40,7 @@ describe("OperationsCommandCenter", () => {
     await renderWithApp(<OperationsCommandCenter />);
 
     expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Equipment/ })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: /Checkout/ })).toBeDisabled();
@@ -105,6 +107,41 @@ describe("OperationsCommandCenter", () => {
 
     await user.click(screen.getByRole("tab", { name: /Inventory/ }));
     expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
+  });
+
+  it("turns facility work into a short branch and area workflow", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user, "Forge — Abdoun");
+    const taskMutation = vi.spyOn(api, "upsertFacilityTask");
+
+    await user.click(screen.getByRole("tab", { name: /Facilities/ }));
+    expect(await screen.findByTestId("operations-facilities")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Facility work list" })).toBeInTheDocument();
+    expect(screen.getByText("Main floor inspection")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "New task" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add facility task" });
+    await user.click(within(dialog).getByRole("button", { name: /Cleaning needed/ }));
+    await user.clear(within(dialog).getByRole("textbox", { name: "What needs doing?" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "What needs doing?" }), "Refill sanitizer station");
+    await user.click(within(dialog).getByRole("button", { name: "Add to work list" }));
+
+    await waitFor(() => expect(taskMutation).toHaveBeenCalledWith(expect.objectContaining({ branchId: expect.any(String), zoneId: expect.any(String), kind: "cleaning", title: "Refill sanitizer station" })));
+    expect(await screen.findByText("Refill sanitizer station")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Area QR" }));
+    expect(await screen.findByRole("dialog", { name: "Area task QR" })).toBeInTheDocument();
+    expect(screen.getByText(/shortcut, not a public write endpoint/i)).toBeInTheDocument();
+  });
+
+  it("opens the preselected task form from an authenticated area QR shortcut", async () => {
+    navigation.search = "tab=facilities&branch=10000000-0000-4a00-8a00-000000000002&zone=10000000-0000-4a00-8a00-000000000049&action=new-task";
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+
+    expect(await screen.findByRole("dialog", { name: "Add facility task" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Facilities/, hidden: true })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "Facility area" })).toHaveTextContent("Main floor");
   });
 
   it("keeps equipment writes in centered dialogs and records issue and work-order changes", async () => {

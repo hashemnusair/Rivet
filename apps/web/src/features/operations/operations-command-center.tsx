@@ -8,6 +8,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
   Cog,
   PackagePlus,
   Pencil,
@@ -20,6 +21,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type {
   EquipmentAsset,
@@ -59,8 +61,9 @@ import { EmptyState, ForbiddenState, QueryErrorState, StatePanel } from "@/compo
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hasSellableRetailPrice, RetailCheckout } from "./retail-checkout";
+import { FacilityTaskWorkspace } from "./facility-task-workspace";
 
-type OperationsTab = "inventory" | "checkout" | "equipment";
+type OperationsTab = "inventory" | "checkout" | "equipment" | "facilities";
 
 const CURRENCY_FALLBACK = "JOD";
 
@@ -510,9 +513,11 @@ function LoadingGrid() {
 
 export function OperationsCommandCenter() {
   const { session, setBranch } = useApp();
+  const searchParams = useSearchParams();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
-  const [tab, setTab] = useState<OperationsTab>("inventory");
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState<OperationsTab>(requestedTab === "facilities" ? "facilities" : "inventory");
   // A Sell action on an inventory row jumps straight into checkout with that
   // item already in the sale, instead of making staff find it twice.
   const [saleProductId, setSaleProductId] = useState<string>();
@@ -536,6 +541,12 @@ export function OperationsCommandCenter() {
   const workOrdersQuery = useApiQuery(qk.operations({ kind: "equipment-work-orders", branchId }), (api) => api.listEquipmentWorkOrders({ branchId }), { enabled: ready && Boolean(branchId) });
   const mutations = useOperationsMutations(invalidate);
 
+  useEffect(() => {
+    const requestedBranchId = searchParams.get("branch");
+    if (!requestedBranchId || session?.activeBranchId === requestedBranchId || !session?.branches.some((branch) => branch.id === requestedBranchId)) return;
+    void setBranch(requestedBranchId);
+  }, [searchParams, session?.activeBranchId, session?.branches, setBranch]);
+
   if (!can("members.read")) return <ForbiddenState description="Daily operations are limited to gym team members with operational read access." />;
   if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader eyebrow="Operations" title="Inventory and checkout" description="A simple place to see stock, sell items, and replenish what is running low." /><LoadingGrid /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => workspaceQuery.refetch()} />;
@@ -557,5 +568,5 @@ export function OperationsCommandCenter() {
   const issues = issuesQuery.data ?? [];
   const workOrders = workOrdersQuery.data ?? [];
   const branches = session?.branches ?? [];
-  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Inventory, checkout, and machines" description={branchId ? `Manage stock and equipment at ${branchLabel.toLowerCase()}. Each branch keeps its own balances.` : "Compare stock across branches. Select a branch before making changes."} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><label htmlFor="operations-branch" className="sr-only">Operations branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value); }}><SelectTrigger id="operations-branch" aria-label="Operations branch" className="h-8 min-w-44 border-0 bg-transparent px-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>} />{inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some operational data could not refresh. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>Retry</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList aria-label="Operations workspace" className="inline-flex w-fit rounded-lg border border-line bg-surface p-1"><TabsTrigger value="inventory" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Boxes className="size-3.5" /> Inventory</TabsTrigger>{canCheckout ? <TabsTrigger value="checkout" disabled={!branchId} className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ShoppingCart className="size-3.5" /> Checkout</TabsTrigger> : null}<TabsTrigger value="equipment" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Wrench className="size-3.5" /> Equipment</TabsTrigger></TabsList><TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} onSell={canCheckout && branchId ? (productId) => { setSaleProductId(productId); setTab("checkout"); } : undefined} /></TabsContent>{canCheckout ? <TabsContent value="checkout">{branchId ? <RetailCheckout embedded preselectProductId={saleProductId} /> : <StatePanel icon={ShoppingCart} title="Choose a branch first" description="Checkout uses the selected branch’s independent inventory. Choose a branch above to begin a sale." className="mt-2" />}</TabsContent> : null}<TabsContent value="equipment"><EquipmentTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} zones={zonesQuery.data ?? []} assets={assets} issues={issues} workOrders={workOrders} loading={equipmentLoading} error={equipmentError} onRetry={retryEquipment} mutations={mutations} /></TabsContent></Tabs></div>;
+  return <div className="space-y-4" data-testid="operations-command-center"><PageHeader eyebrow="Operations" title="Inventory, facilities, and machines" description={branchId ? `Run daily work at ${branchLabel.toLowerCase()}. Stock, spaces, and equipment stay tied to this branch.` : "Compare stock across branches. Select a branch for checkout, facility work, or equipment."} actions={<div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><label htmlFor="operations-branch" className="sr-only">Operations branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value); }}><SelectTrigger id="operations-branch" aria-label="Operations branch" className="h-8 min-w-44 border-0 bg-transparent px-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>} />{inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some operational data could not refresh. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>Retry</button></div> : null}<Tabs value={tab} onValueChange={(value) => setTab(value as OperationsTab)}><TabsList aria-label="Operations workspace" className="inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-line bg-surface p-1"><TabsTrigger value="inventory" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Boxes className="size-3.5" /> Inventory</TabsTrigger>{canCheckout ? <TabsTrigger value="checkout" disabled={!branchId} className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ShoppingCart className="size-3.5" /> Checkout</TabsTrigger> : null}<TabsTrigger value="facilities" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><ClipboardCheck className="size-3.5" /> Facilities</TabsTrigger><TabsTrigger value="equipment" className="gap-1.5 rounded-md px-3 py-1.5 text-[12px]"><Wrench className="size-3.5" /> Equipment</TabsTrigger></TabsList><TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} onSell={canCheckout && branchId ? (productId) => { setSaleProductId(productId); setTab("checkout"); } : undefined} /></TabsContent>{canCheckout ? <TabsContent value="checkout">{branchId ? <RetailCheckout embedded preselectProductId={saleProductId} /> : <StatePanel icon={ShoppingCart} title="Choose a branch first" description="Checkout uses the selected branch’s independent inventory. Choose a branch above to begin a sale." className="mt-2" />}</TabsContent> : null}<TabsContent value="facilities"><FacilityTaskWorkspace branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /></TabsContent><TabsContent value="equipment"><EquipmentTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} zones={zonesQuery.data ?? []} assets={assets} issues={issues} workOrders={workOrders} loading={equipmentLoading} error={equipmentError} onRetry={retryEquipment} mutations={mutations} /></TabsContent></Tabs></div>;
 }
