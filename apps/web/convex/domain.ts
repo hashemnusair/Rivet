@@ -238,6 +238,50 @@ function offerProjection(value: Data): Data {
     : value;
 }
 
+function publicOfferToken(): string {
+  return `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+async function publicOfferRecords(ctx: ReadContext, tokenValue: unknown): Promise<{ link: DomainRecord; offer: DomainRecord; lead: DomainRecord; organization: Organization }> {
+  const token = stringValue(tokenValue).trim();
+  if (!/^[a-f0-9]{64}$/.test(token)) domainError("NOT_FOUND", "This offer link is not available.");
+  const link = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "offerLink").eq("publicId", token)).unique();
+  if (!link) domainError("NOT_FOUND", "This offer link is not available.");
+  const linkData = data(link.data);
+  const [organization, offer, lead] = await Promise.all([
+    ctx.db.get(link.organizationId),
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", link.organizationId).eq("entityType", "offer").eq("publicId", stringValue(linkData.offerId))).unique(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", link.organizationId).eq("entityType", "lead").eq("publicId", stringValue(linkData.leadId))).unique(),
+  ]);
+  if (!organization || organization.archivedAt || !["active", "trial", "past_due"].includes(organization.status) || !offer || !lead) domainError("NOT_FOUND", "This offer link is not available.");
+  return { link, offer, lead, organization };
+}
+
+async function publicOfferView(ctx: ReadContext, token: string): Promise<Data> {
+  const { offer, lead, organization } = await publicOfferRecords(ctx, token);
+  const current = offerProjection(data(offer.data));
+  const status = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : stringValue(current.status);
+  const brand = await brandKitView(ctx, organization);
+  return {
+    token,
+    recipientName: stringValue(data(lead.data).fullName),
+    organizationName: organization.name,
+    planName: stringValue(current.planName),
+    price: current.price,
+    expiresAt: optionalString(current.expiresAt),
+    status,
+    respondedAt: optionalString(current.respondedAt),
+    responseReason: optionalString(current.responseReason),
+    brand: {
+      paletteKey: brand.paletteKey,
+      primaryColor: brand.primaryColor,
+      tokens: brand.tokens,
+      logoUrl: brand.logoUrl,
+      logoAltText: brand.logoAltText,
+    },
+  };
+}
+
 function stringValue(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
@@ -3535,6 +3579,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return { status: "ok", serverTime: Date.now() };
   }
 
+  if (operation === "public.offer") {
+    return await publicOfferView(ctx, stringValue(input.token));
+  }
+
   if (operation === "notifications.list") {
     const { user } = await requireAuthenticated(ctx);
     const notifications = (await ctx.db
@@ -5448,6 +5496,30 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
     return user._id;
+  }
+
+  if (operation === "public.offer.respond") {
+    const token = stringValue(input.token).trim();
+    const { link, offer, lead, organization } = await publicOfferRecords(ctx, token);
+    const current = offerProjection(data(offer.data));
+    const outcome = stringValue(input.outcome);
+    if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose accept or decline.", { correlationId: request.correlationId });
+    if (current.status === outcome) return await publicOfferView(ctx, token);
+    if (current.status === "expired") domainError("CONFLICT", "This offer has expired.", { correlationId: request.correlationId });
+    if (current.status !== "sent") domainError("CONFLICT", "This offer is not ready for a response.", { correlationId: request.correlationId });
+    const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 240) : "";
+    await enforcePublicRateLimit(ctx, { scope: "public-offer-response", fingerprint: await privacyFingerprint({ token }), maxRequests: 5, windowMs: 60 * 60_000, correlationId: request.correlationId });
+    const respondedAt = isoNow();
+    const offerData = { ...data(offer.data), status: outcome, respondedAt, responseReason: reason || (outcome === "declined" ? "Declined by recipient" : undefined), responseSource: "public_link" };
+    await ctx.db.patch(offer._id, { data: offerData, updatedAt: Date.now() });
+    const leadData = data(lead.data);
+    await ctx.db.patch(lead._id, { data: { ...leadData, ...(outcome === "declined" ? { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString() } : {}), updatedAt: respondedAt }, updatedAt: Date.now() });
+    await ctx.db.patch(link._id, { data: { ...data(link.data), outcome, respondedAt }, updatedAt: Date.now() });
+    const responseId = newPublicId();
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "offerResponse", publicId: responseId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: responseId, organizationId: publicOrganizationId(organization), offerId: offer.publicId, leadId: lead.publicId, outcome, reason: reason || undefined, source: "public_link", occurredAt: respondedAt } });
+    const timelineId = newPublicId();
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
+    return await publicOfferView(ctx, token);
   }
 
   if (operation === "platform.marketingMigration.apply") {
@@ -7808,7 +7880,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const plan = await recordOf(ctx, actor, "plan", recordId(input.planId));
-      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: amountOf(input.price), currency: actor.organization.currency }, expiresAt: input.expiresInDays ? new Date(Date.now() + numberValue(input.expiresInDays) * 86_400_000).toISOString() : undefined, status: "draft", createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
+      const expiresInDays = numberValue(input.expiresInDays, 7);
+      const price = amountOf(input.price);
+      if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 60) domainError("VALIDATION_ERROR", "Offer expiry must be between 1 and 60 days.", { correlationId: actor.correlationId });
+      if (!Number.isSafeInteger(price) || price < 0) domainError("VALIDATION_ERROR", "Enter a valid offer price.", { correlationId: actor.correlationId });
+      const token = publicOfferToken();
+      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: price, currency: actor.organization.currency }, expiresAt: new Date(Date.now() + expiresInDays * 86_400_000).toISOString(), status: "draft", publicToken: token, createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
+      await insertRecord(ctx, actor, "offerLink", { id: token, offerId: offer.id, leadId: lead.publicId, createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
       await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
       return offer;
     }

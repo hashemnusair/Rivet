@@ -31,6 +31,7 @@ import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
+import { OfferWorkPanel } from "@/features/crm/offer-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
@@ -56,6 +57,7 @@ export default function LeadDetailPageClient() {
     subscribe: (api, onValue, onError) => api.subscribeLead(leadId, onValue, onError),
   });
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
+  const plansQuery = useApiQuery(qk.plans({ status: "active", pageSize: 100 }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
 
   const trialWindow = useMemo(() => {
     const weekday = weekdayForDate(trialDate);
@@ -238,6 +240,8 @@ export default function LeadDetailPageClient() {
               <p className="mt-2 text-[12.5px] text-ink-2">{lead.lostReason ?? "No reason recorded."}</p>
             </section>
           ) : null}
+
+          {!saleDone && !saleFailed ? <OfferWorkPanel leadId={lead.id} leadName={lead.fullName} phone={lead.phone} organizationName={settingsQuery.data?.organization.name ?? session?.organization.name ?? "RIVET"} currency={settingsQuery.data?.organization.currency ?? session?.organization.currency ?? "JOD"} defaultCountryCallingCode={settingsQuery.data?.organization.phoneCountryCallingCode} offers={lead.offers} plans={plansQuery.data?.items ?? []} /> : null}
 
           {!saleDone ? (
             <section className="panel p-4">

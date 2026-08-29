@@ -348,6 +348,8 @@ export class ConvexGymOSApi implements GymOSApi {
   async listMarketplaceGyms(): Promise<MarketplaceGym[]> {
     return publicMarketplaceRows(await this.query<unknown>("public.marketplace"));
   }
+  getPublicOffer(token: string): Promise<T.PublicOffer> { return this.query("public.offer", { token }); }
+  respondToPublicOffer(token: string, input: { outcome: T.OfferOutcome; reason?: string }): Promise<T.PublicOffer> { return this.mutate("public.offer.respond", { token, ...input }); }
   subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeQuery<unknown>("public.marketplace", {}, (value) => onValue(publicMarketplaceRows(value)), onError);
   }

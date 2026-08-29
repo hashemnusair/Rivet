@@ -23,6 +23,33 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("CRM offer lifecycle", () => {
+  it("publishes a branded bearer link and records an immutable public response", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sales = t.withIdentity({ subject: "clerk-offer-sales" });
+    const draft = await sales.mutation(api.domain.mutate, operation("offers.create", { leadId: "offer-lead-accepted", planId: "offer-plan", price: { amount: 28_000, currency: "JOD" }, expiresInDays: 7 })) as { id: string; publicToken: string };
+    expect(draft.publicToken).toMatch(/^[a-f0-9]{64}$/);
+
+    const preparing = await t.query(api.domain.query, operation("public.offer", { token: draft.publicToken })) as { status: string; recipientName: string; organizationName: string };
+    expect(preparing).toMatchObject({ status: "preparing", recipientName: "Accepted Lead", organizationName: "Offer Gym" });
+
+    await sales.mutation(api.domain.mutate, operation("offers.deliver", { offerId: draft.id, channel: "whatsapp", reference: "Public offer link" }));
+    const available = await t.query(api.domain.query, operation("public.offer", { token: draft.publicToken })) as { status: string };
+    expect(available.status).toBe("available");
+
+    const accepted = await t.mutation(api.domain.mutate, operation("public.offer.respond", { token: draft.publicToken, outcome: "accepted" })) as { status: string; respondedAt: string };
+    expect(accepted).toMatchObject({ status: "accepted", respondedAt: expect.any(String) });
+    await expect(t.mutation(api.domain.mutate, operation("public.offer.respond", { token: draft.publicToken, outcome: "accepted" }))).resolves.toMatchObject({ status: "accepted" });
+
+    const persisted = await t.run(async (ctx) => ({
+      responses: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "offerResponse")).collect(),
+      timelines: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect(),
+    }));
+    expect(persisted.responses).toHaveLength(1);
+    expect(persisted.responses[0]?.data).toMatchObject({ offerId: draft.id, outcome: "accepted", source: "public_link" });
+    expect(persisted.timelines.map((row) => row.data)).toContainEqual(expect.objectContaining({ type: "offer_accepted", actorName: "Offer recipient", meta: expect.objectContaining({ source: "public_link" }) }));
+  });
+
   it("keeps drafts truthful, records delivery, and persists an accepted response once", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

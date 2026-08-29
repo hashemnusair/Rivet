@@ -1,6 +1,7 @@
 /** Central TanStack Query key factory — mutations invalidate by prefix. */
 export const qk = {
   session: ["session"] as const,
+  publicOffer: (token: string) => ["publicOffer", token] as const,
   dashboard: (branchId?: string) => ["dashboard", branchId ?? "all"] as const,
   members: (params?: unknown) => ["members", "list", params] as const,
   member: (id: string) => ["members", "detail", id] as const,

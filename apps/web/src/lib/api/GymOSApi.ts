@@ -716,6 +716,8 @@ export interface GymOSApi {
   // Public directory, customer identity, and platform snapshots
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
   subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getPublicOffer(token: string): Promise<import("@/lib/domain/types").PublicOffer>;
+  respondToPublicOffer(token: string, input: { outcome: OfferOutcome; reason?: string }): Promise<import("@/lib/domain/types").PublicOffer>;
   getCustomerExperience(): Promise<CustomerExperience>;
   /**
    * Subscribe to identity-scoped member changes. The disposer is returned in

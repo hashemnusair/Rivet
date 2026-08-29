@@ -768,6 +768,40 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => this.readMarketplaceGyms());
   }
 
+  getPublicOffer(token: string): Promise<T.PublicOffer> {
+    return this.respond(() => {
+      const offer = this.db.offers.find((item) => item.publicToken === token);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead || this.db.organization.archivedAt) throw ApiError.of(ERR.NOT_FOUND, "This offer link is not available.");
+      const current = this.projectOffer(offer);
+      const status: T.PublicOffer["status"] = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : current.status;
+      return { token, recipientName: lead.fullName, organizationName: this.db.organization.name, planName: current.planName, price: current.price, expiresAt: current.expiresAt, status, respondedAt: current.respondedAt, responseReason: current.responseReason, brand: this.db.brand };
+    }, "public");
+  }
+
+  respondToPublicOffer(token: string, input: { outcome: T.OfferOutcome; reason?: string }): Promise<T.PublicOffer> {
+    return this.respond(() => {
+      const offer = this.db.offers.find((item) => item.publicToken === token);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead) throw ApiError.of(ERR.NOT_FOUND, "This offer link is not available.");
+      const current = this.projectOffer(offer);
+      if (current.status === input.outcome) return this.publicOfferView(offer, lead);
+      if (current.status === "expired") throw ApiError.of(ERR.CONFLICT, "This offer has expired.");
+      if (current.status !== "sent") throw ApiError.of(ERR.CONFLICT, "This offer is not ready for a response.");
+      const respondedAt = nowISO();
+      Object.assign(offer, { status: input.outcome, respondedAt, responseReason: input.reason?.trim().slice(0, 240) || (input.outcome === "declined" ? "Declined by recipient" : undefined) });
+      if (input.outcome === "declined") Object.assign(lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
+      this.activity({ leadId: lead.id, type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${input.outcome} — ${offer.planName}`, body: input.reason?.trim() || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.id, outcome: input.outcome, source: "public_link" } });
+      return this.publicOfferView(offer, lead);
+    }, "public");
+  }
+
+  private publicOfferView(offer: T.Offer, lead: T.Lead): T.PublicOffer {
+    const current = this.projectOffer(offer);
+    const status: T.PublicOffer["status"] = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : current.status;
+    return { token: current.publicToken!, recipientName: lead.fullName, organizationName: this.db.organization.name, planName: current.planName, price: current.price, expiresAt: current.expiresAt, status, respondedAt: current.respondedAt, responseReason: current.responseReason, brand: this.db.brand };
+  }
+
   async subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
       onValue(await this.respond(() => this.readMarketplaceGyms(), "public"));
@@ -5152,6 +5186,7 @@ export class MockGymOSApi implements GymOSApi {
         price: input.price,
         expiresAt: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000).toISOString() : undefined,
         status: "draft",
+        publicToken: `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`,
         createdById: this.actor().id,
         createdAt: nowISO(),
       };

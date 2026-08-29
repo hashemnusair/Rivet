@@ -1368,8 +1368,23 @@ export interface Offer {
   respondedAt?: ISODateTime;
   respondedById?: UUID;
   responseReason?: string;
+  /** High-entropy bearer token for the prospect-facing offer page. */
+  publicToken?: string;
   createdById: UUID;
   createdAt: ISODateTime;
+}
+
+export interface PublicOffer {
+  token: string;
+  recipientName: string;
+  organizationName: string;
+  planName: string;
+  price: Money;
+  expiresAt?: ISODateTime;
+  status: "preparing" | "available" | "accepted" | "declined" | "expired";
+  respondedAt?: ISODateTime;
+  responseReason?: string;
+  brand: Pick<BrandKit, "paletteKey" | "primaryColor" | "tokens" | "logoUrl" | "logoAltText">;
 }
 
 export type OfferDeliveryChannel = "email" | "whatsapp" | "sms" | "manual";

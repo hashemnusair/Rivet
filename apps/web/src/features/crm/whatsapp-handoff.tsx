@@ -19,6 +19,8 @@ interface WhatsAppHandoffProps {
   phone: string;
   organizationName?: string;
   defaultCountryCallingCode?: string;
+  initialMessage?: string;
+  buttonLabel?: string;
   onLogged?: () => void;
   className?: string;
 }
@@ -42,6 +44,8 @@ export function WhatsAppHandoff({
   phone,
   organizationName,
   defaultCountryCallingCode,
+  initialMessage,
+  buttonLabel = "WhatsApp",
   onLogged,
   className,
 }: WhatsAppHandoffProps) {
@@ -49,18 +53,18 @@ export function WhatsAppHandoff({
   const invalidate = useInvalidate();
   const gymName = organizationName ?? session?.organization.name ?? "RIVET";
   const callingCode = defaultCountryCallingCode ?? session?.organization.phoneCountryCallingCode ?? DEFAULT_PHONE_COUNTRY_CALLING_CODE;
-  const initialMessage = useMemo(() => defaultWhatsAppMessage(recipientName, gymName), [gymName, recipientName]);
+  const preparedMessage = useMemo(() => initialMessage?.trim() || defaultWhatsAppMessage(recipientName, gymName), [gymName, initialMessage, recipientName]);
   const [open, setOpen] = useState(false);
-  const [message, setMessage] = useState(initialMessage);
+  const [message, setMessage] = useState(preparedMessage);
   const [nextFollowUp, setNextFollowUp] = useState(() => addDays(todayISODate(session?.organization.timezone), 1));
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (!open) return;
-    setMessage(initialMessage);
+    setMessage(preparedMessage);
     setNextFollowUp(addDays(todayISODate(session?.organization.timezone), 1));
     setError(undefined);
-  }, [initialMessage, open, session?.organization.timezone]);
+  }, [open, preparedMessage, session?.organization.timezone]);
 
   const logHandoff = useApiMutation<unknown, void>(
     (api) => {
@@ -96,7 +100,7 @@ export function WhatsAppHandoff({
   return (
     <>
       <Button type="button" variant="secondary" size="sm" className={className} onClick={() => setOpen(true)}>
-        <MessageCircle /> WhatsApp
+        <MessageCircle /> {buttonLabel}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
