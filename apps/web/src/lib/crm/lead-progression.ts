@@ -50,6 +50,7 @@ const CONTACTED_OUTCOMES = new Set([
   "answered_call_back",
   "answered_not_interested",
   "whatsapp_sent",
+  "whatsapp_opened",
   "trial_booked",
   "trial_completed",
 ]);

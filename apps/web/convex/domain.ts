@@ -53,8 +53,10 @@ import { automationAttentionHref } from "./automations";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "../src/lib/crm/lead-progression";
 import {
   canonicalPhoneKey,
+  countryCallingCodeForLocale,
   LEAD_EMAIL_PATTERN,
   LEAD_PHONE_PATTERN,
+  normalizeCountryCallingCode,
   normalizePhoneForStorage,
   phoneSearchMatches,
 } from "../src/lib/utils/contact";
@@ -260,9 +262,13 @@ function normalizedLeadName(value: unknown, actor: ActorContext): string {
 }
 
 function normalizedLeadPhone(value: unknown, actor: ActorContext): string {
-  const phone = normalizePhoneForStorage(stringValue(value));
+  const phone = normalizePhoneForStorage(stringValue(value), organizationPhoneCountryCallingCode(actor.organization));
   if (!LEAD_PHONE_PATTERN.test(phone)) domainError("VALIDATION_ERROR", "Enter a valid phone number.", { correlationId: actor.correlationId, fieldErrors: { phone: ["Enter a valid phone"] } });
   return phone;
+}
+
+function organizationPhoneCountryCallingCode(organization: Pick<Organization, "locale" | "phoneCountryCallingCode">): string {
+  return normalizeCountryCallingCode(organization.phoneCountryCallingCode ?? countryCallingCodeForLocale(organization.locale));
 }
 
 function numberValue(value: unknown, fallback = 0): number {
@@ -1222,6 +1228,7 @@ function organizationView(org: Organization): Data {
     currency: org.currency,
     timezone: org.timezone,
     locale: org.locale ?? "en-JO",
+    phoneCountryCallingCode: organizationPhoneCountryCallingCode(org),
     defaultLanguage: org.defaultLanguage ?? "en",
     taxRatePercent: org.taxRatePercent ?? 0,
     receiptPrefix: org.receiptPrefix ?? "RV",
@@ -4088,14 +4095,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "members.duplicates": {
       requirePermission(actor, "members.read");
-      const phone = canonicalPhoneKey(optionalString(input.phone));
+      const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+      const phone = canonicalPhoneKey(optionalString(input.phone), callingCode);
       const email = normalize(optionalString(input.email));
       const records = await memberRecords(ctx, actor);
       return records
         .map((record) => data(record.data))
         .filter((member) => member.status !== "archived")
         .flatMap((member) => {
-          if (phone && canonicalPhoneKey(optionalString(member.phone)) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
+          if (phone && canonicalPhoneKey(optionalString(member.phone), callingCode) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
           if (email && normalize(optionalString(member.email)) === email) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "email" }];
           return [];
         });
@@ -4799,10 +4807,11 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const seen = new Set<string>();
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
-    const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]));
+    const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+    const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
     const email = optionalString(values[emailIndex]);
-    const duplicateMemberIds = existing.filter((member) => canonicalPhoneKey(optionalString(member.phone)) === canonicalPhoneKey(phone) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
-    const duplicateKey = `${canonicalPhoneKey(phone)}:${normalize(email)}`;
+    const duplicateMemberIds = existing.filter((member) => canonicalPhoneKey(optionalString(member.phone), callingCode) === canonicalPhoneKey(phone, callingCode) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
+    const duplicateKey = `${canonicalPhoneKey(phone, callingCode)}:${normalize(email)}`;
     if (seen.has(duplicateKey) && phone) duplicateMemberIds.push(`csv-row-${index}`);
     if (phone) seen.add(duplicateKey);
     const errors = [
@@ -4847,7 +4856,8 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       if (row) rows[index] = { ...row, status: "skipped" };
       continue;
     }
-    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (canonicalPhoneKey(optionalString(member.phone)) === canonicalPhoneKey(stringValue(row.phone)) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
+    const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (canonicalPhoneKey(optionalString(member.phone), callingCode) === canonicalPhoneKey(stringValue(row.phone), callingCode) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
     if (duplicate) {
       skippedCount += 1;
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
@@ -4888,6 +4898,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const duplicates = duplicateMemberMatches(
     existingMembers.map((record) => data(record.data)),
     { phone, email },
+    organizationPhoneCountryCallingCode(actor.organization),
   ) as Data[];
   if (options.rejectDuplicates && duplicates.length > 0) {
     domainError("DUPLICATE_MEMBER", "This lead matches an existing member. Open that member instead of creating a duplicate.", {
@@ -6807,7 +6818,19 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const outcome = stringValue(input.outcome);
       if (!outcome) domainError("VALIDATION_ERROR", "Contact outcome is required.", { correlationId: actor.correlationId });
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "call_attempt", title: `Contact — ${outcome.replaceAll("_", " ")}`, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      const nextFollowUpAt = optionalString(input.nextFollowUpAt);
+      if (nextFollowUpAt) {
+        await createTaskMutation(ctx, actor, {
+          type: "follow_up",
+          title: `Follow up — ${stringValue(data(member.data).fullName)}`,
+          ownerId: publicUserId(actor.user),
+          dueAt: nextFollowUpAt,
+          priority: "normal",
+          memberId: member.publicId,
+        });
+      }
+      const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
     }
     case "plans.create": {
       requirePermission(actor, "settings.manage");
@@ -7649,7 +7672,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             : {}),
         updatedAt: isoNow(),
       });
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: `Call — ${stringValue(input.outcome).replaceAll("_", " ")}`, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      const outcome = stringValue(input.outcome);
+      const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
       if (nextStage === "lost") {
         await insertAudit(ctx, actor, {
           category: "crm",
@@ -7923,6 +7948,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const matchingMembers = duplicateMemberMatches(
         (await memberRecords(ctx, actor)).map((record) => data(record.data)),
         { phone: leadData.phone, email: leadData.email },
+        organizationPhoneCountryCallingCode(actor.organization),
       );
       const matchingMemberIds = [...new Set(matchingMembers.map((match) => match.memberId))];
       if (matchingMemberIds.length > 1) {
@@ -8348,9 +8374,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "settings.organization.update": {
       requirePermission(actor, "settings.manage");
-      const allowed = ["name", "timezone", "locale", "defaultLanguage", "taxRatePercent", "receiptPrefix", "receiptFooter"];
+      const allowed = ["name", "timezone", "locale", "phoneCountryCallingCode", "defaultLanguage", "taxRatePercent", "receiptPrefix", "receiptFooter"];
       const patch: Partial<Organization> = {};
       for (const key of allowed) if (input[key] !== undefined) (patch as Record<string, unknown>)[key] = input[key];
+      if (patch.phoneCountryCallingCode !== undefined) {
+        const digits = String(patch.phoneCountryCallingCode).replace(/\D/g, "");
+        if (!/^\d{1,3}$/.test(digits)) domainError("VALIDATION_ERROR", "Enter a valid country calling code.", { correlationId: actor.correlationId, fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
+        patch.phoneCountryCallingCode = digits;
+      }
       await ctx.db.patch(actor.organization._id, { ...patch, updatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.organization_update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: stringValue(input.name, actor.organization.name), summary: "Organization settings updated", before: { name: actor.organization.name, receiptFooter: actor.organization.receiptFooter, taxRatePercent: actor.organization.taxRatePercent }, after: patch });
       return await settingsView(ctx, actor);

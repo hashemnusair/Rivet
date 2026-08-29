@@ -1033,7 +1033,7 @@ export class MockGymOSApi implements GymOSApi {
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
         const fullName = nameIndex >= 0 ? values[nameIndex] ?? "" : "";
-        const phone = normalizePhoneForStorage(phoneIndex >= 0 ? values[phoneIndex] ?? "" : "");
+        const phone = normalizePhoneForStorage(phoneIndex >= 0 ? values[phoneIndex] ?? "" : "", this.db.organization.phoneCountryCallingCode);
         const email = emailIndex >= 0 ? values[emailIndex] || undefined : undefined;
         const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
         const errors = [
@@ -3020,7 +3020,7 @@ export class MockGymOSApi implements GymOSApi {
     }
     return {
       user: { id: user.id, name: user.name, email: user.email },
-      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, brand: this.db.brand },
+      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, brand: this.db.brand },
       branches: this.db.branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
       activeBranchId: activeBranchId ?? (user.branchScope === "selected" && visibleBranches.length === 1 ? visibleBranches[0]!.id : undefined),
       roles: [user.role],
@@ -3535,12 +3535,12 @@ export class MockGymOSApi implements GymOSApi {
   /** Phone/email match ignoring formatting. Shared by the check and by create. */
   private findDuplicates(input: { phone?: string; email?: string }): T.DuplicateMatch[] {
     const normalizedEmail = (value?: string) => value?.trim().toLowerCase() ?? "";
-    const phone = canonicalPhoneKey(input.phone);
+    const phone = canonicalPhoneKey(input.phone, this.db.organization.phoneCountryCallingCode);
     const email = normalizedEmail(input.email);
     const matches: T.DuplicateMatch[] = [];
     for (const m of this.db.members) {
       if (m.status === "archived") continue;
-      if (phone && canonicalPhoneKey(m.phone) === phone) {
+      if (phone && canonicalPhoneKey(m.phone, this.db.organization.phoneCountryCallingCode) === phone) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "phone" });
       } else if (email && m.email && normalizedEmail(m.email) === email) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "email" });
@@ -3568,7 +3568,7 @@ export class MockGymOSApi implements GymOSApi {
         memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
         fullName: input.fullName.trim(),
         fullNameAr: input.fullNameAr,
-        phone: normalizePhoneForStorage(input.phone),
+        phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
         email: input.email?.trim().toLowerCase() || undefined,
         gender: input.gender,
         dateOfBirth: input.dateOfBirth,
@@ -3617,7 +3617,7 @@ export class MockGymOSApi implements GymOSApi {
       const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
       Object.assign(m, {
         ...input,
-        phone: input.phone === undefined ? m.phone : normalizePhoneForStorage(input.phone),
+        phone: input.phone === undefined ? m.phone : normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
         email: input.email === undefined ? m.email : normalizeOptionalEmail(input.email),
       });
       delete (m as MemberRecord & { marketingPreferenceSource?: unknown }).marketingPreferenceSource;
@@ -3739,7 +3739,7 @@ export class MockGymOSApi implements GymOSApi {
       return this.activity({
         memberId,
         type: "call_attempt",
-        title: `Call — ${input.outcome.replace(/_/g, " ")}`,
+        title: input.outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${input.outcome.replace(/_/g, " ")}`,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -4922,7 +4922,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("crm.write");
       const fullName = normalizeLeadName(input.fullName);
-      const phone = normalizeLeadPhone(input.phone);
+      const phone = normalizeLeadPhone(input.phone, this.db.organization.phoneCountryCallingCode);
       const email = normalizeOptionalEmail(input.email);
       if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
       if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
@@ -4998,7 +4998,7 @@ export class MockGymOSApi implements GymOSApi {
       const lead = this.db.leads.find((item) => item.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       const fullName = normalizeLeadName(input.fullName);
-      const phone = normalizeLeadPhone(input.phone);
+      const phone = normalizeLeadPhone(input.phone, this.db.organization.phoneCountryCallingCode);
       const email = normalizeOptionalEmail(input.email);
       if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
       if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
@@ -5038,13 +5038,14 @@ export class MockGymOSApi implements GymOSApi {
         answered_call_back: "Asked for a callback",
         wrong_number: "Wrong number",
         whatsapp_sent: "WhatsApp sent",
+        whatsapp_opened: "WhatsApp handoff opened — delivery not confirmed",
         trial_booked: "Trial booked",
         trial_completed: "Trial completed",
       };
       this.activity({
         leadId,
         type: "call_attempt",
-        title: `Call — ${outcomeLabels[input.outcome].toLowerCase()}`,
+        title: input.outcome === "whatsapp_opened" ? outcomeLabels[input.outcome] : `Call — ${outcomeLabels[input.outcome].toLowerCase()}`,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -5448,7 +5449,7 @@ export class MockGymOSApi implements GymOSApi {
       memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
       fullName: input.fullName.trim(),
       fullNameAr: input.fullNameAr,
-      phone: normalizePhoneForStorage(input.phone),
+      phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
       email: normalizeOptionalEmail(input.email),
       gender: input.gender,
       dateOfBirth: input.dateOfBirth,
@@ -7618,7 +7619,11 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.require("settings.manage");
       const before = { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent };
-      Object.assign(this.db.organization, input);
+      const phoneCountryCallingCode = input.phoneCountryCallingCode?.replace(/\D/g, "");
+      if (input.phoneCountryCallingCode !== undefined && !/^\d{1,3}$/.test(phoneCountryCallingCode ?? "")) {
+        throw ApiError.of(ERR.VALIDATION, "Enter a valid country calling code.", { fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
+      }
+      Object.assign(this.db.organization, input, phoneCountryCallingCode ? { phoneCountryCallingCode } : {});
       this.audit({
         category: "settings",
         action: "settings.organization_update",

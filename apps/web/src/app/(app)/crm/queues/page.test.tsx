@@ -46,6 +46,10 @@ vi.mock("@/features/crm/contact-work-panel", () => ({
   LogContactDialog: () => <button type="button" data-testid="log-contact-dialog">Log contact</button>,
 }));
 
+vi.mock("@/features/crm/whatsapp-handoff", () => ({
+  WhatsAppHandoff: () => <button type="button" data-testid="whatsapp-handoff">WhatsApp</button>,
+}));
+
 describe("follow-up workspace layout", () => {
   beforeEach(() => {
     state.queryKey = undefined;

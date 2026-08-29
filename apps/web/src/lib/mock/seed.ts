@@ -1919,6 +1919,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
       currency: "JOD",
       timezone: "Asia/Amman",
       locale: "en-JO",
+      phoneCountryCallingCode: "962",
       defaultLanguage: "en",
       taxRatePercent: 0,
       receiptPrefix: "R-",

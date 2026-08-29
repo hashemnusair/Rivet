@@ -59,8 +59,9 @@ function normalizeEmail(value: unknown): string {
 export function duplicateMemberMatches(
   members: readonly DuplicateMemberCandidate[],
   input: { phone?: unknown; email?: unknown },
+  defaultCountryCallingCode?: string,
 ): DuplicateMemberMatch[] {
-  const phone = typeof input.phone === "string" ? canonicalPhoneKey(input.phone) : "";
+  const phone = typeof input.phone === "string" ? canonicalPhoneKey(input.phone, defaultCountryCallingCode) : "";
   const email = normalizeEmail(input.email);
   if (!phone && !email) return [];
 
@@ -68,7 +69,7 @@ export function duplicateMemberMatches(
     if (member.status === "archived") return [];
     const memberId = typeof member.id === "string" ? member.id : "";
     if (!memberId) return [];
-    if (phone && typeof member.phone === "string" && canonicalPhoneKey(member.phone) === phone) {
+    if (phone && typeof member.phone === "string" && canonicalPhoneKey(member.phone, defaultCountryCallingCode) === phone) {
       return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "phone" }];
     }
     if (email && normalizeEmail(member.email) === email) {

@@ -71,6 +71,7 @@ type MaybeOrganization = {
   timezone: string;
   currency: string;
   locale?: string;
+  phoneCountryCallingCode?: string;
   defaultLanguage?: "en" | "ar";
   taxRatePercent?: number;
   receiptPrefix?: string;

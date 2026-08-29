@@ -154,6 +154,7 @@ export default defineSchema({
     timezone: v.string(),
     currency: v.string(),
     locale: v.optional(v.string()),
+    phoneCountryCallingCode: v.optional(v.string()),
     defaultLanguage: v.optional(v.union(v.literal("en"), v.literal("ar"))),
     taxRatePercent: v.optional(v.number()),
     receiptPrefix: v.optional(v.string()),

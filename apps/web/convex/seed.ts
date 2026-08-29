@@ -49,6 +49,7 @@ export const seedDemoTenant = internalMutation({
       await ctx.db.patch(organizationId, {
         publicId: "10000000-0000-4a00-8a00-000000000001",
         locale: "en-JO",
+        phoneCountryCallingCode: "962",
         defaultLanguage: "en",
         taxRatePercent: 0,
         receiptPrefix: "RV",
@@ -74,6 +75,7 @@ export const seedDemoTenant = internalMutation({
         timezone: "Asia/Amman",
         currency: "JOD",
         locale: "en-JO",
+        phoneCountryCallingCode: "962",
         defaultLanguage: "en",
         subscriptionPlan: "Pro",
         billingInterval: "monthly",

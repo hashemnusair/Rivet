@@ -30,10 +30,10 @@ export function OrganizationSection() {
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
-  const [form, setForm] = useState({ name: "", timezone: "", locale: "", defaultLanguage: "en" as "en" | "ar" });
+  const [form, setForm] = useState({ name: "", timezone: "", locale: "", phoneCountryCallingCode: "962", defaultLanguage: "en" as "en" | "ar" });
 
   useEffect(() => {
-    if (org) setForm({ name: org.name, timezone: org.timezone, locale: org.locale, defaultLanguage: org.defaultLanguage });
+    if (org) setForm({ name: org.name, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, defaultLanguage: org.defaultLanguage });
   }, [org]);
 
   const save = useApiMutation((api) => api.updateOrganizationSettings(form), {
@@ -76,6 +76,18 @@ export function OrganizationSection() {
               <SelectItem value="ar-JO">العربية (الأردن)</SelectItem>
             </SelectContent>
           </Select>
+        </Field>
+        <Field label="Default phone country" hint="Used only for local numbers. Numbers beginning with + or 00 keep their own country code.">
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3">+</span>
+            <Input
+              className="ps-7 font-mono"
+              inputMode="numeric"
+              aria-label="Default phone country calling code"
+              value={form.phoneCountryCallingCode}
+              onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))}
+            />
+          </div>
         </Field>
         <Field label="Default staff language">
           <Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}>

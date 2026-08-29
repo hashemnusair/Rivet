@@ -490,6 +490,7 @@ export const createWorkspace = internalMutation({
         timezone: "Asia/Amman",
         currency: "JOD",
         locale: "en-JO",
+        phoneCountryCallingCode: "962",
         defaultLanguage: "en",
         taxRatePercent: 0,
         receiptPrefix: "RV",

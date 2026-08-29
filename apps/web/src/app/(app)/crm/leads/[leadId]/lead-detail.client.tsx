@@ -31,6 +31,7 @@ import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
+import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
@@ -144,9 +145,19 @@ export default function LeadDetailPageClient() {
               <span>{LEAD_SOURCE_LABELS[lead.source]}</span>
             </div>
           </div>
-          {saleDone && lead.convertedMemberId ? (
-            <Button onClick={() => router.push(`/members/${lead.convertedMemberId}`)}>Open member <UserCheck /></Button>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <WhatsAppHandoff
+              subject="lead"
+              subjectId={lead.id}
+              recipientName={lead.fullName}
+              phone={lead.phone}
+              organizationName={settingsQuery.data?.organization.name}
+              defaultCountryCallingCode={settingsQuery.data?.organization.phoneCountryCallingCode}
+            />
+            {saleDone && lead.convertedMemberId ? (
+              <Button onClick={() => router.push(`/members/${lead.convertedMemberId}`)}>Open member <UserCheck /></Button>
+            ) : null}
+          </div>
         </div>
 
         <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress" data-testid="lead-stage-progress">

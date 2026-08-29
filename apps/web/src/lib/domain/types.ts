@@ -626,6 +626,8 @@ export interface Organization {
   currency: string;
   timezone: string;
   locale: string;
+  /** Digits only (for example `962`). Used only when a phone omits `+`/`00`. */
+  phoneCountryCallingCode: string;
   defaultLanguage: "en" | "ar";
   taxRatePercent: number; // 0 means tax disabled
   receiptPrefix: string;
@@ -667,6 +669,7 @@ export interface Session {
     currency: string;
     timezone: string;
     locale: string;
+    phoneCountryCallingCode?: string;
     brand?: BrandKit;
   };
   branches: Array<{ id: UUID; name: string; code: string }>;
@@ -1379,6 +1382,7 @@ export type ContactOutcome =
   | "answered_call_back"
   | "wrong_number"
   | "whatsapp_sent"
+  | "whatsapp_opened"
   | "trial_booked"
   | "trial_completed";
 
@@ -2693,6 +2697,7 @@ export type UpdateOrganizationSettingsInput = Partial<{
   name: string;
   timezone: string;
   locale: string;
+  phoneCountryCallingCode: string;
   defaultLanguage: "en" | "ar";
   taxRatePercent: number;
   receiptPrefix: string;
