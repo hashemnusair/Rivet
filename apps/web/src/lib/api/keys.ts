@@ -83,6 +83,7 @@ export const INVALIDATE_ALL = [
   "onboarding",
   "customerFinance",
   "customerReceipts",
+  "automationMonitoring",
   "exports",
   "workspaceSearch",
   "workspaceRecents",

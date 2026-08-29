@@ -135,6 +135,7 @@ import type {
   OnboardingExperience,
   PushSubscriptionInput,
   PushSubscriptionSummary,
+  AutomationMonitoringSummary,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -950,6 +951,7 @@ export interface GymOSApi {
   getGeneralManagerAnalysis(input: ManagementReportInput): Promise<GeneralManagerAnalysis>;
 
   // Automations
+  getAutomationMonitoringSummary(): Promise<AutomationMonitoringSummary>;
   listAutomationRules(): Promise<AutomationRule[]>;
   getAutomationRule(id: UUID): Promise<AutomationRule>;
   createAutomationRule(input: CreateAutomationRuleInput): Promise<AutomationRule>;

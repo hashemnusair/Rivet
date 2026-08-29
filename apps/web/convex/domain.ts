@@ -113,6 +113,20 @@ const DEFAULT_NOTIFICATIONS = {
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",
 };
+const AUTOMATIONS_PAUSE_REASON = "Automated delivery remains paused until providers, consent policy, and production verification are approved.";
+
+function automationsGloballyPaused(): boolean {
+  return process.env.RIVET_AUTOMATIONS_LIVE !== "true";
+}
+
+function requireAutomationsLive(correlationId: string): void {
+  if (automationsGloballyPaused()) {
+    domainError("FEATURE_NOT_AVAILABLE", AUTOMATIONS_PAUSE_REASON, {
+      correlationId,
+      details: { feature: "automations", globallyPaused: true },
+    });
+  }
+}
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ZONE_KINDS = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"] as const;
@@ -5006,6 +5020,54 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const rules = (await recordsOf(ctx, actor, "automationRule")).map((record) => data(record.data));
       return rules;
     }
+    case "automations.monitoring": {
+      requirePermission(actor, "automations.manage");
+      const rules = (await recordsOf(ctx, actor, "automationRule")).map((record) => data(record.data));
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const executions = (await recordsOf(ctx, actor, "automationExecution"))
+        .map((record) => data(record.data))
+        .filter((execution) => {
+          const occurredAt = Date.parse(stringValue(execution.executedAt));
+          return Number.isFinite(occurredAt) && occurredAt >= cutoff;
+        });
+      const statuses = executions.map((execution) => stringValue(execution.status));
+      const globallyPaused = automationsGloballyPaused();
+      const emailConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+      return {
+        globallyPaused,
+        pauseReason: globallyPaused ? AUTOMATIONS_PAUSE_REASON : "Automation delivery is enabled for this environment.",
+        ruleCount: rules.length,
+        persistedEnabledCount: rules.filter((rule) => rule.enabled === true).length,
+        executionsLast30Days: executions.length,
+        successCount: statuses.filter((status) => ["success", "completed"].includes(status)).length,
+        suppressedCount: statuses.filter((status) => ["suppressed", "skipped_duplicate"].includes(status)).length,
+        retryCount: statuses.filter((status) => status === "retrying").length,
+        failureCount: statuses.filter((status) => status === "failed").length,
+        providers: [
+          {
+            key: "internal_tasks",
+            label: "Internal tasks and manager alerts",
+            configured: true,
+            live: !globallyPaused,
+            detail: globallyPaused ? "Configured, but held by the global pause." : "Ready for internal task and notification actions.",
+          },
+          {
+            key: "email",
+            label: "Operational email",
+            configured: emailConfigured,
+            live: !globallyPaused && emailConfigured && process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true",
+            detail: emailConfigured ? "Provider credentials are configured; delivery still follows the global and operational-email gates." : "Resend credentials are not configured.",
+          },
+          {
+            key: "sms_whatsapp",
+            label: "SMS and WhatsApp",
+            configured: false,
+            live: false,
+            detail: "No production SMS or WhatsApp provider is connected. Queued messages cannot leave RIVET.",
+          },
+        ],
+      };
+    }
     case "automations.rule": {
       requirePermission(actor, "automations.manage");
       return data((await recordOf(ctx, actor, "automationRule", recordId(input.id))).data);
@@ -9072,6 +9134,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.rule.create": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       const normalized = normalizedAutomationRulePatch(input, undefined, actor.correlationId, true);
       await assertAutomationTemplateReferences(ctx, actor, arrayValue(normalized.actions).map(data));
       const rule = await insertRecord(ctx, actor, "automationRule", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), ...normalized, executionsLast30Days: 0, updatedAt: isoNow() });
@@ -9080,6 +9143,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.rule.update": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       const record = await recordOf(ctx, actor, "automationRule", recordId(input.id));
       const patch: Data = normalizedAutomationRulePatch(input, data(record.data), actor.correlationId, false);
       if (patch.actions) await assertAutomationTemplateReferences(ctx, actor, arrayValue(patch.actions).map(data));
@@ -9090,6 +9154,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.run": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       requireReason(input.reason, actor.correlationId);
       const ruleRecord = await recordOf(ctx, actor, "automationRule", recordId(input.ruleId));
       const rule = data(ruleRecord.data);
@@ -9116,6 +9181,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.execution.retry": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       requireReason(input.reason, actor.correlationId);
       const executionRecord = await recordOf(ctx, actor, "automationExecution", recordId(input.executionId));
       const execution = data(executionRecord.data);

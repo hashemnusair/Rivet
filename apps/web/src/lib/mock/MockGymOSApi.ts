@@ -7569,6 +7569,29 @@ export class MockGymOSApi implements GymOSApi {
   // automations
   // -------------------------------------------------------------------------
 
+  getAutomationMonitoringSummary(): Promise<import("@/lib/domain/qol").AutomationMonitoringSummary> {
+    return this.respond(() => {
+      this.require("automations.manage");
+      const statuses = this.db.executions.map((execution) => execution.status);
+      return {
+        globallyPaused: true,
+        pauseReason: "Automated delivery remains paused until providers, consent policy, and production verification are approved.",
+        ruleCount: this.db.rules.length,
+        persistedEnabledCount: this.db.rules.filter((rule) => rule.enabled).length,
+        executionsLast30Days: this.db.executions.length,
+        successCount: statuses.filter((status) => ["success", "completed"].includes(status)).length,
+        suppressedCount: statuses.filter((status) => ["suppressed", "skipped_duplicate"].includes(status)).length,
+        retryCount: statuses.filter((status) => status === "retrying").length,
+        failureCount: statuses.filter((status) => status === "failed").length,
+        providers: [
+          { key: "internal_tasks", label: "Internal tasks and manager alerts", configured: true, live: false, detail: "Configured, but held by the global pause." },
+          { key: "email", label: "Operational email", configured: false, live: false, detail: "Provider credentials are not configured in preview mode." },
+          { key: "sms_whatsapp", label: "SMS and WhatsApp", configured: false, live: false, detail: "No production SMS or WhatsApp provider is connected." },
+        ],
+      };
+    });
+  }
+
   listAutomationRules(): Promise<T.AutomationRule[]> {
     return this.respond(() => {
       return this.maybeEmpty([...this.db.rules]);

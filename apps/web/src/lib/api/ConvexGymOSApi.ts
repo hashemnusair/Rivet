@@ -609,6 +609,7 @@ export class ConvexGymOSApi implements GymOSApi {
   getCashflowStatement(input: T.ManagementReportInput): Promise<T.CashflowStatement> { return this.query("reports.cashflow_statement", input); }
   getGeneralManagerAnalysis(input: T.ManagementReportInput): Promise<T.GeneralManagerAnalysis> { return this.query("reports.gm_analysis", input); }
 
+  getAutomationMonitoringSummary(): Promise<import("@/lib/domain/qol").AutomationMonitoringSummary> { return this.query("automations.monitoring"); }
   listAutomationRules(): Promise<T.AutomationRule[]> { return this.query("automations.rules"); }
   getAutomationRule(id: T.UUID): Promise<T.AutomationRule> { return this.query("automations.rule", { id }); }
   createAutomationRule(input: T.CreateAutomationRuleInput): Promise<T.AutomationRule> { return this.mutate("automations.rule.create", input); }

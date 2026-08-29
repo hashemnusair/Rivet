@@ -1,5 +1,5 @@
-import { AutomationComingSoon } from "@/features/automations/coming-soon";
+import AutomationMonitoringClient from "@/features/automations/automation-monitoring.client";
 
 export default function AutomationsPage() {
-  return <AutomationComingSoon />;
+  return <AutomationMonitoringClient />;
 }
