@@ -8757,6 +8757,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         subjectName: stringValue(task.subjectName),
         branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
         dueAt,
+        overdue: overdueTask,
         href: task.leadId ? `/crm/leads/${stringValue(task.leadId)}` : task.memberId ? `/members/${stringValue(task.memberId)}` : "/crm/queues",
         action: canComplete
           ? { kind: "complete_task", label: "Done", taskId: stringValue(task.id) }

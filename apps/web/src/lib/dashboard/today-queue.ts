@@ -4,6 +4,7 @@ export type TodayQueueSortableItem = {
   priority: "urgent" | "high" | "normal";
   dueAt?: string;
   occurredAt?: string;
+  overdue?: boolean;
 };
 
 export type FinalizedTodayQueue<T extends TodayQueueSortableItem> = {
@@ -13,6 +14,8 @@ export type FinalizedTodayQueue<T extends TodayQueueSortableItem> = {
   urgentItems: number;
   highPriorityItems: number;
   kindCounts: Partial<Record<T["kind"], number>>;
+  overdueItems: number;
+  overdueKindCounts: Partial<Record<T["kind"], number>>;
 };
 
 const PRIORITY_RANK: Record<TodayQueueSortableItem["priority"], number> = {
@@ -46,8 +49,10 @@ export function finalizeTodayQueue<T extends TodayQueueSortableItem>(
     return time !== 0 ? time : left.id.localeCompare(right.id);
   });
   const kindCounts: Record<string, number> = {};
+  const overdueKindCounts: Record<string, number> = {};
   for (const item of ordered) {
     kindCounts[item.kind] = (kindCounts[item.kind] ?? 0) + 1;
+    if (item.overdue) overdueKindCounts[item.kind] = (overdueKindCounts[item.kind] ?? 0) + 1;
   }
 
   return {
@@ -57,5 +62,7 @@ export function finalizeTodayQueue<T extends TodayQueueSortableItem>(
     urgentItems: ordered.filter((item) => item.priority === "urgent").length,
     highPriorityItems: ordered.filter((item) => item.priority === "high").length,
     kindCounts: kindCounts as Partial<Record<T["kind"], number>>,
+    overdueItems: ordered.filter((item) => item.overdue).length,
+    overdueKindCounts: overdueKindCounts as Partial<Record<T["kind"], number>>,
   };
 }

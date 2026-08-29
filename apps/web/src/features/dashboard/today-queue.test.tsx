@@ -19,6 +19,8 @@ const queue: TodayQueueData = {
   urgentItems: 1,
   highPriorityItems: 1,
   kindCounts: { outstanding_balance: 1, follow_up: 1, approval: 1 },
+  overdueItems: 1,
+  overdueKindCounts: { outstanding_balance: 1 },
   items: [
     {
       id: "balance:member-1",
@@ -82,7 +84,7 @@ describe("Today queue", () => {
   it("shows a calm, useful empty state", async () => {
     await renderWithApp(
       <TodayQueue
-        data={{ generatedAt: queue.generatedAt, items: [], totalItems: 0, urgentItems: 0, highPriorityItems: 0, kindCounts: {} }}
+        data={{ generatedAt: queue.generatedAt, items: [], totalItems: 0, urgentItems: 0, highPriorityItems: 0, kindCounts: {}, overdueItems: 0, overdueKindCounts: {} }}
       />,
     );
 

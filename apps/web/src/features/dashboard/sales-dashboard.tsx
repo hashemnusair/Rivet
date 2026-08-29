@@ -34,7 +34,7 @@ export function SalesDashboard() {
 
   const me = dashQuery.data?.leaderboard.find((r) => r.userId === session?.user.id);
   const dueFollowUps = dashQuery.data?.todayQueue.kindCounts.follow_up ?? 0;
-  const overdueFollowUps = dashQuery.data?.kpis.overdueFollowUps ?? 0;
+  const overdueFollowUps = dashQuery.data?.todayQueue.overdueKindCounts.follow_up ?? 0;
 
   return (
     <div className="space-y-5">

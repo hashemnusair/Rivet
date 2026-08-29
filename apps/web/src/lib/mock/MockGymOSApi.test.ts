@@ -78,6 +78,13 @@ describe("session and role switching", () => {
     expect(receptionDashboard.todayQueue.items.every((item) => !["approval", "cash_variance", "facility_task"].includes(item.kind))).toBe(true);
     expect(receptionDashboard.todayQueue.items.every((item) => item.action.kind !== "complete_task")).toBe(true);
 
+    const salesSession = await api.switchDemoRole("salesperson");
+    const expectedOwnOverdue = internals.db.tasks.filter((task) =>
+      task.status === "open" && task.ownerId === salesSession.user.id && task.dueAt < new Date().toISOString(),
+    ).length;
+    const salesDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(salesDashboard.todayQueue.overdueKindCounts.follow_up).toBe(expectedOwnOverdue);
+
     await api.switchDemoRole("trainer");
     const trainerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
     expect(trainerDashboard.todayQueue).toMatchObject({ totalItems: 0, items: [] });

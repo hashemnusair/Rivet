@@ -3238,6 +3238,7 @@ export class MockGymOSApi implements GymOSApi {
             subjectName: task.subjectName,
             branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
             dueAt: task.dueAt,
+            overdue,
             href,
             action: canComplete
               ? { kind: "complete_task", label: "Done", taskId: task.id }

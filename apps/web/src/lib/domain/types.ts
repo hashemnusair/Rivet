@@ -2495,6 +2495,7 @@ export interface TodayQueueItem {
   branchName?: string;
   dueAt?: ISODateTime;
   occurredAt?: ISODateTime;
+  overdue?: boolean;
   amount?: Money;
 }
 
@@ -2505,6 +2506,8 @@ export interface TodayQueueData {
   urgentItems: number;
   highPriorityItems: number;
   kindCounts: Partial<Record<TodayQueueKind, number>>;
+  overdueItems: number;
+  overdueKindCounts: Partial<Record<TodayQueueKind, number>>;
 }
 
 export interface DashboardData {
