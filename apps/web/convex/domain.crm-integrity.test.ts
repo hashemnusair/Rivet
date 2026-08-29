@@ -220,4 +220,30 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(dashboard.kpis.activeLeads).toBe(1);
     expect(Object.fromEntries(dashboard.funnel.map((item) => [item.stage, item.count]))).toMatchObject({ new: 1, attempted: 1, contacted: 1, trial_booked: 1, trial_completed: 1, offer_sent: 1, won: 0, lost: 0 });
   });
+
+  it("keeps saved views personal and runs bounded idempotent bulk work with an audit result", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const sales = t.withIdentity({ subject: "clerk-crm-integrity-sales" });
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Bulk Member", phone: "+962790009999", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+
+    const view = await owner.mutation(api.domain.mutate, operation("savedViews.save", { surface: "members", name: "Balances", state: { membership: "outstanding", sort: "-outstanding" }, isDefault: true })) as { id: string; isDefault: boolean };
+    expect(view.isDefault).toBe(true);
+    expect(await owner.query(api.domain.query, operation("savedViews.list", { surface: "members" }))).toEqual([expect.objectContaining({ id: view.id, name: "Balances" })]);
+    expect(await sales.query(api.domain.query, operation("savedViews.list", { surface: "members" }))).toEqual([]);
+
+    const request = { kind: "members_add_tags", recordIds: [created.member.id], tags: ["priority"], idempotencyKey: "bulk-member-tag-1" };
+    const first = await owner.mutation(api.domain.mutate, operation("bulk.run", request)) as { id: string; succeededCount: number; status: string };
+    const replay = await owner.mutation(api.domain.mutate, operation("bulk.run", request)) as { id: string };
+    expect(first).toMatchObject({ succeededCount: 1, status: "completed" });
+    expect(replay.id).toBe(first.id);
+    const member = await owner.query(api.domain.query, operation("members.get", { memberId: created.member.id })) as { tags: string[] };
+    expect(member.tags).toContain("priority");
+    expect(await owner.query(api.domain.query, operation("bulk.jobs"))).toEqual([expect.objectContaining({ id: first.id, requestedCount: 1 })]);
+    await expectCode(owner.mutation(api.domain.mutate, operation("bulk.run", { ...request, recordIds: Array.from({ length: 101 }, (_, index) => `member-${index}`), idempotencyKey: "too-many" })), "VALIDATION_ERROR");
+
+    await owner.mutation(api.domain.mutate, operation("savedViews.delete", { viewId: view.id }));
+    expect(await owner.query(api.domain.query, operation("savedViews.list", { surface: "members" }))).toEqual([]);
+  });
 });

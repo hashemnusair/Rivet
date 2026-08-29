@@ -29,8 +29,11 @@ const lead = {
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
-  useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/crm/pipeline",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
+
+vi.mock("@/components/shared/saved-view-controls", () => ({ SavedViewControls: () => null }));
 
 vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session: { activeBranchId: "branch-1" } }),

@@ -3805,6 +3805,64 @@ async function currentGymProfile(ctx: ReadContext, actor: ActorContext): Promise
   return await gymPublicProfileView(ctx, actor, draft ? data(draft.data) : undefined);
 }
 
+const SAVED_VIEW_SURFACES = new Set(["members", "leads", "customer_finance"]);
+const BULK_OPERATION_KINDS = new Set([
+  "members_add_tags",
+  "members_remove_tags",
+  "members_assign_branch",
+  "members_create_follow_up",
+  "members_archive",
+  "leads_assign_owner",
+  "leads_create_follow_up",
+  "leads_close_lost",
+]);
+
+function savedViewSurface(value: unknown, correlationId?: string): "members" | "leads" | "customer_finance" {
+  const surface = stringValue(value);
+  if (!SAVED_VIEW_SURFACES.has(surface)) domainError("VALIDATION_ERROR", "Choose a valid saved-view surface.", { correlationId });
+  return surface as "members" | "leads" | "customer_finance";
+}
+
+function savedViewState(value: unknown, correlationId?: string): Data {
+  if (!value || typeof value !== "object" || Array.isArray(value)) domainError("VALIDATION_ERROR", "Saved-view state must be an object.", { correlationId });
+  const state = data(value);
+  if (JSON.stringify(state).length > 20_000) domainError("VALIDATION_ERROR", "Saved-view state is too large.", { correlationId });
+  return state;
+}
+
+function savedViewProjection(view: Doc<"userSavedViews">): Data {
+  return {
+    id: view.publicId,
+    surface: view.surface,
+    name: view.name,
+    state: data(view.state),
+    isDefault: view.isDefault,
+    createdAt: utcIso(view.createdAt),
+    updatedAt: utcIso(view.updatedAt),
+  };
+}
+
+async function listSavedViews(ctx: QueryCtx, actor: ActorContext, surface: string): Promise<Data[]> {
+  const rows = await ctx.db.query("userSavedViews").withIndex("by_user_surface", (q) => q.eq("organizationId", actor.organization._id).eq("userId", actor.user._id).eq("surface", savedViewSurface(surface, actor.correlationId))).collect();
+  return rows.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name)).map(savedViewProjection);
+}
+
+function bulkJobProjection(value: Data): Data {
+  return {
+    ...value,
+    failures: arrayValue(value.failures).map(data),
+  };
+}
+
+async function bulkOperationJobs(ctx: QueryCtx, actor: ActorContext): Promise<Data[]> {
+  const rows = await recordsOf(ctx, actor, "bulkOperationJob");
+  return rows
+    .map((row) => bulkJobProjection({ id: row.publicId, ...data(row.data) }))
+    .filter((job) => job.requestedById === publicUserId(actor.user))
+    .sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)))
+    .slice(0, 25);
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4203,6 +4261,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "savedViews.list":
+      return await listSavedViews(ctx, actor, stringValue(input.surface));
+    case "bulk.jobs":
+      return await bulkOperationJobs(ctx, actor);
     case "support.list": {
       const records = await recordsOf(ctx, actor, "supportCase");
       const visible = actor.role === "owner" || actor.role === "manager"
@@ -5510,6 +5572,122 @@ async function executeAutomationCandidate(
     retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
     suppressionReason: status === "suppressed" ? actionResults.map((item) => stringValue(item.suppressionReason)).filter(Boolean).join("; ") : undefined,
   }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
+}
+
+function bulkFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.replace(/^\[CONVEX [^\]]+\]\s*/, "").slice(0, 240);
+  return "This record could not be updated.";
+}
+
+async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  const kind = stringValue(input.kind);
+  if (!BULK_OPERATION_KINDS.has(kind)) domainError("VALIDATION_ERROR", "Choose a valid bulk operation.", { correlationId: actor.correlationId });
+  const ids = [...new Set(arrayValue(input.recordIds).map(String).filter(Boolean))];
+  if (ids.length < 1 || ids.length > 100) domainError("VALIDATION_ERROR", "Select between 1 and 100 records.", { correlationId: actor.correlationId });
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (!idempotencyKey || idempotencyKey.length > 200) domainError("VALIDATION_ERROR", "A valid bulk-operation key is required.", { correlationId: actor.correlationId });
+  const requestHash = JSON.stringify({ kind, ids, tags: input.tags, branchId: input.branchId, ownerId: input.ownerId, dueAt: input.dueAt, reason: input.reason });
+  const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "bulk.run").eq("key", idempotencyKey)).unique();
+  if (existing) {
+    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This bulk-operation key was already used for different work.", { correlationId: actor.correlationId });
+    const stored = data(existing.result);
+    const prior = await recordOf(ctx, actor, "bulkOperationJob", stringValue(stored.jobId));
+    return bulkJobProjection(data(prior.data));
+  }
+
+  if (kind.startsWith("members_")) requirePermission(actor, kind === "members_archive" ? "members.archive" : "members.write");
+  if (kind.startsWith("leads_")) requirePermission(actor, "crm.write");
+  if (kind === "leads_assign_owner") requirePermission(actor, "crm.assign");
+  if (kind.endsWith("create_follow_up")) requirePermission(actor, "crm.write");
+
+  const tags = [...new Set(arrayValue(input.tags).map((tag) => String(tag).trim()).filter(Boolean))];
+  if ((kind === "members_add_tags" || kind === "members_remove_tags") && (tags.length < 1 || tags.length > 20 || tags.some((tag) => tag.length > 40))) {
+    domainError("VALIDATION_ERROR", "Choose between 1 and 20 valid tags.", { correlationId: actor.correlationId });
+  }
+  const reason = optionalString(input.reason)?.trim();
+  if ((kind === "members_archive" || kind === "leads_close_lost") && (!reason || reason.length < 3)) {
+    domainError("VALIDATION_ERROR", "Record a reason for this bulk action.", { correlationId: actor.correlationId });
+  }
+  const dueAt = optionalString(input.dueAt);
+  if (kind.endsWith("create_follow_up") && (!dueAt || Number.isNaN(new Date(dueAt).getTime()))) {
+    domainError("VALIDATION_ERROR", "Choose a valid follow-up date and time.", { correlationId: actor.correlationId });
+  }
+  const branch = kind === "members_assign_branch" ? await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId)) : null;
+  if (kind === "members_assign_branch") {
+    if (!branch || !branch.active) domainError("NOT_FOUND", "Destination branch not found.", { correlationId: actor.correlationId });
+    assertBranchAccess(actor, branch);
+  }
+  const owner = kind === "leads_assign_owner" ? await userByPublicId(ctx, actor.organization._id, recordId(input.ownerId)) : null;
+  if (kind === "leads_assign_owner" && !owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+
+  const failures: Data[] = [];
+  let succeededCount = 0;
+  let skippedCount = 0;
+  for (const id of ids) {
+    try {
+      if (kind.startsWith("members_")) {
+        const record = await recordOf(ctx, actor, "member", id);
+        const member = data(record.data);
+        if (kind === "members_add_tags" || kind === "members_remove_tags") {
+          const current = arrayValue(member.tags).map(String);
+          const next = kind === "members_add_tags" ? [...new Set([...current, ...tags])] : current.filter((tag) => !tags.includes(tag));
+          if (JSON.stringify(current) === JSON.stringify(next)) { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { tags: next });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "members_assign_branch") {
+          if (member.homeBranchId === publicBranchId(branch!)) { skippedCount += 1; continue; }
+          await ctx.db.patch(record._id, { branchId: branch!._id, data: { ...member, homeBranchId: publicBranchId(branch!) }, updatedAt: Date.now() });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "members_create_follow_up") {
+          await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(member.fullName)}`, ownerId: publicUserId(actor.user), dueAt, priority: "normal", memberId: id });
+        } else if (kind === "members_archive") {
+          if (stringValue(member.status) === "archived") { skippedCount += 1; continue; }
+          const photos = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", id)).collect()).filter((asset) => asset.status === "active");
+          const deleteAfter = Date.now() + 90 * 86_400_000;
+          await patchRecord(ctx, actor, record, { status: "archived", archivedAt: isoNow() });
+          await Promise.all(photos.map((asset) => ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter, updatedAt: Date.now() })));
+          await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: id, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Member archived in bulk", reason, before: { status: member.status }, after: { status: "archived", privatePhotosScheduledForDeletion: photos.length }, branchId: optionalString(member.homeBranchId) });
+        }
+      } else {
+        const record = await recordOf(ctx, actor, "lead", id);
+        const lead = data(record.data);
+        if (kind === "leads_assign_owner") {
+          if (lead.ownerId === publicUserId(owner!)) { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { ownerId: publicUserId(owner!), ownerName: owner!.fullName, updatedAt: isoNow() });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "leads_create_follow_up") {
+          await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(lead.fullName)}`, ownerId: optionalString(lead.ownerId) ?? publicUserId(actor.user), dueAt, priority: "normal", leadId: id });
+        } else if (kind === "leads_close_lost") {
+          if (stringValue(lead.stage) === "lost") { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { stage: "lost", lostReason: reason, nextFollowUpAt: undefined, updatedAt: isoNow() });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        }
+      }
+      succeededCount += 1;
+    } catch (error) {
+      failures.push({ recordId: id, message: bulkFailureMessage(error) });
+    }
+  }
+
+  const now = isoNow();
+  const job = {
+    id: newPublicId(),
+    kind,
+    status: failures.length === ids.length ? "failed" : failures.length ? "partially_completed" : "completed",
+    requestedCount: ids.length,
+    succeededCount,
+    skippedCount,
+    failedCount: failures.length,
+    failures,
+    correlationId: actor.correlationId ?? newPublicId(),
+    requestedById: publicUserId(actor.user),
+    createdAt: now,
+    completedAt: now,
+  };
+  await insertRecord(ctx, actor, "bulkOperationJob", job);
+  await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "bulk.run", key: idempotencyKey, requestHash, result: { jobId: job.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 30 });
+  await insertAudit(ctx, actor, { category: kind.startsWith("members_") ? "members" : "crm", action: `bulk.${kind}`, entityType: "bulk_operation", entityId: job.id, entityLabel: `${ids.length} selected records`, summary: `${succeededCount} updated, ${skippedCount} skipped, ${failures.length} failed`, reason, after: { kind, requestedCount: ids.length, succeededCount, skippedCount, failedCount: failures.length } });
+  return bulkJobProjection(job);
 }
 
 async function insertPtLedger(ctx: MutationCtx, actor: ActorContext, input: {
@@ -6883,6 +7061,40 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "savedViews.save": {
+      const surface = savedViewSurface(input.surface, actor.correlationId);
+      const state = savedViewState(input.state, actor.correlationId);
+      const name = stringValue(input.name).trim();
+      if (name.length < 1 || name.length > 60) domainError("VALIDATION_ERROR", "Saved-view names must be between 1 and 60 characters.", { correlationId: actor.correlationId });
+      const isDefault = booleanValue(input.isDefault);
+      const existingRows = await ctx.db.query("userSavedViews").withIndex("by_user_surface", (q) => q.eq("organizationId", actor.organization._id).eq("userId", actor.user._id).eq("surface", surface)).collect();
+      if (existingRows.length >= 25 && !input.id) domainError("VALIDATION_ERROR", "You can save up to 25 views on this page.", { correlationId: actor.correlationId });
+      const duplicate = existingRows.find((view) => view.name.toLocaleLowerCase() === name.toLocaleLowerCase() && view.publicId !== input.id);
+      if (duplicate) domainError("CONFLICT", "You already have a saved view with this name.", { correlationId: actor.correlationId });
+      if (isDefault) await Promise.all(existingRows.filter((view) => view.isDefault).map((view) => ctx.db.patch(view._id, { isDefault: false, updatedAt: Date.now() })));
+      const requestedId = optionalString(input.id);
+      const existing = requestedId ? existingRows.find((view) => view.publicId === requestedId) : null;
+      const now = Date.now();
+      if (existing) {
+        await ctx.db.patch(existing._id, { name, state, isDefault, updatedAt: now });
+        return savedViewProjection({ ...existing, name, state, isDefault, updatedAt: now });
+      }
+      if (requestedId) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      const publicId = newPublicId();
+      const id = await ctx.db.insert("userSavedViews", { organizationId: actor.organization._id, userId: actor.user._id, publicId, surface, name, state, isDefault, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(id);
+      if (!created) domainError("INTERNAL_ERROR", "Saved view could not be created.", { correlationId: actor.correlationId });
+      return savedViewProjection(created);
+    }
+    case "savedViews.delete": {
+      const viewId = recordId(input.viewId);
+      const view = await ctx.db.query("userSavedViews").withIndex("by_public_id", (q) => q.eq("publicId", viewId)).unique();
+      if (!view || view.organizationId !== actor.organization._id || view.userId !== actor.user._id) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      await ctx.db.delete(view._id);
+      return undefined;
+    }
+    case "bulk.run":
+      return await runBulkOperationMutation(ctx, actor, input);
     case "support.reply": {
       const body = stringValue(input.body).trim();
       if (!body) domainError("VALIDATION_ERROR", "A support reply is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });

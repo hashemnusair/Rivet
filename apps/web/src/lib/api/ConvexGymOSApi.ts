@@ -365,6 +365,11 @@ export class ConvexGymOSApi implements GymOSApi {
   getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> { return this.query("customer.finance.summary"); }
   listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> { return this.query("customer.finance.transactions", query); }
   getCustomerReceipt(receiptId: T.UUID): Promise<import("@/lib/domain/qol").CustomerReceipt> { return this.query("customer.receipt", { receiptId }); }
+  listSavedViews(surface: import("@/lib/domain/qol").SavedViewSurface): Promise<import("@/lib/domain/qol").SavedView[]> { return this.query("savedViews.list", { surface }); }
+  saveSavedView(input: { id?: T.UUID; surface: import("@/lib/domain/qol").SavedViewSurface; name: string; state: Record<string, unknown>; isDefault?: boolean }): Promise<import("@/lib/domain/qol").SavedView> { return this.mutate("savedViews.save", input); }
+  deleteSavedView(viewId: T.UUID): Promise<void> { return this.mutate("savedViews.delete", { viewId }); }
+  runBulkOperation(input: import("@/lib/domain/qol").BulkOperationInput): Promise<import("@/lib/domain/qol").BulkOperationJob> { return this.mutate("bulk.run", input); }
+  listBulkOperationJobs(): Promise<import("@/lib/domain/qol").BulkOperationJob[]> { return this.query("bulk.jobs"); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
   previewMarketingPreferenceMigration(): Promise<MarketingPreferenceMigrationPreview> { return this.query("platform.marketingMigration.preview"); }
   applyMarketingPreferenceMigration(input: { migrationId?: string; batchSize?: number; reason: string }): Promise<MarketingPreferenceMigrationProgress> { return this.mutate("platform.marketingMigration.apply", input); }

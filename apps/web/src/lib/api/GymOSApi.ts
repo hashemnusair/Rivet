@@ -124,6 +124,10 @@ import type {
   CustomerReceipt,
   CustomerTransaction,
   CustomerTransactionQuery,
+  BulkOperationInput,
+  BulkOperationJob,
+  SavedView,
+  SavedViewSurface,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -740,6 +744,11 @@ export interface GymOSApi {
   getCustomerFinancialSummary(): Promise<CustomerFinancialSummary>;
   listCustomerTransactions(query: CustomerTransactionQuery): Promise<Page<CustomerTransaction>>;
   getCustomerReceipt(receiptId: UUID): Promise<CustomerReceipt>;
+  listSavedViews(surface: SavedViewSurface): Promise<SavedView[]>;
+  saveSavedView(input: { id?: UUID; surface: SavedViewSurface; name: string; state: Record<string, unknown>; isDefault?: boolean }): Promise<SavedView>;
+  deleteSavedView(viewId: UUID): Promise<void>;
+  runBulkOperation(input: BulkOperationInput): Promise<BulkOperationJob>;
+  listBulkOperationJobs(): Promise<BulkOperationJob[]>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;

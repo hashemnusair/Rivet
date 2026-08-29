@@ -1,12 +1,12 @@
 "use client";
 
-import { GripVertical, LayoutList, PhoneCall, Plus } from "lucide-react";
+import { GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
-import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import type { LeadStage, LeadSummary } from "@/lib/domain/types";
@@ -24,6 +24,10 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
 import { toast } from "sonner";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
+import { SavedViewControls } from "@/components/shared/saved-view-controls";
+import { Checkbox } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { BulkOperationKind } from "@/lib/domain/qol";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; label: string; hint: string }> = [
@@ -50,13 +54,19 @@ function columnLabel(column: PipelineColumn): string {
 function PipelinePageInner() {
   const { session } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const invalidate = useInvalidate();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const debounced = useDebouncedValue(search, 250);
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
-  const [view, setView] = useState<"board" | "list">("board");
-  const [page, setPage] = useState(1);
+  const [view, setView] = useState<"board" | "list">(searchParams.get("view") === "list" ? "list" : "board");
+  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1));
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkKind, setBulkKind] = useState<BulkOperationKind>("leads_create_follow_up");
+  const [bulkValue, setBulkValue] = useState("");
+  const [bulkReason, setBulkReason] = useState("");
   const [dragOverColumn, setDragOverColumn] = useState<PipelineColumn>();
   const [lossLead, setLossLead] = useState<LeadSummary>();
   const [lossReason, setLossReason] = useState("");
@@ -69,6 +79,18 @@ function PipelinePageInner() {
       setView("list");
     }
   }, []);
+
+  const replaceParams = (changes: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
+    if (!("page" in changes)) next.delete("page");
+    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+  };
+  useEffect(() => {
+    if ((searchParams.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });
+    // Only settled search text drives this URL write.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced]);
 
   const query = useMemo(
     () => ({ branchId: session?.activeBranchId, search: debounced || undefined, page, pageSize: 100, sort: "nextFollowUpAt" as const }),
@@ -84,6 +106,7 @@ function PipelinePageInner() {
   });
 
   const leads = useMemo(() => data?.items ?? [], [data]);
+  const users = useApiQuery(qk.users({ status: "active" }), (api) => api.listUsers({ status: "active", pageSize: 100 }));
   const byStage = useMemo(() => {
     const map = new Map<PipelineColumn, LeadSummary[]>();
     for (const stage of PIPELINE_COLUMNS) map.set(stage.column, []);
@@ -134,6 +157,15 @@ function PipelinePageInner() {
     },
   );
 
+  const runBulk = useApiMutation((api) => api.runBulkOperation({
+    kind: bulkKind,
+    recordIds: [...selected],
+    idempotencyKey: crypto.randomUUID(),
+    ownerId: bulkKind === "leads_assign_owner" ? bulkValue : undefined,
+    dueAt: bulkKind === "leads_create_follow_up" ? new Date(bulkValue).toISOString() : undefined,
+    reason: bulkKind === "leads_close_lost" ? bulkReason.trim() : undefined,
+  }), { onSuccess: async (job) => { await invalidate(); setBulkOpen(false); setSelected(new Set()); setBulkValue(""); setBulkReason(""); toast.success(`${job.succeededCount} updated${job.skippedCount ? `, ${job.skippedCount} skipped` : ""}${job.failedCount ? `, ${job.failedCount} failed` : ""}.`); } });
+
   const requestLossReason = (lead: LeadSummary) => {
     setDragOverColumn(undefined);
     setLossLead(lead);
@@ -171,7 +203,7 @@ function PipelinePageInner() {
             <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
               <button
                 type="button"
-                onClick={() => setView("board")}
+                onClick={() => { setView("board"); replaceParams({ view: undefined }); }}
                 aria-pressed={view === "board"}
                 className={cn("rounded-sm px-2.5 py-1 text-[12px] cursor-pointer", view === "board" ? "bg-ink text-paper" : "text-ink-2")}
               >
@@ -179,7 +211,7 @@ function PipelinePageInner() {
               </button>
               <button
                 type="button"
-                onClick={() => setView("list")}
+                onClick={() => { setView("list"); replaceParams({ view: "list" }); }}
                 aria-pressed={view === "list"}
                 className={cn("rounded-sm px-2.5 py-1 text-[12px] cursor-pointer", view === "list" ? "bg-ink text-paper" : "text-ink-2")}
               >
@@ -193,9 +225,12 @@ function PipelinePageInner() {
         }
       />
 
-      <div className="max-w-xs">
-        <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" /></div>
+        <SavedViewControls surface="leads" state={{ q: debounced || undefined, view }} onApply={(state) => { const nextView = state.view === "list" ? "list" : "board"; setSearch(typeof state.q === "string" ? state.q : ""); setView(nextView); replaceParams({ q: typeof state.q === "string" ? state.q : undefined, view: nextView === "list" ? "list" : undefined }); }} />
       </div>
+
+      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Bulk action</Button><button type="button" className="text-[11.5px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -210,6 +245,8 @@ function PipelinePageInner() {
           leads={leads}
           onNoAnswer={(lead) => moveLead.mutate({ lead, target: "no_answer" })}
           onNotSold={requestLossReason}
+          selected={selected}
+          onSelectedChange={setSelected}
         />
       ) : (
         <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-4" data-testid="pipeline-board">
@@ -256,7 +293,7 @@ function PipelinePageInner() {
         </div>
       )}
 
-      {data ? <DataPagination page={data} onPage={setPage} className="border-t border-line pt-3" /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => { setPage(next); replaceParams({ page: next === 1 ? undefined : String(next) }); }} className="border-t border-line pt-3" /> : null}
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} />
       <Dialog open={Boolean(lossLead)} onOpenChange={(open) => { if (!open) { setLossLead(undefined); setLossReason(""); setLossError(undefined); } }}>
@@ -291,6 +328,9 @@ function PipelinePageInner() {
             </Button>
           </DialogFooter>
         </DialogContent>
+      </Dialog>
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Update {selected.size} leads</DialogTitle><DialogDescription>Each lead is permission-checked and the batch result is recorded in the audit history.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><label className="grid gap-1.5 text-[12.5px] font-medium">Action<Select value={bulkKind} onValueChange={(value) => { setBulkKind(value as BulkOperationKind); setBulkValue(""); setBulkReason(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="leads_create_follow_up">Create follow-up</SelectItem><SelectItem value="leads_assign_owner">Assign owner</SelectItem><SelectItem value="leads_close_lost">Close as not sold</SelectItem></SelectContent></Select></label>{bulkKind === "leads_create_follow_up" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Due date and time<Input type="datetime-local" value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label> : bulkKind === "leads_assign_owner" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Owner<Select value={bulkValue || "none"} onValueChange={setBulkValue}><SelectTrigger><SelectValue placeholder="Choose owner" /></SelectTrigger><SelectContent><SelectItem value="none" disabled>Choose owner</SelectItem>{(users.data?.items ?? []).map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label> : <label className="grid gap-1.5 text-[12.5px] font-medium">Reason<Textarea value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Why were these leads not sold?" /></label>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setBulkOpen(false)}>Cancel</Button><Button variant={bulkKind === "leads_close_lost" ? "danger" : "primary"} disabled={!selected.size || (bulkKind === "leads_close_lost" ? bulkReason.trim().length < 3 : !bulkValue)} loading={runBulk.isPending} onClick={() => runBulk.mutate()}>Apply to {selected.size}</Button></DialogFooter></DialogContent>
       </Dialog>
     </div>
   );
@@ -356,7 +396,7 @@ function LeadCard({
   );
 }
 
-function LeadListView({ leads, onNoAnswer, onNotSold }: { leads: LeadSummary[]; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void }) {
+function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange }: { leads: LeadSummary[]; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void; selected: Set<string>; onSelectedChange: (selected: Set<string>) => void }) {
   if (leads.length === 0) {
     return <p className="py-10 text-center text-[13px] text-ink-3">No leads right now.</p>;
   }
@@ -366,6 +406,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold }: { leads: LeadSummary[]; 
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-line">
+              <th className="w-10 px-3 py-2 text-start"><Checkbox checked={leads.length > 0 && leads.every((lead) => selected.has(lead.id))} onCheckedChange={(checked) => { const next = new Set(selected); leads.forEach((lead) => { if (checked) next.add(lead.id); else next.delete(lead.id); }); onSelectedChange(next); }} aria-label="Select all leads on this page" /></th>
               {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up", "Actions"].map((h) => (
                 <th key={h} className="whitespace-nowrap px-3 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
                   {h}
@@ -376,6 +417,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold }: { leads: LeadSummary[]; 
           <tbody>
             {leads.map((lead) => (
               <tr key={lead.id} className="border-b border-line/70 last:border-0 hover:bg-sunken/40">
+                <td className="px-3 py-2.5"><Checkbox checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={`Select ${lead.fullName}`} /></td>
                 <td className="px-3 py-2.5">
                   <Link href={`/crm/leads/${lead.id}`} className="font-medium hover:underline underline-offset-2">
                     {lead.fullName}

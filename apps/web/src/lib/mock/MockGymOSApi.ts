@@ -687,6 +687,9 @@ export class MockGymOSApi implements GymOSApi {
   private ptTrainerPhotoAssetIds = new Map<string, string>();
   private operationalEmailKinds: string[] = [];
   private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
+  private savedViews: import("@/lib/domain/qol").SavedView[] = [];
+  private bulkJobs: import("@/lib/domain/qol").BulkOperationJob[] = [];
+  private bulkIdempotency = new Map<string, { signature: string; job: import("@/lib/domain/qol").BulkOperationJob }>();
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -1006,6 +1009,110 @@ export class MockGymOSApi implements GymOSApi {
       if (!memberId || !memberIds.has(memberId)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
       return { ...detail, gymId: this.db.organization.id };
     });
+  }
+
+  listSavedViews(surface: import("@/lib/domain/qol").SavedViewSurface): Promise<import("@/lib/domain/qol").SavedView[]> {
+    return this.respond(() => this.savedViews.filter((view) => view.surface === surface).sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name)).map((view) => ({ ...view, state: { ...view.state } })));
+  }
+
+  saveSavedView(input: { id?: T.UUID; surface: import("@/lib/domain/qol").SavedViewSurface; name: string; state: Record<string, unknown>; isDefault?: boolean }): Promise<import("@/lib/domain/qol").SavedView> {
+    return this.respond(() => {
+      const name = input.name.trim();
+      if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Saved-view names must be between 1 and 60 characters.");
+      if (this.savedViews.some((view) => view.surface === input.surface && view.name.toLowerCase() === name.toLowerCase() && view.id !== input.id)) throw ApiError.of(ERR.CONFLICT, "You already have a saved view with this name.");
+      if (input.isDefault) this.savedViews.forEach((view) => { if (view.surface === input.surface) view.isDefault = false; });
+      const existing = input.id ? this.savedViews.find((view) => view.id === input.id && view.surface === input.surface) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Saved view not found.");
+      const timestamp = nowISO();
+      if (existing) {
+        Object.assign(existing, { name, state: { ...input.state }, isDefault: Boolean(input.isDefault), updatedAt: timestamp });
+        return { ...existing, state: { ...existing.state } };
+      }
+      const view: import("@/lib/domain/qol").SavedView = { id: mockUuid(), surface: input.surface, name, state: { ...input.state }, isDefault: Boolean(input.isDefault), createdAt: timestamp, updatedAt: timestamp };
+      this.savedViews.push(view);
+      return { ...view, state: { ...view.state } };
+    });
+  }
+
+  deleteSavedView(viewId: T.UUID): Promise<void> {
+    return this.respond(() => {
+      const index = this.savedViews.findIndex((view) => view.id === viewId);
+      if (index < 0) throw ApiError.of(ERR.NOT_FOUND, "Saved view not found.");
+      this.savedViews.splice(index, 1);
+    });
+  }
+
+  runBulkOperation(input: import("@/lib/domain/qol").BulkOperationInput): Promise<import("@/lib/domain/qol").BulkOperationJob> {
+    return this.respond(() => {
+      const ids = [...new Set(input.recordIds)];
+      if (!ids.length || ids.length > 100) throw ApiError.of(ERR.VALIDATION, "Select between 1 and 100 records.");
+      const signature = JSON.stringify({ ...input, recordIds: ids });
+      const replay = this.bulkIdempotency.get(input.idempotencyKey);
+      if (replay) {
+        if (replay.signature !== signature) throw ApiError.of(ERR.VALIDATION, "This bulk-operation key was already used for different work.");
+        return { ...replay.job, failures: replay.job.failures.map((failure) => ({ ...failure })) };
+      }
+      const failures: import("@/lib/domain/qol").JobFailure[] = [];
+      let succeededCount = 0;
+      let skippedCount = 0;
+      for (const id of ids) {
+        try {
+          if (input.kind.startsWith("members_")) {
+            const member = this.db.members.find((item) => item.id === id);
+            if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+            if (input.kind === "members_add_tags") {
+              const next = [...new Set([...member.tags, ...(input.tags ?? [])])];
+              if (next.length === member.tags.length) { skippedCount += 1; continue; }
+              member.tags = next;
+            } else if (input.kind === "members_remove_tags") {
+              const next = member.tags.filter((tag) => !(input.tags ?? []).includes(tag));
+              if (next.length === member.tags.length) { skippedCount += 1; continue; }
+              member.tags = next;
+            } else if (input.kind === "members_assign_branch") {
+              const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
+              if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Destination branch not found.");
+              if (member.homeBranchId === branch.id) { skippedCount += 1; continue; }
+              member.homeBranchId = branch.id;
+            } else if (input.kind === "members_create_follow_up") {
+              this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "follow_up", title: `Follow up — ${member.fullName}`, ownerId: this.actor().id, ownerName: this.actor().name, dueAt: input.dueAt!, priority: "normal", status: "open", memberId: member.id, subjectName: member.fullName, createdById: this.actor().id, createdAt: nowISO() });
+            } else if (input.kind === "members_archive") {
+              if (member.status === "archived") { skippedCount += 1; continue; }
+              member.status = "archived";
+              member.archivedAt = nowISO();
+            }
+          } else {
+            const lead = this.db.leads.find((item) => item.id === id);
+            if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+            if (input.kind === "leads_assign_owner") {
+              if (!this.db.users.some((user) => user.id === input.ownerId && user.status === "active")) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+              if (lead.ownerId === input.ownerId) { skippedCount += 1; continue; }
+              lead.ownerId = input.ownerId;
+            } else if (input.kind === "leads_create_follow_up") {
+              const ownerId = lead.ownerId ?? this.actor().id;
+              this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "follow_up", title: `Follow up — ${lead.fullName}`, ownerId, ownerName: this.db.users.find((user) => user.id === ownerId)?.name ?? this.actor().name, dueAt: input.dueAt!, priority: "normal", status: "open", leadId: lead.id, subjectName: lead.fullName, createdById: this.actor().id, createdAt: nowISO() });
+            } else if (input.kind === "leads_close_lost") {
+              if (lead.stage === "lost") { skippedCount += 1; continue; }
+              lead.stage = "lost";
+              lead.lostReason = input.reason;
+              lead.nextFollowUpAt = undefined;
+            }
+            lead.updatedAt = nowISO();
+          }
+          succeededCount += 1;
+        } catch (error) {
+          failures.push({ recordId: id, message: error instanceof Error ? error.message : "This record could not be updated." });
+        }
+      }
+      const timestamp = nowISO();
+      const job: import("@/lib/domain/qol").BulkOperationJob = { id: mockUuid(), kind: input.kind, status: failures.length === ids.length ? "failed" : failures.length ? "partially_completed" : "completed", requestedCount: ids.length, succeededCount, skippedCount, failedCount: failures.length, failures, correlationId: mockUuid(), createdAt: timestamp, completedAt: timestamp };
+      this.bulkJobs.unshift(job);
+      this.bulkIdempotency.set(input.idempotencyKey, { signature, job });
+      return job;
+    });
+  }
+
+  listBulkOperationJobs(): Promise<import("@/lib/domain/qol").BulkOperationJob[]> {
+    return this.respond(() => this.bulkJobs.slice(0, 25).map((job) => ({ ...job, failures: job.failures.map((failure) => ({ ...failure })) })));
   }
 
   async subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
