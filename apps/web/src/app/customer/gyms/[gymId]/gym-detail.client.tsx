@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -33,7 +34,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const gyms = useMarketplaceGyms();
   const gym = gyms.find((item) => item.id === gymId);
   const customer = useCustomerPersona();
-  const { bookTrial, customerSignedIn, previewSessionReady } = useExperience();
+  const { bookTrial, customerSignedIn, experienceError, experienceStatus, previewSessionReady, retryExperience } = useExperience();
   const router = useRouter();
   const [booked, setBooked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -109,6 +110,19 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   // automation) could type into DOM that React is about to reconcile with the
   // restored customer defaults.
   if (!previewSessionReady) return <main className="px-5 py-20 text-center"><p role="status" className="text-[13px] text-ink-3">Loading booking form…</p></main>;
+  if (experienceStatus !== "ready") {
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-20">
+        <ExperienceDataState
+          status={experienceStatus}
+          error={experienceError}
+          onRetry={retryExperience}
+          emptyTitle="Gym not found"
+          emptyDescription="This gym is not currently available in the RIVET network."
+        />
+      </main>
+    );
+  }
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
   const confirmedBranch = selectedBranch;
   const memberReturnTo = `/customer/gyms/${gym.id}${selectedBranch ? `?branchId=${selectedBranch.id}` : ""}`;

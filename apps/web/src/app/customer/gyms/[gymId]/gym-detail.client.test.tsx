@@ -48,8 +48,11 @@ const state = vi.hoisted(() => ({
   showGym: true,
   convexMode: false,
   previewSessionReady: true,
+  experienceStatus: "ready" as "loading" | "ready" | "error",
+  experienceError: undefined as string | undefined,
   bookTrial: vi.fn(),
   push: vi.fn(),
+  retryExperience: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -66,7 +69,10 @@ vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({
     bookTrial: state.bookTrial,
     customerSignedIn: Boolean(state.customer),
+    experienceError: state.experienceError,
+    experienceStatus: state.experienceStatus,
     previewSessionReady: state.previewSessionReady,
+    retryExperience: state.retryExperience,
   }),
 }));
 
@@ -76,8 +82,11 @@ describe("GymDetailClient trial form", () => {
     state.showGym = true;
     state.convexMode = false;
     state.previewSessionReady = true;
+    state.experienceStatus = "ready";
+    state.experienceError = undefined;
     state.bookTrial.mockReset().mockResolvedValue({ id: "booking-1" });
     state.push.mockReset();
+    state.retryExperience.mockReset();
   });
 
   it("waits for preview session restoration before exposing editable fields", () => {
@@ -91,6 +100,20 @@ describe("GymDetailClient trial form", () => {
     view.rerender(<GymDetailClient gymId="forge-fitness" />);
 
     expect(screen.getByLabelText("Full name")).toBeInTheDocument();
+  });
+
+  it("waits for the live marketplace before deciding that a gym is missing", () => {
+    state.showGym = false;
+    state.experienceStatus = "loading";
+    const view = render(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the live RIVET network");
+    expect(screen.queryByRole("heading", { name: "Gym not found" })).not.toBeInTheDocument();
+
+    state.experienceStatus = "ready";
+    view.rerender(<GymDetailClient gymId="forge-fitness" />);
+
+    expect(screen.getByRole("heading", { name: "Gym not found" })).toBeInTheDocument();
   });
 
   it("restores a valid branch selected in the return URL after signup", async () => {
