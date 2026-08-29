@@ -4845,26 +4845,32 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
   const csv = stringValue(input.csv);
   if (!csv.trim()) domainError("VALIDATION_ERROR", "CSV content is required.", { correlationId: actor.correlationId });
+  if (csv.length > 2_000_000) domainError("VALIDATION_ERROR", "CSV files must be 2 MB or smaller.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Choose a CSV file no larger than 2 MB"] } });
   const rows = parseCsv(csv);
   const headers = (rows.shift() ?? []).map(normalizedHeader);
   const nameIndex = firstHeader(headers, ["full_name", "name", "member_name"]);
   const phoneIndex = firstHeader(headers, ["phone", "mobile", "mobile_number"]);
   const emailIndex = firstHeader(headers, ["email", "email_address"]);
   if (nameIndex < 0 || phoneIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name and phone columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone"] } });
+  if (rows.length > 10_000) domainError("VALIDATION_ERROR", "A single import can contain at most 10,000 members.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
   const existing = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((member) => member.status !== "archived");
-  const seen = new Set<string>();
+  const seenPhones = new Set<string>();
+  const seenEmails = new Set<string>();
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
     const callingCode = organizationPhoneCountryCallingCode(actor.organization);
     const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
-    const email = optionalString(values[emailIndex]);
+    const email = optionalString(values[emailIndex])?.trim().toLowerCase();
+    const phoneKey = canonicalPhoneKey(phone, callingCode);
+    const emailKey = normalize(email);
     const duplicateMemberIds = existing.filter((member) => canonicalPhoneKey(optionalString(member.phone), callingCode) === canonicalPhoneKey(phone, callingCode) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
-    const duplicateKey = `${canonicalPhoneKey(phone, callingCode)}:${normalize(email)}`;
-    if (seen.has(duplicateKey) && phone) duplicateMemberIds.push(`csv-row-${index}`);
-    if (phone) seen.add(duplicateKey);
+    if ((phoneKey && seenPhones.has(phoneKey)) || (emailKey && seenEmails.has(emailKey))) duplicateMemberIds.push(`csv-row-${index + 2}`);
+    if (phoneKey) seenPhones.add(phoneKey);
+    if (emailKey) seenEmails.add(emailKey);
     const errors = [
-      ...(fullName ? [] : ["Full name is required"]),
-      ...(phone ? [] : ["Phone is required"]),
+      ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
+      ...(LEAD_PHONE_PATTERN.test(phone) ? [] : ["Enter a valid phone number"]),
+      ...(!email || (email.length <= 254 && LEAD_EMAIL_PATTERN.test(email)) ? [] : ["Enter a valid email address"]),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
     return { rowNumber: index + 2, fullName, phone, email, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };

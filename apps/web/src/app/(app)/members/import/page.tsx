@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, FileUp, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, FileUp, Upload } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MemberImportCommitResult, MemberImportPreview } from "@/lib/api/GymOSApi";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -15,7 +15,10 @@ import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 const SAMPLE_CSV = `full_name,phone,email
 Samira Haddad,+962790000001,samira@example.com
-Yousef Nasser,+962790000002,yousef@example.com`;
+Yousef Nasser,0790000002,yousef@example.com
+Layla Haddad,+447700900123,layla@example.com`;
+const MAX_FILE_BYTES = 2_000_000;
+const TEMPLATE_DOWNLOAD = `data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE_CSV)}`;
 
 function newIdempotencyKey(importId: string, cursor: number): string {
   return `${importId}-${cursor}-${crypto.randomUUID()}`;
@@ -29,6 +32,9 @@ export default function MemberImportPage() {
   const [preview, setPreview] = useState<MemberImportPreview>();
   const [result, setResult] = useState<MemberImportCommitResult>();
   const [committing, setCommitting] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [branchId, setBranchId] = useState("");
   useEffect(() => {
@@ -54,6 +60,27 @@ export default function MemberImportPage() {
     const selectedBranchId = visibleBranchId(session?.branches, branchId);
     if (!selectedBranchId || !csv.trim()) return;
     previewMutation.mutate({ csv, branchId: selectedBranchId });
+  };
+
+  const loadFile = async (file: File | undefined) => {
+    setFileError("");
+    if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setFileError("Choose a CSV file no larger than 2 MB.");
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setFileError("Export the source as a .csv file, then try again.");
+      return;
+    }
+    try {
+      setCsv(await file.text());
+      setFileName(file.name);
+      setPreview(undefined);
+      setResult(undefined);
+    } catch {
+      setFileError("RIVET could not read this file. Export a fresh CSV and try again.");
+    }
   };
 
   const commit = async () => {
@@ -91,7 +118,7 @@ export default function MemberImportPage() {
       <PageHeader
         eyebrow="Operations"
         title="Import members"
-        description="Preview duplicates and invalid rows before creating members. Large files commit in resumable server-side chunks."
+        description="Bring an existing member list into a clean RIVET workspace. Every row is checked before anything is created."
         actions={
           <Button asChild variant="secondary">
             <Link href="/members">
@@ -108,12 +135,36 @@ export default function MemberImportPage() {
           </div>
           <div>
             <h2 className="font-display text-[15px] font-semibold text-ink">CSV source</h2>
-            <p className="mt-1 text-[12.5px] text-ink-2">Required columns: full_name and phone. Email is optional. Existing phone or email matches are not created.</p>
+            <p className="mt-1 text-[12.5px] text-ink-2">Export any CRM, Excel workbook, or Google Sheet as CSV. Required columns: full_name and phone. Email is optional.</p>
           </div>
         </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-surface px-4 text-start transition-colors hover:border-ink/30 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-accent text-white"><FileSpreadsheet className="size-4" aria-hidden /></span>
+            <span><span className="block text-[13px] font-medium text-ink">Choose CSV file</span><span className="mt-0.5 block text-[11.5px] text-ink-3">Up to 2 MB</span></span>
+          </button>
+          <div className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-sunken/40 px-4">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface font-mono text-[12px] text-ink-2">+{session?.organization.phoneCountryCallingCode ?? "962"}</span>
+            <span><span className="block text-[13px] font-medium text-ink">Local-number default</span><span className="mt-0.5 block text-[11.5px] leading-4 text-ink-3">International + or 00 numbers stay unchanged.</span></span>
+          </div>
+          <div className="flex min-h-24 items-center gap-3 rounded-md border border-line bg-sunken/40 px-4">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink-2"><CheckCircle2 className="size-4" aria-hidden /></span>
+            <span><span className="block text-[13px] font-medium text-ink">Safe preview first</span><span className="mt-0.5 block text-[11.5px] leading-4 text-ink-3">Duplicates and invalid rows are skipped.</span></span>
+          </div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="sr-only"
+          aria-label="Choose member CSV file"
+          onChange={(event) => { void loadFile(event.target.files?.[0]); event.target.value = ""; }}
+        />
+        {fileName ? <p className="text-[12px] text-success-deep" role="status">Loaded {fileName}</p> : null}
+        {fileError ? <p className="text-[12px] text-danger" role="alert">{fileError}</p> : null}
         <div className="grid gap-3 md:grid-cols-[1fr_220px]">
           <label className="space-y-1.5">
-            <span className="eyebrow">Paste CSV</span>
+            <span className="eyebrow">Review or paste CSV</span>
             <Textarea
               rows={10}
               value={csv}
@@ -143,8 +194,12 @@ export default function MemberImportPage() {
             <Button variant="ghost" className="w-full" onClick={() => setCsv(SAMPLE_CSV)}>
               Use sample CSV
             </Button>
+            <Button asChild variant="ghost" className="w-full">
+              <a href={TEMPLATE_DOWNLOAD} download="rivet-member-import-template.csv"><Download /> Download template</a>
+            </Button>
           </div>
         </div>
+        <p className="text-[11.5px] leading-5 text-ink-3">Imported marketing consent remains unknown, so RIVET will not send marketing messages until the member or an authorized employee records an explicit preference. Service messages follow their own operational rules.</p>
       </section>
 
       {preview ? (

@@ -1060,19 +1060,31 @@ export class MockGymOSApi implements GymOSApi {
       this.require("members.write");
       const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
       if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!input.csv.trim()) throw ApiError.of(ERR.VALIDATION, "CSV content is required.");
+      if (input.csv.length > 2_000_000) throw ApiError.of(ERR.VALIDATION, "CSV files must be 2 MB or smaller.", { fieldErrors: { csv: ["Choose a CSV file no larger than 2 MB"] } });
       const rows = parseImportCsv(input.csv);
       const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
       const phoneIndex = header.findIndex((item) => ["phone", "mobile", "mobile_number"].includes(item));
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
+      if (nameIndex < 0 || phoneIndex < 0) throw ApiError.of(ERR.VALIDATION, "CSV headers must include full name and phone columns.", { fieldErrors: { csv: ["Required headers: full_name, phone"] } });
+      if (rows.length > 10_000) throw ApiError.of(ERR.VALIDATION, "A single import can contain at most 10,000 members.", { fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
+      const seenPhones = new Set<string>();
+      const seenEmails = new Set<string>();
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
-        const fullName = nameIndex >= 0 ? values[nameIndex] ?? "" : "";
-        const phone = normalizePhoneForStorage(phoneIndex >= 0 ? values[phoneIndex] ?? "" : "", this.db.organization.phoneCountryCallingCode);
-        const email = emailIndex >= 0 ? values[emailIndex] || undefined : undefined;
+        const fullName = values[nameIndex]?.trim() ?? "";
+        const phone = normalizePhoneForStorage(values[phoneIndex] ?? "", this.db.organization.phoneCountryCallingCode);
+        const email = emailIndex >= 0 ? normalizeOptionalEmail(values[emailIndex]) : undefined;
+        const phoneKey = canonicalPhoneKey(phone, this.db.organization.phoneCountryCallingCode);
+        const emailKey = email?.toLowerCase() ?? "";
         const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
+        if ((phoneKey && seenPhones.has(phoneKey)) || (emailKey && seenEmails.has(emailKey))) duplicateIds.push(`csv-row-${index + 2}`);
+        if (phoneKey) seenPhones.add(phoneKey);
+        if (emailKey) seenEmails.add(emailKey);
         const errors = [
-          ...(fullName ? [] : ["Full name is required"]),
-          ...(phone ? [] : ["Phone is required"]),
+          ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
+          ...(isValidLeadPhone(phone, this.db.organization.phoneCountryCallingCode) ? [] : ["Enter a valid phone number"]),
+          ...(isValidOptionalEmail(email) ? [] : ["Enter a valid email address"]),
           ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
         ];
         return { rowNumber: index + 2, fullName, phone, email, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };

@@ -941,7 +941,7 @@ describe("member creation", () => {
     })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
   });
 
-  it("defaults new members and imported rows to opted in while preserving explicit opt-out", async () => {
+  it("keeps unknown member and imported marketing preferences suppressed while preserving explicit opt-out", async () => {
     const session = await api.getSession();
     const created = await api.createMember({
       fullName: "Consent Default Test",
@@ -980,6 +980,26 @@ describe("member creation", () => {
       marketingOptIn: true,
       marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
     });
+  });
+
+  it("preflights import row validation and repeated contact identities before commit", async () => {
+    const session = await api.getSession();
+    const preview = await api.previewMemberImport({
+      branchId: session.branches[0]!.id,
+      csv: [
+        "full_name,phone,email",
+        "Valid Import,0795558111,valid-import@example.com",
+        "Repeated Phone,0795558111,second@example.com",
+        "Repeated Email,+447700900555,valid-import@example.com",
+        "X,123,not-an-email",
+      ].join("\n"),
+    });
+
+    expect(preview).toMatchObject({ totalRows: 4, validRows: 1, duplicateRows: 2, errorRows: 1 });
+    expect(preview.rows[0]).toMatchObject({ phone: "+962795558111", status: "valid" });
+    expect(preview.rows[1]?.errors).toContain("A member with this phone or email already exists");
+    expect(preview.rows[2]?.errors).toContain("A member with this phone or email already exists");
+    expect(preview.rows[3]?.errors).toEqual(expect.arrayContaining(["Full name must be between 3 and 120 characters", "Enter a valid phone number", "Enter a valid email address"]));
   });
 
   it("warns about a duplicate phone instead of silently creating a second record", async () => {
