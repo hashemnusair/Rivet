@@ -52,7 +52,7 @@ vi.mock("@/lib/hooks/use-api", () => ({
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
   useRealtimeApiQuery: (options: { queryKey: unknown }) => {
     state.queryKey = options.queryKey;
-    return { data: { items: [lead] }, isLoading: false, isError: false, refetch: vi.fn() };
+    return { data: { items: [lead], page: 1, pageSize: 100, totalItems: 101, totalPages: 2 }, isLoading: false, isError: false, refetch: vi.fn() };
   },
 }));
 
@@ -77,6 +77,7 @@ describe("CRM pipeline semantics", () => {
     expect(state.queryKey).toEqual(qk.leads({
       branchId: "branch-1",
       search: undefined,
+      page: 1,
       pageSize: 100,
       sort: "nextFollowUpAt",
       stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"],
@@ -130,5 +131,21 @@ describe("CRM pipeline semantics", () => {
 
     await user.click(screen.getByRole("button", { name: "No answer for Pipeline Lead" }));
     expect(state.moveMutation).toHaveBeenCalledWith({ lead, target: "no_answer" });
+  });
+
+  it("exposes later working-set pages instead of silently capping the pipeline", async () => {
+    const user = userEvent.setup();
+    render(<PipelinePage />);
+
+    expect(screen.getByText("1–100 of 101")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(state.queryKey).toEqual(qk.leads({
+      branchId: "branch-1",
+      search: undefined,
+      page: 2,
+      pageSize: 100,
+      sort: "nextFollowUpAt",
+      stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"],
+    }));
   });
 });

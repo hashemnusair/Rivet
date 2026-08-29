@@ -13,7 +13,7 @@ import type { LeadStage, LeadSummary } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
-import { PageHeader } from "@/components/shared/chrome";
+import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -56,6 +56,7 @@ function PipelinePageInner() {
   const debounced = useDebouncedValue(search, 250);
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
   const [view, setView] = useState<"board" | "list">("board");
+  const [page, setPage] = useState(1);
   const [dragOverColumn, setDragOverColumn] = useState<PipelineColumn>();
   const [lossLead, setLossLead] = useState<LeadSummary>();
   const [lossReason, setLossReason] = useState("");
@@ -70,8 +71,8 @@ function PipelinePageInner() {
   }, []);
 
   const query = useMemo(
-    () => ({ branchId: session?.activeBranchId, search: debounced || undefined, pageSize: 100, sort: "nextFollowUpAt" as const }),
-    [session?.activeBranchId, debounced],
+    () => ({ branchId: session?.activeBranchId, search: debounced || undefined, page, pageSize: 100, sort: "nextFollowUpAt" as const }),
+    [session?.activeBranchId, debounced, page],
   );
   const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
@@ -193,7 +194,7 @@ function PipelinePageInner() {
       />
 
       <div className="max-w-xs">
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter by name or phone…" aria-label="Filter leads" />
+        <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" />
       </div>
 
       {isLoading ? (
@@ -254,6 +255,8 @@ function PipelinePageInner() {
           })}
         </div>
       )}
+
+      {data ? <DataPagination page={data} onPage={setPage} className="border-t border-line pt-3" /> : null}
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} />
       <Dialog open={Boolean(lossLead)} onOpenChange={(open) => { if (!open) { setLossLead(undefined); setLossReason(""); setLossError(undefined); } }}>
