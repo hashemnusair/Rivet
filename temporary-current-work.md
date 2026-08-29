@@ -48,7 +48,7 @@ the next product batch, not unfinished work from this sprint.
 
 ## Next product batch
 
-- [ ] Build a unified **Today** queue combining expiring memberships, unpaid balances, overdue leads, missed follow-ups, unresolved access denials, open facility tasks, and owner approvals.
+- [x] Build a unified **Today** queue combining expiring memberships, unpaid balances, overdue leads, missed follow-ups, unresolved access denials, open facility tasks, and owner approvals. Shipped as a single role/branch-safe dashboard aggregate with one-tap completion, exact collect/renew links, a read-only auditor projection, full-count summaries, responsive visual verification, and permanent browser coverage at code tip `8c4be51`.
 - [ ] Add provider-free WhatsApp handoffs that open a prefilled message, record the attempt, and schedule a follow-up without pretending delivery was confirmed.
 - [ ] Add branded offer links with explicit acceptance, expiry, attribution, and a staff-visible follow-up trail.
 - [ ] Consider facilities QR tasks and waiver/document collection only after pilot-gym demand is confirmed.

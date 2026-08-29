@@ -1,5 +1,44 @@
 # GymOS / RIVET current implementation state
 
+## Unified Today queue — 29 August 2026
+
+- A fresh synchronization check started from clean `main`/`origin/main` at
+  `87080de`; no newer partner commit or non-Arabic partner slice was waiting.
+  `arabic-localisation` remains intentionally deferred and
+  `FRONTEND_HANDOFF.md` remains unchanged.
+- The dashboard contract now returns one deterministic, deduplicated and
+  role/branch-safe **Today** queue from the existing dashboard subscription.
+  It combines due CRM tasks, renewals, collectible balances, same-day access
+  denials, pending approvals, cash variances and due/high-severity facility
+  work without adding a client request waterfall. Full, priority, kind and
+  overdue counts remain truthful even when only the 12 highest-priority rows
+  are returned.
+- Owners, managers, sales staff and reception now share the same calm work
+  surface while retaining role-specific metrics and context. Auditors receive
+  a dedicated read-only review projection instead of the owner dashboard.
+  Trainers retain their PT-specific day. Server permissions decide whether an
+  item is navigational or may expose one-tap task completion.
+- The queue is placed immediately after the dashboard KPI strip, labels the
+  first item **Do this next**, expands without navigation, clearly discloses a
+  truncated highest-priority set, and removes completed tasks in place after
+  invalidation. Renewal and balance links open the exact permitted member
+  action; unauthorized or inapplicable deep links fail closed.
+- Desktop and 390px-phone browser inspection found no horizontal overflow,
+  framework overlay or console error. The shared panel stays within RIVET's
+  existing warm monochrome, ruled-panel, compact-type and signal-red design
+  language; the Impeccable detector reported no banned-pattern findings.
+- Verification at application tip `8c4be51` passed both TypeScript checks,
+  zero-warning lint and the secret-output audit, **155 Vitest files / 945
+  tests**, **14 repository-safety tests**, the **51-page** Production build,
+  **41 credential-free Playwright passes / 14 explicit credential-gated skips
+  / 0 failures**, `pnpm audit --prod` with no known vulnerabilities, and
+  `git diff --check`.
+- No Convex deployment, Production configuration/provider change or
+  Production data mutation was performed. The next product candidates are
+  provider-free WhatsApp handoffs, branded offer acceptance, and the
+  realistic-volume query/index/invalidation pass. Facilities QR tasks remain
+  demand-gated; Arabic/translation and measured optimization remain last.
+
 ## Jordan-first workflow hardening — 29 August 2026
 
 - A fresh GitHub fetch found no newer partner work. `origin/main` remained at

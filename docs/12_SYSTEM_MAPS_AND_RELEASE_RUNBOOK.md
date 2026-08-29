@@ -934,15 +934,27 @@ Evidence recorded 10 August 2026: steps 1–10, 12–14, 16–18, and subscripti
 4. Record the production onboarding outcome without secrets or unnecessary personal data.
 5. Remove or hide public QA listings before pilot launch.
 
-### Phase F — Next engineering slice
+### Phase F — Product engineering trajectory
 
-After release configuration is stable:
+The authenticated ownership, member-only denial and cross-tenant identifier
+matrices from the former Phase F are implemented and retained in the permanent
+Convex suite. Continue the current product trajectory in this order:
 
-1. Add adversarial Convex tests for authenticated customer-profile ownership.
-2. Add trial-booking tests proving the authenticated customer owns the booking and that it routes only to the selected gym/branch.
-3. Add negative tests proving platform administrators and gym staff cannot call member-only operations.
-4. Add cross-tenant and cross-branch tests for member, lead, payment, check-in, entry-pass, and trial identifiers.
-5. Extend the production-shaped staged flow toward the complete product-level release sequence.
+1. **Completed:** the role-aware **Today** queue aggregates due CRM work,
+   renewals, balances, access denials, approvals, cash variances and facility
+   work through the existing dashboard query. Ranking, full counts and overdue
+   summaries are computed before the 12-row display limit, and write actions
+   remain permission-owned by the server.
+2. Add provider-free WhatsApp handoffs using canonical Jordan numbers and
+   approved prefilled copy. Record a handoff attempt and follow-up, never a
+   fabricated provider delivery.
+3. Add stable branded offer links with expiry, attribution, explicit customer
+   acceptance/decline and duplicate-safe conversion.
+4. Run realistic-volume query, index and invalidation profiling before adding
+   caching or pagination speculatively.
+5. Keep facilities QR tasks and waiver/document collection demand-gated to
+   pilot feedback. Keep Arabic/translation and final measured performance work
+   as the last pre-launch implementation pass.
 
 ### Ready-to-paste prompt for the next release agent
 

@@ -1,8 +1,8 @@
 # RIVET product, engineering, and operations backlog
 
 Updated 29 August 2026 for Production backend closure, owner/platform
-acceptance, public QA cleanup, the current recovery export, and the
-Jordan-first workflow-hardening sprint.
+acceptance, public QA cleanup, the current recovery export, the Jordan-first
+workflow-hardening sprint, and the unified Today queue.
 This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
@@ -39,9 +39,15 @@ values, applicant details, and provider credentials out of this file.
 
 ### Next code/product candidates
 
-- [ ] Build one role-aware **Today** queue for expiring memberships, unpaid
-  balances, overdue leads, missed follow-ups, access denials, facility work,
-  and owner approvals. Define ranking and ownership before implementation.
+- [x] Build one role-aware **Today** queue for due CRM work, renewals, unpaid
+  balances, same-day access denials, pending approvals, cash variances and
+  facility work. The shared dashboard aggregation is deterministic,
+  role/branch-safe and count-truthful beyond its 12-row display limit; owners,
+  managers, sales and reception receive tailored projections, auditors receive
+  a dedicated read-only dashboard, and trainers retain their PT day. One-tap
+  task completion, direct collect/renew actions, responsive ordering and empty,
+  loading, expansion and truncation states are covered. Application tip
+  `8c4be51` passed 945 Vitest tests and the full 41-pass/14-skip browser gate.
 - [ ] Add provider-free WhatsApp handoffs that open normalized Jordan numbers
   with approved prefilled copy, record only the handoff attempt, and schedule a
   follow-up without claiming provider delivery.
