@@ -2,7 +2,7 @@
 
 import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, Trash2, WalletCards } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -30,6 +30,17 @@ import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, Freez
 
 type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "delete" | null;
 
+export function resolveMemberActionLink(
+  searchParams: Pick<URLSearchParams, "get">,
+  options: { canCollect: boolean; canSell: boolean; hasCurrentMembership: boolean; outstandingAmount: number },
+): Extract<DialogKind, "sell" | "renew" | "collect"> | null {
+  const action = searchParams.get("action");
+  if (action === "collect" && options.canCollect && options.outstandingAmount > 0) return "collect";
+  if (action === "renew" && options.canSell && options.hasCurrentMembership) return "renew";
+  if (searchParams.get("sell") === "1" && options.canSell && !options.hasCurrentMembership) return "sell";
+  return null;
+}
+
 /**
  * Member 360 header: identity, current commercial state, and every action a
  * permitted staff member can take — one deliberate click away.
@@ -45,10 +56,19 @@ export function MemberHeader({
 }) {
   const { can } = usePermissions();
   const { session } = useApp();
+  const outstanding = member.outstanding;
+  const canSell = can("memberships.sell");
+  const canCollect = can("payments.collect");
   const router = useRouter();
   const searchParams = useSearchParams();
   const invalidate = useInvalidate();
-  const [dialog, setDialog] = useState<DialogKind>(() => searchParams.get("sell") === "1" && !currentMembership ? "sell" : null);
+  const [dialog, setDialog] = useState<DialogKind>(() => resolveMemberActionLink(searchParams, {
+    canCollect,
+    canSell,
+    hasCurrentMembership: Boolean(currentMembership),
+    outstandingAmount: outstanding.amount,
+  }));
+  const handledActionLink = useRef(false);
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -94,9 +114,21 @@ export function MemberHeader({
   });
   const uploadPhoto = useApiMutation((api, file: File) => api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file }), { onSuccess: async () => { toast.success("Member photo uploaded and sanitized."); await invalidate(); } });
 
-  const outstanding = member.outstanding;
-  const canSell = can("memberships.sell");
   const usable = currentMembership && (currentMembership.status === "active" || currentMembership.status === "expiring" || currentMembership.status === "frozen");
+
+  useEffect(() => {
+    if (handledActionLink.current) return;
+    const requestedDialog = resolveMemberActionLink(searchParams, {
+      canCollect,
+      canSell,
+      hasCurrentMembership: Boolean(currentMembership),
+      outstandingAmount: outstanding.amount,
+    });
+    if (requestedDialog) {
+      handledActionLink.current = true;
+      setDialog(requestedDialog);
+    }
+  }, [canCollect, canSell, currentMembership, outstanding.amount, searchParams]);
 
   return (
     <header className="panel overflow-hidden">

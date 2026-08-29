@@ -1,22 +1,22 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, ArrowUpRight, Clock3, Info, OctagonAlert, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, ArrowUpRight, Info, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 
-import type { DashboardData } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { PageHeader } from "@/components/shared/chrome";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
 import { BranchRevenueBars, RevenueChart } from "./charts";
 import { dashboardScopeDescription } from "./dashboard-scope";
+import { TodayQueue } from "./today-queue";
 
 export function OwnerDashboard() {
   const { session } = useApp();
@@ -84,6 +84,8 @@ export function OwnerDashboard() {
         </KpiCell>
       </section>
 
+      <TodayQueue data={data?.todayQueue} loading={isLoading || !data} initialVisible={4} />
+
       {/* Alerts rail */}
       {data && data.alerts.length > 0 ? (
         <section aria-label="Needs attention" className="panel overflow-hidden">
@@ -125,18 +127,15 @@ export function OwnerDashboard() {
         </section>
       ) : null}
 
-      {/* Revenue + branch/operating priorities */}
+      {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel p-4">
           {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} />}
         </section>
-        <div className="grid gap-5">
-          <section className="panel p-4">
-            <p className="eyebrow mb-3">Revenue by branch — 30 days</p>
-            {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
-          </section>
-          <OperatingPriorities kpis={data?.kpis} loading={isLoading || !data} />
-        </div>
+        <section className="panel p-4">
+          <p className="eyebrow mb-3">Revenue by branch — 30 days</p>
+          {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
+        </section>
       </div>
 
       {/* Leaderboard + activity */}
@@ -202,86 +201,6 @@ export function OwnerDashboard() {
   );
 }
 
-export function OperatingPriorities({
-  kpis,
-  loading,
-}: {
-  kpis?: DashboardData["kpis"];
-  loading: boolean;
-}) {
-  const priorities: Array<{
-    label: string;
-    detail: string;
-    href: string;
-    icon: LucideIcon;
-    value: React.ReactNode;
-    tone?: "warning" | "danger";
-  }> = [
-    {
-      label: "Renewals due next 7 days",
-      detail: `${kpis?.expiredUnactioned ?? 0} expired without a newer membership`,
-      href: "/crm/queues",
-      icon: Clock3,
-      value: kpis?.renewalsDueNext7Days ?? 0,
-      tone: (kpis?.renewalsDueNext7Days ?? 0) > 0 ? "warning" : undefined,
-    },
-    {
-      label: "Outstanding balances",
-      detail: "Collect open charges",
-      href: "/payments",
-      icon: WalletCards,
-      value: <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />,
-      tone: (kpis?.outstandingTotal.amount ?? 0) > 0 ? "warning" : undefined,
-    },
-    {
-      label: "Open lead follow-up",
-      detail: `${kpis?.overdueFollowUps ?? 0} follow-up${kpis?.overdueFollowUps === 1 ? "" : "s"} overdue`,
-      href: "/crm/pipeline",
-      icon: UsersRound,
-      value: kpis?.activeLeads ?? 0,
-      tone: (kpis?.overdueFollowUps ?? 0) > 0 ? "danger" : undefined,
-    },
-  ];
-
-  return (
-    <section className="panel overflow-hidden" aria-labelledby="operating-priorities-title">
-      <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <div>
-          <p className="eyebrow">Operating priorities</p>
-          <h2 id="operating-priorities-title" className="mt-1 text-[15px] font-semibold">Move the numbers that matter</h2>
-        </div>
-        <Link href="/crm/queues" className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-          Open queues <ArrowRight className="size-3" />
-        </Link>
-      </header>
-      <div className="divide-y divide-line">
-        {priorities.map((priority) => {
-          const Icon = priority.icon;
-          return (
-            <Link key={priority.label} href={priority.href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sunken/40">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken text-ink-3">
-                <Icon className="size-3.5" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium">{priority.label}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-ink-3">{priority.detail}</span>
-              </span>
-              {loading ? (
-                <Skeleton className="h-5 w-12 shrink-0" />
-              ) : (
-                <span className={cn("shrink-0 text-[18px] font-medium leading-none tabular", priority.tone === "warning" && "text-warning-deep", priority.tone === "danger" && "text-danger")}>
-                  {priority.value}
-                </span>
-              )}
-              <ArrowRight className="size-3.5 shrink-0 text-ink-4" aria-hidden />
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function KpiCell({
   label,
   children,
@@ -315,8 +234,4 @@ function greeting(): string {
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
-}
-
-export function DashboardStatPlaceholder() {
-  return <Stat label="—" value="—" />;
 }
