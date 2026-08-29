@@ -72,17 +72,19 @@ export function MemberHeader({
       router.push("/members");
     },
   });
-  const updateProfile = useApiMutation((api) => api.updateMember(member.id, {
-    ...editForm,
-    fullNameAr: editForm.fullNameAr.trim() || undefined,
-    email: editForm.email.trim() || undefined,
-    emergencyContactName: editForm.emergencyContactName.trim() || undefined,
-    emergencyContactPhone: editForm.emergencyContactPhone.trim() || undefined,
-    notes: editForm.notes.trim() || undefined,
-    tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-    marketingOptIn: editForm.marketingOptIn,
-    marketingPreferenceSource: editForm.marketingPreferenceSource,
-  }), {
+  const updateProfile = useApiMutation((api) => {
+    const { marketingOptIn, marketingPreferenceSource, ...profileFields } = editForm;
+    return api.updateMember(member.id, {
+      ...profileFields,
+      fullNameAr: editForm.fullNameAr.trim() || undefined,
+      email: editForm.email.trim() || undefined,
+      emergencyContactName: editForm.emergencyContactName.trim() || undefined,
+      emergencyContactPhone: editForm.emergencyContactPhone.trim() || undefined,
+      notes: editForm.notes.trim() || undefined,
+      tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      ...(marketingPreferenceSource ? { marketingOptIn, marketingPreferenceSource } : {}),
+    });
+  }, {
     onSuccess: async () => {
       toast.success("Member profile updated — audited.");
       setDialog(null);

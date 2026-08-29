@@ -54,9 +54,13 @@ describe("simple CRM membership sale", () => {
       startDate: "2026-08-13",
       idempotencyKey: "simple-crm-existing-sale",
       membership: { mode: "existing", planId: "simple-crm-plan" },
-    })) as { member: { id: string }; plan: { id: string }; membership: { memberId: string; planId: string }; charge: { membershipId: string } };
+    })) as { member: { id: string; marketingOptIn: boolean; marketingPreference: { optedIn: boolean; status: string; source: string } }; plan: { id: string }; membership: { memberId: string; planId: string }; charge: { membershipId: string } };
 
     expect(result.plan.id).toBe("simple-crm-plan");
+    expect(result.member).toMatchObject({
+      marketingOptIn: true,
+      marketingPreference: { optedIn: true, status: "unknown", source: "system_default" },
+    });
     expect(result.membership).toMatchObject({ memberId: result.member.id, planId: "simple-crm-plan" });
     expect(result.charge.membershipId).toBeTruthy();
     const lead = await sales.query(api.domain.query, operation("leads.get", { leadId: "simple-crm-lead-existing" })) as { stage: string; convertedMemberId?: string; trialBooking?: { status: string } };

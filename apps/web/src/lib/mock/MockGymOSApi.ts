@@ -1072,7 +1072,20 @@ export class MockGymOSApi implements GymOSApi {
         if (row.status !== "valid") { skippedCount += 1; row.status = "skipped"; continue; }
         const branch = previewBranch;
         this.db.counters.memberNumber += 1;
-        const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: nowISO() };
+        const member: MemberRecord = {
+          id: mockUuid(),
+          memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
+          fullName: row.fullName,
+          phone: row.phone,
+          email: row.email,
+          homeBranchId: branch.id,
+          status: "active",
+          tags: [],
+          preferredLanguage: "en",
+          marketingOptIn: true,
+          marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
+          createdAt: nowISO(),
+        };
         this.db.members.push(member);
         this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
         this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
@@ -2563,13 +2576,15 @@ export class MockGymOSApi implements GymOSApi {
 
   private marketingPreferenceFor(input: { marketingOptIn?: boolean; marketingPreferenceSource?: T.MarketingPreferenceSource }, fallbackOptedIn = true): T.MarketingPreference {
     const optedIn = input.marketingOptIn === undefined ? fallbackOptedIn : input.marketingOptIn !== false;
-    const source = input.marketingPreferenceSource ?? (input.marketingOptIn === undefined ? "system_default" : "staff_selected");
+    const source = input.marketingPreferenceSource ?? "system_default";
+    const explicit = (source === "staff_selected" || source === "member_selected") && typeof input.marketingOptIn === "boolean";
     return {
       optedIn,
+      status: explicit ? (optedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown",
       source,
-      changedAt: nowISO(),
-      changedById: source === "system_default" ? undefined : this.actor().id,
-      wordingVersion: MARKETING_WORDING_VERSION,
+      changedAt: explicit ? nowISO() : undefined,
+      changedById: explicit ? this.actor().id : undefined,
+      wordingVersion: explicit ? MARKETING_WORDING_VERSION : undefined,
     };
   }
 
@@ -2761,7 +2776,7 @@ export class MockGymOSApi implements GymOSApi {
       source: m.source,
       assignedSalespersonId: m.assignedSalespersonId,
       marketingOptIn: m.marketingOptIn,
-      marketingPreference: m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default", wordingVersion: "legacy-boolean" },
+      marketingPreference: m.marketingPreference ?? { optedIn: m.marketingOptIn, status: "unknown", source: "system_default" },
       notes: m.notes,
       sensitiveNotes: perms.includes("members.sensitive_notes.read") ? m.sensitiveNotes : undefined,
       archivedAt: m.archivedAt,

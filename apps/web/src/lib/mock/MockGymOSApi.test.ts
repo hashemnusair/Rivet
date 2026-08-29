@@ -897,7 +897,7 @@ describe("member creation", () => {
       preferredLanguage: "en",
     });
     expect(created.member.marketingOptIn).toBe(true);
-    expect(created.member.marketingPreference).toMatchObject({ optedIn: true, source: "system_default" });
+    expect(created.member.marketingPreference).toMatchObject({ optedIn: true, status: "unknown", source: "system_default" });
 
     const optedOut = await api.createMember({
       fullName: "Preference Explicit Test",
@@ -905,6 +905,7 @@ describe("member creation", () => {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
       marketingOptIn: false,
+      marketingPreferenceSource: "staff_selected",
     });
     expect(optedOut.member.marketingOptIn).toBe(false);
     expect(optedOut.member.marketingPreference).toMatchObject({ optedIn: false, source: "staff_selected" });
@@ -922,7 +923,10 @@ describe("member creation", () => {
     expect(imported.committedCount).toBe(1);
     const importedMember = (await api.listMembers({ search: "Consent Import", pageSize: 5 })).items[0];
     expect(importedMember).toBeDefined();
-    expect((await api.getMember(importedMember!.id)).marketingOptIn).toBe(true);
+    expect(await api.getMember(importedMember!.id)).toMatchObject({
+      marketingOptIn: true,
+      marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
+    });
   });
 
   it("warns about a duplicate phone instead of silently creating a second record", async () => {

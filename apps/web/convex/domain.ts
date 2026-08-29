@@ -26,7 +26,7 @@ import { annualPrice } from "./subscriptionReconciliation";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
-import { marketingSuppressionReason } from "./marketing";
+import { marketingStatusFromProvenance, marketingSuppressionReason } from "./marketing";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import {
   buildWorkspaceAccess,
@@ -296,15 +296,15 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = false): Data {
+function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = true): Data {
   const requestedSource = optionalString(input.marketingPreferenceSource);
   const source = requestedSource ?? "system_default";
   if (!["system_default", "staff_selected", "member_selected", "imported"].includes(source)) {
     domainError("VALIDATION_ERROR", "Marketing preference source is invalid.", { correlationId: actor.correlationId });
   }
-  const explicit = source !== "system_default" && typeof input.marketingOptIn === "boolean";
-  const optedIn = explicit ? marketingPreference(input.marketingOptIn) : fallbackOptedIn && explicit;
-  const status = explicit ? (optedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
+  const optedIn = typeof input.marketingOptIn === "boolean" ? input.marketingOptIn : fallbackOptedIn;
+  const status = marketingStatusFromProvenance(source, input.marketingOptIn);
+  const explicit = status !== "unknown";
   return {
     optedIn,
     status,
@@ -323,7 +323,7 @@ function customerPreferenceFromProfile(value: Data): Data {
   const status = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
     ? storedStatus
     : source === "member_selected" ? (legacyOptedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
-  const optedIn = status === "explicit_opt_in";
+  const optedIn = typeof value.marketingOptIn === "boolean" ? value.marketingOptIn : true;
   const changedAt = numberValue(value.marketingPreferenceChangedAt);
   return {
     optedIn,
@@ -1518,15 +1518,18 @@ async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data
   const recent = checkins.map((checkin) => businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK)).sort().at(-1);
   const storedPreference = data(value.marketingPreference);
   const storedStatus = optionalString(storedPreference.status);
+  const storedSource = optionalString(storedPreference.source);
   const marketingStatus = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
     ? storedStatus
-    : optionalString(storedPreference.source) && storedPreference.source !== "system_default"
-      ? (marketingPreference(storedPreference.optedIn) ? "explicit_opt_in" : "explicit_opt_out")
+    : storedSource
+      ? marketingStatusFromProvenance(storedSource, storedPreference.optedIn)
       : value.marketingOptIn === false ? "explicit_opt_out" : "unknown";
-  const marketingOptIn = marketingStatus === "explicit_opt_in";
+  const marketingOptIn = typeof storedPreference.optedIn === "boolean"
+    ? storedPreference.optedIn
+    : typeof value.marketingOptIn === "boolean" ? value.marketingOptIn : true;
   const marketingPreferenceValue: Data = typeof storedPreference.source === "string"
     ? { ...storedPreference, optedIn: marketingOptIn, status: marketingStatus }
-    : { optedIn: false, status: "unknown", source: "system_default" };
+    : { optedIn: marketingOptIn, status: marketingStatus, source: "system_default" };
   const photoAsset = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", stringValue(value.id))).collect()).find((asset) => asset.status === "active" && asset.visibility === "private");
   const photoUrl = photoAsset ? (await ctx.storage.getUrl(photoAsset.storageId)) ?? undefined : undefined;
   const detail: Data = {
@@ -4835,7 +4838,15 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en" });
+    const result = await createMemberMutation(ctx, actor, {
+      fullName: row.fullName,
+      phone: row.phone,
+      email: row.email,
+      homeBranchId: importData.branchId,
+      preferredLanguage: "en",
+      marketingOptIn: true,
+      marketingPreferenceSource: "imported",
+    });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
     rows[index] = { ...row, status: "committed", memberId: member.id };

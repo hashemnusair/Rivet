@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
+import { Switch } from "@/components/ui/switch";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
 
@@ -320,6 +321,8 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
   const [homeBranchId, setHomeBranchId] = useState(branchId);
   const [preferredLanguage, setPreferredLanguage] = useState<"en" | "ar">("en");
+  const [marketingOptIn, setMarketingOptIn] = useState(true);
+  const [marketingPreferenceSource, setMarketingPreferenceSource] = useState<"system_default" | "staff_selected">("system_default");
   const [mode, setMode] = useState<"existing" | "custom">("existing");
   const [planId, setPlanId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -339,6 +342,8 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
     if (!open) return;
     setHomeBranchId(branchId);
     setPreferredLanguage("en");
+    setMarketingOptIn(true);
+    setMarketingPreferenceSource("system_default");
     setStartDate(todayISODate());
     setIdempotencyKey(crypto.randomUUID());
     setServerError(null);
@@ -354,7 +359,8 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
     (api) => api.completeLeadSale(leadId, {
       homeBranchId,
       preferredLanguage,
-      marketingOptIn: true,
+      marketingOptIn,
+      marketingPreferenceSource,
       startDate,
       idempotencyKey,
       membership: mode === "existing"
@@ -409,7 +415,21 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
               <option value="ar">Arabic</option>
             </select>
           </Field>
-          <p className="text-[11.5px] text-ink-3">Marketing updates remain opted in by default; this language choice controls member-facing communication.</p>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/40 px-3 py-3">
+            <div>
+              <p className="text-[13px] font-medium">Marketing messages</p>
+              <p className="text-[11.5px] text-ink-3">On by default, but recorded as a system preference—not explicit consent—until staff changes it. Marketing sends remain suppressed while consent is unknown.</p>
+            </div>
+            <Switch
+              checked={marketingOptIn}
+              onCheckedChange={(checked) => {
+                setMarketingOptIn(checked);
+                setMarketingPreferenceSource("staff_selected");
+              }}
+              aria-label="Marketing opt-in"
+              disabled={navigationPending}
+            />
+          </div>
           <Field label="Membership" required>
             <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label="Membership source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">Choose an existing plan</SelectItem><SelectItem value="custom">Enter a custom membership</SelectItem></SelectContent></Select>
           </Field>

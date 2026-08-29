@@ -3,6 +3,16 @@ export type MarketingPreferenceValue = {
   marketingPreference?: { optedIn?: unknown; status?: unknown; source?: unknown } | unknown;
 };
 
+export function marketingStatusFromProvenance(
+  source: unknown,
+  optedIn: unknown,
+): "explicit_opt_in" | "explicit_opt_out" | "unknown" {
+  if ((source === "staff_selected" || source === "member_selected") && typeof optedIn === "boolean") {
+    return optedIn ? "explicit_opt_in" : "explicit_opt_out";
+  }
+  return "unknown";
+}
+
 /**
  * Unknown and legacy-default preferences are suppressed. Only an attributable
  * explicit opt-in permits marketing; service messages use a separate path.
@@ -14,7 +24,7 @@ export function marketingPreferenceStatus(value: MarketingPreferenceValue | null
     if (status === "explicit_opt_in" || status === "explicit_opt_out" || status === "unknown") return status;
     const optedIn = (preference as { optedIn?: unknown }).optedIn;
     const source = (preference as { source?: unknown }).source;
-    if (typeof optedIn === "boolean" && source && source !== "system_default") return optedIn ? "explicit_opt_in" : "explicit_opt_out";
+    if (source) return marketingStatusFromProvenance(source, optedIn);
     if (optedIn === false) return "explicit_opt_out";
     return "unknown";
   }

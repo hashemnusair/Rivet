@@ -64,7 +64,8 @@ export default function NewMemberPage() {
       email: "",
       homeBranchId: activeBranchId,
       preferredLanguage: "en",
-      marketingOptIn: false,
+      marketingOptIn: true,
+      marketingPreferenceSource: "system_default",
     },
   });
 
@@ -303,7 +304,7 @@ export default function NewMemberPage() {
           <label className="mt-4 flex items-center justify-between gap-3 cursor-pointer">
             <span>
               <span className="block text-[13px] font-medium">Marketing messages</span>
-              <span className="block text-[12px] text-ink-3">No consent is assumed. Turn this on only after the member explicitly agrees; otherwise email, SMS, and WhatsApp marketing stay suppressed. Service messages are separate.</span>
+              <span className="block text-[12px] text-ink-3">RIVET starts this preference on, but records it as a system default—not member consent. Marketing remains suppressed until staff or the member confirms it. Service messages are separate.</span>
             </span>
             <Controller
               control={form.control}
