@@ -1,5 +1,52 @@
 # GymOS / RIVET current implementation state
 
+## Jordan-first workflow hardening — 29 August 2026
+
+- A fresh GitHub fetch found no newer partner work. `origin/main` remained at
+  `b04feecba95e447c5e023ec1d6a1bafe4426ee58`; the application and browser-test
+  tip for this sprint is `ea962fa`, nine coherent direct-main commits ahead.
+  `arabic-localisation` remains intentionally deferred and
+  `FRONTEND_HANDOFF.md` remains unchanged.
+- Marketing preferences now preserve their provenance through member creation,
+  profile edits, imports, lead conversion, mock data, and Convex. A system
+  default is no longer treated as explicit staff/member consent.
+- Jordanian phone variants (`079…`, `+96279…`, `0096279…`, punctuation and
+  spacing variants) resolve to the same canonical identity for validation,
+  lookup, duplicate prevention, and cross-adapter behavior.
+- Cash-shift closure waits for authoritative live totals, distinguishes loading
+  and failure from a legitimate zero, rejects a stale shift, and supports an
+  explicit retry. Transaction ranges and CRM follow-ups now use the tenant's
+  timezone rather than the browser or UTC day boundary.
+- Audit approval filtering is applied at the server boundary before pagination.
+  Command search and member duplicate checks now show real failures, retry, and
+  explicit safe-override behavior instead of presenting a failed lookup as an
+  empty result.
+- Lead capture is reduced to name and phone when a branch is already selected;
+  the remaining fields are optional and collapsed with walk-in/current-owner
+  defaults. Member capture offers an explicit **Create & sell membership**
+  continuation. Pipeline cards expose Call, No answer, Not sold, and Open as
+  separate keyboard/touch actions; terminal losses require and immutably audit
+  a real reason in both mock and Convex implementations.
+- Reception results no longer disappear on a timer. A recorded allowed,
+  warning, or overridden verdict remains until staff deliberately advances or
+  starts another lookup. Shared buttons reach a 44px target on coarse-pointer
+  devices without enlarging laptop layouts. Reception and CRM now expose later
+  pages instead of silently capping working sets.
+- Verification passed both TypeScript checks, lint and the secret-output audit,
+  **153 Vitest files / 937 tests**, **14 repository-safety tests**, the
+  **51-page** Production build, **39 Playwright passes / 14 explicit
+  credential-gated skips / 0 failures**, `pnpm audit --prod` with no known
+  vulnerabilities, and `git diff --check`. The first Playwright attempt was
+  interrupted when a disposable Next development cache exhausted local disk;
+  after that cache was removed, the full suite passed. No source or user data
+  was removed.
+- No Convex deployment, provider activation, Production configuration change,
+  or Production product-data mutation was part of this code sprint. The next
+  product candidates are the unified Today queue, truthful provider-free
+  WhatsApp handoffs, and branded offer acceptance. Operator setup, product and
+  provider decisions, isolated staging, Arabic, and final measured performance
+  work remain separate launch-closure gates.
+
 ## Platform closure, QA-listing cleanup, and Production export — 29 August 2026
 
 - A fresh fetch found no newer partner work; `main` and `origin/main` matched at

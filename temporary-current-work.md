@@ -16,19 +16,19 @@ RIVET should assume that receptionists, sales staff, trainers, and owners are bu
 
 ## Immediate implementation batch
 
-- [ ] Reconcile the marketing-preference contract across forms, mock data, Convex persistence, imports, and lead conversion. A system default must not masquerade as explicit consent.
-- [ ] Canonicalize Jordanian mobile numbers so `079…`, `+96279…`, `0096279…`, and common spacing/punctuation variants resolve to the same identity for duplicate checks and search.
-- [ ] Prevent a cash shift from closing until authoritative server totals are available, and cover loading, error, stale-shift, and recovery states.
-- [ ] Make transaction ranges and CRM follow-up timestamps honor the tenant timezone rather than the browser or UTC day boundary.
-- [ ] Correct audit-log filters so approval status, actor, action, entity, date, and search are applied server-side before pagination.
-- [ ] Replace misleading empty states in command search and duplicate checks with explicit failure, retry, and safe-override behavior.
-- [ ] Add a two-minute quick path for lead capture: name and phone first, sensible defaults, optional details collapsed.
-- [ ] Add a faster member-capture path and a clear `Create & sell membership` continuation.
-- [ ] Give pipeline cards visible, keyboard-accessible actions; terminal outcomes must collect a reason instead of relying on drag-and-drop.
-- [ ] Increase coarse-pointer touch targets and remove unnecessarily dense reception and sales controls.
-- [ ] Keep a successful reception result on screen until staff deliberately moves on; do not discard warnings automatically.
-- [ ] Paginate or otherwise expose the complete CRM and reception working sets instead of silently capping them.
-- [ ] Reconcile `CURRENT_STATE.md` and the canonical product/operations backlog with the shipped code.
+- [x] Reconcile the marketing-preference contract across forms, mock data, Convex persistence, imports, and lead conversion. A system default must not masquerade as explicit consent.
+- [x] Canonicalize Jordanian mobile numbers so `079…`, `+96279…`, `0096279…`, and common spacing/punctuation variants resolve to the same identity for duplicate checks and search.
+- [x] Prevent a cash shift from closing until authoritative server totals are available, and cover loading, error, stale-shift, and recovery states.
+- [x] Make transaction ranges and CRM follow-up timestamps honor the tenant timezone rather than the browser or UTC day boundary.
+- [x] Correct audit-log filters so approval status, actor, action, entity, date, and search are applied server-side before pagination.
+- [x] Replace misleading empty states in command search and duplicate checks with explicit failure, retry, and safe-override behavior.
+- [x] Add a two-minute quick path for lead capture: name and phone first, sensible defaults, optional details collapsed.
+- [x] Add a faster member-capture path and a clear `Create & sell membership` continuation.
+- [x] Give pipeline cards visible, keyboard-accessible actions; terminal outcomes must collect a reason instead of relying on drag-and-drop.
+- [x] Increase coarse-pointer touch targets and remove unnecessarily dense reception and sales controls.
+- [x] Keep a successful reception result on screen until staff deliberately moves on; do not discard warnings automatically.
+- [x] Paginate or otherwise expose the complete CRM and reception working sets instead of silently capping them.
+- [x] Reconcile `CURRENT_STATE.md` and the canonical product/operations backlog with the shipped code.
 
 ## Definition of done for this batch
 
@@ -38,6 +38,13 @@ RIVET should assume that receptionists, sales staff, trainers, and owners are bu
 - Mock and Convex adapters obey the same contract.
 - `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm audit --prod`, and `git diff --check` pass.
 - Work is committed in coherent slices, synchronized with `origin/main`, and pushed directly to `main` as requested.
+
+Completed locally on 29 August 2026. The final pre-documentation application
+and browser-test tip is `ea962fa`. The full gate passed with 153 Vitest files /
+937 tests, 14 repository-safety tests, 51 generated pages, 39 Playwright passes,
+14 explicit credential-gated skips, no known Production dependency
+vulnerabilities, and no test failures. The remaining unchecked items below are
+the next product batch, not unfinished work from this sprint.
 
 ## Next product batch
 

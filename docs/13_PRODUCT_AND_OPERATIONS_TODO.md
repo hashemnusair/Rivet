@@ -1,7 +1,8 @@
 # RIVET product, engineering, and operations backlog
 
 Updated 29 August 2026 for Production backend closure, owner/platform
-acceptance, public QA cleanup, and the current recovery export.
+acceptance, public QA cleanup, the current recovery export, and the
+Jordan-first workflow-hardening sprint.
 This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
@@ -11,6 +12,43 @@ consolidates the former
 values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 29 August 2026
+
+### Jordan-first workflow hardening completed on 29 August
+
+- [x] Preserve marketing-preference provenance across forms, imports, lead
+  conversion, mock data, and Convex; do not treat a system default as explicit
+  consent.
+- [x] Canonicalize Jordan mobile numbers across validation, search, duplicate
+  checks, mock behavior, and Convex.
+- [x] Gate cash-shift closure on authoritative totals with loading, error,
+  retry, stale-shift, and zero-total coverage; use tenant-local dates for
+  transactions and CRM follow-ups.
+- [x] Apply audit approval filtering before pagination, and make command search
+  and duplicate-check failures explicit, retryable, and safely overridable.
+- [x] Ship two-field branch-scoped lead capture, fast member creation with a
+  **Create & sell membership** continuation, accessible pipeline actions, and
+  reason-gated audited not-sold outcomes.
+- [x] Keep committed reception verdicts visible until staff advances, increase
+  coarse-pointer targets, and expose later CRM/reception pages instead of
+  silently capped working sets.
+- [x] Verify application/browser tip `ea962fa`: both TypeScript checks, lint and
+  secret-output audit, 153 Vitest files / 937 tests, 14 repository-safety tests,
+  51 generated Production pages, 39 passed / 14 explicitly credential-gated
+  Playwright journeys, a clean production dependency audit, and
+  `git diff --check` all passed.
+
+### Next code/product candidates
+
+- [ ] Build one role-aware **Today** queue for expiring memberships, unpaid
+  balances, overdue leads, missed follow-ups, access denials, facility work,
+  and owner approvals. Define ranking and ownership before implementation.
+- [ ] Add provider-free WhatsApp handoffs that open normalized Jordan numbers
+  with approved prefilled copy, record only the handoff attempt, and schedule a
+  follow-up without claiming provider delivery.
+- [ ] Add branded offer links with explicit acceptance/decline, expiry,
+  attribution, duplicate-safe conversion, and staff-visible follow-up facts.
+- [ ] Run realistic-volume query/index/invalidation profiling before adding
+  more caching. Keep Arabic/translation and final measured optimization last.
 
 ### Production closure completed on 29 August
 
@@ -53,9 +91,9 @@ values, applicant details, and provider credentials out of this file.
   `d06021e`, generated 51 pages, reached `READY`, and produced no initial error
   or HTTP-500 logs.
 - [x] Read the public landing, gym directory, and one gym detail in Production
-  without console errors. Two test gyms remain publicly listed; resolve their
-  exact publication/content state before launch without deleting tenant
-  history blindly.
+  without console errors. Two test gyms were publicly listed at that checkpoint;
+  the subsequent closure above hid Hashem Test through the audited listing
+  control while preserving its history, and left Elias Test visible.
 
 The final application/code verification tip for this sprint is `3c99fc7`;
 the final pushed history also includes this documentation reconciliation. The verified
