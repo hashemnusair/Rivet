@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
@@ -25,13 +25,13 @@ describe("CommandPalette remote search", () => {
   it("reports a failed lookup honestly and retries the same query", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<CommandPalette open onOpenChange={() => undefined} />);
-    act(() => api.setBehavior({ failNextRequest: true }));
+    vi.spyOn(api, "searchWorkspace").mockRejectedValueOnce(new Error("offline"));
 
-    await user.type(screen.getByRole("combobox", { name: "Global search" }), "Lina");
+    await user.type(screen.getByRole("combobox", { name: "Global search" }), "Li");
 
     const failure = await screen.findByRole("alert");
-    expect(failure).toHaveTextContent(/could not search members and leads/i);
-    expect(screen.queryByText(/No members or leads match/i)).not.toBeInTheDocument();
+    expect(failure).toHaveTextContent(/workspace search is unavailable/i);
+    expect(screen.queryByText(/No records, receipts, pages, or actions match/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Retry search" }));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());

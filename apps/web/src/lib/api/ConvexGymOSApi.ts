@@ -626,6 +626,13 @@ export class ConvexGymOSApi implements GymOSApi {
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.request", input); }
   listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> { return this.query("exports.list"); }
   requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey }); }
+  searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> { return this.query("workspace.search", { search }); }
+  listRecentWorkspaceItems(): Promise<import("@/lib/domain/qol").RecentWorkspaceItem[]> { return this.query("workspace.recents"); }
+  async recordRecentWorkspaceItem(item: Omit<import("@/lib/domain/qol").RecentWorkspaceItem, "viewedAt">): Promise<void> { await this.mutate("workspace.recent.record", item); }
+  async clearRecentWorkspaceItems(): Promise<void> { await this.mutate("workspace.recents.clear"); }
+  listPinnedWorkspaceItems(): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem[]> { return this.query("workspace.pins"); }
+  pinWorkspaceItem(item: Omit<import("@/lib/domain/qol").PinnedWorkspaceItem, "id" | "position" | "createdAt"> & { position?: number }): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem> { return this.mutate("workspace.pin.upsert", item); }
+  async unpinWorkspaceItem(id: T.UUID): Promise<void> { await this.mutate("workspace.pin.delete", { id }); }
   listAuditEvents(query: AuditQuery): Promise<T.Page<T.AuditEvent>> { return this.query("audit.list", query); }
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> { return this.query("settings.get"); }

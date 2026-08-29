@@ -4249,6 +4249,69 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, content: csv.content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
+function workspaceInternalHref(value: unknown, correlationId: string): string {
+  const href = stringValue(value).trim();
+  if (!href.startsWith("/") || href.startsWith("//") || href.length > 500) domainError("VALIDATION_ERROR", "Workspace links must use an internal RIVET route.", { correlationId });
+  return href;
+}
+
+function workspacePages(actor: ActorContext): Data[] {
+  const rows: Array<Data & { permission?: string }> = [
+    { id: "dashboard", title: "Dashboard", subtitle: "Today, revenue, alerts and queue", href: "/dashboard" },
+    { id: "reception", title: "Reception", subtitle: "Check-ins and cash shift", href: "/reception" },
+    { id: "members", title: "Members", subtitle: "Directory and memberships", href: "/members", permission: "members.read" },
+    { id: "leads", title: "Leads", subtitle: "CRM pipeline", href: "/crm/pipeline", permission: "crm.read" },
+    { id: "followups", title: "Follow-ups", subtitle: "Due and overdue CRM work", href: "/crm/queues", permission: "crm.read" },
+    { id: "payments", title: "Payments", subtitle: "Transactions and receipts", href: "/payments", permission: "reports.financial.read" },
+    { id: "exports", title: "Data exports", subtitle: "Portable CSV datasets", href: "/exports", permission: "audit.read" },
+    { id: "audit", title: "Audit log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
+    { id: "automations", title: "Automation monitoring", subtitle: "Rules, providers and execution history", href: "/automations", permission: "automations.manage" },
+    { id: "settings", title: "Settings", subtitle: "Organization, branches and team", href: "/settings", permission: "settings.manage" },
+    { id: "support", title: "Support", subtitle: "Cases and RIVET assistance", href: "/support" },
+  ];
+  return rows.filter((row) => !row.permission || actor.permissions.includes(row.permission));
+}
+
+function workspaceQuickActions(actor: ActorContext): Data[] {
+  return [
+    hasPermission(actor, "members.write") ? { id: "new-member", title: "Create member", subtitle: "Open a new member record", href: "/members/new" } : null,
+    hasPermission(actor, "crm.write") ? { id: "new-lead", title: "Create lead", subtitle: "Add a lead to the pipeline", href: "/crm/pipeline?new=1" } : null,
+    hasPermission(actor, "payments.collect") ? { id: "collect-payment", title: "Collect payment", subtitle: "Find a member and record payment", href: "/payments?collect=1" } : null,
+    hasPermission(actor, "members.read") ? { id: "start-checkin", title: "Start check-in", subtitle: "Open the reception lookup", href: "/reception" } : null,
+  ].filter(Boolean).map((row) => data(row));
+}
+
+async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data[]> {
+  const search = stringValue(input.search).trim();
+  if (search.length < 2) return [];
+  if (search.length > 120) domainError("VALIDATION_ERROR", "Search is too long.", { correlationId: actor.correlationId });
+  const results: Data[] = [];
+  if (hasPermission(actor, "members.read")) {
+    const rows = (await recordsOf(ctx, actor, "member")).map((record) => data(record.data)).filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.memberNumber, member.phone, member.email], search)).slice(0, 7);
+    results.push(...rows.map((member) => ({ kind: "member", id: stringValue(member.id), title: stringValue(member.fullName), subtitle: `${stringValue(member.memberNumber)} · ${stringValue(member.phone)}`, href: `/members/${member.id}`, keywords: [stringValue(member.phone), stringValue(member.memberNumber)] })));
+  }
+  if (hasPermission(actor, "crm.read")) {
+    const rows = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter((lead) => matchesSearch([lead.fullName, lead.phone, lead.email, lead.source], search)).slice(0, 6);
+    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
+  }
+  if (hasPermission(actor, "reports.financial.read")) {
+    const rows = (await recordsOf(ctx, actor, "payment")).map((record) => data(record.data)).filter((payment) => matchesSearch([payment.receiptNumber, payment.externalReference, payment.idempotencyKey, payment.memberName, payment.memberNumber], search)).slice(0, 6);
+    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
+  }
+  const navigation: Data[] = workspacePages(actor).map((row) => ({ kind: "page", ...row }));
+  const actions: Data[] = workspaceQuickActions(actor).map((row) => ({ kind: "action", ...row }));
+  results.push(...[...navigation, ...actions].filter((row) => matchesSearch([row.title, row.subtitle], search)));
+  return results.slice(0, 24);
+}
+
+function recentWorkspaceItemView(row: Doc<"recentWorkspaceItems">): Data {
+  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, href: row.href, viewedAt: utcIso(row.viewedAt) };
+}
+
+function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
+  return { id: row.publicId, targetKey: row.targetKey, kind: row.kind, label: row.label, href: row.href, position: row.position, createdAt: utcIso(row.createdAt) };
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4660,6 +4723,16 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         .filter((job) => stringValue(job.requestedById) === publicUserId(actor.user))
         .sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)));
       return jobs.map(exportJobView);
+    }
+    case "workspace.search":
+      return await workspaceSearch(ctx, actor, input);
+    case "workspace.recents": {
+      const rows = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").take(12);
+      return rows.map(recentWorkspaceItemView);
+    }
+    case "workspace.pins": {
+      const rows = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_user_organization", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      return rows.sort((left, right) => left.position - right.position || left.createdAt - right.createdAt).map(pinnedWorkspaceItemView);
     }
     case "duplicates.list":
       return await duplicateCases(ctx, actor, optionalString(input.status));
@@ -7593,6 +7666,57 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertRecord(ctx, actor, "exportJob", value);
       await insertAudit(ctx, actor, { category: "settings", action: "data.export", entityType: "data_export", entityId: id, entityLabel: fileName, summary: `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)`, after: { kind, rowCount: csv.rowCount, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
       return exportJobView(value);
+    }
+    case "workspace.recent.record": {
+      const kind = stringValue(input.kind);
+      if (!["member", "lead", "receipt", "page"].includes(kind)) domainError("VALIDATION_ERROR", "Recent-item kind is invalid.", { correlationId: actor.correlationId });
+      const entityPublicId = recordId(input.id);
+      const title = stringValue(input.title).trim().slice(0, 160);
+      if (!title) domainError("VALIDATION_ERROR", "Recent-item title is required.", { correlationId: actor.correlationId });
+      const subtitle = optionalString(input.subtitle)?.trim().slice(0, 240);
+      const href = workspaceInternalHref(input.href, actor.correlationId);
+      const existing = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_entity", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id).eq("kind", kind as "member" | "lead" | "receipt" | "page").eq("entityPublicId", entityPublicId)).unique();
+      const viewedAt = Date.now();
+      if (existing) await ctx.db.patch(existing._id, { title, subtitle, href, viewedAt });
+      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, href, viewedAt });
+      const all = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").collect();
+      await Promise.all(all.slice(20).map((row) => ctx.db.delete(row._id)));
+      return undefined;
+    }
+    case "workspace.recents.clear": {
+      const rows = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      await Promise.all(rows.map((row) => ctx.db.delete(row._id)));
+      return undefined;
+    }
+    case "workspace.pin.upsert": {
+      const targetKey = stringValue(input.targetKey).trim().slice(0, 160);
+      const kind = stringValue(input.kind);
+      if (!targetKey || !["action", "saved_view"].includes(kind)) domainError("VALIDATION_ERROR", "Pinned target is invalid.", { correlationId: actor.correlationId });
+      const label = stringValue(input.label).trim().slice(0, 80);
+      const href = workspaceInternalHref(input.href, actor.correlationId);
+      if (!label) domainError("VALIDATION_ERROR", "Pinned label is required.", { correlationId: actor.correlationId });
+      if (kind === "action" && !workspaceQuickActions(actor).some((action) => stringValue(action.id) === targetKey && stringValue(action.href) === href)) domainError("FORBIDDEN", "This quick action is not available for your role.", { correlationId: actor.correlationId });
+      if (kind === "saved_view") {
+        const savedView = await ctx.db.query("userSavedViews").withIndex("by_public_id", (q) => q.eq("publicId", targetKey)).unique();
+        if (!savedView || savedView.userId !== actor.user._id || savedView.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      }
+      const rows = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_user_organization", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      const existing = rows.find((row) => row.targetKey === targetKey);
+      const position = Math.max(0, Math.min(99, Number.isInteger(input.position) ? numberValue(input.position) : existing?.position ?? rows.length));
+      const now = Date.now();
+      if (existing) { await ctx.db.patch(existing._id, { label, href, position, updatedAt: now }); return pinnedWorkspaceItemView({ ...existing, label, href, position, updatedAt: now }); }
+      if (rows.length >= 12) domainError("VALIDATION_ERROR", "You can pin up to 12 workspace actions.", { correlationId: actor.correlationId });
+      const publicId = newPublicId();
+      const id = await ctx.db.insert("pinnedWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, publicId, targetKey, kind: kind as "action" | "saved_view", label, href, position, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(id);
+      if (!created) domainError("INTERNAL_ERROR", "Pinned action could not be saved.", { correlationId: actor.correlationId });
+      return pinnedWorkspaceItemView(created);
+    }
+    case "workspace.pin.delete": {
+      const row = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.id))).unique();
+      if (!row || row.userId !== actor.user._id || row.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Pinned action not found.", { correlationId: actor.correlationId });
+      await ctx.db.delete(row._id);
+      return undefined;
     }
     case "savedViews.save": {
       const surface = savedViewSurface(input.surface, actor.correlationId);

@@ -1,49 +1,37 @@
 "use client";
 
 import { Command } from "cmdk";
-import {
-  ArrowRight,
-  ArrowLeftRight,
-  CircleHelp,
-  Dumbbell,
-  Gauge,
-  KanbanSquare,
-  ListFilter,
-  Plus,
-  ScanLine,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-  UserPlus,
-  Users,
-} from "lucide-react";
+import { ArrowLeftRight, ArrowRight, CircleHelp, Clock3, Dumbbell, Gauge, KanbanSquare, ListFilter, Plus, ReceiptText, ScanLine, ScrollText, Settings, ShieldCheck, Star, StarOff, UserPlus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getApi } from "@/lib/api/client";
-import type { LeadSummary, MemberSummary, Session } from "@/lib/domain/types";
+import { useEffect, useMemo, useState } from "react";
+import { qk } from "@/lib/api/keys";
+import type { RecentWorkspaceItem, WorkspaceSearchResult } from "@/lib/domain/qol";
+import type { Session } from "@/lib/domain/types";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { Monogram } from "@/components/ui/misc";
-import { MembershipStatusChip } from "@/components/shared/status-chip";
+import { Badge } from "@/components/ui/badge";
 
-/**
- * Global command palette (⌘K): member/lead lookup plus navigation actions.
- * This is the fastest way to jump anywhere in daily operations.
- */
+type PaletteTarget = Pick<WorkspaceSearchResult, "kind" | "id" | "title" | "subtitle" | "href">;
+
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter();
+  const invalidate = useInvalidate();
   const { canAny } = usePermissions();
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
-  const [members, setMembers] = useState<MemberSummary[]>([]);
-  const [leads, setLeads] = useState<LeadSummary[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchAttempt, setSearchAttempt] = useState(0);
+  const settledQuery = query.trim();
+  const search = useApiQuery(qk.workspaceSearch(settledQuery), (api) => api.searchWorkspace(settledQuery), { enabled: open && settledQuery.length >= 2, retry: false });
+  const recents = useApiQuery(qk.workspaceRecents, (api) => api.listRecentWorkspaceItems(), { enabled: open });
+  const pins = useApiQuery(qk.workspacePins, (api) => api.listPinnedWorkspaceItems(), { enabled: open });
+  const recordRecent = useApiMutation((api, item: Omit<RecentWorkspaceItem, "viewedAt">) => api.recordRecentWorkspaceItem(item), { onSuccess: async () => invalidate([qk.workspaceRecents]) });
+  const pin = useApiMutation((api, item: { targetKey: string; kind: "action"; label: string; href: string }) => api.pinWorkspaceItem(item), { onSuccess: async () => invalidate([qk.workspacePins]) });
+  const unpin = useApiMutation((api, id: string) => api.unpinWorkspaceItem(id), { onSuccess: async () => invalidate([qk.workspacePins]) });
+  const clearRecents = useApiMutation((api) => api.clearRecentWorkspaceItems(), { onSuccess: async () => invalidate([qk.workspaceRecents]) });
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
         onOpenChange(!open);
       }
     };
@@ -51,211 +39,66 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setMembers([]);
-      setLeads([]);
-      setSearchError(null);
-      return;
-    }
-    if (query.trim().length < 2) {
-      setMembers([]);
-      setLeads([]);
-      setSearchError(null);
-      return;
-    }
-    let cancelled = false;
-    setSearching(true);
-    setSearchError(null);
-    const api = getApi();
-    const t = setTimeout(async () => {
-      try {
-        const [m, l] = await Promise.all([
-          canAny(["members.read"]) ? api.listMembers({ search: query, pageSize: 6 }) : Promise.resolve(null),
-          canAny(["crm.read"]) ? api.listLeads({ search: query, pageSize: 4 }) : Promise.resolve(null),
-        ]);
-        if (cancelled) return;
-        setMembers(m?.items ?? []);
-        setLeads(l?.items ?? []);
-      } catch {
-        if (!cancelled) {
-          setMembers([]);
-          setLeads([]);
-          setSearchError("RIVET could not search members and leads. Check the connection and try again.");
-        }
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 180);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [query, open, canAny, searchAttempt]);
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
+
+  const canOpenManagementLedger = canOpenManagementLedgerFromSession(session) && canAny(["reports.financial.read"]);
+  const pages = useMemo(() => [
+    { id: "dashboard", href: "/dashboard", title: "Dashboard", subtitle: "Today and operating queue", icon: Gauge },
+    { id: "leads", href: "/crm/pipeline", title: "Leads", subtitle: "CRM pipeline", icon: KanbanSquare, perm: ["crm.read"] },
+    { id: "followups", href: "/crm/queues", title: "Follow-ups", subtitle: "Due CRM work", icon: ListFilter, perm: ["crm.read"] },
+    { id: "members", href: "/members", title: "Members", subtitle: "Directory", icon: Users, perm: ["members.read"] },
+    { id: "reception", href: "/reception", title: "Reception", subtitle: "Check-ins", icon: ShieldCheck },
+    { id: "pt", href: "/pt", title: "Personal training", subtitle: "Schedule and packages", icon: Dumbbell, perm: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
+    { id: "payments", href: "/payments", title: "Payments", subtitle: "Transactions and receipts", icon: ArrowLeftRight, perm: ["reports.financial.read"] },
+    ...(canOpenManagementLedger ? [{ id: "finance", href: "/finance", title: "Management ledger", subtitle: "Statements", icon: ScrollText }] : []),
+    { id: "support", href: "/support", title: "Support", subtitle: "Cases", icon: CircleHelp },
+    { id: "settings", href: "/settings", title: "Settings", subtitle: "Organization and team", icon: Settings, perm: ["settings.manage", "users.manage"] },
+  ].filter((page) => !page.perm || canAny(page.perm)), [canAny, canOpenManagementLedger]);
+  const quickActions = useMemo(() => [
+    canAny(["members.write"]) ? { id: "new-member", title: "Create member", subtitle: "Open a new member record", href: "/members/new", icon: Plus } : null,
+    canAny(["crm.write"]) ? { id: "new-lead", title: "Create lead", subtitle: "Add to the pipeline", href: "/crm/pipeline?new=1", icon: UserPlus } : null,
+    canAny(["payments.collect"]) ? { id: "collect-payment", title: "Collect payment", subtitle: "Record a member payment", href: "/payments?collect=1", icon: ReceiptText } : null,
+    canAny(["members.read"]) ? { id: "start-checkin", title: "Start check-in", subtitle: "Open reception lookup", href: "/reception", icon: ScanLine } : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item)), [canAny]);
+  const pinnedByTarget = new Map((pins.data ?? []).map((item) => [item.targetKey, item]));
 
   if (!signedIn) return null;
-
-  const go = (href: string) => {
+  const go = (target: PaletteTarget) => {
     onOpenChange(false);
-    router.push(href);
+    if (target.kind !== "action") recordRecent.mutate({ kind: target.kind, id: target.id, title: target.title, subtitle: target.subtitle, href: target.href });
+    router.push(target.href);
   };
+  const grouped = (search.data ?? []).reduce<Record<string, WorkspaceSearchResult[]>>((groups, result) => { (groups[result.kind] ??= []).push(result); return groups; }, {});
+  const groupLabels: Record<string, string> = { member: "Members", lead: "Leads", receipt: "Receipts", page: "Pages", action: "Actions" };
 
-  // Keep reporting out of the palette unless both gates are already present.
-  // A role permission alone must not advertise a locked subscription route.
-  const canOpenManagementLedger = canOpenManagementLedgerFromSession(session)
-    && canAny(["reports.financial.read"]);
-
-  const pages = [
-    { href: "/dashboard", label: "Dashboard", icon: Gauge },
-    { href: "/crm/pipeline", label: "Leads", icon: KanbanSquare, perm: ["crm.read"] },
-    { href: "/crm/queues", label: "Follow-ups", icon: ListFilter, perm: ["crm.read"] },
-    { href: "/members", label: "Members", icon: Users, perm: ["members.read"] },
-    { href: "/reception", label: "Reception", icon: ShieldCheck },
-    { href: "/pt", label: "Personal training", icon: Dumbbell, perm: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
-    { href: "/payments", label: "Payments", icon: ArrowLeftRight, perm: ["reports.financial.read"] },
-    ...(canOpenManagementLedger ? [{ href: "/finance", label: "Management ledger", icon: ScrollText }] : []),
-    { href: "/support", label: "Support", icon: CircleHelp },
-    { href: "/settings", label: "Settings", icon: Settings, perm: ["settings.manage", "users.manage"] },
-  ].filter((p) => !p.perm || canAny(p.perm));
-
-  return (
-    <Command.Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      label="Global search"
-      className="fixed inset-0 z-[90]"
-      shouldFilter={false}
-    >
-      <div className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
-      <div className="fixed left-1/2 top-[12vh] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-surface shadow-dialog animate-scale-in">
-        <div className="flex items-center gap-2 border-b border-line px-4">
-          <ArrowRight className="size-4 text-ink-3" aria-hidden />
-          <Command.Input
-            value={query}
-            onValueChange={(value) => {
-              setQuery(value);
-              setSearchError(null);
-            }}
-            placeholder="Search members by name, phone or number — or jump to a page…"
-            aria-label="Search RIVET"
-            className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4"
-            autoFocus
-          />
-        </div>
-        <Command.List className="max-h-[50vh] overflow-y-auto p-2">
-          {query.trim().length >= 2 ? (
-            <>
-              {searching ? <p className="px-3 py-2 text-[12.5px] text-ink-3">Searching…</p> : null}
-              {!searching && searchError ? (
-                <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger">
-                  <p>{searchError}</p>
-                  <button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => setSearchAttempt((attempt) => attempt + 1)}>Retry search</button>
-                </div>
-              ) : null}
-              {!searching && !searchError && members.length === 0 && leads.length === 0 ? (
-                <p className="px-3 py-6 text-center text-[13px] text-ink-3">
-                  No members or leads match “{query}”.
-                </p>
-              ) : null}
-              {members.length > 0 ? (
-                <Command.Group heading={<GroupHeading>Members</GroupHeading>}>
-                  {members.map((m) => (
-                    <PaletteItem key={m.id} onSelect={() => go(`/members/${m.id}`)}>
-                      <Monogram name={m.fullName} size="xs" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{m.fullName}</span>
-                        <span className="block font-mono text-[11px] text-ink-3">
-                          {m.memberNumber} · {m.phone}
-                        </span>
-                      </span>
-                      <MembershipStatusChip status={m.membershipStatus} />
-                    </PaletteItem>
-                  ))}
-                </Command.Group>
-              ) : null}
-              {leads.length > 0 ? (
-                <Command.Group heading={<GroupHeading>Leads</GroupHeading>}>
-                  {leads.map((l) => (
-                    <PaletteItem key={l.id} onSelect={() => go(`/crm/leads/${l.id}`)}>
-                      <Monogram name={l.fullName} size="xs" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{l.fullName}</span>
-                        <span className="block font-mono text-[11px] text-ink-3">{l.phone}</span>
-                      </span>
-                    </PaletteItem>
-                  ))}
-                </Command.Group>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <Command.Group heading={<GroupHeading>Quick actions</GroupHeading>}>
-                {canAny(["members.write"]) ? (
-                  <PaletteItem onSelect={() => go("/members/new")}>
-                    <Plus className="size-4 text-ink-3" /> New member
-                  </PaletteItem>
-                ) : null}
-                <PaletteItem onSelect={() => go("/reception")}>
-                  <ScanLine className="size-4 text-ink-3" /> Open reception console
-                </PaletteItem>
-                {canAny(["crm.write"]) ? (
-                  <PaletteItem onSelect={() => go("/crm/pipeline?new=1")}>
-                    <UserPlus className="size-4 text-ink-3" /> New lead
-                  </PaletteItem>
-                ) : null}
-              </Command.Group>
-              <Command.Group heading={<GroupHeading>Go to</GroupHeading>}>
-                {pages.map((p) => (
-                  <PaletteItem key={p.href} onSelect={() => go(p.href)}>
-                    <p.icon className="size-4 text-ink-3" /> {p.label}
-                  </PaletteItem>
-                ))}
-              </Command.Group>
-            </>
-          )}
-        </Command.List>
-        <div className="flex items-center gap-4 border-t border-line bg-paper/70 px-4 py-2 text-[11px] text-ink-3">
-          <span className="flex items-center gap-1">
-            <kbd className="rounded-sm border border-line bg-surface px-1 font-mono">↑↓</kbd> navigate
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded-sm border border-line bg-surface px-1 font-mono">⏎</kbd> open
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded-sm border border-line bg-surface px-1 font-mono">esc</kbd> close
-          </span>
-        </div>
-      </div>
-    </Command.Dialog>
-  );
+  return <Command.Dialog open={open} onOpenChange={onOpenChange} label="Global search" className="fixed inset-0 z-[90]" shouldFilter={false}>
+    <div className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
+    <div className="fixed left-1/2 top-[10vh] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-surface shadow-dialog animate-scale-in">
+      <div className="flex items-center gap-2 border-b border-line px-4"><ArrowRight className="size-4 text-ink-3" aria-hidden /><Command.Input value={query} onValueChange={setQuery} placeholder="Member, phone, receipt, reference, page or action…" aria-label="Search RIVET" className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4" autoFocus /></div>
+      <Command.List className="max-h-[58vh] overflow-y-auto p-2">
+        {settledQuery.length >= 2 ? <>
+          {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">Searching across your workspace…</p> : null}
+          {search.isError ? <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger"><p>Workspace search is unavailable.</p><button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => { void search.refetch(); }}>Retry search</button></div> : null}
+          {!search.isLoading && !search.isError && search.data?.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">No records, receipts, pages, or actions match “{settledQuery}”.</p> : null}
+          {Object.entries(grouped).map(([kind, results]) => <Command.Group key={kind} heading={<GroupHeading>{groupLabels[kind] ?? kind}</GroupHeading>}>{results.map((result) => <PaletteItem key={`${result.kind}-${result.id}`} onSelect={() => go(result)} icon={result.kind === "receipt" ? ReceiptText : result.kind === "lead" ? UserPlus : result.kind === "member" ? Users : result.kind === "action" ? Star : ArrowRight} title={result.title} subtitle={result.subtitle} trailing={<Badge variant="outline">{result.kind}</Badge>} />)}</Command.Group>)}
+        </> : <>
+          {(pins.data?.length ?? 0) > 0 ? <Command.Group heading={<GroupHeading>Pinned</GroupHeading>}>{pins.data?.map((item) => <PaletteItem key={item.id} onSelect={() => go({ kind: "action", id: item.targetKey, title: item.label, href: item.href })} icon={Star} title={item.label} subtitle="Pinned action" trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={`Unpin ${item.label}`} onClick={(event) => { event.stopPropagation(); unpin.mutate(item.id); }}><StarOff className="size-3.5" /></button>} />)}</Command.Group> : null}
+          <Command.Group heading={<GroupHeading>Quick actions</GroupHeading>}>{quickActions.map((item) => { const pinned = pinnedByTarget.get(item.id); return <PaletteItem key={item.id} onSelect={() => go({ kind: "action", ...item })} icon={item.icon} title={item.title} subtitle={item.subtitle} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={pinned ? `Unpin ${item.title}` : `Pin ${item.title}`} onClick={(event) => { event.stopPropagation(); if (pinned) unpin.mutate(pinned.id); else pin.mutate({ targetKey: item.id, kind: "action", label: item.title, href: item.href }); }}>{pinned ? <StarOff className="size-3.5" /> : <Star className="size-3.5" />}</button>} />; })}</Command.Group>
+          {(recents.data?.length ?? 0) > 0 ? <Command.Group heading={<div className="flex items-center justify-between"><GroupHeading>Recent</GroupHeading><button type="button" className="px-2 pt-2 text-[10.5px] text-ink-3 hover:text-ink" onClick={() => clearRecents.mutate()}>Clear</button></div>}>{recents.data?.map((item) => <PaletteItem key={`${item.kind}-${item.id}`} onSelect={() => go(item)} icon={Clock3} title={item.title} subtitle={item.subtitle} trailing={<Badge variant="outline">{item.kind}</Badge>} />)}</Command.Group> : null}
+          <Command.Group heading={<GroupHeading>Go to</GroupHeading>}>{pages.map((page) => <PaletteItem key={page.href} onSelect={() => go({ kind: "page", ...page })} icon={page.icon} title={page.title} subtitle={page.subtitle} />)}</Command.Group>
+        </>}
+      </Command.List>
+      <div className="flex items-center gap-4 border-t border-line bg-paper/70 px-4 py-2 text-[11px] text-ink-3"><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">↑↓</kbd> navigate</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">⏎</kbd> open</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">esc</kbd> close</span></div>
+    </div>
+  </Command.Dialog>;
 }
 
-/**
- * The command palette is a convenience surface, but it must use the same
- * entitlement boundary as the sidebar. Keep this predicate exported so the
- * two-gate rule can be regression-tested without mounting cmdk.
- */
-export function canOpenManagementLedgerFromSession(
-  session: Pick<Session, "permissions" | "workspace"> | undefined,
-): boolean {
-  return Boolean(
-    session?.permissions.includes("reports.financial.read") &&
-      session.workspace?.modules.some((module) => module.key === "reporting" && module.entitled && module.enabled),
-  );
+export function canOpenManagementLedgerFromSession(session: Pick<Session, "permissions" | "workspace"> | undefined): boolean {
+  return Boolean(session?.permissions.includes("reports.financial.read") && session.workspace?.modules.some((module) => module.key === "reporting" && module.entitled && module.enabled));
 }
 
-function GroupHeading({ children }: { children: React.ReactNode }) {
-  return <span className="eyebrow block px-2 pb-1 pt-2">{children}</span>;
-}
+function GroupHeading({ children }: { children: React.ReactNode }) { return <span className="eyebrow block px-2 pb-1 pt-2">{children}</span>; }
 
-function PaletteItem({ children, onSelect }: { children: React.ReactNode; onSelect: () => void }) {
-  return (
-    <Command.Item
-      onSelect={onSelect}
-      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink outline-none data-[selected=true]:bg-sunken"
-    >
-      {children}
-    </Command.Item>
-  );
+function PaletteItem({ icon: Icon, title, subtitle, trailing, onSelect }: { icon: React.ComponentType<{ className?: string }>; title: string; subtitle?: string; trailing?: React.ReactNode; onSelect: () => void }) {
+  return <Command.Item onSelect={onSelect} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink outline-none data-[selected=true]:bg-sunken"><Icon className="size-4 shrink-0 text-ink-3" /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{title}</span>{subtitle ? <span className="block truncate text-[11px] text-ink-3">{subtitle}</span> : null}</span>{trailing}</Command.Item>;
 }

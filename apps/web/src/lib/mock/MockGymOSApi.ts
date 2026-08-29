@@ -694,6 +694,8 @@ export class MockGymOSApi implements GymOSApi {
   private onboardingProgress = new Map<import("@/lib/domain/qol").OnboardingAudience, import("@/lib/domain/qol").OnboardingProgress>();
   private pushSubscriptions: import("@/lib/domain/qol").PushSubscriptionSummary[] = [];
   private exportJobs: import("@/lib/domain/qol").ExportJob[] = [];
+  private recentWorkspaceItems: import("@/lib/domain/qol").RecentWorkspaceItem[] = [];
+  private pinnedWorkspaceItems: import("@/lib/domain/qol").PinnedWorkspaceItem[] = [];
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -7790,6 +7792,26 @@ export class MockGymOSApi implements GymOSApi {
       return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: 1, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
     });
   }
+
+  searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> {
+    return this.respond(() => {
+      const query = search.trim().toLocaleLowerCase();
+      if (query.length < 2) return [];
+      const permissions = permissionsFor(this.db, currentRole(this.db));
+      const results: import("@/lib/domain/qol").WorkspaceSearchResult[] = [];
+      if (permissions.includes("members.read")) results.push(...this.db.members.filter((item) => [item.fullName, item.memberNumber, item.phone].some((value) => value.toLocaleLowerCase().includes(query))).slice(0, 6).map((item) => ({ kind: "member" as const, id: item.id, title: item.fullName, subtitle: `${item.memberNumber} · ${item.phone}`, href: `/members/${item.id}` })));
+      if (permissions.includes("crm.read")) results.push(...this.db.leads.filter((item) => [item.fullName, item.phone, item.email].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "lead" as const, id: item.id, title: item.fullName, subtitle: `${item.stage} · ${item.phone}`, href: `/crm/leads/${item.id}` })));
+      if (permissions.includes("reports.financial.read")) results.push(...this.db.payments.filter((item) => [item.receiptNumber, item.externalReference].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "receipt" as const, id: item.receiptId, title: item.receiptNumber, subtitle: `${this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member"} · ${item.status}`, href: `/payments/receipts/${item.receiptId}` })));
+      return results;
+    });
+  }
+
+  listRecentWorkspaceItems(): Promise<import("@/lib/domain/qol").RecentWorkspaceItem[]> { return this.respond(() => this.recentWorkspaceItems.map((item) => ({ ...item }))); }
+  recordRecentWorkspaceItem(item: Omit<import("@/lib/domain/qol").RecentWorkspaceItem, "viewedAt">): Promise<void> { return this.respond(() => { this.recentWorkspaceItems = [{ ...item, viewedAt: nowISO() }, ...this.recentWorkspaceItems.filter((candidate) => !(candidate.kind === item.kind && candidate.id === item.id))].slice(0, 12); }); }
+  clearRecentWorkspaceItems(): Promise<void> { return this.respond(() => { this.recentWorkspaceItems = []; }); }
+  listPinnedWorkspaceItems(): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem[]> { return this.respond(() => this.pinnedWorkspaceItems.map((item) => ({ ...item }))); }
+  pinWorkspaceItem(item: Omit<import("@/lib/domain/qol").PinnedWorkspaceItem, "id" | "position" | "createdAt"> & { position?: number }): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem> { return this.respond(() => { const existing = this.pinnedWorkspaceItems.find((candidate) => candidate.targetKey === item.targetKey); if (existing) { Object.assign(existing, item); return { ...existing }; } const created = { ...item, id: mockUuid(), position: item.position ?? this.pinnedWorkspaceItems.length, createdAt: nowISO() }; this.pinnedWorkspaceItems.push(created); return { ...created }; }); }
+  unpinWorkspaceItem(id: T.UUID): Promise<void> { return this.respond(() => { this.pinnedWorkspaceItems = this.pinnedWorkspaceItems.filter((item) => item.id !== id); }); }
 
   // -------------------------------------------------------------------------
   // audit

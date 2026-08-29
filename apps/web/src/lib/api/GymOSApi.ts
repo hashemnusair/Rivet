@@ -138,6 +138,9 @@ import type {
   AutomationMonitoringSummary,
   ExportJob,
   ExportRequestInput,
+  WorkspaceSearchResult,
+  RecentWorkspaceItem,
+  PinnedWorkspaceItem,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -972,6 +975,13 @@ export interface GymOSApi {
   requestExport(input: ExportRequestInput): Promise<ExportJob>;
   listExportJobs(): Promise<ExportJob[]>;
   requestMemberPersonalDataExport(idempotencyKey: string): Promise<ExportJob>;
+  searchWorkspace(query: string): Promise<WorkspaceSearchResult[]>;
+  listRecentWorkspaceItems(): Promise<RecentWorkspaceItem[]>;
+  recordRecentWorkspaceItem(item: Omit<RecentWorkspaceItem, "viewedAt">): Promise<void>;
+  clearRecentWorkspaceItems(): Promise<void>;
+  listPinnedWorkspaceItems(): Promise<PinnedWorkspaceItem[]>;
+  pinWorkspaceItem(item: Omit<PinnedWorkspaceItem, "id" | "position" | "createdAt"> & { position?: number }): Promise<PinnedWorkspaceItem>;
+  unpinWorkspaceItem(id: UUID): Promise<void>;
 
   // Audit
   listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>;
