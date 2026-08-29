@@ -1635,6 +1635,19 @@ describe("CRM", () => {
     expect(detail.activities.some((a) => a.type === "call_attempt")).toBe(true);
   });
 
+  it("requires and audits the real reason for a terminal not-sold outcome", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Reason Gate Lead", phone: "+962799000451", branchId: session.branches[0]!.id, source: "walk_in" });
+
+    await expect(api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const closed = await api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost", notes: "Membership price is outside the prospect's budget" });
+
+    expect(closed).toMatchObject({ stage: "lost", lostReason: "Membership price is outside the prospect's budget", nextFollowUpAt: undefined });
+    expect(closed.activities).toContainEqual(expect.objectContaining({ type: "call_attempt", body: "Membership price is outside the prospect's budget" }));
+    const audit = await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 });
+    expect(audit.items).toContainEqual(expect.objectContaining({ action: "lead.lost", reason: "Membership price is outside the prospect's budget" }));
+  });
+
   it("keeps offers as drafts until delivery is explicitly confirmed", async () => {
     const session = await api.getSession();
     const lead = await api.createLead({

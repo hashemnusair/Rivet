@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -60,7 +61,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       phone: "",
       email: "",
       branchId: activeBranchId,
-      source: "instagram",
+      source: "walk_in",
       ownerId: session?.user.id,
       expectedValue: "",
       nextFollowUp: "",
@@ -75,7 +76,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         phone: "",
         email: "",
         branchId: activeBranchId,
-        source: "instagram",
+        source: "walk_in",
         ownerId: session?.user.id,
         expectedValue: "",
         nextFollowUp: "",
@@ -135,84 +136,95 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <Input dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
               </Field>
             </div>
-            <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
-              <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Branch" required error={form.formState.errors.branchId?.message}>
-                <Controller
-                  control={form.control}
-                  name="branchId"
-                  render={({ field }) => (
-                    <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
-                      <SelectTrigger aria-label="Branch">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Choose branch</SelectItem>
-                        {session?.branches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </Field>
-              <Field label="Source">
-                <Controller
-                  control={form.control}
-                  name="source"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Source">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(LEAD_SOURCE_LABELS).map(([k, label]) => (
-                          <SelectItem key={k} value={k}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </Field>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Owner">
-                <Controller
-                  control={form.control}
-                  name="ownerId"
-                  render={({ field }) => (
-                    <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || "unassigned")}>
-                      <SelectTrigger aria-label="Owner">
-                        <SelectValue placeholder="Unassigned" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                        {ownerOptions.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </Field>
-              <Field label="Expected value (JOD)">
-                <Input inputMode="decimal" placeholder="105.000" {...form.register("expectedValue")} />
-              </Field>
-              <Field label="First follow-up">
-                <Input type="date" {...form.register("nextFollowUp")} />
-              </Field>
-            </div>
-            <Field label="Notes">
-              <Textarea placeholder="What did they ask about?" {...form.register("notes")} />
-            </Field>
+            <details className="group rounded-md border border-line bg-sunken/25" open={!activeBranchId || undefined}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-[13px] font-medium text-ink-2">
+                <span>
+                  Add optional details
+                  <span className="ms-2 font-normal text-ink-3">Walk-in · assigned to you</span>
+                </span>
+                <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="space-y-4 border-t border-line p-3">
+                <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
+                  <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Branch" required error={form.formState.errors.branchId?.message}>
+                    <Controller
+                      control={form.control}
+                      name="branchId"
+                      render={({ field }) => (
+                        <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                          <SelectTrigger aria-label="Branch">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Choose branch</SelectItem>
+                            {session?.branches.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                  <Field label="Source">
+                    <Controller
+                      control={form.control}
+                      name="source"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Source">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(LEAD_SOURCE_LABELS).map(([k, label]) => (
+                              <SelectItem key={k} value={k}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <Field label="Owner">
+                    <Controller
+                      control={form.control}
+                      name="ownerId"
+                      render={({ field }) => (
+                        <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || "unassigned")}>
+                          <SelectTrigger aria-label="Owner">
+                            <SelectValue placeholder="Unassigned" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {ownerOptions.map((u) => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </Field>
+                  <Field label="Expected value (JOD)">
+                    <Input inputMode="decimal" placeholder="105.000" {...form.register("expectedValue")} />
+                  </Field>
+                  <Field label="First follow-up">
+                    <Input type="date" {...form.register("nextFollowUp")} />
+                  </Field>
+                </div>
+                <Field label="Notes">
+                  <Textarea placeholder="What did they ask about?" {...form.register("notes")} />
+                </Field>
+              </div>
+            </details>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}

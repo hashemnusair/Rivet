@@ -143,6 +143,25 @@ describe("CRM lead identity and assignment integrity", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("leads.update_contact", { leadId: "crm-integrity-lead", fullName: "Corrected Lead", phone: "+962790001009", email: "bad" })), "VALIDATION_ERROR");
   });
 
+  it("requires, persists, and audits a terminal not-sold reason", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+
+    await expectCode(owner.mutation(api.domain.mutate, operation("leads.contact", { leadId: "crm-integrity-lead", outcome: "answered_not_interested", stage: "lost" })), "VALIDATION_ERROR");
+    const closed = await owner.mutation(api.domain.mutate, operation("leads.contact", {
+      leadId: "crm-integrity-lead",
+      outcome: "answered_not_interested",
+      stage: "lost",
+      notes: "Chose another gym closer to home",
+    })) as { stage: string; lostReason?: string; activities: Array<{ type: string; body?: string }> };
+
+    expect(closed).toMatchObject({ stage: "lost", lostReason: "Chose another gym closer to home" });
+    expect(closed.activities).toContainEqual(expect.objectContaining({ type: "call_attempt", body: "Chose another gym closer to home" }));
+    const audit = await owner.query(api.domain.query, operation("audit.list", { category: "crm", entityId: "crm-integrity-lead", pageSize: 20 })) as { items: Array<{ action: string; reason?: string }> };
+    expect(audit.items).toContainEqual(expect.objectContaining({ action: "lead.lost", reason: "Chose another gym closer to home" }));
+  });
+
   it("projects persisted CRM events into summaries and the dashboard funnel", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

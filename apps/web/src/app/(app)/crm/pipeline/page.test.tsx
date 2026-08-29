@@ -7,7 +7,9 @@ import PipelinePage from "./page";
 
 const state = vi.hoisted(() => ({
   queryKey: undefined as unknown,
-  mutation: undefined as ReturnType<typeof vi.fn> | undefined,
+  moveMutation: vi.fn(),
+  closeMutation: vi.fn(),
+  mutationHookCall: 0,
 }));
 
 const lead = {
@@ -41,8 +43,8 @@ vi.mock("@/lib/hooks/use-debounced", () => ({
 vi.mock("@/lib/hooks/use-api", () => ({
   useApiQuery: () => ({ data: { modules: [{ key: "revenue", entitled: true, enabled: true }] }, isLoading: false, error: undefined, refetch: vi.fn() }),
   useApiMutation: () => {
-    state.mutation = vi.fn();
-    return { mutate: state.mutation, isPending: false };
+    const mutation = state.mutationHookCall++ % 2 === 0 ? state.moveMutation : state.closeMutation;
+    return { mutate: mutation, isPending: false };
   },
   useInvalidate: () => vi.fn(async () => undefined),
 }));
@@ -61,8 +63,12 @@ vi.mock("@/features/crm/new-lead-dialog", () => ({
 describe("CRM pipeline semantics", () => {
   beforeEach(() => {
     state.queryKey = undefined;
-    state.mutation = undefined;
+    state.mutationHookCall = 0;
+    state.moveMutation.mockReset();
+    state.closeMutation.mockReset();
     vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    vi.stubGlobal("ResizeObserver", class ResizeObserver { observe() {} unobserve() {} disconnect() {} });
+    HTMLElement.prototype.scrollIntoView = () => undefined;
   });
 
   it("keys the active-stage query with the actual lead query and renders cards as links", async () => {
@@ -77,8 +83,10 @@ describe("CRM pipeline semantics", () => {
     }));
     expect(screen.getByRole("group", { name: "Lead view" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("link", { name: "Pipeline Lead, Trial" })).toHaveAttribute("href", "/crm/leads/lead-1");
-    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Pipeline Lead" })).toHaveAttribute("href", "/crm/leads/lead-1");
+    expect(screen.getByRole("article", { name: "Pipeline Lead, Trial" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "No answer for Pipeline Lead" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark Pipeline Lead not sold" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Membership sold" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Membership not sold" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Did not answer" })).toBeInTheDocument();
@@ -93,10 +101,11 @@ describe("CRM pipeline semantics", () => {
     expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("moves a lead through the outcome columns with native drag and drop", () => {
+  it("requires a reason when a lead is dropped into the terminal not-sold column", async () => {
+    const user = userEvent.setup();
     render(<PipelinePage />);
 
-    const card = screen.getByRole("link", { name: "Pipeline Lead, Trial" });
+    const card = screen.getByRole("article", { name: "Pipeline Lead, Trial" });
     const target = screen.getByRole("region", { name: "Membership not sold" });
     const dataTransfer = {
       effectAllowed: "",
@@ -107,6 +116,19 @@ describe("CRM pipeline semantics", () => {
     fireEvent.dragStart(card, { dataTransfer });
     fireEvent.drop(target, { dataTransfer });
 
-    expect(state.mutation).toHaveBeenCalledWith({ lead, target: "not_sold" });
+    expect(await screen.findByRole("dialog", { name: "Mark membership as not sold?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark not sold" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Reason"), "Price was outside the prospect's budget");
+    await user.click(screen.getByRole("button", { name: "Mark not sold" }));
+    expect(state.closeMutation).toHaveBeenCalledWith({ lead, reason: "Price was outside the prospect's budget" });
+    expect(state.moveMutation).not.toHaveBeenCalled();
+  });
+
+  it("offers a one-tap no-answer action without closing the lead", async () => {
+    const user = userEvent.setup();
+    render(<PipelinePage />);
+
+    await user.click(screen.getByRole("button", { name: "No answer for Pipeline Lead" }));
+    expect(state.moveMutation).toHaveBeenCalledWith({ lead, target: "no_answer" });
   });
 });

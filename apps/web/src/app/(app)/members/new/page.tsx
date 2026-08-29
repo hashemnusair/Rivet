@@ -1,9 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronDown, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -11,7 +11,7 @@ import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import type { DuplicateMatch, LeadSource } from "@/lib/domain/types";
-import { useApp } from "@/lib/providers/app-providers";
+import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,9 @@ type FormValues = z.infer<typeof schema>;
 
 export default function NewMemberPage() {
   const { session } = useApp();
+  const { can } = usePermissions();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const invalidate = useInvalidate();
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
   const [checkingDupes, setCheckingDupes] = useState(false);
@@ -57,11 +59,12 @@ export default function NewMemberPage() {
   const [duplicateCheckOverride, setDuplicateCheckOverride] = useState(false);
   const duplicateCheckRequest = useRef(0);
   const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? "";
+  const prefilledName = searchParams.get("name")?.trim().slice(0, 120) ?? "";
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      fullName: "",
+      fullName: prefilledName,
       fullNameAr: "",
       phone: "",
       email: "",
@@ -97,13 +100,6 @@ export default function NewMemberPage() {
         marketingOptIn: values.marketingOptIn,
         marketingPreferenceSource: values.marketingPreferenceSource,
       }),
-    {
-      onSuccess: async (result) => {
-        await invalidate();
-        toast.success(`${result.member.fullName} added — ${result.member.memberNumber}.`);
-        router.push(`/members/${result.member.id}`);
-      },
-    },
   );
 
   const checkDuplicates = async () => {
@@ -138,6 +134,27 @@ export default function NewMemberPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const phoneField = form.register("phone");
   const emailField = form.register("email");
+
+  const submitMember = async (values: FormValues, sellMembership: boolean) => {
+    setErrorMsg(null);
+    if (duplicateCheckError && !duplicateCheckOverride) {
+      setErrorMsg("Retry the duplicate check or choose “Continue without pre-check” before saving.");
+      return;
+    }
+    try {
+      const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
+      if (!selectedBranchId) {
+        form.setError("homeBranchId", { message: "Choose a visible branch" });
+        return;
+      }
+      const result = await createMember.mutateAsync({ ...values, homeBranchId: selectedBranchId });
+      await invalidate();
+      toast.success(`${result.member.fullName} added — ${result.member.memberNumber}.`);
+      router.push(`/members/${result.member.id}${sellMembership ? "?sell=1" : ""}`);
+    } catch (error) {
+      setErrorMsg(isApiError(error) ? error.message : "Could not create the member.");
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) router.push("/members"); }}>
@@ -183,23 +200,7 @@ export default function NewMemberPage() {
       ) : null}
 
       <form
-        onSubmit={form.handleSubmit(async (values) => {
-          setErrorMsg(null);
-          if (duplicateCheckError && !duplicateCheckOverride) {
-            setErrorMsg("Retry the duplicate check or choose “Continue without pre-check” before saving.");
-            return;
-          }
-          try {
-            const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
-            if (!selectedBranchId) {
-              form.setError("homeBranchId", { message: "Choose a visible branch" });
-              return;
-            }
-            await createMember.mutateAsync({ ...values, homeBranchId: selectedBranchId });
-          } catch (e) {
-            setErrorMsg(isApiError(e) ? e.message : "Could not create the member.");
-          }
-        })}
+        onSubmit={form.handleSubmit((values) => submitMember(values, false))}
         className="space-y-5"
       >
         <section className="panel p-5">
@@ -265,7 +266,16 @@ export default function NewMemberPage() {
           ) : null}
         </section>
 
-        <section className="panel p-5">
+        <details className="group panel overflow-hidden" open={!activeBranchId || undefined}>
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 text-[13px] font-medium text-ink-2">
+            <span>
+              Add membership context, emergency contact or notes
+              <span className="ms-2 font-normal text-ink-3">Optional · branch and language already selected</span>
+            </span>
+            <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="space-y-5 border-t border-line p-5">
+          <section>
           <h2 className="mb-4 font-display text-[15px] font-semibold">Membership context</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Home branch" required error={form.formState.errors.homeBranchId?.message}>
@@ -337,7 +347,7 @@ export default function NewMemberPage() {
           </div>
         </section>
 
-        <section className="panel p-5">
+        <section className="border-t border-line pt-5">
           <h2 className="mb-4 font-display text-[15px] font-semibold">Emergency & notes</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Emergency contact name">
@@ -362,15 +372,22 @@ export default function NewMemberPage() {
             />
           </label>
         </section>
+          </div>
+        </details>
 
         <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
           {errorMsg ? <p role="alert" className="me-auto text-[13px] text-danger">{errorMsg}</p> : null}
           <Button asChild variant="secondary">
             <Link href="/members">Cancel</Link>
           </Button>
-          <Button type="submit" loading={createMember.isPending} data-testid="save-member">
+          <Button type="submit" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} data-testid="save-member">
             Create member
           </Button>
+          {can("memberships.sell") ? (
+            <Button type="button" loading={createMember.isPending} onClick={form.handleSubmit((values) => submitMember(values, true))} data-testid="save-member-and-sell">
+              <WalletCards /> Create &amp; sell membership
+            </Button>
+          ) : null}
         </div>
       </form>
         </div>

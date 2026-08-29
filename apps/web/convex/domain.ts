@@ -7634,8 +7634,35 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const current = data(record.data);
-      const updatedLead = await patchRecord(ctx, actor, record, { ...(input.stage ? { stage: input.stage } : { stage: current.stage === "new" ? "attempted" : current.stage }), ...(input.nextFollowUpAt !== undefined ? { nextFollowUpAt: input.nextFollowUpAt || undefined } : {}), updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: `Call — ${stringValue(input.outcome).replaceAll("_", " ")}`, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      const nextStage = optionalString(input.stage) ?? (current.stage === "new" ? "attempted" : stringValue(current.stage));
+      const notes = optionalString(input.notes)?.trim();
+      if (nextStage === "lost" && (!notes || notes.length < 5)) {
+        domainError("VALIDATION_ERROR", "A specific reason is required before closing a lead.", { correlationId: actor.correlationId });
+      }
+      const updatedLead = await patchRecord(ctx, actor, record, {
+        stage: nextStage,
+        ...(nextStage === "lost"
+          ? { lostReason: notes, nextFollowUpAt: undefined }
+          : input.nextFollowUpAt !== undefined
+            ? { nextFollowUpAt: input.nextFollowUpAt || undefined }
+            : {}),
+        updatedAt: isoNow(),
+      });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: `Call — ${stringValue(input.outcome).replaceAll("_", " ")}`, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      if (nextStage === "lost") {
+        await insertAudit(ctx, actor, {
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: record.publicId,
+          entityLabel: stringValue(current.fullName),
+          summary: "Lead marked as not sold",
+          reason: notes,
+          before: { stage: stringValue(current.stage), lostReason: optionalString(current.lostReason) ?? null },
+          after: { stage: "lost", lostReason: notes ?? null },
+          branchId: optionalString(current.branchId),
+        });
+      }
       const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers: [] };
     }

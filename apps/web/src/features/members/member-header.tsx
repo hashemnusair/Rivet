@@ -1,7 +1,7 @@
 "use client";
 
 import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, Trash2, WalletCards } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
@@ -46,8 +46,9 @@ export function MemberHeader({
   const { can } = usePermissions();
   const { session } = useApp();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const invalidate = useInvalidate();
-  const [dialog, setDialog] = useState<DialogKind>(null);
+  const [dialog, setDialog] = useState<DialogKind>(() => searchParams.get("sell") === "1" && !currentMembership ? "sell" : null);
   const [archiveReason, setArchiveReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");

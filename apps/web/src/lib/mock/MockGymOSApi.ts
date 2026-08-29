@@ -4848,9 +4848,17 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const lossReason = input.stage === "lost" ? input.notes?.trim() : undefined;
+      if (input.stage === "lost" && (!lossReason || lossReason.length < 5)) {
+        throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
+      }
+      const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
       if (input.stage) lead.stage = input.stage;
       else if (lead.stage === "new") lead.stage = "attempted";
-      if (input.nextFollowUpAt !== undefined) lead.nextFollowUpAt = input.nextFollowUpAt || undefined;
+      if (input.stage === "lost") {
+        lead.lostReason = lossReason;
+        lead.nextFollowUpAt = undefined;
+      } else if (input.nextFollowUpAt !== undefined) lead.nextFollowUpAt = input.nextFollowUpAt || undefined;
       lead.updatedAt = nowISO();
       const outcomeLabels: Record<T.ContactOutcome, string> = {
         no_answer: "No answer",
@@ -4871,6 +4879,20 @@ export class MockGymOSApi implements GymOSApi {
         actorName: this.actor().name,
         meta: { outcome: input.outcome },
       });
+      if (input.stage === "lost") {
+        this.audit({
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: lead.id,
+          entityLabel: lead.fullName,
+          summary: "Lead marked as not sold",
+          reason: lossReason,
+          before,
+          after: { stage: "lost", lostReason: lossReason ?? null },
+          branchId: lead.branchId,
+        });
+      }
       return this.getLeadSync(leadId);
     });
   }
