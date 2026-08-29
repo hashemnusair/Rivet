@@ -7,7 +7,7 @@ import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { CashShift, UUID } from "@/lib/domain/types";
+import type { CashShift, ShiftTotals, UUID } from "@/lib/domain/types";
 import { formatDateTime } from "@/lib/utils/dates";
 import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
@@ -16,6 +16,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { ErrorState } from "@/components/ui/states";
 
 // ---------------------------------------------------------------------------
 // Open shift
@@ -107,6 +108,14 @@ const DENOMS: Array<{ label: string; minor: number }> = [
   { label: "0.10", minor: 100 },
 ];
 
+export function authoritativeExpectedCash(
+  shift: CashShift,
+  current: { shift: CashShift; totals: ShiftTotals } | null | undefined,
+): number | undefined {
+  if (!current || current.shift.id !== shift.id || current.shift.status !== "open") return undefined;
+  return shift.openingFloat.amount + current.totals.cashPayments.amount - current.totals.cashRefunds.amount;
+}
+
 export function CloseShiftDialog({
   open,
   onOpenChange,
@@ -139,12 +148,8 @@ export function CloseShiftDialog({
     () => DENOMS.reduce((sum, d) => sum + (counts[d.label] ?? 0) * d.minor, 0),
     [counts],
   );
-  const expected = useMemo(() => {
-    const totals = totalsQuery.data?.totals;
-    if (!totals) return shift.openingFloat.amount;
-    return shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount;
-  }, [totalsQuery.data, shift.openingFloat.amount]);
-  const variance = counted - expected;
+  const expected = useMemo(() => authoritativeExpectedCash(shift, totalsQuery.data), [shift, totalsQuery.data]);
+  const variance = expected === undefined ? undefined : counted - expected;
 
   const mutation = useApiMutation(
     (api) =>
@@ -162,7 +167,8 @@ export function CloseShiftDialog({
     },
   );
 
-  const totals = totalsQuery.data?.totals;
+  const totals = expected === undefined ? undefined : totalsQuery.data?.totals;
+  const totalsUnavailable = !totalsQuery.isLoading && !totalsQuery.isError && expected === undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,11 +182,14 @@ export function CloseShiftDialog({
         <DialogBody className="space-y-4">
           {/* Expected story */}
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
-            <ExpectCell label="Float" minor={shift.openingFloat.amount} />
-            <ExpectCell label="Cash in" minor={totals?.cashPayments.amount ?? 0} sign="+" />
-            <ExpectCell label="Cash refunds" minor={totals?.cashRefunds.amount ?? 0} sign="−" />
+            <ExpectCell label="Float" minor={expected === undefined ? undefined : shift.openingFloat.amount} />
+            <ExpectCell label="Cash in" minor={totals?.cashPayments.amount} sign="+" />
+            <ExpectCell label="Cash refunds" minor={totals?.cashRefunds.amount} sign="−" />
             <ExpectCell label="Expected" minor={expected} strong />
           </div>
+          {totalsQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Loading authoritative shift totals…</p> : null}
+          {totalsQuery.isError ? <ErrorState title="Shift totals could not be loaded" description="The shift cannot close until RIVET reloads the server totals." onRetry={() => { void totalsQuery.refetch(); }} /> : null}
+          {totalsUnavailable ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5 text-[12.5px] text-warning-deep">This shift is no longer the branch&apos;s open shift. Close this dialog and refresh before continuing.</p> : null}
           {totals ? (
             <p className="text-[11.5px] text-ink-3 tabular">
               {totals.paymentCount} payments this shift · card <MoneyText money={totals.cardPayments} hideCurrency /> · transfers{" "}
@@ -214,22 +223,22 @@ export function CloseShiftDialog({
           <div
             className={cn(
               "flex items-center justify-between rounded-md border px-4 py-3",
-              variance === 0 ? "border-success/40 bg-success-bg/60" : "border-warning/50 bg-warning-bg/60",
+              variance === undefined ? "border-line bg-sunken/40" : variance === 0 ? "border-success/40 bg-success-bg/60" : "border-warning/50 bg-warning-bg/60",
             )}
             data-testid="variance-panel"
           >
             <div>
               <p className="text-[12px] text-ink-2">
                 Counted <MoneyText money={money(counted)} className="font-semibold" /> against expected{" "}
-                <MoneyText money={money(expected)} className="font-semibold" />
+                {expected === undefined ? <strong className="font-semibold">server totals</strong> : <MoneyText money={money(expected)} className="font-semibold" />}
               </p>
-              <p className={cn("mt-0.5 text-[15px] font-semibold tabular", variance === 0 ? "text-success-deep" : "text-warning-deep")}>
-                {variance === 0 ? "Balanced — no variance" : `${variance > 0 ? "+" : "−"}${toMajor(money(Math.abs(variance))).toFixed(3)} JOD ${variance > 0 ? "over" : "short"}`}
+              <p className={cn("mt-0.5 text-[15px] font-semibold tabular", variance === undefined ? "text-ink-3" : variance === 0 ? "text-success-deep" : "text-warning-deep")}>
+                {variance === undefined ? "Waiting for authoritative totals" : variance === 0 ? "Balanced — no variance" : `${variance > 0 ? "+" : "−"}${toMajor(money(Math.abs(variance))).toFixed(3)} JOD ${variance > 0 ? "over" : "short"}`}
               </p>
             </div>
           </div>
 
-          {variance !== 0 ? (
+          {variance !== undefined && variance !== 0 ? (
             <Field label="Variance explanation" required hint="Goes to the manager's approval queue with the audit event.">
               <Textarea
                 rows={2}
@@ -249,6 +258,10 @@ export function CloseShiftDialog({
           <Button
             onClick={() => {
               setServerError(null);
+              if (expected === undefined || variance === undefined) {
+                setServerError("Wait for authoritative shift totals before closing.");
+                return;
+              }
               if (variance !== 0 && explanation.trim().length < 5) {
                 setServerError("Explain the variance before closing (min 5 characters).");
                 return;
@@ -256,6 +269,7 @@ export function CloseShiftDialog({
               mutation.mutate();
             }}
             loading={mutation.isPending}
+            disabled={expected === undefined}
             variant={variance === 0 ? "primary" : "signal"}
             data-testid="confirm-close-shift"
           >
@@ -267,13 +281,12 @@ export function CloseShiftDialog({
   );
 }
 
-function ExpectCell({ label, minor, sign, strong }: { label: string; minor: number; sign?: string; strong?: boolean }) {
+function ExpectCell({ label, minor, sign, strong }: { label: string; minor?: number; sign?: string; strong?: boolean }) {
   return (
     <div className="bg-surface px-3 py-2.5">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
       <p className={cn("mt-0.5 text-[14px] tabular", strong && "font-semibold")}>
-        {sign}
-        {toMajor(money(minor)).toFixed(3)}
+        {minor === undefined ? "—" : <>{sign}{toMajor(money(minor)).toFixed(3)}</>}
       </p>
     </div>
   );

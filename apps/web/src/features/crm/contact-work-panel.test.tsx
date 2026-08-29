@@ -8,6 +8,10 @@ vi.mock("@/lib/hooks/use-api", () => ({
   useInvalidate: () => vi.fn(),
 }));
 
+vi.mock("@/lib/providers/app-providers", () => ({
+  useApp: () => ({ session: { organization: { timezone: "Asia/Amman" } } }),
+}));
+
 describe("LogContactDialog", () => {
   it("opens the contact form in a centered accessible dialog", async () => {
     const user = userEvent.setup();

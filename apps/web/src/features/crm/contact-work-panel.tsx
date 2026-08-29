@@ -6,6 +6,8 @@ import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
+import { useApp } from "@/lib/providers/app-providers";
+import { localDateTimeToISO } from "@/lib/utils/dates";
 import type { ContactOutcome, LeadStage } from "@/lib/domain/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -63,6 +65,7 @@ export function LogContactForm({
   compact?: boolean;
 }) {
   const invalidate = useInvalidate();
+  const { session } = useApp();
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
@@ -77,7 +80,7 @@ export function LogContactForm({
       const input = {
         outcome: v.outcome as ContactOutcome,
         notes: v.notes || undefined,
-        nextFollowUpAt: v.nextFollowUp ? new Date(`${v.nextFollowUp}T10:00:00Z`).toISOString() : undefined,
+        nextFollowUpAt: v.nextFollowUp ? localDateTimeToISO(v.nextFollowUp, "10:00", session?.organization.timezone) : undefined,
         stage: subject === "lead" && v.stage ? (v.stage as LeadStage) : undefined,
       };
       return subject === "lead" ? api.logContactAttempt(leadId!, input) : api.logMemberContactAttempt(memberId!, input);

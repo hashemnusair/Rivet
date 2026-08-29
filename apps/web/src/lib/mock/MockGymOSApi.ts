@@ -59,7 +59,7 @@ import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/l
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
-import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
+import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
@@ -5901,8 +5901,7 @@ export class MockGymOSApi implements GymOSApi {
       if (query.type) items = items.filter((p) => p.type === query.type);
       const txFrom = query.from;
       const txTo = query.to;
-      if (txFrom) items = items.filter((p) => p.occurredAt >= txFrom);
-      if (txTo) items = items.filter((p) => p.occurredAt <= `${txTo}T23:59:59.999Z`);
+      if (txFrom || txTo) items = items.filter((p) => instantFallsInTenantDateRange(p.occurredAt, this.db.organization.timezone, txFrom, txTo));
       items = items.filter((p) => this.matchesSearch([p.memberName, p.memberNumber, p.receiptNumber], query.search));
       items = applySort(items, query.sort ?? "-occurredAt", (p, k) => (k === "occurredAt" ? p.occurredAt : p.amount.amount));
       return paginate(this.maybeEmpty(items), query);

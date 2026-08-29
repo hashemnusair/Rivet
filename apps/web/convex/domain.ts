@@ -58,6 +58,7 @@ import {
   normalizePhoneForStorage,
   phoneSearchMatches,
 } from "../src/lib/utils/contact";
+import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -4342,8 +4343,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.method) items = items.filter((item) => item.method === input.method);
       if (input.type) items = items.filter((item) => item.type === input.type);
-      if (input.from) items = items.filter((item) => stringValue(item.occurredAt) >= input.from);
-      if (input.to) items = items.filter((item) => stringValue(item.occurredAt) <= `${input.to}T23:59:59.999Z`);
+      const transactionTimezone = actor.organization.timezone || TZ_FALLBACK;
+      if (input.from || input.to) items = items.filter((item) => instantFallsInTenantDateRange(stringValue(item.occurredAt), transactionTimezone, optionalString(input.from), optionalString(input.to)));
       items = items.filter((item) => matchesSearch([item.memberName, item.memberNumber, item.receiptNumber], optionalString(input.search)));
       items = sortRecords(items, input.sort ?? "-occurredAt", (item, key) => key === "amount" ? amountOf(item.amount) : stringValue(item[key]));
       return page(items, input);

@@ -90,8 +90,31 @@ export function startOfDayInTz(date: string, tz: string = TENANT_TIMEZONE): Date
 }
 
 export function endOfDayInTz(date: string, tz: string = TENANT_TIMEZONE): Date {
-  const start = startOfDayInTz(date, tz);
-  return new Date(start.getTime() + 24 * 60 * 60_000 - 1);
+  return new Date(startOfDayInTz(addDays(date, 1), tz).getTime() - 1);
+}
+
+/** Convert a tenant-local form date/time into its UTC storage instant. */
+export function localDateTimeToISO(date: string, time: string, tz: string = TENANT_TIMEZONE): string {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const [hour, minute, second = 0] = time.split(":").map(Number) as [number, number, number?];
+  const wallClock = Date.UTC(year, month - 1, day, hour, minute, second);
+  let instant = wallClock;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const next = wallClock - timeZoneOffsetMinutes(tz, new Date(instant)) * 60_000;
+    if (next === instant) break;
+    instant = next;
+  }
+  return new Date(instant).toISOString();
+}
+
+export function instantFallsInTenantDateRange(
+  value: string | number | Date,
+  timezone: string,
+  from?: string,
+  to?: string,
+): boolean {
+  const date = todayISODate(timezone, value instanceof Date ? value : new Date(value));
+  return (!from || date >= from) && (!to || date <= to);
 }
 
 /** Add days to a YYYY-MM-DD date, staying in calendar space. */

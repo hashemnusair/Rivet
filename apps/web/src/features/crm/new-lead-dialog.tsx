@@ -12,6 +12,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { isValidLeadPhone, isValidOptionalEmail, normalizeOptionalEmail } from "@/lib/utils/contact";
 import { fromMajor } from "@/lib/utils/money";
+import { localDateTimeToISO } from "@/lib/utils/dates";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -98,7 +99,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         source: v.source as LeadSource,
         ownerId: v.ownerId || "unassigned",
         expectedValue: v.expectedValue ? fromMajor(Number(v.expectedValue)) : undefined,
-        nextFollowUpAt: v.nextFollowUp ? new Date(`${v.nextFollowUp}T10:00:00Z`).toISOString() : undefined,
+        nextFollowUpAt: v.nextFollowUp ? localDateTimeToISO(v.nextFollowUp, "10:00", session?.organization.timezone) : undefined,
         notes: v.notes || undefined,
       }),
     {

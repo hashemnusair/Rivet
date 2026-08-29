@@ -5,6 +5,8 @@ import {
   daysFromToday,
   diffDays,
   endOfDayInTz,
+  instantFallsInTenantDateRange,
+  localDateTimeToISO,
   partsInTimeZone,
   startOfDayInTz,
   todayISODate,
@@ -59,6 +61,17 @@ describe("tenant-local day boundaries", () => {
     const start = startOfDayInTz("2026-07-30", TENANT_TIMEZONE);
     const end = endOfDayInTz("2026-07-30", TENANT_TIMEZONE);
     expect(end.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000 - 1);
+  });
+
+  it("stores a tenant-local follow-up time as the correct UTC instant", () => {
+    expect(localDateTimeToISO("2026-08-29", "10:00", TENANT_TIMEZONE)).toBe("2026-08-29T07:00:00.000Z");
+    expect(localDateTimeToISO("2026-03-08", "10:00", "America/New_York")).toBe("2026-03-08T14:00:00.000Z");
+  });
+
+  it("filters UTC instants by the tenant's calendar day", () => {
+    const lateUtc = "2026-08-28T22:30:00.000Z";
+    expect(instantFallsInTenantDateRange(lateUtc, TENANT_TIMEZONE, "2026-08-29", "2026-08-29")).toBe(true);
+    expect(instantFallsInTenantDateRange(lateUtc, "UTC", "2026-08-29", "2026-08-29")).toBe(false);
   });
 
   it("measures days until an expiry date from the tenant's today", () => {

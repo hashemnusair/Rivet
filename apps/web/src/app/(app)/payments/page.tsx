@@ -40,11 +40,11 @@ export default function TransactionsPage() {
       method: method === "all" ? undefined : (method as TransactionListQuery["method"]),
       type: type === "all" ? undefined : (type as TransactionListQuery["type"]),
       branchId: session?.activeBranchId,
-      from: range === "all" ? undefined : addDays(todayISODate(), -Number(range)),
+      from: range === "all" ? undefined : addDays(todayISODate(session?.organization.timezone), -(Number(range) - 1)),
       page,
       pageSize: 20,
     }),
-    [debounced, method, type, session?.activeBranchId, range, page],
+    [debounced, method, type, session?.activeBranchId, session?.organization.timezone, range, page],
   );
 
   const { data, isLoading, isError, refetch } = useApiQuery(qk.transactions(query), (api) => api.listTransactions(query));
