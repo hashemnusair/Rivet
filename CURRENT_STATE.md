@@ -1,5 +1,65 @@
 # GymOS / RIVET current implementation state
 
+## Quality-of-life program — 30 August 2026
+
+- The approved quality-of-life program is implemented on
+  `codex/qol-implementation` in eleven focused application/test commits from
+  `0c6ea31` through `2016462`. The frozen `FRONTEND_HANDOFF.md` remains
+  unchanged and no provider, deployment, environment, or Production data was
+  touched.
+- Members now have an ownership-scoped financial center with balances,
+  itemized transaction history, status explanations, receipt deep links,
+  printable/downloadable receipts, and a self-service personal-data export.
+  Receipt and export authorization is enforced from the authenticated member
+  identity rather than a caller-supplied customer ID.
+- Members and CRM now preserve filters in shareable URLs and support private
+  saved views. Members have selectable columns and bounded, idempotent bulk
+  tag, branch, follow-up, and reason-gated archive work; CRM has selectable
+  list/board records and bounded owner/follow-up actions. Every operation
+  rechecks tenant, branch, permission, and record eligibility and reports
+  succeeded, skipped, and failed records.
+- `/members/duplicates` provides a tenant-scoped candidate queue, match reasons,
+  field-by-field survivor choices, an impact preview, optimistic version check,
+  reason-gated ignore/merge decisions, and immutable merge evidence. Completed
+  receipts, payments, ledger facts, and audit history are not rewritten;
+  linked history remains visible from the surviving member.
+- New owners, invited staff, and members receive versioned, persisted,
+  resumable, dismissible, and replayable guidance. Owner readiness derives
+  required operating progress from real organization, branch, payment, plan,
+  invitation, import, reception, shift, and public-profile state. Staff tours
+  are role/branch aware, and member guidance covers memberships, short-lived QR
+  entry, PT, profile ownership, finance, installation, and notifications.
+- The member app is installable. Its service worker caches only a versioned,
+  non-sensitive shell and offline assets; authenticated member, financial,
+  receipt, entry-decision, and QR requests are explicitly excluded. Install
+  prompting is user-initiated, notification subscription is explicit opt-in,
+  and the offline screen never claims a QR remains valid.
+- Automations now expose a read-only operational monitor with rules, global
+  pause state, provider readiness, expected next run, last result, and
+  suppressed/retried/failed activity. `RIVET_AUTOMATIONS_LIVE` must equal
+  `"true"` before create, update, run, or retry operations are permitted; this
+  batch did not enable it.
+- `/exports` provides audited, branch/permission-scoped CSV generation for
+  members, leads, payments/refunds/receipts/reconciliation, audit events,
+  membership liabilities, PT orders, and inventory/supplier operations.
+  Exports include filter/scope/timezone metadata, use idempotency keys, and
+  expire their inline download content after 24 hours.
+- Global navigation now searches permitted members, leads, receipts, pages,
+  and role actions, including phone fragments, receipt numbers, and external
+  references. It records bounded recent work, supports user-pinned quick
+  actions, and includes a keyboard-shortcuts reference opened with `?`.
+- Verification passed both TypeScript checks, zero-warning lint and the secret
+  audit, **161 Vitest files / 975 tests**, **14 repository-safety tests**, the
+  **57-route** Production build, **43 credential-free Playwright passes / 14
+  explicit staging-only skips / 0 failures**, `pnpm audit --prod` with no known
+  vulnerabilities, and `git diff --check`.
+- Intentionally deferred to the final pre-launch work: legal/commercial pages
+  and consent copy, full Arabic localization and language switching, and the
+  broad measured performance-optimization sprint. Online member payment,
+  renewal/purchase, live automation delivery, web-push delivery, and any
+  deployment/provider activation still require their separate policy and
+  operator gates.
+
 ## File-first member import and plain-language maintenance — 29 August 2026
 
 - A fresh GitHub fetch started from clean matching `main` and `origin/main` at

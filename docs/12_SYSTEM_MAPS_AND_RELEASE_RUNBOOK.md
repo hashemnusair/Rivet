@@ -1,8 +1,8 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-29 for the exact-target Production backend closure,
-active-owner/platform acceptance, public cleanup, recovery export, and the
-clean-tenant engagement/facilities feature batch.
+Last reviewed: 2026-08-30 for the quality-of-life implementation batch. The
+latest application work is local/review-branch only; the last recorded
+Production closure and deployment evidence remains dated 2026-08-29.
 
 ## Purpose
 
@@ -15,7 +15,48 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
-## Current repository state — 29 August 2026
+## Current repository state — 30 August 2026
+
+### Quality-of-life architecture batch — 30 August 2026
+
+- New private persistence is owned by the authenticated user and organization:
+  `userSavedViews`, `userOnboardingProgress`, `pushSubscriptions`,
+  `recentWorkspaceItems`, and `pinnedWorkspaceItems`. Bulk jobs, duplicate
+  cases/merge records, and export jobs use the existing bounded domain-record
+  storage pattern. Every adapter path remains behind `GymOSApi`; mock and
+  Convex implementations have parity coverage.
+- New staff routes are `/members/duplicates`, `/getting-started`, `/exports`,
+  and `/automations/[ruleId]`. New member routes are `/customer/finance`,
+  `/customer/receipts/[receiptId]`, and `/customer/getting-started`; `/offline`
+  is the intentionally non-sensitive offline fallback.
+- Saved views and onboarding progress are tenant/user scoped. Bulk work,
+  duplicate decisions, exports, workspace search, recents, and pinned actions
+  are permission and branch scoped at the server boundary. Duplicate merge
+  projections link history without changing completed payment, receipt,
+  accounting, or audit facts.
+- The service worker is served at `/sw.js`. Its allowlist contains the offline
+  and brand shell only; all authenticated, customer, finance, receipt, QR,
+  check-in, API, and Convex traffic is network-only. Push subscriptions store
+  user consent/readiness only; no delivery provider was activated.
+- Automation delivery remains fail-closed. The read-only monitor may expose
+  existing rules and execution facts, but create/update/manual-run/retry paths
+  require the server environment name `RIVET_AUTOMATIONS_LIVE` to equal
+  `"true"`. Keep it absent until provider configuration, consent, and release
+  approval are complete.
+- Export content is generated from authorized projections, includes generation
+  time, tenant timezone, branch scope, and applied filters, and is available
+  inline for at most 24 hours. Sensitive export requests produce immutable
+  audit evidence and do not place personal data in filenames or logs.
+- Local evidence at review-branch tip `2016462` passed both TypeScript checks,
+  lint/secret audit, 161 Vitest files / 975 tests, 14 repository-safety tests,
+  the 57-route Production build, 43 credential-free Playwright journeys with
+  14 explicitly staging-only skips, the production dependency audit, and the
+  diff check. No Convex/Vercel deploy, environment mutation, provider
+  activation, or Production tenant-data write was performed.
+- Release operators must still run the credentialed isolated-staging journeys
+  and the existing exact-target deploy/runbook gates before release. Legal and
+  commercial copy, full Arabic localization, and measured performance work are
+  intentionally reserved for final pre-launch closure.
 
 ### Clean-tenant engagement and operations batch — 29 August 2026
 

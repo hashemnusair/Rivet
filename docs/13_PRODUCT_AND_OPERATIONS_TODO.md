@@ -1,6 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 29 August 2026 for Production backend closure, owner/platform
+Updated 30 August 2026 for the complete quality-of-life implementation batch,
+in addition to the 29 August 2026 Production backend closure, owner/platform
 acceptance, public QA cleanup, the current recovery export, the Jordan-first
 workflow-hardening sprint, the unified Today queue, clean-tenant imports,
 international WhatsApp handoffs, branded offers, facilities QR work, and the
@@ -14,7 +15,47 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current release index — 29 August 2026
+## Current release index — 30 August 2026
+
+### Quality-of-life program completed locally on 30 August
+
+- [x] Add the member financial center, authenticated-member receipt recovery,
+  searchable/filterable history, outstanding and itemized charge explanations,
+  print/download, timeline links, and member personal-data export.
+- [x] Add URL-persistent member/CRM views, private saved views, column choices,
+  multi-select, and bounded idempotent bulk tagging, assignment, follow-up, and
+  reason-gated archive work with partial-result reporting and audit evidence.
+- [x] Add the duplicate queue and reasoned, version-checked merge workflow with
+  field choices, impact preview, immutable merge facts, safe redirection, and
+  linked history without rewriting financial or audit source records.
+- [x] Add persisted, versioned, resumable onboarding for owners, role/branch
+  aware staff, and members, including real owner-readiness checks, replay,
+  dismiss, keyboard-safe tutorials, install education, and notification
+  consent education.
+- [x] Make the member portal installable with an allowlisted non-sensitive
+  service worker, offline state, manifest shortcuts, user-initiated install,
+  and explicit notification subscription storage. QR and financial resources
+  remain network-only and no delivery provider was activated.
+- [x] Replace the Automations dead end with a read-only monitor for rules,
+  provider readiness, next/last execution, suppression, retry, and failure.
+  Keep all automation writes and delivery fail-closed behind
+  `RIVET_AUTOMATIONS_LIVE === "true"`.
+- [x] Add audited self-service CSV exports for members, CRM, finance,
+  reconciliation, audit, membership liabilities, PT, and operations with
+  branch/permission scope, metadata, idempotency, and 24-hour download expiry.
+- [x] Expand the command palette with workspace search across members, leads,
+  receipts, pages, and role actions, plus recent records, pinned actions,
+  phone/external-reference search, and a `?` keyboard reference.
+- [x] Verify 161 Vitest files / 975 tests, 14 repository-safety tests, both
+  TypeScript checks, zero-warning lint/secret audit, 57 generated Production
+  routes, 43 passed / 14 explicitly staging-only skipped Playwright journeys,
+  a clean production dependency audit, and `git diff --check`.
+- [ ] Run the credentialed isolated-staging journeys and normal exact-target
+  release/deployment procedure before promoting this branch. No deployment or
+  provider/environment change is part of this implementation task.
+- [ ] Complete legal/commercial pages and consent copy, full Arabic
+  localization/language switching, and the measured performance sprint during
+  final pre-launch closure, as explicitly deferred by the product owner.
 
 ### Jordan-first workflow hardening completed on 29 August
 
