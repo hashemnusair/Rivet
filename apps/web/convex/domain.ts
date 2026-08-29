@@ -2625,6 +2625,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         type: stringValue(item.type).startsWith("pt_") ? "pt" : stringValue(item.type).includes("payment") ? "payment" : "membership",
         title: stringValue(item.title, "Gym activity"),
         detail: optionalString(item.body),
+        href: optionalString(data(item.meta).receiptId) ? `/customer/receipts/${stringValue(data(item.meta).receiptId)}` : undefined,
         occurredAt: stringValue(item.occurredAt),
       })),
       ...paymentRows.map((row) => data(row.data)).filter((item) => item.memberId === memberId && item.status !== "voided").map((item) => ({
@@ -2632,6 +2633,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         type: "payment",
         title: "Payment recorded",
         detail: optionalString(item.method),
+        href: optionalString(item.receiptId) ? `/customer/receipts/${stringValue(item.receiptId)}` : undefined,
         occurredAt: stringValue(item.occurredAt, stringValue(item.createdAt)),
       })),
     ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 100);
@@ -2694,6 +2696,224 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     memberships,
     bookings,
   };
+}
+
+type CustomerFinanceContext = {
+  organization: Organization;
+  memberId: string;
+  member: Data;
+  membershipId: string;
+};
+
+async function customerFinanceContexts(ctx: ReadContext): Promise<CustomerFinanceContext[]> {
+  const { user } = await requireMember(ctx);
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
+  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const contexts: CustomerFinanceContext[] = [];
+  for (const row of rows) {
+    const projection = data(row.data);
+    if (!belongsToAuthenticatedCustomer(projection, userId, optionalString(profile?.id))) continue;
+    const organization = await ctx.db.get(row.organizationId);
+    if (!organization) continue;
+    const memberRecords = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect();
+    const memberRecord = memberRecords.find((candidate) => candidate.publicId === projection.memberId || stringValue(data(candidate.data).memberNumber) === stringValue(projection.memberNumber));
+    if (!memberRecord) continue;
+    contexts.push({
+      organization,
+      memberId: memberRecord.publicId,
+      member: data(memberRecord.data),
+      membershipId: optionalString(projection.membershipId) ?? row.publicId,
+    });
+  }
+  return contexts;
+}
+
+function customerPaymentExplanation(value: Data): string {
+  const status = stringValue(value.status, "completed");
+  const type = stringValue(value.type, "payment");
+  if (status === "voided" || type === "void") return "This payment was voided and remains in the history for audit.";
+  if (status === "refunded" || type === "refund") return "This amount was returned and is linked to the original payment.";
+  if (status === "partially_refunded") return "Part of this payment has been returned.";
+  if (type === "retail_sale") return "Retail purchase recorded by the gym.";
+  return "Payment received by the gym.";
+}
+
+async function customerFinancialTransactions(ctx: ReadContext): Promise<Data[]> {
+  const contexts = await customerFinanceContexts(ctx);
+  const transactions: Data[] = [];
+  for (const context of contexts) {
+    const [payments, retailSales, branches] = await Promise.all([
+      recordsOfMember(ctx, context.organization._id, context.memberId, "payment"),
+      ctx.db.query("retailSales").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+      ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+    ]);
+    const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+    for (const row of payments) {
+      const payment = data(row.data);
+      if (stringValue(payment.memberId) !== context.memberId) continue;
+      transactions.push({
+        id: stringValue(payment.id, row.publicId),
+        gymId: publicOrganizationId(context.organization),
+        gymName: context.organization.name,
+        branchName: branchNames.get(stringValue(payment.branchId)) ?? "Gym branch",
+        membershipId: optionalString(payment.membershipId) ?? context.membershipId,
+        receiptId: optionalString(payment.receiptId),
+        receiptNumber: stringValue(payment.receiptNumber, "Receipt pending"),
+        type: stringValue(payment.type, "payment"),
+        status: stringValue(payment.status, "completed"),
+        amount: payment.amount,
+        method: stringValue(payment.method, "other"),
+        occurredAt: stringValue(payment.occurredAt, stringValue(payment.createdAt)),
+        explanation: customerPaymentExplanation(payment),
+      });
+    }
+    for (const sale of retailSales.filter((candidate) => candidate.memberId === context.memberId || candidate.customer.memberId === context.memberId)) {
+      const branch = branches.find((candidate) => candidate._id === sale.branchId);
+      transactions.push({
+        id: `retail-payment-${sale.publicId}`,
+        gymId: publicOrganizationId(context.organization),
+        gymName: context.organization.name,
+        branchName: branch?.name ?? "Gym branch",
+        membershipId: context.membershipId,
+        receiptId: sale.receiptId,
+        receiptNumber: sale.receiptNumber,
+        type: "retail_sale",
+        status: sale.status,
+        amount: { amount: sale.totalMinor, currency: sale.currency },
+        method: sale.method,
+        occurredAt: utcIso(sale.createdAt),
+        explanation: customerPaymentExplanation({ type: "retail_sale", status: sale.status }),
+      });
+    }
+  }
+  return transactions.filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id && candidate.gymId === item.gymId) === index);
+}
+
+async function customerFinancialSummary(ctx: ReadContext): Promise<Data> {
+  const contexts = await customerFinanceContexts(ctx);
+  const transactions = await customerFinancialTransactions(ctx);
+  let outstanding = 0;
+  for (const context of contexts) {
+    const charges = await recordsOfMember(ctx, context.organization._id, context.memberId, "charge");
+    const today = todayIn(context.organization.timezone || TZ_FALLBACK);
+    outstanding += charges.map((row) => data(row.data)).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  }
+  const currency = contexts[0]?.organization.currency ?? "JOD";
+  const paidLifetime = transactions.reduce((sum, transaction) => {
+    const amount = amountOf(transaction.amount);
+    return sum + (transaction.type === "refund" ? -Math.abs(amount) : transaction.status === "voided" ? 0 : amount);
+  }, 0);
+  const receiptIds = new Set(transactions.map((transaction) => optionalString(transaction.receiptId)).filter(Boolean));
+  const latest = [...transactions].sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)))[0];
+  const gyms = contexts
+    .map((context) => ({ id: publicOrganizationId(context.organization), name: context.organization.name }))
+    .filter((gym, index, all) => all.findIndex((candidate) => candidate.id === gym.id) === index);
+  return { outstanding: money(outstanding, currency), paidLifetime: money(paidLifetime, currency), receiptCount: receiptIds.size, lastPaymentAt: optionalString(latest?.occurredAt), gyms };
+}
+
+async function customerTransactionPage(ctx: ReadContext, input: Data): Promise<Data> {
+  let items = await customerFinancialTransactions(ctx);
+  if (input.gymId) items = items.filter((item) => item.gymId === input.gymId);
+  if (input.status) items = items.filter((item) => item.status === input.status);
+  if (input.type) items = items.filter((item) => item.type === input.type);
+  if (input.from) items = items.filter((item) => stringValue(item.occurredAt).slice(0, 10) >= stringValue(input.from));
+  if (input.to) items = items.filter((item) => stringValue(item.occurredAt).slice(0, 10) <= stringValue(input.to));
+  items = items.filter((item) => matchesSearch([item.gymName, item.branchName, item.receiptNumber, item.method], optionalString(input.search)));
+  items = sortRecords(items, input.sort ?? "-occurredAt", (item, key) => key === "amount" ? amountOf(item.amount) : stringValue(item[key]));
+  return page(items, input);
+}
+
+async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promise<Data> {
+  const contexts = await customerFinanceContexts(ctx);
+  for (const context of contexts) {
+    const receipt = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "receipt").eq("publicId", receiptId)).unique();
+    if (!receipt) continue;
+    const receiptValue = data(receipt.data);
+    const retailSale = await ctx.db.query("retailSales").withIndex("by_receipt", (q) => q.eq("organizationId", context.organization._id).eq("receiptId", receiptId)).unique();
+    if (retailSale) {
+      if (retailSale.memberId !== context.memberId && retailSale.customer.memberId !== context.memberId) continue;
+      const branch = await ctx.db.get(retailSale.branchId);
+      if (!branch) continue;
+      const payment = {
+        id: `retail-payment-${retailSale.publicId}`,
+        organizationId: publicOrganizationId(context.organization),
+        branchId: publicBranchId(branch),
+        type: "retail_sale",
+        customer: retailSale.customer,
+        amount: { amount: retailSale.totalMinor, currency: retailSale.currency },
+        method: retailSale.method,
+        status: retailSale.status,
+        refundedAmount: retailSale.refundedMinor ? { amount: retailSale.refundedMinor, currency: retailSale.currency } : undefined,
+        refundReason: retailSale.refundReason,
+        voidReason: retailSale.voidReason,
+        receiptId,
+        receiptNumber: retailSale.receiptNumber,
+        collectedById: retailSale.createdByPublicId,
+        collectedByName: retailSale.createdByName,
+        shiftId: retailSale.shiftId,
+        externalReference: retailSale.externalReference,
+        idempotencyKey: retailSale.idempotencyKey,
+        occurredAt: utcIso(retailSale.createdAt),
+      };
+      return {
+        gymId: publicOrganizationId(context.organization),
+        receipt: receiptValue,
+        organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+        branch: { name: branch.name, code: branch.code, address: branch.address ?? "", phone: branch.phone ?? "" },
+        member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
+        customer: retailSale.customer,
+        payment,
+        retailSale: {
+          id: retailSale.publicId,
+          organizationId: publicOrganizationId(context.organization),
+          branchId: publicBranchId(branch),
+          receiptId,
+          receiptNumber: retailSale.receiptNumber,
+          customer: retailSale.customer,
+          lines: retailSale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency }, unitCost: line.unitCostMinor === undefined || line.unitCostCurrency === undefined ? undefined : { amount: line.unitCostMinor, currency: line.unitCostCurrency } })),
+          subtotal: { amount: retailSale.subtotalMinor, currency: retailSale.currency },
+          total: { amount: retailSale.totalMinor, currency: retailSale.currency },
+          status: retailSale.status,
+          refundedAmount: retailSale.refundedMinor ? { amount: retailSale.refundedMinor, currency: retailSale.currency } : undefined,
+          returnedLines: retailSale.returnedLines,
+          refundReason: retailSale.refundReason,
+          voidReason: retailSale.voidReason,
+          voidedAt: retailSale.voidedAt ? utcIso(retailSale.voidedAt) : undefined,
+          method: retailSale.method,
+          externalReference: retailSale.externalReference,
+          shiftId: retailSale.shiftId,
+          idempotencyKey: retailSale.idempotencyKey,
+          createdById: retailSale.createdByPublicId,
+          createdByName: retailSale.createdByName,
+          createdAt: utcIso(retailSale.createdAt),
+          updatedAt: utcIso(retailSale.updatedAt),
+        },
+        relatedPayments: [],
+      };
+    }
+    const payment = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "payment").eq("publicId", stringValue(receiptValue.paymentId))).unique();
+    if (!payment || stringValue(data(payment.data).memberId) !== context.memberId) continue;
+    const paymentValue = data(payment.data);
+    const [branch, charge, relatedRows] = await Promise.all([
+      ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", stringValue(paymentValue.branchId))).unique(),
+      paymentValue.chargeId ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "charge").eq("publicId", stringValue(paymentValue.chargeId))).unique() : Promise.resolve(null),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "payment"),
+    ]);
+    const relatedPayments = relatedRows.map((row) => data(row.data)).filter((item) => item.originalPaymentId === paymentValue.id || (paymentValue.originalPaymentId && item.id === paymentValue.originalPaymentId));
+    return {
+      gymId: publicOrganizationId(context.organization),
+      receipt: receiptValue,
+      organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+      branch: { name: branch?.name ?? "Gym branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
+      member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
+      customer: { kind: "member", fullName: stringValue(context.member.fullName), phone: optionalString(context.member.phone), memberId: context.memberId, memberNumber: stringValue(context.member.memberNumber) },
+      payment: paymentValue,
+      charge: charge ? data(charge.data) : undefined,
+      relatedPayments,
+    };
+  }
+  domainError("NOT_FOUND", "Receipt not found.");
 }
 
 async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: string, branchId: string): Promise<{ pass: Doc<"entryPasses">; membership: DomainRecord; payload: Data } | null> {
@@ -3702,6 +3922,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await platformPlans(ctx);
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
+  if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
+  if (operation === "customer.finance.transactions") return await customerTransactionPage(ctx, input);
+  if (operation === "customer.receipt") return await customerReceiptDetail(ctx, recordId(input.receiptId));
   if (operation === "customer.pt") return await customerPtExperience(ctx, recordId(input.membershipId));
   if (operation === "customer.pt.slots") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));

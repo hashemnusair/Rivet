@@ -362,6 +362,9 @@ export class ConvexGymOSApi implements GymOSApi {
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
+  getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> { return this.query("customer.finance.summary"); }
+  listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> { return this.query("customer.finance.transactions", query); }
+  getCustomerReceipt(receiptId: T.UUID): Promise<import("@/lib/domain/qol").CustomerReceipt> { return this.query("customer.receipt", { receiptId }); }
   getPlatformSnapshot(): Promise<PlatformSnapshot> { return this.query("platform.snapshot"); }
   previewMarketingPreferenceMigration(): Promise<MarketingPreferenceMigrationPreview> { return this.query("platform.marketingMigration.preview"); }
   applyMarketingPreferenceMigration(input: { migrationId?: string; batchSize?: number; reason: string }): Promise<MarketingPreferenceMigrationProgress> { return this.mutate("platform.marketingMigration.apply", input); }

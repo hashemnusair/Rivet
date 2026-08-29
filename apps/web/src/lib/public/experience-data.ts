@@ -169,6 +169,7 @@ export interface CustomerActivity {
   type: "check_in" | "membership" | "payment" | "pt";
   title: string;
   detail?: string;
+  href?: string;
   occurredAt: string;
 }
 

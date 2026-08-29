@@ -72,7 +72,7 @@ import {
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMarketingPreference, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
@@ -905,6 +905,106 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
       return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+    });
+  }
+
+  private customerMemberIds(): Set<string> {
+    const memberships = INITIAL_CUSTOMER_MEMBERSHIPS.filter((membership) => membership.customerId === this.activeCustomerId);
+    const memberNumbers = new Set(memberships.map((membership) => membership.memberNumber));
+    return new Set(this.db.members.filter((member) => memberNumbers.has(member.memberNumber)).map((member) => member.id));
+  }
+
+  private customerTransactionsSync(): import("@/lib/domain/qol").CustomerTransaction[] {
+    const memberIds = this.customerMemberIds();
+    const membershipByMember = new Map(
+      INITIAL_CUSTOMER_MEMBERSHIPS
+        .filter((membership) => membership.customerId === this.activeCustomerId)
+        .map((membership) => [this.db.members.find((member) => member.memberNumber === membership.memberNumber)?.id, membership] as const)
+        .filter((entry): entry is [string, CustomerMembership] => Boolean(entry[0])),
+    );
+    const payments = this.db.payments
+      .filter((payment) => memberIds.has(payment.memberId))
+      .map((payment): import("@/lib/domain/qol").CustomerTransaction => ({
+        id: payment.id,
+        gymId: this.db.organization.id,
+        gymName: this.db.organization.name,
+        branchName: this.db.branches.find((branch) => branch.id === payment.branchId)?.name ?? "Gym branch",
+        membershipId: membershipByMember.get(payment.memberId)?.id,
+        receiptId: payment.receiptId,
+        receiptNumber: payment.receiptNumber,
+        type: payment.type,
+        status: payment.status,
+        amount: payment.amount,
+        method: payment.method,
+        occurredAt: payment.occurredAt,
+        explanation: payment.status === "voided" || payment.type === "void"
+          ? "This payment was voided and remains in the history for audit."
+          : payment.status === "refunded" || payment.type === "refund"
+            ? "This amount was returned and is linked to the original payment."
+            : payment.status === "partially_refunded"
+              ? "Part of this payment has been returned."
+              : "Payment received by the gym.",
+      }));
+    const retail = this.db.retailSales
+      .filter((sale) => sale.customer.memberId && memberIds.has(sale.customer.memberId))
+      .map((sale): import("@/lib/domain/qol").CustomerTransaction => ({
+        id: `retail-payment-${sale.id}`,
+        gymId: this.db.organization.id,
+        gymName: this.db.organization.name,
+        branchName: this.db.branches.find((branch) => branch.id === sale.branchId)?.name ?? "Gym branch",
+        membershipId: sale.customer.memberId ? membershipByMember.get(sale.customer.memberId)?.id : undefined,
+        receiptId: sale.receiptId,
+        receiptNumber: sale.receiptNumber,
+        type: "retail_sale",
+        status: sale.status,
+        amount: sale.total,
+        method: sale.method,
+        occurredAt: sale.createdAt,
+        explanation: "Retail purchase recorded by the gym.",
+      }));
+    return [...payments, ...retail].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  }
+
+  getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> {
+    return this.respond(() => {
+      const memberIds = this.customerMemberIds();
+      const transactions = this.customerTransactionsSync();
+      const outstanding = this.db.charges.filter((charge) => memberIds.has(charge.memberId)).reduce((sum, charge) => sum + Math.max(0, charge.outstandingAmount.amount), 0);
+      const paidLifetime = transactions.reduce((sum, transaction) => sum + (transaction.type === "refund" ? -Math.abs(transaction.amount.amount) : transaction.status === "voided" ? 0 : transaction.amount.amount), 0);
+      return {
+        outstanding: money(outstanding, this.db.organization.currency),
+        paidLifetime: money(paidLifetime, this.db.organization.currency),
+        receiptCount: new Set(transactions.map((transaction) => transaction.receiptId).filter(Boolean)).size,
+        lastPaymentAt: transactions[0]?.occurredAt,
+        gyms: [{ id: this.db.organization.id, name: this.db.organization.name }],
+      };
+    });
+  }
+
+  listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> {
+    return this.respond(() => {
+      let items = this.customerTransactionsSync();
+      if (query.gymId) items = items.filter((item) => item.gymId === query.gymId);
+      if (query.status) items = items.filter((item) => item.status === query.status);
+      if (query.type) items = items.filter((item) => item.type === query.type);
+      if (query.from) items = items.filter((item) => item.occurredAt.slice(0, 10) >= query.from!);
+      if (query.to) items = items.filter((item) => item.occurredAt.slice(0, 10) <= query.to!);
+      if (query.search) {
+        const search = query.search.trim().toLowerCase();
+        items = items.filter((item) => [item.gymName, item.branchName, item.receiptNumber, item.method].some((value) => value.toLowerCase().includes(search)));
+      }
+      items = applySort(items, query.sort ?? "-occurredAt", (item, key) => key === "amount" ? item.amount.amount : typeof item[key as keyof typeof item] === "string" ? item[key as keyof typeof item] as string : undefined);
+      return paginate(items, query);
+    });
+  }
+
+  getCustomerReceipt(receiptId: T.UUID): Promise<import("@/lib/domain/qol").CustomerReceipt> {
+    return this.respond(() => {
+      const detail = this.getReceiptSync(receiptId);
+      const memberIds = this.customerMemberIds();
+      const memberId = "memberId" in detail.payment ? detail.payment.memberId : detail.payment.customer.memberId;
+      if (!memberId || !memberIds.has(memberId)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+      return { ...detail, gymId: this.db.organization.id };
     });
   }
 

@@ -119,6 +119,12 @@ import type {
   UUID,
 } from "@/lib/domain/types";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type {
+  CustomerFinancialSummary,
+  CustomerReceipt,
+  CustomerTransaction,
+  CustomerTransactionQuery,
+} from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
 // Query inputs
@@ -731,6 +737,9 @@ export interface GymOSApi {
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
+  getCustomerFinancialSummary(): Promise<CustomerFinancialSummary>;
+  listCustomerTransactions(query: CustomerTransactionQuery): Promise<Page<CustomerTransaction>>;
+  getCustomerReceipt(receiptId: UUID): Promise<CustomerReceipt>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;

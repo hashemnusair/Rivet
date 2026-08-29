@@ -223,6 +223,18 @@ export interface CustomerTransaction {
   explanation: string;
 }
 
+export interface CustomerTransactionQuery {
+  gymId?: UUID;
+  status?: TransactionStatus;
+  type?: TransactionType;
+  from?: string;
+  to?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+}
+
 export interface CustomerReceipt extends ReceiptDetail {
   gymId: UUID;
 }

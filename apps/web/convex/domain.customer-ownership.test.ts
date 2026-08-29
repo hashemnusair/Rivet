@@ -315,6 +315,38 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       actorName: "Reception A",
       occurredAt: "2026-08-09T10:00:00.000Z",
     }, branchA);
+    await insertRecord(organizationA, "charge", "charge-a", {
+      memberId: "member-a",
+      membershipId: "membership-a-active",
+      description: "Active plan",
+      total: { amount: 50_000, currency: "JOD" },
+      paidAmount: { amount: 30_000, currency: "JOD" },
+      outstandingAmount: { amount: 20_000, currency: "JOD" },
+      status: "partial",
+      issueDate: "2026-08-01",
+      dueDate: "2026-08-01",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    }, branchA);
+    await insertRecord(organizationA, "payment", "payment-a", {
+      memberId: "member-a",
+      membershipId: "membership-a-active",
+      chargeId: "charge-a",
+      branchId: "branch-a",
+      type: "payment",
+      amount: { amount: 30_000, currency: "JOD" },
+      method: "cash",
+      status: "completed",
+      receiptId: "receipt-a",
+      receiptNumber: "R-1001",
+      collectedById: "user-staff",
+      collectedByName: "Reception A",
+      occurredAt: "2026-08-02T09:00:00.000Z",
+    }, branchA);
+    await insertRecord(organizationA, "receipt", "receipt-a", {
+      receiptNumber: "R-1001",
+      paymentId: "payment-a",
+      issuedAt: "2026-08-02T09:00:00.000Z",
+    }, branchA);
 
     await insertRecord(organizationA, "trialBooking", "trial-anonymous", {
       gymId: "gym-a",
@@ -434,6 +466,37 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(persisted.profile?.marketingOptIn).toBeUndefined();
     expect(persisted.events[0]?.changedFields).toEqual(expect.arrayContaining(["fullName", "phone", "preferredLanguage", "emergencyContactRelationship"]));
     expect(persisted.audits).toEqual(expect.arrayContaining([expect.objectContaining({ action: "member.profile_sync", actorRole: "member", after: expect.objectContaining({ changedFields: expect.arrayContaining(["fullName", "phone"]) }) })]));
+  });
+
+  it("projects only the authenticated member's financial history and receipts", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customerA = t.withIdentity({ subject: "clerk-customer-a" });
+    const customerB = t.withIdentity({ subject: "clerk-customer-b" });
+
+    const summary = await customerA.query(api.domain.query, operation("customer.finance.summary")) as {
+      outstanding: { amount: number; currency: string };
+      paidLifetime: { amount: number; currency: string };
+      receiptCount: number;
+    };
+    expect(summary).toMatchObject({
+      outstanding: { amount: 20_000, currency: "JOD" },
+      paidLifetime: { amount: 30_000, currency: "JOD" },
+      receiptCount: 1,
+    });
+
+    const transactions = await customerA.query(api.domain.query, operation("customer.finance.transactions", { page: 1, pageSize: 20 })) as {
+      items: Array<{ id: string; receiptId?: string }>;
+      totalItems: number;
+    };
+    expect(transactions).toMatchObject({ totalItems: 1, items: [{ id: "payment-a", receiptId: "receipt-a" }] });
+
+    const receipt = await customerA.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })) as {
+      member: { memberNumber: string };
+      payment: { id: string };
+    };
+    expect(receipt).toMatchObject({ member: { memberNumber: "A-100" }, payment: { id: "payment-a" } });
+    await expectCode(customerB.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })), "NOT_FOUND");
   });
 
   it("resolves published gym branding in the authenticated member experience", async () => {
@@ -650,6 +713,9 @@ describe("exported Convex customer ownership boundaries", () => {
       await expectCode(actor.mutation(api.domain.mutate, operation("customer.marketingPreference.update", { customerId: "profile-a", optedIn: false })), "FORBIDDEN");
       await expectCode(actor.mutation(api.domain.mutate, operation("customer.trial.create", { customerId: "profile-a", trialId: "trial-b", gymId: "gym-a", branchId: "directory-branch-a" })), "FORBIDDEN");
       await expectCode(actor.mutation(api.domain.mutate, operation("customer.entryPass", { membershipId: "membership-a-active" })), "FORBIDDEN");
+      await expectCode(actor.query(api.domain.query, operation("customer.finance.summary")), "FORBIDDEN");
+      await expectCode(actor.query(api.domain.query, operation("customer.finance.transactions")), "FORBIDDEN");
+      await expectCode(actor.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })), "FORBIDDEN");
     }
 
     const deactivated = t.withIdentity({ subject: "clerk-deactivated" });
