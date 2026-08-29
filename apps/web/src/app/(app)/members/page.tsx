@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Columns3, FileUp, Plus, Search, Tags } from "lucide-react";
+import { Archive, Columns3, FileUp, GitMerge, Plus, Search, Tags } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -97,7 +97,7 @@ function MembersPageInner() {
   const validBulk = selected.size > 0 && (bulkKind === "members_archive" ? bulkReason.trim().length >= 3 : bulkValue.trim().length > 0);
 
   return <div className="space-y-4">
-    <PageHeader eyebrow="Operations" title="Members" description="Every person who trains with you — search, filter, and finish repeat work in batches." actions={<><Gate permission="members.write"><Button asChild variant="secondary"><Link href="/members/import"><FileUp /> Import CSV</Link></Button><Button asChild data-testid="add-member"><Link href="/members/new"><Plus /> Add member</Link></Button></Gate></>} />
+    <PageHeader eyebrow="Operations" title="Members" description="Every person who trains with you — search, filter, and finish repeat work in batches." actions={<><Button asChild variant="secondary"><Link href="/members/duplicates"><GitMerge /> Duplicates</Link></Button><Gate permission="members.write"><Button asChild variant="secondary"><Link href="/members/import"><FileUp /> Import CSV</Link></Button><Button asChild data-testid="add-member"><Link href="/members/new"><Plus /> Add member</Link></Button></Gate></>} />
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full max-w-xs"><Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone, member number…" className="ps-8" aria-label="Search members" data-testid="member-search" /></div>
       <Select value={recordStatus} onValueChange={(value) => replaceParams({ record: value === "active" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="w-32" aria-label="Record status filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active members</SelectItem><SelectItem value="archived">Archived members</SelectItem></SelectContent></Select>

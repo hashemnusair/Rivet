@@ -95,6 +95,7 @@ export interface MergeMemberInput {
   primaryVersion: string;
   candidateVersion: string;
   reason: string;
+  fieldSourceMemberIds?: Partial<Record<"fullName" | "fullNameAr" | "phone" | "email" | "dateOfBirth" | "gender" | "preferredLanguage" | "addressLine1" | "city" | "emergencyContactName" | "emergencyContactRelationship" | "emergencyContactPhone" | "homeBranchId", UUID>>;
 }
 
 export type OnboardingAudience = "owner" | "staff" | "member";

@@ -79,6 +79,9 @@ export interface MemberRecord {
   notes?: string;
   sensitiveNotes?: string;
   archivedAt?: string;
+  updatedAt?: string;
+  mergedIntoMemberId?: UUID;
+  mergedMemberIds?: UUID[];
   createdAt: string;
 }
 

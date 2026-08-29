@@ -690,6 +690,7 @@ export class MockGymOSApi implements GymOSApi {
   private savedViews: import("@/lib/domain/qol").SavedView[] = [];
   private bulkJobs: import("@/lib/domain/qol").BulkOperationJob[] = [];
   private bulkIdempotency = new Map<string, { signature: string; job: import("@/lib/domain/qol").BulkOperationJob }>();
+  private duplicateResolutions = new Map<string, { status: import("@/lib/domain/qol").DuplicateCaseStatus; reason: string; survivingMemberId?: string; updatedAt: string }>();
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
@@ -1113,6 +1114,55 @@ export class MockGymOSApi implements GymOSApi {
 
   listBulkOperationJobs(): Promise<import("@/lib/domain/qol").BulkOperationJob[]> {
     return this.respond(() => this.bulkJobs.slice(0, 25).map((job) => ({ ...job, failures: job.failures.map((failure) => ({ ...failure })) })));
+  }
+
+  private duplicateCasesSync(): import("@/lib/domain/qol").DuplicateCase[] {
+    const members = this.db.members.filter((member) => !member.mergedIntoMemberId);
+    const cases: import("@/lib/domain/qol").DuplicateCase[] = [];
+    for (let leftIndex = 0; leftIndex < members.length; leftIndex += 1) for (let rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
+      const left = members[leftIndex]!;
+      const right = members[rightIndex]!;
+      if (left.status === "archived" || right.status === "archived") continue;
+      const reasons: import("@/lib/domain/qol").DuplicateMatchReason[] = [];
+      if (canonicalPhoneKey(left.phone, this.db.organization.phoneCountryCallingCode) === canonicalPhoneKey(right.phone, this.db.organization.phoneCountryCallingCode)) reasons.push("phone");
+      if (left.email && right.email && left.email.toLowerCase() === right.email.toLowerCase()) reasons.push("email");
+      if (left.memberNumber === right.memberNumber) reasons.push("member_number");
+      if (!reasons.length) continue;
+      const ids = [left.id, right.id].sort();
+      const id = `duplicate:${ids.join(":")}`;
+      const resolution = this.duplicateResolutions.get(id);
+      const summary = (member: MemberRecord): import("@/lib/domain/qol").DuplicateMemberSummary => ({ id: member.id, memberNumber: member.memberNumber, fullName: member.fullName, phone: member.phone, email: member.email, homeBranchId: member.homeBranchId, status: member.mergedIntoMemberId ? "merged" : member.status, balance: money(this.db.charges.filter((charge) => charge.memberId === member.id).reduce((sum, charge) => sum + charge.outstandingAmount.amount, 0)), membershipCount: this.db.memberships.filter((membership) => membership.memberId === member.id).length, visitCount: this.db.checkIns.filter((visit) => visit.memberId === member.id && visit.decision !== "blocked").length, timelineCount: this.db.activities.filter((activity) => activity.memberId === member.id).length, mergedIntoMemberId: member.mergedIntoMemberId, version: member.updatedAt ?? member.createdAt });
+      cases.push({ id, status: resolution?.status ?? "open", reasons, confidence: "strong", primary: summary(left), candidate: summary(right), createdAt: left.createdAt < right.createdAt ? left.createdAt : right.createdAt, updatedAt: resolution?.updatedAt ?? (left.createdAt > right.createdAt ? left.createdAt : right.createdAt), resolutionReason: resolution?.reason, survivingMemberId: resolution?.survivingMemberId });
+    }
+    return cases;
+  }
+
+  listDuplicateCases(status?: import("@/lib/domain/qol").DuplicateCaseStatus): Promise<import("@/lib/domain/qol").DuplicateCase[]> { return this.respond(() => this.duplicateCasesSync().filter((item) => !status || item.status === status)); }
+  getDuplicateCase(caseId: T.UUID): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); return item; }); }
+  ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> {
+    return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); this.duplicateResolutions.set(caseId, { status: "ignored", reason, updatedAt: nowISO() }); return { ...item, status: "ignored", resolutionReason: reason, updatedAt: nowISO() }; });
+  }
+  mergeDuplicateMembers(input: import("@/lib/domain/qol").MergeMemberInput): Promise<import("@/lib/domain/qol").DuplicateCase> {
+    return this.respond(() => {
+      const item = this.duplicateCasesSync().find((candidate) => candidate.id === input.caseId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found.");
+      if (item.primary.version !== input.primaryVersion || item.candidate.version !== input.candidateVersion) throw ApiError.of(ERR.CONFLICT, "One of these member records changed.");
+      const survivor = this.db.members.find((member) => member.id === input.survivingMemberId);
+      const merged = this.db.members.find((member) => member.id === input.mergedMemberId);
+      if (!survivor || !merged || survivor.id === merged.id) throw ApiError.of(ERR.VALIDATION, "Choose valid member records.");
+      const sources = input.fieldSourceMemberIds ?? {};
+      for (const [field, sourceId] of Object.entries(sources)) {
+        if (sourceId === merged.id) (survivor as unknown as Record<string, unknown>)[field] = (merged as unknown as Record<string, unknown>)[field];
+      }
+      survivor.tags = [...new Set([...survivor.tags, ...merged.tags])];
+      survivor.mergedMemberIds = [...new Set([...(survivor.mergedMemberIds ?? []), merged.id, ...(merged.mergedMemberIds ?? [])])];
+      survivor.updatedAt = nowISO();
+      merged.status = "archived";
+      merged.archivedAt = nowISO();
+      merged.mergedIntoMemberId = survivor.id;
+      this.duplicateResolutions.set(input.caseId, { status: "merged", reason: input.reason, survivingMemberId: survivor.id, updatedAt: nowISO() });
+      return { ...item, status: "merged", resolutionReason: input.reason, survivingMemberId: survivor.id, updatedAt: nowISO() };
+    });
   }
 
   async subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {

@@ -1444,9 +1444,10 @@ async function paymentRecords(ctx: ReadContext, actor: ActorContext): Promise<Do
 
 async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data | undefined> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const terms = (await recordsOfMember(ctx, actor.organization._id, memberId, "membership"))
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const terms = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership"))
     .map((record) => data(record.data))
-    .filter((membership) => membership.memberId === memberId)
+    .filter((membership) => identityIds.includes(stringValue(membership.memberId)))
     .map((membership) => ({ membership, status: statusOfMembership(membership, today) }));
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
   return terms.sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5) || stringValue(b.membership.endDate).localeCompare(stringValue(a.membership.endDate)))[0]?.membership;
@@ -1454,24 +1455,26 @@ async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId
 
 async function outstandingForMember(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const total = (await recordsOfMember(ctx, actor.organization._id, memberId, "charge"))
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const total = (await recordsOfMemberIdentity(ctx, actor, memberId, "charge"))
     .map((record) => data(record.data))
-    .filter((charge) => charge.memberId === memberId)
+    .filter((charge) => identityIds.includes(stringValue(charge.memberId)))
     .reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
   return money(total, actor.organization.currency);
 }
 
 async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
+  const identityIds = await memberIdentityIds(ctx, actor, stringValue(value.id));
   const membership = await currentMembership(ctx, actor, stringValue(value.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const outstandingCharges = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "charge"))
+  const outstandingCharges = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "charge"))
     .map((record) => data(record.data))
-    .filter((charge) => charge.memberId === value.id && collectibleOutstandingValue(charge, today) > 0)
+    .filter((charge) => identityIds.includes(stringValue(charge.memberId)) && collectibleOutstandingValue(charge, today) > 0)
     .map((charge) => chargeProjection(charge, today));
-  const checkins = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "checkIn"))
+  const checkins = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
-    .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked")
+    .filter((checkin) => identityIds.includes(stringValue(checkin.memberId)) && checkin.decision !== "blocked")
     .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
   return {
     id: stringValue(value.id),
@@ -1510,10 +1513,16 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   ]);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+  const canonicalByIdentityId = new Map<string, string>();
+  for (const value of values) {
+    const canonicalId = stringValue(value.id);
+    canonicalByIdentityId.set(canonicalId, canonicalId);
+    for (const linkedId of arrayValue(value.mergedMemberIds).map(String)) canonicalByIdentityId.set(linkedId, canonicalId);
+  }
   const membershipsByMember = new Map<string, Data[]>();
   for (const record of memberships) {
     const membership = data(record.data);
-    const memberId = optionalString(membership.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(membership.memberId)) ?? optionalString(membership.memberId);
     if (!memberId) continue;
     const list = membershipsByMember.get(memberId) ?? [];
     list.push(membership);
@@ -1523,7 +1532,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   const chargesByMember = new Map<string, Data[]>();
   for (const record of charges) {
     const charge = data(record.data);
-    const memberId = optionalString(charge.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(charge.memberId)) ?? optionalString(charge.memberId);
     if (!memberId) continue;
     const list = chargesByMember.get(memberId) ?? [];
     list.push(charge);
@@ -1533,7 +1542,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   for (const record of checkIns) {
     const checkIn = data(record.data);
     if (checkIn.decision === "blocked") continue;
-    const memberId = optionalString(checkIn.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(checkIn.memberId)) ?? optionalString(checkIn.memberId);
     if (!memberId) continue;
     const occurredAt = optionalString(checkIn.occurredAt);
     if (occurredAt && (!lastCheckInByMember.has(memberId) || occurredAt > lastCheckInByMember.get(memberId)!)) lastCheckInByMember.set(memberId, occurredAt);
@@ -1584,12 +1593,13 @@ async function recordOfOptional(ctx: ReadContext, actor: ActorContext, entityTyp
 
 async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const summary = await toMemberSummary(ctx, actor, value);
-  const checkins = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "checkIn"))
+  const identityIds = await memberIdentityIds(ctx, actor, stringValue(value.id));
+  const checkins = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
-    .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked");
-  const payments = (await recordsOfMember(ctx, actor.organization._id, stringValue(value.id), "payment"))
+    .filter((checkin) => identityIds.includes(stringValue(checkin.memberId)) && checkin.decision !== "blocked");
+  const payments = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "payment"))
     .map((record) => data(record.data))
-    .filter((payment) => payment.memberId === value.id && payment.status !== "voided")
+    .filter((payment) => identityIds.includes(stringValue(payment.memberId)) && payment.status !== "voided")
     .reduce((sum, payment) => sum + amountOf(payment.amount), 0);
   const recent = checkins.map((checkin) => businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK)).sort().at(-1);
   const storedPreference = data(value.marketingPreference);
@@ -3863,6 +3873,119 @@ async function bulkOperationJobs(ctx: QueryCtx, actor: ActorContext): Promise<Da
     .slice(0, 25);
 }
 
+async function memberIdentityIds(ctx: ReadContext, actor: ActorContext, requestedMemberId: string): Promise<string[]> {
+  const requested = await recordOfOptional(ctx, actor, "member", requestedMemberId);
+  if (!requested) return [requestedMemberId];
+  const requestedValue = data(requested.data);
+  const canonicalId = optionalString(requestedValue.mergedIntoMemberId) ?? requestedMemberId;
+  const canonical = canonicalId === requestedMemberId ? requested : await recordOfOptional(ctx, actor, "member", canonicalId);
+  const linked = canonical ? arrayValue(data(canonical.data).mergedMemberIds).map(String) : [];
+  return [...new Set([canonicalId, ...linked])];
+}
+
+async function recordsOfMemberIdentity(ctx: ReadContext, actor: ActorContext, memberId: string, entityType: string): Promise<DomainRecord[]> {
+  const ids = await memberIdentityIds(ctx, actor, memberId);
+  const rows = await Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, entityType)));
+  return rows.flat().filter((record, index, all) => all.findIndex((candidate) => candidate._id === record._id) === index);
+}
+
+async function duplicateMemberSummary(ctx: ReadContext, actor: ActorContext, record: DomainRecord): Promise<Data> {
+  const value = data(record.data);
+  const ids = await memberIdentityIds(ctx, actor, record.publicId);
+  const [memberships, visits, timeline, charges] = await Promise.all([
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "membership"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "checkIn"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "timeline"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "charge"))),
+  ]);
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const balance = charges.flat().map((row) => data(row.data)).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  return {
+    id: record.publicId,
+    memberNumber: stringValue(value.memberNumber),
+    fullName: stringValue(value.fullName),
+    phone: stringValue(value.phone),
+    email: optionalString(value.email),
+    homeBranchId: stringValue(value.homeBranchId),
+    status: optionalString(value.mergedIntoMemberId) ? "merged" : stringValue(value.status, "active"),
+    balance: money(balance, actor.organization.currency),
+    membershipCount: memberships.flat().length,
+    visitCount: visits.flat().filter((row) => data(row.data).decision !== "blocked").length,
+    timelineCount: timeline.flat().length,
+    mergedIntoMemberId: optionalString(value.mergedIntoMemberId),
+    version: String(record.updatedAt),
+  };
+}
+
+function duplicateCaseId(leftId: string, rightId: string): string {
+  return `duplicate:${[leftId, rightId].sort().join(":")}`;
+}
+
+async function duplicateCases(ctx: ReadContext, actor: ActorContext, requestedStatus?: string): Promise<Data[]> {
+  requirePermission(actor, "members.read");
+  const records = (await memberRecords(ctx, actor)).filter((record) => !optionalString(data(record.data).mergedIntoMemberId));
+  const resolutions = (await recordsOf(ctx, actor, "memberDuplicateResolution")).map((record) => ({ id: record.publicId, value: data(record.data) }));
+  const resolutionById = new Map(resolutions.map((resolution) => [resolution.id, resolution.value]));
+  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+  const cases: Data[] = [];
+  for (let leftIndex = 0; leftIndex < records.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < records.length; rightIndex += 1) {
+      const leftRecord = records[leftIndex]!;
+      const rightRecord = records[rightIndex]!;
+      const left = data(leftRecord.data);
+      const right = data(rightRecord.data);
+      if (stringValue(left.status, "active") === "archived" || stringValue(right.status, "active") === "archived") continue;
+      const reasons: string[] = [];
+      const leftPhone = canonicalPhoneKey(optionalString(left.phone), callingCode);
+      const rightPhone = canonicalPhoneKey(optionalString(right.phone), callingCode);
+      const leftEmail = normalize(optionalString(left.email));
+      const rightEmail = normalize(optionalString(right.email));
+      if (leftPhone && leftPhone === rightPhone) reasons.push("phone");
+      if (leftEmail && leftEmail === rightEmail) reasons.push("email");
+      if (left.memberNumber && left.memberNumber === right.memberNumber) reasons.push("member_number");
+      if (normalize(optionalString(left.fullName)) === normalize(optionalString(right.fullName)) && (leftPhone.slice(-7) === rightPhone.slice(-7) || (leftEmail && leftEmail === rightEmail))) reasons.push("name_and_contact");
+      if (!reasons.length) continue;
+      const id = duplicateCaseId(leftRecord.publicId, rightRecord.publicId);
+      const resolution = resolutionById.get(id);
+      const status = stringValue(resolution?.status, "open");
+      if (requestedStatus && requestedStatus !== status) continue;
+      cases.push({
+        id,
+        status,
+        reasons: [...new Set(reasons)],
+        confidence: reasons.includes("phone") || reasons.includes("email") || reasons.includes("member_number") ? "strong" : "possible",
+        primary: await duplicateMemberSummary(ctx, actor, leftRecord),
+        candidate: await duplicateMemberSummary(ctx, actor, rightRecord),
+        createdAt: optionalString(resolution?.createdAt) ?? utcIso(Math.min(leftRecord.createdAt, rightRecord.createdAt)),
+        updatedAt: optionalString(resolution?.updatedAt) ?? utcIso(Math.max(leftRecord.updatedAt, rightRecord.updatedAt)),
+        resolutionReason: optionalString(resolution?.reason),
+        survivingMemberId: optionalString(resolution?.survivingMemberId),
+        correlationId: optionalString(resolution?.correlationId),
+      });
+    }
+  }
+  const seen = new Set(cases.map((item) => stringValue(item.id)));
+  const allMemberRecords = await memberRecords(ctx, actor);
+  for (const resolution of resolutions) {
+    if (seen.has(resolution.id)) continue;
+    const status = stringValue(resolution.value.status);
+    if (requestedStatus && requestedStatus !== status) continue;
+    const primaryRecord = allMemberRecords.find((record) => record.publicId === resolution.value.primaryMemberId);
+    const candidateRecord = allMemberRecords.find((record) => record.publicId === resolution.value.candidateMemberId);
+    if (!primaryRecord || !candidateRecord) continue;
+    cases.push({ id: resolution.id, status, reasons: arrayValue(resolution.value.reasons).map(String), confidence: stringValue(resolution.value.confidence, "strong"), primary: await duplicateMemberSummary(ctx, actor, primaryRecord), candidate: await duplicateMemberSummary(ctx, actor, candidateRecord), createdAt: stringValue(resolution.value.createdAt), updatedAt: stringValue(resolution.value.updatedAt), resolutionReason: optionalString(resolution.value.reason), survivingMemberId: optionalString(resolution.value.survivingMemberId), correlationId: optionalString(resolution.value.correlationId) });
+  }
+  return cases.sort((left, right) => stringValue(right.updatedAt).localeCompare(stringValue(left.updatedAt)));
+}
+
+async function duplicateCase(ctx: ReadContext, actor: ActorContext, caseId: string): Promise<Data> {
+  const found = (await duplicateCases(ctx, actor)).find((item) => item.id === caseId)
+    ?? (await duplicateCases(ctx, actor, "ignored")).find((item) => item.id === caseId)
+    ?? (await duplicateCases(ctx, actor, "merged")).find((item) => item.id === caseId);
+  if (!found) domainError("NOT_FOUND", "Duplicate case not found.", { correlationId: actor.correlationId });
+  return found;
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
@@ -4265,6 +4388,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       return await listSavedViews(ctx, actor, stringValue(input.surface));
     case "bulk.jobs":
       return await bulkOperationJobs(ctx, actor);
+    case "duplicates.list":
+      return await duplicateCases(ctx, actor, optionalString(input.status));
+    case "duplicates.get":
+      return await duplicateCase(ctx, actor, recordId(input.caseId));
     case "support.list": {
       const records = await recordsOf(ctx, actor, "supportCase");
       const visible = actor.role === "owner" || actor.role === "manager"
@@ -4420,7 +4547,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const branchId = optionalString(input.branchId);
       const records = branchId ? await recordsOfBranch(ctx, actor, "member", branchId) : await memberRecords(ctx, actor);
-      let candidateValues = records.map((record) => data(record.data));
+      let candidateValues = records.map((record) => data(record.data)).filter((member) => !optionalString(member.mergedIntoMemberId));
       if (branchId) candidateValues = candidateValues.filter((member) => member.homeBranchId === branchId);
       if (input.status) candidateValues = candidateValues.filter((member) => stringValue(member.status, "active") === input.status);
       candidateValues = candidateValues.filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.phone, member.memberNumber, member.email], optionalString(input.search)));
@@ -4439,8 +4566,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "members.get": {
       requirePermission(actor, "members.read");
-      const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
-      return await toMemberDetail(ctx, actor, data(record.data));
+      const requested = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const mergedIntoMemberId = optionalString(data(requested.data).mergedIntoMemberId);
+      const record = mergedIntoMemberId ? await recordOf(ctx, actor, "member", mergedIntoMemberId) : requested;
+      return await toMemberDetail(ctx, actor, { ...data(record.data), redirectedFromMemberId: mergedIntoMemberId ? requested.publicId : undefined });
     }
     case "members.duplicates": {
       requirePermission(actor, "members.read");
@@ -4461,7 +4590,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const memberId = recordId(input.memberId);
       await recordOf(ctx, actor, "member", memberId);
-      let events = (await recordsOfMember(ctx, actor.organization._id, memberId, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === memberId);
+      const identityIds = await memberIdentityIds(ctx, actor, memberId);
+      let events = (await recordsOfMemberIdentity(ctx, actor, memberId, "timeline")).map((record) => data(record.data)).filter((event) => identityIds.includes(stringValue(event.memberId)));
       if (Array.isArray(input.types)) events = events.filter((event) => arrayValue(input.types).includes(event.type));
       events.sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
       return page(events, input);
@@ -5688,6 +5818,58 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "bulk.run", key: idempotencyKey, requestHash, result: { jobId: job.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 30 });
   await insertAudit(ctx, actor, { category: kind.startsWith("members_") ? "members" : "crm", action: `bulk.${kind}`, entityType: "bulk_operation", entityId: job.id, entityLabel: `${ids.length} selected records`, summary: `${succeededCount} updated, ${skippedCount} skipped, ${failures.length} failed`, reason, after: { kind, requestedCount: ids.length, succeededCount, skippedCount, failedCount: failures.length } });
   return bulkJobProjection(job);
+}
+
+const MEMBER_MERGE_FIELDS = ["fullName", "fullNameAr", "phone", "email", "dateOfBirth", "gender", "preferredLanguage", "addressLine1", "city", "emergencyContactName", "emergencyContactRelationship", "emergencyContactPhone", "homeBranchId"] as const;
+
+async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, input: Data, resolution: "ignored" | "merged"): Promise<Data> {
+  requirePermission(actor, resolution === "merged" ? "members.archive" : "members.write");
+  const caseId = recordId(input.caseId);
+  const reason = stringValue(input.reason).trim();
+  if (reason.length < 3) domainError("VALIDATION_ERROR", "Record a reason for this duplicate decision.", { correlationId: actor.correlationId });
+  const current = await duplicateCase(ctx, actor, caseId);
+  if (stringValue(current.status) !== "open") domainError("CONFLICT", "This duplicate case has already been resolved.", { correlationId: actor.correlationId });
+  const primary = data(current.primary);
+  const candidate = data(current.candidate);
+  const now = isoNow();
+  let survivingMemberId: string | undefined;
+  let mergeAuditReference: string | undefined;
+
+  if (resolution === "merged") {
+    survivingMemberId = recordId(input.survivingMemberId);
+    const mergedMemberId = recordId(input.mergedMemberId);
+    const pair = new Set([stringValue(primary.id), stringValue(candidate.id)]);
+    if (!pair.has(survivingMemberId) || !pair.has(mergedMemberId) || survivingMemberId === mergedMemberId) domainError("VALIDATION_ERROR", "Choose one member from this duplicate case to keep.", { correlationId: actor.correlationId });
+    if (stringValue(input.primaryVersion) !== stringValue(primary.version) || stringValue(input.candidateVersion) !== stringValue(candidate.version)) domainError("CONFLICT", "One of these member records changed. Review the latest values before merging.", { correlationId: actor.correlationId });
+    const survivor = await recordOf(ctx, actor, "member", survivingMemberId);
+    const merged = await recordOf(ctx, actor, "member", mergedMemberId);
+    const survivorValue = data(survivor.data);
+    const mergedValue = data(merged.data);
+    if (optionalString(survivorValue.mergedIntoMemberId) || optionalString(mergedValue.mergedIntoMemberId)) domainError("CONFLICT", "One of these members has already been merged.", { correlationId: actor.correlationId });
+    const sources = data(input.fieldSourceMemberIds);
+    const patch: Data = {};
+    for (const field of MEMBER_MERGE_FIELDS) {
+      const sourceId = optionalString(sources[field]);
+      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { correlationId: actor.correlationId });
+      const source = sourceId === mergedMemberId ? mergedValue : survivorValue;
+      if (Object.prototype.hasOwnProperty.call(source, field)) patch[field] = source[field];
+    }
+    patch.tags = [...new Set([...arrayValue(survivorValue.tags).map(String), ...arrayValue(mergedValue.tags).map(String)])];
+    patch.mergedMemberIds = [...new Set([...arrayValue(survivorValue.mergedMemberIds).map(String), mergedMemberId, ...arrayValue(mergedValue.mergedMemberIds).map(String)])];
+    patch.updatedAt = now;
+    await patchRecord(ctx, actor, survivor, patch);
+    await patchRecord(ctx, actor, merged, { status: "archived", archivedAt: now, mergedIntoMemberId: survivingMemberId, mergedAt: now });
+    const projections = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership")).collect()).filter((row) => stringValue(data(row.data).memberId) === mergedMemberId);
+    await Promise.all(projections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
+    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
+    const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: projections.length } });
+    mergeAuditReference = stringValue(audit.publicId);
+  }
+
+  const resolutionValue = { id: caseId, status: resolution, reasons: current.reasons, confidence: current.confidence, primaryMemberId: primary.id, candidateMemberId: candidate.id, survivingMemberId, reason, correlationId: actor.correlationId, mergeAuditReference, createdAt: now, updatedAt: now };
+  await insertRecord(ctx, actor, "memberDuplicateResolution", resolutionValue);
+  if (resolution === "ignored") await insertAudit(ctx, actor, { category: "members", action: "member.duplicate.ignore", entityType: "duplicate_case", entityId: caseId, entityLabel: `${stringValue(primary.memberNumber)} ↔ ${stringValue(candidate.memberNumber)}`, summary: "Duplicate suggestion ignored", reason, after: { primaryMemberId: primary.id, candidateMemberId: candidate.id } });
+  return { ...current, status: resolution, resolutionReason: reason, survivingMemberId, correlationId: actor.correlationId, updatedAt: now };
 }
 
 async function insertPtLedger(ctx: MutationCtx, actor: ActorContext, input: {
@@ -7095,6 +7277,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "bulk.run":
       return await runBulkOperationMutation(ctx, actor, input);
+    case "duplicates.ignore":
+      return await resolveDuplicateMutation(ctx, actor, input, "ignored");
+    case "duplicates.merge":
+      return await resolveDuplicateMutation(ctx, actor, input, "merged");
     case "support.reply": {
       const body = stringValue(input.body).trim();
       if (!body) domainError("VALIDATION_ERROR", "A support reply is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });

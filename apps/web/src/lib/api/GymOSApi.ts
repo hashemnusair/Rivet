@@ -128,6 +128,9 @@ import type {
   BulkOperationJob,
   SavedView,
   SavedViewSurface,
+  DuplicateCase,
+  DuplicateCaseStatus,
+  MergeMemberInput,
 } from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
@@ -749,6 +752,10 @@ export interface GymOSApi {
   deleteSavedView(viewId: UUID): Promise<void>;
   runBulkOperation(input: BulkOperationInput): Promise<BulkOperationJob>;
   listBulkOperationJobs(): Promise<BulkOperationJob[]>;
+  listDuplicateCases(status?: DuplicateCaseStatus): Promise<DuplicateCase[]>;
+  getDuplicateCase(caseId: UUID): Promise<DuplicateCase>;
+  ignoreDuplicateCase(caseId: UUID, reason: string): Promise<DuplicateCase>;
+  mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
