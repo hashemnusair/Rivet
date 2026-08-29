@@ -2,7 +2,9 @@
 
 Updated 29 August 2026 for Production backend closure, owner/platform
 acceptance, public QA cleanup, the current recovery export, the Jordan-first
-workflow-hardening sprint, and the unified Today queue.
+workflow-hardening sprint, the unified Today queue, clean-tenant imports,
+international WhatsApp handoffs, branded offers, facilities QR work, and the
+realistic-volume index pass.
 This is the single
 canonical backlog for
 confirmed bugs, release blockers, missing MVP behavior,
@@ -48,13 +50,32 @@ values, applicant details, and provider credentials out of this file.
   task completion, direct collect/renew actions, responsive ordering and empty,
   loading, expansion and truncation states are covered. Application tip
   `8c4be51` passed 945 Vitest tests and the full 41-pass/14-skip browser gate.
-- [ ] Add provider-free WhatsApp handoffs that open normalized Jordan numbers
-  with approved prefilled copy, record only the handoff attempt, and schedule a
-  follow-up without claiming provider delivery.
-- [ ] Add branded offer links with explicit acceptance/decline, expiry,
-  attribution, duplicate-safe conversion, and staff-visible follow-up facts.
-- [ ] Run realistic-volume query/index/invalidation profiling before adding
-  more caching. Keep Arabic/translation and final measured optimization last.
+- [x] Add provider-free WhatsApp handoffs with editable prefilled copy,
+  next-day follow-up, and an immutable handoff-attempt fact that never claims
+  external delivery. Jordan `962` is the organization provisioning default,
+  not a hardcoded country: tenant calling codes are configurable and explicit
+  `+`/`00` international numbers are preserved.
+- [x] Add branded bearer-token offer links with 1–60 day expiry, attribution,
+  explicit and idempotent acceptance/decline, rate-limited public access, and
+  staff-visible timeline/follow-up facts. Keep payment and membership
+  activation out until their product/accounting policy is approved.
+- [x] Give every new tenant a clean-slate onboarding path through preview-first
+  member CSV import. Support file selection, downloadable template, normalized
+  contacts, duplicate review, and independently enforced 2 MB/10,000-row
+  server limits. Imported unknown consent remains suppressed.
+- [x] Add a signed-in Facilities workspace with branch/zone-safe task creation,
+  active/history views, quick presets, one-tap status actions, and downloadable
+  QR shortcuts. The QR opens an authorized prefilled workflow; it is not a
+  public mutation endpoint.
+- [x] Run the first realistic-volume query/index pass. Facility status queries
+  and member/lead relationship projections are indexed; Today fixtures cover
+  25,000 candidates and facility fixtures cover 600 tasks while preserving
+  truthful counts and bounded results.
+- [ ] Decide and approve the next policy-dependent product slice: live
+  WhatsApp/SMS delivery, payment-backed offer checkout, or legally approved
+  waiver/document collection. Do not silently infer provider, accounting,
+  consent, retention, or legal policy.
+- [ ] Keep Arabic/translation and final measured optimization last.
 
 ### Production closure completed on 29 August
 
@@ -150,9 +171,10 @@ Convex or mutate Production data.
   subscription reconciliation, messaging, packaging, accounting, and billing.
 - [ ] Resolve Convex capacity/billing, backups/recovery, WAF, monitoring, and
   operator ownership before pilot expansion.
-- [ ] Keep Arabic/final performance work and supplier marketplaces,
-  autonomous purchasing, statutory accounting, WhatsApp/SMS, and other
-  separately scoped features outside this sprint.
+- [ ] Keep Arabic/final performance work, provider-backed WhatsApp/SMS,
+  supplier marketplaces, autonomous purchasing, statutory accounting, and
+  other separately scoped features outside this sprint. Provider-free
+  WhatsApp handoff is complete and must not be confused with live delivery.
 
 ## Historical release index — 24 August 2026
 
@@ -195,7 +217,13 @@ repository-hardening head is deployed to Convex or Vercel Production.
   without console errors, so authenticated acceptance is still open.
 
 - [x] Run the aggregate-only `renewalJobs.releaseAudit` query after the Production safety deploy. Production returned zero renewal deliveries, delivery events, member-timeline records, and staff call tasks; all status/type groups and first/last timestamps were empty, so no cleanup was required.
-- [ ] Complete the signed-in **active** gym-owner Production pass for `/operations`, `/finance`, `/reports/statements`, Settings/Renewal recovery, authorization failures, loading/empty/error states, drill-downs, failed requests, console errors, and ordinary laptop/mobile layouts. The supplied owner account is valid but belongs to a suspended or cancelled gym; its repaired unavailable-workspace state passed live verification without console errors. Restore that exact test gym only through an authorized, reasoned platform-admin action, or use another active owner.
+- [x] Complete the signed-in active-owner desktop Production pass for the Elias
+  Test tenant: `/operations`, `/finance`, `/reports/statements`, Settings,
+  Renewal recovery off, checkout readiness, one receipt, direct platform
+  denial, and console health all passed without a product-data write.
+- [ ] Complete authenticated mobile Production acceptance. Credential-free
+  responsive coverage is green, but the signed-in browser evidence remains
+  desktop-only.
 - [ ] Run the isolated staging connected journey from the release runbook with disposable records, supported accounting posting, source link, statement drill-down, tenant/branch/role denials, and verified cleanup. No role-specific staging identities or connected-staging variables were available; no functional staging writes were run.
 
 ### Product decisions
@@ -210,7 +238,10 @@ repository-hardening head is deployed to Convex or Vercel Production.
 
 ### Pre-launch cleanup from the historical release index
 
-- [ ] Complete credentialed staging bodies and cleanup evidence for the registered journeys listed under TODO-012, plus realistic-volume/concurrency proof under TODO-007.
+- [ ] Complete credentialed staging bodies and cleanup evidence for the
+  registered journeys listed under TODO-012, plus true concurrent-write proof
+  under TODO-007. The first realistic-volume read/index proof is complete with
+  25,000 Today candidates and 600 facility tasks.
 - [ ] Close the remaining deployed read-only Production verification items in the issue sections below without mutating real gym data.
 - [x] Upgrade the pinned GitHub Actions from the historical v4 pins. The
   current workflow uses `actions/checkout@v7`, `actions/setup-node@v7`, and
@@ -539,7 +570,13 @@ The original flow said **Create offer**, immediately persisted `status: "sent"`,
 - [x] Missing contact data and repeat delivery attempts are rejected; failed/unattempted delivery cannot display as sent.
 - [x] Mock, Convex adapter, Convex domain, component-facing UI, unit, and browser coverage are aligned.
 - [x] Delivered offers can be explicitly accepted or declined. Declines require a reason and return the lead to follow-up; acceptance, decline, expiry projection, and conversion preserve truthful timeline/audit state, and conversion never emits duplicate acceptance facts.
-- [ ] Provider-backed delivery, stable branded offer views/documents, delivery retries/webhooks, and a customer-facing acceptance surface remain open work. Internal expiry enforcement and staff-recorded response outcomes are complete.
+- [x] Stable branded public offer views and the customer-facing acceptance/
+  decline surface are complete with bearer tokens, expiry, rate limiting,
+  idempotency, attribution, and staff-visible facts.
+- [ ] Provider-backed delivery, delivery retries/webhooks, payment collection,
+  and membership activation remain policy-dependent work. Manual confirmation
+  and provider-free WhatsApp handoff must not be described as provider
+  delivery.
 
 ### Completion criteria
 

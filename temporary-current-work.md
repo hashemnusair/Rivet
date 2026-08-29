@@ -49,10 +49,16 @@ the next product batch, not unfinished work from this sprint.
 ## Next product batch
 
 - [x] Build a unified **Today** queue combining expiring memberships, unpaid balances, overdue leads, missed follow-ups, unresolved access denials, open facility tasks, and owner approvals. Shipped as a single role/branch-safe dashboard aggregate with one-tap completion, exact collect/renew links, a read-only auditor projection, full-count summaries, responsive visual verification, and permanent browser coverage at code tip `8c4be51`.
-- [ ] Add provider-free WhatsApp handoffs that open a prefilled message, record the attempt, and schedule a follow-up without pretending delivery was confirmed.
-- [ ] Add branded offer links with explicit acceptance, expiry, attribution, and a staff-visible follow-up trail.
-- [ ] Consider facilities QR tasks and waiver/document collection only after pilot-gym demand is confirmed.
-- [ ] Run a query/index/invalidation scale pass using realistic tenant volumes and fix measured bottlenecks.
+- [x] Add provider-free WhatsApp handoffs that open a prefilled message, record the attempt, and schedule a follow-up without pretending delivery was confirmed. Organization calling codes are configurable; Jordan (`962`) is the default, while explicit international `+`/`00` numbers remain international.
+- [x] Add branded offer links with bearer-token access, explicit acceptance or decline, expiry, attribution, idempotent response handling, and a staff-visible timeline/follow-up trail. Acceptance deliberately does not take payment or activate a membership.
+- [x] Add signed-in, branch-safe facilities QR shortcuts and a low-friction task board with quick presets and one-tap Start, Complete, and Block actions. Public QR writes and waiver/document collection remain separately gated.
+- [x] Run a realistic-volume query/index pass. Facility and Today reads now use tenant/branch/status indexes, and member/lead projections use relationship indexes with legacy-row fallbacks. Regression fixtures cover 600 facility tasks and 25,000 Today candidates while preserving truthful counts and the bounded display set.
+- [x] Harden clean-tenant member onboarding with a downloadable CSV template, file or paste review, normalized international contacts, same-file duplicate detection, a 2 MB/10,000-row server boundary, and a preview-before-commit workflow.
+
+Completed locally in five coherent commits from `ea19e03` through `0db74af`.
+Final release-gate, Production deployment, GitHub synchronization, and hosted
+verification evidence will be recorded in the living handoff; this temporary
+file can then be archived or removed.
 
 ## Creative low-friction ideas to evaluate
 
@@ -68,9 +74,12 @@ the next product batch, not unfinished work from this sprint.
 
 ## Deferred launch closure
 
-- Exact-target Convex Production deployment and post-deploy audit.
+- Exact-target Convex Production deployment and post-deploy health check for
+  the current feature tip.
 - Credentialed staging and signed-in Production acceptance.
 - Production-provider, email, backup/recovery, monitoring, WAF, capacity, and operator ownership checks.
 - Final pricing, accounting, billing, consent, and provider decisions.
+- Approve waiver/document language and retention before collecting signed
+  documents; the QR task workflow does not imply that approval.
 - Arabic through the selected translation solution and RTL verification.
 - Final performance work based on real browser and Convex measurements.

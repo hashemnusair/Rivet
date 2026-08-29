@@ -1,5 +1,49 @@
 # GymOS / RIVET current implementation state
 
+## Clean-tenant engagement, offers, facilities, and scale — 29 August 2026
+
+- RIVET now treats each organization as a clean tenant rather than requiring
+  shared demo data. Staff can onboard an existing member book through a safe
+  CSV review flow: download a template, choose a file or paste CSV, preview
+  validation and duplicates, then explicitly commit. The server independently
+  enforces required headers, normalized contact identities, a 2 MB payload
+  limit, and a 10,000-row limit. Import is an onboarding path, not proof of
+  marketing consent; unknown imported preferences remain suppressed.
+- Contact handling is international by contract. Each organization owns a
+  configurable calling code, Jordan `962` is only the provisioning default,
+  and explicit `+` or `00` numbers preserve their supplied country. Search,
+  duplicates, lead/member capture, imports, and WhatsApp links share the same
+  canonical normalization.
+- Lead detail and renewal work now offer provider-free WhatsApp handoffs with
+  editable prefilled copy and a next-day follow-up. Opening WhatsApp records an
+  immutable handoff attempt; RIVET never claims that an external message was
+  delivered. The older provider-backed delivery fact remains distinct.
+- Staff can create branded, expiring offer links and share them through the
+  same truthful handoff. A tokenized public page supports available, expired,
+  accepted, and declined states. Responses are rate-limited, idempotent, and
+  persisted to the offer, lead, immutable response fact, and unified member/
+  lead timeline. Acceptance is an expression of intent only—it cannot collect
+  payment or activate a membership.
+- Operations now includes a signed-in Facilities workspace with active/history
+  views, critical/open/in-progress totals, quick task presets, status actions,
+  and downloadable zone QR shortcuts. A scan opens the authorized workspace,
+  selects branch/zone, and prepares a task; it is not an unauthenticated write
+  endpoint. Waivers and signed-document collection remain legal/pilot-gated.
+- The scale pass added status-aware facility indexes and relationship-scoped
+  member, membership, invoice, offer, and timeline reads. Today aggregation
+  remains bounded to 12 ranked results while computing truthful counts before
+  truncation. Automated fixtures cover 600 facility tasks and 25,000 Today
+  candidates, including deduplication and stable priority ordering.
+- The implementation is committed directly on `main` in five coherent slices:
+  `ea19e03`, `bf2cea8`, `8a05dcd`, `ffebf49`, and `0db74af`.
+  `FRONTEND_HANDOFF.md` remains unchanged. The full release gate, final GitHub
+  synchronization, exact-target Convex deployment, and hosted evidence are in
+  progress and must be recorded before this section is treated as released.
+- Next product decisions are real message-provider activation, whether offer
+  acceptance may enter payment/membership activation, and approved waiver/
+  retention policy. Operator/staging closure remains separate. Arabic through
+  the chosen translation solution and final measured optimization remain last.
+
 ## Unified Today queue — 29 August 2026
 
 - A fresh synchronization check started from clean `main`/`origin/main` at

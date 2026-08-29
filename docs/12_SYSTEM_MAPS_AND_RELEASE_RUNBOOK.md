@@ -1,7 +1,8 @@
 # 12 — System Maps and Release Runbook
 
 Last reviewed: 2026-08-29 for the exact-target Production backend closure,
-active-owner/platform acceptance, public cleanup, and recovery export.
+active-owner/platform acceptance, public cleanup, recovery export, and the
+clean-tenant engagement/facilities feature batch.
 
 ## Purpose
 
@@ -15,6 +16,34 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current repository state — 29 August 2026
+
+### Clean-tenant engagement and operations batch — 29 August 2026
+
+- A new gym starts with an isolated, empty tenant. Existing records arrive
+  through explicit onboarding workflows, beginning with the preview-first
+  member CSV importer; no Production demo seed is part of tenant creation.
+  Import accepts a selected file or pasted CSV, exposes a template, normalizes
+  contacts, surfaces duplicates and errors before commit, and is independently
+  capped by the server at 2 MB and 10,000 rows.
+- Phone identity and WhatsApp URLs share an international normalization
+  contract. Organization calling code is configurable, Jordan `962` is the
+  provisioning default, and explicit `+`/`00` country codes win. A WhatsApp
+  handoff logs only that RIVET opened an external conversation and scheduled a
+  follow-up; it is not provider delivery evidence.
+- Branded offer links are bearer-token public resources with explicit expiry,
+  rate limiting, idempotent accept/decline, and immutable response/timeline
+  facts. Acceptance does not collect money or activate a membership.
+- The Facilities tab is authenticated and branch-scoped. Zone QR codes are
+  navigation shortcuts that prefill a task; they never grant public write
+  authority. Waiver/document capture is not included without approved legal
+  copy, retention policy, and pilot demand.
+- Facility list/Today reads now select status and relationship indexes rather
+  than broad organization scans. Regression volumes cover 600 facility tasks
+  and 25,000 Today candidates; the dashboard returns a bounded ranked set only
+  after truthful totals and deduplication are calculated.
+- These changes are committed in `ea19e03` through `0db74af`. The full gate,
+  final partner synchronization, exact Production backend deployment, and
+  hosted release evidence remain required before calling this batch released.
 
 ### Platform closure and recovery artifact — 29 August 2026
 
@@ -58,14 +87,16 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   production audit, and diff check. GitHub Actions run `33240389955` passed all
   jobs and Vercel Production deployment `dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj`
   is `READY`; the canonical Elias Test detail loaded without console errors.
-- Hashem Test is a separate historical QA tenant and remains publicly visible
-  with disposable-verification content. Hide it only after exact
-  platform-admin confirmation; preserve its audit and transaction history.
+- At this acceptance checkpoint, Hashem Test was still a public historical QA
+  tenant. The later platform-closure action documented above hid its listing
+  with audit evidence while preserving its transaction history.
 - Convex Production is healthy but reports 1.65 GB August database I/O against
-  a 1 GB Free-plan allowance, and the dashboard has no current backup. These
-  are launch gates. Clerk is confirmed as a live Production instance; open
-  sign-up and disabled MFA are documented policy decisions, not silently
-  assumed release defaults.
+  a 1 GB Free-plan allowance. The later platform-closure action documented
+  above created and verified a current exact-target export outside the
+  repository. Capacity remains a launch gate; the missing-export gate is
+  closed. Clerk is confirmed as a live Production instance; open sign-up and
+  disabled MFA are documented policy decisions, not silently assumed release
+  defaults.
 
 ### Production release closure — 29 August 2026
 
@@ -945,16 +976,22 @@ Convex suite. Continue the current product trajectory in this order:
    work through the existing dashboard query. Ranking, full counts and overdue
    summaries are computed before the 12-row display limit, and write actions
    remain permission-owned by the server.
-2. Add provider-free WhatsApp handoffs using canonical Jordan numbers and
-   approved prefilled copy. Record a handoff attempt and follow-up, never a
-   fabricated provider delivery.
-3. Add stable branded offer links with expiry, attribution, explicit customer
-   acceptance/decline and duplicate-safe conversion.
-4. Run realistic-volume query, index and invalidation profiling before adding
-   caching or pagination speculatively.
-5. Keep facilities QR tasks and waiver/document collection demand-gated to
-   pilot feedback. Keep Arabic/translation and final measured performance work
-   as the last pre-launch implementation pass.
+2. **Completed:** provider-free WhatsApp handoffs use the organization's
+   configurable default calling code (Jordan `962` at provisioning) while
+   preserving explicit international numbers. They record a handoff attempt
+   and follow-up, never fabricated delivery.
+3. **Completed:** stable branded offer links provide expiry, attribution,
+   explicit idempotent acceptance/decline, and timeline facts. Payment and
+   membership activation remain policy-gated.
+4. **Completed for the current working sets:** realistic-volume fixtures and
+   indexes cover facility status, Today aggregation, and member/lead
+   relationships without speculative caching.
+5. **Completed for facility tasks:** signed-in zone QR shortcuts, quick task
+   creation, active/history review, and one-tap status transitions. Keep
+   waiver/document collection demand- and legal-policy-gated.
+6. Next choose among provider-backed messaging, payment-backed offer checkout,
+   or approved waiver/documents. Keep Arabic/translation and final measured
+   performance work as the last pre-launch implementation pass.
 
 ### Ready-to-paste prompt for the next release agent
 
