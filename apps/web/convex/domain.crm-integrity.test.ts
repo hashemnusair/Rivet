@@ -56,7 +56,7 @@ describe("CRM lead identity and assignment integrity", () => {
     const sales = t.withIdentity({ subject: "clerk-crm-integrity-sales" });
 
     const phoneOnly = await sales.mutation(api.domain.mutate, operation("leads.create", { fullName: "Phone Only Lead", phone: " +962 79 000 1001 ", email: "  ", branchId: "crm-integrity-branch-a", source: "phone_call", ownerId: "crm-integrity-sales" })) as { email?: string; phone: string; ownerId?: string };
-    expect(phoneOnly).toMatchObject({ phone: "+962 79 000 1001", ownerId: "crm-integrity-sales" });
+    expect(phoneOnly).toMatchObject({ phone: "+962790001001", ownerId: "crm-integrity-sales" });
     expect(phoneOnly).not.toHaveProperty("email");
 
     const normalized = await sales.mutation(api.domain.mutate, operation("leads.create", { fullName: "Normalized Email Lead", phone: "+962790001002", email: "  NEW.LEAD@EXAMPLE.COM ", branchId: "crm-integrity-branch-a", source: "phone_call", ownerId: "crm-integrity-sales" })) as { email: string };
@@ -89,6 +89,24 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(matches).toEqual([]);
   });
 
+  it("treats local and international Jordan phone forms as one member identity", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", {
+      fullName: "Jordan Phone Member",
+      phone: "079 321 4567",
+      homeBranchId: "crm-integrity-branch-a",
+      preferredLanguage: "en",
+    })) as { member: { id: string; phone: string } };
+
+    expect(created.member.phone).toBe("+962793214567");
+    const matches = await owner.query(api.domain.query, operation("members.duplicates", { phone: "00962 79 321 4567" })) as Array<{ memberId: string }>;
+    expect(matches).toEqual([{ memberId: created.member.id, fullName: "Jordan Phone Member", memberNumber: expect.any(String), matchedOn: "phone" }]);
+    const search = await owner.query(api.domain.query, operation("members.list", { search: "079 321", pageSize: 10 })) as { items: Array<{ id: string }> };
+    expect(search.items.map((member) => member.id)).toContain(created.member.id);
+  });
+
   it("validates every update assignment, preserves unassigned, and requires crm.assign for another owner", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
@@ -112,13 +130,13 @@ describe("CRM lead identity and assignment integrity", () => {
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
     const updated = await owner.mutation(api.domain.mutate, operation("leads.update_contact", { leadId: "crm-integrity-lead", fullName: "  Corrected Lead ", phone: " +962 79 000 1009 ", email: "  CORRECTED@EXAMPLE.COM " })) as { fullName: string; phone: string; email: string; stage: string; activities: Array<{ type: string; body?: string; meta?: { fields?: string } }> };
-    expect(updated).toMatchObject({ fullName: "Corrected Lead", phone: "+962 79 000 1009", email: "corrected@example.com", stage: "new" });
+    expect(updated).toMatchObject({ fullName: "Corrected Lead", phone: "+962790001009", email: "corrected@example.com", stage: "new" });
     const contactEvent = updated.activities.find((event) => event.type === "lead_contact_updated");
     expect(contactEvent).toMatchObject({ body: "Contact details were updated; pipeline status was unchanged.", meta: { fields: "fullName,phone,email" } });
     expect(updated.activities.some((event) => event.type === "call_attempt")).toBe(false);
 
     const audits = await owner.query(api.domain.query, operation("audit.list", { category: "crm", entityId: "crm-integrity-lead", pageSize: 100 })) as { items: Array<{ action: string; before?: Record<string, unknown>; after?: Record<string, unknown> }> };
-    expect(audits.items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Original Lead", phone: "+962 79 000 1000", email: "original@example.com" }, after: { fullName: "Corrected Lead", phone: "+962 79 000 1009", email: "corrected@example.com" } }));
+    expect(audits.items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Original Lead", phone: "+962 79 000 1000", email: "original@example.com" }, after: { fullName: "Corrected Lead", phone: "+962790001009", email: "corrected@example.com" } }));
 
     const cleared = await owner.mutation(api.domain.mutate, operation("leads.update_contact", { leadId: "crm-integrity-lead", fullName: "Corrected Lead", phone: "+962790001009", email: " " })) as { email?: string };
     expect(cleared).not.toHaveProperty("email");

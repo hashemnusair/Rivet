@@ -1,3 +1,5 @@
+import { canonicalPhoneKey } from "../src/lib/utils/contact";
+
 export type ServerMembershipStatus = "active" | "expiring" | "frozen" | "expired" | "cancelled" | "depleted" | "scheduled";
 
 function dayNumber(value: string): number {
@@ -46,8 +48,8 @@ export interface DuplicateMemberMatch {
   matchedOn: "phone" | "email";
 }
 
-function normalizeContact(value: unknown): string {
-  return typeof value === "string" ? value.replace(/[\s+()-]/g, "").toLowerCase() : "";
+function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 /**
@@ -58,18 +60,18 @@ export function duplicateMemberMatches(
   members: readonly DuplicateMemberCandidate[],
   input: { phone?: unknown; email?: unknown },
 ): DuplicateMemberMatch[] {
-  const phone = normalizeContact(input.phone);
-  const email = normalizeContact(input.email);
+  const phone = typeof input.phone === "string" ? canonicalPhoneKey(input.phone) : "";
+  const email = normalizeEmail(input.email);
   if (!phone && !email) return [];
 
   return members.flatMap<DuplicateMemberMatch>((member) => {
     if (member.status === "archived") return [];
     const memberId = typeof member.id === "string" ? member.id : "";
     if (!memberId) return [];
-    if (phone && normalizeContact(member.phone) === phone) {
+    if (phone && typeof member.phone === "string" && canonicalPhoneKey(member.phone) === phone) {
       return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "phone" }];
     }
-    if (email && normalizeContact(member.email) === email) {
+    if (email && normalizeEmail(member.email) === email) {
       return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "email" }];
     }
     return [];

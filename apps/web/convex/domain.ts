@@ -51,6 +51,13 @@ import { platformPlanEntitledModules } from "./platformPlanCatalog";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 import { automationAttentionHref } from "./automations";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "../src/lib/crm/lead-progression";
+import {
+  canonicalPhoneKey,
+  LEAD_EMAIL_PATTERN,
+  LEAD_PHONE_PATTERN,
+  normalizePhoneForStorage,
+  phoneSearchMatches,
+} from "../src/lib/utils/contact";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -104,8 +111,6 @@ const DEFAULT_NOTIFICATIONS = {
 };
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-const LEAD_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const LEAD_PHONE_PATTERN = /^\+?[\d\s()-]{9,18}$/;
 const ZONE_KINDS = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"] as const;
 
 function normalizedTrialWindow(value: Data): Data {
@@ -253,7 +258,7 @@ function normalizedLeadName(value: unknown, actor: ActorContext): string {
 }
 
 function normalizedLeadPhone(value: unknown, actor: ActorContext): string {
-  const phone = stringValue(value).trim();
+  const phone = normalizePhoneForStorage(stringValue(value));
   if (!LEAD_PHONE_PATTERN.test(phone)) domainError("VALIDATION_ERROR", "Enter a valid phone number.", { correlationId: actor.correlationId, fieldErrors: { phone: ["Enter a valid phone"] } });
   return phone;
 }
@@ -805,7 +810,9 @@ function matchesSearch(values: unknown[], search?: string): boolean {
   const compact = query.replace(/[\s\-]/g, "");
   return values.some((value) => {
     if (typeof value !== "string") return false;
-    return value.toLowerCase().includes(query) || value.replace(/[\s\-]/g, "").includes(compact);
+    return value.toLowerCase().includes(query)
+      || value.replace(/[\s\-]/g, "").includes(compact)
+      || phoneSearchMatches(value, query);
   });
 }
 
@@ -4073,14 +4080,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "members.duplicates": {
       requirePermission(actor, "members.read");
-      const phone = normalize(optionalString(input.phone));
+      const phone = canonicalPhoneKey(optionalString(input.phone));
       const email = normalize(optionalString(input.email));
       const records = await memberRecords(ctx, actor);
       return records
         .map((record) => data(record.data))
         .filter((member) => member.status !== "archived")
         .flatMap((member) => {
-          if (phone && normalize(optionalString(member.phone)) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
+          if (phone && canonicalPhoneKey(optionalString(member.phone)) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
           if (email && normalize(optionalString(member.email)) === email) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "email" }];
           return [];
         });
@@ -4784,10 +4791,10 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const seen = new Set<string>();
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
-    const phone = stringValue(values[phoneIndex]).trim();
+    const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]));
     const email = optionalString(values[emailIndex]);
-    const duplicateMemberIds = existing.filter((member) => normalize(member.phone) === normalize(phone) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
-    const duplicateKey = `${normalize(phone)}:${normalize(email)}`;
+    const duplicateMemberIds = existing.filter((member) => canonicalPhoneKey(optionalString(member.phone)) === canonicalPhoneKey(phone) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
+    const duplicateKey = `${canonicalPhoneKey(phone)}:${normalize(email)}`;
     if (seen.has(duplicateKey) && phone) duplicateMemberIds.push(`csv-row-${index}`);
     if (phone) seen.add(duplicateKey);
     const errors = [
@@ -4832,7 +4839,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       if (row) rows[index] = { ...row, status: "skipped" };
       continue;
     }
-    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (normalize(member.phone) === normalize(stringValue(row.phone)) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
+    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (canonicalPhoneKey(optionalString(member.phone)) === canonicalPhoneKey(stringValue(row.phone)) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
     if (duplicate) {
       skippedCount += 1;
       rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
@@ -4863,7 +4870,8 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
 async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean } = {}): Promise<{ member: Data; duplicates: Data[] }> {
   requirePermission(actor, "members.write");
   const fullName = stringValue(input.fullName).trim();
-  const phone = stringValue(input.phone).trim();
+  const phone = normalizedLeadPhone(input.phone, actor);
+  const email = normalizedLeadEmail(input.email, actor);
   if (!fullName || !phone) domainError("VALIDATION_ERROR", "Name and phone are required.", { correlationId: actor.correlationId, fieldErrors: { ...(fullName ? {} : { fullName: ["Full name is required"] }), ...(phone ? {} : { phone: ["Phone is required"] }) } });
   const homeBranchId = recordId(input.homeBranchId);
   const branch = await branchByPublicId(ctx, actor.organization._id, homeBranchId);
@@ -4871,7 +4879,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const existingMembers = await memberRecords(ctx, actor);
   const duplicates = duplicateMemberMatches(
     existingMembers.map((record) => data(record.data)),
-    { phone, email: input.email },
+    { phone, email },
   ) as Data[];
   if (options.rejectDuplicates && duplicates.length > 0) {
     domainError("DUPLICATE_MEMBER", "This lead matches an existing member. Open that member instead of creating a duplicate.", {
@@ -4888,7 +4896,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     fullName,
     fullNameAr: optionalString(input.fullNameAr),
     phone,
-    email: optionalString(input.email),
+    email,
     gender: optionalString(input.gender),
     dateOfBirth: optionalString(input.dateOfBirth),
     homeBranchId,
@@ -6667,11 +6675,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const patch: Data = { ...input };
       delete patch.memberId;
+      if (Object.prototype.hasOwnProperty.call(input, "phone")) patch.phone = normalizedLeadPhone(input.phone, actor);
+      if (Object.prototype.hasOwnProperty.call(input, "email")) patch.email = normalizedLeadEmail(input.email, actor);
       const homeBranch = patch.homeBranchId ? await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId)) : null;
       if (patch.homeBranchId) assertBranchAccess(actor, homeBranch);
       const previous = data(record.data);
       const memberOwnedFields = ["fullName", "fullNameAr", "phone", "email", "dateOfBirth", "gender", "preferredLanguage", "addressLine1", "city", "emergencyContactName", "emergencyContactRelationship", "emergencyContactPhone"];
-      if (previous.customerProfileId && memberOwnedFields.some((field) => input[field] !== undefined && stringValue(input[field]) !== stringValue(previous[field]))) {
+      if (previous.customerProfileId && memberOwnedFields.some((field) => Object.prototype.hasOwnProperty.call(input, field) && stringValue(patch[field]) !== stringValue(previous[field]))) {
         domainError("FORBIDDEN", "Personal profile fields are managed by the member account. Update gym-owned notes, tags, or membership details here.", { correlationId: actor.correlationId });
       }
       const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;

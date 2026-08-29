@@ -948,6 +948,19 @@ describe("member creation", () => {
     expect(matches.map((m) => m.memberId)).toContain(existing.id);
   });
 
+  it("stores Jordan mobile numbers consistently and finds local-form searches", async () => {
+    const session = await api.getSession();
+    const result = await api.createMember({
+      fullName: "Jordan Alias Test",
+      phone: "079 321 4567",
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+    });
+    expect(result.member.phone).toBe("+962793214567");
+    expect((await api.checkMemberDuplicates({ phone: "00962 79 321 4567" })).map((match) => match.memberId)).toContain(result.member.id);
+    expect((await api.listMembers({ search: "079 321", pageSize: 10 })).items.map((member) => member.id)).toContain(result.member.id);
+  });
+
   it("previews and commits member CSV rows with resumable idempotency", async () => {
     const branch = (await api.getSession()).branches[0]!;
     const preview = await api.previewMemberImport({
@@ -1012,10 +1025,10 @@ describe("lead capture", () => {
     await expect(api.updateLead(lead.id, { ownerId: lead.ownerId })).resolves.toMatchObject({ ownerId: lead.ownerId });
 
     const updated = await api.updateLeadContact(lead.id, { fullName: "  Corrected Contact Lead ", phone: " +962 79 555 1309 ", email: " NEW@EXAMPLE.COM " });
-    expect(updated).toMatchObject({ fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "new@example.com", stage: "new" });
+    expect(updated).toMatchObject({ fullName: "Corrected Contact Lead", phone: "+962795551309", email: "new@example.com", stage: "new" });
     expect(updated.activities).toContainEqual(expect.objectContaining({ type: "lead_contact_updated", body: "Contact details were updated; pipeline status was unchanged." }));
     expect(updated.activities).not.toContainEqual(expect.objectContaining({ type: "call_attempt" }));
-    expect((await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Contact Correction Lead", phone: "+962 79 555 1302", email: "old@example.com" }, after: { fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "new@example.com" } }));
+    expect((await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Contact Correction Lead", phone: "+962795551302", email: "old@example.com" }, after: { fullName: "Corrected Contact Lead", phone: "+962795551309", email: "new@example.com" } }));
     await expect(api.updateLeadContact(lead.id, { fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "bad" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 });

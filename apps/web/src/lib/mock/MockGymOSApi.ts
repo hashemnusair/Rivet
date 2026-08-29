@@ -60,7 +60,7 @@ import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/l
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
-import { isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail } from "@/lib/utils/contact";
+import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -1032,7 +1032,7 @@ export class MockGymOSApi implements GymOSApi {
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
         const fullName = nameIndex >= 0 ? values[nameIndex] ?? "" : "";
-        const phone = phoneIndex >= 0 ? values[phoneIndex] ?? "" : "";
+        const phone = normalizePhoneForStorage(phoneIndex >= 0 ? values[phoneIndex] ?? "" : "");
         const email = emailIndex >= 0 ? values[emailIndex] || undefined : undefined;
         const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
         const errors = [
@@ -2983,7 +2983,7 @@ export class MockGymOSApi implements GymOSApi {
     return haystack.some((h) => {
       if (!h) return false;
       const s = h.toLowerCase();
-      return s.includes(q) || s.replace(/[\s-]/g, "").includes(normalized);
+      return s.includes(q) || s.replace(/[\s-]/g, "").includes(normalized) || phoneSearchMatches(h, q);
     });
   }
 
@@ -3363,13 +3363,15 @@ export class MockGymOSApi implements GymOSApi {
 
   /** Phone/email match ignoring formatting. Shared by the check and by create. */
   private findDuplicates(input: { phone?: string; email?: string }): T.DuplicateMatch[] {
-    const norm = (s?: string) => (s ?? "").replace(/[\s+()-]/g, "").toLowerCase();
+    const normalizedEmail = (value?: string) => value?.trim().toLowerCase() ?? "";
+    const phone = canonicalPhoneKey(input.phone);
+    const email = normalizedEmail(input.email);
     const matches: T.DuplicateMatch[] = [];
     for (const m of this.db.members) {
       if (m.status === "archived") continue;
-      if (input.phone && norm(m.phone) === norm(input.phone)) {
+      if (phone && canonicalPhoneKey(m.phone) === phone) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "phone" });
-      } else if (input.email && m.email && norm(m.email) === norm(input.email)) {
+      } else if (email && m.email && normalizedEmail(m.email) === email) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "email" });
       }
     }
@@ -3395,7 +3397,7 @@ export class MockGymOSApi implements GymOSApi {
         memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
         fullName: input.fullName.trim(),
         fullNameAr: input.fullNameAr,
-        phone: input.phone.trim(),
+        phone: normalizePhoneForStorage(input.phone),
         email: input.email?.trim().toLowerCase() || undefined,
         gender: input.gender,
         dateOfBirth: input.dateOfBirth,
@@ -3444,7 +3446,8 @@ export class MockGymOSApi implements GymOSApi {
       const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
       Object.assign(m, {
         ...input,
-        email: input.email === undefined ? m.email : input.email || undefined,
+        phone: input.phone === undefined ? m.phone : normalizePhoneForStorage(input.phone),
+        email: input.email === undefined ? m.email : normalizeOptionalEmail(input.email),
       });
       delete (m as MemberRecord & { marketingPreferenceSource?: unknown }).marketingPreferenceSource;
       if (marketingChanged) {
@@ -5252,8 +5255,8 @@ export class MockGymOSApi implements GymOSApi {
       memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
       fullName: input.fullName.trim(),
       fullNameAr: input.fullNameAr,
-      phone: input.phone.trim(),
-      email: input.email?.trim() || undefined,
+      phone: normalizePhoneForStorage(input.phone),
+      email: normalizeOptionalEmail(input.email),
       gender: input.gender,
       dateOfBirth: input.dateOfBirth,
       homeBranchId: branch.id,

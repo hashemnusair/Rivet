@@ -34,7 +34,7 @@ describe("server domain invariants", () => {
           { id: "member-1", fullName: "Active Member", memberNumber: "AM-1001", phone: "079 111 2222", email: "active@example.com", status: "active" },
           { id: "member-2", fullName: "Archived Member", memberNumber: "AM-1002", phone: "0791112222", email: "archived@example.com", status: "archived" },
         ],
-        { phone: "079-111-2222" },
+        { phone: "+962-79-111-2222" },
       ),
     ).toEqual([{ memberId: "member-1", fullName: "Active Member", memberNumber: "AM-1001", matchedOn: "phone" }]);
 
