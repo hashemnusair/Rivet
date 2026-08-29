@@ -1,7 +1,7 @@
 # RIVET engineering handoff plan
 
 Last updated: 29 August 2026
-Handoff baseline: `main` at `d06021ebb2b013957efbc00127288c223be4ebb3`;
+Handoff baseline: `main` at `fb43a14cdcd65fc47c79f410c0b5aeb0949597d8`;
 current Convex and Vercel Production verification is recorded below.
 
 ## Purpose
@@ -21,6 +21,26 @@ and the complete chronological implementation record is
 
 ## Current state at handoff
 
+- Authenticated active-owner acceptance passed against the intended
+  `elias test gym 1` Production tenant for dashboard, Operations/inventory,
+  retail checkout readiness, Finance/statements/controls, a completed receipt,
+  Settings, Renewal recovery default-off, and owner denial from `/platform`.
+  The pass was read-only and produced no browser console errors. A current-head
+  platform-administrator pass and authenticated mobile viewport remain open.
+- `fb43a14` fixes the public gym-detail cold-load race: a valid gym no longer
+  flashes **Gym not found** before the first marketplace snapshot. Local gates
+  passed with 914 Vitest tests and 39 Playwright passes / 14 isolated-staging
+  skips; GitHub Actions run `33240389955` passed, and Vercel Production
+  deployment `dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj` is `READY`. The canonical
+  Elias Test profile loaded without console errors.
+- Elias Test is the intended pilot/test tenant. The separate Hashem Test QA
+  tenant is publicly visible with disposable-verification content; hide it
+  through an explicitly approved, reversible platform-admin action without
+  deleting its historical records.
+- Convex Production August database I/O is 1.65 GB against the 1 GB Free-plan
+  allowance, and no current dashboard backup exists. Capacity/billing and a
+  fresh backup are launch gates. Clerk Production is live; open public sign-up
+  and disabled MFA remain explicit product/security decisions.
 - Convex Production `descriptive-meerkat-589` received the current backend
   through the guarded `pnpm convex:deploy` dry-run/deploy flow on 29 August.
   Schema validation passed, no indexes were deleted, and post-deploy health was
@@ -34,9 +54,9 @@ and the complete chronological implementation record is
   `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh`, is `READY`, generated 51 pages, and had
   no initial runtime errors or HTTP 500s.
 - Public read-only verification passed for the landing page, directory, and
-  one gym detail. Two test gyms remain publicly listed, including disposable
-  verification copy. Resolve those exact test tenants before launch. The
-  signed-in active-owner/platform pass and isolated staging suite remain open.
+  gym details. The signed-in active-owner pass is now complete; the platform
+  pass, exact Hashem Test publication action, and isolated staging suite remain
+  open.
 
 - The sprint began at `e1cac31127a94659ad95f1e0f5f45f536678fa6f` and the final
   application/code verification tip is `3c99fc7`; the final pushed history

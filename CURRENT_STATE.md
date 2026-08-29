@@ -1,5 +1,56 @@
 # GymOS / RIVET current implementation state
 
+## Active-owner Production acceptance and public-detail repair — 29 August 2026
+
+- A fresh fetch confirmed `main` and `origin/main` match at
+  `fb43a14cdcd65fc47c79f410c0b5aeb0949597d8`; no newer partner commit or
+  unmerged non-Arabic partner slice was present. `arabic-localisation` remains
+  deliberately deferred.
+- The authenticated active-owner session belongs to **Elias Test gym** and the
+  organization `elias test gym 1`, which is the intended pilot/test tenant.
+  Read-only Production acceptance passed for the dashboard, Operations and
+  inventory, retail checkout readiness, Finance and all three management
+  statements, finance controls, a completed retail receipt, Settings, and the
+  direct-forbidden `/platform` route. Balance-sheet and cash-flow equations
+  reconciled, Renewal recovery was visibly off, the checkout remained empty
+  and disabled, the owner was redirected away from `/platform`, and no browser
+  console errors were observed. No sale, refund, void, settings change, or
+  other Production product-data mutation was performed.
+- A cold direct visit to a valid public gym profile could briefly show **Gym
+  not found** before the marketplace subscription delivered its first
+  snapshot. Commit `fb43a14` now keeps the detail page in its shared loading or
+  recovery state until the live marketplace is ready, and only renders the
+  not-found state after a ready snapshot proves the ID is absent. The focused
+  regression increased the full suite to **148 files / 914 tests**.
+- Local verification passed both typechecks, lint and secret-output audit, all
+  914 tests, the 51-route Production build, **39 Playwright passes / 14
+  explicit isolated-staging skips / 0 failures**, `pnpm audit --prod` with no
+  known vulnerabilities, and `git diff --check`. GitHub Actions run
+  [33240389955](https://github.com/hashemnusair/Rivet/actions/runs/33240389955)
+  passed all three jobs for exact SHA `fb43a14`. Vercel Production deployment
+  [`dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/Ep5eEmAYBdRrpyqH6Mf1hhvb29rj)
+  is `READY`; the canonical Elias Test profile loaded the live gym, branches,
+  plans, PT packages, and trial-request shell without console errors.
+- Production still publicly lists **Hashem Test**, whose profile exposes
+  disposable Production-QA copy and membership data. It is not the intended
+  current test tenant. Hiding it is a reversible platform-admin action that
+  still requires explicit operator approval; do not delete its historical
+  records.
+- The active Convex Production deployment is healthy, but August database I/O
+  is **1.65 GB against the 1 GB Free-plan allowance** and no current dashboard
+  backup exists. Plan/capacity ownership and a current backup remain launch
+  gates. Clerk is a live Production instance with password and email-code
+  sign-in, compromised-password rejection, and Device Trust; public sign-up is
+  open and MFA is not enabled, both of which remain explicit security/product
+  decisions.
+- Remaining closure work is the current-head platform-administrator read-only
+  pass, an approved hide of Hashem Test, isolated credentialed staging and
+  cleanup evidence, backup/capacity resolution, monitoring/WAF ownership, and
+  the documented provider/product decisions. The browser session used here
+  could not force a signed-in mobile viewport, so authenticated responsive
+  evidence remains open even though credential-free mobile/tablet Playwright
+  coverage passed. Arabic and final performance optimization remain last.
+
 ## Production backend and deployment-path closure — 29 August 2026
 
 - `main` and `origin/main` matched at `d06021ebb2b013957efbc00127288c223be4ebb3`

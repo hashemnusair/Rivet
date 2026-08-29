@@ -1,7 +1,7 @@
 # 12 — System Maps and Release Runbook
 
 Last reviewed: 2026-08-29 for the exact-target Production backend closure,
-Vercel deploy-path correction, and public read-only acceptance.
+active-owner acceptance, and public gym-detail loading repair.
 
 ## Purpose
 
@@ -15,6 +15,34 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current repository state — 29 August 2026
+
+### Active-owner acceptance and public-profile repair — 29 August 2026
+
+- A fresh fetch found no newer partner commit; `main` and `origin/main` match
+  at `fb43a14`. The authenticated Production owner belongs to `elias test gym
+  1`, the intended pilot/test tenant.
+- Read-only owner acceptance passed for dashboard, Operations/inventory,
+  checkout readiness, Finance and all management statements, finance controls,
+  a completed receipt, Settings, Renewal recovery off, and direct denial from
+  `/platform`. The browser console remained clean and no product record or
+  setting was mutated. Credential-free responsive Playwright passed; the
+  authenticated Chrome viewport could not be forced to mobile and must not be
+  reported as signed-in mobile evidence.
+- `fb43a14` prevents a valid public gym detail from rendering **Gym not found**
+  while its first marketplace snapshot is still loading. The full local gate
+  passed with 148 files / 914 tests, both typechecks, lint and secret audit, 51
+  built routes, 39 Playwright passes / 14 isolated-staging skips, a clean
+  production audit, and diff check. GitHub Actions run `33240389955` passed all
+  jobs and Vercel Production deployment `dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj`
+  is `READY`; the canonical Elias Test detail loaded without console errors.
+- Hashem Test is a separate historical QA tenant and remains publicly visible
+  with disposable-verification content. Hide it only after exact
+  platform-admin confirmation; preserve its audit and transaction history.
+- Convex Production is healthy but reports 1.65 GB August database I/O against
+  a 1 GB Free-plan allowance, and the dashboard has no current backup. These
+  are launch gates. Clerk is confirmed as a live Production instance; open
+  sign-up and disabled MFA are documented policy decisions, not silently
+  assumed release defaults.
 
 ### Production release closure — 29 August 2026
 
