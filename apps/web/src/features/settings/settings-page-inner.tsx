@@ -7,6 +7,7 @@ import { ForbiddenState } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BranchesSection,
+  GymSpacesSection,
   NotificationsSection,
   OperationalRulesSection,
   OrganizationSection,
@@ -40,6 +41,7 @@ export function SettingsPageInner() {
             <TabsTrigger value="brand">Brand Kit</TabsTrigger>
             <TabsTrigger value="profile">Public profile</TabsTrigger>
             <TabsTrigger value="branches">Branches</TabsTrigger>
+            <TabsTrigger value="spaces">Gym spaces</TabsTrigger>
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="roles">Roles & permissions</TabsTrigger>
             <TabsTrigger value="payments">Payments</TabsTrigger>
@@ -59,6 +61,9 @@ export function SettingsPageInner() {
           </TabsContent>
           <TabsContent value="branches">
             <BranchesSection />
+          </TabsContent>
+          <TabsContent value="spaces">
+            <GymSpacesSection />
           </TabsContent>
           <TabsContent value="users">
             <UsersSection />

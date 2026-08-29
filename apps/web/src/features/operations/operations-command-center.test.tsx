@@ -109,19 +109,19 @@ describe("OperationsCommandCenter", () => {
     expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
   });
 
-  it("turns facility work into a short branch and area workflow", async () => {
+  it("turns maintenance into a short branch and gym-space workflow", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
     await selectBranch(user, "Forge — Abdoun");
     const taskMutation = vi.spyOn(api, "upsertFacilityTask");
 
-    await user.click(screen.getByRole("tab", { name: /Facilities/ }));
+    await user.click(screen.getByRole("tab", { name: /Maintenance/ }));
     expect(await screen.findByTestId("operations-facilities")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Facility work list" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Maintenance list" })).toBeInTheDocument();
     expect(screen.getByText("Main floor inspection")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "New task" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add facility task" });
+    const dialog = await screen.findByRole("dialog", { name: "Add maintenance task" });
     await user.click(within(dialog).getByRole("button", { name: /Cleaning needed/ }));
     await user.clear(within(dialog).getByRole("textbox", { name: "What needs doing?" }));
     await user.type(within(dialog).getByRole("textbox", { name: "What needs doing?" }), "Refill sanitizer station");
@@ -130,18 +130,18 @@ describe("OperationsCommandCenter", () => {
     await waitFor(() => expect(taskMutation).toHaveBeenCalledWith(expect.objectContaining({ branchId: expect.any(String), zoneId: expect.any(String), kind: "cleaning", title: "Refill sanitizer station" })));
     expect(await screen.findByText("Refill sanitizer station")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Area QR" }));
-    expect(await screen.findByRole("dialog", { name: "Area task QR" })).toBeInTheDocument();
-    expect(screen.getByText(/shortcut, not a public write endpoint/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Location QR" }));
+    expect(await screen.findByRole("dialog", { name: "Location task QR" })).toBeInTheDocument();
+    expect(screen.getByText(/only saves them from finding and selecting this location/i)).toBeInTheDocument();
   });
 
   it("opens the preselected task form from an authenticated area QR shortcut", async () => {
     navigation.search = "tab=facilities&branch=10000000-0000-4a00-8a00-000000000002&zone=10000000-0000-4a00-8a00-000000000049&action=new-task";
     await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
 
-    expect(await screen.findByRole("dialog", { name: "Add facility task" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Facilities/, hidden: true })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("combobox", { name: "Facility area" })).toHaveTextContent("Main floor");
+    expect(await screen.findByRole("dialog", { name: "Add maintenance task" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Maintenance/, hidden: true })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("combobox", { name: "Task location" })).toHaveTextContent("Main floor");
   });
 
   it("keeps equipment writes in centered dialogs and records issue and work-order changes", async () => {

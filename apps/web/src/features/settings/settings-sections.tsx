@@ -7,7 +7,7 @@ import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PERMISSIONS, ROLE_LABELS } from "@/lib/domain/permissions";
-import type { Branch, NotificationSettings, OperationalPolicies, PaymentMethod, RoleKey, StaffUser, WeekdayKey } from "@/lib/domain/types";
+import type { Branch, NotificationSettings, OperationalPolicies, PaymentMethod, RoleKey, StaffUser, WeekdayKey, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
@@ -19,7 +19,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Checkbox, Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -228,6 +228,174 @@ export function BranchesSection() {
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name || !form.code}>
               {dialog.branch ? "Save" : "Create branch"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gym spaces
+// ---------------------------------------------------------------------------
+const SPACE_KIND_LABELS: Record<ZoneKind, string> = {
+  floor: "General floor",
+  studio: "Studio",
+  weights: "Weights floor",
+  cardio: "Cardio area",
+  functional: "Functional training",
+  locker_room: "Locker room",
+  bathroom: "Bathroom",
+  reception: "Reception",
+  storage: "Storage",
+  other: "Other",
+};
+
+function newSpaceCode(): string {
+  return `SP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+export function GymSpacesSection() {
+  const invalidate = useInvalidate();
+  const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
+  const activeBranches = (settingsQuery.data?.branches ?? []).filter((branch) => branch.status === "active");
+  const [branchId, setBranchId] = useState("");
+  const [dialog, setDialog] = useState<{ open: boolean; space?: Zone }>({ open: false });
+  const [form, setForm] = useState({ name: "", kind: "floor" as ZoneKind, capacity: "", status: "active" as "active" | "archived" });
+
+  useEffect(() => {
+    setBranchId((current) => activeBranches.some((branch) => branch.id === current) ? current : activeBranches[0]?.id ?? "");
+  }, [activeBranches]);
+
+  useEffect(() => {
+    if (!dialog.open) return;
+    setForm(dialog.space
+      ? { name: dialog.space.name, kind: dialog.space.kind, capacity: dialog.space.capacity?.toString() ?? "", status: dialog.space.status }
+      : { name: "", kind: "floor", capacity: "", status: "active" });
+  }, [dialog]);
+
+  const spacesQuery = useApiQuery(
+    qk.operations({ kind: "settings-gym-spaces", branchId }),
+    (api) => api.listZones({ branchId, includeArchived: true }),
+    { enabled: Boolean(branchId) },
+  );
+  const save = useApiMutation(
+    (api) => api.upsertZone({
+      id: dialog.space?.id,
+      branchId,
+      code: dialog.space?.code ?? newSpaceCode(),
+      name: form.name.trim(),
+      kind: form.kind,
+      capacity: form.capacity ? Number(form.capacity) : undefined,
+      status: form.status,
+    }),
+    {
+      onSuccess: async () => {
+        toast.success(dialog.space ? "Gym space updated." : "Gym space added.");
+        setDialog({ open: false });
+        await invalidate([qk.operations()]);
+      },
+      onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save this gym space."),
+    },
+  );
+
+  if (settingsQuery.isLoading) return <Skeleton className="h-48 w-full" />;
+  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
+
+  return (
+    <section className="panel max-w-3xl overflow-hidden">
+      <header className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-display text-[15px] font-semibold">Gym spaces</h2>
+          <p className="mt-1 max-w-2xl text-[12.5px] text-ink-3">The places inside a branch—for example Reception, Main floor, Studio, or Locker room. RIVET uses them to locate maintenance work and equipment.</p>
+        </div>
+        <Button size="sm" onClick={() => setDialog({ open: true })} disabled={!branchId}>
+          <Plus /> Add gym space
+        </Button>
+      </header>
+
+      <div className="border-b border-line bg-sunken/40 px-5 py-3">
+        <label className="block max-w-xs space-y-1.5">
+          <span className="text-[12px] font-medium text-ink">Branch</span>
+          <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
+            <SelectTrigger aria-label="Gym spaces branch"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+            <SelectContent>
+              {activeBranches.length === 0 ? <SelectItem value="none">No active branches</SelectItem> : null}
+              {activeBranches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+      </div>
+
+      {spacesQuery.isLoading ? <div className="p-5"><Skeleton className="h-32 w-full" /></div> : null}
+      {spacesQuery.isError ? <ErrorState className="m-5" onRetry={() => spacesQuery.refetch()} /> : null}
+      {!spacesQuery.isLoading && !spacesQuery.isError && (spacesQuery.data?.length ?? 0) === 0 ? (
+        <EmptyState
+          className="m-5"
+          compact
+          title="No gym spaces in this branch"
+          description="Add the few places employees already use when describing where work happened. You can keep this simple."
+          action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> Add first gym space</Button>}
+        />
+      ) : null}
+      {(spacesQuery.data?.length ?? 0) > 0 ? (
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-end">Capacity</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead aria-label="Edit" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {spacesQuery.data?.map((space) => (
+              <TableRow key={space.id}>
+                <TableCell className="font-medium">{space.name}</TableCell>
+                <TableCell className="text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}</TableCell>
+                <TableCell className="text-end tabular">{space.capacity?.toLocaleString() ?? "—"}</TableCell>
+                <TableCell><Badge variant={space.status === "active" ? "success" : "neutral"}>{space.status}</Badge></TableCell>
+                <TableCell className="text-end"><Button variant="ghost" size="icon-sm" aria-label={`Edit ${space.name}`} onClick={() => setDialog({ open: true, space })}><Pencil /></Button></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : null}
+
+      <Dialog open={dialog.open} onOpenChange={(open) => setDialog({ open, space: open ? dialog.space : undefined })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialog.space ? `Edit ${dialog.space.name}` : "Add gym space"}</DialogTitle>
+            <DialogDescription>Use the everyday name employees will recognize immediately.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <Field label="Name" required hint="For example: Reception, Main floor, Ladies studio, or Locker room.">
+              <Input autoFocus value={form.name} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Main floor" />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Type" required>
+                <Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as ZoneKind }))}>
+                  <SelectTrigger aria-label="Gym space type"><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(SPACE_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="Capacity" hint="Optional">
+                <Input type="number" min={1} max={100000} inputMode="numeric" value={form.capacity} onChange={(event) => setForm((current) => ({ ...current, capacity: event.target.value }))} />
+              </Field>
+              {dialog.space ? (
+                <Field label="Status">
+                  <Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "archived" }))}>
+                    <SelectTrigger aria-label="Gym space status"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDialog({ open: false })}>Cancel</Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? "Save changes" : "Add gym space"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

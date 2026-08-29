@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createContext, useContext, useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -74,5 +74,26 @@ describe("Settings public-profile navigation guard", () => {
     expect(navigation.push).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
     await waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/dashboard"));
+  });
+});
+
+describe("Settings gym spaces", () => {
+  it("explains gym spaces in plain language and lets an owner add one", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<SettingsPageInner />);
+    const upsertZone = vi.spyOn(api, "upsertZone");
+
+    await user.click(screen.getByRole("tab", { name: "Gym spaces" }));
+    expect(await screen.findByRole("heading", { name: "Gym spaces" })).toBeInTheDocument();
+    expect(screen.getByText(/places inside a branch/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add gym space" }));
+    const dialog = screen.getByRole("dialog", { name: "Add gym space" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Ladies studio");
+    await user.click(within(dialog).getByRole("button", { name: "Add gym space" }));
+
+    await waitFor(() => expect(upsertZone).toHaveBeenCalledWith(expect.objectContaining({ name: "Ladies studio", branchId: expect.any(String), kind: "floor" })));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add gym space" })).not.toBeInTheDocument());
+    expect(await screen.findByText("Ladies studio")).toBeInTheDocument();
   });
 });

@@ -18,6 +18,13 @@ test.describe("daily operations workflows", () => {
     await expect(page.getByText(/Select a branch above to add items/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Add item" })).toBeEnabled();
 
+    // Maintenance uses everyday gym language while retaining the same
+    // branch-safe task model underneath.
+    await page.getByRole("tab", { name: "Maintenance" }).click();
+    await expect(page.getByRole("heading", { name: "Maintenance list" })).toBeVisible();
+    await expect(page.getByText(/Cleaning, inspections, and incidents/)).toBeVisible();
+    await page.getByRole("tab", { name: "Inventory" }).click();
+
     // Stock movements between branches go through the transfer dialog.
     await page.getByRole("button", { name: "Move stock" }).click();
     const transferDialog = page.getByRole("dialog", { name: "Move stock to another branch" });
