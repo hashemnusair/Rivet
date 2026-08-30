@@ -1,38 +1,43 @@
 # GymOS / RIVET current implementation state
 
-## Partner feature integration hardening — 30 August 2026
+## Partner features, weekly timetable, and integration hardening — 30 August 2026
 
-- A clean fast-forward synchronized local `main` with `origin/main` from
-  `bc2b23c` to Elias's two commits: `49d4f86` for the group-class calendar and
-  `e195709` for configurable referrals and member freeze requests. No other
-  partner commit was waiting, and `FRONTEND_HANDOFF.md` remains unchanged.
-- Commit `5772a9c` closes the integration gaps found during review. Reception
-  now sees the roster and attendance controls its server permission already
-  allowed, while only owners/managers can schedule, edit, or cancel classes.
-  The calendar uses the organization's timezone for week boundaries, slot
-  placement, labels, and date-time editing. Open slots are discoverable on
-  touch, and calendar, coach, and member-search failures no longer look like an
-  empty schedule or an empty search result.
-- Referrer selection now enforces the acting staff member's branch scope in
-  Convex and the mock adapter. Future scheduled terms no longer qualify as an
-  active membership for a referral reward; current active, expiring, or frozen
-  terms remain eligible. Referrer lookup failures are visible and retryable.
-- Freeze-request listing and both approval and denial now enforce the linked
-  membership's branch boundary, including legacy request rows without a stored
-  branch key. New request rows store the branch key and their audit events carry
-  it. Member-owned reads use the existing member relationship index instead of
-  collecting the tenant's complete request history.
-- The member app now reads a dedicated, identity-owned freeze-policy preview.
-  It hides the new-request action when disabled, shows current minimum/maximum
-  days and the predicted fee before submission, and explains that approval
-  recalculates the fee. Loading or failure in either policy or request history
-  blocks the form instead of pretending no pending request exists. The staff
-  request panel also exposes loading, retry, and fee-recalculation truth.
-- Verification passed both TypeScript checks, zero-warning lint and the
-  secret-output audit, 169 Vitest files / 1,000 tests plus 14 repository-safety
-  tests, the 58-route Production build, the existing 43-pass / 14-skip
-  Playwright gate, two added class-role browser journeys, a clean Production
-  dependency audit, the Impeccable UI detector, and `git diff --check`.
+- Classes moved from dated sessions to a fixed weekly template: `classSessions`
+  now stores `dayOfWeek`/`startMinute` (legacy dated rows are normalized on
+  read in the tenant timezone), the page renders a gantt-style grid (days down,
+  hours across, chips spanning their duration with lane packing for overlaps),
+  and each class carries a Women/Men/Mixed audience shown as a W/M badge.
+- The class scheduler gained a coach directory (`classes.coach.upsert/remove`,
+  entityType `coach`; renames sync every class's snapshot, removal keeps the
+  class), right-click Edit / Who is in / Remove-from-schedule (removal is
+  reason-gated and audited as `classes.session.delete`), press-a-slot creation
+  at 30-minute resolution, optional class photos (`class_image` assets), and a
+  Print button that prints only the schedule for a PDF via the browser.
+- The finance cluster is coherent again: the sidebar keeps Payments active
+  across `/payments/shifts` and `/reports` (and Leads active on lead detail
+  pages), and all three finance views share the same eyebrow, one-line
+  description, and tab-strip position so nothing jumps between tabs.
+- Settings became a ServiceTitan-style vertical rail — grouped sections with a
+  search box that filters by name and synonyms (e.g. "freeze" finds Rules &
+  hours) — replacing the horizontally scrolling tab strip.
+- A saved Brand Kit logo now replaces the RIVET lockup in the workspace
+  sidebar and mobile drawer with a quiet "Operated by RIVET™" credit beneath;
+  route changes across the staff, customer, and platform shells animate with a
+  240 ms rise-and-fade (`template.tsx` per shell, inert under reduced motion).
+- Commit `5772a9c` closes the referral and freeze integration gaps found during
+  review. Referrer selection now enforces branch scope, and a future scheduled
+  membership no longer qualifies for a reward. Freeze-request listing,
+  approval, and denial enforce the linked membership's branch boundary,
+  including legacy request rows without a branch key.
+- The member app now reads an identity-owned freeze-policy preview, hides the
+  action when requests are disabled, and shows the current limits and predicted
+  fee before submission. Loading and failure states do not masquerade as an
+  empty request history; the staff panel is equally explicit about retries and
+  approval-time fee recalculation.
+- The reconciled class UI preserves Reception's roster/attendance permission,
+  keeps scheduling and deletion manager-only, validates capacity before save,
+  and exposes honest retry states for the timetable, coach directory, and
+  member lookup.
 - This batch did not deploy Convex, enable a provider, or mutate Production
   tenant data. Release `156f9b1` remains the last fully verified exact-target
   backend and hosted pair. Do not infer backend parity from an automatic

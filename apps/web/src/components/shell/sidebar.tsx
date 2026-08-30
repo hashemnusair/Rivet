@@ -12,7 +12,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
 export function navIsActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard" || pathname === "/";
-  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/receipts");
+  // The Payments entry fronts the whole finance cluster, whose Reports view
+  // lives outside the /payments segment.
+  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/") || pathname === "/reports" || pathname.startsWith("/reports/");
+  // Lead detail pages live under /crm/leads but belong to the pipeline entry.
+  if (href === "/crm/pipeline") return pathname === "/crm/pipeline" || pathname.startsWith("/crm/pipeline/") || pathname.startsWith("/crm/leads");
   // Match the route itself and descendants, but not similarly prefixed routes.
   // Without the segment boundary, `/members` also activates `/memberships`.
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -33,19 +37,23 @@ export function Sidebar() {
       )}
       aria-label="Primary navigation"
     >
-      {/* Brand */}
+      {/* Brand — the workspace wears the gym's own logo when a brand kit sets
+          one, with a quiet "Operated by RIVET" credit underneath. */}
       <div className="flex h-16 items-center border-b border-night-line px-4">
         {/* Keep the brand wrapper's left edge fixed and use the dedicated glyph
             when collapsed so the brand never jumps between sidebar states. */}
         <Link
           href="/dashboard"
-          className={cn("flex h-7 shrink-0 items-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[110px]")}
+          className={cn("flex h-full shrink-0 flex-col justify-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[140px]")}
           aria-label={`${brandName} home`}
         >
           {sidebarCollapsed ? (
             <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
-            <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto" } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+            <>
+              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[9px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
+            </>
           )}
         </Link>
       </div>

@@ -12,7 +12,7 @@ test.describe("class calendar roles", () => {
     await enterStaff(page, "receptionist");
     await page.goto("/classes");
 
-    await expect(page.getByRole("heading", { name: "Classes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Weekly class schedule" })).toBeVisible();
     await expect(page.getByRole("button", { name: "New class" })).toHaveCount(0);
     await page.getByRole("button", { name: /Morning HIIT/ }).click();
     await expect(page.getByText("Who is in")).toBeVisible();

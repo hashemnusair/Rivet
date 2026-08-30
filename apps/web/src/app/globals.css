@@ -99,6 +99,12 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  /* Route transition. Ends at transform:none so the settled page never keeps
+     a transform (which would turn fixed-position children into offset ones). */
+  @keyframes page-enter {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
+  }
   @keyframes fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -374,6 +380,11 @@
   border-radius: var(--radius-md);
 }
 
+/* Route transition wrapper rendered by each shell's template.tsx. */
+.page-transition {
+  animation: page-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -390,7 +401,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Print — receipts only
+   Print — receipts, and the weekly class schedule when armed
    ------------------------------------------------------------------------- */
 @media print {
   body {
@@ -402,6 +413,23 @@
   #receipt-print,
   #receipt-print * {
     visibility: visible;
+  }
+  .print-schedule [data-print-root],
+  .print-schedule [data-print-root] * {
+    visibility: visible;
+  }
+  .print-schedule [data-print-root] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .print-schedule [data-print-root] .print\:hidden {
+    display: none !important;
+  }
+  .print-schedule [data-print-schedule] {
+    overflow: visible !important;
+    border: none;
   }
   #receipt-print {
     position: absolute;

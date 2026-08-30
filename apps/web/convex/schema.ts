@@ -509,7 +509,12 @@ export default defineSchema({
     name: v.string(),
     coachUserId: v.optional(v.string()),
     coachName: v.optional(v.string()),
-    startsAt: v.number(),
+    /** Weekly template slot: 0 = Sunday … 6 = Saturday. Legacy rows carry a
+     * dated startsAt instead and are normalized on read. */
+    dayOfWeek: v.optional(v.number()),
+    startMinute: v.optional(v.number()),
+    audience: v.optional(v.union(v.literal("mixed"), v.literal("women"), v.literal("men"))),
+    startsAt: v.optional(v.number()),
     durationMinutes: v.number(),
     capacity: v.number(),
     imageAssetId: v.optional(v.string()),
@@ -521,6 +526,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_organization", ["organizationId"])
+    .index("by_branch", ["organizationId", "branchId"])
     .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
     .index("by_public_id", ["organizationId", "publicId"]),
 

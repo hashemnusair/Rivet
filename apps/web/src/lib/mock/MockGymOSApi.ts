@@ -655,6 +655,7 @@ export class MockGymOSApi implements GymOSApi {
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
   private classSessions: T.ClassSession[] = [];
+  private classCoaches: T.ClassCoach[] = [];
   private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
   private freezeRequests: T.MembershipFreezeRequest[] = [];
   private customerMemberLinks = new Map<string, string>();
@@ -713,6 +714,7 @@ export class MockGymOSApi implements GymOSApi {
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
     this.freezeRequests = [];
@@ -2826,6 +2828,7 @@ export class MockGymOSApi implements GymOSApi {
     this.archivedGymIds.clear();
     this.platformAuditEvents = [];
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
     this.freezeRequests = [];
@@ -8987,36 +8990,37 @@ export class MockGymOSApi implements GymOSApi {
   private seedClassSessions(): T.ClassSession[] {
     const branch = this.db.branches[0];
     if (!branch) return [];
-    const coach = this.db.users.find((user) => user.status === "active");
+    const coach = this.classCoaches[0];
     const members = this.db.members.filter((member) => member.status === "active").slice(0, 3);
-    const today = new Date();
-    const at = (dayOffset: number, hour: number) => {
-      const value = new Date(today);
-      value.setDate(value.getDate() + dayOffset);
-      value.setHours(hour, 0, 0, 0);
-      return value.toISOString();
-    };
-    const roster = (count: number): T.ClassRosterEntry[] => members.slice(0, count).map((member, index) => ({ memberId: member.id, name: member.fullName, bookedAt: at(0, 6), attended: index === 0 }));
-    const session = (id: string, name: string, dayOffset: number, hour: number, capacity: number, bookings: number): T.ClassSession => ({
+    const roster = (count: number): T.ClassRosterEntry[] => members.slice(0, count).map((member, index) => ({ memberId: member.id, name: member.fullName, bookedAt: nowISO(), attended: index === 0 }));
+    const slot = (id: string, name: string, dayOfWeek: number, startMinute: number, durationMinutes: number, capacity: number, bookings: number, audience: T.ClassAudience = "mixed"): T.ClassSession => ({
       id,
       branchId: branch.id,
       name,
-      coachUserId: coach?.id,
+      coachId: coach?.id,
       coachName: coach?.name,
-      startsAt: at(dayOffset, hour),
-      durationMinutes: 60,
+      dayOfWeek,
+      startMinute,
+      durationMinutes,
       capacity,
-      status: "scheduled",
+      audience,
       roster: roster(bookings),
       attendedCount: roster(bookings).filter((entry) => entry.attended).length,
-      createdAt: at(-7, 9),
-      updatedAt: at(-1, 9),
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
     });
     return [
-      session("class-hiit-am", "Morning HIIT", 0, 7, 12, 2),
-      session("class-strength", "Ladies Strength", 0, 18, 10, 3),
-      session("class-boxing", "Boxing Fundamentals", 1, 19, 16, 1),
-      session("class-mobility", "Mobility & Stretch", 3, 10, 14, 0),
+      slot("class-hiit-am", "Morning HIIT", 0, 7 * 60, 60, 12, 2),
+      slot("class-strength", "Ladies Strength", 0, 18 * 60, 60, 10, 3, "women"),
+      slot("class-boxing", "Boxing Fundamentals", 2, 19 * 60, 90, 16, 1),
+      slot("class-mobility", "Mobility & Stretch", 4, 10 * 60, 45, 14, 0),
+    ];
+  }
+
+  private seedClassCoaches(): T.ClassCoach[] {
+    return [
+      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", createdAt: nowISO() },
+      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", createdAt: nowISO() },
     ];
   }
 
@@ -9026,7 +9030,7 @@ export class MockGymOSApi implements GymOSApi {
 
   private classSessionById(sessionId: string): T.ClassSession {
     const session = this.classSessions.find((candidate) => candidate.id === sessionId);
-    if (!session || !this.branchIsVisible(session.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class session not found.");
+    if (!session || !this.branchIsVisible(session.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
     return session;
   }
 
@@ -9035,12 +9039,9 @@ export class MockGymOSApi implements GymOSApi {
       this.require("members.read");
       const branch = this.db.branches.find((candidate) => candidate.id === query.branchId);
       if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
-      const from = query.from ? Date.parse(query.from) : Date.now() - 7 * 86_400_000;
-      const to = query.to ? Date.parse(query.to) : from + 7 * 86_400_000;
-      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) throw ApiError.of(ERR.VALIDATION, "Choose a valid calendar window.");
       return this.classSessions
-        .filter((session) => session.branchId === branch.id && Date.parse(session.startsAt) >= from && Date.parse(session.startsAt) <= to)
-        .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+        .filter((session) => session.branchId === branch.id)
+        .sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.startMinute - right.startMinute)
         .map((session) => this.classSessionView(session));
     });
   }
@@ -9052,14 +9053,15 @@ export class MockGymOSApi implements GymOSApi {
       if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const name = input.name.trim();
       if (!name || name.length > 80) throw ApiError.of(ERR.VALIDATION, "Class name is required and must be 80 characters or fewer.");
-      const startsAt = Date.parse(input.startsAt);
-      if (!Number.isFinite(startsAt)) throw ApiError.of(ERR.VALIDATION, "The class start time must be a valid time.");
+      if (!Number.isSafeInteger(input.dayOfWeek) || input.dayOfWeek < 0 || input.dayOfWeek > 6) throw ApiError.of(ERR.VALIDATION, "Day must be a weekday index between 0 and 6.");
+      if (!Number.isSafeInteger(input.startMinute) || input.startMinute < 0 || input.startMinute > 1425) throw ApiError.of(ERR.VALIDATION, "Start time is invalid.");
       if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
       if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
+      if (!["mixed", "women", "men"].includes(input.audience)) throw ApiError.of(ERR.VALIDATION, "Audience must be mixed, women, or men.");
       let coachName: string | undefined;
-      if (input.coachUserId) {
-        const coach = this.db.users.find((candidate) => candidate.id === input.coachUserId && candidate.status === "active");
-        if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found in this gym.");
+      if (input.coachId) {
+        const coach = this.classCoaches.find((candidate) => candidate.id === input.coachId);
+        if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
         coachName = coach.name;
       }
       const image = input.imageAssetId ? this.mediaAssets.get(input.imageAssetId) : undefined;
@@ -9068,10 +9070,9 @@ export class MockGymOSApi implements GymOSApi {
       const existing = input.sessionId ? this.classSessions.find((candidate) => candidate.id === input.sessionId) : undefined;
       if (input.sessionId && existing) {
         if (!this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage classes for this branch.");
-        if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class session cannot move between branches.");
-        if (existing.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class cannot be edited. Schedule a new session instead.");
-        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already booked.`);
-        Object.assign(existing, { name, coachUserId: input.coachUserId, coachName, startsAt: new Date(startsAt).toISOString(), durationMinutes: input.durationMinutes, capacity: input.capacity, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
+        if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class cannot move between branches.");
+        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already in the class.`);
+        Object.assign(existing, { name, coachId: input.coachId, coachName, dayOfWeek: input.dayOfWeek, startMinute: input.startMinute, durationMinutes: input.durationMinutes, capacity: input.capacity, audience: input.audience, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
         this.audit({ category: "operations", action: "classes.session.update", entityType: "class_session", entityId: existing.id, entityLabel: name, summary: `Updated class ${name}` });
         return this.classSessionView(existing);
       }
@@ -9079,16 +9080,17 @@ export class MockGymOSApi implements GymOSApi {
         id: input.sessionId ?? mockUuid(),
         branchId: branch.id,
         name,
-        coachUserId: input.coachUserId,
+        coachId: input.coachId,
         coachName,
-        startsAt: new Date(startsAt).toISOString(),
+        dayOfWeek: input.dayOfWeek,
+        startMinute: input.startMinute,
         durationMinutes: input.durationMinutes,
         capacity: input.capacity,
+        audience: input.audience,
         imageAssetId: input.imageAssetId,
         imageUrl: image?.url,
         imageAltText: image?.altText,
         notes: input.notes?.trim() || undefined,
-        status: "scheduled",
         roster: [],
         attendedCount: 0,
         createdAt: now,
@@ -9100,18 +9102,49 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  cancelClassSession(input: { sessionId: T.UUID; reason: string }): Promise<T.ClassSession> {
+  deleteClassSession(input: { sessionId: T.UUID; reason: string }): Promise<{ id: T.UUID }> {
     return this.respond(() => {
       this.require("operations.manage");
       this.requireReason(input.reason);
       const session = this.classSessionById(input.sessionId);
-      if (session.status !== "cancelled") {
-        session.status = "cancelled";
-        session.cancelReason = input.reason.trim();
-        session.updatedAt = nowISO();
-        this.audit({ category: "operations", action: "classes.session.cancel", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Cancelled class ${session.name}`, reason: input.reason.trim() });
+      this.classSessions = this.classSessions.filter((candidate) => candidate.id !== session.id);
+      this.audit({ category: "operations", action: "classes.session.delete", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Removed class ${session.name} from the weekly schedule`, reason: input.reason.trim() });
+      return { id: session.id };
+    });
+  }
+
+  listClassCoaches(): Promise<T.ClassCoach[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      return this.classCoaches.map((coach) => ({ ...coach })).sort((left, right) => left.name.localeCompare(right.name));
+    });
+  }
+
+  upsertClassCoach(input: T.UpsertClassCoachInput): Promise<T.ClassCoach> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const name = input.name.trim();
+      if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Coach name is required and must be 60 characters or fewer.");
+      const existing = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
+      if (input.coachId && existing) {
+        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined });
+        for (const session of this.classSessions.filter((candidate) => candidate.coachId === existing.id)) session.coachName = name;
+        return { ...existing };
       }
-      return this.classSessionView(session);
+      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, createdAt: nowISO() };
+      this.classCoaches.push(created);
+      return { ...created };
+    });
+  }
+
+  removeClassCoach(coachId: T.UUID): Promise<{ id: T.UUID }> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const coach = this.classCoaches.find((candidate) => candidate.id === coachId);
+      if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
+      this.classCoaches = this.classCoaches.filter((candidate) => candidate.id !== coachId);
+      for (const session of this.classSessions.filter((candidate) => candidate.coachId === coachId)) session.coachId = undefined;
+      return { id: coachId };
     });
   }
 
@@ -9119,7 +9152,6 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireRosterPermission();
       const session = this.classSessionById(input.sessionId);
-      if (session.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class cannot take bookings.");
       const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
       if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
       if (!session.roster.some((entry) => entry.memberId === member.id)) {
@@ -9150,9 +9182,8 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireRosterPermission();
       const session = this.classSessionById(input.sessionId);
-      if (session.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class has no attendance to record.");
       const entry = session.roster.find((candidate) => candidate.memberId === input.memberId);
-      if (!entry) throw ApiError.of(ERR.NOT_FOUND, "This member is not on the class roster.");
+      if (!entry) throw ApiError.of(ERR.NOT_FOUND, "This member is not in the class.");
       if (entry.attended !== input.attended) {
         entry.attended = input.attended;
         session.updatedAt = nowISO();

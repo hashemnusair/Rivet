@@ -18,8 +18,8 @@ type ClassSession = Doc<"classSessions">;
 
 const MAX_CAPACITY = 200;
 const MAX_DURATION_MINUTES = 8 * 60;
-const MAX_WINDOW_DAYS = 62;
-const DAY_MS = 86_400_000;
+const DAY_MINUTES = 24 * 60;
+const AUDIENCES = ["mixed", "women", "men"] as const;
 
 function optionalText(input: unknown): string | undefined {
   const value = typeof input === "string" ? input.trim() : undefined;
@@ -37,12 +37,6 @@ function boundedInteger(input: unknown, field: string, min: number, max: number,
   if (!Number.isSafeInteger(value) || value < min || value > max) {
     domainError("VALIDATION_ERROR", `${field} must be a whole number between ${min} and ${max}.`, { correlationId: actor.correlationId });
   }
-  return value;
-}
-
-function timestamp(input: unknown, field: string, actor: ActorContext): number {
-  const value = typeof input === "string" ? Date.parse(input) : Number.NaN;
-  if (!Number.isFinite(value)) domainError("VALIDATION_ERROR", `${field} must be a valid time.`, { correlationId: actor.correlationId });
   return value;
 }
 
@@ -67,18 +61,18 @@ async function sessionByPublicId(ctx: ReadContext, actor: ActorContext, id: unkn
   const session = sessionId
     ? await ctx.db.query("classSessions").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sessionId)).unique()
     : null;
-  if (!session) domainError("NOT_FOUND", "Class session not found.", { correlationId: actor.correlationId });
+  if (!session) domainError("NOT_FOUND", "Class not found.", { correlationId: actor.correlationId });
   if (actor.branchScope !== "all" && !actor.branchIds.includes(session.branchId)) {
     domainError("FORBIDDEN", "Your role cannot manage classes for this branch.", { correlationId: actor.correlationId });
   }
   return session;
 }
 
-async function classAudit(ctx: MutationCtx, actor: ActorContext, input: { action: string; session: ClassSession; summary: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
+async function classAudit(ctx: MutationCtx, actor: ActorContext, input: { action: string; branchId: ClassSession["branchId"]; entityId: string; entityLabel: string; summary: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
   await ctx.db.insert("auditEvents", {
     organizationId: actor.organization._id,
     publicId: `audit-${crypto.randomUUID()}`,
-    branchId: input.session.branchId,
+    branchId: input.branchId,
     actorUserId: actor.user._id,
     actorPublicId: publicUserId(actor.user),
     actorName: actor.user.fullName,
@@ -86,8 +80,8 @@ async function classAudit(ctx: MutationCtx, actor: ActorContext, input: { action
     category: "operations",
     action: input.action,
     entityType: "class_session",
-    entityPublicId: input.session.publicId,
-    entityLabel: input.session.name,
+    entityPublicId: input.entityId,
+    entityLabel: input.entityLabel,
     summary: input.summary,
     reason: input.reason,
     before: input.before,
@@ -105,33 +99,44 @@ async function classImageView(ctx: ReadContext, actor: ActorContext, assetId: st
   return { imageUrl: url ?? undefined, imageAltText: asset.altText };
 }
 
+/** Legacy dated rows normalize into the weekly template in the gym timezone. */
+function weeklySlot(session: ClassSession, timezone: string): { dayOfWeek: number; startMinute: number } {
+  if (session.dayOfWeek !== undefined && session.startMinute !== undefined) {
+    return { dayOfWeek: session.dayOfWeek, startMinute: session.startMinute };
+  }
+  const at = new Date(session.startsAt ?? session.createdAt);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone || "Asia/Amman", weekday: "short", hour: "numeric", minute: "numeric", hour12: false }).formatToParts(at);
+  const weekday = parts.find((part) => part.type === "weekday")?.value ?? "Sun";
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 12) % 24;
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  const dayIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday);
+  return { dayOfWeek: dayIndex < 0 ? 0 : dayIndex, startMinute: hour * 60 + minute };
+}
+
 async function classView(ctx: ReadContext, actor: ActorContext, session: ClassSession): Promise<Data> {
   const image = await classImageView(ctx, actor, session.imageAssetId);
+  const branch = await ctx.db.get(session.branchId);
+  if (!branch || branch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Class branch not found.", { correlationId: actor.correlationId });
+  const slot = weeklySlot(session, actor.organization.timezone || "Asia/Amman");
   return {
     id: session.publicId,
-    branchId: publicBranchId(await branchOf(ctx, actor, session)),
+    branchId: publicBranchId(branch),
     name: session.name,
-    coachUserId: session.coachUserId,
+    coachId: session.coachUserId,
     coachName: session.coachName,
-    startsAt: new Date(session.startsAt).toISOString(),
+    dayOfWeek: slot.dayOfWeek,
+    startMinute: slot.startMinute,
     durationMinutes: session.durationMinutes,
     capacity: session.capacity,
+    audience: session.audience ?? "mixed",
     imageAssetId: session.imageAssetId,
     ...image,
     notes: session.notes,
-    status: session.status,
-    cancelReason: session.cancelReason,
     roster: session.roster.map((entry) => ({ memberId: entry.memberId, name: entry.name, bookedAt: new Date(entry.bookedAt).toISOString(), attended: entry.attended })),
     attendedCount: session.roster.filter((entry) => entry.attended).length,
     createdAt: new Date(session.createdAt).toISOString(),
     updatedAt: new Date(session.updatedAt).toISOString(),
   };
-}
-
-async function branchOf(ctx: ReadContext, actor: ActorContext, session: ClassSession): Promise<Branch> {
-  const branch = await ctx.db.get(session.branchId);
-  if (!branch || branch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Class session branch not found.", { correlationId: actor.correlationId });
-  return branch;
 }
 
 async function activateClassImage(ctx: MutationCtx, actor: ActorContext, assetId: string | undefined, previousAssetId: string | undefined): Promise<void> {
@@ -145,22 +150,23 @@ async function activateClassImage(ctx: MutationCtx, actor: ActorContext, assetId
   }
   if (previousAssetId && previousAssetId !== assetId) {
     const previous = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", previousAssetId)).unique();
-    if (previous && previous.status === "active") await ctx.db.patch(previous._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * DAY_MS, updatedAt: now });
+    if (previous && previous.status === "active") await ctx.db.patch(previous._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
   }
+}
+
+async function coachByPublicId(ctx: ReadContext, actor: ActorContext, id: string): Promise<Doc<"domainRecords">> {
+  const coach = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "coach").eq("publicId", id)).unique();
+  if (!coach) domainError("NOT_FOUND", "Coach not found.", { correlationId: actor.correlationId });
+  return coach;
 }
 
 async function listClassSessions(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
   requirePermission(actor, "members.read");
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
-  const from = input.from === undefined ? Date.now() - 7 * DAY_MS : timestamp(input.from, "The window start", actor);
-  const to = input.to === undefined ? from + 7 * DAY_MS : timestamp(input.to, "The window end", actor);
-  if (to < from || to - from > MAX_WINDOW_DAYS * DAY_MS) domainError("VALIDATION_ERROR", `Choose a calendar window of at most ${MAX_WINDOW_DAYS} days.`, { correlationId: actor.correlationId });
-  const rows = await ctx.db
-    .query("classSessions")
-    .withIndex("by_branch_start", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).gte("startsAt", from).lte("startsAt", to))
-    .collect();
-  const views = await Promise.all(rows.sort((left, right) => left.startsAt - right.startsAt).map((row) => classView(ctx, actor, row)));
-  return views;
+  const rows = (await ctx.db.query("classSessions").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect())
+    .filter((row) => row.status !== "cancelled");
+  const views = await Promise.all(rows.map((row) => classView(ctx, actor, row)));
+  return views.sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.startMinute - right.startMinute);
 }
 
 async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -168,19 +174,20 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
   const name = requiredText(input.name, "Class name", actor);
   if (name.length > 80) domainError("VALIDATION_ERROR", "Class name must be 80 characters or fewer.", { correlationId: actor.correlationId });
-  const startsAt = timestamp(input.startsAt, "The class start time", actor);
+  const dayOfWeek = boundedInteger(input.dayOfWeek, "Day", 0, 6, actor);
+  const startMinute = boundedInteger(input.startMinute, "Start time", 0, DAY_MINUTES - 15, actor);
   const durationMinutes = boundedInteger(input.durationMinutes, "Duration", 15, MAX_DURATION_MINUTES, actor);
   const capacity = boundedInteger(input.capacity, "Capacity", 1, MAX_CAPACITY, actor);
+  const audience = optionalText(input.audience) ?? "mixed";
+  if (!AUDIENCES.includes(audience as (typeof AUDIENCES)[number])) domainError("VALIDATION_ERROR", "Audience must be mixed, women, or men.", { correlationId: actor.correlationId });
   const notes = optionalText(input.notes);
   if (notes && notes.length > 500) domainError("VALIDATION_ERROR", "Notes must be 500 characters or fewer.", { correlationId: actor.correlationId });
   const imageAssetId = optionalText(input.imageAssetId);
-  const coachUserId = optionalText(input.coachUserId);
+  const coachId = optionalText(input.coachId);
   let coachName: string | undefined;
-  if (coachUserId) {
-    const coach = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", coachUserId)).unique();
-    const membership = coach ? await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", coach._id)).unique() : null;
-    if (!coach || coach.status === "deactivated" || !membership?.active) domainError("NOT_FOUND", "Coach not found in this gym.", { correlationId: actor.correlationId });
-    coachName = coach.fullName;
+  if (coachId) {
+    const coach = await coachByPublicId(ctx, actor, coachId);
+    coachName = optionalText((coach.data as Data).name) ?? coachId;
   }
   const now = Date.now();
   const requestedId = optionalText(input.sessionId);
@@ -192,14 +199,13 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
     if (actor.branchScope !== "all" && !actor.branchIds.includes(existing.branchId)) {
       domainError("FORBIDDEN", "Your role cannot manage classes for this branch.", { correlationId: actor.correlationId });
     }
-    if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A class session cannot move between branches.", { correlationId: actor.correlationId });
-    if (existing.status === "cancelled") domainError("VALIDATION_ERROR", "A cancelled class cannot be edited. Schedule a new session instead.", { correlationId: actor.correlationId });
-    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already booked.`, { correlationId: actor.correlationId });
-    const before = { name: existing.name, startsAt: existing.startsAt, durationMinutes: existing.durationMinutes, capacity: existing.capacity, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
+    if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A class cannot move between branches.", { correlationId: actor.correlationId });
+    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { correlationId: actor.correlationId });
+    const before = { name: existing.name, dayOfWeek: existing.dayOfWeek, startMinute: existing.startMinute, durationMinutes: existing.durationMinutes, capacity: existing.capacity, audience: existing.audience, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
     await activateClassImage(ctx, actor, imageAssetId, existing.imageAssetId);
-    await ctx.db.patch(existing._id, { name, coachUserId, coachName, startsAt, durationMinutes, capacity, imageAssetId, notes, updatedAt: now });
+    await ctx.db.patch(existing._id, { name, coachUserId: coachId, coachName, dayOfWeek, startMinute, startsAt: undefined, audience: audience as ClassSession["audience"], durationMinutes, capacity, imageAssetId, notes, status: "scheduled", cancelReason: undefined, updatedAt: now });
     const updated = (await ctx.db.get(existing._id))!;
-    await classAudit(ctx, actor, { action: "classes.session.update", session: updated, summary: `Updated class ${name}`, before, after: { name, startsAt, durationMinutes, capacity, coachName, imageAssetId } });
+    await classAudit(ctx, actor, { action: "classes.session.update", branchId: updated.branchId, entityId: updated.publicId, entityLabel: name, summary: `Updated class ${name}`, before, after: { name, dayOfWeek, startMinute, durationMinutes, capacity, audience, coachName, imageAssetId } });
     return await classView(ctx, actor, updated);
   }
 
@@ -210,9 +216,11 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
     publicId,
     branchId: branch._id,
     name,
-    coachUserId,
+    coachUserId: coachId,
     coachName,
-    startsAt,
+    dayOfWeek,
+    startMinute,
+    audience: audience as ClassSession["audience"],
     durationMinutes,
     capacity,
     imageAssetId,
@@ -223,20 +231,18 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
     updatedAt: now,
   });
   const created = (await ctx.db.get(id))!;
-  await classAudit(ctx, actor, { action: "classes.session.create", session: created, summary: `Scheduled class ${name}`, after: { name, startsAt, durationMinutes, capacity, coachName, imageAssetId } });
+  await classAudit(ctx, actor, { action: "classes.session.create", branchId: created.branchId, entityId: created.publicId, entityLabel: name, summary: `Scheduled class ${name}`, after: { name, dayOfWeek, startMinute, durationMinutes, capacity, audience, coachName, imageAssetId } });
   return await classView(ctx, actor, created);
 }
 
-async function cancelClassSession(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+async function deleteClassSession(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<{ id: string }> {
   requirePermission(actor, "operations.manage");
   requireReason(input.reason, actor.correlationId);
   const session = await sessionByPublicId(ctx, actor, input.sessionId);
-  if (session.status === "cancelled") return await classView(ctx, actor, session);
-  const now = Date.now();
-  await ctx.db.patch(session._id, { status: "cancelled", cancelReason: String(input.reason).trim(), updatedAt: now });
-  const updated = (await ctx.db.get(session._id))!;
-  await classAudit(ctx, actor, { action: "classes.session.cancel", session: updated, summary: `Cancelled class ${session.name}`, reason: String(input.reason).trim(), before: { status: "scheduled" }, after: { status: "cancelled" } });
-  return await classView(ctx, actor, updated);
+  await classAudit(ctx, actor, { action: "classes.session.delete", branchId: session.branchId, entityId: session.publicId, entityLabel: session.name, summary: `Removed class ${session.name} from the weekly schedule`, reason: String(input.reason).trim(), before: { name: session.name, dayOfWeek: session.dayOfWeek, startMinute: session.startMinute, roster: session.roster.length } });
+  if (session.imageAssetId) await activateClassImage(ctx, actor, undefined, session.imageAssetId);
+  await ctx.db.delete(session._id);
+  return { id: session.publicId };
 }
 
 async function rosterMember(ctx: ReadContext, actor: ActorContext, memberId: unknown): Promise<{ id: string; name: string }> {
@@ -253,14 +259,13 @@ async function rosterMember(ctx: ReadContext, actor: ActorContext, memberId: unk
 async function addClassAttendee(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requireRosterPermission(actor);
   const session = await sessionByPublicId(ctx, actor, input.sessionId);
-  if (session.status === "cancelled") domainError("VALIDATION_ERROR", "A cancelled class cannot take bookings.", { correlationId: actor.correlationId });
   const member = await rosterMember(ctx, actor, input.memberId);
   if (session.roster.some((entry) => entry.memberId === member.id)) return await classView(ctx, actor, session);
   if (session.roster.length >= session.capacity) domainError("VALIDATION_ERROR", "This class is full.", { correlationId: actor.correlationId });
   const now = Date.now();
   await ctx.db.patch(session._id, { roster: [...session.roster, { memberId: member.id, name: member.name, bookedAt: now, attended: false }], updatedAt: now });
   const updated = (await ctx.db.get(session._id))!;
-  await classAudit(ctx, actor, { action: "classes.roster.add", session: updated, summary: `Added ${member.name} to ${session.name}` });
+  await classAudit(ctx, actor, { action: "classes.roster.add", branchId: updated.branchId, entityId: updated.publicId, entityLabel: session.name, summary: `Added ${member.name} to ${session.name}` });
   return await classView(ctx, actor, updated);
 }
 
@@ -273,29 +278,79 @@ async function removeClassAttendee(ctx: MutationCtx, actor: ActorContext, input:
   const now = Date.now();
   await ctx.db.patch(session._id, { roster: session.roster.filter((candidate) => candidate.memberId !== memberId), updatedAt: now });
   const updated = (await ctx.db.get(session._id))!;
-  await classAudit(ctx, actor, { action: "classes.roster.remove", session: updated, summary: `Removed ${entry.name} from ${session.name}` });
+  await classAudit(ctx, actor, { action: "classes.roster.remove", branchId: updated.branchId, entityId: updated.publicId, entityLabel: session.name, summary: `Removed ${entry.name} from ${session.name}` });
   return await classView(ctx, actor, updated);
 }
 
 async function setClassAttendance(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requireRosterPermission(actor);
   const session = await sessionByPublicId(ctx, actor, input.sessionId);
-  if (session.status === "cancelled") domainError("VALIDATION_ERROR", "A cancelled class has no attendance to record.", { correlationId: actor.correlationId });
   const memberId = optionalText(input.memberId);
   const attended = input.attended === true;
   const entry = session.roster.find((candidate) => candidate.memberId === memberId);
-  if (!entry) domainError("NOT_FOUND", "This member is not on the class roster.", { correlationId: actor.correlationId });
+  if (!entry) domainError("NOT_FOUND", "This member is not in the class.", { correlationId: actor.correlationId });
   if (entry.attended === attended) return await classView(ctx, actor, session);
   const now = Date.now();
   await ctx.db.patch(session._id, { roster: session.roster.map((candidate) => candidate.memberId === memberId ? { ...candidate, attended } : candidate), updatedAt: now });
   const updated = (await ctx.db.get(session._id))!;
-  await classAudit(ctx, actor, { action: "classes.attendance.set", session: updated, summary: `${attended ? "Marked" : "Unmarked"} ${entry.name} ${attended ? "present in" : "for"} ${session.name}` });
+  await classAudit(ctx, actor, { action: "classes.attendance.set", branchId: updated.branchId, entityId: updated.publicId, entityLabel: session.name, summary: `${attended ? "Marked" : "Unmarked"} ${entry.name} ${attended ? "present in" : "for"} ${session.name}` });
   return await classView(ctx, actor, updated);
+}
+
+function coachView(row: Doc<"domainRecords">): Data {
+  const value = row.data as Data;
+  return { id: row.publicId, name: String(value.name ?? row.publicId), phone: optionalText(value.phone), specialty: optionalText(value.specialty), createdAt: new Date(row.createdAt).toISOString() };
+}
+
+async function listCoaches(ctx: QueryCtx, actor: ActorContext): Promise<Data[]> {
+  requirePermission(actor, "members.read");
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "coach")).collect())
+    .map(coachView)
+    .sort((left, right) => String(left.name).localeCompare(String(right.name)));
+}
+
+async function upsertCoach(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "operations.manage");
+  const name = requiredText(input.name, "Coach name", actor);
+  if (name.length > 60) domainError("VALIDATION_ERROR", "Coach name must be 60 characters or fewer.", { correlationId: actor.correlationId });
+  const phone = optionalText(input.phone);
+  const specialty = optionalText(input.specialty);
+  const now = Date.now();
+  const requestedId = optionalText(input.coachId);
+  const existing = requestedId
+    ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "coach").eq("publicId", requestedId)).unique()
+    : null;
+  if (existing) {
+    await ctx.db.patch(existing._id, { data: { ...(existing.data as Data), name, phone, specialty }, updatedAt: now });
+    // Keep coach-name snapshots on classes in step with the directory.
+    const sessions = await ctx.db.query("classSessions").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    for (const session of sessions.filter((candidate) => candidate.coachUserId === existing.publicId && candidate.coachName !== name)) {
+      await ctx.db.patch(session._id, { coachName: name, updatedAt: now });
+    }
+    return coachView((await ctx.db.get(existing._id))!);
+  }
+  const publicId = crypto.randomUUID();
+  const id = await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "coach", publicId, createdAt: now, updatedAt: now, data: { id: publicId, name, phone, specialty } });
+  return coachView((await ctx.db.get(id))!);
+}
+
+async function removeCoach(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<{ id: string }> {
+  requirePermission(actor, "operations.manage");
+  const coach = await coachByPublicId(ctx, actor, requiredText(input.coachId, "Coach", actor));
+  const now = Date.now();
+  // Classes keep the historical name but drop the dangling reference.
+  const sessions = await ctx.db.query("classSessions").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  for (const session of sessions.filter((candidate) => candidate.coachUserId === coach.publicId)) {
+    await ctx.db.patch(session._id, { coachUserId: undefined, updatedAt: now });
+  }
+  await ctx.db.delete(coach._id);
+  return { id: coach.publicId };
 }
 
 export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
   switch (operation) {
     case "classes.sessions.list": return await listClassSessions(ctx, actor, input);
+    case "classes.coaches.list": return await listCoaches(ctx, actor);
     default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { correlationId: actor.correlationId });
   }
 }
@@ -303,10 +358,12 @@ export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation
 export async function classesMutation(ctx: MutationCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
   switch (operation) {
     case "classes.session.upsert": return await upsertClassSession(ctx, actor, input);
-    case "classes.session.cancel": return await cancelClassSession(ctx, actor, input);
+    case "classes.session.delete": return await deleteClassSession(ctx, actor, input);
     case "classes.roster.add": return await addClassAttendee(ctx, actor, input);
     case "classes.roster.remove": return await removeClassAttendee(ctx, actor, input);
     case "classes.attendance.set": return await setClassAttendance(ctx, actor, input);
+    case "classes.coach.upsert": return await upsertCoach(ctx, actor, input);
+    case "classes.coach.remove": return await removeCoach(ctx, actor, input);
     default: domainError("NOT_FOUND", `Unknown classes mutation ${operation}.`, { correlationId: actor.correlationId });
   }
 }

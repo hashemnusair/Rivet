@@ -688,10 +688,13 @@ export class ConvexGymOSApi implements GymOSApi {
   upsertFacilityTask(input: T.UpsertFacilityTaskInput): Promise<T.FacilityTask> { return this.mutate("operations.facility_task.upsert", input); }
   listClassSessions(query: T.ClassSessionQuery): Promise<T.ClassSession[]> { return this.query("classes.sessions.list", query); }
   upsertClassSession(input: T.UpsertClassSessionInput): Promise<T.ClassSession> { return this.mutate("classes.session.upsert", input); }
-  cancelClassSession(input: { sessionId: T.UUID; reason: string }): Promise<T.ClassSession> { return this.mutate("classes.session.cancel", input); }
+  deleteClassSession(input: { sessionId: T.UUID; reason: string }): Promise<{ id: T.UUID }> { return this.mutate("classes.session.delete", input); }
   addClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> { return this.mutate("classes.roster.add", input); }
   removeClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> { return this.mutate("classes.roster.remove", input); }
   setClassAttendance(input: T.ClassAttendanceInput): Promise<T.ClassSession> { return this.mutate("classes.attendance.set", input); }
+  listClassCoaches(): Promise<T.ClassCoach[]> { return this.query("classes.coaches.list", {}); }
+  upsertClassCoach(input: T.UpsertClassCoachInput): Promise<T.ClassCoach> { return this.mutate("classes.coach.upsert", input); }
+  removeClassCoach(coachId: T.UUID): Promise<{ id: T.UUID }> { return this.mutate("classes.coach.remove", { coachId }); }
   listEquipmentAssets(query: { branchId?: T.UUID; status?: T.EquipmentAssetStatus } = {}): Promise<T.EquipmentAsset[]> { return this.query("operations.equipment_assets.list", query); }
   upsertEquipmentAsset(input: T.UpsertEquipmentAssetInput): Promise<T.EquipmentAsset> { return this.mutate("operations.equipment_asset.upsert", input); }
   reportEquipmentIssue(input: Parameters<GymOSApi["reportEquipmentIssue"]>[0]): Promise<T.EquipmentIssue> { return this.mutate("operations.equipment_issue.report", input); }

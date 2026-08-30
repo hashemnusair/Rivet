@@ -17,6 +17,16 @@ describe("navIsActive", () => {
     expect(navIsActive("/dashboard", "/dashboard")).toBe(true);
     expect(navIsActive("/dashboard", "/dashboard/settings")).toBe(false);
     expect(navIsActive("/payments", "/payments/receipts/receipt-1")).toBe(true);
-    expect(navIsActive("/payments", "/payments/shifts")).toBe(false);
+  });
+
+  it("keeps the Payments entry active across the whole finance cluster", () => {
+    expect(navIsActive("/payments", "/payments/shifts")).toBe(true);
+    expect(navIsActive("/payments", "/reports")).toBe(true);
+    expect(navIsActive("/finance", "/reports")).toBe(false);
+  });
+
+  it("keeps the pipeline entry active on lead detail pages", () => {
+    expect(navIsActive("/crm/pipeline", "/crm/leads/lead-1")).toBe(true);
+    expect(navIsActive("/crm/queues", "/crm/leads/lead-1")).toBe(false);
   });
 });

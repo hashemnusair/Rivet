@@ -8,8 +8,6 @@ const modules = import.meta.glob("./**/*.ts");
 const operation = (name: string, input: Record<string, unknown> = {}) => ({ operation: name, input, correlationId: `cor-test-${name}` });
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
 
-const DAY_MS = 86_400_000;
-
 async function seed(t: TestConvex<typeof schema>) {
   await t.run(async (ctx) => {
     const now = Date.now();
@@ -30,68 +28,81 @@ async function seed(t: TestConvex<typeof schema>) {
   });
 }
 
-describe("class calendar", () => {
-  it("schedules, lists in a window, rosters with capacity, records attendance, and cancels with a reason", async () => {
+describe("weekly class schedule", () => {
+  it("manages the coach directory and keeps class snapshots in step", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-owner-classes" });
     const reception = t.withIdentity({ subject: "clerk-reception-classes" });
-    const startsAt = new Date(Date.now() + 2 * DAY_MS).toISOString();
 
-    // Receptionists cannot schedule classes.
-    await expectCode(reception.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "HIIT", startsAt, durationMinutes: 60, capacity: 2 })), "FORBIDDEN");
+    await expectCode(reception.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Blocked" })), "FORBIDDEN");
+    const coach = await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Dana Haddad", specialty: "HIIT" })) as { id: string; name: string };
+    expect(coach).toMatchObject({ name: "Dana Haddad", specialty: "HIIT" });
 
-    const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", {
-      branchId: "branch-classes",
-      name: "Morning HIIT",
-      coachUserId: "owner-classes",
-      startsAt,
-      durationMinutes: 60,
-      capacity: 2,
-      notes: "Bring water.",
-    })) as { id: string; status: string; coachName: string; roster: unknown[] };
-    expect(created).toMatchObject({ status: "scheduled", coachName: "Owner Classes", roster: [] });
+    const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Evening HIIT", coachId: coach.id, dayOfWeek: 1, startMinute: 18 * 60, durationMinutes: 60, capacity: 10, audience: "women" })) as { id: string; coachName: string; audience: string };
+    expect(created).toMatchObject({ coachName: "Dana Haddad", audience: "women", dayOfWeek: 1, startMinute: 1080 });
 
-    const listed = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes", from: new Date(Date.now()).toISOString(), to: new Date(Date.now() + 7 * DAY_MS).toISOString() })) as Array<{ id: string }>;
-    expect(listed.map((item) => item.id)).toContain(created.id);
-    const outside = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes", from: new Date(Date.now() + 3 * DAY_MS).toISOString(), to: new Date(Date.now() + 5 * DAY_MS).toISOString() })) as Array<{ id: string }>;
-    expect(outside.map((item) => item.id)).not.toContain(created.id);
+    // Renaming the coach updates the schedule's snapshots.
+    await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { coachId: coach.id, name: "Dana H." }));
+    const listed = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes" })) as Array<{ id: string; coachName?: string }>;
+    expect(listed.find((item) => item.id === created.id)?.coachName).toBe("Dana H.");
 
-    // Reception can roster and mark attendance.
+    // Removing a coach keeps the class but drops the dangling reference.
+    await owner.mutation(api.domain.mutate, operation("classes.coach.remove", { coachId: coach.id }));
+    const after = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes" })) as Array<{ id: string; coachId?: string; coachName?: string }>;
+    expect(after.find((item) => item.id === created.id)).toMatchObject({ coachName: "Dana H." });
+    expect(after.find((item) => item.id === created.id)?.coachId).toBeUndefined();
+    expect(await owner.query(api.domain.query, operation("classes.coaches.list"))).toEqual([]);
+  });
+
+  it("keeps a weekly template with roster capacity, attendance, and reason-gated removal", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-classes" });
+    const reception = t.withIdentity({ subject: "clerk-reception-classes" });
+
+    await expectCode(reception.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "HIIT", dayOfWeek: 0, startMinute: 360, durationMinutes: 60, capacity: 2, audience: "mixed" })), "FORBIDDEN");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Bad day", dayOfWeek: 9, startMinute: 360, durationMinutes: 60, capacity: 2, audience: "mixed" })), "VALIDATION_ERROR");
+
+    const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Morning HIIT", dayOfWeek: 0, startMinute: 6 * 60, durationMinutes: 90, capacity: 2, audience: "mixed" })) as { id: string };
+
     await reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-a" }));
     const duplicated = await reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-a" })) as { roster: unknown[] };
     expect(duplicated.roster).toHaveLength(1);
     await reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-b" }));
     await expectCode(reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-c" })), "VALIDATION_ERROR");
-
     const marked = await reception.mutation(api.domain.mutate, operation("classes.attendance.set", { sessionId: created.id, memberId: "member-a", attended: true })) as { attendedCount: number };
     expect(marked.attendedCount).toBe(1);
 
-    // Capacity cannot drop below the booked roster.
-    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { sessionId: created.id, branchId: "branch-classes", name: "Morning HIIT", startsAt, durationMinutes: 60, capacity: 1 })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { sessionId: created.id, branchId: "branch-classes", name: "Morning HIIT", dayOfWeek: 0, startMinute: 6 * 60, durationMinutes: 90, capacity: 1, audience: "mixed" })), "VALIDATION_ERROR");
 
-    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.cancel", { sessionId: created.id, reason: "" })), "VALIDATION_ERROR");
-    const cancelled = await owner.mutation(api.domain.mutate, operation("classes.session.cancel", { sessionId: created.id, reason: "Coach is unavailable." })) as { status: string; cancelReason: string };
-    expect(cancelled).toMatchObject({ status: "cancelled", cancelReason: "Coach is unavailable." });
-    await expectCode(reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-c" })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.delete", { sessionId: created.id, reason: "" })), "VALIDATION_ERROR");
+    await owner.mutation(api.domain.mutate, operation("classes.session.delete", { sessionId: created.id, reason: "Coach left; slot retired." }));
+    const listed = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes" })) as Array<{ id: string }>;
+    expect(listed.map((item) => item.id)).not.toContain(created.id);
 
     const audits = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).filter((event) => event.entityType === "class_session").map((event) => event.action));
-    expect(audits).toEqual(expect.arrayContaining(["classes.session.create", "classes.roster.add", "classes.attendance.set", "classes.session.cancel"]));
+    expect(audits).toEqual(expect.arrayContaining(["classes.session.create", "classes.roster.add", "classes.attendance.set", "classes.session.delete"]));
   });
 
-  it("keeps class sessions inside the caller's branch scope", async () => {
+  it("normalizes legacy dated rows into weekly slots and enforces branch scope", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-owner-classes" });
     const reception = t.withIdentity({ subject: "clerk-reception-classes" });
-    const startsAt = new Date(Date.now() + DAY_MS).toISOString();
-    const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-other", name: "Second Branch Yoga", startsAt, durationMinutes: 60, capacity: 10 })) as { id: string };
 
-    // The receptionist is scoped to the main branch only.
+    // A legacy dated row (Wednesday 2026-09-02 11:00 Amman = 08:00 UTC).
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-classes")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "branch-classes")).unique();
+      await ctx.db.insert("classSessions", { organizationId: organization!._id, publicId: "legacy-1", branchId: branch!._id, name: "Legacy MMA", startsAt: Date.parse("2026-09-02T08:00:00.000Z"), durationMinutes: 60, capacity: 12, status: "scheduled", roster: [], createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    const listed = await owner.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-classes" })) as Array<{ id: string; dayOfWeek: number; startMinute: number }>;
+    expect(listed.find((item) => item.id === "legacy-1")).toMatchObject({ dayOfWeek: 3, startMinute: 11 * 60 });
+
+    const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-other", name: "Second Branch Yoga", dayOfWeek: 2, startMinute: 600, durationMinutes: 60, capacity: 10, audience: "mixed" })) as { id: string };
     await expectCode(reception.query(api.domain.query, operation("classes.sessions.list", { branchId: "branch-other" })), "FORBIDDEN");
     await expectCode(reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-a" })), "FORBIDDEN");
-
-    // A session can never migrate between branches.
-    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { sessionId: created.id, branchId: "branch-classes", name: "Second Branch Yoga", startsAt, durationMinutes: 60, capacity: 10 })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { sessionId: created.id, branchId: "branch-classes", name: "Second Branch Yoga", dayOfWeek: 2, startMinute: 600, durationMinutes: 60, capacity: 10, audience: "mixed" })), "VALIDATION_ERROR");
   });
 });
