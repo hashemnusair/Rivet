@@ -3,8 +3,9 @@
 ## Quality-of-life program — 30 August 2026
 
 - The approved quality-of-life program is implemented on
-  `codex/qol-implementation` in eleven focused application/test commits from
-  `0c6ea31` through `2016462`. The frozen `FRONTEND_HANDOFF.md` remains
+  `codex/qol-implementation` in focused application, audit-fix, and test
+  commits from `0c6ea31` through `6296fea`. The frozen
+  `FRONTEND_HANDOFF.md` remains
   unchanged and no provider, deployment, environment, or Production data was
   touched.
 - Members now have an ownership-scoped financial center with balances,
@@ -13,7 +14,8 @@
   Receipt and export authorization is enforced from the authenticated member
   identity rather than a caller-supplied customer ID.
 - Members and CRM now preserve filters in shareable URLs and support private
-  saved views. Members have selectable columns and bounded, idempotent bulk
+  saved views with automatic personal defaults, rename/update, duplicate, and
+  delete controls. Members have selectable columns and bounded, idempotent bulk
   tag, branch, follow-up, and reason-gated archive work; CRM has selectable
   list/board records and bounded owner/follow-up actions. Every operation
   rechecks tenant, branch, permission, and record eligibility and reports
@@ -22,12 +24,15 @@
   field-by-field survivor choices, an impact preview, optimistic version check,
   reason-gated ignore/merge decisions, and immutable merge evidence. Completed
   receipts, payments, ledger facts, and audit history are not rewritten;
-  linked history remains visible from the surviving member.
+  linked history remains visible from the surviving member. Records attached
+  to a member-owned account are deliberately blocked from automatic merge and
+  require supervised identity resolution.
 - New owners, invited staff, and members receive versioned, persisted,
   resumable, dismissible, and replayable guidance. Owner readiness derives
   required operating progress from real organization, branch, payment, plan,
   invitation, import, reception, shift, and public-profile state. Staff tours
-  are role/branch aware, and member guidance covers memberships, short-lived QR
+  are permission/role aware, state-derived readiness cannot be manually
+  bypassed, and member guidance covers memberships, short-lived QR
   entry, PT, profile ownership, finance, installation, and notifications.
 - The member app is installable. Its service worker caches only a versioned,
   non-sensitive shell and offline assets; authenticated member, financial,
@@ -43,13 +48,14 @@
   members, leads, payments/refunds/receipts/reconciliation, audit events,
   membership liabilities, PT orders, and inventory/supplier operations.
   Exports include filter/scope/timezone metadata, use idempotency keys, and
-  expire their inline download content after 24 hours.
+  expire their inline download content after 24 hours. CSV text cells are
+  spreadsheet-formula neutralized and PT rows honor selected-branch scope.
 - Global navigation now searches permitted members, leads, receipts, pages,
   and role actions, including phone fragments, receipt numbers, and external
   references. It records bounded recent work, supports user-pinned quick
   actions, and includes a keyboard-shortcuts reference opened with `?`.
 - Verification passed both TypeScript checks, zero-warning lint and the secret
-  audit, **161 Vitest files / 975 tests**, **14 repository-safety tests**, the
+  audit, **161 Vitest files / 977 tests**, **14 repository-safety tests**, the
   **57-route** Production build, **43 credential-free Playwright passes / 14
   explicit staging-only skips / 0 failures**, `pnpm audit --prod` with no known
   vulnerabilities, and `git diff --check`.

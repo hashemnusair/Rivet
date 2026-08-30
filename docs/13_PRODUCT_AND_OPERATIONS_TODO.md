@@ -22,12 +22,14 @@ values, applicant details, and provider credentials out of this file.
 - [x] Add the member financial center, authenticated-member receipt recovery,
   searchable/filterable history, outstanding and itemized charge explanations,
   print/download, timeline links, and member personal-data export.
-- [x] Add URL-persistent member/CRM views, private saved views, column choices,
+- [x] Add URL-persistent member/CRM views, private saved views with personal
+  defaults and full update/duplicate/delete lifecycle, column choices,
   multi-select, and bounded idempotent bulk tagging, assignment, follow-up, and
   reason-gated archive work with partial-result reporting and audit evidence.
 - [x] Add the duplicate queue and reasoned, version-checked merge workflow with
   field choices, impact preview, immutable merge facts, safe redirection, and
-  linked history without rewriting financial or audit source records.
+  linked history without rewriting financial or audit source records. Block
+  member-owned identities from automatic merge pending supervised resolution.
 - [x] Add persisted, versioned, resumable onboarding for owners, role/branch
   aware staff, and members, including real owner-readiness checks, replay,
   dismiss, keyboard-safe tutorials, install education, and notification
@@ -42,11 +44,12 @@ values, applicant details, and provider credentials out of this file.
   `RIVET_AUTOMATIONS_LIVE === "true"`.
 - [x] Add audited self-service CSV exports for members, CRM, finance,
   reconciliation, audit, membership liabilities, PT, and operations with
-  branch/permission scope, metadata, idempotency, and 24-hour download expiry.
+  branch/permission scope, metadata, idempotency, spreadsheet-formula
+  neutralization, and 24-hour download expiry.
 - [x] Expand the command palette with workspace search across members, leads,
   receipts, pages, and role actions, plus recent records, pinned actions,
   phone/external-reference search, and a `?` keyboard reference.
-- [x] Verify 161 Vitest files / 975 tests, 14 repository-safety tests, both
+- [x] Verify 161 Vitest files / 977 tests, 14 repository-safety tests, both
   TypeScript checks, zero-warning lint/secret audit, 57 generated Production
   routes, 43 passed / 14 explicitly staging-only skipped Playwright journeys,
   a clean production dependency audit, and `git diff --check`.
