@@ -37,9 +37,12 @@ values, applicant details, and provider credentials out of this file.
   routes, 45 credential-free Playwright journeys including two class-role
   journeys, 14 explicit staging-only skips, a clean Production dependency
   audit, the UI detector, and `git diff --check`.
-- [ ] Run the normal exact-target Convex and hosted release procedure for the
-  post-`156f9b1` application commits. Code verification is complete; this entry
-  does not claim the new backend functions are already in Production.
+- [x] Run the normal exact-target Convex and hosted release procedure for the
+  post-`156f9b1` application commits: Convex Production `descriptive-meerkat-589`
+  deployed cleanly at `d2a45e2` on 30 August (schema validated, no index
+  deletions) after the 169-file / 1,003-test suite and both typechecks passed
+  on the merged tree, so `customer.membership.freezePolicy` and the hardened
+  handlers are live behind the already-deployed Vercel frontend.
 
 ### Quality-of-life program completed locally on 30 August
 
