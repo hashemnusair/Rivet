@@ -131,8 +131,11 @@ export function SettingsPageInner() {
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
         <div className="grid items-start gap-5 lg:grid-cols-[222px_minmax(0,1fr)]">
-          <nav aria-label="Settings sections" className="lg:sticky lg:top-20 lg:flex lg:max-h-[calc(100dvh-6.5rem)] lg:flex-col">
-            <div className="relative mb-3 shrink-0">
+          {/* Plain page flow on purpose: the rail scrolls with the page, so
+              every section is always reachable — no pinned pane to trap or
+              clip the list on short screens. */}
+          <nav aria-label="Settings sections">
+            <div className="relative mb-3">
               <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
               <Input
                 value={query}
@@ -142,11 +145,7 @@ export function SettingsPageInner() {
                 className="h-9 ps-8"
               />
             </div>
-            <div
-              role="tablist"
-              aria-orientation="vertical"
-              className="space-y-4 pe-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-2 [scrollbar-width:thin]"
-            >
+            <div role="tablist" aria-orientation="vertical" className="space-y-4 pb-2">
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-0.5">{filtered.map(navButton)}</div>
