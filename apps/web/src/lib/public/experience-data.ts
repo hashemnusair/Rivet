@@ -421,6 +421,21 @@ export const INITIAL_CUSTOMER_MEMBERSHIPS: CustomerMembership[] = [
     balanceMinor: 0,
     qrValue: "rivet://entry/forge-fitness/ABD-2214/customer-lina",
     lastCheckInAt: "2026-07-30T19:12:00+03:00",
+    // The mock provider paints this fixture synchronously before its API
+    // subscriptions start. Keep the preview projection aligned with the
+    // seeded operational policy; the mock API replaces it with live reward
+    // progress and a generated share path after the member takes an action.
+    referral: {
+      membershipId: "membership-lina-forge",
+      enabled: true,
+      rewardDays: 7,
+      maxRewardDaysPerWindow: 30,
+      windowDays: 90,
+      earnedDays: 0,
+      remainingDays: 30,
+      successfulReferrals: 0,
+      recordedReferrals: 0,
+    },
     visitHistory: [
       { id: "visit-lina-3", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-30T19:12:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
       { id: "visit-lina-2", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-28T18:46:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
