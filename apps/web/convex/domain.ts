@@ -2654,6 +2654,36 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
   return { ...value, marketingPreference: preference };
 }
 
+async function customerReferralProgramData(ctx: ReadContext, organization: Organization, portalMembershipId: string, memberId: string, gymId: string, internalMembershipId = portalMembershipId): Promise<Data> {
+  const [settings, rewards, links] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "referralReward")).collect(),
+    recordsOfMember(ctx, organization._id, memberId, "referralLink"),
+  ]);
+  const configured = data(data(data(settings?.data).operationalPolicies).referrals);
+  const policy = { ...DEFAULT_OPERATIONAL_POLICIES.referrals, ...configured } as Data;
+  const rewardDays = numberValue(policy.rewardDays, 7);
+  const maxRewardDaysPerWindow = numberValue(policy.maxRewardDaysPerWindow, 30);
+  const windowDays = numberValue(policy.windowDays, 90);
+  const windowStart = Date.now() - windowDays * 86_400_000;
+  const memberRewards = rewards.filter((row) => stringValue(data(row.data).referrerId) === memberId);
+  const currentRewards = memberRewards.filter((row) => row.createdAt >= windowStart);
+  const earnedDays = currentRewards.reduce((sum, row) => sum + numberValue(data(row.data).days), 0);
+  const link = links.map((row) => data(row.data)).find((row) => booleanValue(row.active, true) && row.membershipId === internalMembershipId);
+  return {
+    membershipId: portalMembershipId,
+    enabled: booleanValue(policy.enabled),
+    rewardDays,
+    maxRewardDaysPerWindow,
+    windowDays,
+    earnedDays,
+    remainingDays: Math.max(0, maxRewardDaysPerWindow - earnedDays),
+    successfulReferrals: memberRewards.filter((row) => stringValue(data(row.data).status) === "applied").length,
+    recordedReferrals: memberRewards.length,
+    sharePath: link ? `/customer/gyms/${encodeURIComponent(gymId)}?ref=${encodeURIComponent(stringValue(link.id))}` : undefined,
+  };
+}
+
 async function customerExperience(ctx: ReadContext): Promise<Data> {
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
@@ -2723,6 +2753,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         occurredAt: stringValue(item.occurredAt, stringValue(item.createdAt)),
       })),
     ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 100);
+    const referral = await customerReferralProgramData(ctx, tenant, stringValue(projection.id), memberId, marketplace?.publicId ?? stringValue(projection.gymId, publicOrganizationId(tenant)), internalMembershipId);
     return {
       ...projection,
       gymId: marketplace?.publicId ?? stringValue(projection.gymId, publicOrganizationId(tenant)),
@@ -2751,6 +2782,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         checkedInByName: optionalString(item.actorName),
       })),
       activity,
+      referral,
       qrValue: "",
     };
   }));
@@ -3140,6 +3172,17 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
   }
   const storageOrganization = targetOrganization;
+  const referralToken = optionalString(input.referralToken)?.trim();
+  let referredByMemberId: string | undefined;
+  if (referralToken) {
+    if (referralToken.length > 200) domainError("VALIDATION_ERROR", "This referral link is not valid.");
+    const referralLink = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "referralLink").eq("publicId", referralToken)).unique();
+    const referral = data(referralLink?.data);
+    const referrerId = optionalString(referral.memberId);
+    const referrer = referrerId ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "member").eq("publicId", referrerId)).unique() : null;
+    if (!referralLink || !booleanValue(referral.active, true) || referral.gymId !== input.gymId || !referrer || stringValue(data(referrer.data).status) === "archived") domainError("NOT_FOUND", "This referral link is no longer available.");
+    referredByMemberId = referrerId;
+  }
   const idempotencyKey = optionalString(input.idempotencyKey)?.trim();
   if (idempotencyKey && (idempotencyKey.length < 8 || idempotencyKey.length > 200)) {
     domainError("VALIDATION_ERROR", "The trial request could not be processed.");
@@ -3154,6 +3197,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     preferredDate,
     preferredTime,
     goal: stringValue(input.goal),
+    referralToken,
   });
   const idempotencyScope = `customer.trial.create:${await privacyFingerprint(publicUserId(user))}`;
   if (idempotencyKey) {
@@ -3230,7 +3274,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   if (branch) {
     leadId = newPublicId();
     const branchPublicId = publicBranchId(branch);
-    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: "other", expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: `Free trial requested through RIVET Member. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
+    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: referredByMemberId ? "referral" : "other", referredByMemberId, expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: `Free trial requested through RIVET Member${referredByMemberId ? " via a member referral link" : ""}. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
     await ctx.db.insert("domainRecords", { organizationId: targetOrganization._id, entityType: "lead", publicId: leadId, branchId: branch._id, leadPublicId: leadId, createdAt: Date.now(), updatedAt: Date.now(), data: lead });
     await ctx.db.patch((await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique())!._id, { data: { ...base, leadId }, updatedAt: Date.now() });
     await notifyOrganizationRoles(ctx, {
@@ -7117,6 +7161,30 @@ async function insertCustomerPtAudit(ctx: MutationCtx, input: { organization: Or
   });
 }
 
+async function ensureCustomerReferralLink(ctx: MutationCtx, membershipId: string, correlationId: string): Promise<Data> {
+  const context = await customerPtContext(ctx, membershipId);
+  const projection = data(context.projection.data);
+  const member = data(context.member.data);
+  const gymId = stringValue(projection.gymId, publicOrganizationId(context.organization));
+  const current = await customerReferralProgramData(ctx, context.organization, context.projection.publicId, context.member.publicId, gymId, context.membership.publicId);
+  if (!booleanValue(current.enabled)) domainError("CONFLICT", "This gym has not enabled member referral rewards.", { correlationId });
+  if (optionalString(current.sharePath)) return current;
+  const token = newPublicId();
+  const now = Date.now();
+  await ctx.db.insert("domainRecords", {
+    organizationId: context.organization._id,
+    entityType: "referralLink",
+    publicId: token,
+    branchId: context.membership.branchId,
+    memberPublicId: context.member.publicId,
+    createdAt: now,
+    updatedAt: now,
+    data: { id: token, organizationId: publicOrganizationId(context.organization), memberId: context.member.publicId, membershipId: context.membership.publicId, gymId, active: true, createdAt: utcIso(now) },
+  });
+  await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: context.membership.branchId, action: "member.referral_link_created", entityType: "member", entityId: context.member.publicId, entityLabel: stringValue(member.memberNumber, context.member.publicId), summary: "Member created a referral share link", correlationId, after: { membershipId: context.membership.publicId } });
+  return await customerReferralProgramData(ctx, context.organization, context.projection.publicId, context.member.publicId, gymId, context.membership.publicId);
+}
+
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
   if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
@@ -7238,6 +7306,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.profile.update") return await registerCustomer(ctx, input);
   if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
+  if (operation === "customer.referral.ensure") return await ensureCustomerReferralLink(ctx, recordId(input.membershipId), stringValue(request.correlationId, newPublicId()));
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
   if (operation === "customer.membership.freezeRequest") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
@@ -9893,6 +9962,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           preferredLanguage: input.preferredLanguage,
           source: leadData.source,
           assignedSalespersonId: leadData.ownerId,
+          referredByMemberId: leadData.referredByMemberId,
         }, { rejectDuplicates: true });
       const memberDetail = created?.member ?? await toMemberDetail(ctx, actor, data(existingMemberRecord!.data));
       const member = data(memberDetail);

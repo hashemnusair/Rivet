@@ -57,6 +57,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: state.push }),
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock("@/lib/api/ConvexGymOSApi", () => ({
@@ -78,6 +79,7 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 describe("GymDetailClient trial form", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/customer/gyms/forge-fitness");
     state.customer = null;
     state.showGym = true;
     state.convexMode = false;
@@ -185,6 +187,45 @@ describe("GymDetailClient trial form", () => {
 
     await waitFor(() => expect(state.push).toHaveBeenCalledWith("/login/member/create?returnTo=%2Fcustomer%2Fgyms%2Fforge-fitness%3FbranchId%3Dforge-abdoun"));
     expect(state.bookTrial).not.toHaveBeenCalled();
+  });
+
+  it("preserves an opaque referral token through signup", async () => {
+    state.convexMode = true;
+    window.history.replaceState({}, "", "/customer/gyms/forge-fitness?ref=referral-token-123");
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Referred Visitor" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+962790000009" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "referred@example.com" } });
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "forge-abdoun" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send trial request" }));
+
+    await waitFor(() => expect(state.push).toHaveBeenCalledWith(
+      "/login/member/create?returnTo=%2Fcustomer%2Fgyms%2Fforge-fitness%3FbranchId%3Dforge-abdoun%26ref%3Dreferral-token-123",
+    ));
+    expect(state.bookTrial).not.toHaveBeenCalled();
+  });
+
+  it("submits the referral token with an authenticated trial request", async () => {
+    const user = userEvent.setup();
+    state.customer = {
+      id: "customer-referred",
+      name: "Referred Member",
+      nameAr: "Referred Member",
+      email: "referred.member@example.com",
+      phone: "+962790000008",
+      initials: "RM",
+      context: "RIVET member",
+    };
+    window.history.replaceState({}, "", "/customer/gyms/forge-fitness?ref=referral-token-456");
+    render(<GymDetailClient gymId="forge-fitness" />);
+
+    fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "forge-abdoun" } });
+    await user.click(screen.getByRole("button", { name: "Send trial request" }));
+
+    expect(state.bookTrial).toHaveBeenCalledWith(expect.objectContaining({
+      referralToken: "referral-token-456",
+    }));
   });
 
   it("denies a direct public detail route when the gym is no longer publishable", () => {

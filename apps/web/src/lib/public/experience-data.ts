@@ -152,6 +152,20 @@ export interface CustomerMembership {
   lastCheckInAt: string;
   visitHistory: CustomerVisit[];
   activity?: CustomerActivity[];
+  referral?: CustomerReferralProgram;
+}
+
+export interface CustomerReferralProgram {
+  membershipId: string;
+  enabled: boolean;
+  rewardDays: number;
+  maxRewardDaysPerWindow: number;
+  windowDays: number;
+  earnedDays: number;
+  remainingDays: number;
+  successfulReferrals: number;
+  recordedReferrals: number;
+  sharePath?: string;
 }
 
 export interface CustomerVisit {

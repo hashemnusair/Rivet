@@ -28,6 +28,7 @@ export interface BookTrialInput {
   preferredTime: string;
   goal: string;
   idempotencyKey?: string;
+  referralToken?: string;
 }
 
 export interface RegisterCustomerInput {

@@ -25,7 +25,7 @@ async function expectCode(request: Promise<unknown>, code: string) {
 
 type CustomerExperienceResult = {
   customer?: { id: string; email: string; marketingPreference?: { optedIn: boolean } };
-  memberships: Array<{ id: string }>;
+  memberships: Array<{ id: string; referral?: { enabled: boolean; sharePath?: string } }>;
   bookings: Array<{ id: string }>;
 };
 
@@ -654,6 +654,55 @@ describe("exported Convex customer ownership boundaries", () => {
     }
     const routedRows = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "lead")).collect());
     expect(routedRows).toHaveLength(1);
+  });
+
+  it("creates an opaque member referral link and attributes the referred trial lead", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    await t.run(async (ctx) => {
+      const settings = (await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "settings").eq("publicId", "settings")).unique())!;
+      const value = settings.data as Record<string, unknown>;
+      const operationalPolicies = value.operationalPolicies as Record<string, unknown>;
+      await ctx.db.patch(settings._id, {
+        data: {
+          ...value,
+          operationalPolicies: {
+            ...operationalPolicies,
+            referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
+          },
+        },
+      });
+    });
+    const referrer = t.withIdentity({ subject: "clerk-customer-a" });
+    const referred = t.withIdentity({ subject: "clerk-customer-b" });
+
+    const program = await referrer.mutation(api.domain.mutate, operation("customer.referral.ensure", {
+      membershipId: "membership-a-active",
+    })) as { sharePath: string };
+    expect(program.sharePath).toMatch(/^\/customer\/gyms\/gym-a\?ref=[0-9a-f-]+$/);
+    expect(program.sharePath).not.toContain("member-a");
+    expect(program.sharePath).not.toContain("Customer A");
+    const token = new URL(program.sharePath, "https://rivet.jo").searchParams.get("ref");
+    expect(token).toBeTruthy();
+
+    const booking = await referred.mutation(api.domain.mutate, operation("customer.trial.create", {
+      gymId: "gym-a",
+      branchId: "directory-branch-a",
+      preferredDate: trialDate,
+      preferredTime: "13:45",
+      goal: "Join a friend at the gym",
+      referralToken: token,
+    })) as TrialBookingResult;
+
+    const persisted = await t.run(async (ctx) => {
+      const lead = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "lead").eq("publicId", booking.leadId!)).unique();
+      const link = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "referralLink").eq("publicId", token!)).unique();
+      const audit = (await ctx.db.query("auditEvents").collect()).find((event) => event.action === "member.referral_link_created");
+      return { lead: lead?.data, link: link?.data, audit };
+    });
+    expect(persisted.lead).toMatchObject({ source: "referral", referredByMemberId: "member-a" });
+    expect(persisted.link).toMatchObject({ memberId: "member-a", membershipId: "membership-a-active", gymId: "gym-a", active: true });
+    expect(persisted.audit).toMatchObject({ actorRole: "member", entityPublicId: "member-a" });
   });
 
   it("replays customer trial requests idempotently with a privacy-safe guard", async () => {

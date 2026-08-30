@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, CreditCard, Dumbbell, MapPin, QrCode, ScanLine, Ticket } from "lucide-react";
+import { ArrowLeft, CalendarDays, Copy, CreditCard, Dumbbell, Gift, MapPin, QrCode, ScanLine, Share2, Ticket, Users } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
-import type { CustomerMembership, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerReferralProgram, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
 import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
 
@@ -122,12 +122,39 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         </div>
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
         <FreezeRequestCard membershipId={membership.id} />
+        {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}
         <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
     </main>
   );
+}
+
+function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerReferralProgram; gymName: string }) {
+  const [program, setProgram] = useState(initialProgram);
+  useEffect(() => setProgram(initialProgram), [initialProgram]);
+  const ensureLink = useApiMutation((api, membershipId: string) => api.ensureCustomerReferralLink(membershipId), { onSuccess: setProgram });
+  const sharePath = program.sharePath;
+  const progress = program.maxRewardDaysPerWindow > 0 ? Math.min(100, Math.round((program.earnedDays / program.maxRewardDaysPerWindow) * 100)) : 0;
+  const copy = async () => {
+    if (!sharePath) return;
+    try { await navigator.clipboard.writeText(new URL(sharePath, window.location.origin).toString()); toast.success("Referral link copied."); }
+    catch { toast.error("The link could not be copied. Try Share instead."); }
+  };
+  const share = async () => {
+    if (!sharePath) return;
+    const shareUrl = new URL(sharePath, window.location.origin).toString();
+    if (!navigator.share) { await copy(); return; }
+    try { await navigator.share({ title: `Join me at ${gymName}`, text: `Book a trial at ${gymName} through my member referral.`, url: shareUrl }); }
+    catch (error) { if (error instanceof DOMException && error.name === "AbortError") return; toast.error("The share sheet could not be opened."); }
+  };
+  return <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="referral-title">
+    <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
+      <div className="p-5"><span className="flex size-9 items-center justify-center rounded-md bg-success-bg text-success-deep"><Gift className="size-4" aria-hidden /></span><p className="eyebrow mt-4">Member referrals</p><h2 id="referral-title" className="mt-1 font-display text-[18px] font-semibold">Bring a friend. Earn {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"}.</h2><p className="mt-2 max-w-2xl text-[12.5px] leading-5 text-ink-2">Share your link. If your friend books through it and buys their first membership, {gymName} applies the reward automatically.</p><div className="mt-4 flex flex-wrap gap-2">{sharePath ? <><Button onClick={() => void share()}><Share2 /> Share link</Button><Button variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button></> : <Button loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>}</div></div>
+      <div className="border-t border-line bg-sunken p-5 lg:border-s lg:border-t-0"><div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Users className="size-4 text-ink-3" /> Reward progress</span><span className="font-mono text-[11px] text-ink-3">{program.earnedDays}/{program.maxRewardDaysPerWindow} days</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className="h-full rounded-full bg-success transition-[width]" style={{ width: `${progress}%` }} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-[11.5px]"><div><dt className="text-ink-3">Successful referrals</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.successfulReferrals}</dd></div><div><dt className="text-ink-3">Days still available</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.remainingDays}</dd></div></dl><p className="mt-4 text-[10.5px] leading-4 text-ink-3">The {program.maxRewardDaysPerWindow}-day cap looks back {program.windowDays} days. A referral counts once, after the first membership sale.</p></div>
+    </div>
+  </section>;
 }
 
 function fallbackGym(membership: CustomerMembership): MarketplaceGym {

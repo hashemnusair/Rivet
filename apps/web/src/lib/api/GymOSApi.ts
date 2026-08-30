@@ -120,7 +120,7 @@ import type {
   ISODate,
   UUID,
 } from "@/lib/domain/types";
-import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import type {
   CustomerFinancialSummary,
   CustomerReceipt,
@@ -834,7 +834,8 @@ export interface GymOSApi {
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona>;
   /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking>;
+  ensureCustomerReferralLink(membershipId: UUID): Promise<CustomerReferralProgram>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getCustomerFinancialSummary(): Promise<CustomerFinancialSummary>;
   listCustomerTransactions(query: CustomerTransactionQuery): Promise<Page<CustomerTransaction>>;

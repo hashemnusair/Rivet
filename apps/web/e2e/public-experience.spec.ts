@@ -136,6 +136,20 @@ test.describe("RIVET member experience", () => {
     await expect(dialog).toBeHidden();
     await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
   });
+
+  test("lets a member create a private referral link and see reward progress", async ({ page }) => {
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await page.goto("/customer/my-gyms/membership-lina-forge");
+
+    const referrals = page.getByRole("region", { name: /Bring a friend\. Earn 7 free days\./i });
+    await expect(referrals).toBeVisible();
+    await expect(referrals.getByText("0/30 days")).toBeVisible();
+    await referrals.getByRole("button", { name: "Create my link" }).click();
+    await expect(referrals.getByRole("button", { name: "Share link" })).toBeVisible();
+    await expect(referrals.getByRole("button", { name: "Copy" })).toBeVisible();
+  });
 });
 
 test.describe("RIVET gym applications", () => {

@@ -77,7 +77,7 @@ import {
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
@@ -679,6 +679,7 @@ export class MockGymOSApi implements GymOSApi {
   private classSessions: T.ClassSession[] = [];
   private classCoaches: T.ClassCoach[] = [];
   private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
+  private referralLinks = new Map<string, { token: string; memberId: string; membershipId: string; gymId: string }>();
   private freezeRequests: T.MembershipFreezeRequest[] = [];
   private customerMemberLinks = new Map<string, string>();
   private platformSupportCases: PlatformSupportCase[];
@@ -740,6 +741,7 @@ export class MockGymOSApi implements GymOSApi {
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
+    this.referralLinks.clear();
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
@@ -950,10 +952,32 @@ export class MockGymOSApi implements GymOSApi {
     return { ...persona, marketingPreference: preference, marketingPreferenceHistory: history.length > 0 ? history.map((item) => ({ ...item })) : [fallback] };
   }
 
+  private customerReferralProgram(membership: CustomerMembership): CustomerReferralProgram {
+    const policy = this.db.operationalPolicies.referrals;
+    const { member } = this.customerOperationalMembership(membership.id);
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const rewards = this.referralRewards.filter((reward) => reward.referrerId === member.id);
+    const currentRewards = rewards.filter((reward) => Date.parse(reward.createdAt) >= windowStart);
+    const earnedDays = currentRewards.reduce((sum, reward) => sum + reward.days, 0);
+    const link = this.referralLinks.get(membership.id);
+    return { membershipId: membership.id, enabled: policy.enabled, rewardDays: policy.rewardDays, maxRewardDaysPerWindow: policy.maxRewardDaysPerWindow, windowDays: policy.windowDays, earnedDays, remainingDays: Math.max(0, policy.maxRewardDaysPerWindow - earnedDays), successfulReferrals: rewards.filter((reward) => reward.status === "applied").length, recordedReferrals: rewards.length, sharePath: link ? `/customer/gyms/${encodeURIComponent(membership.gymId)}?ref=${encodeURIComponent(link.token)}` : undefined };
+  }
+
   getCustomerExperience(): Promise<CustomerExperience> {
     return this.respond(() => {
       const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
-      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS.map((membership) => ({ ...membership, referral: this.customerReferralProgram(membership) })), bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+    });
+  }
+
+  ensureCustomerReferralLink(membershipId: T.UUID): Promise<CustomerReferralProgram> {
+    return this.respond(() => {
+      const membership = INITIAL_CUSTOMER_MEMBERSHIPS.find((candidate) => candidate.id === membershipId && candidate.customerId === this.activeCustomerId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      if (!this.db.operationalPolicies.referrals.enabled) throw ApiError.of(ERR.CONFLICT, "This gym has not enabled member referral rewards.");
+      const { member, membership: operationalMembership } = this.customerOperationalMembership(membershipId);
+      if (!this.referralLinks.has(membershipId)) this.referralLinks.set(membershipId, { token: mockUuid(), memberId: member.id, membershipId: operationalMembership.id, gymId: membership.gymId });
+      return this.customerReferralProgram(membership);
     });
   }
 
@@ -1347,14 +1371,16 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
       if (!gym || !this.isProvisionedGym(gym) || !publicMarketplaceGyms([gym]).length || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
       if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
+      const referralLink = input.referralToken ? [...this.referralLinks.values()].find((link) => link.token === input.referralToken && link.gymId === input.gymId) : undefined;
+      if (input.referralToken && !referralLink) throw ApiError.of(ERR.NOT_FOUND, "This referral link is no longer available.");
       const idempotencyKey = input.idempotencyKey?.trim();
-      const signature = publicRequestSignature({ gymId: input.gymId, branchId: input.branchId, fullName: input.fullName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), preferredDate: input.preferredDate, preferredTime: input.preferredTime, goal: input.goal.trim(), customerId: input.customerId });
+      const signature = publicRequestSignature({ gymId: input.gymId, branchId: input.branchId, fullName: input.fullName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), preferredDate: input.preferredDate, preferredTime: input.preferredTime, goal: input.goal.trim(), customerId: input.customerId, referralToken: input.referralToken });
       const idempotencyScope = input.customerId ?? `anonymous:${input.email.trim().toLowerCase()}`;
       const idempotencyMapKey = idempotencyKey ? `${idempotencyScope}:${idempotencyKey}` : undefined;
       if (idempotencyMapKey) {
@@ -1376,7 +1402,7 @@ export class MockGymOSApi implements GymOSApi {
       if (gym && internalBranchId) {
         leadId = mockUuid();
         const followUp = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
-        const lead: T.Lead = {
+        const lead: T.Lead & { referredByMemberId?: string; notes?: string } = {
           id: leadId,
           organizationId: this.db.organization.id,
           branchId: internalBranchId,
@@ -1384,18 +1410,20 @@ export class MockGymOSApi implements GymOSApi {
           phone: input.phone.trim(),
           email: input.email.trim().toLowerCase(),
           stage: "trial_booked",
-          source: "other",
+          source: referralLink ? "referral" : "other",
+          referredByMemberId: referralLink?.memberId,
           ownerId: this.actor().id,
           expectedValue: { amount: gym.fromPriceMinor, currency: "JOD" },
           nextFollowUpAt: followUp,
           createdAt: nowISO(),
           updatedAt: nowISO(),
         };
-        (lead as T.Lead & { notes?: string }).notes = `Free trial requested through RIVET Member for ${directoryBranch.name}. Goal: ${input.goal}`;
+        lead.notes = `Free trial requested through RIVET Member${referralLink ? " via a member referral link" : ""} for ${directoryBranch.name}. Goal: ${input.goal}`;
         this.db.leads.push(lead);
         this.activity({ leadId, type: "member_created", title: "Free trial requested", body: input.goal, actorName: "RIVET Member" });
       }
-      const booking: TrialBooking = { ...input, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
+      const { referralToken: _referralToken, ...bookingInput } = input;
+      const booking: TrialBooking = { ...bookingInput, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
       this.trialBookings.unshift(booking);
       if (idempotencyMapKey) this.trialIdempotency.set(idempotencyMapKey, { signature, result: { ...booking } });
       return { ...booking };
@@ -2951,6 +2979,7 @@ export class MockGymOSApi implements GymOSApi {
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
+    this.referralLinks.clear();
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
@@ -6218,6 +6247,7 @@ export class MockGymOSApi implements GymOSApi {
         marketingPreferenceSource: input.marketingPreferenceSource,
         source: lead.source,
         assignedSalespersonId: lead.ownerId,
+        referredByMemberId: (lead as T.Lead & { referredByMemberId?: string }).referredByMemberId,
       });
       const sale = this.buildSale({ memberId: member.id, planId: plan.id, startDate: input.startDate, idempotencyKey: `lead-sale:${input.idempotencyKey}`, standardStartDate: this.today(), soldBy: this.actor().id });
       lead.stage = "won";
@@ -6239,12 +6269,18 @@ export class MockGymOSApi implements GymOSApi {
   private createMemberSync(input: T.CreateMemberInput): MemberRecord {
     const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
     if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    const referrer = input.referredByMemberId
+      ? this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived" && this.branchIsVisible(candidate.homeBranchId))
+      : undefined;
+    if (input.referredByMemberId && !referrer) throw ApiError.of(ERR.NOT_FOUND, "The referring member was not found.");
     this.db.counters.memberNumber += 1;
     const record: MemberRecord = {
       id: mockUuid(),
       memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
       fullName: input.fullName.trim(),
       fullNameAr: input.fullNameAr,
+      referredByMemberId: input.referredByMemberId,
+      referredByName: referrer?.fullName,
       phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
       email: normalizeOptionalEmail(input.email),
       gender: input.gender,

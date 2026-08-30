@@ -52,7 +52,7 @@ import type {
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
-import type { CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 
 export type ConvexOperationArgs = {
@@ -364,7 +364,8 @@ export class ConvexGymOSApi implements GymOSApi {
   registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> { return this.mutate("customer.profile.update", input); }
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
+  ensureCustomerReferralLink(membershipId: T.UUID): Promise<CustomerReferralProgram> { return this.mutate("customer.referral.ensure", { membershipId }); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> { return this.query("customer.finance.summary"); }
   listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> { return this.query("customer.finance.transactions", query); }

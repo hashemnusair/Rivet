@@ -2051,6 +2051,50 @@ describe("free-trial lifecycle", () => {
     expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("converted");
   });
 
+  it("carries a member referral from the share link through trial conversion and reward", async () => {
+    const internals = api as unknown as { db: MockDb; customerMemberLinks: Map<string, string> };
+    const customerMembership = (await api.getCustomerExperience()).memberships.find((item) => item.id === "membership-lina-forge")!;
+    const program = await api.ensureCustomerReferralLink(customerMembership.id);
+    const linkedMemberId = internals.customerMemberLinks.get(customerMembership.id);
+    const referrer = internals.db.members.find((member) => member.id === linkedMemberId)!;
+    const referrerMembership = internals.db.memberships.find((membership) => membership.memberId === referrer.id)!;
+    referrerMembership.startDate = addDays(todayISODate(), -5);
+    referrerMembership.endDate = addDays(todayISODate(), 30);
+    const originalEndDate = referrerMembership.endDate;
+    const referralToken = new URL(program.sharePath!, "https://rivet.jo").searchParams.get("ref")!;
+
+    const booking = await api.createTrialBooking({
+      customerId: "customer-referred-prospect",
+      gymId: "forge-fitness",
+      branchId: "forge-abdoun",
+      fullName: "Referral Prospect",
+      email: "referral-prospect@example.com",
+      phone: "+962 79 654 0099",
+      preferredDate: "2026-08-20",
+      preferredTime: "19:00",
+      goal: "Train with a friend",
+      referralToken,
+    });
+    expect(booking).not.toHaveProperty("referralToken");
+    const lead = await api.getLead(booking.leadId!) as T.Lead & { referredByMemberId?: string };
+    expect(lead).toMatchObject({ source: "referral", referredByMemberId: referrer.id });
+
+    await api.updateTrialBooking(booking.id, { status: "completed", note: "Referral trial completed" });
+    const session = await api.getSession();
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    await api.completeLeadSale(booking.leadId!, {
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      startDate: todayISODate(),
+      idempotencyKey: "mock-referral-trial-sale",
+      membership: { mode: "existing", planId: plan.id },
+    });
+
+    expect(referrerMembership.endDate).toBe(addDays(originalEndDate, 7));
+    const after = (await api.getCustomerExperience()).memberships.find((item) => item.id === customerMembership.id)!.referral!;
+    expect(after).toMatchObject({ earnedDays: 7, remainingDays: 23, successfulReferrals: 1, recordedReferrals: 1 });
+  });
+
   it("reuses one matching member created by the legacy CRM flow and only adds the membership", async () => {
     const booking = await bookTrial();
     const session = await api.getSession();

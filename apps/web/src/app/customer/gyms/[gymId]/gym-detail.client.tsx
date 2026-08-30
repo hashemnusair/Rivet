@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarCheck, Check, Clock, Dumbbell, MapPin, ShieldCheck, Ticket, Users } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -36,6 +36,8 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const customer = useCustomerPersona();
   const { bookTrial, customerSignedIn, experienceError, experienceStatus, previewSessionReady, retryExperience } = useExperience();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const referralToken = searchParams.get("ref")?.trim() || undefined;
   const [booked, setBooked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const trialRequestKeyRef = useRef<string | undefined>(undefined);
@@ -125,7 +127,10 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   }
   if (!gym) return <main className="px-5 py-20 text-center"><h1 className="text-[26px] font-semibold">Gym not found</h1><Button asChild className="mt-5"><Link href="/customer/discover">Back to discovery</Link></Button></main>;
   const confirmedBranch = selectedBranch;
-  const memberReturnTo = `/customer/gyms/${gym.id}${selectedBranch ? `?branchId=${selectedBranch.id}` : ""}`;
+  const returnParams = new URLSearchParams();
+  if (selectedBranch) returnParams.set("branchId", selectedBranch.id);
+  if (referralToken) returnParams.set("ref", referralToken);
+  const memberReturnTo = `/customer/gyms/${gym.id}${returnParams.size ? `?${returnParams.toString()}` : ""}`;
   const memberSignupHref = `/login/member/create?returnTo=${encodeURIComponent(memberReturnTo)}`;
 
   const submit = handleSubmit(async (values) => {
@@ -139,7 +144,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     setSubmitting(true);
     try {
       const idempotencyKey = trialRequestKeyRef.current ?? (trialRequestKeyRef.current = crypto.randomUUID());
-      await bookTrial({ gymId: gym.id, ...values, idempotencyKey });
+      await bookTrial({ gymId: gym.id, ...values, idempotencyKey, referralToken });
       trialRequestKeyRef.current = undefined;
       setBooked(true);
     } finally {
@@ -177,7 +182,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
           <aside id="book-trial" className="h-fit border border-ink bg-surface p-6 shadow-pop lg:sticky lg:top-24">
             {booked ? (
-              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p><p className="mt-1 text-[11px] text-ink-3">{customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
+              <div className="py-5 text-center"><span className="mx-auto flex size-14 items-center justify-center rounded-full bg-success-bg text-success"><Check className="size-6" /></span><p className="mt-6 eyebrow">Sent to {gym.shortName}</p><h2 className="mt-2 text-[24px] font-semibold">Your free trial request is recorded.</h2><p className="mt-3 text-[13px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p><div className="mt-6 border border-line bg-sunken p-4 text-start"><p className="text-[13px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p><p className="mt-1 text-[11px] text-ink-3">{referralToken ? "The member referral is attached to this request. The reward is considered only after your first membership is sold." : customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p></div><Button asChild className="mt-6 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button></div>
             ) : (
               <>
                 <p className="eyebrow">Free first visit</p><h2 className="mt-2 text-[24px] font-semibold tracking-tight">Book a trial at {gym.shortName}</h2><p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">No payment required. Choose a branch and preferred time; the gym will confirm.</p>
