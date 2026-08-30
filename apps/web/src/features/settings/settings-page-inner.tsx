@@ -79,14 +79,14 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
         id: "branches", label: "Branches", keywords: "locations address", component: BranchesSection,
         contents: [
           { label: "Branch names & codes", keywords: "location" },
-          { label: "Add branch", keywords: "new location" },
+          { label: "Add a branch", keywords: "new location" },
         ],
       },
       {
         id: "spaces", label: "Gym spaces", keywords: "zones areas", component: GymSpacesSection,
         contents: [
           { label: "Rooms, floors & studios", keywords: "zone area" },
-          { label: "Add gym space", keywords: "new room" },
+          { label: "Add a space", keywords: "new room gym" },
         ],
       },
     ],
@@ -98,7 +98,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
         id: "users", label: "Users", keywords: "staff accounts", component: UsersSection,
         contents: [
           { label: "Staff accounts", keywords: "team deactivate" },
-          { label: "Invite user", keywords: "add staff email" },
+          { label: "Invite staff", keywords: "add user email" },
           { label: "Branch access", keywords: "scope" },
         ],
       },
