@@ -94,8 +94,11 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await page.getByLabel("Membership status filter").click();
     await page.getByRole("option", { name: /has balance due/i }).click();
 
+    // Only click once the filtered result set is on screen: a balance-due row
+    // shows a positive "JOD …" amount, while unfiltered rows show "0.000".
+    // Clicking earlier races the refetch and can open a paid member.
     const row = page.getByTestId("member-row").first();
-    await expect(row).toBeVisible();
+    await expect(row).toContainText(/JOD/);
     await row.click();
 
     // Collect the balance from the member header.
@@ -262,17 +265,20 @@ test.describe("personal training operations", () => {
 });
 
 test.describe("settings navigation", () => {
-  test("keeps the full settings tab row reachable by keyboard at tablet width", async ({ page }) => {
+  test("reaches every setting from the vertical rail and its search at tablet width", async ({ page }) => {
     await signIn(page, "Owner");
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto("/settings");
-    const tabs = page.getByRole("tablist");
-    await expect(tabs).toBeVisible();
-    const dimensions = await tabs.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
-    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
-    await page.getByRole("tab", { name: "Organization" }).focus();
-    await page.keyboard.press("End");
-    await expect(page.getByRole("tab", { name: "Rules & hours" })).toBeFocused();
+    const rail = page.getByRole("tablist");
+    await expect(rail).toBeVisible();
+    await expect(rail).toHaveAttribute("aria-orientation", "vertical");
+    // The rail never scrolls sideways — sections stack vertically.
+    const dimensions = await rail.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+    // Search narrows by synonyms, not just exact labels.
+    await page.getByRole("textbox", { name: "Search settings" }).fill("freeze");
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    await page.getByRole("tab", { name: "Rules & hours" }).click();
     await expect(page.getByRole("tabpanel")).toContainText(/rules|hours|operating/i);
   });
 });
