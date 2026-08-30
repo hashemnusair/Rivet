@@ -56,6 +56,7 @@ export const qk = {
   workspaceSearch: (query: string) => ["workspaceSearch", query] as const,
   workspaceRecents: ["workspaceRecents"] as const,
   workspacePins: ["workspacePins"] as const,
+  classSessions: (branchId: string, from: string, to: string) => ["classSessions", branchId, from, to] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */

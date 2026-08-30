@@ -45,6 +45,7 @@ import {
 } from "./workspaceModules";
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
+import { classesMutation, classesQuery } from "./classes";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
@@ -5393,6 +5394,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "operations.equipment_work_orders.list":
     case "operations.equipment.recommendation":
       return await operationsQuery(ctx, actor, operation, input);
+    case "classes.sessions.list":
+      return await classesQuery(ctx, actor, operation, input);
     case "accounting.accounts.list":
     case "finance.accounts.list":
     case "accounting.periods.list":
@@ -10075,6 +10078,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.equipment_issue.update":
     case "operations.equipment_work_order.upsert":
       return await operationsMutation(ctx, actor, operation, input);
+    case "classes.session.upsert":
+    case "classes.session.cancel":
+    case "classes.roster.add":
+    case "classes.roster.remove":
+    case "classes.attendance.set":
+      return await classesMutation(ctx, actor, operation, input);
     case "accounting.manual_journal.post":
     case "finance.manual_journal.post":
     case "accounting.source.post":

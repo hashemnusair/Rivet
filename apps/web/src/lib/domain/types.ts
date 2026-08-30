@@ -392,6 +392,67 @@ export interface TrafficContext {
   capturedAt?: ISODateTime;
 }
 
+export type ClassSessionStatus = "scheduled" | "cancelled";
+
+export interface ClassRosterEntry {
+  memberId: UUID;
+  name: string;
+  bookedAt: string;
+  attended: boolean;
+}
+
+export interface ClassSession {
+  id: UUID;
+  branchId: UUID;
+  name: string;
+  coachUserId?: UUID;
+  coachName?: string;
+  /** ISO start time; the calendar renders it in the tenant timezone. */
+  startsAt: string;
+  durationMinutes: number;
+  capacity: number;
+  imageAssetId?: string;
+  imageUrl?: string;
+  imageAltText?: string;
+  notes?: string;
+  status: ClassSessionStatus;
+  cancelReason?: string;
+  roster: ClassRosterEntry[];
+  attendedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClassSessionQuery {
+  branchId: UUID;
+  /** Inclusive ISO window; defaults to the current week when omitted. */
+  from?: string;
+  to?: string;
+}
+
+export interface UpsertClassSessionInput {
+  /** Provide to update; omit to create. The create dialog may pre-generate it
+   * so a class image can be uploaded before the first save. */
+  sessionId?: UUID;
+  branchId: UUID;
+  name: string;
+  coachUserId?: UUID;
+  startsAt: string;
+  durationMinutes: number;
+  capacity: number;
+  imageAssetId?: string;
+  notes?: string;
+}
+
+export interface ClassRosterInput {
+  sessionId: UUID;
+  memberId: UUID;
+}
+
+export interface ClassAttendanceInput extends ClassRosterInput {
+  attended: boolean;
+}
+
 export interface FacilityTask {
   id: UUID;
   organizationId: UUID;
@@ -2583,7 +2644,7 @@ export interface OrganizationSettings {
   workspace?: WorkspaceAccess;
 }
 
-export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo";
+export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo" | "class_image";
 
 export interface MediaAsset {
   id: UUID;

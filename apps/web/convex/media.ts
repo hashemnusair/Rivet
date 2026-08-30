@@ -5,7 +5,7 @@ import { action, internalMutation, internalQuery, mutation, type MutationCtx } f
 import { sanitizeImageBytes } from "./mediaSanitizer";
 import { assertBranchAccess, domainError, hasPermission, publicOrganizationId, publicUserId, requireActor, requirePermission } from "./security";
 
-const ownerType = v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo"));
+const ownerType = v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo"), v.literal("class_image"));
 const requestArgs = {
   organizationId: v.string(),
   branchId: v.optional(v.string()),
@@ -120,7 +120,7 @@ async function memberMediaRecord(ctx: MutationCtx, actor: Awaited<ReturnType<typ
 async function requireUploadIntent(
   ctx: MutationCtx,
   actor: Awaited<ReturnType<typeof requireActor>>,
-  args: { correlationId?: string; ownerType: "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo"; ownerPublicId: string; storageId: Id<"_storage"> },
+  args: { correlationId?: string; ownerType: "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo" | "class_image"; ownerPublicId: string; storageId: Id<"_storage"> },
 ): Promise<void> {
   const correlationId = args.correlationId?.trim();
   if (!correlationId) domainError("VALIDATION_ERROR", "Media upload correlation is required.", { correlationId: actor.correlationId });
@@ -178,6 +178,8 @@ export const generateUploadUrl = mutation({
     if (args.ownerType === "member_photo") {
       requirePermission(actor, "members.write");
       await memberMediaRecord(ctx, actor, args.ownerPublicId);
+    } else if (args.ownerType === "class_image") {
+      requirePermission(actor, "operations.manage");
     } else {
       requirePermission(actor, "profiles.manage");
     }
@@ -222,6 +224,13 @@ export const authorizeFinalize = internalMutation({
       await memberMediaRecord(ctx, actor, args.ownerPublicId);
       return { organizationDocumentId: actor.organization._id, visibility: "private" as const };
     }
+    if (args.ownerType === "class_image") {
+      // Class images upload before their session exists (the create dialog
+      // binds them), so only role and alt text are checked here.
+      requirePermission(actor, "operations.manage");
+      if (!altText) domainError("VALIDATION_ERROR", "Alt text is required for public media.", { correlationId: actor.correlationId, fieldErrors: { altText: ["Required"] } });
+      return { organizationDocumentId: actor.organization._id, visibility: "public" as const };
+    }
     requirePermission(actor, "profiles.manage");
     if (!altText) domainError("VALIDATION_ERROR", "Alt text is required for public media.", { correlationId: actor.correlationId, fieldErrors: { altText: ["Required"] } });
     if (args.ownerType.startsWith("gym_") && args.ownerPublicId !== publicOrganizationId(actor.organization)) domainError("NOT_FOUND", "Profile media target not found.", { correlationId: actor.correlationId });
@@ -239,6 +248,7 @@ export const commit = internalMutation({
   handler: async (ctx, args) => {
     const actor = await requireActor(ctx, args);
     if (args.ownerType === "member_photo") requirePermission(actor, "members.write");
+    else if (args.ownerType === "class_image") requirePermission(actor, "operations.manage");
     else requirePermission(actor, "profiles.manage");
     if (args.ownerType === "member_photo") await memberMediaRecord(ctx, actor, args.ownerPublicId);
     const now = Date.now();
@@ -252,8 +262,11 @@ export const commit = internalMutation({
     }
     const publicId = `MEDIA-${crypto.randomUUID()}`;
     const isProfileDraft = isProfileMediaOwnerType(args.ownerType);
-    const status = isProfileDraft ? "pending" as const : "active" as const;
-    const deleteAfter = isProfileDraft ? now + PUBLIC_PROFILE_DRAFT_TTL_MS : undefined;
+    // Class images also start as expiring drafts: the class-session save that
+    // references them activates them, so an abandoned upload cleans itself up.
+    const isExpiringDraft = isProfileDraft || args.ownerType === "class_image";
+    const status = isExpiringDraft ? "pending" as const : "active" as const;
+    const deleteAfter = isExpiringDraft ? now + PUBLIC_PROFILE_DRAFT_TTL_MS : undefined;
     if (isProfileDraft) {
       const usage = await profileMediaUsageCount(ctx, actor.organization._id, now);
       if (usage >= MAX_PENDING_PROFILE_MEDIA_PER_ORGANIZATION) {

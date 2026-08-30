@@ -53,6 +53,29 @@
   accounting and migration rules remain an explicit product decision. Arabic
   translation and the measured performance sprint remain last, as directed.
 
+## Group class calendar — 30 August 2026
+
+- New **Classes** workspace (nav: Workspace → Classes, all plan tiers): a
+  press-to-schedule weekly calendar with time across the top and dates down
+  the left, per the owner's spec. Pressing an open slot opens the create
+  dialog (name, coach from active staff, start, duration, capacity, notes,
+  optional photo); pressing a class opens roster management — "who is in" —
+  with live member search, one-tap add/remove, attendance checkboxes, edit,
+  and reason-gated cancellation.
+- Backend: dedicated `classSessions` table with a `(org, branch, startsAt)`
+  window index; `classes.*` operations routed through the domain seam;
+  scheduling/cancelling requires `operations.manage`, roster and attendance
+  accept `members.write` or reception's `pt.book_for_member`; capacity,
+  duration, window, branch-scope, and cancelled-state guards are
+  server-enforced with audit events for every action. Class photos are a new
+  `class_image` media type that uploads as an expiring draft and activates
+  when the session references it.
+- MockGymOSApi mirrors the contract with seeded demo classes. Covered by a
+  Convex suite (scheduling, window listing, roster capacity/dedupe,
+  attendance, reason-gated cancel, branch scope, receptionist permissions;
+  suite now 979) and verified in the mock browser end-to-end (slot → create
+  → save; roster attendance + live member add reaching 3/12 booked).
+
 ## Quality-of-life program — 30 August 2026
 
 - The approved quality-of-life program is implemented on

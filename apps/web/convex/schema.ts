@@ -502,6 +502,28 @@ export default defineSchema({
     .index("by_branch_status", ["organizationId", "branchId", "status"])
     .index("by_public_id", ["organizationId", "publicId"]),
 
+  classSessions: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    name: v.string(),
+    coachUserId: v.optional(v.string()),
+    coachName: v.optional(v.string()),
+    startsAt: v.number(),
+    durationMinutes: v.number(),
+    capacity: v.number(),
+    imageAssetId: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    status: v.union(v.literal("scheduled"), v.literal("cancelled")),
+    cancelReason: v.optional(v.string()),
+    roster: v.array(v.object({ memberId: v.string(), name: v.string(), bookedAt: v.number(), attended: v.boolean() })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
   facilityTasks: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),
@@ -1376,7 +1398,7 @@ export default defineSchema({
   mediaAssets: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),
-    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo")),
+    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo"), v.literal("class_image")),
     ownerPublicId: v.string(),
     storageId: v.id("_storage"),
     contentType: v.union(v.literal("image/jpeg"), v.literal("image/png"), v.literal("image/webp")),
@@ -1406,7 +1428,7 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     publicId: v.string(),
     correlationId: v.string(),
-    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo")),
+    ownerType: v.union(v.literal("gym_logo"), v.literal("gym_cover"), v.literal("gym_gallery"), v.literal("trainer_photo"), v.literal("member_photo"), v.literal("class_image")),
     ownerPublicId: v.string(),
     // Bound by the first finalize call after Convex's upload endpoint returns
     // its storage id. Retries must present the same object; a correlation id

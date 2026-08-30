@@ -10,6 +10,7 @@ describe("primary workspace navigation", () => {
       "Dashboard",
       "Reception",
       "Members",
+      "Classes",
       "Personal training",
       "Operations",
       "Leads",

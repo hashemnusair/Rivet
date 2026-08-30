@@ -654,6 +654,7 @@ export class MockGymOSApi implements GymOSApi {
   private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
+  private classSessions: T.ClassSession[] = [];
   private platformSupportCases: PlatformSupportCase[];
   private readonly provisioningInFlight = new Set<string>();
   private operationalNotifications: MockOperationalNotification[] = [];
@@ -709,6 +710,7 @@ export class MockGymOSApi implements GymOSApi {
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.classSessions = this.seedClassSessions();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
@@ -897,6 +899,7 @@ export class MockGymOSApi implements GymOSApi {
         if (!member || !branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
         if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
       }
+      if (input.ownerType === "class_image") this.require("operations.manage");
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
       const now = nowISO();
       const assetId = mockUuid();
@@ -2685,6 +2688,7 @@ export class MockGymOSApi implements GymOSApi {
     this.archivedGymIds.clear();
     this.platformAuditEvents = [];
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.classSessions = this.seedClassSessions();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
@@ -2816,6 +2820,14 @@ export class MockGymOSApi implements GymOSApi {
       throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.", {
         fieldErrors: { [field]: ["Required"] },
       });
+    }
+  }
+
+  private requireRosterPermission(): void {
+    const role = currentRole(this.db);
+    const perms = permissionsFor(this.db, role);
+    if (!perms.includes("members.write") && !perms.includes("pt.book_for_member")) {
+      throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage class rosters.");
     }
   }
 
@@ -8782,6 +8794,184 @@ export class MockGymOSApi implements GymOSApi {
       const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
       this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
       return result;
+    });
+  }
+
+  private seedClassSessions(): T.ClassSession[] {
+    const branch = this.db.branches[0];
+    if (!branch) return [];
+    const coach = this.db.users.find((user) => user.status === "active");
+    const members = this.db.members.filter((member) => member.status === "active").slice(0, 3);
+    const today = new Date();
+    const at = (dayOffset: number, hour: number) => {
+      const value = new Date(today);
+      value.setDate(value.getDate() + dayOffset);
+      value.setHours(hour, 0, 0, 0);
+      return value.toISOString();
+    };
+    const roster = (count: number): T.ClassRosterEntry[] => members.slice(0, count).map((member, index) => ({ memberId: member.id, name: member.fullName, bookedAt: at(0, 6), attended: index === 0 }));
+    const session = (id: string, name: string, dayOffset: number, hour: number, capacity: number, bookings: number): T.ClassSession => ({
+      id,
+      branchId: branch.id,
+      name,
+      coachUserId: coach?.id,
+      coachName: coach?.name,
+      startsAt: at(dayOffset, hour),
+      durationMinutes: 60,
+      capacity,
+      status: "scheduled",
+      roster: roster(bookings),
+      attendedCount: roster(bookings).filter((entry) => entry.attended).length,
+      createdAt: at(-7, 9),
+      updatedAt: at(-1, 9),
+    });
+    return [
+      session("class-hiit-am", "Morning HIIT", 0, 7, 12, 2),
+      session("class-strength", "Ladies Strength", 0, 18, 10, 3),
+      session("class-boxing", "Boxing Fundamentals", 1, 19, 16, 1),
+      session("class-mobility", "Mobility & Stretch", 3, 10, 14, 0),
+    ];
+  }
+
+  private classSessionView(session: T.ClassSession): T.ClassSession {
+    return { ...session, roster: session.roster.map((entry) => ({ ...entry })), attendedCount: session.roster.filter((entry) => entry.attended).length };
+  }
+
+  private classSessionById(sessionId: string): T.ClassSession {
+    const session = this.classSessions.find((candidate) => candidate.id === sessionId);
+    if (!session || !this.branchIsVisible(session.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class session not found.");
+    return session;
+  }
+
+  listClassSessions(query: T.ClassSessionQuery): Promise<T.ClassSession[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      const branch = this.db.branches.find((candidate) => candidate.id === query.branchId);
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const from = query.from ? Date.parse(query.from) : Date.now() - 7 * 86_400_000;
+      const to = query.to ? Date.parse(query.to) : from + 7 * 86_400_000;
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) throw ApiError.of(ERR.VALIDATION, "Choose a valid calendar window.");
+      return this.classSessions
+        .filter((session) => session.branchId === branch.id && Date.parse(session.startsAt) >= from && Date.parse(session.startsAt) <= to)
+        .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+        .map((session) => this.classSessionView(session));
+    });
+  }
+
+  upsertClassSession(input: T.UpsertClassSessionInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const branch = this.db.branches.find((candidate) => candidate.id === input.branchId);
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const name = input.name.trim();
+      if (!name || name.length > 80) throw ApiError.of(ERR.VALIDATION, "Class name is required and must be 80 characters or fewer.");
+      const startsAt = Date.parse(input.startsAt);
+      if (!Number.isFinite(startsAt)) throw ApiError.of(ERR.VALIDATION, "The class start time must be a valid time.");
+      if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
+      if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
+      let coachName: string | undefined;
+      if (input.coachUserId) {
+        const coach = this.db.users.find((candidate) => candidate.id === input.coachUserId && candidate.status === "active");
+        if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found in this gym.");
+        coachName = coach.name;
+      }
+      const image = input.imageAssetId ? this.mediaAssets.get(input.imageAssetId) : undefined;
+      if (input.imageAssetId && (!image || image.ownerType !== "class_image")) throw ApiError.of(ERR.NOT_FOUND, "Class image was not found.");
+      const now = nowISO();
+      const existing = input.sessionId ? this.classSessions.find((candidate) => candidate.id === input.sessionId) : undefined;
+      if (input.sessionId && existing) {
+        if (!this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage classes for this branch.");
+        if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class session cannot move between branches.");
+        if (existing.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class cannot be edited. Schedule a new session instead.");
+        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already booked.`);
+        Object.assign(existing, { name, coachUserId: input.coachUserId, coachName, startsAt: new Date(startsAt).toISOString(), durationMinutes: input.durationMinutes, capacity: input.capacity, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
+        this.audit({ category: "operations", action: "classes.session.update", entityType: "class_session", entityId: existing.id, entityLabel: name, summary: `Updated class ${name}` });
+        return this.classSessionView(existing);
+      }
+      const created: T.ClassSession = {
+        id: input.sessionId ?? mockUuid(),
+        branchId: branch.id,
+        name,
+        coachUserId: input.coachUserId,
+        coachName,
+        startsAt: new Date(startsAt).toISOString(),
+        durationMinutes: input.durationMinutes,
+        capacity: input.capacity,
+        imageAssetId: input.imageAssetId,
+        imageUrl: image?.url,
+        imageAltText: image?.altText,
+        notes: input.notes?.trim() || undefined,
+        status: "scheduled",
+        roster: [],
+        attendedCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.classSessions.unshift(created);
+      this.audit({ category: "operations", action: "classes.session.create", entityType: "class_session", entityId: created.id, entityLabel: name, summary: `Scheduled class ${name}` });
+      return this.classSessionView(created);
+    });
+  }
+
+  cancelClassSession(input: { sessionId: T.UUID; reason: string }): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const session = this.classSessionById(input.sessionId);
+      if (session.status !== "cancelled") {
+        session.status = "cancelled";
+        session.cancelReason = input.reason.trim();
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.session.cancel", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Cancelled class ${session.name}`, reason: input.reason.trim() });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  addClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      if (session.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class cannot take bookings.");
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      if (!session.roster.some((entry) => entry.memberId === member.id)) {
+        if (session.roster.length >= session.capacity) throw ApiError.of(ERR.VALIDATION, "This class is full.");
+        session.roster.push({ memberId: member.id, name: member.fullName, bookedAt: nowISO(), attended: false });
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.roster.add", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Added ${member.fullName} to ${session.name}` });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  removeClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      const entry = session.roster.find((candidate) => candidate.memberId === input.memberId);
+      if (entry) {
+        session.roster = session.roster.filter((candidate) => candidate.memberId !== input.memberId);
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.roster.remove", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Removed ${entry.name} from ${session.name}` });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  setClassAttendance(input: T.ClassAttendanceInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      if (session.status === "cancelled") throw ApiError.of(ERR.VALIDATION, "A cancelled class has no attendance to record.");
+      const entry = session.roster.find((candidate) => candidate.memberId === input.memberId);
+      if (!entry) throw ApiError.of(ERR.NOT_FOUND, "This member is not on the class roster.");
+      if (entry.attended !== input.attended) {
+        entry.attended = input.attended;
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.attendance.set", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `${input.attended ? "Marked" : "Unmarked"} ${entry.name} ${input.attended ? "present in" : "for"} ${session.name}` });
+      }
+      return this.classSessionView(session);
     });
   }
 

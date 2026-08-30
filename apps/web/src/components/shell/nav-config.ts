@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  CalendarDays,
   Boxes,
   Gauge,
   KanbanSquare,
@@ -42,6 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/reception", label: "Reception", icon: ShieldCheck },
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
+      { href: "/classes", label: "Classes", icon: CalendarDays, anyPermission: ["members.read"] },
       { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
       { href: "/operations", label: "Operations", icon: Boxes, anyPermission: ["members.read"], moduleKey: "operations" },
     ],
