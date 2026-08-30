@@ -546,6 +546,41 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(call).toMatchObject({ applicationId: result.applicationId, correlationId: expect.any(String) });
   });
 
+  it("sends staff invitations with the exact protected action contract", async () => {
+    const invited = {
+      id: "staff-invite-1",
+      name: "Staging Reception",
+      email: "reception@example.test",
+      role: "receptionist" as const,
+      branchScope: "selected" as const,
+      branchIds: [session.branches[0]!.id],
+      status: "invited" as const,
+    };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ query: session, action: invited }, (_kind, args) => { call = args; }));
+
+    await api.getSession();
+    await expect(api.inviteUser({
+      name: invited.name,
+      email: invited.email,
+      role: invited.role,
+      branchScope: invited.branchScope,
+      branchIds: invited.branchIds,
+    })).resolves.toEqual(invited);
+
+    expect(call).toEqual({
+      input: {
+        name: invited.name,
+        email: invited.email,
+        role: invited.role,
+        branchScope: invited.branchScope,
+        branchIds: invited.branchIds,
+      },
+      organizationId: session.organization.id,
+      correlationId: expect.any(String),
+    });
+  });
+
   it("keeps platform tenant controls behind the platform mutation boundary", async () => {
     const gym = {
       id: "marketplace-gym-1",

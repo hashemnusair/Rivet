@@ -63,6 +63,12 @@ export type ConvexOperationArgs = {
   correlationId: string;
 };
 
+type InvitationActionArgs = {
+  input: Record<string, unknown>;
+  organizationId: string;
+  correlationId: string;
+};
+
 export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
@@ -78,7 +84,7 @@ export interface ConvexTransport {
   action(reference: typeof api.gymApplications.submit, args: SubmitGymApplicationInput): Promise<unknown>;
   action(reference: typeof api.gymApplications.review, args: ReviewGymApplicationInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
-  action(reference: typeof api.invitations.send, args: ConvexOperationArgs): Promise<unknown>;
+  action(reference: typeof api.invitations.send, args: InvitationActionArgs): Promise<unknown>;
   action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
 }
 
@@ -238,8 +244,8 @@ export class ConvexGymOSApi implements GymOSApi {
 
   private async action<T>(reference: typeof api.invitations.send, input: object = {}): Promise<T> {
     try {
-      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
-      const result = await this.transport.action(reference, { operation: "invitations.send", input: this.input(input), organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() });
+      if (!this.transport || !this.organizationId) throw ApiError.of(ERR.CONFIGURATION, "Select a gym workspace before inviting staff.");
+      const result = await this.transport.action(reference, { input: input as Record<string, unknown>, organizationId: this.organizationId, correlationId: correlationId() });
       return result as T;
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
