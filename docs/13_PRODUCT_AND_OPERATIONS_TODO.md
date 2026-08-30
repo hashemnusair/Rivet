@@ -19,10 +19,11 @@ values, applicant details, and provider credentials out of this file.
 
 ### Classes, referrals, and freeze requests completed and hardened on 30 August
 
-- [x] Add an every-tier group-class calendar with branch/time windows,
-  owner/manager scheduling, optional photos, capacity enforcement, roster and
-  attendance management for reception, reason-gated cancellation, immutable
-  audits, tenant-local time handling, and explicit loading/error recovery.
+- [x] Add an every-tier fixed weekly class timetable with branch scope,
+  owner/manager scheduling, a coach directory, Women/Men/Mixed audiences,
+  optional photos, capacity enforcement, roster and attendance management for
+  reception, reason-gated removal, immutable audits, legacy date normalization,
+  print/PDF output, and explicit loading/error recovery.
 - [x] Add tenant-configurable referral rewards with a rolling per-member cap,
   branch-safe referrer selection, first-sale deduplication, current-term
   eligibility, customer-projection synchronization, and immutable applied,
@@ -31,9 +32,9 @@ values, applicant details, and provider credentials out of this file.
   preview, upfront predicted fee, current-policy recomputation at approval,
   one pending request per membership, overlap and allowance guards, audited
   approval/denial, an unpaid fee charge when due, and branch-safe staff queues.
-- [x] Verify 169 Vitest files / 1,000 tests, 14 repository-safety tests, both
+- [x] Verify 169 Vitest files / 1,003 tests, 14 repository-safety tests, both
   TypeScript checks, zero-warning lint/secret audit, 58 generated Production
-  routes, 43 existing credential-free Playwright journeys plus two class-role
+  routes, 45 credential-free Playwright journeys including two class-role
   journeys, 14 explicit staging-only skips, a clean Production dependency
   audit, the UI detector, and `git diff --check`.
 - [ ] Run the normal exact-target Convex and hosted release procedure for the

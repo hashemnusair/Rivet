@@ -38,6 +38,15 @@
   keeps scheduling and deletion manager-only, validates capacity before save,
   and exposes honest retry states for the timetable, coach directory, and
   member lookup.
+- A final fetch caught Elias's follow-up commits `25c73f9` and `c8cce1c` before
+  push. Merge commit `8e5adeb` preserves the fixed weekly timetable, workspace
+  shell, vertical Settings rail, and repaired browser selectors alongside the
+  earlier referral/freeze and UI hardening; no partner history was rewritten.
+- Verification at application tip `8e5adeb` passed both TypeScript checks,
+  zero-warning lint and secret-output audit, 169 Vitest files / 1,003 tests plus
+  14 repository-safety tests, the 58-route Production build, 45 credential-free
+  Playwright journeys with 14 explicit staging-only skips, a clean Production
+  dependency audit, and `git diff --check`.
 - This batch did not deploy Convex, enable a provider, or mutate Production
   tenant data. Release `156f9b1` remains the last fully verified exact-target
   backend and hosted pair. Do not infer backend parity from an automatic

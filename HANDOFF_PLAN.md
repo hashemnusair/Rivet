@@ -1,7 +1,7 @@
 # RIVET engineering handoff plan
 
 Last updated: 30 August 2026
-Current application tip: `5772a9c`; the last fully verified Convex and Vercel
+Current application tip: `8e5adeb`; the last fully verified Convex and Vercel
 Production release pair is `156f9b1`. The post-release migration,
 classes, referrals, and freeze-request code still needs the normal exact-target
 Production release procedure.
@@ -27,9 +27,12 @@ and the complete chronological implementation record is
   customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
   member migration mapper with batch resume/rejection/undo, one atomic
   front-desk member/membership/payment transaction, group classes, configurable
-  referral rewards, and member freeze requests. Commit `5772a9c` aligns the
-  three partner features with branch authorization, tenant-local time, role
-  permissions, upfront policy truth, and retryable UI states. Read
+  front-desk member/membership/payment transaction, a fixed weekly class
+  timetable with a coach directory, configurable referral rewards, and member
+  freeze requests. Commits `5772a9c` and `8e5adeb` align the partner features
+  with branch authorization, role permissions, upfront policy truth, and
+  retryable UI states while preserving the later weekly-schedule and workspace
+  shell work. Read
   `CURRENT_STATE.md` first for exact behavior and commits.
 - Generic imports remain member-profile-only. Membership terms, balances,
   freezes, opening balances, and historical money still require an approved
