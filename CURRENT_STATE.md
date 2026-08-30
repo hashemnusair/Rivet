@@ -1,5 +1,43 @@
 # GymOS / RIVET current implementation state
 
+## Partner feature integration hardening — 30 August 2026
+
+- A clean fast-forward synchronized local `main` with `origin/main` from
+  `bc2b23c` to Elias's two commits: `49d4f86` for the group-class calendar and
+  `e195709` for configurable referrals and member freeze requests. No other
+  partner commit was waiting, and `FRONTEND_HANDOFF.md` remains unchanged.
+- Commit `5772a9c` closes the integration gaps found during review. Reception
+  now sees the roster and attendance controls its server permission already
+  allowed, while only owners/managers can schedule, edit, or cancel classes.
+  The calendar uses the organization's timezone for week boundaries, slot
+  placement, labels, and date-time editing. Open slots are discoverable on
+  touch, and calendar, coach, and member-search failures no longer look like an
+  empty schedule or an empty search result.
+- Referrer selection now enforces the acting staff member's branch scope in
+  Convex and the mock adapter. Future scheduled terms no longer qualify as an
+  active membership for a referral reward; current active, expiring, or frozen
+  terms remain eligible. Referrer lookup failures are visible and retryable.
+- Freeze-request listing and both approval and denial now enforce the linked
+  membership's branch boundary, including legacy request rows without a stored
+  branch key. New request rows store the branch key and their audit events carry
+  it. Member-owned reads use the existing member relationship index instead of
+  collecting the tenant's complete request history.
+- The member app now reads a dedicated, identity-owned freeze-policy preview.
+  It hides the new-request action when disabled, shows current minimum/maximum
+  days and the predicted fee before submission, and explains that approval
+  recalculates the fee. Loading or failure in either policy or request history
+  blocks the form instead of pretending no pending request exists. The staff
+  request panel also exposes loading, retry, and fee-recalculation truth.
+- Verification passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, 169 Vitest files / 1,000 tests plus 14 repository-safety
+  tests, the 58-route Production build, the existing 43-pass / 14-skip
+  Playwright gate, two added class-role browser journeys, a clean Production
+  dependency audit, the Impeccable UI detector, and `git diff --check`.
+- This batch did not deploy Convex, enable a provider, or mutate Production
+  tenant data. Release `156f9b1` remains the last fully verified exact-target
+  backend and hosted pair. Do not infer backend parity from an automatic
+  frontend deployment; run the normal release procedure for this tip.
+
 ## Migration and front-desk completion — 30 August 2026
 
 - A fresh GitHub fetch began this batch with clean, matching `main` and

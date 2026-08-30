@@ -1,8 +1,10 @@
 # RIVET engineering handoff plan
 
 Last updated: 30 August 2026
-Current application tip: `822f328`; the application-bearing release commit is
-`156f9b1`. Current Convex and Vercel Production verification is recorded below.
+Current application tip: `5772a9c`; the last fully verified Convex and Vercel
+Production release pair is `156f9b1`. The post-release migration,
+classes, referrals, and freeze-request code still needs the normal exact-target
+Production release procedure.
 
 ## Purpose
 
@@ -23,9 +25,12 @@ and the complete chronological implementation record is
 
 - The current local application adds complete-or-fail export cleanup, bounded
   customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
-  member migration mapper with batch resume/rejection/undo, and one atomic
-  front-desk member/membership/payment transaction. Read `CURRENT_STATE.md`
-  first for exact behavior and commits.
+  member migration mapper with batch resume/rejection/undo, one atomic
+  front-desk member/membership/payment transaction, group classes, configurable
+  referral rewards, and member freeze requests. Commit `5772a9c` aligns the
+  three partner features with branch authorization, tenant-local time, role
+  permissions, upfront policy truth, and retryable UI states. Read
+  `CURRENT_STATE.md` first for exact behavior and commits.
 - Generic imports remain member-profile-only. Membership terms, balances,
   freezes, opening balances, and historical money still require an approved
   migration/accounting contract.
@@ -33,6 +38,10 @@ and the complete chronological implementation record is
   remain deliberately last. The next policy-dependent choices are online
   payments/payment-backed offer acceptance, live messaging, legally approved
   waivers/documents, and recurring maintenance checklists.
+- Before expanding the profile importer into money or membership history,
+  approve the membership-migration contract for active terms, scheduled terms,
+  freezes, outstanding balances, opening receivables, and historical payment
+  evidence. The current importer deliberately creates member profiles only.
 - Release `156f9b1` is aligned on local and GitHub `main`. GitHub Actions run
   `33311009377` passed all jobs, Vercel Production deployment
   `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is `READY` for the exact SHA, and the

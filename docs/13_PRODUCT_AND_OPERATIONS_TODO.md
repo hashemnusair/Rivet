@@ -17,6 +17,29 @@ values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 30 August 2026
 
+### Classes, referrals, and freeze requests completed and hardened on 30 August
+
+- [x] Add an every-tier group-class calendar with branch/time windows,
+  owner/manager scheduling, optional photos, capacity enforcement, roster and
+  attendance management for reception, reason-gated cancellation, immutable
+  audits, tenant-local time handling, and explicit loading/error recovery.
+- [x] Add tenant-configurable referral rewards with a rolling per-member cap,
+  branch-safe referrer selection, first-sale deduplication, current-term
+  eligibility, customer-projection synchronization, and immutable applied,
+  cap-reached, or no-active-membership outcomes.
+- [x] Add tenant-configurable member freeze requests with a member-owned policy
+  preview, upfront predicted fee, current-policy recomputation at approval,
+  one pending request per membership, overlap and allowance guards, audited
+  approval/denial, an unpaid fee charge when due, and branch-safe staff queues.
+- [x] Verify 169 Vitest files / 1,000 tests, 14 repository-safety tests, both
+  TypeScript checks, zero-warning lint/secret audit, 58 generated Production
+  routes, 43 existing credential-free Playwright journeys plus two class-role
+  journeys, 14 explicit staging-only skips, a clean Production dependency
+  audit, the UI detector, and `git diff --check`.
+- [ ] Run the normal exact-target Convex and hosted release procedure for the
+  post-`156f9b1` application commits. Code verification is complete; this entry
+  does not claim the new backend functions are already in Production.
+
 ### Quality-of-life program completed locally on 30 August
 
 - [x] Add the member financial center, authenticated-member receipt recovery,
