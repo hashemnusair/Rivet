@@ -9,12 +9,13 @@ import { toast } from "sonner";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { Input, Textarea } from "@/components/ui/input";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -120,6 +121,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className={cn("h-full rounded-full", daysLeft <= 14 ? "bg-warning" : "bg-ink")} style={{ width: `${Math.round((elapsed / total) * 100)}%` }} /></div>
         </div>
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
+        <FreezeRequestCard membershipId={membership.id} />
         <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
@@ -273,5 +275,61 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
       </p>
       <p className="mt-2 truncate text-[15px] font-semibold">{value}</p>
     </div>
+  );
+}
+
+function FreezeRequestCard({ membershipId }: { membershipId: string }) {
+  const invalidate = useInvalidate();
+  const requestsQuery = useApiQuery(["customerFreezeRequests", membershipId] as const, (api) => api.listCustomerFreezeRequests(membershipId));
+  const [open, setOpen] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [days, setDays] = useState(7);
+  const [reason, setReason] = useState("");
+  const pending = requestsQuery.data?.find((item) => item.status === "pending");
+  const latestDecided = requestsQuery.data?.find((item) => item.status !== "pending");
+
+  const submit = useApiMutation((api) => api.requestMembershipFreeze({ membershipId, startDate, days, reason: reason.trim() }), {
+    onSuccess: async () => {
+      setOpen(false);
+      setStartDate("");
+      setReason("");
+      await invalidate([["customerFreezeRequests", membershipId]]);
+    },
+    successMessage: "Freeze request sent. The gym will confirm it.",
+  });
+
+  return (
+    <section className="rounded-lg border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="eyebrow">Freeze</p>
+          <p className="mt-1 text-[12.5px] text-ink-2">
+            {pending
+              ? `Requested ${pending.days} days from ${pending.startDate} — waiting for the gym${pending.expectedFeeMinor > 0 ? ` (expected fee JOD ${(pending.expectedFeeMinor / 1000).toFixed(3)})` : ""}.`
+              : latestDecided
+                ? `Last request ${latestDecided.status}${latestDecided.status === "approved" && (latestDecided.feeMinor ?? 0) > 0 ? ` · fee JOD ${((latestDecided.feeMinor ?? 0) / 1000).toFixed(3)}` : ""}${latestDecided.decisionNote ? ` — ${latestDecided.decisionNote}` : ""}.`
+                : "Need a break? Ask the gym to pause your membership."}
+          </p>
+        </div>
+        {!pending ? <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>Request a freeze</Button> : null}
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Request a freeze</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="grid gap-3">
+            <label className="grid gap-1.5 text-[12px] font-medium">From<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Days<Input type="number" min={1} max={180} value={days} onChange={(event) => setDays(Number(event.target.value))} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Why?<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travel, injury, exams…" /></label>
+            <p className="text-[11px] text-ink-3">The gym reviews every request. Depending on its policy, a freeze may carry a fee collected at the desk.</p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button loading={submit.isPending} disabled={!startDate || !reason.trim() || days < 1} onClick={() => submit.mutate()}>Send request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }

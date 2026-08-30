@@ -925,6 +925,11 @@ export interface GymOSApi {
   renewMembership(membershipId: UUID, input: RenewMembershipInput): Promise<MembershipSaleResult>;
   changeMembershipPlan(membershipId: UUID, input: ChangeMembershipPlanInput): Promise<MembershipSaleResult>;
   freezeMembership(membershipId: UUID, input: FreezeMembershipInput): Promise<MembershipDetail>;
+  /** Member self-service freeze requests, decided by staff under the gym's policy. */
+  requestMembershipFreeze(input: import("@/lib/domain/types").RequestMembershipFreezeInput): Promise<import("@/lib/domain/types").MembershipFreezeRequest>;
+  listCustomerFreezeRequests(membershipId: UUID): Promise<import("@/lib/domain/types").MembershipFreezeRequest[]>;
+  listFreezeRequests(query?: { status?: import("@/lib/domain/types").FreezeRequestStatus }): Promise<import("@/lib/domain/types").MembershipFreezeRequest[]>;
+  decideFreezeRequest(input: import("@/lib/domain/types").DecideFreezeRequestInput): Promise<import("@/lib/domain/types").MembershipFreezeRequest>;
   unfreezeMembership(membershipId: UUID, input: { reason: string }): Promise<MembershipDetail>;
   extendMembership(membershipId: UUID, input: ExtendMembershipInput): Promise<MembershipDetail>;
   cancelMembership(membershipId: UUID, input: CancelMembershipInput): Promise<MembershipDetail>;

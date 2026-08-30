@@ -178,6 +178,19 @@ const DEFAULT_OPERATIONAL_POLICIES = {
     bookingHorizonDays: 30,
     cancellationCutoffHours: 12,
   },
+  referrals: {
+    enabled: false,
+    rewardDays: 7,
+    maxRewardDaysPerWindow: 30,
+    windowDays: 90,
+  },
+  memberFreezes: {
+    requestsEnabled: false,
+    freeFreezesPerWindow: 1,
+    extraFreezeFeeMinor: 10_000,
+    maxDaysPerFreeze: 30,
+    windowDays: 365,
+  },
   operatingHours: [],
   trialSchedules: [],
 };
@@ -1105,6 +1118,8 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
       entry: { ...DEFAULT_OPERATIONAL_POLICIES.entry, ...data(operational.entry) },
       membership: { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operational.membership) },
       personalTraining: { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(operational.personalTraining) },
+      referrals: { ...DEFAULT_OPERATIONAL_POLICIES.referrals, ...data(operational.referrals) },
+      memberFreezes: { ...DEFAULT_OPERATIONAL_POLICIES.memberFreezes, ...data(operational.memberFreezes) },
       operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
       trialSchedules: Array.isArray(operational.trialSchedules) ? operational.trialSchedules : [],
     },
@@ -1238,6 +1253,24 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
   if (!integerInRange(bookingHorizonDays, 1, 90)) domainError("VALIDATION_ERROR", "PT booking horizon must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(cancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "PT cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
+  const referrals = data(value.referrals);
+  const referralRewardDays = numberValue(referrals.rewardDays, 7);
+  const referralCapDays = numberValue(referrals.maxRewardDaysPerWindow, 30);
+  const referralWindowDays = numberValue(referrals.windowDays, 90);
+  if (!integerInRange(referralRewardDays, 1, 90)) domainError("VALIDATION_ERROR", "Referral reward must be between 1 and 90 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(referralCapDays, 1, 365)) domainError("VALIDATION_ERROR", "The referral cap must be between 1 and 365 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(referralWindowDays, 7, 365)) domainError("VALIDATION_ERROR", "The referral window must be between 7 and 365 days.", { correlationId: actor.correlationId });
+  if (referralRewardDays > referralCapDays) domainError("VALIDATION_ERROR", "The referral reward cannot exceed the per-member cap.", { correlationId: actor.correlationId });
+  const memberFreezes = data(value.memberFreezes);
+  const freeFreezesPerWindow = numberValue(memberFreezes.freeFreezesPerWindow, 1);
+  const extraFreezeFeeMinor = numberValue(memberFreezes.extraFreezeFeeMinor, 10_000);
+  const maxDaysPerFreeze = numberValue(memberFreezes.maxDaysPerFreeze, 30);
+  const freezeWindowDays = numberValue(memberFreezes.windowDays, 365);
+  if (!integerInRange(freeFreezesPerWindow, 0, 12)) domainError("VALIDATION_ERROR", "Free freezes must be between 0 and 12 per window.", { correlationId: actor.correlationId });
+  if (!Number.isSafeInteger(extraFreezeFeeMinor) || extraFreezeFeeMinor < 0 || extraFreezeFeeMinor > 1_000_000) domainError("VALIDATION_ERROR", "The extra-freeze fee must be between 0 and 1,000 JOD.", { correlationId: actor.correlationId });
+  if (!integerInRange(maxDaysPerFreeze, 1, 180)) domainError("VALIDATION_ERROR", "A freeze may run between 1 and 180 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(freezeWindowDays, 30, 730)) domainError("VALIDATION_ERROR", "The freeze window must be between 30 and 730 days.", { correlationId: actor.correlationId });
+  if (maxDaysPerFreeze < minimumFreezeDays) domainError("VALIDATION_ERROR", "The maximum freeze cannot be below the minimum freeze.", { correlationId: actor.correlationId });
   const operatingHours: Data[] = [];
   const seenOperatingBranches = new Set<string>();
   for (const rawSchedule of arrayValue(value.operatingHours)) {
@@ -1290,6 +1323,8 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   return {
     entry: { outstandingBalance, expiryWarningDays, duplicateScanWindowMinutes, enforceOperatingHours: booleanValue(entry.enforceOperatingHours) },
     membership: { allowOverlappingMemberships: booleanValue(membership.allowOverlappingMemberships), renewalWindowDays, minimumFreezeDays, maximumExtensionDays },
+    referrals: { enabled: booleanValue(referrals.enabled), rewardDays: referralRewardDays, maxRewardDaysPerWindow: referralCapDays, windowDays: referralWindowDays },
+    memberFreezes: { requestsEnabled: booleanValue(memberFreezes.requestsEnabled), freeFreezesPerWindow, extraFreezeFeeMinor, maxDaysPerFreeze, windowDays: freezeWindowDays },
     personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays, cancellationCutoffHours },
     operatingHours,
     trialSchedules,
@@ -4471,6 +4506,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
   if (operation === "customer.finance.transactions") return await customerTransactionPage(ctx, input);
   if (operation === "customer.receipt") return await customerReceiptDetail(ctx, recordId(input.receiptId));
+  if (operation === "customer.membership.freezeRequests") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "freezeRequest")).collect())
+      .map((row) => data(row.data))
+      .filter((value) => stringValue(value.membershipId) === context.membership.publicId)
+      .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)));
+  }
   if (operation === "customer.pt") return await customerPtExperience(ctx, recordId(input.membershipId));
   if (operation === "customer.pt.slots") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
@@ -4991,6 +5033,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const record = await recordOf(ctx, actor, "plan", recordId(input.planId));
       return await toPlan(ctx, actor, data(record.data));
+    }
+    case "memberships.freeze_requests.list": {
+      requirePermission(actor, "memberships.freeze");
+      const status = optionalString(input.status);
+      return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect())
+        .map((row) => data(row.data))
+        .filter((value) => !status || stringValue(value.status) === status)
+        .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)))
+        .slice(0, 100);
     }
     case "memberships.list": {
       requirePermission(actor, "members.read");
@@ -5948,6 +5999,14 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
       details: { matches: unconfirmedDuplicates },
     });
   }
+  const referredByMemberId = optionalString(input.referredByMemberId);
+  let referredByName: string | undefined;
+  if (referredByMemberId) {
+    const referrer = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", referredByMemberId)).unique();
+    const referrerData = referrer ? data(referrer.data) : undefined;
+    if (!referrer || stringValue(referrerData?.status) === "archived") domainError("NOT_FOUND", "The referring member was not found.", { correlationId: actor.correlationId });
+    referredByName = stringValue(referrerData?.fullName, referredByMemberId);
+  }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
   const preference = marketingPreferenceRecord(input, actor);
   const member = await insertRecord(ctx, actor, "member", {
@@ -5970,6 +6029,8 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     addressLine1: optionalString(input.addressLine1),
     city: optionalString(input.city),
     source: optionalString(input.source),
+    referredByMemberId,
+    referredByName,
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
     marketingOptIn: preference.optedIn,
     marketingPreference: preference,
@@ -6112,7 +6173,86 @@ async function createMembershipMutation(
     });
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
+  if (operation === "sale") await applyReferralReward(ctx, actor, memberData);
   return result;
+}
+
+/**
+ * Grants the gym-configured referral reward the first time a referred member
+ * buys a membership: free days are added to the referrer's active membership,
+ * bounded by the per-referrer cap inside its rolling window. Every outcome —
+ * applied, cap reached, or no active membership — is recorded immutably so
+ * the rule cannot be gamed by repeat sales or self-referrals.
+ */
+async function applyReferralReward(ctx: MutationCtx, actor: ActorContext, referredMember: Data): Promise<void> {
+  const referrerId = optionalString(referredMember.referredByMemberId);
+  const referredId = stringValue(referredMember.id);
+  if (!referrerId || referrerId === referredId) return;
+  const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).referrals);
+  if (!booleanValue(policies.enabled)) return;
+  const rewardDays = numberValue(policies.rewardDays, 7);
+  const capDays = numberValue(policies.maxRewardDaysPerWindow, 30);
+  const windowDays = numberValue(policies.windowDays, 90);
+  const dedupeId = `referral-${referredId}`;
+  const already = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "referralReward").eq("publicId", dedupeId)).unique();
+  if (already) return;
+  const referrer = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", referrerId)).unique();
+  const referrerData = referrer ? data(referrer.data) : undefined;
+  if (!referrer || stringValue(referrerData?.status) === "archived") return;
+  const windowStart = Date.now() - windowDays * 86_400_000;
+  const priorRewards = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "referralReward")).collect())
+    .filter((row) => row.createdAt >= windowStart && stringValue(data(row.data).referrerId) === referrerId);
+  const usedDays = priorRewards.reduce((sum, row) => sum + numberValue(data(row.data).days, 0), 0);
+  const grantDays = Math.max(0, Math.min(rewardDays, capDays - usedDays));
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const memberships = await recordsOfMember(ctx, actor.organization._id, referrerId, "membership");
+  const active = memberships
+    .map((row) => ({ row, value: data(row.data) }))
+    .filter(({ value }) => !value.cancelledAt && stringValue(value.endDate) >= today)
+    .sort((left, right) => stringValue(right.value.endDate).localeCompare(stringValue(left.value.endDate)))[0];
+  let status = "applied";
+  let appliedMembershipId: string | undefined;
+  let newEndDate: string | undefined;
+  if (grantDays === 0) {
+    status = "cap_reached";
+  } else if (!active) {
+    status = "no_active_membership";
+  } else {
+    newEndDate = addDays(stringValue(active.value.endDate), grantDays);
+    appliedMembershipId = stringValue(active.value.id);
+    await patchRecord(ctx, actor, active.row, {
+      endDate: newEndDate,
+      adjustments: [...arrayValue(active.value.adjustments), { id: newPublicId(), membershipId: appliedMembershipId, type: "referral_bonus", reason: `Referred ${stringValue(referredMember.fullName)} — ${grantDays} free day${grantDays === 1 ? "" : "s"}`, actorId: publicUserId(actor.user), before: { endDate: active.value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() }],
+    });
+    const plan = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", stringValue(active.value.planId))).unique();
+    if (plan && referrerData) await syncCustomerMembershipProjection(ctx, actor, { ...active.value, endDate: newEndDate }, referrerData, data(plan.data));
+  }
+  await insertRecord(ctx, actor, "referralReward", {
+    id: dedupeId,
+    referrerId,
+    referrerName: stringValue(referrerData?.fullName),
+    referredMemberId: referredId,
+    referredMemberName: stringValue(referredMember.fullName),
+    days: status === "applied" ? grantDays : 0,
+    requestedDays: rewardDays,
+    status,
+    appliedMembershipId,
+    newEndDate,
+    createdAt: isoNow(),
+  });
+  await insertAudit(ctx, actor, {
+    category: "memberships",
+    action: "membership.referral_reward",
+    entityType: "member",
+    entityId: referrerId,
+    entityLabel: stringValue(referrerData?.fullName, referrerId),
+    summary: status === "applied"
+      ? `Referral reward: ${grantDays} free day${grantDays === 1 ? "" : "s"} for referring ${stringValue(referredMember.fullName)}`
+      : `Referral reward for ${stringValue(referredMember.fullName)} not applied (${status === "cap_reached" ? "cap reached" : "no active membership"})`,
+    before: status === "applied" ? { endDate: active?.value.endDate } : undefined,
+    after: { status, days: status === "applied" ? grantDays : 0, referredMemberId: referredId },
+    branchId: optionalString(referrerData?.homeBranchId),
+  });
 }
 
 async function membershipSaleResultFromIdempotency(
@@ -6865,6 +7005,57 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "customer.membership.freezeRequest") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const organization = context.organization;
+    const actorless = { organization } as { organization: typeof organization };
+    void actorless;
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const policies = data(data(data(settings?.data).operationalPolicies).memberFreezes);
+    const defaults = DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data;
+    const policy = { ...defaults, ...policies };
+    if (!booleanValue(policy.requestsEnabled)) domainError("VALIDATION_ERROR", "This gym does not accept freeze requests from the app. Ask at the front desk.", { correlationId: request.correlationId });
+    const membershipData = data(context.membership.data);
+    const today = todayIn(organization.timezone || TZ_FALLBACK);
+    const startDate = stringValue(input.startDate);
+    const days = numberValue(input.days, 0);
+    const reason = stringValue(input.reason).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || startDate < today) domainError("VALIDATION_ERROR", "Choose a start date from today onward.", { correlationId: request.correlationId });
+    if (stringValue(membershipData.endDate) < startDate) domainError("VALIDATION_ERROR", "The freeze must start before the membership ends.", { correlationId: request.correlationId });
+    const minimumFreezeDays = numberValue(data(data(data(settings?.data).operationalPolicies).membership).minimumFreezeDays, 1);
+    if (!Number.isSafeInteger(days) || days < minimumFreezeDays || days > numberValue(policy.maxDaysPerFreeze, 30)) {
+      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { correlationId: request.correlationId });
+    }
+    if (!reason) domainError("VALIDATION_ERROR", "Tell the gym why you need the freeze.", { correlationId: request.correlationId });
+    const membershipId = context.membership.publicId;
+    const existingRequests = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "freezeRequest")).collect()).map((row) => data(row.data));
+    if (existingRequests.some((candidate) => stringValue(candidate.membershipId) === membershipId && stringValue(candidate.status) === "pending")) {
+      domainError("CONFLICT", "You already have a freeze request waiting for the gym.", { correlationId: request.correlationId });
+    }
+    const activeFreeze = data(membershipData.activeFreeze);
+    if (stringValue(activeFreeze.status) === "active" && stringValue(activeFreeze.endDate) >= today) {
+      domainError("CONFLICT", "This membership already has an active or scheduled freeze.", { correlationId: request.correlationId });
+    }
+    const memberId = context.member.publicId;
+    const windowStart = Date.now() - numberValue(policy.windowDays, 365) * 86_400_000;
+    const approvedInWindow = existingRequests.filter((candidate) => stringValue(candidate.memberId) === memberId && stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart).length;
+    const expectedFeeMinor = approvedInWindow < numberValue(policy.freeFreezesPerWindow, 1) ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000);
+    const now = Date.now();
+    const value = {
+      id: newPublicId(),
+      membershipId,
+      memberId,
+      memberName: stringValue(data(context.member.data).fullName, memberId),
+      startDate,
+      days,
+      reason,
+      status: "pending",
+      expectedFeeMinor,
+      requestedAt: utcIso(now),
+    };
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "freezeRequest", publicId: stringValue(value.id), memberPublicId: memberId, createdAt: now, updatedAt: now, data: value });
+    return value;
+  }
   if (operation === "customer.pt.package.request") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
@@ -8913,6 +9104,43 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await revokeUnusedIncludedPtCredits(ctx, actor, old.publicId, `Superseded by immediate plan change: ${stringValue(input.reason)}`);
       }
       return result;
+    }
+    case "memberships.freeze_request.decide": {
+      requirePermission(actor, "memberships.freeze");
+      const requestId = recordId(input.requestId);
+      const decision = stringValue(input.decision);
+      const note = optionalString(input.note);
+      if (decision !== "approved" && decision !== "denied") domainError("VALIDATION_ERROR", "Decide approved or denied.", { correlationId: actor.correlationId });
+      if (decision === "denied") requireReason(input.note, actor.correlationId);
+      const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest").eq("publicId", requestId)).unique();
+      if (!row) domainError("NOT_FOUND", "Freeze request not found.", { correlationId: actor.correlationId });
+      const value = data(row.data);
+      if (stringValue(value.status) !== "pending") domainError("CONFLICT", "This freeze request was already decided.", { correlationId: actor.correlationId });
+      const now = Date.now();
+      let feeMinor = 0;
+      let chargeId: string | undefined;
+      if (decision === "approved") {
+        // The policy is re-evaluated at approval so stale requests cannot
+        // sneak past a cap that has since been used up.
+        const policy = { ...(DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data), ...data(data((await settingsData(ctx, actor)).operationalPolicies).memberFreezes) };
+        const windowStart = now - numberValue(policy.windowDays, 365) * 86_400_000;
+        const approvedInWindow = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect())
+          .map((candidate) => data(candidate.data))
+          .filter((candidate) => stringValue(candidate.memberId) === stringValue(value.memberId) && stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart)
+          .length;
+        feeMinor = approvedInWindow < numberValue(policy.freeFreezesPerWindow, 1) ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000);
+        const memberRecord = await recordOf(ctx, actor, "member", stringValue(value.memberId));
+        const memberData = data(memberRecord.data);
+        if (feeMinor > 0) {
+          chargeId = newPublicId();
+          await insertRecord(ctx, actor, "charge", { id: chargeId, organizationId: publicOrganizationId(actor.organization), memberId: stringValue(value.memberId), membershipId: stringValue(value.membershipId), description: "Membership freeze fee", subtotal: money(feeMinor, actor.organization.currency), discount: money(0, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(feeMinor, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(feeMinor, actor.organization.currency), status: "unpaid", issueDate: todayIn(actor.organization.timezone || TZ_FALLBACK), dueDate: stringValue(value.startDate), createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: stringValue(value.memberId) });
+        }
+        await mutationData(ctx, "memberships.freeze", { membershipId: stringValue(value.membershipId), startDate: stringValue(value.startDate), endDate: addDays(stringValue(value.startDate), Math.max(0, numberValue(value.days, 1) - 1)), reason: `Member request approved: ${stringValue(value.reason)}` }, request);
+      }
+      const decided = { ...value, status: decision, feeMinor: decision === "approved" ? feeMinor : undefined, chargeId, decisionNote: note, decidedAt: utcIso(now), decidedBy: actor.user.fullName };
+      await ctx.db.patch(row._id, { data: decided, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "memberships", action: `membership.freeze_request.${decision}`, entityType: "membership", entityId: stringValue(value.membershipId), entityLabel: stringValue(value.memberName), summary: decision === "approved" ? `Approved a ${numberValue(value.days, 0)}-day freeze request${feeMinor > 0 ? ` with a ${actor.organization.currency} ${(feeMinor / 1000).toFixed(3)} fee` : " free of charge"}` : "Denied a member freeze request", reason: note ?? stringValue(value.reason), before: { status: "pending" }, after: { status: decision, feeMinor, chargeId } });
+      return decided;
     }
     case "memberships.freeze": {
       requirePermission(actor, "memberships.freeze");

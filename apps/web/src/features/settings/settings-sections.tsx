@@ -1025,6 +1025,8 @@ type OperationalPoliciesInput = {
   entry?: Partial<OperationalPolicies["entry"]>;
   membership?: Partial<OperationalPolicies["membership"]>;
   personalTraining?: Partial<OperationalPolicies["personalTraining"]>;
+  referrals?: Partial<OperationalPolicies["referrals"]>;
+  memberFreezes?: Partial<OperationalPolicies["memberFreezes"]>;
   operatingHours?: OperationalPolicies["operatingHours"];
   trialSchedules?: OperationalPolicies["trialSchedules"];
 };
@@ -1050,6 +1052,21 @@ export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): 
       bookingHorizonDays: 30,
       cancellationCutoffHours: 12,
       ...value?.personalTraining,
+    },
+    referrals: {
+      enabled: false,
+      rewardDays: 7,
+      maxRewardDaysPerWindow: 30,
+      windowDays: 90,
+      ...value?.referrals,
+    },
+    memberFreezes: {
+      requestsEnabled: false,
+      freeFreezesPerWindow: 1,
+      extraFreezeFeeMinor: 10_000,
+      maxDaysPerFreeze: 30,
+      windowDays: 365,
+      ...value?.memberFreezes,
     },
     operatingHours: Array.isArray(value?.operatingHours)
       ? value.operatingHours.map((schedule) => ({ ...schedule, days: normalizedOperatingDays(schedule.days) }))
@@ -1101,6 +1118,10 @@ export function OperationalRulesSection() {
   const branches = settingsQuery.data?.branches?.filter((branch) => branch.status === "active") ?? [];
   const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
     setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
+  const updateReferrals = <K extends keyof OperationalPolicies["referrals"]>(key: K, value: OperationalPolicies["referrals"][K]) =>
+    setPolicies((current) => current ? { ...current, referrals: { ...current.referrals, [key]: value } } : current);
+  const updateFreezes = <K extends keyof OperationalPolicies["memberFreezes"]>(key: K, value: OperationalPolicies["memberFreezes"][K]) =>
+    setPolicies((current) => current ? { ...current, memberFreezes: { ...current.memberFreezes, [key]: value } } : current);
   const updateMembership = <K extends keyof OperationalPolicies["membership"]>(key: K, value: OperationalPolicies["membership"][K]) =>
     setPolicies((current) => current ? { ...current, membership: { ...current.membership, [key]: value } } : current);
   const updateHours = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["operatingHours"][number]["days"][WeekdayKey]>) =>
@@ -1159,6 +1180,33 @@ export function OperationalRulesSection() {
             <span><span className="block text-[13px] font-medium">Allow overlapping memberships</span><span className="block text-[11.5px] text-ink-3">Off prevents accidental duplicate active terms.</span></span>
             <Switch checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} aria-label="Allow overlapping memberships" />
           </label>
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Referral rewards</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">When a referred person buys their first membership, the referrer gets free days on their active membership — capped per member inside a rolling window.</p>
+          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+            <span><span className="block text-[13px] font-medium">Reward referrals</span><span className="block text-[11.5px] text-ink-3">Off records nothing and grants nothing.</span></span>
+            <Switch checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} aria-label="Reward referrals" />
+          </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Free days per referral"><Input type="number" min={1} max={90} value={policies.referrals.rewardDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("rewardDays", Number(event.target.value))} /></Field>
+            <Field label="Max days per member"><Input type="number" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} /></Field>
+            <Field label="Cap resets after (days)"><Input type="number" min={7} max={365} value={policies.referrals.windowDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} /></Field>
+          </div>
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Member freeze requests</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">Members ask from their app; your team approves. The policy decides what is free and what carries a fee — for example the first freeze free, the second for 10 JOD.</p>
+          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+            <span><span className="block text-[13px] font-medium">Accept freeze requests</span><span className="block text-[11.5px] text-ink-3">Off hides the request option in the member app.</span></span>
+            <Switch checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} aria-label="Accept freeze requests" />
+          </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Free freezes per window"><Input type="number" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} /></Field>
+            <Field label="Fee after that (JOD)"><Input type="number" min={0} max={1000} step={0.5} value={policies.memberFreezes.extraFreezeFeeMinor / 1000} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 1000))} /></Field>
+            <Field label="Max days per freeze"><Input type="number" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} /></Field>
+            <Field label="Counter resets after (days)"><Input type="number" min={30} max={730} value={policies.memberFreezes.windowDays} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} /></Field>
+          </div>
         </section>
       </div>
 

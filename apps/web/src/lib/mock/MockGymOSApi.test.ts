@@ -1400,6 +1400,8 @@ describe("operational policies", () => {
     const updated = await api.updateOperationalPolicies({
       entry: { outstandingBalance: "block", expiryWarningDays: 10, duplicateScanWindowMinutes: 4, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
+      referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
+      memberFreezes: { requestsEnabled: true, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
       operatingHours: [{ branchId: branch.id, days }],
       trialSchedules: [{ branchId: branch.id, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: day !== "fri", opensAt: "09:00", closesAt: "20:00" }])) as OperationalPolicies["trialSchedules"][number]["days"] }],
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },

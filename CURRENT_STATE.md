@@ -53,6 +53,34 @@
   accounting and migration rules remain an explicit product decision. Arabic
   translation and the measured performance sprint remain last, as directed.
 
+## Customizable referrals + member freeze requests — 30 August 2026
+
+- **Referral rewards (Settings → Operational rules → Referral rewards):**
+  fully gym-customizable — enabled flag, free days per referral, a per-member
+  day cap, and the rolling window that resets it. Member creation gained a
+  "Referred by" member search; when the referred person completes their
+  first membership sale, the referrer's active membership is extended
+  automatically, the outcome (applied / cap reached / no active membership)
+  is recorded as an immutable `referralReward` fact with an audit event and
+  a membership adjustment, repeat sales and self-referrals grant nothing,
+  and the customer-app projection is kept in sync.
+- **Member freeze requests (Settings → Operational rules → Member freeze
+  requests):** members ask from the membership page in their app (dates,
+  days, reason, with the expected fee shown); gyms configure free freezes
+  per window, the fee after that (e.g. first free, then 10 JOD), the max
+  days per freeze, and the reset window. Requests cannot be gamed: policy
+  bounds, one pending request per membership, no overlap with an active
+  freeze, and the fee is **re-computed at approval**. Staff decide from a
+  panel on Memberships — approval applies the freeze through the existing
+  audited machinery and books an unpaid "Membership freeze fee" charge when
+  due; denial requires a reason the member sees.
+- Legacy settings normalize safely on both server and client; MockGymOSApi
+  mirrors both features (including a stable demo link from bundled customer
+  memberships to generated seed members). New Convex suites cover the
+  reward/cap/dedupe/disabled referral paths and the request → decide →
+  fee/charge freeze paths (suite now 997). Verified in the mock browser:
+  member "Request a freeze" → policy-checked submission → confirmation.
+
 ## Group class calendar — 30 August 2026
 
 - New **Classes** workspace (nav: Workspace → Classes, all plan tiers): a

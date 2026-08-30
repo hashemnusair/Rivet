@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { CreateMemberInput, CreateMemberMembershipSaleInput, CreateMemberMembershipSaleResult, DuplicateMatch, LeadSource } from "@/lib/domain/types";
+import type { CreateMemberInput, CreateMemberMembershipSaleInput, CreateMemberMembershipSaleResult, DuplicateMatch, LeadSource, MemberSummary } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
@@ -42,6 +42,7 @@ const schema = z.object({
   emergencyContactPhone: z.string().optional(),
   source: z.enum(["instagram", "walk_in", "referral", "whatsapp", "google", "phone_call", "other"]).optional(),
   assignedSalespersonId: z.string().optional(),
+  referredByMemberId: z.string().optional(),
   notes: z.string().optional(),
   marketingOptIn: z.boolean(),
   marketingPreferenceSource: z.enum(["system_default", "staff_selected", "member_selected", "imported"]).optional(),
@@ -389,6 +390,15 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
+            <Field label="Referred by (optional)" hint="The referring member earns the gym's referral reward on this member's first sale.">
+              <Controller
+                control={form.control}
+                name="referredByMemberId"
+                render={({ field }) => (
+                  <ReferrerSearch value={field.value} onChange={field.onChange} />
+                )}
+              />
+            </Field>
           </div>
         </section>
 
@@ -457,6 +467,7 @@ function memberInput(values: FormValues): CreateMemberInput {
     emergencyContactPhone: values.emergencyContactPhone || undefined,
     source: values.source,
     assignedSalespersonId: values.assignedSalespersonId || undefined,
+    referredByMemberId: values.referredByMemberId || undefined,
     notes: values.notes || undefined,
     marketingOptIn: values.marketingOptIn,
     marketingPreferenceSource: values.marketingPreferenceSource,
@@ -515,5 +526,46 @@ function SalesSelect({ value, onChange }: { value?: string; onChange: (v: string
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?: string) => void }) {
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<MemberSummary[]>([]);
+  const [selectedLabel, setSelectedLabel] = useState<string>();
+
+  const run = async (input: string) => {
+    setSearch(input);
+    if (input.trim().length < 2) { setResults([]); return; }
+    try {
+      const page = await getApi().listMembers({ search: input.trim(), pageSize: 6 });
+      setResults(page.items.filter((member) => member.status !== "archived"));
+    } catch {
+      setResults([]);
+    }
+  };
+
+  if (value) {
+    return (
+      <div className="flex h-10 items-center justify-between gap-2 rounded-md border border-line-2 bg-sunken px-3 text-[13px]">
+        <span className="truncate">{selectedLabel ?? "Selected member"}</span>
+        <button type="button" className="text-[11px] text-ink-3 hover:text-ink" onClick={() => { onChange(undefined); setSelectedLabel(undefined); setSearch(""); }}>Clear</button>
+      </div>
+    );
+  }
+  return (
+    <div className="relative">
+      <Input value={search} onChange={(event) => void run(event.target.value)} placeholder="Search members by name or phone…" />
+      {results.length > 0 ? (
+        <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
+          {results.map((member) => (
+            <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => { onChange(member.id); setSelectedLabel(`${member.fullName} · ${member.memberNumber}`); setResults([]); }}>
+              <span className="truncate">{member.fullName}</span>
+              <span className="text-ink-3">{member.memberNumber}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

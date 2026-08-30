@@ -13,6 +13,7 @@ import type * as accounting from "../accounting.js";
 import type * as accountingLedger from "../accountingLedger.js";
 import type * as automations from "../automations.js";
 import type * as brand from "../brand.js";
+import type * as classes from "../classes.js";
 import type * as crons from "../crons.js";
 import type * as customer from "../customer.js";
 import type * as domain from "../domain.js";
@@ -61,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   accountingLedger: typeof accountingLedger;
   automations: typeof automations;
   brand: typeof brand;
+  classes: typeof classes;
   crons: typeof crons;
   customer: typeof customer;
   domain: typeof domain;

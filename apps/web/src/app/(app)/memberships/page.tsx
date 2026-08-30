@@ -1,17 +1,19 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { MembershipListQuery } from "@/lib/api/GymOSApi";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -53,6 +55,8 @@ function MembershipsWorkspace() {
         title="Memberships"
         description="Every term ever sold — current, past, frozen and cancelled."
       />
+
+      <FreezeRequestsPanel />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
@@ -170,3 +174,55 @@ function MembershipsWorkspace() {
     </div>
   );
 }
+
+function FreezeRequestsPanel() {
+  const invalidate = useInvalidate();
+  const requestsQuery = useApiQuery(["freezeRequests", "pending"] as const, (api) => api.listFreezeRequests({ status: "pending" }));
+  const [denyId, setDenyId] = useState<string>();
+  const [note, setNote] = useState("");
+
+  const decide = useApiMutation((api, input: { requestId: string; decision: "approved" | "denied"; note?: string }) => api.decideFreezeRequest(input), {
+    onSuccess: async () => {
+      setDenyId(undefined);
+      setNote("");
+      await invalidate([["freezeRequests", "pending"], ["memberships"]]);
+    },
+    successMessage: "Freeze request decided and audited.",
+  });
+
+  const pending = requestsQuery.data ?? [];
+  if (pending.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
+      <p className="eyebrow">Member requests</p>
+      <h2 className="mt-1 text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
+      <div className="mt-3 grid gap-2">
+        {pending.map((request) => (
+          <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
+            <div className="min-w-0 text-[12.5px]">
+              <p className="font-semibold">{request.memberName}</p>
+              <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? `fee JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : "free under policy"}</p>
+            </div>
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="signal" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve{request.expectedFeeMinor > 0 ? ` · JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : ""}</Button>
+              <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Deny</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Dialog open={Boolean(denyId)} onOpenChange={(open) => { if (!open) setDenyId(undefined); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Deny this freeze request?</DialogTitle></DialogHeader>
+          <DialogBody>
+            <label className="grid gap-1.5 text-[12px] font-medium">Reason the member will see<Textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDenyId(undefined)}>Cancel</Button>
+            <Button variant="danger" loading={decide.isPending} disabled={!note.trim()} onClick={() => decide.mutate({ requestId: denyId!, decision: "denied", note: note.trim() })}>Deny request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+

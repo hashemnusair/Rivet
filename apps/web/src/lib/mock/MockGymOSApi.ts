@@ -655,6 +655,9 @@ export class MockGymOSApi implements GymOSApi {
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
   private classSessions: T.ClassSession[] = [];
+  private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
+  private freezeRequests: T.MembershipFreezeRequest[] = [];
+  private customerMemberLinks = new Map<string, string>();
   private platformSupportCases: PlatformSupportCase[];
   private readonly provisioningInFlight = new Set<string>();
   private operationalNotifications: MockOperationalNotification[] = [];
@@ -711,6 +714,9 @@ export class MockGymOSApi implements GymOSApi {
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.classSessions = this.seedClassSessions();
+    this.referralRewards = [];
+    this.freezeRequests = [];
+    this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
@@ -1376,6 +1382,111 @@ export class MockGymOSApi implements GymOSApi {
       const membership = INITIAL_CUSTOMER_MEMBERSHIPS.find((item) => item.id === membershipId);
       if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       return { token: membership.qrValue, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), membershipId };
+    });
+  }
+
+  private customerOperationalMembership(customerMembershipId: string): { member: MemberRecord; membership: MembershipRecord } {
+    const projection = INITIAL_CUSTOMER_MEMBERSHIPS.find((item) => item.id === customerMembershipId && item.customerId === this.activeCustomerId);
+    if (!projection) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+    // Demo members are generated, so the bundled customer projections may not
+    // share a member number with the seed; keep a stable per-projection link
+    // to a real active membership so the request flow stays demoable.
+    let member = this.db.members.find((candidate) => candidate.memberNumber === projection.memberNumber);
+    let membership = member ? this.db.memberships.filter((candidate) => candidate.memberId === member!.id && !candidate.cancelledAt).sort((left, right) => right.endDate.localeCompare(left.endDate))[0] : undefined;
+    if (!member || !membership) {
+      const linkedId = this.customerMemberLinks.get(customerMembershipId);
+      const today = this.today();
+      const fallbackMembership = (linkedId
+        ? this.db.memberships.filter((candidate) => candidate.memberId === linkedId && !candidate.cancelledAt)
+        : this.db.memberships.filter((candidate) => !candidate.cancelledAt && candidate.endDate >= today))
+        .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
+      const fallbackMember = fallbackMembership ? this.db.members.find((candidate) => candidate.id === fallbackMembership.memberId && candidate.status !== "archived") : undefined;
+      if (!fallbackMembership || !fallbackMember) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      this.customerMemberLinks.set(customerMembershipId, fallbackMember.id);
+      member = fallbackMember;
+      membership = fallbackMembership;
+    }
+    return { member, membership };
+  }
+
+  private freezeFeeFor(memberId: string): number {
+    const policy = this.db.operationalPolicies.memberFreezes;
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const approved = this.freezeRequests.filter((candidate) => candidate.memberId === memberId && candidate.status === "approved" && Date.parse(candidate.decidedAt ?? candidate.requestedAt) >= windowStart).length;
+    return approved < policy.freeFreezesPerWindow ? 0 : policy.extraFreezeFeeMinor;
+  }
+
+  requestMembershipFreeze(input: T.RequestMembershipFreezeInput): Promise<T.MembershipFreezeRequest> {
+    return this.respond(() => {
+      const policy = this.db.operationalPolicies.memberFreezes;
+      if (!policy.requestsEnabled) throw ApiError.of(ERR.VALIDATION, "This gym does not accept freeze requests from the app. Ask at the front desk.");
+      const { member, membership } = this.customerOperationalMembership(input.membershipId);
+      const today = this.today();
+      const reason = input.reason.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate) || input.startDate < today) throw ApiError.of(ERR.VALIDATION, "Choose a start date from today onward.");
+      if (membership.endDate < input.startDate) throw ApiError.of(ERR.VALIDATION, "The freeze must start before the membership ends.");
+      const minimum = this.db.operationalPolicies.membership.minimumFreezeDays;
+      if (!Number.isSafeInteger(input.days) || input.days < minimum || input.days > policy.maxDaysPerFreeze) throw ApiError.of(ERR.VALIDATION, `A freeze must be between ${minimum} and ${policy.maxDaysPerFreeze} days.`);
+      if (!reason) throw ApiError.of(ERR.VALIDATION, "Tell the gym why you need the freeze.");
+      if (this.freezeRequests.some((candidate) => candidate.membershipId === membership.id && candidate.status === "pending")) throw ApiError.of(ERR.CONFLICT, "You already have a freeze request waiting for the gym.");
+      if (membership.activeFreeze && membership.activeFreeze.status === "active" && membership.activeFreeze.endDate >= today) throw ApiError.of(ERR.CONFLICT, "This membership already has an active or scheduled freeze.");
+      const record: T.MembershipFreezeRequest = {
+        id: mockUuid(),
+        membershipId: membership.id,
+        memberId: member.id,
+        memberName: member.fullName,
+        startDate: input.startDate,
+        days: input.days,
+        reason,
+        status: "pending",
+        expectedFeeMinor: this.freezeFeeFor(member.id),
+        requestedAt: nowISO(),
+      };
+      this.freezeRequests.unshift(record);
+      return { ...record };
+    });
+  }
+
+  listCustomerFreezeRequests(customerMembershipId: T.UUID): Promise<T.MembershipFreezeRequest[]> {
+    return this.respond(() => {
+      const { membership } = this.customerOperationalMembership(customerMembershipId);
+      return this.freezeRequests.filter((candidate) => candidate.membershipId === membership.id).map((candidate) => ({ ...candidate }));
+    });
+  }
+
+  listFreezeRequests(query: { status?: T.FreezeRequestStatus } = {}): Promise<T.MembershipFreezeRequest[]> {
+    return this.respond(() => {
+      this.require("memberships.freeze");
+      return this.freezeRequests.filter((candidate) => !query.status || candidate.status === query.status).map((candidate) => ({ ...candidate }));
+    });
+  }
+
+  async decideFreezeRequest(input: T.DecideFreezeRequestInput): Promise<T.MembershipFreezeRequest> {
+    const pending = await this.respond(() => {
+      this.require("memberships.freeze");
+      if (input.decision === "denied" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to deny a freeze request.");
+      const record = this.freezeRequests.find((candidate) => candidate.id === input.requestId);
+      if (!record) throw ApiError.of(ERR.NOT_FOUND, "Freeze request not found.");
+      if (record.status !== "pending") throw ApiError.of(ERR.CONFLICT, "This freeze request was already decided.");
+      return record;
+    });
+    if (input.decision === "approved") {
+      // The policy is re-evaluated at approval; the existing audited freeze
+      // machinery applies the dates.
+      const feeMinor = this.freezeFeeFor(pending.memberId);
+      if (feeMinor > 0) {
+        this.db.charges.push({ id: mockUuid(), memberId: pending.memberId, membershipId: pending.membershipId, description: "Membership freeze fee", subtotal: { amount: feeMinor, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, tax: { amount: 0, currency: "JOD" }, total: { amount: feeMinor, currency: "JOD" }, paidAmount: { amount: 0, currency: "JOD" }, outstandingAmount: { amount: feeMinor, currency: "JOD" }, status: "unpaid", issueDate: this.today(), dueDate: pending.startDate, createdAt: nowISO() } as never);
+      }
+      await this.freezeMembership(pending.membershipId, { startDate: pending.startDate, endDate: addDays(pending.startDate, Math.max(0, pending.days - 1)), reason: `Member request approved: ${pending.reason}` });
+      pending.feeMinor = feeMinor;
+    }
+    return await this.respond(() => {
+      pending.status = input.decision;
+      pending.decisionNote = input.note?.trim() || undefined;
+      pending.decidedAt = nowISO();
+      pending.decidedBy = this.actor().name;
+      this.audit({ category: "memberships", action: `membership.freeze_request.${input.decision}`, entityType: "membership", entityId: pending.membershipId, entityLabel: pending.memberName, summary: input.decision === "approved" ? `Approved a ${pending.days}-day freeze request` : "Denied a member freeze request", reason: input.note?.trim() || pending.reason });
+      return { ...pending };
     });
   }
 
@@ -2689,6 +2800,9 @@ export class MockGymOSApi implements GymOSApi {
     this.platformAuditEvents = [];
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.classSessions = this.seedClassSessions();
+    this.referralRewards = [];
+    this.freezeRequests = [];
+    this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
@@ -3995,12 +4109,20 @@ export class MockGymOSApi implements GymOSApi {
       }
       const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
       if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      let referredByName: string | undefined;
+      if (input.referredByMemberId) {
+        const referrer = this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived");
+        if (!referrer) throw ApiError.of(ERR.NOT_FOUND, "The referring member was not found.");
+        referredByName = referrer.fullName;
+      }
       this.db.counters.memberNumber += 1;
       const record: MemberRecord = {
         id: mockUuid(),
         memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
         fullName: input.fullName.trim(),
         fullNameAr: input.fullNameAr,
+        referredByMemberId: input.referredByMemberId,
+        referredByName,
         phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
         email: input.email?.trim().toLowerCase() || undefined,
         gender: input.gender,
@@ -4924,7 +5046,46 @@ export class MockGymOSApi implements GymOSApi {
 
     const result = { membership: this.toMembership(record), charge, payment, receipt, timelineEventIds: timelineIds };
     if (idempotencyMapKey && idempotencySignature) this.membershipSaleIdempotency.set(idempotencyMapKey, { signature: idempotencySignature, result });
+    if (operation === "sale") this.applyReferralReward(member);
     return result;
+  }
+
+  /** Parity with Convex: first-sale referral reward, capped inside its window. */
+  private applyReferralReward(referredMember: MemberRecord): void {
+    const referrerId = (referredMember as MemberRecord & { referredByMemberId?: string }).referredByMemberId;
+    if (!referrerId || referrerId === referredMember.id) return;
+    const policy = this.db.operationalPolicies.referrals;
+    if (!policy?.enabled) return;
+    if (this.referralRewards.some((reward) => reward.referredMemberId === referredMember.id)) return;
+    const referrer = this.db.members.find((candidate) => candidate.id === referrerId && candidate.status !== "archived");
+    if (!referrer) return;
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const used = this.referralRewards.filter((reward) => reward.referrerId === referrerId && Date.parse(reward.createdAt) >= windowStart).reduce((sum, reward) => sum + reward.days, 0);
+    const grant = Math.max(0, Math.min(policy.rewardDays, policy.maxRewardDaysPerWindow - used));
+    const today = this.today();
+    const active = this.db.memberships
+      .filter((membership) => membership.memberId === referrerId && !membership.cancelledAt && membership.endDate >= today)
+      .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
+    let status = "applied";
+    if (grant === 0) status = "cap_reached";
+    else if (!active) status = "no_active_membership";
+    else {
+      const before = active.endDate;
+      active.endDate = addDays(active.endDate, grant);
+      active.adjustments = [...active.adjustments, { id: mockUuid(), membershipId: active.id, type: "referral_bonus" as never, reason: `Referred ${referredMember.fullName} — ${grant} free day${grant === 1 ? "" : "s"}`, actorId: this.actor().id, before: { endDate: before }, after: { endDate: active.endDate }, approvalStatus: "not_required", createdAt: nowISO() }];
+    }
+    this.referralRewards.push({ referrerId, referredMemberId: referredMember.id, days: status === "applied" ? grant : 0, status, createdAt: nowISO() });
+    this.audit({
+      category: "memberships",
+      action: "membership.referral_reward",
+      entityType: "member",
+      entityId: referrerId,
+      entityLabel: referrer.fullName,
+      summary: status === "applied"
+        ? `Referral reward: ${grant} free day${grant === 1 ? "" : "s"} for referring ${referredMember.fullName}`
+        : `Referral reward for ${referredMember.fullName} not applied (${status === "cap_reached" ? "cap reached" : "no active membership"})`,
+      branchId: referrer.homeBranchId,
+    });
   }
 
   createMembershipSale(input: T.CreateMembershipSaleInput): Promise<T.MembershipSaleResult> {

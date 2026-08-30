@@ -829,6 +829,8 @@ export interface CreateMemberInput {
   source?: LeadSource;
   assignedSalespersonId?: UUID;
   tags?: string[];
+  /** Member who referred this person; rewarded on the first membership sale. */
+  referredByMemberId?: UUID;
   marketingOptIn?: boolean;
   marketingPreferenceSource?: MarketingPreferenceSource;
   notes?: string;
@@ -1039,6 +1041,41 @@ export interface CreateMemberMembershipSaleInput {
 export interface CreateMemberMembershipSaleResult {
   member: MemberDetail;
   sale: MembershipSaleResult;
+}
+
+
+export type FreezeRequestStatus = "pending" | "approved" | "denied";
+
+export interface MembershipFreezeRequest {
+  id: UUID;
+  membershipId: UUID;
+  memberId: UUID;
+  memberName: string;
+  startDate: ISODate;
+  days: number;
+  reason: string;
+  status: FreezeRequestStatus;
+  /** Fee the policy predicts at request time; the decision recomputes it. */
+  expectedFeeMinor: number;
+  feeMinor?: number;
+  chargeId?: string;
+  decisionNote?: string;
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
+
+export interface RequestMembershipFreezeInput {
+  membershipId: UUID;
+  startDate: ISODate;
+  days: number;
+  reason: string;
+}
+
+export interface DecideFreezeRequestInput {
+  requestId: UUID;
+  decision: "approved" | "denied";
+  note?: string;
 }
 
 export interface FreezeMembershipInput {
@@ -2766,6 +2803,24 @@ export interface OperationalPolicies {
     sessionDurationMinutes: 60;
     bookingHorizonDays: number;
     cancellationCutoffHours: number;
+  };
+  /** Gym-customizable member-referral rewards: free days added to the
+   * referrer's active membership when a referred person buys their first
+   * membership, capped per referrer inside a rolling window. */
+  referrals: {
+    enabled: boolean;
+    rewardDays: number;
+    maxRewardDaysPerWindow: number;
+    windowDays: number;
+  };
+  /** Gym-customizable member freeze requests: how many freezes are free per
+   * rolling window, what later ones cost, and how long one freeze may run. */
+  memberFreezes: {
+    requestsEnabled: boolean;
+    freeFreezesPerWindow: number;
+    extraFreezeFeeMinor: number;
+    maxDaysPerFreeze: number;
+    windowDays: number;
   };
 }
 

@@ -478,6 +478,8 @@ describe("ConvexGymOSApi contract boundary", () => {
     await api.updateOperationalPolicies({
       entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
+      referrals: { enabled: false, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
+      memberFreezes: { requestsEnabled: false, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [{ branchId: session.activeBranchId!, days }],
       trialSchedules: [{ branchId: session.activeBranchId!, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: true, opensAt: "09:00", closesAt: "20:00" }])) as import("@/lib/domain/types").OperationalPolicies["trialSchedules"][number]["days"] }],

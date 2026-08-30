@@ -538,6 +538,10 @@ export class ConvexGymOSApi implements GymOSApi {
   renewMembership(membershipId: T.UUID, input: T.RenewMembershipInput): Promise<T.MembershipSaleResult> { return this.mutate("memberships.renew", { membershipId, ...input }); }
   changeMembershipPlan(membershipId: T.UUID, input: T.ChangeMembershipPlanInput): Promise<T.MembershipSaleResult> { return this.mutate("memberships.plan_change", { membershipId, ...input }); }
   freezeMembership(membershipId: T.UUID, input: T.FreezeMembershipInput): Promise<T.MembershipDetail> { return this.mutate("memberships.freeze", { membershipId, ...input }); }
+  requestMembershipFreeze(input: T.RequestMembershipFreezeInput): Promise<T.MembershipFreezeRequest> { return this.mutate("customer.membership.freezeRequest", input); }
+  listCustomerFreezeRequests(membershipId: T.UUID): Promise<T.MembershipFreezeRequest[]> { return this.query("customer.membership.freezeRequests", { membershipId }); }
+  listFreezeRequests(query: { status?: T.FreezeRequestStatus } = {}): Promise<T.MembershipFreezeRequest[]> { return this.query("memberships.freeze_requests.list", query); }
+  decideFreezeRequest(input: T.DecideFreezeRequestInput): Promise<T.MembershipFreezeRequest> { return this.mutate("memberships.freeze_request.decide", input); }
   unfreezeMembership(membershipId: T.UUID, input: { reason: string }): Promise<T.MembershipDetail> { return this.mutate("memberships.unfreeze", { membershipId, ...input }); }
   extendMembership(membershipId: T.UUID, input: T.ExtendMembershipInput): Promise<T.MembershipDetail> { return this.mutate("memberships.extend", { membershipId, ...input }); }
   cancelMembership(membershipId: T.UUID, input: T.CancelMembershipInput): Promise<T.MembershipDetail> { return this.mutate("memberships.cancel", { membershipId, ...input }); }

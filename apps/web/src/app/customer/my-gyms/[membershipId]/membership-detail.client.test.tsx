@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS } from "@/lib/public/experience-data";
@@ -25,7 +26,8 @@ describe("member visit history", () => {
   it("keeps recent activity collapsed until the member opens it", async () => {
     const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
     const user = userEvent.setup();
-    render(<MembershipDetailClient membershipId={membership.id} />);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
 
     expect(screen.getByText("Recent activity")).toBeInTheDocument();
     const activity = screen.getByText("Recent activity").closest("details");

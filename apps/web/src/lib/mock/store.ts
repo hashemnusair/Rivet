@@ -53,6 +53,8 @@ import { effectiveRolePermissions } from "@/lib/domain/permissions";
 // ---------------------------------------------------------------------------
 
 export interface MemberRecord {
+  referredByMemberId?: string;
+  referredByName?: string;
   id: UUID;
   memberNumber: string;
   fullName: string;
