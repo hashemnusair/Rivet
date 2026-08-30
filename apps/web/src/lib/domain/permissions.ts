@@ -82,7 +82,10 @@ const AUDITOR: Permission[] = [
 ];
 
 const LEGACY_COMPATIBILITY_PERMISSIONS: Partial<Record<RoleKey, Permission[]>> = {
-  manager: ["operations.manage", "accounting.post"],
+  manager: ["operations.manage", "accounting.post", "pt.manage", "pt.book_for_member", "pt.schedule.self", "pt.outcome.self", "pt.refund", "pt.reports.read"],
+  salesperson: ["pt.book_for_member"],
+  receptionist: ["pt.book_for_member"],
+  trainer: ["pt.schedule.self", "pt.outcome.self"],
 };
 
 export const ROLE_LABELS: Record<RoleKey, string> = {

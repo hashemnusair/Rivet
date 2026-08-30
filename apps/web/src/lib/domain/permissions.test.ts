@@ -6,6 +6,7 @@ import {
   canAny,
   defaultRoleDefinitions,
   discountNeedsApproval,
+  effectiveRolePermissions,
   hasPermission,
   type Permission,
 } from "./permissions";
@@ -88,6 +89,14 @@ describe("least privilege per role", () => {
 });
 
 describe("permission helpers", () => {
+  it("restores post-seed PT capabilities only for legacy role definitions", () => {
+    expect(effectiveRolePermissions("manager", ["members.read"])).toEqual(expect.arrayContaining(["pt.manage", "pt.refund", "pt.reports.read"]));
+    expect(effectiveRolePermissions("salesperson", ["members.read"])).toContain("pt.book_for_member");
+    expect(effectiveRolePermissions("receptionist", ["members.read"])).toContain("pt.book_for_member");
+    expect(effectiveRolePermissions("trainer", ["members.read"])).toEqual(expect.arrayContaining(["pt.schedule.self", "pt.outcome.self"]));
+    expect(effectiveRolePermissions("trainer", ["members.read"], 2)).toEqual(["members.read"]);
+  });
+
   it("checks a single permission", () => {
     expect(hasPermission(["members.read"], "members.read")).toBe(true);
     expect(hasPermission(["members.read"], "members.write")).toBe(false);

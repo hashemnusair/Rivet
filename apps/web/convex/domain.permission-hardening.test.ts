@@ -15,13 +15,16 @@ async function seeded() {
     const now = Date.now();
     const organization = await ctx.db.insert("organizations", { publicId: "permission-org", name: "Permission Gym", slug: "permission-gym", status: "active", subscriptionPlan: "Pro", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "permission-branch", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
-    const createUser = async (publicId: string, role: "owner" | "manager" | "auditor") => {
+    const createUser = async (publicId: string, role: "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor") => {
       const user = await ctx.db.insert("users", { publicId, authSubject: `clerk-${publicId}`, email: `${publicId}@example.com`, fullName: publicId, platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
-      await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: user, role, branchIds: [branch], branchScope: role === "auditor" ? "selected" : "all", active: true, createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: user, role, branchIds: [branch], branchScope: role === "owner" || role === "manager" ? "all" : "selected", active: true, createdAt: now, updatedAt: now });
       return user;
     };
     await createUser("permission-owner", "owner");
     await createUser("permission-manager", "manager");
+    await createUser("permission-sales", "sales");
+    await createUser("permission-receptionist", "receptionist");
+    await createUser("permission-trainer", "trainer");
     await createUser("permission-auditor", "auditor");
   });
   return {
@@ -33,7 +36,7 @@ async function seeded() {
 }
 
 describe("permission catalog compatibility and write boundaries", () => {
-  it("keeps legacy manager rows compatible while new default roles expose both write permissions", async () => {
+  it("keeps legacy role rows compatible with product capabilities added before catalog versioning", async () => {
     const { t, manager } = await seeded();
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "permission-org")).unique();
@@ -51,10 +54,41 @@ describe("permission catalog compatibility and write boundaries", () => {
       });
     });
     const session = await manager.query(api.domain.query, operation("session")) as { permissions: string[] };
-    expect(session.permissions).toEqual(expect.arrayContaining(["operations.manage", "accounting.post"]));
+    expect(session.permissions).toEqual(expect.arrayContaining(["operations.manage", "accounting.post", "pt.manage", "pt.refund", "pt.reports.read"]));
     const product = await manager.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEGACY", name: "Legacy stock", unit: "each", reorderPoint: 1 })) as { id: string };
     expect(product.id).toBeTruthy();
     await expect(manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh"))).resolves.toMatchObject({ scanned: 0 });
+
+    const legacyRoles = await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "permission-org")).unique();
+      if (!organization) throw new Error("permission fixture missing organization");
+      return await Promise.all((["sales", "receptionist", "trainer"] as const).map(async (role) => {
+        const existing = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", organization._id).eq("role", role)).unique();
+        if (existing) await ctx.db.delete(existing._id);
+        await ctx.db.insert("roleDefinitions", {
+          organizationId: organization._id,
+          role,
+          label: `Legacy ${role}`,
+          description: "Pre-catalog role",
+          permissions: ["members.read"],
+          discountLimitMinor: 0,
+          isSystem: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        return role;
+      }));
+    });
+    expect(legacyRoles).toEqual(["sales", "receptionist", "trainer"]);
+
+    const roleSessions = await Promise.all([
+      t.withIdentity({ subject: "clerk-permission-sales" }).query(api.domain.query, operation("session")),
+      t.withIdentity({ subject: "clerk-permission-receptionist" }).query(api.domain.query, operation("session")),
+      t.withIdentity({ subject: "clerk-permission-trainer" }).query(api.domain.query, operation("session")),
+    ]) as Array<{ permissions: string[] }>;
+    expect(roleSessions[0]!.permissions).toEqual(expect.arrayContaining(["pt.book_for_member"]));
+    expect(roleSessions[1]!.permissions).toEqual(expect.arrayContaining(["pt.book_for_member"]));
+    expect(roleSessions[2]!.permissions).toEqual(expect.arrayContaining(["pt.schedule.self", "pt.outcome.self"]));
   });
 
   it("enforces omissions after an owner edits a current-version manager role", async () => {

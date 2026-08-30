@@ -113,11 +113,14 @@ export const DEFAULT_ROLE_DEFINITIONS: Record<OrganizationRole, { label: string;
 };
 
 const LEGACY_COMPATIBILITY_PERMISSIONS: Partial<Record<OrganizationRole, Permission[]>> = {
-  // Before catalog versioning, owners and managers were the only roles with
-  // the deliberate operations/accounting write capability. Preserve that
-  // capability for legacy manager rows while allowing a current-version role
-  // edit to intentionally omit either permission.
-  manager: ["operations.manage", "accounting.post"],
+  // Before catalog versioning, stored definitions could not express the
+  // operations/accounting or PT capabilities introduced later. Restore only
+  // those product-owned additions for legacy rows; once an owner saves the
+  // current catalog version, deliberate omissions remain authoritative.
+  manager: ["operations.manage", "accounting.post", "pt.manage", "pt.book_for_member", "pt.schedule.self", "pt.outcome.self", "pt.refund", "pt.reports.read"],
+  sales: ["pt.book_for_member"],
+  receptionist: ["pt.book_for_member"],
+  trainer: ["pt.schedule.self", "pt.outcome.self"],
 };
 
 export function effectiveRolePermissions(role: OrganizationRole, configured?: string[], catalogVersion?: number): string[] {
