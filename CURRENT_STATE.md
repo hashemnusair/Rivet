@@ -1,5 +1,55 @@
 # GymOS / RIVET current implementation state
 
+## Membership migration and member referral sharing — 30 August 2026
+
+- The batch started by fetching GitHub and merging Elias's five Settings
+  follow-ups (`4fdde4f` through `3755f66`) into `main` without rewriting
+  partner history. Merge commit `d2a45e2` was pushed before feature work began.
+- Commit `d4a66c8` expands the existing file-first CSV/XLSX member importer into
+  the approved membership-migration contract. A gym can map source plans to
+  active RIVET plans and import active or scheduled terms, remaining visits,
+  a current freeze, an opening balance, and read-only historical payment
+  evidence at an explicit migration cutoff date. Profile-only imports remain
+  valid.
+- Migration never fabricates historical sales, payments, receipts, cash shifts,
+  or posted revenue. Imported terms use zero sale price; opening balances are
+  dated migration receivables marked ineligible for accounting-source posting;
+  historical paid totals are evidence records only. Source filename, row,
+  mapping, cutoff, batch progress, rejection, and audit provenance are retained
+  without storing the uploaded workbook body.
+- Resumable commit and seven-day undo now cover the exact untouched member,
+  membership, opening-receivable, freeze, and historical-evidence records made
+  by the batch. Any later operational or financial use makes that row ineligible
+  for undo and the skip is reported rather than silently deleting history.
+- Commit `24e3749` adds the member referral-sharing loop. Eligible members see
+  the gym's configured reward, rolling-window progress, and an on-demand
+  private share link in My Gyms. The URL contains only an opaque token and
+  survives real member signup before the referred visitor submits a trial.
+- Convex validates a referral against the exact target gym and a live referrer,
+  records the CRM lead as `source: referral`, carries attribution through the
+  completed-trial sale, and delegates the reward to the existing first-sale,
+  cap, active-membership, self-referral, and immutable-audit rules. The token is
+  not copied into the trial booking or exposed to gym staff.
+- Mock parity covers the same link → trial → CRM → member → first-sale reward
+  path. Its atomic trial-sale helper was corrected after the new integration
+  test found that it had dropped referral attribution while Production Convex
+  preserved it.
+- Commit `fe54838` aligns browser, mock, and Convex import-size validation at
+  5 MB (measured as UTF-8 bytes) while retaining the 10,000-row batch cap.
+- Commit `31eae98` aligns the synchronous member-preview fixture with the
+  enabled referral policy so the first browser paint and the live API
+  projection expose the same referral card.
+- The completed local gate passed both TypeScript checks, lint/secret audit,
+  169 Vitest files / 1,011 tests plus 14 repository-safety tests, the 58-page
+  Production build, `pnpm audit --prod`, `git diff --check`, and 46
+  credential-free Playwright journeys with 14 explicit staging-only skips and
+  zero failures. The Impeccable UI detector reported no flagged patterns in
+  the importer or member referral surfaces.
+- No Convex deployment, provider activation, or Production tenant-data import
+  was performed in this code batch. The last exact-target backend/hosted release
+  remains `156f9b1`; current application tip `31eae98` still needs the normal
+  release procedure after the repository gate and push.
+
 ## Partner features, weekly timetable, and integration hardening — 30 August 2026
 
 - Classes moved from dated sessions to a fixed weekly template: `classSessions`

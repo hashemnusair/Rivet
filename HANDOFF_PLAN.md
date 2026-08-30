@@ -1,10 +1,11 @@
 # RIVET engineering handoff plan
 
 Last updated: 30 August 2026
-Current application tip: `8e5adeb`; the last fully verified Convex and Vercel
-Production release pair is `156f9b1`. The post-release migration,
-classes, referrals, and freeze-request code still needs the normal exact-target
-Production release procedure.
+Current application tip: `31eae98`; the last fully verified Convex and Vercel
+Production release pair is `156f9b1`. Membership-state migration, member
+referral sharing, classes, referral rewards, freeze requests, and the latest
+partner Settings work still need the normal exact-target Production release
+procedure.
 
 ## Purpose
 
@@ -25,26 +26,27 @@ and the complete chronological implementation record is
 
 - The current local application adds complete-or-fail export cleanup, bounded
   customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
-  member migration mapper with batch resume/rejection/undo, one atomic
-  front-desk member/membership/payment transaction, group classes, configurable
-  front-desk member/membership/payment transaction, a fixed weekly class
-  timetable with a coach directory, configurable referral rewards, and member
-  freeze requests. Commits `5772a9c` and `8e5adeb` align the partner features
-  with branch authorization, role permissions, upfront policy truth, and
-  retryable UI states while preserving the later weekly-schedule and workspace
-  shell work. Read
+  member and membership-state migration mapper with batch
+  resume/rejection/undo, one atomic front-desk member/membership/payment
+  transaction, a fixed weekly class timetable with a coach directory,
+  configurable referral rewards, member-created referral links and progress,
+  and member freeze requests. Commits `d4a66c8`, `24e3749`, and `fe54838` add
+  the approved migration and referral-sharing contracts; `31eae98` keeps the
+  synchronous preview projection aligned. Merge `d2a45e2` preserved Elias's
+  latest Settings work. Read
   `CURRENT_STATE.md` first for exact behavior and commits.
-- Generic imports remain member-profile-only. Membership terms, balances,
-  freezes, opening balances, and historical money still require an approved
-  migration/accounting contract.
+- Imports may now include mapped active/scheduled membership terms, remaining
+  visits, one current freeze, opening receivables, and read-only historical
+  payment evidence. They deliberately do not fabricate historical sales,
+  payments, receipts, cash shifts, or posted ledger revenue.
 - Arabic/translation and the broad measured browser/Convex performance sprint
   remain deliberately last. The next policy-dependent choices are online
   payments/payment-backed offer acceptance, live messaging, legally approved
   waivers/documents, and recurring maintenance checklists.
-- Before expanding the profile importer into money or membership history,
-  approve the membership-migration contract for active terms, scheduled terms,
-  freezes, outstanding balances, opening receivables, and historical payment
-  evidence. The current importer deliberately creates member profiles only.
+- Before expanding migration beyond the implemented contract, decide whether
+  a pilot needs multiple historical terms, itemized old payments, legacy
+  documents, or plan creation. Keep those out unless their evidence,
+  accounting, retention, and undo rules are approved explicitly.
 - Release `156f9b1` is aligned on local and GitHub `main`. GitHub Actions run
   `33311009377` passed all jobs, Vercel Production deployment
   `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is `READY` for the exact SHA, and the

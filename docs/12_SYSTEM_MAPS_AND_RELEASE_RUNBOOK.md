@@ -1,8 +1,8 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-30 for the quality-of-life implementation batch. The
-latest application work is local/review-branch only; the last recorded
-Production closure and deployment evidence remains dated 2026-08-29.
+Last reviewed: 2026-08-30 for membership migration and member referral sharing.
+The latest application work is local on `main`; the last recorded Production
+closure and deployment evidence remains dated 2026-08-29.
 
 ## Purpose
 
@@ -16,6 +16,39 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current repository state — 30 August 2026
+
+### Membership-state migration and referral-sharing batch — 30 August 2026
+
+- The file-first CSV/XLSX importer accepts profile-only rows or mapped
+  active/scheduled membership state at an explicit cutoff date: source plan,
+  start/end, remaining visits, current freeze, opening balance, and read-only
+  historical paid-total evidence. Source plan labels must be mapped to an
+  active RIVET plan before commit.
+- Imported terms are not sales and use zero sale price. Opening balances are
+  migration receivables with accounting-source posting disabled. Historical
+  paid totals are evidence records, not payments or receipts. This prevents a
+  migration from inventing cash, revenue, tax, or shift history.
+- Batch resume, rejected-row export, seven-day undo, and audit provenance cover
+  every artifact created by an import. Undo succeeds only while the exact row
+  versions are untouched and no later operational or financial reference
+  exists. The original workbook body is never retained.
+- Member referral URLs use opaque tokens. Creation is authenticated and tied
+  to the member's exact portal/operational membership; public trial submission
+  validates the token against the target tenant/gym and a live referrer. Only
+  the resulting CRM lead carries `referredByMemberId`; the public token is not
+  persisted on the trial booking.
+- A completed trial sale creates the referred member with that attribution and
+  then uses the existing one-time referral reward rules. Gym-configured enable,
+  reward days, rolling cap, active-referrer membership, and immutable reward/
+  audit evidence remain authoritative.
+- Application commits are `d4a66c8`, `24e3749`, `fe54838`, and `31eae98`,
+  following partner-preserving merge `d2a45e2`. The local gate passed both
+  TypeScript checks, lint/secret audit, 169 Vitest files / 1,011 tests plus 14
+  repository-safety tests, the 58-page Production build, dependency audit,
+  diff check, and 46 credential-free Playwright journeys with 14 explicit
+  staging-only skips and zero failures. No Convex deploy, provider activation,
+  or Production tenant-data import was performed. Release from this tip only
+  through the exact-target procedure below.
 
 ### Migration and front-desk transaction batch — 30 August 2026
 
@@ -33,9 +66,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   permissions, plan/branch/payment rules, duplicate review, and a year-long
   idempotency record inside one Convex transaction. Any thrown validation or
   payment error rolls back the member, membership, charge, and receipt.
-- Generic member migration deliberately excludes memberships, balances,
-  freezes, and financial history pending approved mapping and accounting
-  policy. Do not reinterpret those fields from arbitrary spreadsheets.
+- Member migration now supports the bounded membership-state contract above.
+  It still excludes fabricated historical sales/payments/receipts/cash shifts,
+  multiple old terms, and posted financial history.
 - Application commits are `f60a724`, `8726737`, `7f336c9`, and `822f328`.
   The local gate passed 166 Vitest files / 990 tests plus 14 repository-safety
   tests, both TypeScript checks, lint/secret audit, the 57-page build, 43
@@ -108,7 +141,7 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   member CSV importer; no Production demo seed is part of tenant creation.
   Import accepts a selected file or pasted CSV, exposes a template, normalizes
   contacts, surfaces duplicates and errors before commit, and is independently
-  capped by the server at 2 MB and 10,000 rows.
+  capped by the server at 5 MB (UTF-8 bytes) and 10,000 rows.
 - Phone identity and WhatsApp URLs share an international normalization
   contract. Organization calling code is configurable, Jordan `962` is the
   provisioning default, and explicit `+`/`00` country codes win. A WhatsApp

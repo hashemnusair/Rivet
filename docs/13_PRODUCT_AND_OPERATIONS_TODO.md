@@ -141,7 +141,7 @@ values, applicant details, and provider credentials out of this file.
   member CSV import. The released UI is file-first with drag-and-drop/native
   selection, selected-file state, a sensible concrete branch default,
   downloadable template, normalized contacts, duplicate review, secondary raw
-  CSV editing, and independently enforced 2 MB/10,000-row server limits.
+  CSV editing, and independently enforced 5 MB/10,000-row server limits.
   Imported unknown consent remains suppressed.
 - [x] Add a signed-in **Maintenance** workspace with branch/gym-space-safe task
   creation, active/history views, quick presets, one-tap status actions, and
@@ -164,7 +164,8 @@ values, applicant details, and provider credentials out of this file.
   are recognized and the original file body is not persisted.
 - [x] Add import-batch history and safe recovery: counts, creator, branch,
   timestamp, source filename, row results, resumable chunk state, and a bounded
-  seven-day audited undo only for untouched profiles created by that batch.
+  seven-day audited undo only for untouched profiles and membership-migration
+  artifacts created by that batch.
 - [x] Replace the member-create → sale redirect with one idempotent front-desk
   transaction for member, membership, payment/balance, and receipt. Failed
   downstream steps roll back the member, replays cannot double-charge, and
@@ -175,10 +176,23 @@ values, applicant details, and provider credentials out of this file.
   lint/secret audit, a 57-page Production build, 43 credential-free Playwright
   passes / 14 explicit staging-only skips / 0 failures, a clean Production
   dependency audit, and `git diff --check`.
-- [ ] Decide the separate membership-data migration contract before importing
-  plans, active terms, payment history, outstanding balances, freezes, or
-  opening balances. These affect revenue and accounting and must not be guessed
-  from a generic spreadsheet.
+- [x] Decide and implement the bounded membership-data migration contract:
+  source plans map to active RIVET plans; active/scheduled terms, remaining
+  visits, one current freeze, and dated opening receivables may be imported at
+  an explicit cutoff. Historical paid totals are read-only evidence. Never
+  fabricate old sales, payments, receipts, cash shifts, tax, or posted revenue.
+  Preserve batch/row provenance and allow undo only while every created artifact
+  remains untouched.
+- [x] Add the member referral-sharing loop: authenticated opaque link creation,
+  signup-safe trial attribution, CRM/source facts, first-sale reward handoff,
+  rolling-window progress, copy/share controls, mock/Convex parity, and browser
+  coverage. Never expose the member identity in the URL or count a booking as a
+  successful reward before the first membership sale.
+- [x] Verify the migration/referral batch with both TypeScript checks,
+  lint/secret audit, 169 Vitest files / 1,011 tests plus 14 repository-safety
+  tests, a 58-page Production build, clean Production dependency audit,
+  `git diff --check`, and 46 credential-free Playwright passes / 14 explicit
+  staging-only skips / zero failures.
 - [ ] Evaluate the next low-friction maintenance slice with pilot gyms:
   assignee-aware work, recurring opening/closing checklists, optional photo
   evidence, and overdue escalation. Keep it out until the real daily owner is
