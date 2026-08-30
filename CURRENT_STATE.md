@@ -1,5 +1,37 @@
 # GymOS / RIVET current implementation state
 
+## Credentialed release verification — 31 August 2026
+
+- The isolated Development release pass exercised the owner-settings,
+  staff-authorization, membership-lifecycle, reception-entry,
+  finance-reconciliation, member-portal, isolation/audit, personal-training,
+  and realtime journeys with role-specific Clerk identities. Every created
+  finance, PT, and invitation artifact was cleaned up, and the shared staging
+  ledger now fails a journey when any planned cleanup remains incomplete.
+- Live verification exposed and fixed two contract defects: legacy role rows
+  now retain the later product-owned PT/operations/accounting capabilities
+  until an owner saves the current permission catalog, and staff invitations
+  call the dedicated Convex action with its actual validator shape instead of
+  the generic domain-operation envelope.
+- The trial/CRM and gym-provisioning public-write journeys remain blocked in
+  Development because `RIVET_PUBLIC_REQUEST_PEPPER` is absent from
+  `fleet-otter-621`; the fail-closed behavior is correct. The salesperson
+  browser state also expired and must be refreshed before the sales-specific
+  trial pass. Automation remains deliberately deferred and disabled.
+- Local verification passed both TypeScript checks, zero-warning lint and
+  secret-output audit, 169 Vitest files / 1,013 tests plus 14 repository-safety
+  tests, the 58-page Production build, a focused two-role class-calendar
+  browser regression, the Production dependency audit, and `git diff --check`.
+  The complete credential-free browser suite is left to the pushed GitHub gate
+  so it runs against a fresh mock server rather than the active credentialed
+  Development server on port 3100.
+- Production Convex had already passed the exact-target deployment, health
+  query, renewal aggregate audit, and disabled subscription-reconciliation
+  preview for the preceding release. After this code tip is pushed, deploy the
+  matching backend to `descriptive-meerkat-589` and repeat signed-in owner
+  acceptance; the last browser observation was still showing the cached-data
+  recovery banner and therefore is not recorded as closed.
+
 ## Membership migration and member referral sharing — 30 August 2026
 
 - The batch started by fetching GitHub and merging Elias's five Settings

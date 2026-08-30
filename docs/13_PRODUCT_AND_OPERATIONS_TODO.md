@@ -1,6 +1,6 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 30 August 2026 for the complete quality-of-life implementation batch,
+Updated 31 August 2026 for credentialed release verification and the complete quality-of-life implementation batch,
 in addition to the 29 August 2026 Production backend closure, owner/platform
 acceptance, public QA cleanup, the current recovery export, the Jordan-first
 workflow-hardening sprint, the unified Today queue, clean-tenant imports,
@@ -15,7 +15,21 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current release index — 30 August 2026
+## Current release index — 31 August 2026
+
+### Credentialed release verification — 31 August 2026
+
+- [x] Run and clean up the isolated owner-settings, staff-authorization,
+  membership-lifecycle, reception-entry, finance-reconciliation, member-portal,
+  isolation/audit, personal-training, and realtime Development journeys.
+- [x] Repair legacy-role PT/operations/accounting capability compatibility,
+  the dedicated staff-invitation action contract, and staging cleanup
+  enforcement discovered by those journeys.
+- [ ] Configure the private Development `RIVET_PUBLIC_REQUEST_PEPPER`, refresh
+  the salesperson browser state, and close trial/CRM plus gym provisioning.
+- [ ] Push the verified code tip, wait for GitHub/Vercel, deploy the exact
+  backend tip to Convex Production, and close the cached-data recovery banner
+  with signed-in owner acceptance.
 
 ### Classes, referrals, and freeze requests completed and hardened on 30 August
 

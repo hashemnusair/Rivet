@@ -1,8 +1,8 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-30 for membership migration and member referral sharing.
-The latest application work is local on `main`; the last recorded Production
-closure and deployment evidence remains dated 2026-08-29.
+Last reviewed: 2026-08-31 for credentialed release verification.
+The latest application work is local on `main`; the last fully recorded
+Production closure and deployment evidence remains dated 2026-08-29.
 
 ## Purpose
 
@@ -15,7 +15,32 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
-## Current repository state — 30 August 2026
+## Current repository state — 31 August 2026
+
+### Credentialed Development release pass — 31 August 2026
+
+- Role-specific Development sessions passed owner settings, staff
+  authorization, membership lifecycle, reception, finance reconciliation,
+  member portal, isolation/audit, personal training, and realtime coverage.
+  Cleanup evidence is now executable: any planned, failed, or abandoned entry
+  fails the journey instead of merely being attached to the report.
+- Live checks corrected legacy-role capability compatibility and the dedicated
+  staff-invitation action argument contract. The fixes have unit, permission,
+  adapter, and credentialed browser coverage.
+- Public trial/CRM and gym provisioning remain intentionally blocked until the
+  Development deployment `fleet-otter-621` receives a private
+  `RIVET_PUBLIC_REQUEST_PEPPER`; do not record or pass its value through a
+  command or agent transcript. Refresh the Development salesperson browser
+  state before rerunning the trial journey. Automation remains disabled.
+- The local static gate passed both typechecks, lint/secret audit, 169 Vitest
+  files / 1,013 tests plus 14 repository-safety tests, the 58-page Production
+  build, a focused two-role class browser regression, dependency audit, and
+  diff check. The pushed GitHub workflow owns the clean-server, complete
+  credential-free Playwright result for the release commit.
+- After GitHub and Vercel are green, use only the guarded exact-target
+  `pnpm convex:deploy` procedure for Production `descriptive-meerkat-589`, then
+  rerun health, aggregate safety audits, and signed-in owner acceptance. Do not
+  treat the prior cached-data recovery banner as a successful live read.
 
 ### Membership-state migration and referral-sharing batch — 30 August 2026
 
