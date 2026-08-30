@@ -5910,7 +5910,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
   const csv = stringValue(input.csv);
   if (!csv.trim()) domainError("VALIDATION_ERROR", "CSV content is required.", { correlationId: actor.correlationId });
-  if (csv.length > 2_000_000) domainError("VALIDATION_ERROR", "CSV files must be 2 MB or smaller.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Choose a CSV file no larger than 2 MB"] } });
+  if (new TextEncoder().encode(csv).byteLength > 5_000_000) domainError("VALIDATION_ERROR", "Member import files must be 5 MB or smaller.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Choose a member file no larger than 5 MB"] } });
   const rows = parseCsv(csv);
   const headers = (rows.shift() ?? []).map(normalizedHeader);
   const nameIndex = firstHeader(headers, ["full_name", "name", "member_name"]);

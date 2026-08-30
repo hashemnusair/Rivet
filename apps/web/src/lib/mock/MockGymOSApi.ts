@@ -1576,7 +1576,7 @@ export class MockGymOSApi implements GymOSApi {
       const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
       if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       if (!input.csv.trim()) throw ApiError.of(ERR.VALIDATION, "CSV content is required.");
-      if (input.csv.length > 2_000_000) throw ApiError.of(ERR.VALIDATION, "CSV files must be 2 MB or smaller.", { fieldErrors: { csv: ["Choose a CSV file no larger than 2 MB"] } });
+      if (new TextEncoder().encode(input.csv).byteLength > 5_000_000) throw ApiError.of(ERR.VALIDATION, "Member import files must be 5 MB or smaller.", { fieldErrors: { csv: ["Choose a member file no larger than 5 MB"] } });
       const rows = parseImportCsv(input.csv);
       const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
