@@ -27,8 +27,8 @@ interface SettingsItem {
   label: string;
   /** Extra search terms beyond the label. */
   keywords?: string;
-  /** Exact heading text of the card this item lives in, when scroll-to makes sense. */
-  heading?: string;
+  /** Exact heading text of the card this item jumps to. */
+  heading: string;
 }
 
 interface SettingsEntry {
@@ -37,8 +37,11 @@ interface SettingsEntry {
   /** Extra search terms beyond the label, so "logo" finds Brand Kit. */
   keywords: string;
   component: ComponentType;
-  /** What the section contains — shown in the rail dropdown and searched. */
-  contents: SettingsItem[];
+  /**
+   * Sub-sections of the page, when it has more than one distinct card.
+   * Single-card pages list nothing — the page already shows everything.
+   */
+  contents?: SettingsItem[];
 }
 
 interface SettingsGroup {
@@ -50,64 +53,18 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: "Gym",
     entries: [
-      {
-        id: "organization", label: "Organization", keywords: "identity contact", component: OrganizationSection,
-        contents: [
-          { label: "Organization name", keywords: "gym name" },
-          { label: "Timezone", keywords: "clock amman" },
-          { label: "Locale & language", keywords: "arabic english" },
-          { label: "Default phone country", keywords: "dialing code 962" },
-        ],
-      },
-      {
-        id: "brand", label: "Brand Kit", keywords: "identity sidebar", component: BrandKitSection,
-        contents: [
-          { label: "Workspace palette", keywords: "colors theme" },
-          { label: "Primary color", keywords: "hex accent" },
-          { label: "Workspace logo", keywords: "logo image sidebar" },
-        ],
-      },
-      {
-        id: "profile", label: "Public profile", keywords: "page publish website directory", component: GymPublicProfileSection,
-        contents: [
-          { label: "Draft and publication", keywords: "publish review", heading: "Draft and publication" },
-          { label: "Logo & cover photos", keywords: "banner images media" },
-          { label: "Tagline & amenities", keywords: "description category audience" },
-        ],
-      },
-      {
-        id: "branches", label: "Branches", keywords: "locations address", component: BranchesSection,
-        contents: [
-          { label: "Branch names & codes", keywords: "location" },
-          { label: "Add a branch", keywords: "new location" },
-        ],
-      },
-      {
-        id: "spaces", label: "Gym spaces", keywords: "zones areas", component: GymSpacesSection,
-        contents: [
-          { label: "Rooms, floors & studios", keywords: "zone area" },
-          { label: "Add a space", keywords: "new room gym" },
-        ],
-      },
+      { id: "organization", label: "Organization", keywords: "identity contact gym name timezone locale language phone country", component: OrganizationSection },
+      { id: "brand", label: "Brand Kit", keywords: "identity sidebar logo palette primary color theme", component: BrandKitSection },
+      { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", component: GymPublicProfileSection },
+      { id: "branches", label: "Branches", keywords: "locations address codes", component: BranchesSection },
+      { id: "spaces", label: "Gym spaces", keywords: "zones areas rooms floors studios", component: GymSpacesSection },
     ],
   },
   {
     label: "People",
     entries: [
-      {
-        id: "users", label: "Users", keywords: "staff accounts", component: UsersSection,
-        contents: [
-          { label: "Staff accounts", keywords: "team deactivate" },
-          { label: "Invite staff", keywords: "add user email" },
-          { label: "Branch access", keywords: "scope" },
-        ],
-      },
-      {
-        id: "roles", label: "Roles & permissions", keywords: "access owner manager receptionist coach", component: RolesSection,
-        contents: [
-          { label: "Permission matrix", keywords: "grant capability", heading: "Permission matrix" },
-        ],
-      },
+      { id: "users", label: "Users", keywords: "staff accounts invite deactivate branch access", component: UsersSection },
+      { id: "roles", label: "Roles & permissions", keywords: "access matrix owner manager receptionist coach auditor", component: RolesSection },
     ],
   },
   {
@@ -120,14 +77,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
           { label: "Discount approval limits", keywords: "percent manager override", heading: "Discount approval limits" },
         ],
       },
-      {
-        id: "receipts", label: "Receipts & tax", keywords: "invoice", component: ReceiptsSection,
-        contents: [
-          { label: "Receipt prefix", keywords: "numbering" },
-          { label: "Sales tax (%)", keywords: "vat rate" },
-          { label: "Receipt footer", keywords: "note text" },
-        ],
-      },
+      { id: "receipts", label: "Receipts & tax", keywords: "invoice vat rate prefix numbering footer", component: ReceiptsSection },
     ],
   },
   {
@@ -140,13 +90,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
           { label: "Automation delivery", keywords: "whatsapp sms email renewals", heading: "Automation delivery" },
         ],
       },
-      {
-        id: "email", label: "Operational email", keywords: "sender outbox delivery", component: OperationalEmailSection,
-        contents: [
-          { label: "Member service email", keywords: "categories preferences", heading: "Member service email" },
-          { label: "Mandatory platform notices", keywords: "invoices suspension" },
-        ],
-      },
+      { id: "email", label: "Operational email", keywords: "sender outbox delivery member service preferences mandatory notices", component: OperationalEmailSection },
     ],
   },
   {
@@ -185,9 +129,9 @@ export function SettingsPageInner() {
     const needle = query.trim().toLowerCase();
     if (!needle) return null;
     return ALL_ENTRIES.map((entry) => {
-      const items = entry.contents.filter((item) => matches(needle, item.label, item.keywords));
+      const items = (entry.contents ?? []).filter((item) => matches(needle, item.label, item.keywords));
       const entryMatched = matches(needle, entry.label, entry.keywords);
-      return entryMatched || items.length > 0 ? { entry, items: entryMatched && items.length === 0 ? entry.contents : items } : null;
+      return entryMatched || items.length > 0 ? { entry, items } : null;
     }).filter((result): result is { entry: SettingsEntry; items: SettingsItem[] } => result !== null);
   }, [query]);
 
@@ -231,8 +175,8 @@ export function SettingsPageInner() {
     <button
       key={item.label}
       type="button"
-      // Namespaced so a rail item never shares an accessible name with the
-      // section's own action buttons (e.g. "Add gym space").
+      // Namespaced so a rail item never shares an accessible name with
+      // controls inside the section itself.
       aria-label={`${entry.label} — ${item.label}`}
       onClick={() => select(entry.id, item.heading)}
       className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-1 pe-2 ps-7 text-start text-[12px] text-ink-3 transition-colors hover:bg-sunken/60 hover:text-ink"
@@ -244,18 +188,19 @@ export function SettingsPageInner() {
 
   const sectionButton = (entry: SettingsEntry, options?: { forceOpen?: boolean; items?: SettingsItem[] }) => {
     const isActive = entry.id === active.id;
-    const isOpen = options?.forceOpen ?? expanded.has(entry.id);
-    const items = options?.items ?? entry.contents;
+    const expandable = (entry.contents?.length ?? 0) > 0;
+    const isOpen = expandable && (options?.forceOpen ?? expanded.has(entry.id));
+    const items = options?.items ?? entry.contents ?? [];
     return (
       <div key={entry.id}>
         <button
           type="button"
           role="tab"
           aria-selected={isActive}
-          aria-expanded={isOpen}
+          aria-expanded={expandable ? isOpen : undefined}
           data-state={isActive ? "active" : "inactive"}
           onClick={() => {
-            if (isActive) toggleExpanded(entry.id);
+            if (isActive && expandable) toggleExpanded(entry.id);
             select(entry.id);
           }}
           className={cn(
@@ -263,19 +208,25 @@ export function SettingsPageInner() {
             isActive ? "bg-sunken font-medium text-ink" : "text-ink-2 hover:bg-sunken/60 hover:text-ink",
           )}
         >
-          <ChevronRight
-            aria-hidden
-            className={cn("size-3.5 shrink-0 text-ink-4 transition-transform duration-150", isOpen ? "rotate-90" : "rtl:rotate-180")}
-          />
+          {expandable ? (
+            <ChevronRight
+              aria-hidden
+              className={cn("size-3.5 shrink-0 text-ink-4 transition-transform duration-150", isOpen ? "rotate-90" : "rtl:rotate-180")}
+            />
+          ) : (
+            <span aria-hidden className="size-3.5 shrink-0" />
+          )}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
           {isActive ? <span aria-hidden className="ms-1 h-3.5 w-[3px] shrink-0 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} /> : null}
         </button>
-        {/* 0fr→1fr grid keeps the reveal smooth without measuring heights. */}
-        <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
-          <div className="overflow-hidden">
-            <div className="space-y-px pb-1 pt-0.5">{items.map((item) => itemButton(entry, item))}</div>
+        {expandable ? (
+          // 0fr→1fr grid keeps the reveal smooth without measuring heights.
+          <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+            <div className="overflow-hidden">
+              <div className="space-y-px pb-1 pt-0.5">{items.map((item) => itemButton(entry, item))}</div>
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
     );
   };
@@ -308,7 +259,7 @@ export function SettingsPageInner() {
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-1">
-                    {filtered.map(({ entry, items }) => sectionButton(entry, { forceOpen: true, items }))}
+                    {filtered.map(({ entry, items }) => sectionButton(entry, { forceOpen: items.length > 0, items }))}
                   </div>
                 ) : (
                   <p className="px-2.5 py-1.5 text-[12px] text-ink-3">No settings match “{query.trim()}”.</p>

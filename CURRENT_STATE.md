@@ -19,11 +19,12 @@
   description, and tab-strip position so nothing jumps between tabs.
 - Settings became a ServiceTitan-style vertical rail — grouped sections with a
   search box that filters by name and synonyms (e.g. "freeze" finds Rules &
-  hours) — replacing the horizontally scrolling tab strip. Each section then
-  gained an accordion dropdown listing what it contains; search matches those
-  items too and shows them under their section (e.g. "tax" → Receipts & tax →
-  Sales tax (%)), clicking an item glides to that card, the rail scrolls
-  independently when tall, and every rail control uses a pointer cursor.
+  hours) — replacing the horizontally scrolling tab strip. Sections whose page
+  holds several distinct cards (Payments, Notifications, Rules & hours) carry
+  an accordion dropdown of those sub-sections — clicking one glides to that
+  card, and search surfaces them under their section (e.g. "whatsapp" →
+  Notifications → Automation delivery). Single-card pages stay plain buttons.
+  The rail scrolls independently when tall and uses pointer cursors.
 - A saved Brand Kit logo now replaces the RIVET lockup in the workspace
   sidebar and mobile drawer with a quiet "Operated by RIVET™" credit beneath;
   route changes across the staff, customer, and platform shells animate with a
