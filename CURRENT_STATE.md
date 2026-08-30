@@ -1,5 +1,30 @@
 # GymOS / RIVET current implementation state
 
+## Fixed weekly class timetable + workspace polish — 30 August 2026
+
+- Classes moved from dated sessions to a fixed weekly template: `classSessions`
+  now stores `dayOfWeek`/`startMinute` (legacy dated rows are normalized on
+  read in the tenant timezone), the page renders a gantt-style grid (days down,
+  hours across, chips spanning their duration with lane packing for overlaps),
+  and each class carries a Women/Men/Mixed audience shown as a W/M badge.
+- The class scheduler gained a coach directory (`classes.coach.upsert/remove`,
+  entityType `coach`; renames sync every class's snapshot, removal keeps the
+  class), right-click Edit / Who is in / Remove-from-schedule (removal is
+  reason-gated and audited as `classes.session.delete`), press-a-slot creation
+  at 30-minute resolution, optional class photos (`class_image` assets), and a
+  Print button that prints only the schedule for a PDF via the browser.
+- The finance cluster is coherent again: the sidebar keeps Payments active
+  across `/payments/shifts` and `/reports` (and Leads active on lead detail
+  pages), and all three finance views share the same eyebrow, one-line
+  description, and tab-strip position so nothing jumps between tabs.
+- Settings became a ServiceTitan-style vertical rail — grouped sections with a
+  search box that filters by name and synonyms (e.g. "freeze" finds Rules &
+  hours) — replacing the horizontally scrolling tab strip.
+- A saved Brand Kit logo now replaces the RIVET lockup in the workspace
+  sidebar and mobile drawer with a quiet "Operated by RIVET™" credit beneath;
+  route changes across the staff, customer, and platform shells animate with a
+  240 ms rise-and-fade (`template.tsx` per shell, inert under reduced motion).
+
 ## Migration and front-desk completion — 30 August 2026
 
 - A fresh GitHub fetch began this batch with clean, matching `main` and

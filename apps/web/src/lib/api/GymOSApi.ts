@@ -1085,13 +1085,16 @@ export interface GymOSApi {
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
 
   listFacilityTasks(query?: { branchId?: UUID; zoneId?: UUID; status?: import("@/lib/domain/types").FacilityTaskStatus; kind?: import("@/lib/domain/types").FacilityTaskKind }): Promise<import("@/lib/domain/types").FacilityTask[]>;
-  /** Class calendar: branch-scoped sessions inside an inclusive time window. */
+  /** Fixed weekly class schedule for one branch. */
   listClassSessions(query: import("@/lib/domain/types").ClassSessionQuery): Promise<import("@/lib/domain/types").ClassSession[]>;
   upsertClassSession(input: import("@/lib/domain/types").UpsertClassSessionInput): Promise<import("@/lib/domain/types").ClassSession>;
-  cancelClassSession(input: { sessionId: UUID; reason: string }): Promise<import("@/lib/domain/types").ClassSession>;
+  deleteClassSession(input: { sessionId: UUID; reason: string }): Promise<{ id: UUID }>;
   addClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
   removeClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
   setClassAttendance(input: import("@/lib/domain/types").ClassAttendanceInput): Promise<import("@/lib/domain/types").ClassSession>;
+  listClassCoaches(): Promise<import("@/lib/domain/types").ClassCoach[]>;
+  upsertClassCoach(input: import("@/lib/domain/types").UpsertClassCoachInput): Promise<import("@/lib/domain/types").ClassCoach>;
+  removeClassCoach(coachId: UUID): Promise<{ id: UUID }>;
   upsertFacilityTask(input: import("@/lib/domain/types").UpsertFacilityTaskInput): Promise<import("@/lib/domain/types").FacilityTask>;
   listEquipmentAssets(query?: { branchId?: UUID; status?: import("@/lib/domain/types").EquipmentAssetStatus }): Promise<import("@/lib/domain/types").EquipmentAsset[]>;
   upsertEquipmentAsset(input: import("@/lib/domain/types").UpsertEquipmentAssetInput): Promise<import("@/lib/domain/types").EquipmentAsset>;

@@ -5446,6 +5446,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "operations.equipment.recommendation":
       return await operationsQuery(ctx, actor, operation, input);
     case "classes.sessions.list":
+    case "classes.coaches.list":
       return await classesQuery(ctx, actor, operation, input);
     case "accounting.accounts.list":
     case "finance.accounts.list":
@@ -10307,10 +10308,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.equipment_work_order.upsert":
       return await operationsMutation(ctx, actor, operation, input);
     case "classes.session.upsert":
-    case "classes.session.cancel":
+    case "classes.session.delete":
     case "classes.roster.add":
     case "classes.roster.remove":
     case "classes.attendance.set":
+    case "classes.coach.upsert":
+    case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
     case "accounting.manual_journal.post":
     case "finance.manual_journal.post":

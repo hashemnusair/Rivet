@@ -392,7 +392,7 @@ export interface TrafficContext {
   capturedAt?: ISODateTime;
 }
 
-export type ClassSessionStatus = "scheduled" | "cancelled";
+export type ClassAudience = "mixed" | "women" | "men";
 
 export interface ClassRosterEntry {
   memberId: UUID;
@@ -401,22 +401,24 @@ export interface ClassRosterEntry {
   attended: boolean;
 }
 
+/** A slot on the fixed weekly schedule; the timetable repeats every week. */
 export interface ClassSession {
   id: UUID;
   branchId: UUID;
   name: string;
-  coachUserId?: UUID;
+  coachId?: UUID;
   coachName?: string;
-  /** ISO start time; the calendar renders it in the tenant timezone. */
-  startsAt: string;
+  /** 0 = Sunday … 6 = Saturday. */
+  dayOfWeek: number;
+  /** Minutes from midnight in the gym's timezone. */
+  startMinute: number;
   durationMinutes: number;
   capacity: number;
+  audience: ClassAudience;
   imageAssetId?: string;
   imageUrl?: string;
   imageAltText?: string;
   notes?: string;
-  status: ClassSessionStatus;
-  cancelReason?: string;
   roster: ClassRosterEntry[];
   attendedCount: number;
   createdAt: string;
@@ -425,9 +427,21 @@ export interface ClassSession {
 
 export interface ClassSessionQuery {
   branchId: UUID;
-  /** Inclusive ISO window; defaults to the current week when omitted. */
-  from?: string;
-  to?: string;
+}
+
+export interface ClassCoach {
+  id: UUID;
+  name: string;
+  phone?: string;
+  specialty?: string;
+  createdAt: string;
+}
+
+export interface UpsertClassCoachInput {
+  coachId?: UUID;
+  name: string;
+  phone?: string;
+  specialty?: string;
 }
 
 export interface UpsertClassSessionInput {
@@ -436,10 +450,12 @@ export interface UpsertClassSessionInput {
   sessionId?: UUID;
   branchId: UUID;
   name: string;
-  coachUserId?: UUID;
-  startsAt: string;
+  coachId?: UUID;
+  dayOfWeek: number;
+  startMinute: number;
   durationMinutes: number;
   capacity: number;
+  audience: ClassAudience;
   imageAssetId?: string;
   notes?: string;
 }

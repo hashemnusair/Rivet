@@ -81,9 +81,9 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Owner reporting"
+        eyebrow="Finance"
         title="Reports"
-        description="Reconcile revenue, collections, members, and branch performance from the same persisted facts that power the workspace."
+        description="Revenue, collections, and member activity over any date range."
         actions={<Button variant="signal" onClick={exportCsv} disabled={!dashboard || transactions.length === 0}><Download /> Export CSV</Button>}
       />
 
