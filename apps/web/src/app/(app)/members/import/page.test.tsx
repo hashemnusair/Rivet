@@ -27,17 +27,19 @@ describe("member import", () => {
     const file = new File([csv], "current-members.csv", { type: "text/csv" });
     Object.defineProperty(file, "text", { value: vi.fn().mockResolvedValue(csv) });
 
-    expect(screen.getByRole("heading", { name: "Upload a member list" })).toBeInTheDocument();
-    expect(screen.getByText("Drop your CSV file here")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose your member file" })).toBeInTheDocument();
+    expect(screen.getByText("Drop a member file here")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Member CSV content" })).not.toBeInTheDocument();
 
-    await user.upload(screen.getByLabelText("Choose member CSV file"), file);
+    await user.upload(screen.getByLabelText("Choose member file"), file);
     expect(await screen.findByText("current-members.csv")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Review members" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "Review members" }));
+    expect(screen.getByRole("combobox", { name: "Full name source column" })).toHaveTextContent("full_name");
+    expect(screen.getByRole("combobox", { name: "Phone source column" })).toHaveTextContent("phone");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Check members" }));
 
-    await waitFor(() => expect(previewImport).toHaveBeenCalledWith({ csv, branchId: BRANCH_ABD }));
-    expect(await screen.findByRole("heading", { name: "Preview" })).toBeInTheDocument();
+    await waitFor(() => expect(previewImport).toHaveBeenCalledWith(expect.objectContaining({ csv: "full_name,phone,email\r\nRana Odeh,0798765432,rana.odeh@example.com", branchId: BRANCH_ABD, sourceFileName: "current-members.csv", sourceKind: "csv", columnMapping: { fullName: 0, phone: 1, email: 2 } })));
+    expect(await screen.findByRole("heading", { name: "Review before import" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import 1 member" })).toBeInTheDocument();
   });
 
@@ -50,6 +52,6 @@ describe("member import", () => {
     await user.type(editor, "full_name,phone\nMira Nasser,0798123456");
 
     expect(editor).toHaveValue("full_name,phone\nMira Nasser,0798123456");
-    expect(screen.getByRole("button", { name: "Review members" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled();
   });
 });

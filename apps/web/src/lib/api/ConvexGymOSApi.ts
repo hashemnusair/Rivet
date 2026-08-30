@@ -18,6 +18,10 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
+  MemberImportPreviewInput,
+  MemberImportSummary,
+  MemberImportUndoInput,
+  MemberImportUndoResult,
   SubmitGymApplicationInput,
   SubmitGymApplicationResult,
   PlatformGymApplication,
@@ -685,8 +689,11 @@ export class ConvexGymOSApi implements GymOSApi {
   listEquipmentWorkOrders(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentWorkOrder["status"] } = {}): Promise<T.EquipmentWorkOrder[]> { return this.query("operations.equipment_work_orders.list", query); }
   getEquipmentRecommendation(assetId: T.UUID): Promise<T.EquipmentRecommendation> { return this.query("operations.equipment.recommendation", { id: assetId }); }
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> { return this.query("users.list", query); }
-  previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
+  previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> { return this.mutate("members.import.commit", input); }
+  listMemberImports(): Promise<MemberImportSummary[]> { return this.query("members.import.list"); }
+  getMemberImport(importId: T.UUID): Promise<MemberImportPreview> { return this.query("members.import.get", { importId }); }
+  undoMemberImport(input: MemberImportUndoInput): Promise<MemberImportUndoResult> { return this.mutate("members.import.undo", input); }
   inviteUser(input: T.InviteUserInput): Promise<T.StaffUser> { return this.action(api.invitations.send, input); }
   updateUserAccess(userId: T.UUID, input: T.UpdateUserAccessInput): Promise<T.StaffUser> { return this.mutate("users.update", { userId, ...input }); }
   updateRolePermissions(role: T.RoleKey, input: T.UpdateRolePermissionsInput): Promise<T.RoleDefinition> { return this.mutate("roles.update", { role, ...input }); }

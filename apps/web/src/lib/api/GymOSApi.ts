@@ -242,6 +242,19 @@ export interface MemberImportRow {
   memberId?: string;
 }
 
+export type MemberImportField = "fullName" | "phone" | "email";
+export type MemberImportColumnMapping = Partial<Record<MemberImportField, number>>;
+export type MemberImportStatus = "preview" | "processing" | "completed" | "undoing" | "undone";
+
+export interface MemberImportPreviewInput {
+  csv: string;
+  branchId: UUID;
+  sourceFileName?: string;
+  sourceKind?: "csv" | "xlsx" | "pasted";
+  sourceHeaders?: string[];
+  columnMapping?: MemberImportColumnMapping;
+}
+
 export interface MemberImportPreview {
   id: string;
   branchId: string;
@@ -250,8 +263,24 @@ export interface MemberImportPreview {
   duplicateRows: number;
   errorRows: number;
   rows: MemberImportRow[];
+  status?: MemberImportStatus;
+  cursor?: number;
+  committedCount?: number;
+  skippedCount?: number;
+  sourceFileName?: string;
+  sourceKind?: "csv" | "xlsx" | "pasted";
+  sourceHeaders?: string[];
+  columnMapping?: MemberImportColumnMapping;
+  undoExpiresAt?: string;
   createdAt: string;
+  completedAt?: string;
+  undoneAt?: string;
+  undoCursor?: number;
+  undoArchivedCount?: number;
+  undoSkippedCount?: number;
 }
+
+export type MemberImportSummary = Omit<MemberImportPreview, "rows">;
 
 export interface MemberImportCommitInput {
   importId: string;
@@ -270,6 +299,23 @@ export interface MemberImportCommitResult {
   failedCount: number;
   createdMemberIds: string[];
   errors: Array<{ rowNumber: number; message: string }>;
+}
+
+export interface MemberImportUndoInput {
+  importId: string;
+  cursor?: number;
+  chunkSize?: number;
+  idempotencyKey: string;
+  reason: string;
+}
+
+export interface MemberImportUndoResult {
+  importId: string;
+  status: "undoing" | "undone";
+  cursor: number;
+  totalCreated: number;
+  archivedCount: number;
+  skippedCount: number;
 }
 
 export interface DashboardQuery {
@@ -1041,8 +1087,11 @@ export interface GymOSApi {
   listEquipmentWorkOrders(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentWorkOrder["status"] }): Promise<import("@/lib/domain/types").EquipmentWorkOrder[]>;
   getEquipmentRecommendation(assetId: UUID): Promise<import("@/lib/domain/types").EquipmentRecommendation>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
-  previewMemberImport(input: { csv: string; branchId: UUID }): Promise<MemberImportPreview>;
+  previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview>;
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;
+  listMemberImports(): Promise<MemberImportSummary[]>;
+  getMemberImport(importId: UUID): Promise<MemberImportPreview>;
+  undoMemberImport(input: MemberImportUndoInput): Promise<MemberImportUndoResult>;
   inviteUser(input: InviteUserInput): Promise<StaffUser>;
   updateUserAccess(userId: UUID, input: UpdateUserAccessInput): Promise<StaffUser>;
   updateRolePermissions(role: RoleKey, input: UpdateRolePermissionsInput): Promise<RoleDefinition>;

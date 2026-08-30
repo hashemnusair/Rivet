@@ -39,7 +39,11 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
+  MemberImportPreviewInput,
   MemberImportRow,
+  MemberImportSummary,
+  MemberImportUndoInput,
+  MemberImportUndoResult,
   CustomerExperience,
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
@@ -1371,7 +1375,7 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> {
+  previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> {
     return this.respond(() => {
       this.require("members.write");
       const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
@@ -1405,7 +1409,7 @@ export class MockGymOSApi implements GymOSApi {
         ];
         return { rowNumber: index + 2, fullName, phone, email, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
-      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, createdAt: nowISO() };
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
       return preview;
     });
@@ -1426,6 +1430,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!preview) throw ApiError.of(ERR.NOT_FOUND, "Import preview not found.");
       const previewBranch = this.db.branches.find((item) => item.id === preview.branchId && item.status === "active");
       if (!previewBranch || !this.branchIsVisible(previewBranch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (cursor !== (preview.cursor ?? 0)) throw ApiError.of(ERR.CONFLICT, "Import cursor is stale. Resume from the latest cursor.");
       const end = Math.min(preview.rows.length, cursor + chunkSize);
       const createdMemberIds: string[] = [];
       const errors: Array<{ rowNumber: number; message: string }> = [];
@@ -1457,10 +1462,62 @@ export class MockGymOSApi implements GymOSApi {
         createdMemberIds.push(member.id);
       }
       const nextCursor = end;
-      const result: MemberImportCommitResult = { importId: preview.id, status: nextCursor >= preview.rows.length ? "completed" : "processing", cursor: nextCursor, totalRows: preview.rows.length, committedCount: createdMemberIds.length, skippedCount, failedCount: errors.length, createdMemberIds, errors };
+      const status = nextCursor >= preview.rows.length ? "completed" : "processing";
+      preview.cursor = nextCursor;
+      preview.status = status;
+      preview.committedCount = (preview.committedCount ?? 0) + createdMemberIds.length;
+      preview.skippedCount = (preview.skippedCount ?? 0) + skippedCount;
+      if (status === "completed") {
+        preview.completedAt = nowISO();
+        preview.undoExpiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+      }
+      const result: MemberImportCommitResult = { importId: preview.id, status, cursor: nextCursor, totalRows: preview.rows.length, committedCount: preview.committedCount, skippedCount: preview.skippedCount, failedCount: errors.length, createdMemberIds, errors };
       this.memberImports.set(preview.id, preview);
       this.memberImportIdempotency.set(input.idempotencyKey, { signature, result });
       return result;
+    });
+  }
+
+  listMemberImports(): Promise<MemberImportSummary[]> {
+    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
+  }
+
+  getMemberImport(importId: T.UUID): Promise<MemberImportPreview> {
+    return this.respond(() => {
+      const item = this.memberImports.get(importId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Import not found.");
+      return { ...item, rows: item.rows.map((row) => ({ ...row, errors: [...row.errors], duplicateMemberIds: [...row.duplicateMemberIds] })) };
+    });
+  }
+
+  undoMemberImport(input: MemberImportUndoInput): Promise<MemberImportUndoResult> {
+    return this.respond(() => {
+      this.require("members.archive");
+      if (input.reason.trim().length < 3) throw ApiError.of(ERR.VALIDATION, "A reason is required.");
+      const item = this.memberImports.get(input.importId);
+      if (!item || !["completed", "undoing"].includes(item.status ?? "")) throw ApiError.of(ERR.CONFLICT, "Only a completed import can be undone.");
+      if (!item.undoExpiresAt || Date.parse(item.undoExpiresAt) < Date.now()) throw ApiError.of(ERR.CONFLICT, "The seven-day undo window for this import has expired.");
+      const createdRows = item.rows.filter((row) => row.memberId);
+      const cursor = input.cursor ?? item.undoCursor ?? 0;
+      if (cursor !== (item.undoCursor ?? 0)) throw ApiError.of(ERR.CONFLICT, "Undo cursor is stale. Resume from the latest cursor.");
+      const end = Math.min(createdRows.length, cursor + Math.min(100, Math.max(1, input.chunkSize ?? 25)));
+      let archivedCount = 0;
+      let skippedCount = 0;
+      for (const row of createdRows.slice(cursor, end)) {
+        const member = this.db.members.find((candidate) => candidate.id === row.memberId);
+        const used = this.db.memberships.some((membership) => membership.memberId === row.memberId) || this.db.charges.some((charge) => charge.memberId === row.memberId) || this.db.payments.some((payment) => payment.memberId === row.memberId) || this.db.checkIns.some((checkIn) => checkIn.memberId === row.memberId);
+        if (!member || member.status !== "active" || used) { skippedCount += 1; continue; }
+        member.status = "archived";
+        member.archivedAt = nowISO();
+        archivedCount += 1;
+      }
+      const status = end >= createdRows.length ? "undone" : "undoing";
+      item.status = status;
+      item.undoCursor = end;
+      item.undoArchivedCount = (item.undoArchivedCount ?? 0) + archivedCount;
+      item.undoSkippedCount = (item.undoSkippedCount ?? 0) + skippedCount;
+      if (status === "undone") item.undoneAt = nowISO();
+      return { importId: item.id, status, cursor: end, totalCreated: createdRows.length, archivedCount: item.undoArchivedCount, skippedCount: item.undoSkippedCount };
     });
   }
 

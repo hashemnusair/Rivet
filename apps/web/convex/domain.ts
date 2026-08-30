@@ -4769,6 +4769,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const rows = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_user_organization", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
       return rows.sort((left, right) => left.position - right.position || left.createdAt - right.createdAt).map(pinnedWorkspaceItemView);
     }
+    case "members.import.list": {
+      requirePermission(actor, "members.read");
+      const imports = (await recordsOf(ctx, actor, "memberImport")).map((record) => data(record.data)).sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)));
+      return imports.slice(0, 25).map((value) => memberImportView(value, false));
+    }
+    case "members.import.get": {
+      requirePermission(actor, "members.read");
+      return memberImportView(data((await recordOf(ctx, actor, "memberImport", recordId(input.importId))).data), true);
+    }
     case "duplicates.list":
       return await duplicateCasePage(ctx, actor, input);
     case "duplicates.get":
@@ -5699,6 +5708,34 @@ function firstHeader(headers: string[], names: string[]): number {
   return headers.findIndex((header) => names.includes(header));
 }
 
+function memberImportView(value: Data, includeRows: boolean): Data {
+  const rows = arrayValue(value.rows).map(data);
+  return {
+    id: stringValue(value.id),
+    branchId: stringValue(value.branchId),
+    totalRows: numberValue(value.totalRows, rows.length),
+    validRows: numberValue(value.validRows, rows.filter((row) => row.status === "valid").length),
+    duplicateRows: numberValue(value.duplicateRows, rows.filter((row) => row.status === "duplicate").length),
+    errorRows: numberValue(value.errorRows, rows.filter((row) => row.status === "invalid").length),
+    status: stringValue(value.status, "preview"),
+    cursor: numberValue(value.nextCursor),
+    committedCount: numberValue(value.committedCount),
+    skippedCount: numberValue(value.skippedCount),
+    sourceFileName: optionalString(value.sourceFileName),
+    sourceKind: optionalString(value.sourceKind),
+    sourceHeaders: arrayValue(value.sourceHeaders).map(String),
+    columnMapping: data(value.columnMapping),
+    undoExpiresAt: optionalString(value.undoExpiresAt),
+    createdAt: stringValue(value.createdAt),
+    completedAt: optionalString(value.completedAt),
+    undoneAt: optionalString(value.undoneAt),
+    undoCursor: numberValue(value.undoCursor),
+    undoArchivedCount: numberValue(value.undoArchivedCount),
+    undoSkippedCount: numberValue(value.undoSkippedCount),
+    ...(includeRows ? { rows } : {}),
+  };
+}
+
 async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requirePermission(actor, "members.write");
   const branchId = recordId(input.branchId);
@@ -5714,16 +5751,25 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   if (nameIndex < 0 || phoneIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name and phone columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone"] } });
   if (rows.length > 10_000) domainError("VALIDATION_ERROR", "A single import can contain at most 10,000 members.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
   const existing = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((member) => member.status !== "archived");
+  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+  const existingByPhone = new Map<string, string[]>();
+  const existingByEmail = new Map<string, string[]>();
+  for (const member of existing) {
+    const memberId = stringValue(member.id);
+    const phoneKey = canonicalPhoneKey(optionalString(member.phone), callingCode);
+    const emailKey = normalize(optionalString(member.email));
+    if (phoneKey) existingByPhone.set(phoneKey, [...(existingByPhone.get(phoneKey) ?? []), memberId]);
+    if (emailKey) existingByEmail.set(emailKey, [...(existingByEmail.get(emailKey) ?? []), memberId]);
+  }
   const seenPhones = new Set<string>();
   const seenEmails = new Set<string>();
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
-    const callingCode = organizationPhoneCountryCallingCode(actor.organization);
     const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
     const email = optionalString(values[emailIndex])?.trim().toLowerCase();
     const phoneKey = canonicalPhoneKey(phone, callingCode);
     const emailKey = normalize(email);
-    const duplicateMemberIds = existing.filter((member) => canonicalPhoneKey(optionalString(member.phone), callingCode) === canonicalPhoneKey(phone, callingCode) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
+    const duplicateMemberIds = [...new Set([...(existingByPhone.get(phoneKey) ?? []), ...(emailKey ? existingByEmail.get(emailKey) ?? [] : [])])];
     if ((phoneKey && seenPhones.has(phoneKey)) || (emailKey && seenEmails.has(emailKey))) duplicateMemberIds.push(`csv-row-${index + 2}`);
     if (phoneKey) seenPhones.add(phoneKey);
     if (emailKey) seenEmails.add(emailKey);
@@ -5737,9 +5783,14 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   });
   const id = newPublicId();
   const now = Date.now();
-  await insertRecord(ctx, actor, "memberImport", { id, branchId, rows: previewRows, totalRows: previewRows.length, nextCursor: 0, status: "preview", createdAt: isoNow(), createdById: publicUserId(actor.user) }, { branchId });
+  const sourceKind = ["csv", "xlsx", "pasted"].includes(stringValue(input.sourceKind)) ? stringValue(input.sourceKind) : "csv";
+  const sourceFileName = optionalString(input.sourceFileName)?.trim().slice(0, 180);
+  const sourceHeaders = arrayValue(input.sourceHeaders).slice(0, 100).map((header) => stringValue(header).slice(0, 160));
+  const columnMapping = data(input.columnMapping);
+  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
+  await insertRecord(ctx, actor, "memberImport", value, { branchId });
   await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member CSV · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows`, branchId });
-  return { id, branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, createdAt: utcIso(now) };
+  return memberImportView({ ...value, createdAt: utcIso(now) }, true);
 }
 
 async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -5754,15 +5805,27 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
   }
   const record = await recordOf(ctx, actor, "memberImport", importId);
   const importData = data(record.data);
+  if (["undoing", "undone"].includes(stringValue(importData.status))) domainError("CONFLICT", "This import is already being undone.", { correlationId: actor.correlationId });
   const rows = arrayValue(importData.rows).map(data);
   const cursor = Math.max(0, Math.floor(numberValue(input.cursor, numberValue(importData.nextCursor))));
   if (cursor !== numberValue(importData.nextCursor)) domainError("CONFLICT", "Import cursor is stale. Resume from the latest cursor.", { correlationId: actor.correlationId });
   const chunkSize = Math.min(100, Math.max(1, Math.floor(numberValue(input.chunkSize, 25))));
   const end = Math.min(rows.length, cursor + chunkSize);
   const createdMemberIds: string[] = [];
+  const createdMembers = arrayValue(importData.createdMembers).map(data);
   const errors: Data[] = [];
   let skippedCount = 0;
   const failedCount = 0;
+  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+  const currentMembers = (await memberRecords(ctx, actor)).map((item) => data(item.data)).filter((member) => member.status !== "archived");
+  const knownPhones = new Map<string, string>();
+  const knownEmails = new Map<string, string>();
+  for (const member of currentMembers) {
+    const phoneKey = canonicalPhoneKey(optionalString(member.phone), callingCode);
+    const emailKey = normalize(optionalString(member.email));
+    if (phoneKey) knownPhones.set(phoneKey, stringValue(member.id));
+    if (emailKey) knownEmails.set(emailKey, stringValue(member.id));
+  }
   for (let index = cursor; index < end; index += 1) {
     const row = rows[index];
     if (!row || row.status !== "valid") {
@@ -5770,11 +5833,12 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       if (row) rows[index] = { ...row, status: "skipped" };
       continue;
     }
-    const callingCode = organizationPhoneCountryCallingCode(actor.organization);
-    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (canonicalPhoneKey(optionalString(member.phone), callingCode) === canonicalPhoneKey(stringValue(row.phone), callingCode) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
-    if (duplicate) {
+    const phoneKey = canonicalPhoneKey(stringValue(row.phone), callingCode);
+    const emailKey = normalize(optionalString(row.email));
+    const duplicateId = knownPhones.get(phoneKey) ?? (emailKey ? knownEmails.get(emailKey) : undefined);
+    if (duplicateId) {
       skippedCount += 1;
-      rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
+      rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [duplicateId] };
       continue;
     }
     const result = await createMemberMutation(ctx, actor, {
@@ -5788,14 +5852,73 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
     });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
+    if (phoneKey) knownPhones.set(phoneKey, stringValue(member.id));
+    if (emailKey) knownEmails.set(emailKey, stringValue(member.id));
+    const memberRecord = await recordOf(ctx, actor, "member", stringValue(member.id));
+    const tagged = await patchRecord(ctx, actor, memberRecord, { importBatchId: importId, importRowNumber: numberValue(row.rowNumber) });
+    const taggedRecord = await recordOf(ctx, actor, "member", stringValue(tagged.id));
+    createdMembers.push({ memberId: stringValue(member.id), version: String(taggedRecord.updatedAt), rowNumber: numberValue(row.rowNumber) });
     rows[index] = { ...row, status: "committed", memberId: member.id };
   }
   const nextCursor = end;
   const status = nextCursor >= rows.length ? "completed" : "processing";
-  await patchRecord(ctx, actor, record, { rows, nextCursor, status, committedAt: status === "completed" ? isoNow() : undefined });
-  const result = { importId, status, cursor: nextCursor, totalRows: rows.length, committedCount: createdMemberIds.length, skippedCount, failedCount, createdMemberIds, errors };
+  const committedCount = numberValue(importData.committedCount) + createdMemberIds.length;
+  const totalSkippedCount = numberValue(importData.skippedCount) + skippedCount;
+  const completedAt = status === "completed" ? isoNow() : undefined;
+  const undoExpiresAt = completedAt ? utcIso(Date.now() + 7 * 86_400_000) : undefined;
+  await patchRecord(ctx, actor, record, { rows, nextCursor, status, createdMembers, committedCount, skippedCount: totalSkippedCount, completedAt, undoExpiresAt });
+  const result = { importId, status, cursor: nextCursor, totalRows: rows.length, committedCount, skippedCount: totalSkippedCount, failedCount, createdMemberIds, errors };
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "member-import.commit", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 });
   await insertAudit(ctx, actor, { category: "members", action: "member.import_commit", entityType: "member_import", entityId: importId, entityLabel: `Member CSV · rows ${cursor + 1}-${end}`, summary: `Committed ${createdMemberIds.length} members`, branchId: optionalString(importData.branchId) });
+  return result;
+}
+
+async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "members.archive");
+  const reason = stringValue(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const importId = recordId(input.importId);
+  const idempotencyKey = recordId(input.idempotencyKey);
+  const cursor = Math.max(0, Math.floor(numberValue(input.cursor)));
+  const chunkSize = Math.min(100, Math.max(1, Math.floor(numberValue(input.chunkSize, 25))));
+  const requestHash = JSON.stringify({ importId, cursor, chunkSize, reason });
+  const replay = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member-import.undo").eq("key", idempotencyKey)).unique();
+  if (replay) {
+    if (replay.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This undo request key was already used for a different batch.", { correlationId: actor.correlationId });
+    return data(replay.result);
+  }
+  const importRecord = await recordOf(ctx, actor, "memberImport", importId);
+  const importData = data(importRecord.data);
+  if (!["completed", "undoing"].includes(stringValue(importData.status))) domainError("CONFLICT", "Only a completed import can be undone.", { correlationId: actor.correlationId });
+  if (Date.parse(stringValue(importData.undoExpiresAt)) < Date.now()) domainError("CONFLICT", "The seven-day undo window for this import has expired.", { correlationId: actor.correlationId });
+  const expectedCursor = numberValue(importData.undoCursor);
+  if (cursor !== expectedCursor) domainError("CONFLICT", "Undo cursor is stale. Resume from the latest cursor.", { correlationId: actor.correlationId });
+  const createdMembers = arrayValue(importData.createdMembers).map(data);
+  const end = Math.min(createdMembers.length, cursor + chunkSize);
+  let archivedCount = 0;
+  let skippedCount = 0;
+  for (let index = cursor; index < end; index += 1) {
+    const created = createdMembers[index];
+    if (!created) continue;
+    const memberId = stringValue(created.memberId);
+    const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
+    if (!memberRecord || String(memberRecord.updatedAt) !== stringValue(created.version) || stringValue(data(memberRecord.data).importBatchId) !== importId) { skippedCount += 1; continue; }
+    const related = await Promise.all(["membership", "payment", "charge", "checkin", "customerMembership"].map((entityType) => recordsOfMember(ctx, actor.organization._id, memberId, entityType)));
+    if (related.some((records) => records.length > 0)) { skippedCount += 1; continue; }
+    const member = data(memberRecord.data);
+    const now = isoNow();
+    await ctx.db.patch(memberRecord._id, { data: { ...member, status: "archived", archivedAt: now, importUndoId: importId }, updatedAt: Date.now() });
+    await insertAudit(ctx, actor, { category: "members", action: "member.import_undo", entityType: "member", entityId: memberId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Untouched imported member removed from the active directory", reason, before: { status: member.status, importBatchId: importId }, after: { status: "archived", importUndoId: importId }, branchId: optionalString(member.homeBranchId) });
+    archivedCount += 1;
+  }
+  const nextCursor = end;
+  const status = nextCursor >= createdMembers.length ? "undone" : "undoing";
+  const totalArchived = numberValue(importData.undoArchivedCount) + archivedCount;
+  const totalSkipped = numberValue(importData.undoSkippedCount) + skippedCount;
+  await patchRecord(ctx, actor, importRecord, { status, undoCursor: nextCursor, undoArchivedCount: totalArchived, undoSkippedCount: totalSkipped, undoneAt: status === "undone" ? isoNow() : undefined, undoReason: reason });
+  const result = { importId, status, cursor: nextCursor, totalCreated: createdMembers.length, archivedCount: totalArchived, skippedCount: totalSkipped };
+  await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "member-import.undo", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 });
+  if (status === "undone") await insertAudit(ctx, actor, { category: "members", action: "member.import_batch_undo", entityType: "member_import", entityId: importId, entityLabel: stringValue(importData.sourceFileName, `Member import ${importId}`), summary: `Archived ${totalArchived} untouched imported members; skipped ${totalSkipped} changed records`, reason, branchId: optionalString(importData.branchId) });
   return result;
 }
 
@@ -7920,6 +8043,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await previewMemberImport(ctx, actor, input);
     case "members.import.commit":
       return await commitMemberImport(ctx, actor, input);
+    case "members.import.undo":
+      return await undoMemberImport(ctx, actor, input);
     case "members.create":
       return await createMemberMutation(ctx, actor, input);
     case "members.update": {
