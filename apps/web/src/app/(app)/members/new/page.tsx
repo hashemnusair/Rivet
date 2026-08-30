@@ -531,19 +531,14 @@ function SalesSelect({ value, onChange }: { value?: string; onChange: (v: string
 
 function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?: string) => void }) {
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<MemberSummary[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string>();
-
-  const run = async (input: string) => {
-    setSearch(input);
-    if (input.trim().length < 2) { setResults([]); return; }
-    try {
-      const page = await getApi().listMembers({ search: input.trim(), pageSize: 6 });
-      setResults(page.items.filter((member) => member.status !== "archived"));
-    } catch {
-      setResults([]);
-    }
-  };
+  const normalizedSearch = search.trim();
+  const lookup = useApiQuery(
+    qk.members({ search: normalizedSearch, pageSize: 6 }),
+    (api) => api.listMembers({ search: normalizedSearch, pageSize: 6 }),
+    { enabled: normalizedSearch.length >= 2 },
+  );
+  const results: MemberSummary[] = lookup.data?.items.filter((member) => member.status !== "archived") ?? [];
 
   if (value) {
     return (
@@ -555,17 +550,19 @@ function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?
   }
   return (
     <div className="relative">
-      <Input value={search} onChange={(event) => void run(event.target.value)} placeholder="Search members by name or phone…" />
-      {results.length > 0 ? (
+      <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search members by name or phone…" />
+      {lookup.isLoading ? <p className="mt-1.5 text-[11px] text-ink-3" role="status">Searching members…</p> : lookup.isError ? (
+        <div className="mt-1.5 flex items-center justify-between gap-3 border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger" role="alert"><span>Member search is unavailable.</span><Button type="button" size="sm" variant="ghost" onClick={() => lookup.refetch()}>Retry</Button></div>
+      ) : results.length > 0 ? (
         <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
           {results.map((member) => (
-            <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => { onChange(member.id); setSelectedLabel(`${member.fullName} · ${member.memberNumber}`); setResults([]); }}>
+            <button key={member.id} type="button" className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => { onChange(member.id); setSelectedLabel(`${member.fullName} · ${member.memberNumber}`); }}>
               <span className="truncate">{member.fullName}</span>
               <span className="text-ink-3">{member.memberNumber}</span>
             </button>
           ))}
         </div>
-      ) : null}
+      ) : normalizedSearch.length >= 2 ? <p className="mt-1.5 text-[11px] text-ink-3">No members match this search.</p> : null}
     </div>
   );
 }

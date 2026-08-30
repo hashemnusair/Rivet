@@ -4506,9 +4506,30 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
   if (operation === "customer.finance.transactions") return await customerTransactionPage(ctx, input);
   if (operation === "customer.receipt") return await customerReceiptDetail(ctx, recordId(input.receiptId));
+  if (operation === "customer.membership.freezePolicy") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const operationalPolicies = data(data(settings?.data).operationalPolicies);
+    const policy = { ...(DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data), ...data(operationalPolicies.memberFreezes) };
+    const membershipPolicy = { ...(DEFAULT_OPERATIONAL_POLICIES.membership as Data), ...data(operationalPolicies.membership) };
+    const windowStart = Date.now() - numberValue(policy.windowDays, 365) * 86_400_000;
+    const approved = (await recordsOfMember(ctx, context.organization._id, context.member.publicId, "freezeRequest"))
+      .map((row) => data(row.data))
+      .filter((candidate) => stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart)
+      .length;
+    const freeRequests = numberValue(policy.freeFreezesPerWindow, 1);
+    return {
+      requestsEnabled: booleanValue(policy.requestsEnabled),
+      minimumDays: numberValue(membershipPolicy.minimumFreezeDays, 1),
+      maximumDays: numberValue(policy.maxDaysPerFreeze, 30),
+      expectedFeeMinor: approved < freeRequests ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000),
+      currency: context.organization.currency,
+      freeRequestsRemaining: Math.max(0, freeRequests - approved),
+    };
+  }
   if (operation === "customer.membership.freezeRequests") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
-    return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "freezeRequest")).collect())
+    return (await recordsOfMember(ctx, context.organization._id, context.member.publicId, "freezeRequest"))
       .map((row) => data(row.data))
       .filter((value) => stringValue(value.membershipId) === context.membership.publicId)
       .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)));
@@ -5037,7 +5058,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "memberships.freeze_requests.list": {
       requirePermission(actor, "memberships.freeze");
       const status = optionalString(input.status);
-      return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect())
+      const requests = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect();
+      const visibleMembershipIds = actor.branchScope === "all"
+        ? null
+        : new Set((await membershipRecords(ctx, actor)).map((record) => record.publicId));
+      return requests
+        .filter((row) => actor.branchScope === "all" || (row.branchId ? actor.branchIds.includes(row.branchId) : visibleMembershipIds?.has(stringValue(data(row.data).membershipId))))
         .map((row) => data(row.data))
         .filter((value) => !status || stringValue(value.status) === status)
         .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)))
@@ -6002,9 +6028,9 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const referredByMemberId = optionalString(input.referredByMemberId);
   let referredByName: string | undefined;
   if (referredByMemberId) {
-    const referrer = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", referredByMemberId)).unique();
-    const referrerData = referrer ? data(referrer.data) : undefined;
-    if (!referrer || stringValue(referrerData?.status) === "archived") domainError("NOT_FOUND", "The referring member was not found.", { correlationId: actor.correlationId });
+    const referrer = await recordOf(ctx, actor, "member", referredByMemberId);
+    const referrerData = data(referrer.data);
+    if (stringValue(referrerData.status) === "archived") domainError("NOT_FOUND", "The referring member was not found.", { correlationId: actor.correlationId });
     referredByName = stringValue(referrerData?.fullName, referredByMemberId);
   }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
@@ -6208,7 +6234,7 @@ async function applyReferralReward(ctx: MutationCtx, actor: ActorContext, referr
   const memberships = await recordsOfMember(ctx, actor.organization._id, referrerId, "membership");
   const active = memberships
     .map((row) => ({ row, value: data(row.data) }))
-    .filter(({ value }) => !value.cancelledAt && stringValue(value.endDate) >= today)
+    .filter(({ value }) => ["active", "expiring", "frozen"].includes(statusOfMembership(value, today)))
     .sort((left, right) => stringValue(right.value.endDate).localeCompare(stringValue(left.value.endDate)))[0];
   let status = "applied";
   let appliedMembershipId: string | undefined;
@@ -7046,6 +7072,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       membershipId,
       memberId,
       memberName: stringValue(data(context.member.data).fullName, memberId),
+      branchId: optionalString(membershipData.homeBranchId),
       startDate,
       days,
       reason,
@@ -7053,7 +7080,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       expectedFeeMinor,
       requestedAt: utcIso(now),
     };
-    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "freezeRequest", publicId: stringValue(value.id), memberPublicId: memberId, createdAt: now, updatedAt: now, data: value });
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "freezeRequest", publicId: stringValue(value.id), branchId: context.membership.branchId, memberPublicId: memberId, createdAt: now, updatedAt: now, data: value });
     return value;
   }
   if (operation === "customer.pt.package.request") {
@@ -9115,6 +9142,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest").eq("publicId", requestId)).unique();
       if (!row) domainError("NOT_FOUND", "Freeze request not found.", { correlationId: actor.correlationId });
       const value = data(row.data);
+      const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(value.membershipId));
+      const membershipData = data(membershipRecord.data);
       if (stringValue(value.status) !== "pending") domainError("CONFLICT", "This freeze request was already decided.", { correlationId: actor.correlationId });
       const now = Date.now();
       let feeMinor = 0;
@@ -9139,7 +9168,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const decided = { ...value, status: decision, feeMinor: decision === "approved" ? feeMinor : undefined, chargeId, decisionNote: note, decidedAt: utcIso(now), decidedBy: actor.user.fullName };
       await ctx.db.patch(row._id, { data: decided, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "memberships", action: `membership.freeze_request.${decision}`, entityType: "membership", entityId: stringValue(value.membershipId), entityLabel: stringValue(value.memberName), summary: decision === "approved" ? `Approved a ${numberValue(value.days, 0)}-day freeze request${feeMinor > 0 ? ` with a ${actor.organization.currency} ${(feeMinor / 1000).toFixed(3)} fee` : " free of charge"}` : "Denied a member freeze request", reason: note ?? stringValue(value.reason), before: { status: "pending" }, after: { status: decision, feeMinor, chargeId } });
+      await insertAudit(ctx, actor, { category: "memberships", action: `membership.freeze_request.${decision}`, entityType: "membership", entityId: stringValue(value.membershipId), entityLabel: stringValue(value.memberName), summary: decision === "approved" ? `Approved a ${numberValue(value.days, 0)}-day freeze request${feeMinor > 0 ? ` with a ${actor.organization.currency} ${(feeMinor / 1000).toFixed(3)} fee` : " free of charge"}` : "Denied a member freeze request", reason: note ?? stringValue(value.reason), before: { status: "pending" }, after: { status: decision, feeMinor, chargeId }, branchId: optionalString(membershipData.homeBranchId) });
       return decided;
     }
     case "memberships.freeze": {

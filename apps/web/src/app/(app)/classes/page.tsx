@@ -7,36 +7,38 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import type { ClassSession, MemberSummary, StaffUser, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { getApi } from "@/lib/api/client";
+import { addDays, endOfDayInTz, localDateTimeToISO, partsInTimeZone, startOfDayInTz, TENANT_TIMEZONE, todayISODate } from "@/lib/utils/dates";
 
 const HOURS = Array.from({ length: 17 }, (_, index) => 6 + index); // 06:00 → 22:00 start slots
-const DAY_MS = 86_400_000;
 const DURATIONS = [30, 45, 60, 90, 120] as const;
 
 /** Weeks start on Sunday, the first working day in Jordan. */
-function weekStart(anchor: Date): Date {
-  const value = new Date(anchor);
-  value.setHours(0, 0, 0, 0);
-  value.setDate(value.getDate() - value.getDay());
-  return value;
+function weekStart(anchor: string): string {
+  const value = new Date(`${anchor}T12:00:00.000Z`);
+  return addDays(anchor, -value.getUTCDay());
 }
 
-function slotIso(day: Date, hour: number): string {
-  const value = new Date(day);
-  value.setHours(hour, 0, 0, 0);
-  return value.toISOString();
+function slotIso(day: string, hour: number, timezone: string): string {
+  return localDateTimeToISO(day, `${String(hour).padStart(2, "0")}:00`, timezone);
 }
 
-function dayLabel(day: Date): string {
-  return day.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+function dayLabel(day: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00.000Z`));
 }
 
-function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+function timeLabel(iso: string, locale: string, timezone: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: timezone }).format(new Date(iso));
+}
+
+function localInputValue(iso: string, timezone: string): string {
+  const parts = partsInTimeZone(new Date(iso), timezone);
+  return `${parts.date}T${parts.time.slice(0, 5)}`;
 }
 
 type EditorState = {
@@ -57,15 +59,19 @@ export default function ClassesPage() {
   const { session } = useApp();
   const permissions = usePermissions();
   const canManage = permissions.can("operations.manage");
-  const canRoster = permissions.can("members.write");
+  const canRoster = permissions.can("members.write") || permissions.can("pt.book_for_member");
   const invalidate = useInvalidate();
+  const timezone = session?.organization.timezone ?? TENANT_TIMEZONE;
+  const locale = session?.organization.locale ?? "en-JO";
   const branches = session?.branches ?? [];
   const [branchChoice, setBranchChoice] = useState<string>();
   const branchId = branchChoice ?? session?.activeBranchId ?? branches[0]?.id;
-  const [weekAnchor, setWeekAnchor] = useState(() => weekStart(new Date()));
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => new Date(weekAnchor.getTime() + index * DAY_MS)), [weekAnchor]);
-  const windowFrom = days[0]!.toISOString();
-  const windowTo = new Date(days[6]!.getTime() + DAY_MS - 1).toISOString();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const currentTenantDate = todayISODate(timezone);
+  const weekAnchor = addDays(weekStart(currentTenantDate), weekOffset * 7);
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekAnchor, index)), [weekAnchor]);
+  const windowFrom = startOfDayInTz(days[0]!, timezone).toISOString();
+  const windowTo = endOfDayInTz(days[6]!, timezone).toISOString();
 
   const sessionsQuery = useApiQuery(
     qk.classSessions(branchId ?? "none", windowFrom, windowTo),
@@ -79,7 +85,13 @@ export default function ClassesPage() {
   const [manageId, setManageId] = useState<string>();
   const [cancelReason, setCancelReason] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
-  const [memberResults, setMemberResults] = useState<MemberSummary[]>([]);
+  const normalizedMemberSearch = memberSearch.trim();
+  const memberLookup = useApiQuery(
+    qk.members({ search: normalizedMemberSearch, pageSize: 6 }),
+    (api) => api.listMembers({ search: normalizedMemberSearch, pageSize: 6 }),
+    { enabled: Boolean(manageId && canRoster && normalizedMemberSearch.length >= 2) },
+  );
+  const memberResults: MemberSummary[] = memberLookup.data?.items.filter((member) => member.status !== "archived") ?? [];
   const managed = sessionsQuery.data?.find((item) => item.id === manageId);
 
   const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none", windowFrom, windowTo)]); };
@@ -109,25 +121,21 @@ export default function ClassesPage() {
   });
 
   const addAttendee = useApiMutation((api, memberId: string) => api.addClassAttendee({ sessionId: manageId!, memberId }), {
-    onSuccess: async () => { setMemberSearch(""); setMemberResults([]); await refresh(); },
+    onSuccess: async () => { setMemberSearch(""); await refresh(); },
   });
   const removeAttendee = useApiMutation((api, memberId: string) => api.removeClassAttendee({ sessionId: manageId!, memberId }), { onSuccess: refresh });
   const setAttendance = useApiMutation((api, input: { memberId: string; attended: boolean }) => api.setClassAttendance({ sessionId: manageId!, ...input }), { onSuccess: refresh });
 
-  const searchMembers = async (value: string) => {
-    setMemberSearch(value);
-    if (value.trim().length < 2) { setMemberResults([]); return; }
-    try {
-      const page = await getApi().listMembers({ search: value.trim(), pageSize: 6 });
-      setMemberResults(page.items.filter((member) => member.status !== "archived"));
-    } catch {
-      setMemberResults([]);
-    }
+  const openCreate = (day: string, hour: number) => {
+    if (!canManage || !branchId) return;
+    setEditor({ sessionId: crypto.randomUUID(), branchId, name: "", coachUserId: "", startsAt: slotIso(day, hour, timezone), durationMinutes: 60, capacity: 12, notes: "", uploading: false });
   };
 
-  const openCreate = (day: Date, hour: number) => {
-    if (!canManage || !branchId) return;
-    setEditor({ sessionId: crypto.randomUUID(), branchId, name: "", coachUserId: "", startsAt: slotIso(day, hour), durationMinutes: 60, capacity: 12, notes: "", uploading: false });
+  const openDefaultCreate = () => {
+    const tenantNow = partsInTimeZone(new Date(), timezone);
+    const day = days.includes(tenantNow.date) ? tenantNow.date : days[0]!;
+    const hour = day === tenantNow.date ? Math.min(22, Math.max(6, tenantNow.hour + 1)) : 18;
+    openCreate(day, hour);
   };
 
   const openEdit = (target: ClassSession) => {
@@ -147,10 +155,10 @@ export default function ClassesPage() {
     }
   };
 
-  const sessionsFor = (day: Date, hour: number): ClassSession[] =>
+  const sessionsFor = (day: string, hour: number): ClassSession[] =>
     (sessionsQuery.data ?? []).filter((item) => {
-      const starts = new Date(item.startsAt);
-      return starts.getFullYear() === day.getFullYear() && starts.getMonth() === day.getMonth() && starts.getDate() === day.getDate() && starts.getHours() === hour;
+      const starts = partsInTimeZone(new Date(item.startsAt), timezone);
+      return starts.date === day && starts.hour === hour;
     });
 
   return (
@@ -165,43 +173,45 @@ export default function ClassesPage() {
               </select>
             ) : null}
             <div className="flex items-center rounded-md border border-line-2">
-              <Button variant="ghost" size="sm" aria-label="Previous week" onClick={() => setWeekAnchor((current) => new Date(current.getTime() - 7 * DAY_MS))}><ChevronLeft /></Button>
-              <button type="button" className="px-2 text-[12px] font-medium hover:underline" onClick={() => setWeekAnchor(weekStart(new Date()))}>
-                {dayLabel(days[0]!)} – {dayLabel(days[6]!)}
+              <Button variant="ghost" size="sm" aria-label="Previous week" onClick={() => setWeekOffset((current) => current - 1)}><ChevronLeft /></Button>
+              <button type="button" className="min-h-9 px-2 text-[12px] font-medium hover:underline" onClick={() => setWeekOffset(0)}>
+                {dayLabel(days[0]!, locale)} – {dayLabel(days[6]!, locale)}
               </button>
-              <Button variant="ghost" size="sm" aria-label="Next week" onClick={() => setWeekAnchor((current) => new Date(current.getTime() + 7 * DAY_MS))}><ChevronRight /></Button>
+              <Button variant="ghost" size="sm" aria-label="Next week" onClick={() => setWeekOffset((current) => current + 1)}><ChevronRight /></Button>
             </div>
-            {canManage ? <Button variant="signal" onClick={() => openCreate(days[0]!, 18)} disabled={!branchId}><Plus /> New class</Button> : null}
+            {canManage ? <Button variant="signal" onClick={openDefaultCreate} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>
         </div>
 
-        {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : (
+        {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : sessionsQuery.isError ? (
+          <div className="mt-6 border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The calendar is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
+        ) : (
           <div className="mt-6 overflow-x-auto border border-line bg-surface">
             <div className="min-w-[1180px]">
               <div className="grid" style={{ gridTemplateColumns: `130px repeat(${HOURS.length}, minmax(58px, 1fr))` }}>
-                <div className="border-b border-line bg-sunken px-3 py-2 font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Date</div>
+                <div className="border-b border-line bg-sunken px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-ink-3">Date</div>
                 {HOURS.map((hour) => (
-                  <div key={hour} className="border-b border-s border-line bg-sunken px-1 py-2 text-center font-mono text-[8px] uppercase tracking-[.05em] text-ink-3">{String(hour).padStart(2, "0")}:00</div>
+                  <div key={hour} className="border-b border-s border-line bg-sunken px-1 py-2 text-center font-mono text-[10px] uppercase tracking-[.05em] text-ink-3">{String(hour).padStart(2, "0")}:00</div>
                 ))}
                 {days.map((day) => {
-                  const isToday = new Date().toDateString() === day.toDateString();
+                  const isToday = currentTenantDate === day;
                   return (
-                    <div key={day.toISOString()} className="contents">
-                      <div className={`border-b border-line px-3 py-3 text-[11.5px] font-semibold ${isToday ? "bg-signal-bg/40" : ""}`}>{dayLabel(day)}{isToday ? <span className="ms-1.5 font-mono text-[7.5px] uppercase tracking-[.1em] text-signal">today</span> : null}</div>
+                    <div key={day} className="contents">
+                      <div className={`border-b border-line px-3 py-3 text-[12px] font-semibold ${isToday ? "bg-signal-bg/40" : ""}`}>{dayLabel(day, locale)}{isToday ? <span className="ms-1.5 font-mono text-[9px] uppercase tracking-[.1em] text-signal">today</span> : null}</div>
                       {HOURS.map((hour) => {
                         const slotSessions = sessionsFor(day, hour);
                         return (
-                          <div key={hour} className={`relative min-h-[52px] border-b border-s border-line ${isToday ? "bg-signal-bg/15" : ""}`}>
+                          <div key={hour} className={`relative min-h-14 border-b border-s border-line ${isToday ? "bg-signal-bg/15" : ""}`}>
                             {slotSessions.length === 0 && canManage ? (
-                              <button type="button" aria-label={`Add class on ${dayLabel(day)} at ${String(hour).padStart(2, "0")}:00`} className="absolute inset-0 opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100" onClick={() => openCreate(day, hour)}>
+                              <button type="button" aria-label={`Add class on ${dayLabel(day, locale)} at ${String(hour).padStart(2, "0")}:00`} className="absolute inset-0 opacity-25 transition-opacity hover:bg-sunken hover:opacity-100 focus-visible:bg-sunken focus-visible:opacity-100" onClick={() => openCreate(day, hour)}>
                                 <span className="flex h-full items-center justify-center text-ink-3"><Plus className="size-3.5" /></span>
                               </button>
                             ) : null}
                             <div className="grid gap-1 p-1">
                               {slotSessions.map((item) => (
-                                <button key={item.id} type="button" onClick={() => { setManageId(item.id); setCancelReason(""); setMemberSearch(""); setMemberResults([]); }} className={`w-full rounded-sm border px-1.5 py-1 text-start text-[10px] leading-tight transition-colors ${item.status === "cancelled" ? "border-line bg-sunken text-ink-3 line-through" : "border-signal/40 bg-signal-bg/60 hover:border-signal"}`}>
+                                <button key={item.id} type="button" onClick={() => { setManageId(item.id); setCancelReason(""); setMemberSearch(""); }} className={`min-h-11 w-full rounded-sm border px-1.5 py-1 text-start text-[11px] leading-tight transition-colors ${item.status === "cancelled" ? "border-line bg-sunken text-ink-3 line-through" : "border-signal/40 bg-signal-bg/60 hover:border-signal"}`}>
                                   <span className="block truncate font-semibold">{item.name}</span>
-                                  <span className="block truncate text-ink-3">{timeLabel(item.startsAt)} · {item.roster.length}/{item.capacity}</span>
+                                  <span className="block truncate text-ink-3">{timeLabel(item.startsAt, locale, timezone)} · {item.roster.length}/{item.capacity}</span>
                                 </button>
                               ))}
                             </div>
@@ -226,8 +236,8 @@ export default function ClassesPage() {
               <DialogBody className="grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-1.5 text-[12px] font-medium">Class name<Input value={editor.name} maxLength={80} autoFocus onChange={(event) => setEditor({ ...editor, name: event.target.value })} placeholder="Morning HIIT" /></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Coach<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachUserId} onChange={(event) => setEditor({ ...editor, coachUserId: event.target.value })}><option value="">No coach assigned</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Starts<Input type="datetime-local" value={editor.startsAt ? new Date(new Date(editor.startsAt).getTime() - new Date(editor.startsAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : ""} onChange={(event) => { if (event.target.value) setEditor({ ...editor, startsAt: new Date(event.target.value).toISOString() }); }} /></label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">Coach<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachUserId} disabled={staffQuery.isError} onChange={(event) => setEditor({ ...editor, coachUserId: event.target.value })}><option value="">{staffQuery.isError ? "Coaches unavailable" : "No coach assigned"}</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select>{staffQuery.isError ? <span className="text-[11px] font-normal text-danger">Staff could not be loaded. Save without a coach or retry the page.</span> : null}</label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">Starts<Input type="datetime-local" value={editor.startsAt ? localInputValue(editor.startsAt, timezone) : ""} onChange={(event) => { const [date, time] = event.target.value.split("T"); if (date && time) setEditor({ ...editor, startsAt: localDateTimeToISO(date, time, timezone) }); }} /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Duration<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.durationMinutes} onChange={(event) => setEditor({ ...editor, durationMinutes: Number(event.target.value) })}>{DURATIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Capacity<Input type="number" min={1} max={200} value={editor.capacity} onChange={(event) => setEditor({ ...editor, capacity: Number(event.target.value) })} /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Photo (optional)
@@ -242,7 +252,7 @@ export default function ClassesPage() {
             ) : null}
             <DialogFooter>
               <Button variant="secondary" onClick={() => setEditor(undefined)} disabled={save.isPending}>Cancel</Button>
-              <Button variant="signal" loading={save.isPending} disabled={!editor?.name.trim() || !editor?.startsAt || editor?.uploading} onClick={() => save.mutate()}><Check /> Save class</Button>
+              <Button variant="signal" loading={save.isPending} disabled={!editor?.name.trim() || !editor?.startsAt || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200} onClick={() => save.mutate()}><Check /> Save class</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -254,7 +264,7 @@ export default function ClassesPage() {
                 <DialogHeader>
                   <DialogTitle>{managed.name}</DialogTitle>
                   <DialogDescription>
-                    {dayLabel(new Date(managed.startsAt))} · {timeLabel(managed.startsAt)} · {managed.durationMinutes} min{managed.coachName ? ` · ${managed.coachName}` : ""} · {managed.roster.length}/{managed.capacity} booked
+                    {dayLabel(partsInTimeZone(new Date(managed.startsAt), timezone).date, locale)} · {timeLabel(managed.startsAt, locale, timezone)} · {managed.durationMinutes} min{managed.coachName ? ` · ${managed.coachName}` : ""} · {managed.roster.length}/{managed.capacity} booked
                     {managed.status === "cancelled" ? ` · cancelled${managed.cancelReason ? `: ${managed.cancelReason}` : ""}` : ""}
                   </DialogDescription>
                 </DialogHeader>
@@ -276,9 +286,11 @@ export default function ClassesPage() {
                     {canRoster && managed.status !== "cancelled" ? (
                       <div className="relative mt-2">
                         <label className="grid gap-1.5 text-[12px] font-medium">Add member
-                          <Input value={memberSearch} onChange={(event) => void searchMembers(event.target.value)} placeholder="Search by name or phone…" />
+                          <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name or phone…" />
                         </label>
-                        {memberResults.length > 0 ? (
+                        {memberLookup.isLoading ? <p className="mt-2 text-[11.5px] text-ink-3" role="status">Searching members…</p> : memberLookup.isError ? (
+                          <div className="mt-2 flex items-center justify-between gap-3 border border-danger/30 bg-danger-bg px-3 py-2 text-[11.5px] text-danger" role="alert"><span>Member search is unavailable.</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div>
+                        ) : memberResults.length > 0 ? (
                           <div className="absolute z-10 mt-1 w-full divide-y divide-line border border-line bg-surface shadow-dialog">
                             {memberResults.map((member) => (
                               <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addAttendee.mutate(member.id)}>
@@ -287,7 +299,7 @@ export default function ClassesPage() {
                               </button>
                             ))}
                           </div>
-                        ) : null}
+                        ) : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11.5px] text-ink-3">No members match this search.</p> : null}
                       </div>
                     ) : null}
                   </div>

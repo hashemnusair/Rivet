@@ -21,7 +21,7 @@ async function seed(t: TestConvex<typeof schema>) {
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-f", branchId: branch, memberPublicId: "member-f", createdAt: now, updatedAt: now, data: { id: "member-f", fullName: "Member Freeze", memberNumber: "MAIN-9", status: "active", phone: "+962790000009", homeBranchId: "branch-freeze", createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "plan", publicId: "plan-f", createdAt: now, updatedAt: now, data: { id: "plan-f", name: "Monthly", code: "MONTH", kind: "time", durationDays: 30, basePrice: { amount: 45_000, currency: "JOD" }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 60, includedPtSessions: 0, status: "active" } });
-    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "membership-f", memberPublicId: "member-f", createdAt: now, updatedAt: now, data: { id: "membership-f", memberId: "member-f", planId: "plan-f", startDate: day(-10), endDate: day(40), adjustments: [], freezes: [], frozenDaysUsed: 0, createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "membership-f", branchId: branch, memberPublicId: "member-f", createdAt: now, updatedAt: now, data: { id: "membership-f", memberId: "member-f", planId: "plan-f", homeBranchId: "branch-freeze", startDate: day(-10), endDate: day(40), adjustments: [], freezes: [], frozenDaysUsed: 0, createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "customerMembership", publicId: "cm-f", createdAt: now, updatedAt: now, data: { id: "cm-f", customerUserId: "customer-freeze", membershipId: "membership-f", memberId: "member-f", memberNumber: "MAIN-9", status: "active", startDate: day(-10), endDate: day(40) } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { id: "settings", operationalPolicies: { entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: false }, membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 }, personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 }, referrals: { enabled: false, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 }, memberFreezes: { requestsEnabled: true, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 }, operatingHours: [], trialSchedules: [] } } });
   });
@@ -33,6 +33,9 @@ describe("member freeze requests", () => {
     await seed(t);
     const member = t.withIdentity({ subject: "clerk-customer-freeze" });
     const staff = t.withIdentity({ subject: "clerk-owner-freeze" });
+
+    const policy = await member.query(api.domain.query, operation("customer.membership.freezePolicy", { membershipId: "cm-f" })) as { requestsEnabled: boolean; minimumDays: number; maximumDays: number; expectedFeeMinor: number; freeRequestsRemaining: number };
+    expect(policy).toMatchObject({ requestsEnabled: true, minimumDays: 1, maximumDays: 30, expectedFeeMinor: 0, freeRequestsRemaining: 1 });
 
     // Bounds are policy-enforced.
     await expectCode(member.mutation(api.domain.mutate, operation("customer.membership.freezeRequest", { membershipId: "cm-f", startDate: day(1), days: 45, reason: "Long trip" })), "VALIDATION_ERROR");
@@ -61,6 +64,8 @@ describe("member freeze requests", () => {
     const first = await member.mutation(api.domain.mutate, operation("customer.membership.freezeRequest", { membershipId: "cm-f", startDate: day(1), days: 5, reason: "Exams." })) as { id: string };
     const approvedFirst = await staff.mutation(api.domain.mutate, operation("memberships.freeze_request.decide", { requestId: first.id, decision: "approved" })) as { status: string; feeMinor: number };
     expect(approvedFirst).toMatchObject({ status: "approved", feeMinor: 0 });
+    const policyAfterFirst = await member.query(api.domain.query, operation("customer.membership.freezePolicy", { membershipId: "cm-f" })) as { expectedFeeMinor: number; freeRequestsRemaining: number };
+    expect(policyAfterFirst).toMatchObject({ expectedFeeMinor: 10_000, freeRequestsRemaining: 0 });
 
     const frozen = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "membership").eq("publicId", "membership-f")).unique())!.data as Record<string, any>); // eslint-disable-line @typescript-eslint/no-explicit-any
     expect(frozen.activeFreeze).toMatchObject({ startDate: day(1) });
@@ -95,5 +100,28 @@ describe("member freeze requests", () => {
     });
     const member = t.withIdentity({ subject: "clerk-customer-freeze" });
     await expectCode(member.mutation(api.domain.mutate, operation("customer.membership.freezeRequest", { membershipId: "cm-f", startDate: day(1), days: 5, reason: "Trip." })), "VALIDATION_ERROR");
+  });
+
+  it("keeps pending requests and decisions inside the staff member's branch scope", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-freeze")).unique())!;
+      const main = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "branch-freeze")).unique())!;
+      const other = await ctx.db.insert("branches", { organizationId: organization._id, publicId: "branch-other", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now });
+      const manager = await ctx.db.insert("users", { publicId: "manager-freeze", authSubject: "clerk-manager-freeze", email: "manager@freeze.example", fullName: "Manager Freeze", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: manager, role: "manager", branchIds: [main._id], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "member", publicId: "member-other", branchId: other, memberPublicId: "member-other", createdAt: now, updatedAt: now, data: { id: "member-other", fullName: "Other Member", memberNumber: "OTHER-1", status: "active", phone: "+962790000111", homeBranchId: "branch-other", createdAt: new Date(now).toISOString() } });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "membership", publicId: "membership-other", branchId: other, memberPublicId: "member-other", createdAt: now, updatedAt: now, data: { id: "membership-other", memberId: "member-other", planId: "plan-f", homeBranchId: "branch-other", startDate: day(-5), endDate: day(20), adjustments: [], freezes: [], frozenDaysUsed: 0, createdAt: new Date(now).toISOString() } });
+      // Legacy requests may predate the branchId column. The membership still
+      // owns their authorization boundary.
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "freezeRequest", publicId: "freeze-other", memberPublicId: "member-other", createdAt: now, updatedAt: now, data: { id: "freeze-other", membershipId: "membership-other", memberId: "member-other", memberName: "Other Member", startDate: day(2), days: 3, reason: "Travel", status: "pending", expectedFeeMinor: 0, requestedAt: new Date(now).toISOString() } });
+    });
+
+    const manager = t.withIdentity({ subject: "clerk-manager-freeze" });
+    const visible = await manager.query(api.domain.query, operation("memberships.freeze_requests.list", { status: "pending" })) as Array<{ id: string }>;
+    expect(visible).toHaveLength(0);
+    await expectCode(manager.mutation(api.domain.mutate, operation("memberships.freeze_request.decide", { requestId: "freeze-other", decision: "denied", note: "Wrong branch" })), "NOT_FOUND");
   });
 });

@@ -14,7 +14,7 @@ import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
 import { Input, Textarea } from "@/components/ui/input";
-import { TableSkeleton } from "@/components/ui/misc";
+import { Skeleton, TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -190,12 +190,17 @@ function FreezeRequestsPanel() {
     successMessage: "Freeze request decided and audited.",
   });
 
+  if (requestsQuery.isLoading) return <Skeleton className="h-24 w-full" />;
+  if (requestsQuery.isError) {
+    return <section className="rounded-lg border border-line bg-surface p-4" aria-label="Freeze requests"><ErrorState title="Freeze requests could not be loaded" description="No request has been approved or denied. Retry before handling member requests." onRetry={() => requestsQuery.refetch()} /></section>;
+  }
   const pending = requestsQuery.data ?? [];
   if (pending.length === 0) return null;
   return (
     <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
       <p className="eyebrow">Member requests</p>
       <h2 className="mt-1 text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
+      <p className="mt-1 text-[11.5px] text-ink-3">RIVET recalculates any fee when you approve, using the gym&apos;s current policy.</p>
       <div className="mt-3 grid gap-2">
         {pending.map((request) => (
           <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
@@ -204,7 +209,7 @@ function FreezeRequestsPanel() {
               <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? `fee JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : "free under policy"}</p>
             </div>
             <div className="flex gap-1.5">
-              <Button size="sm" variant="signal" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve{request.expectedFeeMinor > 0 ? ` · JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : ""}</Button>
+              <Button size="sm" variant="signal" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>
               <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Deny</Button>
             </div>
           </div>
@@ -225,4 +230,3 @@ function FreezeRequestsPanel() {
     </section>
   );
 }
-

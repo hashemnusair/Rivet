@@ -19,7 +19,7 @@ async function seed(t: TestConvex<typeof schema>) {
     const today = new Date(now).toISOString().slice(0, 10);
     const in30 = new Date(now + 30 * DAY_MS).toISOString().slice(0, 10);
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "referrer-1", branchId: branch, memberPublicId: "referrer-1", createdAt: now, updatedAt: now, data: { id: "referrer-1", fullName: "Rania Referrer", memberNumber: "MAIN-1", status: "active", phone: "+962790000001", homeBranchId: "branch-referral", createdAt: new Date(now).toISOString() } });
-    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "membership-referrer", memberPublicId: "referrer-1", createdAt: now, updatedAt: now, data: { id: "membership-referrer", memberId: "referrer-1", planId: "plan-month", startDate: today, endDate: in30, adjustments: [], createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "membership-referrer", branchId: branch, memberPublicId: "referrer-1", createdAt: now, updatedAt: now, data: { id: "membership-referrer", memberId: "referrer-1", planId: "plan-month", homeBranchId: "branch-referral", startDate: today, endDate: in30, adjustments: [], createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "plan", publicId: "plan-month", createdAt: now, updatedAt: now, data: { id: "plan-month", name: "Monthly", code: "MONTH", kind: "time", durationDays: 30, basePrice: { amount: 45_000, currency: "JOD" }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 0, status: "active" } });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { id: "settings", operationalPolicies: { entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: false }, membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 }, personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 }, referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 10, windowDays: 90 }, operatingHours: [], trialSchedules: [] } } });
   });
@@ -97,5 +97,42 @@ describe("referral rewards", () => {
     await owner.mutation(api.domain.mutate, operation("memberships.sale", { memberId, planId: "plan-month", startDate: new Date().toISOString().slice(0, 10) }));
     const rewards = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "referralReward")).collect());
     expect(rewards).toHaveLength(0);
+  });
+
+  it("does not treat a future scheduled term as the referrer's active membership", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "membership").eq("publicId", "membership-referrer")).unique())!;
+      const value = row.data as Record<string, unknown>;
+      await ctx.db.patch(row._id, { data: { ...value, startDate: new Date(Date.now() + 10 * DAY_MS).toISOString().slice(0, 10), endDate: new Date(Date.now() + 40 * DAY_MS).toISOString().slice(0, 10) } });
+    });
+    const owner = t.withIdentity({ subject: "clerk-owner-referral" });
+    const referredId = await createReferred(t, "8");
+    await owner.mutation(api.domain.mutate, operation("memberships.sale", { memberId: referredId, planId: "plan-month", startDate: new Date().toISOString().slice(0, 10) }));
+    const reward = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "referralReward")).first())!.data as Record<string, unknown>);
+    expect(reward).toMatchObject({ status: "no_active_membership", days: 0 });
+  });
+
+  it("does not accept a referrer outside a branch-scoped staff member's access", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-referral")).unique())!;
+      const main = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "branch-referral")).unique())!;
+      const other = await ctx.db.insert("branches", { organizationId: organization._id, publicId: "branch-other", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now });
+      const manager = await ctx.db.insert("users", { publicId: "manager-referral", authSubject: "clerk-manager-referral", email: "manager@referral.example", fullName: "Manager Referral", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: manager, role: "manager", branchIds: [main._id], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "member", publicId: "referrer-other", branchId: other, memberPublicId: "referrer-other", createdAt: now, updatedAt: now, data: { id: "referrer-other", fullName: "Other Referrer", memberNumber: "OTHER-1", status: "active", phone: "+962790000222", homeBranchId: "branch-other", createdAt: new Date(now).toISOString() } });
+    });
+    const manager = t.withIdentity({ subject: "clerk-manager-referral" });
+    await expect(manager.mutation(api.domain.mutate, operation("members.create", {
+      fullName: "Cross Branch Referral",
+      phone: "+962790000223",
+      homeBranchId: "branch-referral",
+      preferredLanguage: "en",
+      referredByMemberId: "referrer-other",
+    }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
   });
 });

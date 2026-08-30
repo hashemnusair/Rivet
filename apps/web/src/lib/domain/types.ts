@@ -1046,6 +1046,15 @@ export interface CreateMemberMembershipSaleResult {
 
 export type FreezeRequestStatus = "pending" | "approved" | "denied";
 
+export interface CustomerFreezePolicy {
+  requestsEnabled: boolean;
+  minimumDays: number;
+  maximumDays: number;
+  expectedFeeMinor: number;
+  currency: string;
+  freeRequestsRemaining: number;
+}
+
 export interface MembershipFreezeRequest {
   id: UUID;
   membershipId: UUID;

@@ -1447,6 +1447,23 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  getCustomerFreezePolicy(customerMembershipId: T.UUID): Promise<T.CustomerFreezePolicy> {
+    return this.respond(() => {
+      const { member } = this.customerOperationalMembership(customerMembershipId);
+      const policy = this.db.operationalPolicies.memberFreezes;
+      const windowStart = Date.now() - policy.windowDays * 86_400_000;
+      const approved = this.freezeRequests.filter((candidate) => candidate.memberId === member.id && candidate.status === "approved" && Date.parse(candidate.decidedAt ?? candidate.requestedAt) >= windowStart).length;
+      return {
+        requestsEnabled: policy.requestsEnabled,
+        minimumDays: this.db.operationalPolicies.membership.minimumFreezeDays,
+        maximumDays: policy.maxDaysPerFreeze,
+        expectedFeeMinor: approved < policy.freeFreezesPerWindow ? 0 : policy.extraFreezeFeeMinor,
+        currency: this.db.organization.currency,
+        freeRequestsRemaining: Math.max(0, policy.freeFreezesPerWindow - approved),
+      };
+    });
+  }
+
   listCustomerFreezeRequests(customerMembershipId: T.UUID): Promise<T.MembershipFreezeRequest[]> {
     return this.respond(() => {
       const { membership } = this.customerOperationalMembership(customerMembershipId);
@@ -1457,7 +1474,14 @@ export class MockGymOSApi implements GymOSApi {
   listFreezeRequests(query: { status?: T.FreezeRequestStatus } = {}): Promise<T.MembershipFreezeRequest[]> {
     return this.respond(() => {
       this.require("memberships.freeze");
-      return this.freezeRequests.filter((candidate) => !query.status || candidate.status === query.status).map((candidate) => ({ ...candidate }));
+      return this.freezeRequests
+        .filter((candidate) => {
+          const membership = this.db.memberships.find((item) => item.id === candidate.membershipId);
+          const member = membership ? this.db.members.find((item) => item.id === membership.memberId) : undefined;
+          return Boolean(member && this.branchIsVisible(member.homeBranchId));
+        })
+        .filter((candidate) => !query.status || candidate.status === query.status)
+        .map((candidate) => ({ ...candidate }));
     });
   }
 
@@ -1467,6 +1491,9 @@ export class MockGymOSApi implements GymOSApi {
       if (input.decision === "denied" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to deny a freeze request.");
       const record = this.freezeRequests.find((candidate) => candidate.id === input.requestId);
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Freeze request not found.");
+      const membership = this.db.memberships.find((candidate) => candidate.id === record.membershipId);
+      const member = membership ? this.db.members.find((candidate) => candidate.id === membership.memberId) : undefined;
+      if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Freeze request not found.");
       if (record.status !== "pending") throw ApiError.of(ERR.CONFLICT, "This freeze request was already decided.");
       return record;
     });
@@ -4111,7 +4138,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       let referredByName: string | undefined;
       if (input.referredByMemberId) {
-        const referrer = this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived");
+        const referrer = this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived" && this.branchIsVisible(candidate.homeBranchId));
         if (!referrer) throw ApiError.of(ERR.NOT_FOUND, "The referring member was not found.");
         referredByName = referrer.fullName;
       }
@@ -5062,9 +5089,8 @@ export class MockGymOSApi implements GymOSApi {
     const windowStart = Date.now() - policy.windowDays * 86_400_000;
     const used = this.referralRewards.filter((reward) => reward.referrerId === referrerId && Date.parse(reward.createdAt) >= windowStart).reduce((sum, reward) => sum + reward.days, 0);
     const grant = Math.max(0, Math.min(policy.rewardDays, policy.maxRewardDaysPerWindow - used));
-    const today = this.today();
     const active = this.db.memberships
-      .filter((membership) => membership.memberId === referrerId && !membership.cancelledAt && membership.endDate >= today)
+      .filter((membership) => membership.memberId === referrerId && ["active", "expiring", "frozen"].includes(this.membershipStatusOf(membership)))
       .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
     let status = "applied";
     if (grant === 0) status = "cap_reached";

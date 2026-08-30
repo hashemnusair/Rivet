@@ -281,6 +281,7 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 function FreezeRequestCard({ membershipId }: { membershipId: string }) {
   const invalidate = useInvalidate();
   const requestsQuery = useApiQuery(["customerFreezeRequests", membershipId] as const, (api) => api.listCustomerFreezeRequests(membershipId));
+  const policyQuery = useApiQuery(["customerFreezePolicy", membershipId] as const, (api) => api.getCustomerFreezePolicy(membershipId));
   const [open, setOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [days, setDays] = useState(7);
@@ -293,10 +294,15 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
       setOpen(false);
       setStartDate("");
       setReason("");
-      await invalidate([["customerFreezeRequests", membershipId]]);
+      await invalidate([["customerFreezeRequests", membershipId], ["customerFreezePolicy", membershipId]]);
     },
     successMessage: "Freeze request sent. The gym will confirm it.",
   });
+
+  if (requestsQuery.isLoading || policyQuery.isLoading) return <Skeleton className="h-24 w-full" />;
+  if (requestsQuery.isError || policyQuery.isError) return <section className="rounded-lg border border-line bg-surface p-4"><ErrorState title="Freeze details could not be loaded" description="RIVET could not safely check your existing requests or the gym's current policy." onRetry={() => { void requestsQuery.refetch(); void policyQuery.refetch(); }} /></section>;
+  const policy = policyQuery.data!;
+  if (!policy.requestsEnabled && !pending && !latestDecided) return null;
 
   return (
     <section className="rounded-lg border border-line bg-surface p-4">
@@ -308,10 +314,10 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
               ? `Requested ${pending.days} days from ${pending.startDate} — waiting for the gym${pending.expectedFeeMinor > 0 ? ` (expected fee JOD ${(pending.expectedFeeMinor / 1000).toFixed(3)})` : ""}.`
               : latestDecided
                 ? `Last request ${latestDecided.status}${latestDecided.status === "approved" && (latestDecided.feeMinor ?? 0) > 0 ? ` · fee JOD ${((latestDecided.feeMinor ?? 0) / 1000).toFixed(3)}` : ""}${latestDecided.decisionNote ? ` — ${latestDecided.decisionNote}` : ""}.`
-                : "Need a break? Ask the gym to pause your membership."}
+                : policy.requestsEnabled ? "Need a break? Ask the gym to pause your membership." : "This gym is not accepting new freeze requests right now."}
           </p>
         </div>
-        {!pending ? <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>Request a freeze</Button> : null}
+        {!pending && policy.requestsEnabled ? <Button size="sm" variant="secondary" onClick={() => { setDays(Math.max(policy.minimumDays, Math.min(7, policy.maximumDays))); setOpen(true); }}>Request a freeze</Button> : null}
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
@@ -320,13 +326,16 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
           </DialogHeader>
           <DialogBody className="grid gap-3">
             <label className="grid gap-1.5 text-[12px] font-medium">From<Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-            <label className="grid gap-1.5 text-[12px] font-medium">Days<Input type="number" min={1} max={180} value={days} onChange={(event) => setDays(Number(event.target.value))} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">Days<Input type="number" min={policy.minimumDays} max={policy.maximumDays} value={days} onChange={(event) => setDays(Number(event.target.value))} /><span className="text-[11px] font-normal text-ink-3">Choose {policy.minimumDays} to {policy.maximumDays} days.</span></label>
             <label className="grid gap-1.5 text-[12px] font-medium">Why?<Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travel, injury, exams…" /></label>
-            <p className="text-[11px] text-ink-3">The gym reviews every request. Depending on its policy, a freeze may carry a fee collected at the desk.</p>
+            <div className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[12px] text-ink-2">
+              {policy.expectedFeeMinor > 0 ? <p>This request currently carries a <MoneyText money={{ amount: policy.expectedFeeMinor, currency: policy.currency }} /> fee, collected at the desk if approved.</p> : <p>This request is free under the gym&apos;s current policy.</p>}
+              <p className="mt-1 text-[11px] text-ink-3">The gym recalculates the fee when it approves the request.</p>
+            </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button loading={submit.isPending} disabled={!startDate || !reason.trim() || days < 1} onClick={() => submit.mutate()}>Send request</Button>
+            <Button loading={submit.isPending} disabled={!startDate || !reason.trim() || !Number.isSafeInteger(days) || days < policy.minimumDays || days > policy.maximumDays} onClick={() => submit.mutate()}>Send request</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
