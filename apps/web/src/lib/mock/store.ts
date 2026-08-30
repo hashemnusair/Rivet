@@ -84,6 +84,9 @@ export interface MemberRecord {
   updatedAt?: string;
   mergedIntoMemberId?: UUID;
   mergedMemberIds?: UUID[];
+  importBatchId?: UUID;
+  importRowNumber?: number;
+  migrationCutoffDate?: string;
   createdAt: string;
 }
 
@@ -109,6 +112,13 @@ export interface MembershipRecord {
   adjustments: MembershipAdjustment[];
   cancelledAt?: string;
   cancellationReason?: string;
+  migration?: {
+    importBatchId: UUID;
+    sourceRowNumber: number;
+    sourcePlanName?: string;
+    cutoffDate: string;
+    financialPostingEligible: false;
+  };
   createdAt: string;
 }
 

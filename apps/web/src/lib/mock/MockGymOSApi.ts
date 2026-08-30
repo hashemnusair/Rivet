@@ -622,6 +622,28 @@ function parseImportCsv(csv: string): string[][] {
   return rows;
 }
 
+function validImportDate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function normalizedImportNumber(value: string): string {
+  const digits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+  return value.replace(/[٠-٩۰-۹]/g, (character) => String(digits.indexOf(character) % 10)).replace(/٬/g, ",").replace(/٫/g, ".").trim();
+}
+
+function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
+  if (!value?.trim()) return {};
+  const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return { error: `Enter ${currency} amounts as positive numbers` };
+  const digits = exponentFor(currency);
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > digits) return { error: `${currency} amounts can have at most ${digits} decimal place${digits === 1 ? "" : "s"}` };
+  const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, "0") || 0);
+  return Number.isSafeInteger(amount) && amount >= 0 ? { amount } : { error: `Enter a valid ${currency} amount` };
+}
+
 function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, key: string) => string | number | undefined): I[] {
   if (!sort) return items;
   const desc = sort.startsWith("-");
@@ -666,6 +688,7 @@ export class MockGymOSApi implements GymOSApi {
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
+  private memberImportPaymentEvidence: Array<{ id: string; memberId: string; membershipId: string; amount: T.Money; lastPaymentDate: string; sourceReference?: string; importBatchId: string; sourceRowNumber: number }> = [];
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
   private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
   private publicApplicationRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
@@ -1531,14 +1554,41 @@ export class MockGymOSApi implements GymOSApi {
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
       const phoneIndex = header.findIndex((item) => ["phone", "mobile", "mobile_number"].includes(item));
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
+      const planIndex = header.findIndex((item) => ["source_plan_name", "plan", "plan_name", "membership_plan"].includes(item));
+      const membershipStartIndex = header.findIndex((item) => ["membership_start_date", "membership_start", "start_date"].includes(item));
+      const membershipEndIndex = header.findIndex((item) => ["membership_end_date", "membership_end", "end_date", "expiry_date"].includes(item));
+      const remainingVisitsIndex = header.findIndex((item) => ["remaining_visits", "visits_left"].includes(item));
+      const freezeStartIndex = header.findIndex((item) => ["freeze_start_date", "freeze_start"].includes(item));
+      const freezeEndIndex = header.findIndex((item) => ["freeze_end_date", "freeze_end"].includes(item));
+      const openingBalanceIndex = header.findIndex((item) => ["opening_balance", "outstanding_balance"].includes(item));
+      const historicalPaidIndex = header.findIndex((item) => ["historical_paid_total", "total_paid"].includes(item));
+      const historicalPaymentDateIndex = header.findIndex((item) => ["historical_payment_date", "last_payment_date"].includes(item));
+      const historicalPaymentReferenceIndex = header.findIndex((item) => ["historical_payment_reference", "payment_reference"].includes(item));
       if (nameIndex < 0 || phoneIndex < 0) throw ApiError.of(ERR.VALIDATION, "CSV headers must include full name and phone columns.", { fieldErrors: { csv: ["Required headers: full_name, phone"] } });
       if (rows.length > 10_000) throw ApiError.of(ERR.VALIDATION, "A single import can contain at most 10,000 members.", { fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
+      const migrationCutoffDate = input.migrationCutoffDate ?? this.today();
+      if (!validImportDate(migrationCutoffDate)) throw ApiError.of(ERR.VALIDATION, "Choose a valid migration cutoff date.", { fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
+      const planMappings = new Map(Object.entries(input.planMappings ?? {}).map(([sourceName, planId]) => [sourceName.trim().toLowerCase(), planId]));
       const seenPhones = new Set<string>();
       const seenEmails = new Set<string>();
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
         const fullName = values[nameIndex]?.trim() ?? "";
         const phone = normalizePhoneForStorage(values[phoneIndex] ?? "", this.db.organization.phoneCountryCallingCode);
         const email = emailIndex >= 0 ? normalizeOptionalEmail(values[emailIndex]) : undefined;
+        const sourcePlanName = planIndex >= 0 ? values[planIndex]?.trim() || undefined : undefined;
+        const planId = sourcePlanName ? planMappings.get(sourcePlanName.toLowerCase()) : undefined;
+        const plan = planId ? this.db.plans.find((candidate) => candidate.id === planId) : undefined;
+        const membershipStartDate = membershipStartIndex >= 0 ? values[membershipStartIndex]?.trim() || undefined : undefined;
+        const membershipEndDate = membershipEndIndex >= 0 ? values[membershipEndIndex]?.trim() || undefined : undefined;
+        const remainingVisitsRaw = remainingVisitsIndex >= 0 ? values[remainingVisitsIndex]?.trim() || undefined : undefined;
+        const remainingVisits = remainingVisitsRaw && /^\d+$/.test(normalizedImportNumber(remainingVisitsRaw)) ? Number(normalizedImportNumber(remainingVisitsRaw)) : undefined;
+        const freezeStartDate = freezeStartIndex >= 0 ? values[freezeStartIndex]?.trim() || undefined : undefined;
+        const freezeEndDate = freezeEndIndex >= 0 ? values[freezeEndIndex]?.trim() || undefined : undefined;
+        const openingBalance = importedMoneyMinor(openingBalanceIndex >= 0 ? values[openingBalanceIndex] : undefined, this.db.organization.currency);
+        const historicalPaid = importedMoneyMinor(historicalPaidIndex >= 0 ? values[historicalPaidIndex] : undefined, this.db.organization.currency);
+        const historicalPaymentDate = historicalPaymentDateIndex >= 0 ? values[historicalPaymentDateIndex]?.trim() || undefined : undefined;
+        const historicalPaymentReference = historicalPaymentReferenceIndex >= 0 ? values[historicalPaymentReferenceIndex]?.trim().slice(0, 160) || undefined : undefined;
+        const hasMembershipData = Boolean(sourcePlanName || membershipStartDate || membershipEndDate || remainingVisitsRaw || freezeStartDate || freezeEndDate || openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference);
         const phoneKey = canonicalPhoneKey(phone, this.db.organization.phoneCountryCallingCode);
         const emailKey = email?.toLowerCase() ?? "";
         const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
@@ -1549,11 +1599,30 @@ export class MockGymOSApi implements GymOSApi {
           ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
           ...(isValidLeadPhone(phone, this.db.organization.phoneCountryCallingCode) ? [] : ["Enter a valid phone number"]),
           ...(isValidOptionalEmail(email) ? [] : ["Enter a valid email address"]),
+          ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
+          ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
+          ...(planId && (!plan || plan.status === "archived") ? ["The mapped RIVET plan is unavailable"] : []),
+          ...(plan && plan.branchAccess === "selected" && !plan.branchIds.includes(input.branchId) ? ["The mapped plan is not available at this branch"] : []),
+          ...(sourcePlanName && !validImportDate(membershipStartDate) ? ["Enter a valid membership start date"] : []),
+          ...(sourcePlanName && !validImportDate(membershipEndDate) ? ["Enter a valid membership end date"] : []),
+          ...(validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && membershipEndDate < membershipStartDate ? ["Membership end date must be on or after its start date"] : []),
+          ...(validImportDate(membershipEndDate) && membershipEndDate < migrationCutoffDate ? ["Only active or scheduled membership terms can be imported"] : []),
+          ...(plan?.kind === "visits" && (remainingVisits == null || remainingVisits < 0 || remainingVisits > (plan.visitAllowance ?? 0)) ? [`Enter visits remaining between 0 and ${plan.visitAllowance ?? 0}`] : []),
+          ...(remainingVisitsRaw && remainingVisits == null ? ["Visits remaining must be a whole number"] : []),
+          ...((freezeStartDate || freezeEndDate) && (!validImportDate(freezeStartDate) || !validImportDate(freezeEndDate)) ? ["Enter both current-freeze dates"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && freezeEndDate < freezeStartDate ? ["Freeze end date must be on or after its start date"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && (migrationCutoffDate < freezeStartDate || migrationCutoffDate > freezeEndDate) ? ["A current freeze must include the migration cutoff date"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && (freezeStartDate < membershipStartDate || freezeEndDate > membershipEndDate) ? ["Freeze dates must sit inside the membership term"] : []),
+          ...(openingBalance.error ? [openingBalance.error] : []),
+          ...(historicalPaid.error ? [historicalPaid.error] : []),
+          ...((openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference) && !sourcePlanName ? ["Financial migration evidence requires a membership term"] : []),
+          ...(historicalPaid.amount && !validImportDate(historicalPaymentDate) ? ["Historical amount paid requires its last payment date"] : []),
+          ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
           ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
         ];
-        return { rowNumber: index + 2, fullName, phone, email, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
+        return { rowNumber: index + 2, fullName, phone, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
-      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, createdAt: nowISO() };
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
       return preview;
     });
@@ -1596,11 +1665,55 @@ export class MockGymOSApi implements GymOSApi {
           preferredLanguage: "en",
           marketingOptIn: true,
           marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
+          importBatchId: preview.id,
+          importRowNumber: row.rowNumber,
+          migrationCutoffDate: preview.migrationCutoffDate,
           createdAt: nowISO(),
         };
         this.db.members.push(member);
         this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
         this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
+        if (row.planId) {
+          const plan = this.db.plans.find((candidate) => candidate.id === row.planId && candidate.status === "active");
+          if (!plan) throw ApiError.of(ERR.CONFLICT, "A mapped plan changed after preview. Run the preview again.");
+          const membershipId = mockUuid();
+          const activeFreeze: T.FreezePeriod | undefined = row.freezeStartDate && row.freezeEndDate ? { id: mockUuid(), membershipId, startDate: row.freezeStartDate, endDate: row.freezeEndDate, status: "active", reason: "Current freeze imported from the previous system", createdById: this.actor().id, createdAt: nowISO() } : undefined;
+          const membership: MembershipRecord = {
+            id: membershipId,
+            organizationId: this.db.organization.id,
+            memberId: member.id,
+            planId: plan.id,
+            homeBranchId: branch.id,
+            startDate: row.membershipStartDate!,
+            endDate: row.membershipEndDate!,
+            ...(plan.kind === "visits" ? { totalVisits: plan.visitAllowance, remainingVisits: row.remainingVisits } : {}),
+            salePrice: money(0, this.db.organization.currency),
+            discount: money(0, this.db.organization.currency),
+            discountApprovalStatus: "none",
+            soldById: this.actor().id,
+            frozenDaysUsed: 0,
+            activeFreeze,
+            freezes: activeFreeze ? [activeFreeze] : [],
+            adjustments: [],
+            migration: { importBatchId: preview.id, sourceRowNumber: row.rowNumber, sourcePlanName: row.sourcePlanName, cutoffDate: preview.migrationCutoffDate ?? this.today(), financialPostingEligible: false },
+            createdAt: nowISO(),
+          };
+          this.db.memberships.push(membership);
+          if ((row.openingBalanceMinor ?? 0) > 0) {
+            const amount = row.openingBalanceMinor!;
+            const chargeId = mockUuid();
+            this.db.charges.push({ id: chargeId, organizationId: this.db.organization.id, memberId: member.id, membershipId, description: `Opening balance at ${preview.migrationCutoffDate}`, subtotal: money(amount, this.db.organization.currency), discount: money(0, this.db.organization.currency), tax: money(0, this.db.organization.currency), total: money(amount, this.db.organization.currency), paidAmount: money(0, this.db.organization.currency), outstandingAmount: money(amount, this.db.organization.currency), status: "unpaid", issueDate: preview.migrationCutoffDate, dueDate: preview.migrationCutoffDate, migration: { importBatchId: preview.id, sourceRowNumber: row.rowNumber, kind: "opening_receivable", accountingPostingEligible: false }, createdAt: nowISO() });
+            this.activity({ memberId: member.id, type: "note", title: `Opening balance imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Outstanding as of ${preview.migrationCutoffDate}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: preview.id, chargeId, sourceRowNumber: row.rowNumber } });
+          }
+          if ((row.historicalPaidMinor ?? 0) > 0) {
+            const amount = row.historicalPaidMinor!;
+            const evidenceId = mockUuid();
+            this.memberImportPaymentEvidence.push({ id: evidenceId, memberId: member.id, membershipId, amount: money(amount, this.db.organization.currency), lastPaymentDate: row.historicalPaymentDate!, sourceReference: row.historicalPaymentReference, importBatchId: preview.id, sourceRowNumber: row.rowNumber });
+            this.activity({ memberId: member.id, type: "note", title: `Historical payment evidence imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Read-only evidence through ${row.historicalPaymentDate}${row.historicalPaymentReference ? ` · ${row.historicalPaymentReference}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: preview.id, evidenceId, sourceRowNumber: row.rowNumber } });
+          }
+          this.activity({ memberId: member.id, type: "note", title: `${plan.name} membership history imported`, body: `${row.membershipStartDate} → ${row.membershipEndDate} · source cutoff ${preview.migrationCutoffDate}`, meta: { importBatchId: preview.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+          this.audit({ category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${member.fullName} · ${plan.name}`, summary: `Imported active or scheduled membership history from row ${row.rowNumber}`, after: { startDate: row.membershipStartDate ?? null, endDate: row.membershipEndDate ?? null, activeFreeze: activeFreeze ? "yes" : "no", openingBalanceMinor: row.openingBalanceMinor ?? 0, historicalPaidMinor: row.historicalPaidMinor ?? 0, importBatchId: preview.id, financialPostingEligible: "no" } });
+        }
         row.status = "committed";
         row.memberId = member.id;
         createdMemberIds.push(member.id);
@@ -1623,7 +1736,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listMemberImports(): Promise<MemberImportSummary[]> {
-    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
+    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
   }
 
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> {
@@ -1649,8 +1762,15 @@ export class MockGymOSApi implements GymOSApi {
       let skippedCount = 0;
       for (const row of createdRows.slice(cursor, end)) {
         const member = this.db.members.find((candidate) => candidate.id === row.memberId);
-        const used = this.db.memberships.some((membership) => membership.memberId === row.memberId) || this.db.charges.some((charge) => charge.memberId === row.memberId) || this.db.payments.some((payment) => payment.memberId === row.memberId) || this.db.checkIns.some((checkIn) => checkIn.memberId === row.memberId);
+        const memberships = this.db.memberships.filter((membership) => membership.memberId === row.memberId);
+        const charges = this.db.charges.filter((charge) => charge.memberId === row.memberId);
+        const importedMemberships = memberships.filter((membership) => membership.migration?.importBatchId === item.id && membership.adjustments.length === 0 && !membership.cancelledAt);
+        const importedCharges = charges.filter((charge) => charge.migration?.importBatchId === item.id && charge.paidAmount.amount === 0 && charge.status === "unpaid");
+        const used = memberships.length !== importedMemberships.length || charges.length !== importedCharges.length || this.db.payments.some((payment) => payment.memberId === row.memberId) || this.db.checkIns.some((checkIn) => checkIn.memberId === row.memberId) || member?.updatedAt != null;
         if (!member || member.status !== "active" || used) { skippedCount += 1; continue; }
+        this.db.memberships = this.db.memberships.filter((membership) => !importedMemberships.some((candidate) => candidate.id === membership.id));
+        this.db.charges = this.db.charges.filter((charge) => !importedCharges.some((candidate) => candidate.id === charge.id));
+        this.memberImportPaymentEvidence = this.memberImportPaymentEvidence.filter((evidence) => !(evidence.memberId === member.id && evidence.importBatchId === item.id));
         member.status = "archived";
         member.archivedAt = nowISO();
         archivedCount += 1;

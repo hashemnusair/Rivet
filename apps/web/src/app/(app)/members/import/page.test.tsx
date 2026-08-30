@@ -38,9 +38,10 @@ describe("member import", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Check members" }));
 
-    await waitFor(() => expect(previewImport).toHaveBeenCalledWith(expect.objectContaining({ csv: "full_name,phone,email\r\nRana Odeh,0798765432,rana.odeh@example.com", branchId: BRANCH_ABD, sourceFileName: "current-members.csv", sourceKind: "csv", columnMapping: { fullName: 0, phone: 1, email: 2 } })));
+    await waitFor(() => expect(previewImport).toHaveBeenCalledWith(expect.objectContaining({ csv: expect.stringContaining("Rana Odeh,0798765432,rana.odeh@example.com"), branchId: BRANCH_ABD, sourceFileName: "current-members.csv", sourceKind: "csv", columnMapping: { fullName: 0, phone: 1, email: 2 }, migrationCutoffDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), planMappings: {} })));
     expect(await screen.findByRole("heading", { name: "Review before import" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import 1 member" })).toBeInTheDocument();
+    expect(screen.getByText("Bring over current memberships")).toBeInTheDocument();
   });
 
   it("keeps pasting CSV as an explicit secondary path", async () => {

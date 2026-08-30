@@ -1822,6 +1822,12 @@ export interface Charge {
   dueDate?: ISODate;
   /** Server-derived. False for future, void, and refunded invoices. */
   collectible?: boolean;
+  migration?: {
+    importBatchId: UUID;
+    sourceRowNumber: number;
+    kind: "opening_receivable";
+    accountingPostingEligible: false;
+  };
   createdAt: ISODateTime;
 }
 

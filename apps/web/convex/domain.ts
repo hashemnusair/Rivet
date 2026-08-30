@@ -5789,6 +5789,43 @@ function firstHeader(headers: string[], names: string[]): number {
   return headers.findIndex((header) => names.includes(header));
 }
 
+function validImportDate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function importCurrencyDigits(currency: string): number {
+  if (["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"].includes(currency.toUpperCase())) return 3;
+  if (["CLP", "ISK", "JPY", "KRW"].includes(currency.toUpperCase())) return 0;
+  return 2;
+}
+
+function normalizedImportNumber(value: string): string {
+  const digits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+  return value
+    .replace(/[٠-٩۰-۹]/g, (character) => String(digits.indexOf(character) % 10))
+    .replace(/٬/g, ",")
+    .replace(/٫/g, ".")
+    .trim();
+}
+
+function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
+  if (!value?.trim()) return {};
+  const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return { error: `Enter ${currency} amounts as positive numbers` };
+  const digits = importCurrencyDigits(currency);
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > digits) return { error: `${currency} amounts can have at most ${digits} decimal place${digits === 1 ? "" : "s"}` };
+  const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, "0") || 0);
+  if (!Number.isSafeInteger(amount) || amount < 0) return { error: `Enter a valid ${currency} amount` };
+  return { amount };
+}
+
+function normalizedPlanMapping(value: unknown): Map<string, string> {
+  return new Map(Object.entries(data(value)).flatMap(([sourceName, planId]) => typeof planId === "string" && planId.trim() ? [[normalize(sourceName), planId.trim()]] : []));
+}
+
 function memberImportView(value: Data, includeRows: boolean): Data {
   const rows = arrayValue(value.rows).map(data);
   return {
@@ -5806,6 +5843,12 @@ function memberImportView(value: Data, includeRows: boolean): Data {
     sourceKind: optionalString(value.sourceKind),
     sourceHeaders: arrayValue(value.sourceHeaders).map(String),
     columnMapping: data(value.columnMapping),
+    migrationCutoffDate: optionalString(value.migrationCutoffDate),
+    planMappings: data(value.planMappings),
+    membershipRows: numberValue(value.membershipRows),
+    openingBalanceRows: numberValue(value.openingBalanceRows),
+    historicalEvidenceRows: numberValue(value.historicalEvidenceRows),
+    currency: optionalString(value.currency),
     undoExpiresAt: optionalString(value.undoExpiresAt),
     createdAt: stringValue(value.createdAt),
     completedAt: optionalString(value.completedAt),
@@ -5829,8 +5872,23 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const nameIndex = firstHeader(headers, ["full_name", "name", "member_name"]);
   const phoneIndex = firstHeader(headers, ["phone", "mobile", "mobile_number"]);
   const emailIndex = firstHeader(headers, ["email", "email_address"]);
+  const planIndex = firstHeader(headers, ["source_plan_name", "plan", "plan_name", "membership_plan"]);
+  const membershipStartIndex = firstHeader(headers, ["membership_start_date", "membership_start", "start_date"]);
+  const membershipEndIndex = firstHeader(headers, ["membership_end_date", "membership_end", "end_date", "expiry_date"]);
+  const remainingVisitsIndex = firstHeader(headers, ["remaining_visits", "visits_left"]);
+  const freezeStartIndex = firstHeader(headers, ["freeze_start_date", "freeze_start"]);
+  const freezeEndIndex = firstHeader(headers, ["freeze_end_date", "freeze_end"]);
+  const openingBalanceIndex = firstHeader(headers, ["opening_balance", "outstanding_balance"]);
+  const historicalPaidIndex = firstHeader(headers, ["historical_paid_total", "total_paid"]);
+  const historicalPaymentDateIndex = firstHeader(headers, ["historical_payment_date", "last_payment_date"]);
+  const historicalPaymentReferenceIndex = firstHeader(headers, ["historical_payment_reference", "payment_reference"]);
   if (nameIndex < 0 || phoneIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name and phone columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone"] } });
   if (rows.length > 10_000) domainError("VALIDATION_ERROR", "A single import can contain at most 10,000 members.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
+  const migrationCutoffDate = optionalString(input.migrationCutoffDate) ?? todayIn(actor.organization.timezone || TZ_FALLBACK);
+  if (!validImportDate(migrationCutoffDate)) domainError("VALIDATION_ERROR", "Choose a valid migration cutoff date.", { correlationId: actor.correlationId, fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
+  const planMappings = normalizedPlanMapping(input.planMappings);
+  const planRecords = await recordsOf(ctx, actor, "plan");
+  const plansById = new Map(planRecords.map((record) => [record.publicId, data(record.data)]));
   const existing = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((member) => member.status !== "archived");
   const callingCode = organizationPhoneCountryCallingCode(actor.organization);
   const existingByPhone = new Map<string, string[]>();
@@ -5848,6 +5906,20 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
     const fullName = stringValue(values[nameIndex]).trim();
     const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
     const email = optionalString(values[emailIndex])?.trim().toLowerCase();
+    const sourcePlanName = optionalString(values[planIndex])?.trim();
+    const planId = sourcePlanName ? planMappings.get(normalize(sourcePlanName)) : undefined;
+    const plan = planId ? plansById.get(planId) : undefined;
+    const membershipStartDate = optionalString(values[membershipStartIndex])?.trim();
+    const membershipEndDate = optionalString(values[membershipEndIndex])?.trim();
+    const remainingVisitsRaw = optionalString(values[remainingVisitsIndex])?.trim();
+    const remainingVisits = remainingVisitsRaw && /^\d+$/.test(normalizedImportNumber(remainingVisitsRaw)) ? Number(normalizedImportNumber(remainingVisitsRaw)) : undefined;
+    const freezeStartDate = optionalString(values[freezeStartIndex])?.trim();
+    const freezeEndDate = optionalString(values[freezeEndIndex])?.trim();
+    const openingBalance = importedMoneyMinor(optionalString(values[openingBalanceIndex]), actor.organization.currency);
+    const historicalPaid = importedMoneyMinor(optionalString(values[historicalPaidIndex]), actor.organization.currency);
+    const historicalPaymentDate = optionalString(values[historicalPaymentDateIndex])?.trim();
+    const historicalPaymentReference = optionalString(values[historicalPaymentReferenceIndex])?.trim().slice(0, 160);
+    const hasMembershipData = Boolean(sourcePlanName || membershipStartDate || membershipEndDate || remainingVisitsRaw || freezeStartDate || freezeEndDate || openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference);
     const phoneKey = canonicalPhoneKey(phone, callingCode);
     const emailKey = normalize(email);
     const duplicateMemberIds = [...new Set([...(existingByPhone.get(phoneKey) ?? []), ...(emailKey ? existingByEmail.get(emailKey) ?? [] : [])])];
@@ -5858,9 +5930,28 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
       ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
       ...(LEAD_PHONE_PATTERN.test(phone) ? [] : ["Enter a valid phone number"]),
       ...(!email || (email.length <= 254 && LEAD_EMAIL_PATTERN.test(email)) ? [] : ["Enter a valid email address"]),
+      ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
+      ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
+      ...(planId && (!plan || plan.status === "archived") ? ["The mapped RIVET plan is unavailable"] : []),
+      ...(plan && plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(branchId) ? ["The mapped plan is not available at this branch"] : []),
+      ...(sourcePlanName && !validImportDate(membershipStartDate) ? ["Enter a valid membership start date"] : []),
+      ...(sourcePlanName && !validImportDate(membershipEndDate) ? ["Enter a valid membership end date"] : []),
+      ...(validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && membershipEndDate < membershipStartDate ? ["Membership end date must be on or after its start date"] : []),
+      ...(validImportDate(membershipEndDate) && membershipEndDate < migrationCutoffDate ? ["Only active or scheduled membership terms can be imported"] : []),
+      ...(plan?.kind === "visits" && (remainingVisits == null || remainingVisits < 0 || remainingVisits > numberValue(plan.visitAllowance)) ? [`Enter visits remaining between 0 and ${numberValue(plan.visitAllowance)}`] : []),
+      ...(remainingVisitsRaw && remainingVisits == null ? ["Visits remaining must be a whole number"] : []),
+      ...((freezeStartDate || freezeEndDate) && (!validImportDate(freezeStartDate) || !validImportDate(freezeEndDate)) ? ["Enter both current-freeze dates"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && freezeEndDate < freezeStartDate ? ["Freeze end date must be on or after its start date"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && (migrationCutoffDate < freezeStartDate || migrationCutoffDate > freezeEndDate) ? ["A current freeze must include the migration cutoff date"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && (freezeStartDate < membershipStartDate || freezeEndDate > membershipEndDate) ? ["Freeze dates must sit inside the membership term"] : []),
+      ...(openingBalance.error ? [openingBalance.error] : []),
+      ...(historicalPaid.error ? [historicalPaid.error] : []),
+      ...((openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference) && !sourcePlanName ? ["Financial migration evidence requires a membership term"] : []),
+      ...(historicalPaid.amount && !validImportDate(historicalPaymentDate) ? ["Historical amount paid requires its last payment date"] : []),
+      ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
-    return { rowNumber: index + 2, fullName, phone, email, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
+    return { rowNumber: index + 2, fullName, phone, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
   });
   const id = newPublicId();
   const now = Date.now();
@@ -5868,10 +5959,106 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const sourceFileName = optionalString(input.sourceFileName)?.trim().slice(0, 180);
   const sourceHeaders = arrayValue(input.sourceHeaders).slice(0, 100).map((header) => stringValue(header).slice(0, 160));
   const columnMapping = data(input.columnMapping);
-  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
+  const rawPlanMappings = Object.fromEntries(Object.entries(data(input.planMappings)).filter(([, value]) => typeof value === "string"));
+  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
   await insertRecord(ctx, actor, "memberImport", value, { branchId });
-  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member CSV · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows`, branchId });
+  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows } });
   return memberImportView({ ...value, createdAt: utcIso(now) }, true);
+}
+
+async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorContext, importData: Data, row: Data, member: Data): Promise<Data> {
+  const planId = optionalString(row.planId);
+  if (!planId) return {};
+  const planRecord = await recordOf(ctx, actor, "plan", planId);
+  const plan = data(planRecord.data);
+  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { correlationId: actor.correlationId });
+  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { correlationId: actor.correlationId });
+  const membershipId = newPublicId();
+  const freezeStartDate = optionalString(row.freezeStartDate);
+  const freezeEndDate = optionalString(row.freezeEndDate);
+  const activeFreeze = freezeStartDate && freezeEndDate ? {
+    id: newPublicId(),
+    membershipId,
+    startDate: freezeStartDate,
+    endDate: freezeEndDate,
+    status: "active",
+    reason: "Current freeze imported from the previous system",
+    createdById: publicUserId(actor.user),
+    createdAt: isoNow(),
+    migrationImported: true,
+  } : undefined;
+  const membership = await insertRecord(ctx, actor, "membership", {
+    id: membershipId,
+    organizationId: publicOrganizationId(actor.organization),
+    memberId: stringValue(member.id),
+    planId,
+    homeBranchId: stringValue(importData.branchId),
+    startDate: stringValue(row.membershipStartDate),
+    endDate: stringValue(row.membershipEndDate),
+    ...(plan.kind === "visits" ? { totalVisits: numberValue(plan.visitAllowance), remainingVisits: numberValue(row.remainingVisits) } : {}),
+    salePrice: money(0, actor.organization.currency),
+    discount: money(0, actor.organization.currency),
+    discountApprovalStatus: "none",
+    soldById: publicUserId(actor.user),
+    frozenDaysUsed: 0,
+    activeFreeze,
+    freezes: activeFreeze ? [activeFreeze] : [],
+    adjustments: [],
+    migration: { importBatchId: stringValue(importData.id), sourceRowNumber: numberValue(row.rowNumber), sourcePlanName: optionalString(row.sourcePlanName), cutoffDate: stringValue(importData.migrationCutoffDate), financialPostingEligible: false },
+    createdAt: isoNow(),
+  }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+  const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id));
+  let chargeId: string | undefined;
+  let chargeVersion: string | undefined;
+  if (numberValue(row.openingBalanceMinor) > 0) {
+    chargeId = newPublicId();
+    const amount = numberValue(row.openingBalanceMinor);
+    await insertRecord(ctx, actor, "charge", {
+      id: chargeId,
+      organizationId: publicOrganizationId(actor.organization),
+      memberId: stringValue(member.id),
+      membershipId,
+      description: `Opening balance at ${stringValue(importData.migrationCutoffDate)}`,
+      subtotal: money(amount, actor.organization.currency),
+      discount: money(0, actor.organization.currency),
+      tax: money(0, actor.organization.currency),
+      total: money(amount, actor.organization.currency),
+      paidAmount: money(0, actor.organization.currency),
+      outstandingAmount: money(amount, actor.organization.currency),
+      status: "unpaid",
+      issueDate: stringValue(importData.migrationCutoffDate),
+      dueDate: stringValue(importData.migrationCutoffDate),
+      migration: { importBatchId: stringValue(importData.id), sourceRowNumber: numberValue(row.rowNumber), kind: "opening_receivable", accountingPostingEligible: false },
+      createdAt: isoNow(),
+    }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+    chargeVersion = String((await recordOf(ctx, actor, "charge", chargeId)).updatedAt);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Outstanding as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
+  }
+  let evidenceId: string | undefined;
+  let evidenceVersion: string | undefined;
+  if (numberValue(row.historicalPaidMinor) > 0) {
+    evidenceId = newPublicId();
+    const amount = numberValue(row.historicalPaidMinor);
+    await insertRecord(ctx, actor, "migrationPaymentEvidence", {
+      id: evidenceId,
+      organizationId: publicOrganizationId(actor.organization),
+      memberId: stringValue(member.id),
+      membershipId,
+      amount: money(amount, actor.organization.currency),
+      lastPaymentDate: stringValue(row.historicalPaymentDate),
+      sourceReference: optionalString(row.historicalPaymentReference),
+      importBatchId: stringValue(importData.id),
+      sourceRowNumber: numberValue(row.rowNumber),
+      readOnly: true,
+      accountingPostingEligible: false,
+      createdAt: isoNow(),
+    }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+    evidenceVersion = String((await recordOf(ctx, actor, "migrationPaymentEvidence", evidenceId)).updatedAt);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${optionalString(row.historicalPaymentReference) ? ` · ${stringValue(row.historicalPaymentReference)}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
+  }
+  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+  await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
+  return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
 }
 
 async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -5936,9 +6123,10 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
     if (phoneKey) knownPhones.set(phoneKey, stringValue(member.id));
     if (emailKey) knownEmails.set(emailKey, stringValue(member.id));
     const memberRecord = await recordOf(ctx, actor, "member", stringValue(member.id));
-    const tagged = await patchRecord(ctx, actor, memberRecord, { importBatchId: importId, importRowNumber: numberValue(row.rowNumber) });
+    const tagged = await patchRecord(ctx, actor, memberRecord, { importBatchId: importId, importRowNumber: numberValue(row.rowNumber), migrationCutoffDate: optionalString(importData.migrationCutoffDate) });
+    const artifacts = await createImportedMembershipArtifacts(ctx, actor, importData, row, member);
     const taggedRecord = await recordOf(ctx, actor, "member", stringValue(tagged.id));
-    createdMembers.push({ memberId: stringValue(member.id), version: String(taggedRecord.updatedAt), rowNumber: numberValue(row.rowNumber) });
+    createdMembers.push({ memberId: stringValue(member.id), memberVersion: String(taggedRecord.updatedAt), version: String(taggedRecord.updatedAt), rowNumber: numberValue(row.rowNumber), ...artifacts });
     rows[index] = { ...row, status: "committed", memberId: member.id };
   }
   const nextCursor = end;
@@ -5983,13 +6171,32 @@ async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Da
     if (!created) continue;
     const memberId = stringValue(created.memberId);
     const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
-    if (!memberRecord || String(memberRecord.updatedAt) !== stringValue(created.version) || stringValue(data(memberRecord.data).importBatchId) !== importId) { skippedCount += 1; continue; }
-    const related = await Promise.all(["membership", "payment", "charge", "checkin", "customerMembership"].map((entityType) => recordsOfMember(ctx, actor.organization._id, memberId, entityType)));
-    if (related.some((records) => records.length > 0)) { skippedCount += 1; continue; }
+    if (!memberRecord || String(memberRecord.updatedAt) !== stringValue(created.memberVersion, stringValue(created.version)) || stringValue(data(memberRecord.data).importBatchId) !== importId) { skippedCount += 1; continue; }
+    const [memberships, payments, charges, checkIns, legacyCheckIns, customerMemberships, evidence] = await Promise.all([
+      recordsOfMember(ctx, actor.organization._id, memberId, "membership"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "payment"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "charge"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "checkIn"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "checkin"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "customerMembership"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "migrationPaymentEvidence"),
+    ]);
+    const importedMembershipId = optionalString(created.membershipId);
+    const importedChargeId = optionalString(created.chargeId);
+    const importedEvidenceId = optionalString(created.evidenceId);
+    const onlyImportedArtifacts = memberships.every((item) => item.publicId === importedMembershipId)
+      && charges.every((item) => item.publicId === importedChargeId)
+      && evidence.every((item) => item.publicId === importedEvidenceId)
+      && payments.length === 0 && checkIns.length === 0 && legacyCheckIns.length === 0 && customerMemberships.length === 0;
+    const artifactVersionsMatch = (!importedMembershipId || (memberships[0]?.publicId === importedMembershipId && String(memberships[0].updatedAt) === stringValue(created.membershipVersion)))
+      && (!importedChargeId || (charges[0]?.publicId === importedChargeId && String(charges[0].updatedAt) === stringValue(created.chargeVersion)))
+      && (!importedEvidenceId || (evidence[0]?.publicId === importedEvidenceId && String(evidence[0].updatedAt) === stringValue(created.evidenceVersion)));
+    if (!onlyImportedArtifacts || !artifactVersionsMatch) { skippedCount += 1; continue; }
+    for (const artifact of [...evidence, ...charges, ...memberships]) await ctx.db.delete(artifact._id);
     const member = data(memberRecord.data);
     const now = isoNow();
     await ctx.db.patch(memberRecord._id, { data: { ...member, status: "archived", archivedAt: now, importUndoId: importId }, updatedAt: Date.now() });
-    await insertAudit(ctx, actor, { category: "members", action: "member.import_undo", entityType: "member", entityId: memberId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Untouched imported member removed from the active directory", reason, before: { status: member.status, importBatchId: importId }, after: { status: "archived", importUndoId: importId }, branchId: optionalString(member.homeBranchId) });
+    await insertAudit(ctx, actor, { category: "members", action: "member.import_undo", entityType: "member", entityId: memberId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Untouched imported member and migration artifacts removed from active records", reason, before: { status: member.status, importBatchId: importId, membershipId: importedMembershipId, chargeId: importedChargeId, evidenceId: importedEvidenceId }, after: { status: "archived", importUndoId: importId }, branchId: optionalString(member.homeBranchId) });
     archivedCount += 1;
   }
   const nextCursor = end;

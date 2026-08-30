@@ -1051,6 +1051,28 @@ describe("member creation", () => {
     await expect(api.commitMemberImport({ importId: preview.id, cursor: 1, chunkSize: 25, idempotencyKey: "member-import-idem-1" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     expect((await api.listMembers({ search: "Import Test", pageSize: 5 })).totalItems).toBe(1);
   });
+
+  it("imports membership state and opening balances without creating a fake payment", async () => {
+    const session = await api.getSession();
+    const plan = (await api.listPlans({ status: "active", pageSize: 10 })).items.find((item) => item.kind === "time")!;
+    const preview = await api.previewMemberImport({
+      branchId: session.branches[0]!.id,
+      migrationCutoffDate: "2026-08-30",
+      planMappings: { LegacyMonthly: plan.id },
+      csv: "full_name,phone,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\nMigration State,0799911223,migration-state@example.com,LegacyMonthly,2026-08-01,2099-09-07,,,,12.500,80.000,2026-08-20,OLD-44",
+    });
+    expect(preview).toMatchObject({ validRows: 1, membershipRows: 1, openingBalanceRows: 1, historicalEvidenceRows: 1, rows: [{ openingBalanceMinor: 12_500, historicalPaidMinor: 80_000 }] });
+
+    const result = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-state-import-1" });
+    const memberId = result.createdMemberIds[0]!;
+    expect(await api.getMember(memberId)).toMatchObject({ outstanding: { amount: 12_500, currency: session.organization.currency } });
+    expect((await api.listMemberships({ memberId, pageSize: 10 })).items).toEqual([expect.objectContaining({ planName: plan.name, salePrice: expect.objectContaining({ amount: 0 }) })]);
+    expect((await api.listMemberTimeline(memberId)).items.map((event) => event.title)).toEqual(expect.arrayContaining([expect.stringContaining("membership history imported"), expect.stringContaining("Opening balance imported"), expect.stringContaining("Historical payment evidence imported")]));
+    expect((await api.listTransactions({ memberId, pageSize: 10 })).items).toHaveLength(0);
+
+    expect(await api.undoMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-state-undo-1", reason: "Wrong migration cutoff" })).toMatchObject({ archivedCount: 1, skippedCount: 0 });
+    expect((await api.listMemberships({ memberId, pageSize: 10 })).items).toHaveLength(0);
+  });
 });
 
 describe("lead capture", () => {

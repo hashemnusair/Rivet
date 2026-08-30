@@ -242,10 +242,36 @@ export interface MemberImportRow {
   errors: string[];
   duplicateMemberIds: string[];
   memberId?: string;
+  sourcePlanName?: string;
+  planId?: UUID;
+  planName?: string;
+  membershipStartDate?: string;
+  membershipEndDate?: string;
+  remainingVisits?: number;
+  freezeStartDate?: string;
+  freezeEndDate?: string;
+  openingBalanceMinor?: number;
+  historicalPaidMinor?: number;
+  historicalPaymentDate?: string;
+  historicalPaymentReference?: string;
 }
 
-export type MemberImportField = "fullName" | "phone" | "email";
+export type MemberImportField =
+  | "fullName"
+  | "phone"
+  | "email"
+  | "sourcePlanName"
+  | "membershipStartDate"
+  | "membershipEndDate"
+  | "remainingVisits"
+  | "freezeStartDate"
+  | "freezeEndDate"
+  | "openingBalance"
+  | "historicalPaidTotal"
+  | "historicalPaymentDate"
+  | "historicalPaymentReference";
 export type MemberImportColumnMapping = Partial<Record<MemberImportField, number>>;
+export type MemberImportPlanMapping = Record<string, UUID>;
 export type MemberImportStatus = "preview" | "processing" | "completed" | "undoing" | "undone";
 
 export interface MemberImportPreviewInput {
@@ -255,6 +281,8 @@ export interface MemberImportPreviewInput {
   sourceKind?: "csv" | "xlsx" | "pasted";
   sourceHeaders?: string[];
   columnMapping?: MemberImportColumnMapping;
+  migrationCutoffDate?: string;
+  planMappings?: MemberImportPlanMapping;
 }
 
 export interface MemberImportPreview {
@@ -273,6 +301,12 @@ export interface MemberImportPreview {
   sourceKind?: "csv" | "xlsx" | "pasted";
   sourceHeaders?: string[];
   columnMapping?: MemberImportColumnMapping;
+  migrationCutoffDate?: string;
+  planMappings?: MemberImportPlanMapping;
+  membershipRows?: number;
+  openingBalanceRows?: number;
+  historicalEvidenceRows?: number;
+  currency?: string;
   undoExpiresAt?: string;
   createdAt: string;
   completedAt?: string;
