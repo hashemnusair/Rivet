@@ -1,5 +1,44 @@
 # GymOS / RIVET current implementation state
 
+## Migration and front-desk completion — 30 August 2026
+
+- A fresh GitHub fetch began this batch with clean, matching `main` and
+  `origin/main` at `bc3dfba`; no newer Elias/partner commit was waiting and the
+  frozen `FRONTEND_HANDOFF.md` remains unchanged.
+- Commit `f60a724` closes the remaining quality-of-life data boundaries:
+  complete-or-fail exports with expired payload cleanup, indexed customer
+  identity lookups, bounded duplicate detection with a 10,000-record fixture,
+  and deletion of revoked push-subscription credentials instead of indefinite
+  retention.
+- Commit `8726737` turns the member importer into a real migration tool. It
+  accepts CSV and XLSX files, recognizes English and Arabic-style headings,
+  lets the operator confirm column mapping, normalizes international contacts,
+  previews duplicates and invalid rows, saves batch provenance and progress,
+  resumes interrupted chunks, downloads rejected rows, and supports a
+  seven-day audited undo that archives only untouched records created by that
+  batch. Original uploaded file bodies are not persisted.
+- Commit `7f336c9` replaces the two-write **Create & sell membership**
+  continuation with one idempotent Convex transaction. Staff review the member,
+  choose a branch-eligible plan, collect a full/partial payment or deliberately
+  leave a balance, and receive one completion result with the member number,
+  term, balance, and receipt. A failed plan/payment step rolls back the member;
+  replay cannot charge twice. Contact matches require an explicit
+  different-person confirmation and create immutable override evidence.
+- The sale work also corrects an older response inconsistency: a successful
+  payment now returns the persisted post-payment charge and canonical receipt,
+  rather than a stale pre-payment balance in the immediate response.
+- Local verification for application tip `822f328` passed both TypeScript
+  checks, zero-warning lint and secret-output audit, 166 Vitest files / 990
+  tests plus 14 repository-safety tests, the 57-page Production build, 43
+  credential-free Playwright journeys / 14 explicit staging-only skips / 0
+  failures, `pnpm audit --prod` with no known vulnerabilities, and
+  `git diff --check`. GitHub/Vercel and exact-target Convex evidence is recorded
+  when the final documentation commit is promoted.
+- Membership terms, opening balances, historical payments, and financial
+  history are intentionally not accepted by the generic member importer. Their
+  accounting and migration rules remain an explicit product decision. Arabic
+  translation and the measured performance sprint remain last, as directed.
+
 ## Quality-of-life program — 30 August 2026
 
 - The approved quality-of-life program is implemented on

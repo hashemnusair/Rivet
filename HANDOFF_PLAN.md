@@ -1,8 +1,9 @@
 # RIVET engineering handoff plan
 
-Last updated: 29 August 2026
-Handoff baseline: `main` at `04b1f0ffa1c751af86d4d3d279b72a0dc5b819b8`;
-current Convex and Vercel Production verification is recorded below.
+Last updated: 30 August 2026
+Current application tip: `822f328`; the final documentation/release commit is
+recorded after the guarded Production promotion. Current Convex and Vercel
+Production verification is recorded below.
 
 ## Purpose
 
@@ -20,6 +21,19 @@ and the complete chronological implementation record is
 [`FRONTEND_HANDOFF.md`](FRONTEND_HANDOFF.md) as a frozen historical artifact.
 
 ## Current state at handoff
+
+- The current local application adds complete-or-fail export cleanup, bounded
+  customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
+  member migration mapper with batch resume/rejection/undo, and one atomic
+  front-desk member/membership/payment transaction. Read `CURRENT_STATE.md`
+  first for exact behavior and commits.
+- Generic imports remain member-profile-only. Membership terms, balances,
+  freezes, opening balances, and historical money still require an approved
+  migration/accounting contract.
+- Arabic/translation and the broad measured browser/Convex performance sprint
+  remain deliberately last. The next policy-dependent choices are online
+  payments/payment-backed offer acceptance, live messaging, legally approved
+  waivers/documents, and recurring maintenance checklists.
 
 - Current-head platform-owner acceptance passed for Overview, Applications,
   Gyms, Pricing & entitlements, Billing, and Support with no page or console

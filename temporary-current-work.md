@@ -89,18 +89,32 @@ audit, rendered desktop review, the Impeccable detector, and `git diff --check`.
 
 ## Candidate next code batch
 
-- [ ] **Messy-file import mapping.** Let an owner upload the CSV they actually
-  have, map unfamiliar headers to member fields, confirm uncertain matches, and
-  download rejected rows instead of editing the original spreadsheet by hand.
-- [ ] **Import history and recovery.** Keep a safe batch record with source
+- [x] **Messy-file import mapping.** Let an owner upload the CSV or XLSX they
+  actually have, map unfamiliar headers to member fields, confirm uncertain
+  matches, and download rejected rows instead of editing the original
+  spreadsheet by hand.
+- [x] **Import history and recovery.** Keep a safe batch record with source
   filename, counts, row outcomes, resumable progress, and a tightly bounded,
   audited undo for untouched profiles created by that batch.
-- [ ] **Migration policy first.** Do not import memberships, plan terms,
+- [x] **Migration policy first.** Do not import memberships, plan terms,
   balances, freezes, or financial history until their mapping and accounting
   rules are explicitly approved.
+- [x] **Atomic front-desk sale.** Replace the profile-then-redirect sequence
+  with one idempotent member → plan → payment/balance → receipt transaction and
+  one clear completion state. Roll back the full transaction on any failed
+  step and audit confirmed contact-identity overrides.
 - [ ] **Maintenance follow-through.** Validate assignees, recurring
   opening/closing checklists, photo evidence, and overdue escalation with a
   pilot gym before committing to the next maintenance feature.
+
+Completed locally in commits `f60a724`, `8726737`, `7f336c9`, and `822f328`.
+The full local gate passed 166 Vitest files / 990 tests plus 14
+repository-safety tests, both TypeScript checks, zero-warning lint and secret
+audit, the 57-page Production build, 43 Playwright passes / 14 explicit
+staging-only skips / 0 failures, a clean Production dependency audit, and the
+diff check. Final GitHub, Vercel, and exact-target Convex evidence belongs in
+the living handoff after release; this file remains a temporary product-working
+record only.
 
 ## Creative low-friction ideas to evaluate
 

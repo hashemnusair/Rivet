@@ -86,6 +86,11 @@ values, applicant details, and provider credentials out of this file.
 
 ### Next code/product candidates
 
+- [x] Close the QoL data-boundary pass: exports fail rather than silently
+  truncate, expired inline export bodies are purged, customer identity reads
+  use bounded indexed paths, duplicate detection is paginated/indexed and
+  volume-tested, and revoked push credentials are deleted.
+
 - [x] Build one role-aware **Today** queue for due CRM work, renewals, unpaid
   balances, same-day access denials, pending approvals, cash variances and
   facility work. The shared dashboard aggregation is deterministic,
@@ -123,14 +128,25 @@ values, applicant details, and provider credentials out of this file.
   WhatsApp/SMS delivery, payment-backed offer checkout, or legally approved
   waiver/document collection. Do not silently infer provider, accounting,
   consent, retention, or legal policy.
-- [ ] Add a flexible onboarding import mapper for gyms whose files do not use
+- [x] Add a flexible onboarding import mapper for gyms whose files do not use
   RIVET's template headers. Preview automatic column matches, require explicit
   confirmation for uncertain matches, save an audited import batch, and offer
   a downloadable rejection report without retaining the original file longer
-  than necessary.
-- [ ] Add import-batch history and safe recovery: counts, creator, branch,
+  than necessary. CSV and XLSX are supported; English/Arabic-style headings
+  are recognized and the original file body is not persisted.
+- [x] Add import-batch history and safe recovery: counts, creator, branch,
   timestamp, source filename, row results, resumable chunk state, and a bounded
-  audited undo only for untouched profiles created by that batch.
+  seven-day audited undo only for untouched profiles created by that batch.
+- [x] Replace the member-create → sale redirect with one idempotent front-desk
+  transaction for member, membership, payment/balance, and receipt. Failed
+  downstream steps roll back the member, replays cannot double-charge, and
+  deliberate duplicate-identity overrides require confirmation and audit
+  evidence.
+- [x] Verify the migration/front-desk application tip with 166 Vitest files /
+  990 tests, 14 repository-safety tests, both TypeScript checks, zero-warning
+  lint/secret audit, a 57-page Production build, 43 credential-free Playwright
+  passes / 14 explicit staging-only skips / 0 failures, a clean Production
+  dependency audit, and `git diff --check`.
 - [ ] Decide the separate membership-data migration contract before importing
   plans, active terms, payment history, outstanding balances, freezes, or
   opening balances. These affect revenue and accounting and must not be guessed

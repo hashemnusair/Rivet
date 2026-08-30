@@ -17,6 +17,33 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 
 ## Current repository state — 30 August 2026
 
+### Migration and front-desk transaction batch — 30 August 2026
+
+- Member migration is file-first and accepts CSV or XLSX. Parsing and column
+  inference happen in the browser; Convex receives canonical mapped CSV plus
+  source filename/kind/header/mapping provenance. The original workbook body is
+  not stored.
+- `memberImport` records own preview rows, per-row outcomes, cursor progress,
+  created-member references, and the seven-day undo deadline. Commit and undo
+  are bounded and idempotent. Undo archives only members that still match their
+  import-created version and have no subsequent operational or financial
+  references; changed records are skipped and reported.
+- `members.create_and_sell` is the atomic front-desk boundary for a new member
+  and first membership. It enforces member-write and membership-sale
+  permissions, plan/branch/payment rules, duplicate review, and a year-long
+  idempotency record inside one Convex transaction. Any thrown validation or
+  payment error rolls back the member, membership, charge, and receipt.
+- Generic member migration deliberately excludes memberships, balances,
+  freezes, and financial history pending approved mapping and accounting
+  policy. Do not reinterpret those fields from arbitrary spreadsheets.
+- Application commits are `f60a724`, `8726737`, `7f336c9`, and `822f328`.
+  The local gate passed 166 Vitest files / 990 tests plus 14 repository-safety
+  tests, both TypeScript checks, lint/secret audit, the 57-page build, 43
+  credential-free Playwright passes / 14 explicit staging-only skips / 0
+  failures, the Production dependency audit, and the diff check. Exact
+  deployment and hosted verification evidence is appended only after the
+  standard guarded Production procedure completes.
+
 ### Quality-of-life architecture batch — 30 August 2026
 
 - New private persistence is owned by the authenticated user and organization:
