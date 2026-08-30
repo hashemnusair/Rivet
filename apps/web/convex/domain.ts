@@ -4023,11 +4023,11 @@ async function onboardingExperience(ctx: ReadContext, input: Data, request: Requ
     const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
     const memberships = membershipRows.map((row) => data(row.data)).filter((value) => belongsToAuthenticatedCustomer(value, publicUserId(user), optionalString(profile?.id)));
     const tasks = [
-      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone) },
-      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0 },
-      { key: "member_entry", title: "Learn the entry QR", description: "See how to create a short-lived front-desk entry pass.", href: "/customer/my-gyms", category: "recommended", complete: completed.has("member_entry") },
-      { key: "member_finance", title: "Find payments and receipts", description: "Know where balances, refunds, and printable receipts live.", href: "/customer/finance", category: "recommended", complete: completed.has("member_finance") },
-      { key: "member_install", title: "Install RIVET", description: "Add the member app to your home screen for quicker access.", href: "/customer/getting-started#install", category: "optional", complete: completed.has("member_install") },
+      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone), completionMode: "state" },
+      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0, completionMode: "state" },
+      { key: "member_entry", title: "Learn the entry QR", description: "See how to create a short-lived front-desk entry pass.", href: "/customer/my-gyms", category: "recommended", complete: completed.has("member_entry"), completionMode: "manual" },
+      { key: "member_finance", title: "Find payments and receipts", description: "Know where balances, refunds, and printable receipts live.", href: "/customer/finance", category: "recommended", complete: completed.has("member_finance"), completionMode: "manual" },
+      { key: "member_install", title: "Install RIVET", description: "Add the member app to your home screen for quicker access.", href: "/customer/getting-started#install", category: "optional", complete: completed.has("member_install"), completionMode: "manual" },
     ];
     return { progress, tasks, role: "member" };
   }
@@ -4048,24 +4048,27 @@ async function onboardingExperience(ctx: ReadContext, input: Data, request: Requ
   ]);
   const liveProviderReady = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
   const ownerTasks = [
-    { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: Boolean(actor.organization.name && actor.organization.timezone && actor.organization.currency) },
-    { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: branches.some((branch) => branch.active) },
-    { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: arrayValue(settings.paymentMethods).some((method) => booleanValue(data(method).enabled)) },
-    { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/memberships/plans", category: "required", complete: plans.some((row) => stringValue(data(row.data).status, "active") === "active") },
-    { key: "owner_staff", title: "Invite your team", description: "Add managers, sales, reception, or trainers with the right scope.", href: "/settings?section=team", category: "required", complete: teamMemberships.filter((membership) => membership.active).length > 1 },
-    { key: "owner_members", title: "Add or import members", description: "Start with CSV import or create the first live member.", href: "/members/import", category: "required", complete: members.length > 0 },
-    { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front-desk workflow.", href: "/reception", category: "required", complete: shifts.length > 0 },
-    { key: "owner_public_profile", title: "Publish the gym profile", description: "Review what prospective members see in discovery.", href: "/settings/public-profile", category: "recommended", complete: Boolean(listing && booleanValue(data(listing.data).profilePublished, booleanValue(data(listing.data).isPublic))) },
-    { key: "owner_provider", title: "Review provider readiness", description: "Understand which email and messaging features remain unavailable before activation.", href: "/automations", category: "optional", complete: liveProviderReady, unavailableReason: liveProviderReady ? undefined : "Email provider delivery is not configured yet." },
+    { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: Boolean(actor.organization.name && actor.organization.timezone && actor.organization.currency), completionMode: "state" },
+    { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: branches.some((branch) => branch.active), completionMode: "state" },
+    { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: arrayValue(settings.paymentMethods).some((method) => booleanValue(data(method).enabled)), completionMode: "state" },
+    { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/plans", category: "required", complete: plans.some((row) => stringValue(data(row.data).status, "active") === "active"), completionMode: "state" },
+    { key: "owner_staff", title: "Invite your team", description: "Add managers, sales, reception, or trainers with the right scope.", href: "/settings?section=users", category: "required", complete: teamMemberships.filter((membership) => membership.active).length > 1, completionMode: "state" },
+    { key: "owner_members", title: "Add or import members", description: "Start with CSV import or create the first live member.", href: "/members/import", category: "required", complete: members.length > 0, completionMode: "state" },
+    { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front-desk workflow.", href: "/reception", category: "required", complete: shifts.length > 0, completionMode: "state" },
+    { key: "owner_public_profile", title: "Publish the gym profile", description: "Review what prospective members see in discovery.", href: "/settings?section=profile", category: "recommended", complete: Boolean(listing && booleanValue(data(listing.data).profilePublished, booleanValue(data(listing.data).isPublic))), completionMode: "state" },
+    { key: "owner_provider", title: "Review provider readiness", description: "Understand which email and messaging features remain unavailable before activation.", href: "/automations", category: "optional", complete: liveProviderReady, completionMode: "state", unavailableReason: liveProviderReady ? undefined : "Email provider delivery is not configured yet." },
   ];
+  const manualTask = (key: string, title: string, description: string, href: string, category: "required" | "recommended" | "optional" = "recommended") => ({ key, title, description, href, category, complete: completed.has(key), completionMode: "manual" });
   const staffTasks = [
-    { key: "staff_role", title: "Understand your role", description: `Review what the ${actor.role} role can see and change.`, href: "/getting-started#role", category: "required", complete: completed.has("staff_role") },
-    { key: "staff_navigation", title: "Learn navigation and search", description: "Use the sidebar and ⌘K search to move without losing your place.", href: "/getting-started#navigation", category: "recommended", complete: completed.has("staff_navigation") },
-    { key: "staff_member", title: "Open a member record", description: "Find the timeline, membership, payment, and follow-up actions.", href: "/members", category: "required", complete: completed.has("staff_member") },
-    { key: "staff_tasks", title: "Find your follow-up queue", description: "Review overdue and upcoming work assigned to you.", href: "/crm/queues", category: "required", complete: completed.has("staff_tasks") },
-    { key: "staff_reception", title: "Practice the front desk", description: "Learn check-in and cash-shift rules for your branch.", href: "/reception", category: "recommended", complete: actor.role !== "receptionist" || shifts.length > 0 },
-    { key: "staff_security", title: "Review safe handling", description: "Know why sensitive changes require reasons and leave audit events.", href: "/getting-started#security", category: "recommended", complete: completed.has("staff_security") },
-  ];
+    manualTask("staff_role", "Understand your role", `Review what the ${actor.role} role can see and change.`, "/getting-started#role", "required"),
+    manualTask("staff_navigation", "Learn navigation and search", "Use the sidebar and ⌘K search to move without losing your place.", "/getting-started#navigation"),
+    hasPermission(actor, "members.read") ? manualTask("staff_member", "Open a member record", "Find the timeline, membership, payment, and follow-up actions.", "/members", "required") : null,
+    hasPermission(actor, "crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review overdue and upcoming work assigned to you.", "/crm/queues", "required") : null,
+    actor.role === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
+    actor.role === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule, member bookings, and package credits.", "/pt", "required") : null,
+    ["manager", "auditor"].includes(actor.role) && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
+    manualTask("staff_security", "Review safe handling", "Know why sensitive changes require reasons and leave audit events.", "/getting-started#security"),
+  ].filter(Boolean);
   return { progress, tasks: audience === "owner" ? ownerTasks : staffTasks, role: actor.role, organizationName: actor.organization.name };
 }
 
@@ -4080,12 +4083,15 @@ async function updateOnboardingProgressMutation(ctx: MutationCtx, input: Data, r
   const currentKeys = existing?.completedStepKeys ?? [];
   const stepKey = optionalString(input.completedStepKey);
   const preview = await onboardingExperience(ctx, { audience }, request);
-  const validKeys = new Set(arrayValue(preview.tasks).map((task) => stringValue(data(task).key)));
+  const previewTasks = arrayValue(preview.tasks).map(data);
+  const validKeys = new Set(previewTasks.map((task) => stringValue(task.key)));
   if (stepKey && !validKeys.has(stepKey)) domainError("VALIDATION_ERROR", "Unknown onboarding step.", { correlationId: request.correlationId });
+  const selectedTask = stepKey ? previewTasks.find((task) => stringValue(task.key) === stepKey) : undefined;
+  if (selectedTask && stringValue(selectedTask.completionMode) !== "manual") domainError("CONFLICT", "This setup step completes only when its underlying work is finished.", { correlationId: request.correlationId });
   const completedStepKeys = booleanValue(input.restart) ? [] : [...new Set([...currentKeys, ...(stepKey ? [stepKey] : [])])];
   const now = Date.now();
-  const requiredTasks = arrayValue(preview.tasks).map(data).filter((task) => task.category === "required");
-  const allRequiredComplete = requiredTasks.every((task) => booleanValue(task.complete) || completedStepKeys.includes(stringValue(task.key)));
+  const requiredTasks = previewTasks.filter((task) => task.category === "required");
+  const allRequiredComplete = requiredTasks.every((task) => booleanValue(task.complete) || (stringValue(task.completionMode) === "manual" && completedStepKeys.includes(stringValue(task.key))));
   const value = { version: ONBOARDING_VERSION, completedStepKeys, dismissedAt: booleanValue(input.restart) ? undefined : booleanValue(input.dismissed) ? now : existing?.dismissedAt, completedAt: allRequiredComplete ? now : undefined, updatedAt: now };
   if (existing) await ctx.db.patch(existing._id, value);
   else await ctx.db.insert("userOnboardingProgress", { userId: user._id, organizationId, audience, createdAt: now, ...value });
@@ -4150,7 +4156,8 @@ function requireExportPermission(actor: ActorContext, kind: StaffExportKind): vo
 
 function csvCell(value: unknown): string {
   if (value === undefined || value === null) return "";
-  const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
+  const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
+  const raw = typeof value === "string" && /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : serialized;
   return /[",\r\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
 }
 
@@ -4201,7 +4208,8 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
   }
   if (kind === "personal_training") {
     const orders = await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
-    return orders.map((order) => exportRecordRow("pt_package_order", order.publicId, { memberId: order.memberPublicId, membershipId: order.membershipPublicId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters));
+    const visibleMemberIds = new Set((await memberRecords(ctx, actor)).map((record) => record.publicId));
+    return orders.filter((order) => visibleMemberIds.has(order.memberPublicId)).map((order) => exportRecordRow("pt_package_order", order.publicId, { memberId: order.memberPublicId, membershipId: order.membershipPublicId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters));
   }
   const [products, suppliers, balances, movements, branches] = await Promise.all([
     ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
@@ -4256,20 +4264,20 @@ function workspaceInternalHref(value: unknown, correlationId: string): string {
 }
 
 function workspacePages(actor: ActorContext): Data[] {
-  const rows: Array<Data & { permission?: string }> = [
+  const rows: Array<Data & { permission?: string; anyPermission?: string[] }> = [
     { id: "dashboard", title: "Dashboard", subtitle: "Today, revenue, alerts and queue", href: "/dashboard" },
     { id: "reception", title: "Reception", subtitle: "Check-ins and cash shift", href: "/reception" },
     { id: "members", title: "Members", subtitle: "Directory and memberships", href: "/members", permission: "members.read" },
     { id: "leads", title: "Leads", subtitle: "CRM pipeline", href: "/crm/pipeline", permission: "crm.read" },
     { id: "followups", title: "Follow-ups", subtitle: "Due and overdue CRM work", href: "/crm/queues", permission: "crm.read" },
     { id: "payments", title: "Payments", subtitle: "Transactions and receipts", href: "/payments", permission: "reports.financial.read" },
-    { id: "exports", title: "Data exports", subtitle: "Portable CSV datasets", href: "/exports", permission: "audit.read" },
+    { id: "exports", title: "Data exports", subtitle: "Portable CSV datasets", href: "/exports", anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
     { id: "audit", title: "Audit log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
     { id: "automations", title: "Automation monitoring", subtitle: "Rules, providers and execution history", href: "/automations", permission: "automations.manage" },
     { id: "settings", title: "Settings", subtitle: "Organization, branches and team", href: "/settings", permission: "settings.manage" },
     { id: "support", title: "Support", subtitle: "Cases and RIVET assistance", href: "/support" },
   ];
-  return rows.filter((row) => !row.permission || actor.permissions.includes(row.permission));
+  return rows.filter((row) => (!row.permission || actor.permissions.includes(row.permission)) && (!row.anyPermission || row.anyPermission.some((permission) => actor.permissions.includes(permission))));
 }
 
 function workspaceQuickActions(actor: ActorContext): Data[] {
@@ -6240,6 +6248,12 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     const survivorValue = data(survivor.data);
     const mergedValue = data(merged.data);
     if (optionalString(survivorValue.mergedIntoMemberId) || optionalString(mergedValue.mergedIntoMemberId)) domainError("CONFLICT", "One of these members has already been merged.", { correlationId: actor.correlationId });
+    const projections = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership")).collect()).filter((row) => pair.has(stringValue(data(row.data).memberId)));
+    const hasMemberOwnedIdentity = Boolean(optionalString(survivorValue.customerProfileId) || optionalString(mergedValue.customerProfileId) || projections.some((projection) => {
+      const value = data(projection.data);
+      return Boolean(optionalString(value.customerUserId) || optionalString(value.customerId));
+    }));
+    if (hasMemberOwnedIdentity) domainError("CONFLICT", "These records are linked to a member account. Resolve the member identity before merging.", { correlationId: actor.correlationId });
     const sources = data(input.fieldSourceMemberIds);
     const patch: Data = {};
     for (const field of MEMBER_MERGE_FIELDS) {
@@ -6253,10 +6267,10 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     patch.updatedAt = now;
     await patchRecord(ctx, actor, survivor, patch);
     await patchRecord(ctx, actor, merged, { status: "archived", archivedAt: now, mergedIntoMemberId: survivingMemberId, mergedAt: now });
-    const projections = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership")).collect()).filter((row) => stringValue(data(row.data).memberId) === mergedMemberId);
-    await Promise.all(projections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
+    const mergedProjections = projections.filter((projection) => stringValue(data(projection.data).memberId) === mergedMemberId);
+    await Promise.all(mergedProjections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
     const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
-    const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: projections.length } });
+    const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
     mergeAuditReference = stringValue(audit.publicId);
   }
 

@@ -116,6 +116,7 @@ export interface OnboardingTaskState {
   href: string;
   category: "required" | "recommended" | "optional";
   complete: boolean;
+  completionMode: "state" | "manual";
   unavailableReason?: string;
 }
 

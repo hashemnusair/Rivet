@@ -18,7 +18,7 @@ async function seed(t: TestConvex<typeof schema>) {
     const auditor = await ctx.db.insert("users", { publicId: "auditor-export", authSubject: "clerk-auditor-export", email: "auditor@example.com", fullName: "Auditor Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: auditor, role: "auditor", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
-    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-export", branchId: branch, memberPublicId: "member-export", createdAt: now, updatedAt: now, data: { id: "member-export", fullName: "Doe, \"Jane\"", memberNumber: "M-100", phone: "+962790000000", homeBranchId: "branch-export", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-export", branchId: branch, memberPublicId: "member-export", createdAt: now, updatedAt: now, data: { id: "member-export", fullName: "Doe, \"Jane\"", memberNumber: "M-100", phone: "+962790000000", email: "=2+2", homeBranchId: "branch-export", createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: foreignOrganization, entityType: "member", publicId: "foreign-member", createdAt: now, updatedAt: now, data: { id: "foreign-member", fullName: "Must Not Leak", memberNumber: "F-1" } });
   });
 }
@@ -33,6 +33,8 @@ describe("tenant data exports", () => {
     const replay = await owner.mutation(api.domain.mutate, operation("exports.request", input)) as { id: string };
     expect(first).toMatchObject({ rowCount: 1, timezone: "Asia/Amman", branchScope: "branch:branch-export" });
     expect(first.content).toContain('"Doe, ""Jane"""');
+    expect(first.content).toContain("'=2+2");
+    expect(first.content).not.toContain(",=2+2,");
     expect(first.content).toContain("export_generated_at");
     expect(first.content).not.toContain("Must Not Leak");
     expect(replay.id).toBe(first.id);
@@ -50,5 +52,28 @@ describe("tenant data exports", () => {
     const owner = t.withIdentity({ subject: "clerk-owner-export" });
     await owner.mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: {}, idempotencyKey: "export-members-002" }));
     await expectCode(owner.mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: { search: "different" }, idempotencyKey: "export-members-002" })), "CONFLICT");
+  });
+
+  it("keeps personal-training exports inside a selected branch", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-export")).unique();
+      const mainBranch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "branch-export")).unique();
+      if (!organization || !mainBranch) throw new Error("Export fixtures missing");
+      const otherBranch = await ctx.db.insert("branches", { organizationId: organization._id, publicId: "branch-other", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now });
+      const manager = await ctx.db.insert("users", { publicId: "manager-export", authSubject: "clerk-manager-export", email: "manager@example.com", fullName: "Manager Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: manager, role: "manager", branchIds: [mainBranch._id], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "member", publicId: "member-other", branchId: otherBranch, memberPublicId: "member-other", createdAt: now, updatedAt: now, data: { id: "member-other", fullName: "Other Branch Member", memberNumber: "O-100", phone: "+962790000001", homeBranchId: "branch-other", createdAt: new Date(now).toISOString() } });
+      const ptPackage = await ctx.db.insert("ptPackages", { organizationId: organization._id, publicId: "package-export", name: "Export package", sessionCount: 4, totalPriceMinor: 40_000, currency: "JOD", validityDays: 30, branchAccess: "all", branchIds: [], status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("ptPackageOrders", { organizationId: organization._id, publicId: "order-visible", memberPublicId: "member-export", membershipPublicId: "membership-visible", packageId: ptPackage, chargePublicId: "charge-visible", packageNameSnapshot: "Visible package", sessionCountSnapshot: 4, totalPriceMinorSnapshot: 40_000, currencySnapshot: "JOD", status: "active", refundedSessions: 0, refundedMinor: 0, createdAt: now, updatedAt: now });
+      await ctx.db.insert("ptPackageOrders", { organizationId: organization._id, publicId: "order-hidden", memberPublicId: "member-other", membershipPublicId: "membership-hidden", packageId: ptPackage, chargePublicId: "charge-hidden", packageNameSnapshot: "Hidden package", sessionCountSnapshot: 4, totalPriceMinorSnapshot: 40_000, currencySnapshot: "JOD", status: "active", refundedSessions: 0, refundedMinor: 0, createdAt: now, updatedAt: now });
+    });
+    const manager = t.withIdentity({ subject: "clerk-manager-export" });
+    const exported = await manager.mutation(api.domain.mutate, operation("exports.request", { kind: "personal_training", filters: {}, idempotencyKey: "export-pt-scoped-001" })) as { rowCount: number; content: string };
+    expect(exported.rowCount).toBe(1);
+    expect(exported.content).toContain("order-visible");
+    expect(exported.content).not.toContain("order-hidden");
   });
 });

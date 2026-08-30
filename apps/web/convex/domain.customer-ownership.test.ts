@@ -504,8 +504,9 @@ describe("exported Convex customer ownership boundaries", () => {
     await seedFixtures(t);
     const customer = t.withIdentity({ subject: "clerk-customer-a" });
     const staff = t.withIdentity({ subject: "clerk-staff" });
-    const initial = await customer.query(api.domain.query, operation("onboarding.get", { audience: "member" })) as { tasks: Array<{ key: string; complete: boolean }> };
-    expect(initial.tasks).toContainEqual(expect.objectContaining({ key: "member_entry", complete: false }));
+    const initial = await customer.query(api.domain.query, operation("onboarding.get", { audience: "member" })) as { tasks: Array<{ key: string; complete: boolean; completionMode: string }> };
+    expect(initial.tasks).toContainEqual(expect.objectContaining({ key: "member_entry", complete: false, completionMode: "manual" }));
+    await expectCode(customer.mutation(api.domain.mutate, operation("onboarding.update", { audience: "member", completedStepKey: "member_profile" })), "CONFLICT");
     const updated = await customer.mutation(api.domain.mutate, operation("onboarding.update", { audience: "member", completedStepKey: "member_entry" })) as { progress: { completedStepKeys: string[] }; tasks: Array<{ key: string; complete: boolean }> };
     expect(updated.progress.completedStepKeys).toContain("member_entry");
     expect(updated.tasks).toContainEqual(expect.objectContaining({ key: "member_entry", complete: true }));

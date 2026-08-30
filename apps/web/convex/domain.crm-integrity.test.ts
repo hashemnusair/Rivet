@@ -268,18 +268,48 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(await owner.query(api.domain.query, operation("duplicates.list", { status: "merged" }))).toEqual([expect.objectContaining({ id: duplicate!.id, survivingMemberId: first.member.id })]);
   });
 
+  it("requires supervised identity resolution before merging a member-owned record", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Primary", phone: "+962790006666", email: "owned@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Candidate", phone: "0790006666", email: "owned@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "crm-integrity-org-a")).unique();
+      const record = organization ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", second.member.id)).unique() : null;
+      if (!record) throw new Error("Owned duplicate fixture missing");
+      await ctx.db.patch(record._id, { data: { ...record.data, customerProfileId: "customer-owned" }, updatedAt: Date.now() });
+    });
+    const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }>;
+    const duplicate = cases.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
+    expect(duplicate).toBeDefined();
+    await expectCode(owner.mutation(api.domain.mutate, operation("duplicates.merge", { caseId: duplicate!.id, survivingMemberId: first.member.id, mergedMemberId: second.member.id, primaryVersion: duplicate!.primary.version, candidateVersion: duplicate!.candidate.version, reason: "Attempt unsafe identity merge" })), "CONFLICT");
+    const stillPresent = await owner.query(api.domain.query, operation("members.get", { memberId: second.member.id })) as { id: string; status: string };
+    expect(stillPresent).toMatchObject({ id: second.member.id, status: "active" });
+  });
+
   it("derives owner readiness from tenant state and stores staff tutorial progress per user", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
     const sales = t.withIdentity({ subject: "clerk-crm-integrity-sales" });
-    const ownerExperience = await owner.query(api.domain.query, operation("onboarding.get", { audience: "owner" })) as { role: string; tasks: Array<{ key: string; category: string }> };
+    const ownerExperience = await owner.query(api.domain.query, operation("onboarding.get", { audience: "owner" })) as { role: string; tasks: Array<{ key: string; category: string; href: string; completionMode: string }> };
     expect(ownerExperience.role).toBe("owner");
     expect(ownerExperience.tasks).toEqual(expect.arrayContaining([expect.objectContaining({ key: "owner_plan", category: "required" }), expect.objectContaining({ key: "owner_provider", category: "optional" })]));
+    expect(ownerExperience.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "owner_plan", href: "/plans", completionMode: "state" }),
+      expect.objectContaining({ key: "owner_staff", href: "/settings?section=users" }),
+      expect.objectContaining({ key: "owner_public_profile", href: "/settings?section=profile" }),
+    ]));
+    await expectCode(owner.mutation(api.domain.mutate, operation("onboarding.update", { audience: "owner", completedStepKey: "owner_plan" })), "CONFLICT");
     await expectCode(sales.query(api.domain.query, operation("onboarding.get", { audience: "owner" })), "FORBIDDEN");
     const updated = await sales.mutation(api.domain.mutate, operation("onboarding.update", { audience: "staff", completedStepKey: "staff_role" })) as { progress: { completedStepKeys: string[] } };
     expect(updated.progress.completedStepKeys).toContain("staff_role");
     const ownerStaff = await owner.query(api.domain.query, operation("onboarding.get", { audience: "staff" })) as { progress: { completedStepKeys: string[] } };
     expect(ownerStaff.progress.completedStepKeys).not.toContain("staff_role");
+    const trainer = t.withIdentity({ subject: "clerk-crm-integrity-trainer" });
+    const trainerExperience = await trainer.query(api.domain.query, operation("onboarding.get", { audience: "staff" })) as { tasks: Array<{ key: string }> };
+    expect(trainerExperience.tasks.map((task) => task.key)).toContain("staff_training");
+    expect(trainerExperience.tasks.map((task) => task.key)).not.toContain("staff_tasks");
   });
 });

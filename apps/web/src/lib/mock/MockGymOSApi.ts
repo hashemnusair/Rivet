@@ -1155,6 +1155,7 @@ export class MockGymOSApi implements GymOSApi {
       const survivor = this.db.members.find((member) => member.id === input.survivingMemberId);
       const merged = this.db.members.find((member) => member.id === input.mergedMemberId);
       if (!survivor || !merged || survivor.id === merged.id) throw ApiError.of(ERR.VALIDATION, "Choose valid member records.");
+      if (survivor.customerProfileId || merged.customerProfileId) throw ApiError.of(ERR.CONFLICT, "These records are linked to a member account. Resolve the member identity before merging.");
       const sources = input.fieldSourceMemberIds ?? {};
       for (const [field, sourceId] of Object.entries(sources)) {
         if (sourceId === merged.id) (survivor as unknown as Record<string, unknown>)[field] = (merged as unknown as Record<string, unknown>)[field];
@@ -1175,28 +1176,33 @@ export class MockGymOSApi implements GymOSApi {
       const timestamp = nowISO();
       const progress = this.onboardingProgress.get(audience) ?? { audience, version: 1, completedStepKeys: [], updatedAt: timestamp };
       const complete = (key: string) => progress.completedStepKeys.includes(key);
+      const completionMode = "state" as const;
+      const manualTask = (key: string, title: string, description: string, href: string, category: import("@/lib/domain/qol").OnboardingTaskState["category"] = "recommended"): import("@/lib/domain/qol").OnboardingTaskState => ({ key, title, description, href, category, complete: complete(key), completionMode: "manual" });
       const tasks: import("@/lib/domain/qol").OnboardingTaskState[] = audience === "owner" ? [
-        { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: true },
-        { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: this.db.branches.length > 0 },
-        { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: this.db.paymentMethods.some((method) => method.enabled) },
-        { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/memberships/plans", category: "required", complete: this.db.plans.length > 0 },
-        { key: "owner_staff", title: "Invite your team", description: "Add staff with the right scope.", href: "/settings?section=team", category: "required", complete: this.db.users.length > 1 },
-        { key: "owner_members", title: "Add or import members", description: "Create the first live member.", href: "/members/import", category: "required", complete: this.db.members.length > 0 },
-        { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front desk.", href: "/reception", category: "required", complete: this.db.shifts.length > 0 },
-        { key: "owner_public_profile", title: "Publish the gym profile", description: "Review member discovery.", href: "/settings/public-profile", category: "recommended", complete: this.gymPublicProfile.status === "published" },
+        { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: true, completionMode },
+        { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: this.db.branches.length > 0, completionMode },
+        { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: this.db.paymentMethods.some((method) => method.enabled), completionMode },
+        { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/plans", category: "required", complete: this.db.plans.length > 0, completionMode },
+        { key: "owner_staff", title: "Invite your team", description: "Add staff with the right scope.", href: "/settings?section=users", category: "required", complete: this.db.users.length > 1, completionMode },
+        { key: "owner_members", title: "Add or import members", description: "Create the first live member.", href: "/members/import", category: "required", complete: this.db.members.length > 0, completionMode },
+        { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front desk.", href: "/reception", category: "required", complete: this.db.shifts.length > 0, completionMode },
+        { key: "owner_public_profile", title: "Publish the gym profile", description: "Review member discovery.", href: "/settings?section=profile", category: "recommended", complete: this.gymPublicProfile.status === "published", completionMode },
       ] : audience === "member" ? [
-        { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details.", href: "/customer/profile", category: "required", complete: true },
-        { key: "member_memberships", title: "Open My Gyms", description: "Review your membership and balance.", href: "/customer/my-gyms", category: "required", complete: INITIAL_CUSTOMER_MEMBERSHIPS.length > 0 },
-        { key: "member_entry", title: "Learn the entry QR", description: "Create a short-lived entry pass.", href: "/customer/my-gyms", category: "recommended", complete: complete("member_entry") },
-        { key: "member_finance", title: "Find payments and receipts", description: "Know where your financial history lives.", href: "/customer/finance", category: "recommended", complete: complete("member_finance") },
-        { key: "member_install", title: "Install RIVET", description: "Add the app to your home screen.", href: "/customer/getting-started#install", category: "optional", complete: complete("member_install") },
+        { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details.", href: "/customer/profile", category: "required", complete: true, completionMode },
+        { key: "member_memberships", title: "Open My Gyms", description: "Review your membership and balance.", href: "/customer/my-gyms", category: "required", complete: INITIAL_CUSTOMER_MEMBERSHIPS.length > 0, completionMode },
+        manualTask("member_entry", "Learn the entry QR", "Create a short-lived entry pass.", "/customer/my-gyms"),
+        manualTask("member_finance", "Find payments and receipts", "Know where your financial history lives.", "/customer/finance"),
+        manualTask("member_install", "Install RIVET", "Add the app to your home screen.", "/customer/getting-started#install", "optional"),
       ] : [
-        { key: "staff_role", title: "Understand your role", description: "Review what your role can see and change.", href: "/getting-started#role", category: "required", complete: complete("staff_role") },
-        { key: "staff_navigation", title: "Learn navigation and search", description: "Use the sidebar and command search.", href: "/getting-started#navigation", category: "recommended", complete: complete("staff_navigation") },
-        { key: "staff_member", title: "Open a member record", description: "Find the member timeline and actions.", href: "/members", category: "required", complete: complete("staff_member") },
-        { key: "staff_tasks", title: "Find your follow-up queue", description: "Review assigned work.", href: "/crm/queues", category: "required", complete: complete("staff_tasks") },
-        { key: "staff_security", title: "Review safe handling", description: "Understand audited actions.", href: "/getting-started#security", category: "recommended", complete: complete("staff_security") },
-      ];
+        manualTask("staff_role", "Understand your role", "Review what your role can see and change.", "/getting-started#role", "required"),
+        manualTask("staff_navigation", "Learn navigation and search", "Use the sidebar and command search.", "/getting-started#navigation"),
+        permissionsFor(this.db, currentRole(this.db)).includes("members.read") ? manualTask("staff_member", "Open a member record", "Find the member timeline and actions.", "/members", "required") : null,
+        permissionsFor(this.db, currentRole(this.db)).includes("crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review assigned work.", "/crm/queues", "required") : null,
+        currentRole(this.db) === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
+        currentRole(this.db) === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule and member bookings.", "/pt", "required") : null,
+        ["manager", "auditor"].includes(currentRole(this.db)) ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records.", "/audit", "required") : null,
+        manualTask("staff_security", "Review safe handling", "Understand audited actions.", "/getting-started#security"),
+      ].filter((task): task is import("@/lib/domain/qol").OnboardingTaskState => Boolean(task));
       return { progress, tasks, role: audience === "member" ? "member" : currentRole(this.db), organizationName: audience === "member" ? undefined : this.db.organization.name };
     });
   }
@@ -1204,6 +1210,12 @@ export class MockGymOSApi implements GymOSApi {
   updateOnboardingProgress(input: { audience: import("@/lib/domain/qol").OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<import("@/lib/domain/qol").OnboardingExperience> {
     return this.respond(async () => {
       const current = this.onboardingProgress.get(input.audience) ?? { audience: input.audience, version: 1, completedStepKeys: [], updatedAt: nowISO() };
+      if (input.completedStepKey) {
+        const experience = await this.getOnboardingExperience(input.audience);
+        const task = experience.tasks.find((item) => item.key === input.completedStepKey);
+        if (!task) throw ApiError.of(ERR.VALIDATION, "Unknown onboarding step.");
+        if (task.completionMode !== "manual") throw ApiError.of(ERR.CONFLICT, "This setup step completes only when its underlying work is finished.");
+      }
       const completedStepKeys = input.restart ? [] : [...new Set([...current.completedStepKeys, ...(input.completedStepKey ? [input.completedStepKey] : [])])];
       this.onboardingProgress.set(input.audience, { ...current, completedStepKeys, dismissedAt: input.restart ? undefined : input.dismissed ? nowISO() : current.dismissedAt, updatedAt: nowISO() });
       return await this.getOnboardingExperience(input.audience);
