@@ -27,9 +27,12 @@ values, applicant details, and provider credentials out of this file.
   enforcement discovered by those journeys.
 - [ ] Configure the private Development `RIVET_PUBLIC_REQUEST_PEPPER`, refresh
   the salesperson browser state, and close trial/CRM plus gym provisioning.
-- [ ] Push the verified code tip, wait for GitHub/Vercel, deploy the exact
-  backend tip to Convex Production, and close the cached-data recovery banner
-  with signed-in owner acceptance.
+- [x] Push release tip `b1da867`, complete the exact Vercel and Convex Production
+  deployments, rerun health and aggregate safety checks, and close the
+  cached-data recovery banner with signed-in owner acceptance.
+- [ ] Record the final result of GitHub run `33341837875`; its static/build,
+  dependency, diff, clean-tree, and generated-code jobs passed while the
+  clean-server credential-free browser job remained in progress at handoff.
 
 ### Classes, referrals, and freeze requests completed and hardened on 30 August
 

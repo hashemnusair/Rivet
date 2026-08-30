@@ -25,12 +25,19 @@
   The complete credential-free browser suite is left to the pushed GitHub gate
   so it runs against a fresh mock server rather than the active credentialed
   Development server on port 3100.
-- Production Convex had already passed the exact-target deployment, health
-  query, renewal aggregate audit, and disabled subscription-reconciliation
-  preview for the preceding release. After this code tip is pushed, deploy the
-  matching backend to `descriptive-meerkat-589` and repeat signed-in owner
-  acceptance; the last browser observation was still showing the cached-data
-  recovery banner and therefore is not recorded as closed.
+- Release tip `b1da867` is pushed on matching `main` and `origin/main`.
+  Vercel completed the exact-SHA deployment, and the guarded Convex dry run and
+  deploy explicitly targeted Production `descriptive-meerkat-589`; schema
+  validation passed and no indexes were deleted. Production health returned
+  `status: ok`, the renewal aggregate audit returned zero records, and the
+  default-off subscription preview processed five organizations with two
+  eligible and zero invoice, past-due, or suspension writes.
+- A hard reload of the authenticated owner session cleared the stale cached-data
+  banner. Audit, Operations, Finance/Statements, and Settings loaded live with
+  no browser errors; Renewal recovery was unchecked and external delivery was
+  disabled. Vercel is green; GitHub run `33341837875` has completed its static,
+  build, dependency, diff, clean-tree, and generated-code jobs while the
+  clean-server credential-free browser job remains in progress.
 
 ## Membership migration and member referral sharing — 30 August 2026
 

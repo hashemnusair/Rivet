@@ -37,10 +37,18 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   build, a focused two-role class browser regression, dependency audit, and
   diff check. The pushed GitHub workflow owns the clean-server, complete
   credential-free Playwright result for the release commit.
-- After GitHub and Vercel are green, use only the guarded exact-target
-  `pnpm convex:deploy` procedure for Production `descriptive-meerkat-589`, then
-  rerun health, aggregate safety audits, and signed-in owner acceptance. Do not
-  treat the prior cached-data recovery banner as a successful live read.
+- Release tip `b1da867` is pushed on matching local/GitHub `main`. Vercel is
+  green for the exact SHA. The guarded Convex dry run and deploy explicitly
+  selected Production `descriptive-meerkat-589`, passed schema validation, and
+  deleted no indexes. Production health is `ok`; the renewal aggregate is zero;
+  subscription reconciliation remains disabled and previewed zero invoice,
+  past-due, or suspension writes across five organizations.
+- The authenticated owner session passed Audit, Operations, Finance/Statements,
+  and Settings after a hard reload, with no recovery banner or browser errors.
+  Renewal recovery was visibly off and external delivery disabled. GitHub run
+  `33341837875` has passed the static/build, audit, diff, clean-tree, and
+  generated-code jobs; its clean-server credential-free browser job is the one
+  remaining in-flight release check.
 
 ### Membership-state migration and referral-sharing batch — 30 August 2026
 
