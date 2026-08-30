@@ -105,7 +105,7 @@ function MembersPageInner() {
       <Select value={planId} onValueChange={(value) => replaceParams({ plan: value === "all" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="w-44" aria-label="Plan filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All plans</SelectItem>{(plansQuery.data?.items ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
       <Select value={sort} onValueChange={(value) => replaceParams({ sort: value === "fullName" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="w-40" aria-label="Sort members"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fullName">Name A–Z</SelectItem><SelectItem value="-createdAt">Newest first</SelectItem><SelectItem value="membershipEndDate">Expiry soonest</SelectItem><SelectItem value="-outstanding">Highest balance</SelectItem><SelectItem value="-lastCheckInAt">Recent check-in</SelectItem></SelectContent></Select>
       <Button size="sm" variant="secondary" onClick={() => setColumnsOpen(true)}><Columns3 /> Columns</Button>
-      <SavedViewControls surface="members" state={viewState} onApply={applyView} />
+      <SavedViewControls surface="members" state={viewState} onApply={applyView} hasExplicitState={["q", "record", "membership", "plan", "sort", "columns"].some((key) => params.has(key))} />
       {members.data ? <span className="ms-auto text-[11.5px] text-ink-3 tabular">{members.data.totalItems} members</span> : null}
     </div>
 

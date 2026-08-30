@@ -227,7 +227,7 @@ function PipelinePageInner() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" /></div>
-        <SavedViewControls surface="leads" state={{ q: debounced || undefined, view }} onApply={(state) => { const nextView = state.view === "list" ? "list" : "board"; setSearch(typeof state.q === "string" ? state.q : ""); setView(nextView); replaceParams({ q: typeof state.q === "string" ? state.q : undefined, view: nextView === "list" ? "list" : undefined }); }} />
+        <SavedViewControls surface="leads" state={{ q: debounced || undefined, view }} hasExplicitState={searchParams.has("q") || searchParams.has("view")} onApply={(state) => { const nextView = state.view === "list" ? "list" : "board"; setSearch(typeof state.q === "string" ? state.q : ""); setView(nextView); replaceParams({ q: typeof state.q === "string" ? state.q : undefined, view: nextView === "list" ? "list" : undefined }); }} />
       </div>
 
       {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Bulk action</Button><button type="button" className="text-[11.5px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}

@@ -8,6 +8,7 @@ import { qk } from "@/lib/api/keys";
 import type { RecentWorkspaceItem, WorkspaceSearchResult } from "@/lib/domain/qol";
 import type { Session } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Badge } from "@/components/ui/badge";
 
@@ -19,7 +20,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { canAny } = usePermissions();
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
-  const settledQuery = query.trim();
+  const settledQuery = useDebouncedValue(query.trim(), 200);
   const search = useApiQuery(qk.workspaceSearch(settledQuery), (api) => api.searchWorkspace(settledQuery), { enabled: open && settledQuery.length >= 2, retry: false });
   const recents = useApiQuery(qk.workspaceRecents, (api) => api.listRecentWorkspaceItems(), { enabled: open });
   const pins = useApiQuery(qk.workspacePins, (api) => api.listPinnedWorkspaceItems(), { enabled: open });
@@ -72,7 +73,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const groupLabels: Record<string, string> = { member: "Members", lead: "Leads", receipt: "Receipts", page: "Pages", action: "Actions" };
 
   return <Command.Dialog open={open} onOpenChange={onOpenChange} label="Global search" className="fixed inset-0 z-[90]" shouldFilter={false}>
-    <div className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
+    <button type="button" tabIndex={-1} aria-label="Close workspace search" className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
     <div className="fixed left-1/2 top-[10vh] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-surface shadow-dialog animate-scale-in">
       <div className="flex items-center gap-2 border-b border-line px-4"><ArrowRight className="size-4 text-ink-3" aria-hidden /><Command.Input value={query} onValueChange={setQuery} placeholder="Member, phone, receipt, reference, page or action…" aria-label="Search RIVET" className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4" autoFocus /></div>
       <Command.List className="max-h-[58vh] overflow-y-auto p-2">
