@@ -32,8 +32,22 @@
   tests plus 14 repository-safety tests, the 57-page Production build, 43
   credential-free Playwright journeys / 14 explicit staging-only skips / 0
   failures, `pnpm audit --prod` with no known vulnerabilities, and
-  `git diff --check`. GitHub/Vercel and exact-target Convex evidence is recorded
-  when the final documentation commit is promoted.
+  `git diff --check`.
+- Release commit `156f9b1` was pushed directly to matching `main` and
+  `origin/main`; no partner commit arrived during the final fetch. GitHub
+  Actions run `33311009377` passed all three jobs for that exact SHA, including
+  the 43-pass credential-free browser suite. Vercel Production deployment
+  `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is `READY` for the same SHA and the
+  canonical origin returned HTTP 200.
+- Convex Production `descriptive-meerkat-589` passed the exact-target guarded
+  dry run and deploy. Schema validation completed, no indexes were deleted,
+  and four additive indexes were installed for bounded customer identity,
+  expired-export cleanup, and maintenance state. The read-only `health`
+  operation returned `status: ok`. Convex repeated the existing Free-plan
+  overage warning; no plan or PAYG change was made.
+- No Production tenant, member, membership, payment, import, or provider data
+  was created or changed by this release. The importer and guided sale are now
+  available for an authorized operator to exercise deliberately.
 - Membership terms, opening balances, historical payments, and financial
   history are intentionally not accepted by the generic member importer. Their
   accounting and migration rules remain an explicit product decision. Arabic

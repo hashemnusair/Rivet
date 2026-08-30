@@ -1,9 +1,8 @@
 # RIVET engineering handoff plan
 
 Last updated: 30 August 2026
-Current application tip: `822f328`; the final documentation/release commit is
-recorded after the guarded Production promotion. Current Convex and Vercel
-Production verification is recorded below.
+Current application tip: `822f328`; the application-bearing release commit is
+`156f9b1`. Current Convex and Vercel Production verification is recorded below.
 
 ## Purpose
 
@@ -34,6 +33,15 @@ and the complete chronological implementation record is
   remain deliberately last. The next policy-dependent choices are online
   payments/payment-backed offer acceptance, live messaging, legally approved
   waivers/documents, and recurring maintenance checklists.
+- Release `156f9b1` is aligned on local and GitHub `main`. GitHub Actions run
+  `33311009377` passed all jobs, Vercel Production deployment
+  `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is `READY` for the exact SHA, and the
+  canonical site returned HTTP 200.
+- Convex Production `descriptive-meerkat-589` received the matching backend
+  through the guarded dry-run/deploy path. No indexes were deleted; four
+  additive indexes were installed and the read-only health operation returned
+  `status: ok`. The existing Free-plan overage warning remains and no plan or
+  PAYG change was made. No Production product data was seeded or mutated.
 
 - Current-head platform-owner acceptance passed for Overview, Applications,
   Gyms, Pricing & entitlements, Billing, and Support with no page or console

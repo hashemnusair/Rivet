@@ -41,8 +41,20 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   tests, both TypeScript checks, lint/secret audit, the 57-page build, 43
   credential-free Playwright passes / 14 explicit staging-only skips / 0
   failures, the Production dependency audit, and the diff check. Exact
-  deployment and hosted verification evidence is appended only after the
-  standard guarded Production procedure completes.
+  deployment and hosted verification evidence follows.
+- Release commit `156f9b1` is aligned on local and GitHub `main`. GitHub
+  Actions run `33311009377` passed all three jobs, including the credential-free
+  browser gate. Vercel deployment `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is
+  `READY` for the exact SHA; the canonical site returned HTTP 200.
+- The exact-target guarded Convex dry run and deploy selected Production
+  `descriptive-meerkat-589`, completed schema validation, deleted no indexes,
+  and added `domainRecords.by_type_customer_profile`,
+  `domainRecords.by_type_customer_user`,
+  `domainRecords.by_type_export_expiry`, and `maintenanceState.by_key`.
+  Read-only `domain:query` operation `health` returned `status: ok`.
+- Convex repeated the existing Free-plan overage warning. No plan/PAYG change,
+  provider activation, seed, import, restore, or Production product-data
+  mutation was performed.
 
 ### Quality-of-life architecture batch — 30 August 2026
 

@@ -53,9 +53,13 @@ values, applicant details, and provider credentials out of this file.
   TypeScript checks, zero-warning lint/secret audit, 57 generated Production
   routes, 43 passed / 14 explicitly staging-only skipped Playwright journeys,
   a clean production dependency audit, and `git diff --check`.
-- [ ] Run the credentialed isolated-staging journeys and normal exact-target
-  release/deployment procedure before promoting this branch. No deployment or
-  provider/environment change is part of this implementation task.
+- [x] Run the normal exact-target release procedure for application-bearing
+  commit `156f9b1`: guarded Convex Production dry run/deploy and health check,
+  GitHub Actions run `33311009377`, exact-SHA Vercel Production deployment, and
+  canonical HTTP check all passed without Production product-data mutation.
+- [ ] Run the credentialed isolated-staging journeys when the dedicated
+  non-Production identities and variables are available. Keep these separate
+  from the credential-free release gate.
 - [ ] Complete legal/commercial pages and consent copy, full Arabic
   localization/language switching, and the measured performance sprint during
   final pre-launch closure, as explicitly deferred by the product owner.
