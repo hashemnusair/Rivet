@@ -5922,7 +5922,7 @@ async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Da
   return result;
 }
 
-async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean } = {}): Promise<{ member: Data; duplicates: Data[] }> {
+async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean; confirmedDuplicateMemberIds?: string[] } = {}): Promise<{ member: Data; duplicates: Data[] }> {
   requirePermission(actor, "members.write");
   const fullName = stringValue(input.fullName).trim();
   const phone = normalizedLeadPhone(input.phone, actor);
@@ -5937,10 +5937,12 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     { phone, email },
     organizationPhoneCountryCallingCode(actor.organization),
   ) as Data[];
-  if (options.rejectDuplicates && duplicates.length > 0) {
+  const confirmedDuplicateMemberIds = new Set(options.confirmedDuplicateMemberIds ?? []);
+  const unconfirmedDuplicates = duplicates.filter((duplicate) => !confirmedDuplicateMemberIds.has(stringValue(duplicate.memberId)));
+  if (options.rejectDuplicates && unconfirmedDuplicates.length > 0) {
     domainError("DUPLICATE_MEMBER", "This lead matches an existing member. Open that member instead of creating a duplicate.", {
       correlationId: actor.correlationId,
-      details: { matches: duplicates },
+      details: { matches: unconfirmedDuplicates },
     });
   }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
@@ -5973,6 +5975,9 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   }, { branchId: homeBranchId });
   await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
   await insertAudit(ctx, actor, { category: "members", action: "member.create", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Member profile created", branchId: homeBranchId });
+  if (duplicates.length > 0 && unconfirmedDuplicates.length === 0) {
+    await insertAudit(ctx, actor, { category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId) }, branchId: homeBranchId });
+  }
   return { member: await toMemberDetail(ctx, actor, member), duplicates };
 }
 
@@ -6089,7 +6094,9 @@ async function createMembershipMutation(
     receipt = paymentResult.receipt;
     await auditPaymentCollection(ctx, actor, payment);
   }
-  const result = { membership: await toMembership(ctx, actor, membership), charge, payment, receipt, timelineEventIds: [event.id] };
+  const persistedCharge = await recordOf(ctx, actor, "charge", charge.id);
+  const persistedReceipt = receipt ? await recordOf(ctx, actor, "receipt", stringValue(receipt.id)) : null;
+  const result = { membership: await toMembership(ctx, actor, membership), charge: data(persistedCharge.data), payment, receipt: persistedReceipt ? data(persistedReceipt.data) : undefined, timelineEventIds: [event.id] };
   if (idempotencyKey && requestHash) {
     await ctx.db.insert("idempotencyRecords", {
       organizationId: actor.organization._id,
@@ -6103,6 +6110,84 @@ async function createMembershipMutation(
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
   return result;
+}
+
+async function membershipSaleResultFromIdempotency(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  stored: Data,
+): Promise<Data> {
+  const replayMembership = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
+  const replayCharge = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
+  const replayPayment = stored.paymentId ? await recordOf(ctx, actor, "payment", stringValue(stored.paymentId)) : null;
+  const replayReceipt = stored.receiptId ? await recordOf(ctx, actor, "receipt", stringValue(stored.receiptId)) : null;
+  return {
+    membership: await toMembership(ctx, actor, data(replayMembership.data)),
+    charge: data(replayCharge.data),
+    payment: replayPayment ? data(replayPayment.data) : undefined,
+    receipt: replayReceipt ? data(replayReceipt.data) : undefined,
+    timelineEventIds: arrayValue(stored.timelineEventIds).map(String),
+  };
+}
+
+async function createMemberMembershipSaleMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "members.write");
+  requirePermission(actor, "memberships.sell");
+  const memberInput = data(input.member);
+  const saleInput = data(input.sale);
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 120) {
+    domainError("VALIDATION_ERROR", "A valid sale request key is required.", { correlationId: actor.correlationId });
+  }
+  const confirmedDuplicateMemberIds = arrayValue(input.confirmedDuplicateMemberIds).map(String).sort();
+  const requestHash = JSON.stringify({ member: memberInput, sale: saleInput, confirmedDuplicateMemberIds });
+  const existing = await ctx.db
+    .query("idempotencyRecords")
+    .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member.create_and_sell").eq("key", idempotencyKey))
+    .unique();
+  if (existing) {
+    if (existing.requestHash !== requestHash) {
+      domainError("VALIDATION_ERROR", "This request key was already used for a different member sale.", { correlationId: actor.correlationId });
+    }
+    const stored = data(existing.result);
+    const member = await recordOf(ctx, actor, "member", stringValue(stored.memberId));
+    return {
+      member: await toMemberDetail(ctx, actor, data(member.data)),
+      sale: await membershipSaleResultFromIdempotency(ctx, actor, stored),
+    };
+  }
+
+  const created = await createMemberMutation(ctx, actor, memberInput, { rejectDuplicates: true, confirmedDuplicateMemberIds });
+  const memberId = stringValue(data(created.member).id);
+  const normalizedSaleInput: Data = { ...saleInput, memberId };
+  delete normalizedSaleInput.idempotencyKey;
+  const sale = await createMembershipMutation(
+    ctx,
+    actor,
+    normalizedSaleInput,
+    undefined,
+    { standardStartDate: todayIn(actor.organization.timezone || TZ_FALLBACK) },
+  );
+  const saleData = data(sale);
+  const resultReference = {
+    memberId,
+    membershipId: stringValue(data(saleData.membership).id),
+    chargeId: stringValue(data(saleData.charge).id),
+    paymentId: optionalString(data(saleData.payment).id),
+    receiptId: optionalString(data(saleData.receipt).id),
+    timelineEventIds: arrayValue(saleData.timelineEventIds).map(String),
+  };
+  await ctx.db.insert("idempotencyRecords", {
+    organizationId: actor.organization._id,
+    operation: "member.create_and_sell",
+    key: idempotencyKey,
+    requestHash,
+    result: resultReference,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 86_400_000 * 365,
+  });
+  const member = await recordOf(ctx, actor, "member", memberId);
+  return { member: await toMemberDetail(ctx, actor, data(member.data)), sale };
 }
 
 async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -8047,6 +8132,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await undoMemberImport(ctx, actor, input);
     case "members.create":
       return await createMemberMutation(ctx, actor, input);
+    case "members.create_and_sell":
+      return await createMemberMembershipSaleMutation(ctx, actor, input);
     case "members.update": {
       requirePermission(actor, "members.write");
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));

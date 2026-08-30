@@ -7,6 +7,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
 import { MockGymOSApi } from "./MockGymOSApi";
+import { BRANCH_ABD } from "./seed";
 import type { MockDb } from "./store";
 
 /**
@@ -1165,6 +1166,33 @@ describe("collecting a payment", () => {
 });
 
 describe("membership sale and renewal", () => {
+  it("commits a new member and their first sale as one idempotent workflow", async () => {
+    const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
+    const input = {
+      member: { fullName: "Atomic Member", phone: "+962 79 911 2233", homeBranchId: BRANCH_ABD, preferredLanguage: "en" as const },
+      sale: { planId: plan.id, startDate: todayISODate(), payment: { amount: plan.basePrice, method: "card" as const, externalReference: "POS-ATOMIC-1" } },
+      idempotencyKey: "mock-member-sale-atomic-1",
+    };
+    const first = await api.createMemberMembershipSale(input);
+    const replay = await api.createMemberMembershipSale(input);
+    expect(replay).toEqual(first);
+    expect(first.sale.membership.memberId).toBe(first.member.id);
+    expect(first.sale.receipt).toBeDefined();
+    expect((await api.listMembers({ search: "Atomic Member", pageSize: 20 })).items).toHaveLength(1);
+  });
+
+  it("restores mock state when a composite sale fails", async () => {
+    const before = await api.listMembers({ pageSize: 100 });
+    await expect(api.createMemberMembershipSale({
+      member: { fullName: "Rollback Member", phone: "+962 79 911 2244", homeBranchId: BRANCH_ABD, preferredLanguage: "en" },
+      sale: { planId: "missing-plan", startDate: todayISODate() },
+      idempotencyKey: "mock-member-sale-rollback-1",
+    })).rejects.toThrow(/Plan not found/i);
+    const after = await api.listMembers({ pageSize: 100 });
+    expect(after.totalItems).toBe(before.totalItems);
+    expect(after.items.some((member) => member.fullName === "Rollback Member")).toBe(false);
+  });
+
   it("sells a membership with a payment and records charge, receipt and timeline together", async () => {
     const member = await freshMemberForSale();
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;

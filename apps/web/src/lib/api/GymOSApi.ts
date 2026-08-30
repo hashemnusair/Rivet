@@ -35,6 +35,8 @@ import type {
   CreateCheckInInput,
   CreateLeadInput,
   CreateMemberInput,
+  CreateMemberMembershipSaleInput,
+  CreateMemberMembershipSaleResult,
   CreateMemberResult,
   CreateMembershipSaleInput,
   ChangeMembershipPlanInput,
@@ -863,6 +865,7 @@ export interface GymOSApi {
   getMember(memberId: UUID): Promise<MemberDetail>;
   subscribeMember(memberId: UUID, onValue: (member: MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createMember(input: CreateMemberInput): Promise<CreateMemberResult>;
+  createMemberMembershipSale(input: CreateMemberMembershipSaleInput): Promise<CreateMemberMembershipSaleResult>;
   updateMember(memberId: UUID, input: UpdateMemberInput): Promise<MemberDetail>;
   archiveMember(memberId: UUID, input: { reason: string }): Promise<void>;
   deleteMember(memberId: UUID, input: { reason: string; confirmation: string }): Promise<void>;

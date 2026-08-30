@@ -963,6 +963,23 @@ export interface MembershipSaleResult {
   timelineEventIds: UUID[];
 }
 
+/**
+ * One front-desk transaction for a brand-new member and their first term.
+ * The member and sale are committed together, or neither is committed.
+ */
+export interface CreateMemberMembershipSaleInput {
+  member: CreateMemberInput;
+  sale: Omit<CreateMembershipSaleInput, "memberId" | "idempotencyKey">;
+  /** Exact matches the operator reviewed and confirmed belong to a different person. */
+  confirmedDuplicateMemberIds?: UUID[];
+  idempotencyKey: string;
+}
+
+export interface CreateMemberMembershipSaleResult {
+  member: MemberDetail;
+  sale: MembershipSaleResult;
+}
+
 export interface FreezeMembershipInput {
   startDate: ISODate;
   endDate: ISODate;

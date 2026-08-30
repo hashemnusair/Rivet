@@ -667,6 +667,7 @@ export class MockGymOSApi implements GymOSApi {
   private trialIdempotency = new Map<string, { signature: string; result: TrialBooking }>();
   private trialRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
   private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
+  private memberSaleFlowIdempotency = new Map<string, { signature: string; result: T.CreateMemberMembershipSaleResult }>();
   private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
   private ptCancellationIdempotency = new Map<string, { signature: string; result: T.PtPackageOrder }>();
   private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
@@ -2689,6 +2690,7 @@ export class MockGymOSApi implements GymOSApi {
     this.operationalNotifications = [];
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     this.membershipSaleIdempotency.clear();
+    this.memberSaleFlowIdempotency.clear();
     this.membershipTransferIdempotency.clear();
     this.ptTrainers = [];
     this.ptPackages = [];
@@ -4024,6 +4026,58 @@ export class MockGymOSApi implements GymOSApi {
         member: this.toMemberDetail(record),
         duplicates,
       };
+    });
+  }
+
+  createMemberMembershipSale(input: T.CreateMemberMembershipSaleInput): Promise<T.CreateMemberMembershipSaleResult> {
+    return this.respond(async () => {
+      this.require("members.write");
+      this.require("memberships.sell");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw ApiError.of(ERR.VALIDATION, "A valid sale request key is required.");
+      const confirmedDuplicateMemberIds = [...(input.confirmedDuplicateMemberIds ?? [])].sort();
+      const signature = JSON.stringify({ member: input.member, sale: input.sale, confirmedDuplicateMemberIds });
+      const prior = this.memberSaleFlowIdempotency.get(idempotencyKey);
+      if (prior) {
+        if (prior.signature !== signature) throw ApiError.of(ERR.VALIDATION, "This request key was already used for a different member sale.");
+        return prior.result;
+      }
+      const duplicates = this.findDuplicates({ phone: input.member.phone, email: input.member.email });
+      const confirmed = new Set(confirmedDuplicateMemberIds);
+      const unconfirmedDuplicates = duplicates.filter((duplicate) => !confirmed.has(duplicate.memberId));
+      if (unconfirmedDuplicates.length > 0) throw ApiError.of(ERR.DUPLICATE_MEMBER, "This person matches an existing member. Open that member instead of creating a duplicate.", { details: { matches: unconfirmedDuplicates } });
+
+      const snapshot = {
+        members: this.db.members.length,
+        memberships: this.db.memberships.length,
+        charges: this.db.charges.length,
+        payments: this.db.payments.length,
+        receipts: this.db.receipts.length,
+        activities: this.db.activities.length,
+        audits: this.db.audits.length,
+        memberNumber: this.db.counters.memberNumber,
+        receiptNumber: this.db.counters.receiptNumber,
+      };
+      try {
+        const created = await this.createMember(input.member);
+        if (duplicates.length > 0) this.audit({ category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: created.member.id, entityLabel: `${created.member.fullName} · ${created.member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId).join(",") }, branchId: created.member.homeBranchId });
+        const sale = await this.createMembershipSale({ ...input.sale, memberId: created.member.id });
+        const memberRecord = this.db.members.find((member) => member.id === created.member.id)!;
+        const result = { member: this.toMemberDetail(memberRecord), sale };
+        this.memberSaleFlowIdempotency.set(idempotencyKey, { signature, result });
+        return result;
+      } catch (error) {
+        this.db.members.splice(snapshot.members);
+        this.db.memberships.splice(snapshot.memberships);
+        this.db.charges.splice(snapshot.charges);
+        this.db.payments.splice(snapshot.payments);
+        this.db.receipts.splice(snapshot.receipts);
+        this.db.activities.splice(0, this.db.activities.length - snapshot.activities);
+        this.db.audits.splice(0, this.db.audits.length - snapshot.audits);
+        this.db.counters.memberNumber = snapshot.memberNumber;
+        this.db.counters.receiptNumber = snapshot.receiptNumber;
+        throw error;
+      }
     });
   }
 

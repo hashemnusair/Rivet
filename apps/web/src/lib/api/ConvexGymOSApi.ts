@@ -462,6 +462,7 @@ export class ConvexGymOSApi implements GymOSApi {
   getMember(memberId: T.UUID): Promise<T.MemberDetail> { return this.query("members.get", { memberId }); }
   subscribeMember(memberId: T.UUID, onValue: (member: T.MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("members.get", { memberId }, onValue, onError); }
   createMember(input: T.CreateMemberInput): Promise<T.CreateMemberResult> { return this.mutate("members.create", input); }
+  createMemberMembershipSale(input: T.CreateMemberMembershipSaleInput): Promise<T.CreateMemberMembershipSaleResult> { return this.mutate("members.create_and_sell", input); }
   updateMember(memberId: T.UUID, input: T.UpdateMemberInput): Promise<T.MemberDetail> { return this.mutate("members.update", { memberId, ...input }); }
   async archiveMember(memberId: T.UUID, input: { reason: string }): Promise<void> { await this.mutate("members.archive", { memberId, ...input }); }
   async deleteMember(memberId: T.UUID, input: { reason: string; confirmation: string }): Promise<void> { await this.mutate("members.delete", { memberId, ...input }); }

@@ -59,11 +59,12 @@ describe("new member duplicate pre-check", () => {
     expect(duplicateCheck).toHaveBeenCalledTimes(2);
   });
 
-  it("prefills a reception search and continues directly to membership sale", async () => {
+  it("prefills a reception search and commits the member and membership only after final confirmation", async () => {
     navigation.searchParams = new URLSearchParams("name=Walk-in Guest");
     const user = userEvent.setup();
     const { api } = await renderWithApp(<NewMemberPage />, { branchId: BRANCH_ABD });
     const createMember = vi.spyOn(api, "createMember");
+    const createMemberSale = vi.spyOn(api, "createMemberMembershipSale");
 
     expect(screen.getByTestId("member-name")).toHaveValue("Walk-in Guest");
     const phone = screen.getByTestId("member-phone");
@@ -75,7 +76,18 @@ describe("new member duplicate pre-check", () => {
     await waitFor(() => expect(screen.queryByText(/Checking for duplicates/i)).not.toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Create & sell membership/i }));
 
-    await waitFor(() => expect(createMember).toHaveBeenCalledOnce());
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/members\/.+\?sell=1$/)));
+    expect(await screen.findByText(/Choose Walk-in Guest's membership/i)).toBeInTheDocument();
+    expect(createMember).not.toHaveBeenCalled();
+    expect(createMemberSale).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId("quick-sale-plan"));
+    await user.click(await screen.findByRole("option", { name: /Monthly Standard/i }));
+    await user.click(screen.getByRole("switch", { name: "Collect payment now" }));
+    await user.click(screen.getByTestId("confirm-member-sale"));
+
+    await waitFor(() => expect(createMemberSale).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("heading", { name: "Member ready" })).toBeInTheDocument();
+    expect(screen.getByText("Balance recorded")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
   });
 });
