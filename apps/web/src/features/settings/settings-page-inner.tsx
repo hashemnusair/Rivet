@@ -26,7 +26,7 @@ import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 interface SettingsEntry {
   id: string;
   label: string;
-  /** Extra search terms beyond the label, so "logo" finds Brand kit. */
+  /** Extra search terms beyond the label, so "logo" finds Brand Kit. */
   keywords: string;
   component: ComponentType;
 }
@@ -40,38 +40,38 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: "Gym",
     entries: [
-      { id: "organization", label: "Organization", keywords: "name currency timezone contact", component: OrganizationSection },
-      { id: "brand", label: "Brand Kit", keywords: "logo colors identity sidebar", component: BrandKitSection },
-      { id: "profile", label: "Public profile", keywords: "page photos banner publish description website", component: GymPublicProfileSection },
-      { id: "branches", label: "Branches", keywords: "locations codes address", component: BranchesSection },
-      { id: "spaces", label: "Gym spaces", keywords: "zones rooms floor studio areas", component: GymSpacesSection },
+      { id: "organization", label: "Organization", keywords: "identity contact gym name timezone locale language phone country", component: OrganizationSection },
+      { id: "brand", label: "Brand Kit", keywords: "identity sidebar logo palette primary color theme", component: BrandKitSection },
+      { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", component: GymPublicProfileSection },
+      { id: "branches", label: "Branches", keywords: "locations address codes", component: BranchesSection },
+      { id: "spaces", label: "Gym spaces", keywords: "zones areas rooms floors studios", component: GymSpacesSection },
     ],
   },
   {
     label: "People",
     entries: [
-      { id: "users", label: "Users", keywords: "staff invite accounts deactivate", component: UsersSection },
-      { id: "roles", label: "Roles & permissions", keywords: "access owner manager receptionist coach", component: RolesSection },
+      { id: "users", label: "Users", keywords: "staff accounts invite deactivate branch access", component: UsersSection },
+      { id: "roles", label: "Roles & permissions", keywords: "access matrix owner manager receptionist coach auditor", component: RolesSection },
     ],
   },
   {
     label: "Money",
     entries: [
-      { id: "payments", label: "Payments", keywords: "methods cash card cliq bank", component: PaymentsSection },
-      { id: "receipts", label: "Receipts & tax", keywords: "vat numbering invoice footer", component: ReceiptsSection },
+      { id: "payments", label: "Payments", keywords: "money methods cash card cliq bank transfer discount approval limits", component: PaymentsSection },
+      { id: "receipts", label: "Receipts & tax", keywords: "invoice vat rate prefix numbering footer", component: ReceiptsSection },
     ],
   },
   {
     label: "Communication",
     entries: [
-      { id: "notifications", label: "Notifications", keywords: "whatsapp sms email reminders renewals templates", component: NotificationsSection },
-      { id: "email", label: "Operational email", keywords: "sender outbox delivery", component: OperationalEmailSection },
+      { id: "notifications", label: "Notifications", keywords: "reminders templates manager alerts automation delivery whatsapp sms email renewals variance", component: NotificationsSection },
+      { id: "email", label: "Operational email", keywords: "sender outbox delivery member service preferences mandatory notices", component: OperationalEmailSection },
     ],
   },
   {
     label: "Operations",
     entries: [
-      { id: "operations", label: "Rules & hours", keywords: "operating hours entry freeze referral trial policies", component: OperationalRulesSection },
+      { id: "operations", label: "Rules & hours", keywords: "policies entry check-in scan freeze referral trial renewal operating hours lifecycle", component: OperationalRulesSection },
     ],
   },
 ];
@@ -95,7 +95,11 @@ export function SettingsPageInner() {
   const active = ALL_ENTRIES.find((entry) => entry.id === activeSection) ?? DEFAULT_ENTRY;
   const ActiveComponent = active.component;
 
-  const select = (id: string) => requestNavigation(() => setActiveSection(id));
+  const select = (id: string) =>
+    requestNavigation(() => {
+      setActiveSection(id);
+      try { window.scrollTo({ top: 0 }); } catch { /* jsdom */ }
+    });
 
   const navButton = (entry: SettingsEntry) => {
     const isActive = entry.id === active.id;
@@ -108,7 +112,7 @@ export function SettingsPageInner() {
         data-state={isActive ? "active" : "inactive"}
         onClick={() => select(entry.id)}
         className={cn(
-          "flex w-full items-center rounded-md px-2.5 py-1.5 text-start text-[13px] transition-colors",
+          "flex w-full cursor-pointer items-center rounded-md px-2.5 py-1.5 text-start text-[13px] transition-colors",
           isActive ? "bg-sunken font-medium text-ink" : "text-ink-2 hover:bg-sunken/60 hover:text-ink",
         )}
       >
@@ -126,8 +130,11 @@ export function SettingsPageInner() {
         description="Organization, branches, people, permissions and receipts. Everything sensitive here is audited."
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
-        <div className="grid items-start gap-5 lg:grid-cols-[218px_minmax(0,1fr)]">
-          <nav aria-label="Settings sections" className="lg:sticky lg:top-20">
+        <div className="grid items-start gap-5 lg:grid-cols-[222px_minmax(0,1fr)]">
+          {/* Plain page flow on purpose: the rail scrolls with the page, so
+              every section is always reachable — no pinned pane to trap or
+              clip the list on short screens. */}
+          <nav aria-label="Settings sections">
             <div className="relative mb-3">
               <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
               <Input
@@ -138,7 +145,7 @@ export function SettingsPageInner() {
                 className="h-9 ps-8"
               />
             </div>
-            <div role="tablist" aria-orientation="vertical" className="space-y-4">
+            <div role="tablist" aria-orientation="vertical" className="space-y-4 pb-2">
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-0.5">{filtered.map(navButton)}</div>

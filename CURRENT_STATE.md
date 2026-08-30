@@ -19,7 +19,11 @@
   description, and tab-strip position so nothing jumps between tabs.
 - Settings became a ServiceTitan-style vertical rail — grouped sections with a
   search box that filters by name and synonyms (e.g. "freeze" finds Rules &
-  hours) — replacing the horizontally scrolling tab strip.
+  hours, "whatsapp" finds Notifications) — replacing the horizontally
+  scrolling tab strip. After trialing an accordion of sub-sections, the rail
+  settled on plain buttons only: dropdowns are reserved for the day a section
+  splits into separate pages. The rail scrolls independently when tall and
+  uses pointer cursors.
 - A saved Brand Kit logo now replaces the RIVET lockup in the workspace
   sidebar and mobile drawer with a quiet "Operated by RIVET™" credit beneath;
   route changes across the staff, customer, and platform shells animate with a
