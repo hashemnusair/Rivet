@@ -254,8 +254,8 @@ describe("CRM lead identity and assignment integrity", () => {
     const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Primary", phone: "+962790007777", email: "duplicate@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
     const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Candidate", phone: "0790007777", email: "duplicate@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
     await owner.mutation(api.domain.mutate, operation("members.note", { memberId: second.member.id, body: "Historical note on duplicate identity" }));
-    const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }>;
-    const duplicate = cases.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
+    const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as { items: Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }> };
+    const duplicate = cases.items.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
     expect(duplicate).toBeDefined();
 
     await owner.mutation(api.domain.mutate, operation("duplicates.merge", { caseId: duplicate!.id, survivingMemberId: first.member.id, mergedMemberId: second.member.id, primaryVersion: duplicate!.primary.version, candidateVersion: duplicate!.candidate.version, fieldSourceMemberIds: { fullName: first.member.id, email: second.member.id }, reason: "Verified as the same member at reception" }));
@@ -265,7 +265,7 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(redirected.id).toBe(first.member.id);
     const timeline = await owner.query(api.domain.query, operation("members.timeline", { memberId: first.member.id, pageSize: 100 })) as { items: Array<{ title: string }> };
     expect(timeline.items.map((item) => item.title)).toEqual(expect.arrayContaining(["Note added", expect.stringContaining("Merged duplicate record")]));
-    expect(await owner.query(api.domain.query, operation("duplicates.list", { status: "merged" }))).toEqual([expect.objectContaining({ id: duplicate!.id, survivingMemberId: first.member.id })]);
+    expect(await owner.query(api.domain.query, operation("duplicates.list", { status: "merged" }))).toMatchObject({ items: [expect.objectContaining({ id: duplicate!.id, survivingMemberId: first.member.id })] });
   });
 
   it("requires supervised identity resolution before merging a member-owned record", async () => {
@@ -280,8 +280,8 @@ describe("CRM lead identity and assignment integrity", () => {
       if (!record) throw new Error("Owned duplicate fixture missing");
       await ctx.db.patch(record._id, { data: { ...record.data, customerProfileId: "customer-owned" }, updatedAt: Date.now() });
     });
-    const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }>;
-    const duplicate = cases.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
+    const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as { items: Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }> };
+    const duplicate = cases.items.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
     expect(duplicate).toBeDefined();
     await expectCode(owner.mutation(api.domain.mutate, operation("duplicates.merge", { caseId: duplicate!.id, survivingMemberId: first.member.id, mergedMemberId: second.member.id, primaryVersion: duplicate!.primary.version, candidateVersion: duplicate!.candidate.version, reason: "Attempt unsafe identity merge" })), "CONFLICT");
     const stillPresent = await owner.query(api.domain.query, operation("members.get", { memberId: second.member.id })) as { id: string; status: string };

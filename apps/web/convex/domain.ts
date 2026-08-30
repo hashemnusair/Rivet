@@ -62,6 +62,7 @@ import {
 } from "../src/lib/utils/contact";
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
+import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -1009,6 +1010,7 @@ async function insertRecord(
     branchId: branch?._id,
     memberPublicId: options.memberPublicId ?? optionalString(value.memberId),
     leadPublicId: options.leadPublicId ?? optionalString(value.leadId),
+    exportExpiresAt: entityType === "exportJob" && optionalString(value.expiresAt) ? Date.parse(stringValue(value.expiresAt)) : undefined,
     createdAt: now,
     updatedAt: now,
     data: enriched,
@@ -2423,6 +2425,30 @@ async function syncCustomerProfileToMemberRecord(
   return true;
 }
 
+const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v1";
+
+async function customerMembershipRowsForIdentity(
+  ctx: ReadContext,
+  user: User,
+  customerProfileId?: string,
+): Promise<DomainRecord[]> {
+  const userId = publicUserId(user);
+  const [byUser, byProfile, indexState] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_type_customer_user", (q) => q.eq("entityType", "customerMembership").eq("customerUserPublicId", userId)).collect(),
+    customerProfileId
+      ? ctx.db.query("domainRecords").withIndex("by_type_customer_profile", (q) => q.eq("entityType", "customerMembership").eq("customerProfilePublicId", customerProfileId)).collect()
+      : Promise.resolve([] as DomainRecord[]),
+    ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY)).unique(),
+  ]);
+  const indexed = [...byUser, ...byProfile].filter((record, index, rows) => rows.findIndex((candidate) => candidate._id === record._id) === index);
+  if (indexState?.status === "completed") return indexed;
+  // One compatibility read protects member accounts until the bounded cron has
+  // indexed every pre-release projection. New writes always populate both keys.
+  const legacy = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
+    .filter((record) => belongsToAuthenticatedCustomer(data(record.data), userId, customerProfileId));
+  return [...indexed, ...legacy].filter((record, index, rows) => rows.findIndex((candidate) => candidate._id === record._id) === index);
+}
+
 async function syncCustomerProfileToLinkedMembers(
   ctx: MutationCtx,
   user: User,
@@ -2430,7 +2456,7 @@ async function syncCustomerProfileToLinkedMembers(
   changedFields: string[],
   correlationId: string,
 ): Promise<void> {
-  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const rows = await customerMembershipRowsForIdentity(ctx, user, stringValue(profile.id));
   for (const row of rows) {
     const projection = data(row.data);
     if (!belongsToAuthenticatedCustomer(projection, publicUserId(user), stringValue(profile.id))) continue;
@@ -2498,8 +2524,8 @@ async function linkExactEmailMembersToCustomerProfile(ctx: MutationCtx, user: Us
         lastCheckInAt: optionalString(checks[0]?.occurredAt),
       };
       const existingProjection = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "customerMembership").eq("publicId", projection.membershipId)).unique();
-      if (existingProjection) await ctx.db.patch(existingProjection._id, { branchId: branch?._id, memberPublicId: memberRecord.publicId, data: { ...data(existingProjection.data), ...projection }, updatedAt: Date.now() });
-      else await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "customerMembership", publicId: projection.membershipId, branchId: branch?._id, memberPublicId: memberRecord.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: projection.membershipId, ...projection } });
+      if (existingProjection) await ctx.db.patch(existingProjection._id, { branchId: branch?._id, memberPublicId: memberRecord.publicId, customerUserPublicId: publicUserId(user), customerProfilePublicId: stringValue(profile.id), data: { ...data(existingProjection.data), ...projection }, updatedAt: Date.now() });
+      else await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "customerMembership", publicId: projection.membershipId, branchId: branch?._id, memberPublicId: memberRecord.publicId, customerUserPublicId: publicUserId(user), customerProfilePublicId: stringValue(profile.id), createdAt: Date.now(), updatedAt: Date.now(), data: { id: projection.membershipId, ...projection } });
       await syncCustomerProfileToMemberRecord(ctx, user, memberRecord, profile, [...CUSTOMER_PROFILE_MEMBER_FIELDS], `membership-link-${projection.membershipId}`);
     }
   }
@@ -2602,7 +2628,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     .map((event) => customerPreferenceEventView(event));
   const preference = history.at(-1) ?? data(profile?.marketingPreference ?? customerPreferenceFromProfile({ createdAt: Date.now() }));
   const preferenceHistory = history.length > 0 ? history : [preference];
-  const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const membershipRows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const ownedMembershipRows = membershipRows
     .map((record): { record: DomainRecord; projection: Data } => ({ record, projection: { id: record.publicId, ...data(record.data) } }))
     .filter(({ projection }) => belongsToAuthenticatedCustomer(projection, userId, optionalString(profile?.id)));
@@ -2733,7 +2759,7 @@ async function customerFinanceContexts(ctx: ReadContext): Promise<CustomerFinanc
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const rows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const contexts: CustomerFinanceContext[] = [];
   for (const row of rows) {
     const projection = data(row.data);
@@ -2763,8 +2789,8 @@ function customerPaymentExplanation(value: Data): string {
   return "Payment received by the gym.";
 }
 
-async function customerFinancialTransactions(ctx: ReadContext): Promise<Data[]> {
-  const contexts = await customerFinanceContexts(ctx);
+async function customerFinancialTransactions(ctx: ReadContext, resolvedContexts?: CustomerFinanceContext[]): Promise<Data[]> {
+  const contexts = resolvedContexts ?? await customerFinanceContexts(ctx);
   const transactions: Data[] = [];
   for (const context of contexts) {
     const [payments, retailSales, branches] = await Promise.all([
@@ -2816,7 +2842,7 @@ async function customerFinancialTransactions(ctx: ReadContext): Promise<Data[]> 
 
 async function customerFinancialSummary(ctx: ReadContext): Promise<Data> {
   const contexts = await customerFinanceContexts(ctx);
-  const transactions = await customerFinancialTransactions(ctx);
+  const transactions = await customerFinancialTransactions(ctx, contexts);
   let outstanding = 0;
   for (const context of contexts) {
     const charges = await recordsOfMember(ctx, context.organization._id, context.memberId, "charge");
@@ -2973,7 +2999,7 @@ async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
   const membershipId = recordId(input.membershipId);
-  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const rows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const membership = rows.find((row) => row.publicId === membershipId && belongsToAuthenticatedCustomer(data(row.data), userId, optionalString(profile?.id)));
   if (!membership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(membership.organizationId);
@@ -3931,73 +3957,74 @@ async function duplicateMemberSummary(ctx: ReadContext, actor: ActorContext, rec
   };
 }
 
-function duplicateCaseId(leftId: string, rightId: string): string {
-  return `duplicate:${[leftId, rightId].sort().join(":")}`;
-}
+type DuplicateCaseCandidate = {
+  pair: DuplicateCandidatePair;
+  primaryRecord: DomainRecord;
+  candidateRecord: DomainRecord;
+  resolution?: Data;
+  status: string;
+};
 
-async function duplicateCases(ctx: ReadContext, actor: ActorContext, requestedStatus?: string): Promise<Data[]> {
+async function duplicateCaseCandidates(ctx: ReadContext, actor: ActorContext, requestedStatus?: string): Promise<DuplicateCaseCandidate[]> {
   requirePermission(actor, "members.read");
   const records = (await memberRecords(ctx, actor)).filter((record) => !optionalString(data(record.data).mergedIntoMemberId));
   const resolutions = (await recordsOf(ctx, actor, "memberDuplicateResolution")).map((record) => ({ id: record.publicId, value: data(record.data) }));
   const resolutionById = new Map(resolutions.map((resolution) => [resolution.id, resolution.value]));
-  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
-  const cases: Data[] = [];
-  for (let leftIndex = 0; leftIndex < records.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < records.length; rightIndex += 1) {
-      const leftRecord = records[leftIndex]!;
-      const rightRecord = records[rightIndex]!;
-      const left = data(leftRecord.data);
-      const right = data(rightRecord.data);
-      if (stringValue(left.status, "active") === "archived" || stringValue(right.status, "active") === "archived") continue;
-      const reasons: string[] = [];
-      const leftPhone = canonicalPhoneKey(optionalString(left.phone), callingCode);
-      const rightPhone = canonicalPhoneKey(optionalString(right.phone), callingCode);
-      const leftEmail = normalize(optionalString(left.email));
-      const rightEmail = normalize(optionalString(right.email));
-      if (leftPhone && leftPhone === rightPhone) reasons.push("phone");
-      if (leftEmail && leftEmail === rightEmail) reasons.push("email");
-      if (left.memberNumber && left.memberNumber === right.memberNumber) reasons.push("member_number");
-      if (normalize(optionalString(left.fullName)) === normalize(optionalString(right.fullName)) && (leftPhone.slice(-7) === rightPhone.slice(-7) || (leftEmail && leftEmail === rightEmail))) reasons.push("name_and_contact");
-      if (!reasons.length) continue;
-      const id = duplicateCaseId(leftRecord.publicId, rightRecord.publicId);
-      const resolution = resolutionById.get(id);
-      const status = stringValue(resolution?.status, "open");
-      if (requestedStatus && requestedStatus !== status) continue;
-      cases.push({
-        id,
-        status,
-        reasons: [...new Set(reasons)],
-        confidence: reasons.includes("phone") || reasons.includes("email") || reasons.includes("member_number") ? "strong" : "possible",
-        primary: await duplicateMemberSummary(ctx, actor, leftRecord),
-        candidate: await duplicateMemberSummary(ctx, actor, rightRecord),
-        createdAt: optionalString(resolution?.createdAt) ?? utcIso(Math.min(leftRecord.createdAt, rightRecord.createdAt)),
-        updatedAt: optionalString(resolution?.updatedAt) ?? utcIso(Math.max(leftRecord.updatedAt, rightRecord.updatedAt)),
-        resolutionReason: optionalString(resolution?.reason),
-        survivingMemberId: optionalString(resolution?.survivingMemberId),
-        correlationId: optionalString(resolution?.correlationId),
-      });
-    }
-  }
-  const seen = new Set(cases.map((item) => stringValue(item.id)));
+  const byId = new Map(records.map((record) => [record.publicId, record]));
+  const pairs = buildDuplicateCandidatePairs(records.map((record) => {
+    const value = data(record.data);
+    return { id: record.publicId, fullName: optionalString(value.fullName), phone: optionalString(value.phone), email: optionalString(value.email), memberNumber: optionalString(value.memberNumber), status: optionalString(value.mergedIntoMemberId) ? "merged" : stringValue(value.status, "active"), createdAt: record.createdAt, updatedAt: record.updatedAt };
+  }), organizationPhoneCountryCallingCode(actor.organization));
+  const candidates: DuplicateCaseCandidate[] = pairs.flatMap((pair) => {
+    const primaryRecord = byId.get(pair.primaryId);
+    const candidateRecord = byId.get(pair.candidateId);
+    if (!primaryRecord || !candidateRecord) return [];
+    const resolution = resolutionById.get(pair.id);
+    const status = stringValue(resolution?.status, "open");
+    return requestedStatus && requestedStatus !== status ? [] : [{ pair, primaryRecord, candidateRecord, resolution, status }];
+  });
+  const seen = new Set(candidates.map((item) => item.pair.id));
   const allMemberRecords = await memberRecords(ctx, actor);
+  const allById = new Map(allMemberRecords.map((record) => [record.publicId, record]));
   for (const resolution of resolutions) {
     if (seen.has(resolution.id)) continue;
     const status = stringValue(resolution.value.status);
     if (requestedStatus && requestedStatus !== status) continue;
-    const primaryRecord = allMemberRecords.find((record) => record.publicId === resolution.value.primaryMemberId);
-    const candidateRecord = allMemberRecords.find((record) => record.publicId === resolution.value.candidateMemberId);
+    const primaryRecord = allById.get(stringValue(resolution.value.primaryMemberId));
+    const candidateRecord = allById.get(stringValue(resolution.value.candidateMemberId));
     if (!primaryRecord || !candidateRecord) continue;
-    cases.push({ id: resolution.id, status, reasons: arrayValue(resolution.value.reasons).map(String), confidence: stringValue(resolution.value.confidence, "strong"), primary: await duplicateMemberSummary(ctx, actor, primaryRecord), candidate: await duplicateMemberSummary(ctx, actor, candidateRecord), createdAt: stringValue(resolution.value.createdAt), updatedAt: stringValue(resolution.value.updatedAt), resolutionReason: optionalString(resolution.value.reason), survivingMemberId: optionalString(resolution.value.survivingMemberId), correlationId: optionalString(resolution.value.correlationId) });
+    candidates.push({
+      pair: { id: resolution.id, primaryId: primaryRecord.publicId, candidateId: candidateRecord.publicId, reasons: arrayValue(resolution.value.reasons).map(String) as DuplicateCandidatePair["reasons"], confidence: stringValue(resolution.value.confidence, "strong") as DuplicateCandidatePair["confidence"], createdAt: Date.parse(stringValue(resolution.value.createdAt)) || primaryRecord.createdAt, updatedAt: Date.parse(stringValue(resolution.value.updatedAt)) || primaryRecord.updatedAt },
+      primaryRecord,
+      candidateRecord,
+      resolution: resolution.value,
+      status,
+    });
   }
-  return cases.sort((left, right) => stringValue(right.updatedAt).localeCompare(stringValue(left.updatedAt)));
+  return candidates.sort((left, right) => right.pair.updatedAt - left.pair.updatedAt || left.pair.id.localeCompare(right.pair.id));
+}
+
+async function duplicateCaseView(ctx: ReadContext, actor: ActorContext, candidate: DuplicateCaseCandidate): Promise<Data> {
+  const { pair, primaryRecord, candidateRecord, resolution, status } = candidate;
+  const [primary, duplicate] = await Promise.all([
+    duplicateMemberSummary(ctx, actor, primaryRecord),
+    duplicateMemberSummary(ctx, actor, candidateRecord),
+  ]);
+  return { id: pair.id, status, reasons: pair.reasons, confidence: pair.confidence, primary, candidate: duplicate, createdAt: optionalString(resolution?.createdAt) ?? utcIso(pair.createdAt), updatedAt: optionalString(resolution?.updatedAt) ?? utcIso(pair.updatedAt), resolutionReason: optionalString(resolution?.reason), survivingMemberId: optionalString(resolution?.survivingMemberId), correlationId: optionalString(resolution?.correlationId) };
+}
+
+async function duplicateCasePage(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data> {
+  const candidates = await duplicateCaseCandidates(ctx, actor, optionalString(input.status));
+  const paged = page(candidates, input);
+  return { ...paged, items: await Promise.all(paged.items.map((candidate) => duplicateCaseView(ctx, actor, candidate))) };
 }
 
 async function duplicateCase(ctx: ReadContext, actor: ActorContext, caseId: string): Promise<Data> {
-  const found = (await duplicateCases(ctx, actor)).find((item) => item.id === caseId)
-    ?? (await duplicateCases(ctx, actor, "ignored")).find((item) => item.id === caseId)
-    ?? (await duplicateCases(ctx, actor, "merged")).find((item) => item.id === caseId);
+  const found = (await duplicateCaseCandidates(ctx, actor)).find((item) => item.pair.id === caseId)
+    ?? (await duplicateCaseCandidates(ctx, actor, "ignored")).find((item) => item.pair.id === caseId)
+    ?? (await duplicateCaseCandidates(ctx, actor, "merged")).find((item) => item.pair.id === caseId);
   if (!found) domainError("NOT_FOUND", "Duplicate case not found.", { correlationId: actor.correlationId });
-  return found;
+  return await duplicateCaseView(ctx, actor, found);
 }
 
 const ONBOARDING_VERSION = 1;
@@ -4020,8 +4047,8 @@ async function onboardingExperience(ctx: ReadContext, input: Data, request: Requ
     const progress = onboardingProgressView(progressRecord, audience);
     const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
     const profile = await customerProfileForUser(ctx, publicUserId(user));
-    const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
-    const memberships = membershipRows.map((row) => data(row.data)).filter((value) => belongsToAuthenticatedCustomer(value, publicUserId(user), optionalString(profile?.id)));
+    const membershipRows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
+    const memberships = membershipRows.map((row) => data(row.data));
     const tasks = [
       { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone), completionMode: "state" },
       { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0, completionMode: "state" },
@@ -4133,7 +4160,7 @@ async function revokeMemberPushSubscription(ctx: MutationCtx, input: Data): Prom
   const publicId = recordId(input.subscriptionId);
   const row = await ctx.db.query("pushSubscriptions").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique();
   if (!row || row.userId !== user._id || row.revokedAt) domainError("NOT_FOUND", "Push subscription not found.");
-  await ctx.db.patch(row._id, { revokedAt: Date.now(), updatedAt: Date.now() });
+  await ctx.db.delete(row._id);
 }
 
 const EXPORT_KINDS = ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const;
@@ -4161,7 +4188,7 @@ function csvCell(value: unknown): string {
   return /[",\r\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
 }
 
-function csvFromRows(rows: Data[], metadata: Data): { content: string; rowCount: number } {
+function csvFromRows(rows: Data[], metadata: Data): { content: string; rowCount: number; totalRows: number; complete: boolean } {
   const normalized = rows.slice(0, 2_000).map((row) => ({ ...metadata, ...row }));
   const headers = [...new Set(["export_generated_at", "export_timezone", "export_branch_scope", "export_filters", ...normalized.flatMap((row) => Object.keys(row))])];
   const header = headers.map(csvCell).join(",");
@@ -4173,7 +4200,7 @@ function csvFromRows(rows: Data[], metadata: Data): { content: string; rowCount:
     content += line;
     rowCount += 1;
   }
-  return { content, rowCount };
+  return { content, rowCount, totalRows: rows.length, complete: rowCount === rows.length };
 }
 
 function exportRecordRow(recordType: string, id: string, value: Data): Data {
@@ -4229,7 +4256,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
 }
 
 function exportJobView(value: Data): Data {
-  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
+  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
 }
 
 async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
@@ -4238,8 +4265,7 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const membershipRecords = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
-  const memberships = membershipRecords.filter((record) => belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const memberships = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const rows: Data[] = [{ record_type: "profile", record_id: optionalString(profile?.id) ?? userId, data: profile ?? { userId } }];
   const organizations = new Map<string, Organization>();
   for (const membership of memberships) {
@@ -4253,8 +4279,9 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   }
   const now = isoNow();
   const csv = csvFromRows(rows, { export_generated_at: now, export_timezone: "UTC", export_branch_scope: "authenticated member records", export_filters: "{}" });
+  if (!csv.complete) domainError("CONFLICT", `Your personal-data export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
-  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, content: csv.content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
 function workspaceInternalHref(value: unknown, correlationId: string): string {
@@ -4743,7 +4770,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       return rows.sort((left, right) => left.position - right.position || left.createdAt - right.createdAt).map(pinnedWorkspaceItemView);
     }
     case "duplicates.list":
-      return await duplicateCases(ctx, actor, optionalString(input.status));
+      return await duplicateCasePage(ctx, actor, input);
     case "duplicates.get":
       return await duplicateCase(ctx, actor, recordId(input.caseId));
     case "support.list": {
@@ -6373,8 +6400,8 @@ async function syncCustomerMembershipProjection(ctx: MutationCtx, actor: ActorCo
     lastCheckInAt: optionalString(checks[0]?.occurredAt),
   };
   const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership").eq("publicId", stringValue(membership.id))).unique();
-  if (existing) await ctx.db.patch(existing._id, { branchId: branch?._id, memberPublicId: stringValue(member.id), data: { ...data(existing.data), ...value }, updatedAt: Date.now() });
-  else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "customerMembership", publicId: stringValue(membership.id), branchId: branch?._id, memberPublicId: stringValue(member.id), createdAt: Date.now(), updatedAt: Date.now(), data: value });
+  if (existing) await ctx.db.patch(existing._id, { branchId: branch?._id, memberPublicId: stringValue(member.id), customerUserPublicId: publicUserId(user), customerProfilePublicId: optionalString(profile?.id), data: { ...data(existing.data), ...value }, updatedAt: Date.now() });
+  else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "customerMembership", publicId: stringValue(membership.id), branchId: branch?._id, memberPublicId: stringValue(member.id), customerUserPublicId: publicUserId(user), customerProfilePublicId: optionalString(profile?.id), createdAt: Date.now(), updatedAt: Date.now(), data: value });
 }
 
 async function revokeUnusedIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, membershipId: string, reason: string): Promise<void> {
@@ -7676,9 +7703,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const csv = csvFromRows(rows, { export_generated_at: generatedAt, export_timezone: actor.organization.timezone || TZ_FALLBACK, export_branch_scope: branchScope, export_filters: JSON.stringify(filters) });
       const id = newPublicId();
       const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
-      const value = { id, kind, status: "completed", fileName, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, content: csv.content, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
+      const status = csv.complete ? "completed" : "failed";
+      const failureMessage = csv.complete ? undefined : `This export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Narrow the date, branch, or search filters and try again.`;
+      const value = { id, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
       await insertRecord(ctx, actor, "exportJob", value);
-      await insertAudit(ctx, actor, { category: "settings", action: "data.export", entityType: "data_export", entityId: id, entityLabel: fileName, summary: `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)`, after: { kind, rowCount: csv.rowCount, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
+      await insertAudit(ctx, actor, { category: "settings", action: csv.complete ? "data.export" : "data.export_rejected", entityType: "data_export", entityId: id, entityLabel: fileName, summary: csv.complete ? `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)` : `Rejected oversized ${kind.replaceAll("_", " ")} export (${csv.totalRows} rows)`, after: { kind, status, rowCount: csv.rowCount, totalRows: csv.totalRows, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
       return exportJobView(value);
     }
     case "workspace.recent.record": {

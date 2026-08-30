@@ -370,7 +370,7 @@ export class ConvexGymOSApi implements GymOSApi {
   deleteSavedView(viewId: T.UUID): Promise<void> { return this.mutate("savedViews.delete", { viewId }); }
   runBulkOperation(input: import("@/lib/domain/qol").BulkOperationInput): Promise<import("@/lib/domain/qol").BulkOperationJob> { return this.mutate("bulk.run", input); }
   listBulkOperationJobs(): Promise<import("@/lib/domain/qol").BulkOperationJob[]> { return this.query("bulk.jobs"); }
-  listDuplicateCases(status?: import("@/lib/domain/qol").DuplicateCaseStatus): Promise<import("@/lib/domain/qol").DuplicateCase[]> { return this.query("duplicates.list", { status }); }
+  listDuplicateCases(query: import("@/lib/domain/qol").DuplicateCaseQuery = {}): Promise<T.Page<import("@/lib/domain/qol").DuplicateCase>> { return this.query("duplicates.list", query); }
   getDuplicateCase(caseId: T.UUID): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.query("duplicates.get", { caseId }); }
   ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.ignore", { caseId, reason }); }
   mergeDuplicateMembers(input: import("@/lib/domain/qol").MergeMemberInput): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.merge", input); }

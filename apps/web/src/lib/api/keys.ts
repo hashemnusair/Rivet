@@ -44,7 +44,7 @@ export const qk = {
   users: (params?: unknown) => ["users", params] as const,
   savedViews: (surface: string) => ["savedViews", surface] as const,
   bulkJobs: ["bulkJobs"] as const,
-  duplicateCases: (status?: string) => ["duplicateCases", status ?? "open"] as const,
+  duplicateCases: (params?: unknown) => ["duplicateCases", params] as const,
   onboarding: (audience: string) => ["onboarding", audience] as const,
   customerFinance: (params?: unknown) => ["customerFinance", params] as const,
   customerReceipt: (id: string) => ["customerReceipts", id] as const,

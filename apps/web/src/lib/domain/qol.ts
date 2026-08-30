@@ -88,6 +88,12 @@ export interface DuplicateCase {
   correlationId?: string;
 }
 
+export interface DuplicateCaseQuery {
+  status?: DuplicateCaseStatus;
+  page?: number;
+  pageSize?: number;
+}
+
 export interface MergeMemberInput {
   caseId: UUID;
   survivingMemberId: UUID;
@@ -158,6 +164,8 @@ export interface ExportJob {
   fileName?: string;
   mimeType?: string;
   rowCount?: number;
+  /** Number of authorized rows before export-size limits are applied. */
+  totalRows?: number;
   downloadUrl?: string;
   /** Present only on an authorized export response; never exposed through a public URL. */
   content?: string;

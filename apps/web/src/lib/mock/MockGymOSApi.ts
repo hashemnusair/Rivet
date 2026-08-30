@@ -62,6 +62,7 @@ import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/c
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
+import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -1123,26 +1124,24 @@ export class MockGymOSApi implements GymOSApi {
 
   private duplicateCasesSync(): import("@/lib/domain/qol").DuplicateCase[] {
     const members = this.db.members.filter((member) => !member.mergedIntoMemberId);
+    const byId = new Map(members.map((member) => [member.id, member]));
     const cases: import("@/lib/domain/qol").DuplicateCase[] = [];
-    for (let leftIndex = 0; leftIndex < members.length; leftIndex += 1) for (let rightIndex = leftIndex + 1; rightIndex < members.length; rightIndex += 1) {
-      const left = members[leftIndex]!;
-      const right = members[rightIndex]!;
-      if (left.status === "archived" || right.status === "archived") continue;
-      const reasons: import("@/lib/domain/qol").DuplicateMatchReason[] = [];
-      if (canonicalPhoneKey(left.phone, this.db.organization.phoneCountryCallingCode) === canonicalPhoneKey(right.phone, this.db.organization.phoneCountryCallingCode)) reasons.push("phone");
-      if (left.email && right.email && left.email.toLowerCase() === right.email.toLowerCase()) reasons.push("email");
-      if (left.memberNumber === right.memberNumber) reasons.push("member_number");
-      if (!reasons.length) continue;
-      const ids = [left.id, right.id].sort();
-      const id = `duplicate:${ids.join(":")}`;
+    for (const candidate of buildDuplicateCandidatePairs(members.map((member) => ({
+      ...member,
+      createdAt: Date.parse(member.createdAt),
+      updatedAt: Date.parse(member.updatedAt ?? member.createdAt),
+    })), this.db.organization.phoneCountryCallingCode)) {
+      const left = byId.get(candidate.primaryId)!;
+      const right = byId.get(candidate.candidateId)!;
+      const id = candidate.id;
       const resolution = this.duplicateResolutions.get(id);
       const summary = (member: MemberRecord): import("@/lib/domain/qol").DuplicateMemberSummary => ({ id: member.id, memberNumber: member.memberNumber, fullName: member.fullName, phone: member.phone, email: member.email, homeBranchId: member.homeBranchId, status: member.mergedIntoMemberId ? "merged" : member.status, balance: money(this.db.charges.filter((charge) => charge.memberId === member.id).reduce((sum, charge) => sum + charge.outstandingAmount.amount, 0)), membershipCount: this.db.memberships.filter((membership) => membership.memberId === member.id).length, visitCount: this.db.checkIns.filter((visit) => visit.memberId === member.id && visit.decision !== "blocked").length, timelineCount: this.db.activities.filter((activity) => activity.memberId === member.id).length, mergedIntoMemberId: member.mergedIntoMemberId, version: member.updatedAt ?? member.createdAt });
-      cases.push({ id, status: resolution?.status ?? "open", reasons, confidence: "strong", primary: summary(left), candidate: summary(right), createdAt: left.createdAt < right.createdAt ? left.createdAt : right.createdAt, updatedAt: resolution?.updatedAt ?? (left.createdAt > right.createdAt ? left.createdAt : right.createdAt), resolutionReason: resolution?.reason, survivingMemberId: resolution?.survivingMemberId });
+      cases.push({ id, status: resolution?.status ?? "open", reasons: candidate.reasons, confidence: candidate.confidence, primary: summary(left), candidate: summary(right), createdAt: new Date(candidate.createdAt).toISOString(), updatedAt: resolution?.updatedAt ?? new Date(candidate.updatedAt).toISOString(), resolutionReason: resolution?.reason, survivingMemberId: resolution?.survivingMemberId });
     }
     return cases;
   }
 
-  listDuplicateCases(status?: import("@/lib/domain/qol").DuplicateCaseStatus): Promise<import("@/lib/domain/qol").DuplicateCase[]> { return this.respond(() => this.duplicateCasesSync().filter((item) => !status || item.status === status)); }
+  listDuplicateCases(query: import("@/lib/domain/qol").DuplicateCaseQuery = {}): Promise<T.Page<import("@/lib/domain/qol").DuplicateCase>> { return this.respond(() => paginate(this.duplicateCasesSync().filter((item) => !query.status || item.status === query.status), query)); }
   getDuplicateCase(caseId: T.UUID): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); return item; }); }
   ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> {
     return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); this.duplicateResolutions.set(caseId, { status: "ignored", reason, updatedAt: nowISO() }); return { ...item, status: "ignored", resolutionReason: reason, updatedAt: nowISO() }; });

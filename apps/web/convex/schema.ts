@@ -875,6 +875,14 @@ export default defineSchema({
     .index("by_user_organization", ["userId", "organizationId"])
     .index("by_user_organization_target", ["userId", "organizationId", "targetKey"]),
 
+  maintenanceState: defineTable({
+    key: v.string(),
+    status: v.union(v.literal("pending"), v.literal("completed")),
+    processedCount: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_key", ["key"]),
+
   operationalNotifications: defineTable({
     publicId: v.string(),
     recipientUserId: v.id("users"),
@@ -1418,6 +1426,9 @@ export default defineSchema({
     branchId: v.optional(v.id("branches")),
     memberPublicId: v.optional(v.string()),
     leadPublicId: v.optional(v.string()),
+    customerUserPublicId: v.optional(v.string()),
+    customerProfilePublicId: v.optional(v.string()),
+    exportExpiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     data: v.any(),
@@ -1429,7 +1440,10 @@ export default defineSchema({
     .index("by_organization_type_public_id", ["organizationId", "entityType", "publicId"])
     .index("by_organization_branch_type", ["organizationId", "branchId", "entityType"])
     .index("by_organization_member_type", ["organizationId", "memberPublicId", "entityType"])
-    .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"]),
+    .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
+    .index("by_type_customer_user", ["entityType", "customerUserPublicId"])
+    .index("by_type_customer_profile", ["entityType", "customerProfilePublicId"])
+    .index("by_type_export_expiry", ["entityType", "exportExpiresAt"]),
 
   auditEvents: defineTable({
     organizationId: v.id("organizations"),

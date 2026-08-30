@@ -526,6 +526,9 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(await customer.query(api.domain.query, operation("push.list"))).toEqual([expect.objectContaining({ id: saved.id, label: "Test phone" })]);
     await customer.mutation(api.domain.mutate, operation("push.revoke", { subscriptionId: saved.id }));
     expect(await customer.query(api.domain.query, operation("push.list"))).toEqual([]);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("pushSubscriptions").withIndex("by_public_id", (q) => q.eq("publicId", saved.id)).unique()).toBeNull();
+    });
     await expectCode(staff.query(api.domain.query, operation("push.list")), "FORBIDDEN");
   });
 

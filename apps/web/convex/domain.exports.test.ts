@@ -54,6 +54,21 @@ describe("tenant data exports", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: { search: "different" }, idempotencyKey: "export-members-002" })), "CONFLICT");
   });
 
+  it("rejects an oversized export instead of presenting a partial CSV as complete", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-export")).unique();
+      const member = organization ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", "member-export")).unique() : null;
+      if (!member) throw new Error("Export member fixture missing");
+      await ctx.db.patch(member._id, { data: { ...member.data, notes: "x".repeat(760_000) }, updatedAt: Date.now() });
+    });
+
+    const result = await t.withIdentity({ subject: "clerk-owner-export" }).mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: {}, idempotencyKey: "export-members-oversized" })) as { status: string; rowCount: number; totalRows: number; content?: string; failureMessage?: string };
+    expect(result).toMatchObject({ status: "failed", rowCount: 0, totalRows: 1, failureMessage: expect.stringContaining("safe single-download limit") });
+    expect(result.content).toBeUndefined();
+  });
+
   it("keeps personal-training exports inside a selected branch", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

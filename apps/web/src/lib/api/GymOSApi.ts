@@ -129,7 +129,7 @@ import type {
   SavedView,
   SavedViewSurface,
   DuplicateCase,
-  DuplicateCaseStatus,
+  DuplicateCaseQuery,
   MergeMemberInput,
   OnboardingAudience,
   OnboardingExperience,
@@ -762,7 +762,7 @@ export interface GymOSApi {
   deleteSavedView(viewId: UUID): Promise<void>;
   runBulkOperation(input: BulkOperationInput): Promise<BulkOperationJob>;
   listBulkOperationJobs(): Promise<BulkOperationJob[]>;
-  listDuplicateCases(status?: DuplicateCaseStatus): Promise<DuplicateCase[]>;
+  listDuplicateCases(query?: DuplicateCaseQuery): Promise<Page<DuplicateCase>>;
   getDuplicateCase(caseId: UUID): Promise<DuplicateCase>;
   ignoreDuplicateCase(caseId: UUID, reason: string): Promise<DuplicateCase>;
   mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;

@@ -38,6 +38,7 @@ import type * as platformProvisioning from "../platformProvisioning.js";
 import type * as platformProvisioningAction from "../platformProvisioningAction.js";
 import type * as ptJobs from "../ptJobs.js";
 import type * as publicAbuse from "../publicAbuse.js";
+import type * as qolMaintenance from "../qolMaintenance.js";
 import type * as reconciliation from "../reconciliation.js";
 import type * as renewalJobs from "../renewalJobs.js";
 import type * as renewalPolicy from "../renewalPolicy.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   platformProvisioningAction: typeof platformProvisioningAction;
   ptJobs: typeof ptJobs;
   publicAbuse: typeof publicAbuse;
+  qolMaintenance: typeof qolMaintenance;
   reconciliation: typeof reconciliation;
   renewalJobs: typeof renewalJobs;
   renewalPolicy: typeof renewalPolicy;
