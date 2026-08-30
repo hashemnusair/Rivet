@@ -30,9 +30,8 @@ values, applicant details, and provider credentials out of this file.
 - [x] Push release tip `b1da867`, complete the exact Vercel and Convex Production
   deployments, rerun health and aggregate safety checks, and close the
   cached-data recovery banner with signed-in owner acceptance.
-- [ ] Record the final result of GitHub run `33341837875`; its static/build,
-  dependency, diff, clean-tree, and generated-code jobs passed while the
-  clean-server credential-free browser job remained in progress at handoff.
+- [x] Record GitHub run `33341837875`: all three jobs passed, including the
+  clean-server credential-free browser suite.
 
 ### Classes, referrals, and freeze requests completed and hardened on 30 August
 

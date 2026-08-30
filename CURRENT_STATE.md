@@ -35,9 +35,8 @@
 - A hard reload of the authenticated owner session cleared the stale cached-data
   banner. Audit, Operations, Finance/Statements, and Settings loaded live with
   no browser errors; Renewal recovery was unchecked and external delivery was
-  disabled. Vercel is green; GitHub run `33341837875` has completed its static,
-  build, dependency, diff, clean-tree, and generated-code jobs while the
-  clean-server credential-free browser job remains in progress.
+  disabled. Vercel is green, and GitHub run `33341837875` passed all three
+  jobs, including the clean-server credential-free browser suite.
 
 ## Membership migration and member referral sharing — 30 August 2026
 

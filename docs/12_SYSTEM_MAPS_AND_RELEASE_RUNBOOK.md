@@ -46,9 +46,8 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 - The authenticated owner session passed Audit, Operations, Finance/Statements,
   and Settings after a hard reload, with no recovery banner or browser errors.
   Renewal recovery was visibly off and external delivery disabled. GitHub run
-  `33341837875` has passed the static/build, audit, diff, clean-tree, and
-  generated-code jobs; its clean-server credential-free browser job is the one
-  remaining in-flight release check.
+  `33341837875` passed all three jobs, including the clean-server
+  credential-free browser suite.
 
 ### Membership-state migration and referral-sharing batch — 30 August 2026
 
