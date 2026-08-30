@@ -14,11 +14,9 @@ test.describe("staged member portal", () => {
 
     try {
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
-      await expect(member.getByRole("heading", { name: "Member home" })).toBeVisible();
+      await expect(member.getByText("Member home", { exact: true })).toBeVisible();
       await expect(member.getByRole("heading", { name: "Entry QR" })).toHaveCount(0);
 
-      const marketing = member.getByRole("switch", { name: "Receive marketing updates" });
-      const marketingBefore = await marketing.isChecked();
       await member.getByRole("link", { name: /Forge Fitness Club/ }).first().click();
       await expect(member).toHaveURL(/\/customer\/my-gyms\//);
       const showQr = member.getByRole("button", { name: "Show entry QR" });
@@ -34,6 +32,8 @@ test.describe("staged member portal", () => {
       await member.getByRole("link", { name: "Dashboard", exact: true }).click();
       await member.getByRole("link", { name: "Profile", exact: true }).click();
       await expect(member).toHaveURL(/\/customer\/profile$/);
+      const marketing = member.getByRole("switch", { name: "Receive marketing updates" });
+      const marketingBefore = await marketing.isChecked();
       await member.locator("#emergency-name").fill(emergencyName);
       await member.locator("#emergency-relationship").fill("Sibling");
       await member.locator("#emergency-phone").fill("+962790000000");

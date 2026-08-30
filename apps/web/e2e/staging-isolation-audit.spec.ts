@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
+import { chooseFirstAvailableOption, newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 test.describe("staged isolation and audit", () => {
   test("keeps a tenant member private while the owning audit log records the write", async ({ browser, baseURL }, testInfo) => {
@@ -22,7 +22,8 @@ test.describe("staged isolation and audit", () => {
       await owner.goto("/members/new", { waitUntil: "domcontentloaded" });
       await owner.getByTestId("member-name").fill(fullName);
       await owner.getByTestId("member-phone").fill(phone);
-      await owner.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+      await chooseFirstAvailableOption(owner, "Home branch");
+      await owner.getByTestId("save-member").click();
       await expect(owner).toHaveURL(/\/members\/[0-9a-f-]+$/);
       memberUrl = owner.url();
       cleanupEntry = cleanup.plan({ targetType: "member", targetId: memberUrl.split("/").at(-1), action: "archive", reason: "Disposable isolation and audit journey member" });
@@ -35,7 +36,7 @@ test.describe("staged isolation and audit", () => {
       await expect(owner.getByRole("button").filter({ hasText: fullName }).first()).toBeVisible();
 
       await platform.goto("/platform/gyms", { waitUntil: "domcontentloaded" });
-      await expect(platform.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+      await expect(platform.getByRole("heading", { name: "Gym organizations" })).toBeVisible();
       await expect(platform.getByText(fullName, { exact: true })).toHaveCount(0);
       cleanup.complete(cleanupEntry);
     } finally {

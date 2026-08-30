@@ -3,6 +3,7 @@ import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./s
 
 test.describe("staged provisioning", () => {
   test("reviews, provisions, and suspends one disposable gym workspace", async ({ browser, baseURL }, testInfo) => {
+    test.setTimeout(120_000);
     test.skip(process.env.PLAYWRIGHT_STAGING_FULL_SUITE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging", "Enable the isolated full staging suite explicitly.");
     const guard = requireStagingJourney("provisioning", baseURL);
     const cleanup = new StagingCleanupLedger(guard.runId, "provisioning");

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
+import { chooseFirstAvailableOption, newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 test.describe("staged reception entry", () => {
   test("sells a disposable membership, checks it in at reception, and preserves the timeline", async ({ browser, baseURL }, testInfo) => {
@@ -22,7 +22,8 @@ test.describe("staged reception entry", () => {
       await manager.goto("/members/new", { waitUntil: "domcontentloaded" });
       await manager.getByTestId("member-name").fill(fullName);
       await manager.getByTestId("member-phone").fill(phone);
-      await manager.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+      await chooseFirstAvailableOption(manager, "Home branch");
+      await manager.getByTestId("save-member").click();
       await expect(manager).toHaveURL(/\/members\/[0-9a-f-]+$/);
       memberUrl = manager.url();
       cleanupEntry = cleanup.plan({ targetType: "member", targetId: memberUrl.split("/").at(-1), action: "archive", reason: "Disposable reception entry journey member" });
@@ -32,10 +33,13 @@ test.describe("staged reception entry", () => {
       const sale = manager.getByRole("dialog", { name: "Sell membership" });
       await sale.getByRole("combobox", { name: "Plan" }).click();
       await manager.getByRole("option").first().click();
+      const collectNow = sale.getByRole("switch", { name: "Collect payment now" });
+      if (await collectNow.isChecked()) await collectNow.click();
       await sale.getByTestId("confirm-sale").click();
       await expect(sale).toBeHidden();
 
       await reception.goto("/reception", { waitUntil: "domcontentloaded" });
+      await expect(reception.getByTestId("reception-search")).toBeVisible();
       await reception.getByTestId("reception-search").fill(memberNumber);
       const verdict = reception.getByTestId("checkin-verdict");
       await expect(verdict).toHaveAttribute("data-decision", /allowed|warning/);
@@ -47,7 +51,7 @@ test.describe("staged reception entry", () => {
       await expect(reception.getByTestId("member-timeline")).toContainText(/checked in/i);
 
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
-      await expect(member.getByRole("heading", { name: "Member home" })).toBeVisible();
+      await expect(member.getByText("Member home", { exact: true })).toBeVisible();
       cleanup.complete(cleanupEntry);
     } finally {
       if (memberUrl && cleanupEntry !== undefined) {

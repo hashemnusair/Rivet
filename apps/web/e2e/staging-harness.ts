@@ -47,12 +47,14 @@ export class StagingCleanupLedger {
   constructor(private readonly runId: string, private readonly journey: StagingJourney) {}
   plan(entry: Omit<CleanupEntry, "status">): number { return this.entries.push({ ...entry, status: "planned" }) - 1; }
   complete(index: number) { if (this.entries[index]) this.entries[index]!.status = "completed"; }
-  fail(index: number, error: unknown) { if (this.entries[index]) { this.entries[index]!.status = "failed"; this.entries[index]!.error = error instanceof Error ? error.message : "Cleanup failed"; } }
+  fail(index: number, error: unknown) { if (this.entries[index]) { this.entries[index]!.status = "failed"; this.entries[index]!.error = error instanceof Error ? error.message : typeof error === "string" ? error : "Cleanup failed"; } }
   async attach(testInfo: TestInfo) {
     console.log("[staging-cleanup]", JSON.stringify({
       journey: this.journey,
       entries: this.entries.map(({ targetType, action, status }) => ({ targetType, action, status })),
     }));
     await testInfo.attach(`staging-cleanup-${this.journey}-${this.runId}.json`, { body: Buffer.from(JSON.stringify({ runId: this.runId, journey: this.journey, generatedAt: new Date().toISOString(), entries: this.entries }, null, 2)), contentType: "application/json" });
+    const incomplete = this.entries.filter((entry) => entry.status !== "completed").map(({ targetType, action, status, error }) => ({ targetType, action, status, error }));
+    expect(incomplete, `${this.journey} must complete every planned cleanup action`).toEqual([]);
   }
 }

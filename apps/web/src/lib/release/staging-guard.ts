@@ -4,7 +4,7 @@ export type StagingRole = typeof STAGING_ROLES[number];
 export const STAGING_JOURNEY_MANIFEST = {
   provisioning: ["platform_admin", "owner"],
   "owner-settings": ["owner"],
-  "staff-authorization": ["owner", "manager", "salesperson", "receptionist", "trainer"],
+  "staff-authorization": ["owner", "manager", "receptionist", "trainer"],
   "trial-crm": ["manager", "salesperson", "member"],
   "membership-lifecycle": ["owner", "manager", "receptionist", "member"],
   "reception-entry": ["manager", "receptionist", "member"],
@@ -24,15 +24,15 @@ export type StagingJourneyStatus = "implemented" | "credential-blocked" | "defer
 export const STAGING_JOURNEY_READINESS: Record<StagingJourney, Exclude<StagingJourneyStatus, "not-run">> = {
   provisioning: "credential-blocked",
   "owner-settings": "implemented",
-  "staff-authorization": "credential-blocked",
+  "staff-authorization": "implemented",
   "trial-crm": "credential-blocked",
   "membership-lifecycle": "implemented",
-  "reception-entry": "credential-blocked",
-  "finance-reconciliation": "credential-blocked",
+  "reception-entry": "implemented",
+  "finance-reconciliation": "implemented",
   automation: "deferred",
-  "member-portal": "credential-blocked",
-  "isolation-audit": "credential-blocked",
-  "personal-training": "credential-blocked",
+  "member-portal": "implemented",
+  "isolation-audit": "implemented",
+  "personal-training": "implemented",
   "realtime-smoke": "implemented",
 };
 

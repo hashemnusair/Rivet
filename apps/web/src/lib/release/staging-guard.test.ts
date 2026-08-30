@@ -24,7 +24,7 @@ describe("staging write guard", () => {
 
   it("reports deferred, credential-blocked, implemented, and unselected journeys clearly", () => {
     expect(stagingJourneyStatus(["all"], "automation")).toBe("deferred");
-    expect(stagingJourneyStatus(["all"], "reception-entry")).toBe("credential-blocked");
+    expect(stagingJourneyStatus(["all"], "reception-entry")).toBe("implemented");
     expect(stagingJourneyStatus(["all"], "membership-lifecycle")).toBe("implemented");
     expect(stagingJourneyStatus(["membership-lifecycle"], "reception-entry")).toBe("not-run");
   });
