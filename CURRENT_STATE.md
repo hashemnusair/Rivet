@@ -46,9 +46,12 @@
   zero failures. The Impeccable UI detector reported no flagged patterns in
   the importer or member referral surfaces.
 - No Convex deployment, provider activation, or Production tenant-data import
-  was performed in this code batch. The last exact-target backend/hosted release
-  remains `156f9b1`; current application tip `31eae98` still needs the normal
-  release procedure after the repository gate and push.
+  was performed for the migration/referral commits. During the final sync,
+  Elias's commit `3c43829` recorded that Convex Production
+  `descriptive-meerkat-589` was deployed cleanly through merge `d2a45e2`
+  (schema valid; no index deletions). Current application code tip `31eae98`
+  still needs the normal exact-target backend/hosted release procedure after
+  the repository push.
 
 ## Partner features, weekly timetable, and integration hardening — 30 August 2026
 

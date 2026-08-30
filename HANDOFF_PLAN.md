@@ -1,11 +1,11 @@
 # RIVET engineering handoff plan
 
 Last updated: 30 August 2026
-Current application tip: `31eae98`; the last fully verified Convex and Vercel
-Production release pair is `156f9b1`. Membership-state migration, member
-referral sharing, classes, referral rewards, freeze requests, and the latest
-partner Settings work still need the normal exact-target Production release
-procedure.
+Current application tip: `31eae98`. Convex Production
+`descriptive-meerkat-589` is deployed through partner-preserving merge
+`d2a45e2`; `156f9b1` remains the last fully documented signed-in acceptance
+closure. Membership-state migration and member referral sharing still need the
+normal exact-target backend/hosted release procedure.
 
 ## Purpose
 
@@ -33,7 +33,8 @@ and the complete chronological implementation record is
   and member freeze requests. Commits `d4a66c8`, `24e3749`, and `fe54838` add
   the approved migration and referral-sharing contracts; `31eae98` keeps the
   synchronous preview projection aligned. Merge `d2a45e2` preserved Elias's
-  latest Settings work. Read
+  latest Settings work, and Elias's follow-up `3c43829` records its clean
+  Convex Production deployment. Read
   `CURRENT_STATE.md` first for exact behavior and commits.
 - Imports may now include mapped active/scheduled membership terms, remaining
   visits, one current freeze, opening receivables, and read-only historical
@@ -65,6 +66,10 @@ and the complete chronological implementation record is
   Elias Test but no longer listed Hashem Test, and the hidden tenant's direct
   URL returned not-found without leaking its disposable QA content. Historical
   tenant records were preserved.
+- Elias's release record confirms that Convex Production was subsequently
+  advanced through merge `d2a45e2` on 30 August with schema validation and no
+  index deletions. The newer migration/referral code through `31eae98` is not
+  included in that backend release.
 - The obsolete `vercel-production` Convex deploy key was revoked; the separate
   `rivet_prod_cli` operator key and documented non-Production GitHub credential
   remain. No provider or job was enabled.

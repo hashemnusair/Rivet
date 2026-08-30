@@ -47,7 +47,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   repository-safety tests, the 58-page Production build, dependency audit,
   diff check, and 46 credential-free Playwright journeys with 14 explicit
   staging-only skips and zero failures. No Convex deploy, provider activation,
-  or Production tenant-data import was performed. Release from this tip only
+  or Production tenant-data import was performed for these commits. Elias's
+  follow-up `3c43829` records a clean Convex Production deploy through the
+  preceding merge `d2a45e2`; release the newer migration/referral tip only
   through the exact-target procedure below.
 
 ### Migration and front-desk transaction batch — 30 August 2026
