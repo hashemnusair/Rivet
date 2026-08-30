@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
-import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
+import { chooseFirstAvailableOption, newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 /**
  * Credentialed realtime verification. These write journeys are deliberately
@@ -93,7 +93,8 @@ async function createDisposableMember(page: Page, label: string): Promise<string
   await expect(page).not.toHaveURL(/\/login/);
   await page.getByTestId("member-name").fill(marker);
   await page.getByTestId("member-phone").fill(phone);
-  await page.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  await chooseFirstAvailableOption(page, "Home branch");
+  await page.getByTestId("save-member").click();
   await expect(page).toHaveURL(/\/members\/[0-9a-f-]+$/);
   return page.url();
 }

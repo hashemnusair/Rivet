@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { expect, test, type Browser, type BrowserContext, type TestInfo } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { stagingJourneyRoles, stagingJourneySelected, stagingJourneyStatus, storageStateEnvironmentKey, type StagingJourney, type StagingRole, validateStagingEnvironment } from "../src/lib/release/staging-guard";
 
 type CleanupEntry = { targetType: string; targetId?: string; action: "archive" | "deactivate" | "unpublish" | "suspend" | "preserve"; reason: string; status: "planned" | "completed" | "failed"; error?: string };
@@ -27,6 +27,19 @@ export async function newRoleContext(browser: Browser, role: StagingRole, baseUR
   const path = process.env[key] ?? (role === "owner" ? process.env.PLAYWRIGHT_CLERK_STORAGE_STATE : undefined);
   if (!path || !existsSync(path)) throw new Error(`${key} must point to a readable Clerk storage-state file.`);
   return await browser.newContext({ storageState: path, baseURL, viewport: { width: 1440, height: 900 }, locale: "en-US" });
+}
+
+export async function chooseFirstAvailableOption(page: Page, comboboxName: string): Promise<void> {
+  const combobox = page.getByRole("combobox", { name: comboboxName, exact: true });
+  await expect(combobox).toBeVisible();
+  await combobox.click();
+  const options = page.getByRole("option").filter({ visible: true });
+  const labels = (await options.allTextContents()).map((label) => label.trim());
+  const optionIndex = labels.findIndex((label) => !/^(all|choose|none|select)\b/i.test(label));
+  expect(optionIndex, `${comboboxName} needs at least one concrete option`).toBeGreaterThanOrEqual(0);
+  const option = options.nth(optionIndex);
+  await expect(option).toBeVisible();
+  await option.click();
 }
 
 export class StagingCleanupLedger {
