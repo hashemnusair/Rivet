@@ -267,10 +267,20 @@ test.describe("personal training operations", () => {
 });
 
 test.describe("settings navigation", () => {
-  test("reaches every setting from the vertical rail and its search at tablet width", async ({ page }) => {
+  test("uses the compact selector on tablets and the searchable rail on desktop", async ({ page }) => {
     await signIn(page, "Owner");
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto("/settings");
+
+    const sectionPicker = page.getByRole("combobox", { name: "Settings section" });
+    await expect(sectionPicker).toBeVisible();
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await sectionPicker.click();
+    await page.getByRole("option", { name: "Operational rules" }).click();
+    await expect(page).toHaveURL(/section=operations/);
+    await expect(page.getByRole("tabpanel")).toContainText(/entry and access|class booking/i);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
     const rail = page.getByRole("tablist");
     await expect(rail).toBeVisible();
     await expect(rail).toHaveAttribute("aria-orientation", "vertical");
@@ -280,8 +290,7 @@ test.describe("settings navigation", () => {
     // Search narrows by synonyms, not just exact labels.
     await page.getByRole("textbox", { name: "Search settings" }).fill("freeze");
     await expect(page.getByRole("tab")).toHaveCount(1);
-    await page.getByRole("tab", { name: "Rules & hours" }).click();
-    await expect(page.getByRole("tabpanel")).toContainText(/rules|hours|operating/i);
+    await expect(page.getByRole("tab", { name: "Operational rules" })).toBeVisible();
   });
 });
 

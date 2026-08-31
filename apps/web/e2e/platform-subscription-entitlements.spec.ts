@@ -50,15 +50,16 @@ async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth")
   } else {
     await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
   }
+  await expect(primaryNav.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toHaveCount(0);
 
-  // Payments remains a foundation surface and exposes the secondary finance
-  // switcher. Statements are a separate, reporting-entitled workspace and
-  // must not be advertised for Starter/Growth.
+  // Reports is a primary Finance destination. The Payments switcher stays
+  // focused on payment work, while Statements remains a separate,
+  // reporting-entitled workspace that Starter/Growth must not advertise.
   await primaryNav.getByRole("link", { name: "Payments", exact: true }).click();
   await expect(page).toHaveURL(/\/payments$/);
   const financeNav = page.getByRole("navigation", { name: "Finance views" });
-  await expect(financeNav.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
+  await expect(financeNav.getByRole("link", { name: "Reports", exact: true })).toHaveCount(0);
   await expect(financeNav.getByRole("link", { name: "Management statements", exact: true })).toHaveCount(0);
 
   // Direct `/reports/statements` access is independently covered by the
@@ -71,6 +72,7 @@ async function expectPremiumWorkspace(page: Page) {
   const primaryNav = page.locator('aside[aria-label="Primary navigation"]');
   await expect(primaryNav).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toBeVisible();
 
   await primaryNav.getByRole("link", { name: "Operations", exact: true }).click();
@@ -100,6 +102,7 @@ async function expectPremiumWorkspace(page: Page) {
   await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Payments", exact: true }).click();
   await expect(page).toHaveURL(/\/payments$/);
   const financeNav = page.getByRole("navigation", { name: "Finance views" });
+  await expect(financeNav.getByRole("link", { name: "Reports", exact: true })).toHaveCount(0);
   await expect(financeNav.getByRole("link", { name: "Management statements", exact: true })).toHaveCount(0);
 }
 
