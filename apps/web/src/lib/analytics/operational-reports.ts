@@ -248,7 +248,7 @@ export function renewalForecastReport(
   memberNames: Map<string, string>,
   planFacts: Map<string, { name: string; priceMinor: number }>,
   todayLocal: string,
-  rowCap = 50,
+  rowCap = 200,
 ): RenewalForecastReport {
   const byMember = new Map<string, RenewalInputMembership[]>();
   for (const membership of memberships) {
@@ -485,7 +485,7 @@ export function controlTrendsReport(
   priceOverrideAmounts: Array<{ occurredAt: string; amountMinor: number }>,
   range: LocalDateRange,
   timeZone: string,
-  recentCap = 50,
+  recentCap = 200,
 ): ControlTrendsReport {
   const inRange = (iso: string) => inLocalRange(iso, range, timeZone);
   const periodAudits = audits.filter((audit) => CONTROL_ACTIONS.has(audit.action) && inRange(audit.occurredAt));
