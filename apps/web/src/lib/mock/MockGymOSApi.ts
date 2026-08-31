@@ -9687,6 +9687,10 @@ export class MockGymOSApi implements GymOSApi {
       slot("class-strength", "Ladies Strength", 0, 18 * 60, 60, 10, 3, "women"),
       slot("class-boxing", "Boxing Fundamentals", 2, 19 * 60, 90, 16, 1),
       slot("class-mobility", "Mobility & Stretch", 4, 10 * 60, 45, 14, 0),
+      // Friday and Saturday slots keep the member week view populated from
+      // any starting weekday, matching a real gym's seven-day timetable.
+      slot("class-friday-flow", "Friday Flow Yoga", 5, 9 * 60, 60, 15, 1),
+      slot("class-open-gym", "Weekend Open Gym", 6, 10 * 60, 120, 30, 2),
     ];
   }
 

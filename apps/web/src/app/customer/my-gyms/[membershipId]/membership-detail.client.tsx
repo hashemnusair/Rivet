@@ -4,7 +4,7 @@ import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, Credi
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
@@ -140,6 +140,21 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   // view resets to the new week automatically when the week rolls over.
   const [panelView, setPanelView] = useState<"week" | "history">("week");
   const [selectedDate, setSelectedDate] = useState(() => todayISODate());
+  const autoAdvanced = useRef(false);
+  // Land on the first day of the week that actually has classes, once, so a
+  // member never opens onto an empty day when later days have sessions.
+  useEffect(() => {
+    const upcoming = experience.data?.upcoming;
+    if (!upcoming || autoAdvanced.current) return;
+    autoAdvanced.current = true;
+    const start = todayISODate();
+    const end = addDays(start, 6 - new Date(`${start}T12:00:00Z`).getUTCDay());
+    const firstWithClasses = upcoming
+      .map((occurrence) => occurrence.date)
+      .filter((value) => value >= start && value <= end)
+      .sort()[0];
+    if (firstWithClasses) setSelectedDate(firstWithClasses);
+  }, [experience.data]);
   const book = useApiMutation((api, occurrenceId: string) => api.bookCustomerClass({ membershipId, occurrenceId }), {
     onSuccess: async (result) => {
       toast.success(result.outcome === "waitlisted" ? "You joined the waitlist." : "Class booked.");
