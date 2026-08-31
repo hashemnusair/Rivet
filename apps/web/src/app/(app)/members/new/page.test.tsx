@@ -74,6 +74,8 @@ describe("new member duplicate pre-check", () => {
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.queryByText(/Checking for duplicates/i)).not.toBeInTheDocument());
+    await user.click(screen.getByRole("combobox", { name: "Gender" }));
+    await user.click(await screen.findByRole("option", { name: "Female" }));
     await user.click(screen.getByRole("button", { name: /Create & sell membership/i }));
 
     expect(await screen.findByText(/Choose Walk-in Guest's membership/i)).toBeInTheDocument();

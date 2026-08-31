@@ -371,6 +371,7 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.completeLeadSale("lead-1", {
       homeBranchId: session.activeBranchId!,
+      gender: "female",
       preferredLanguage: "en",
       startDate: "2026-08-13",
       idempotencyKey: "lead-sale-1",
@@ -480,6 +481,8 @@ describe("ConvexGymOSApi contract boundary", () => {
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
       referrals: { enabled: false, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
       memberFreezes: { requestsEnabled: false, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
+      classBooking: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [{ branchId: session.activeBranchId!, days }],
       trialSchedules: [{ branchId: session.activeBranchId!, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: true, opensAt: "09:00", closesAt: "20:00" }])) as import("@/lib/domain/types").OperationalPolicies["trialSchedules"][number]["days"] }],

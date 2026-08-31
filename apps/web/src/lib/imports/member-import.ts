@@ -5,6 +5,7 @@ export type ImportMatrix = string[][];
 const FIELD_ALIASES: Record<MemberImportField, string[]> = {
   fullName: ["full_name", "fullname", "name", "member", "member_name", "customer_name", "client_name", "اسم", "الاسم", "اسم_العضو", "اسم_العميل"],
   phone: ["phone", "phone_number", "mobile", "mobile_number", "telephone", "contact_number", "رقم", "الهاتف", "رقم_الهاتف", "موبايل"],
+  gender: ["gender", "sex", "member_gender", "الجنس", "النوع"],
   email: ["email", "email_address", "e_mail", "mail", "البريد", "البريد_الالكتروني", "ايميل"],
   sourcePlanName: ["plan", "plan_name", "membership_plan", "package", "package_name", "subscription", "membership_type", "الخطة", "الباقة", "نوع_الاشتراك"],
   membershipStartDate: ["membership_start", "membership_start_date", "start_date", "subscription_start", "تاريخ_البداية", "بداية_الاشتراك"],
@@ -18,7 +19,7 @@ const FIELD_ALIASES: Record<MemberImportField, string[]> = {
   historicalPaymentReference: ["payment_reference", "legacy_payment_reference", "receipt_reference", "مرجع_الدفع"],
 };
 
-export const OPTIONAL_MEMBERSHIP_IMPORT_FIELDS: Array<{ field: Exclude<MemberImportField, "fullName" | "phone" | "email">; label: string }> = [
+export const OPTIONAL_MEMBERSHIP_IMPORT_FIELDS: Array<{ field: Exclude<MemberImportField, "fullName" | "phone" | "gender" | "email">; label: string }> = [
   { field: "sourcePlanName", label: "Current plan" },
   { field: "membershipStartDate", label: "Membership starts" },
   { field: "membershipEndDate", label: "Membership ends" },
@@ -77,10 +78,11 @@ function csvCell(value: string | number | undefined): string {
 
 export function mappedMemberCsv(matrix: ImportMatrix, mapping: MemberImportColumnMapping): string {
   const rows = matrix.slice(1).filter((row) => row.some((cell) => cell.trim()));
-  const fields: MemberImportField[] = ["fullName", "phone", "email", ...OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field }) => field)];
+  const fields: MemberImportField[] = ["fullName", "phone", "gender", "email", ...OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field }) => field)];
   const headers: Record<MemberImportField, string> = {
     fullName: "full_name",
     phone: "phone",
+    gender: "gender",
     email: "email",
     sourcePlanName: "source_plan_name",
     membershipStartDate: "membership_start_date",
@@ -107,7 +109,7 @@ export function sourcePlanNames(matrix: ImportMatrix, mapping: MemberImportColum
 export function rejectedMemberRowsCsv(rows: MemberImportRow[]): string {
   const rejected = rows.filter((row) => row.status === "duplicate" || row.status === "invalid" || row.status === "skipped");
   return [
-    "source_row,full_name,phone,email,source_plan,membership_start,membership_end,opening_balance_minor,result,reason",
-    ...rejected.map((row) => [row.rowNumber, row.fullName, row.phone, row.email, row.sourcePlanName, row.membershipStartDate, row.membershipEndDate, row.openingBalanceMinor, row.status, row.errors.join("; ")].map(csvCell).join(",")),
+    "source_row,full_name,phone,gender,email,source_plan,membership_start,membership_end,opening_balance_minor,result,reason",
+    ...rejected.map((row) => [row.rowNumber, row.fullName, row.phone, row.gender, row.email, row.sourcePlanName, row.membershipStartDate, row.membershipEndDate, row.openingBalanceMinor, row.status, row.errors.join("; ")].map(csvCell).join(",")),
   ].join("\r\n");
 }

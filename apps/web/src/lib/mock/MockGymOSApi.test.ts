@@ -33,7 +33,7 @@ async function anyMemberWithBalance(): Promise<MemberSummary> {
 
 async function freshMemberForSale(): Promise<MemberSummary> {
   const session = await api.getSession();
-  return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en" })).member;
+  return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en", gender: "male" })).member;
 }
 
 describe("session and role switching", () => {
@@ -916,6 +916,7 @@ describe("member creation", () => {
       phone: "+962 79 555 1234",
       homeBranchId: branch.id,
       preferredLanguage: "ar",
+      gender: "male",
     });
 
     expect(member.memberNumber).toContain(branch.code);
@@ -934,6 +935,7 @@ describe("member creation", () => {
       phone: "+962 79 555 1200",
       homeBranchId: "branch-no-longer-visible",
       preferredLanguage: "en",
+      gender: "male",
     })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
 
     await expect(api.previewMemberImport({
@@ -949,6 +951,7 @@ describe("member creation", () => {
       phone: "+962 79 555 1240",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
     });
     expect(created.member.marketingOptIn).toBe(true);
     expect(created.member.marketingPreference).toMatchObject({ optedIn: true, status: "unknown", source: "system_default" });
@@ -958,6 +961,7 @@ describe("member creation", () => {
       phone: "+962 79 555 1241",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
       marketingOptIn: false,
       marketingPreferenceSource: "staff_selected",
     });
@@ -971,7 +975,7 @@ describe("member creation", () => {
 
     const preview = await api.previewMemberImport({
       branchId: session.branches[0]!.id,
-      csv: "full_name,phone,email\nConsent Import,+962790001240,consent-import@example.com",
+      csv: "full_name,phone,gender,email\nConsent Import,+962790001240,female,consent-import@example.com",
     });
     const imported = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-consent-1" });
     expect(imported.committedCount).toBe(1);
@@ -988,11 +992,11 @@ describe("member creation", () => {
     const preview = await api.previewMemberImport({
       branchId: session.branches[0]!.id,
       csv: [
-        "full_name,phone,email",
-        "Valid Import,0795558111,valid-import@example.com",
-        "Repeated Phone,0795558111,second@example.com",
-        "Repeated Email,+447700900555,valid-import@example.com",
-        "X,123,not-an-email",
+        "full_name,phone,gender,email",
+        "Valid Import,0795558111,female,valid-import@example.com",
+        "Repeated Phone,0795558111,male,second@example.com",
+        "Repeated Email,+447700900555,female,valid-import@example.com",
+        "X,123,unknown,not-an-email",
       ].join("\n"),
     });
 
@@ -1011,6 +1015,7 @@ describe("member creation", () => {
       phone: existing.phone,
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
     });
     expect(result.duplicates.length).toBeGreaterThan(0);
     expect(result.duplicates[0]!.matchedOn).toBe("phone");
@@ -1029,6 +1034,7 @@ describe("member creation", () => {
       phone: "079 321 4567",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
     });
     expect(result.member.phone).toBe("+962793214567");
     expect((await api.checkMemberDuplicates({ phone: "00962 79 321 4567" })).map((match) => match.memberId)).toContain(result.member.id);
@@ -1039,7 +1045,7 @@ describe("member creation", () => {
     const branch = (await api.getSession()).branches[0]!;
     const preview = await api.previewMemberImport({
       branchId: branch.id,
-      csv: "full_name,phone,email\nImport Test,+962790000099,import-test@example.com",
+      csv: "full_name,phone,gender,email\nImport Test,+962790000099,male,import-test@example.com",
     });
     expect(preview.validRows).toBe(1);
 
@@ -1059,7 +1065,7 @@ describe("member creation", () => {
       branchId: session.branches[0]!.id,
       migrationCutoffDate: "2026-08-30",
       planMappings: { LegacyMonthly: plan.id },
-      csv: "full_name,phone,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\nMigration State,0799911223,migration-state@example.com,LegacyMonthly,2026-08-01,2099-09-07,,,,12.500,80.000,2026-08-20,OLD-44",
+      csv: "full_name,phone,gender,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\nMigration State,0799911223,female,migration-state@example.com,LegacyMonthly,2026-08-01,2099-09-07,,,,12.500,80.000,2026-08-20,OLD-44",
     });
     expect(preview).toMatchObject({ validRows: 1, membershipRows: 1, openingBalanceRows: 1, historicalEvidenceRows: 1, rows: [{ openingBalanceMinor: 12_500, historicalPaidMinor: 80_000 }] });
 
@@ -1191,7 +1197,7 @@ describe("membership sale and renewal", () => {
   it("commits a new member and their first sale as one idempotent workflow", async () => {
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
     const input = {
-      member: { fullName: "Atomic Member", phone: "+962 79 911 2233", homeBranchId: BRANCH_ABD, preferredLanguage: "en" as const },
+      member: { fullName: "Atomic Member", phone: "+962 79 911 2233", homeBranchId: BRANCH_ABD, preferredLanguage: "en" as const, gender: "male" as const },
       sale: { planId: plan.id, startDate: todayISODate(), payment: { amount: plan.basePrice, method: "card" as const, externalReference: "POS-ATOMIC-1" } },
       idempotencyKey: "mock-member-sale-atomic-1",
     };
@@ -1206,7 +1212,7 @@ describe("membership sale and renewal", () => {
   it("restores mock state when a composite sale fails", async () => {
     const before = await api.listMembers({ pageSize: 100 });
     await expect(api.createMemberMembershipSale({
-      member: { fullName: "Rollback Member", phone: "+962 79 911 2244", homeBranchId: BRANCH_ABD, preferredLanguage: "en" },
+      member: { fullName: "Rollback Member", phone: "+962 79 911 2244", homeBranchId: BRANCH_ABD, preferredLanguage: "en", gender: "female" },
       sale: { planId: "missing-plan", startDate: todayISODate() },
       idempotencyKey: "mock-member-sale-rollback-1",
     })).rejects.toThrow(/Plan not found/i);
@@ -1424,6 +1430,8 @@ describe("operational policies", () => {
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
       referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
       memberFreezes: { requestsEnabled: true, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
+      classBooking: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       operatingHours: [{ branchId: branch.id, days }],
       trialSchedules: [{ branchId: branch.id, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: day !== "fri", opensAt: "09:00", closesAt: "20:00" }])) as OperationalPolicies["trialSchedules"][number]["days"] }],
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
@@ -2041,6 +2049,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
       marketingOptIn: true,
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-sale",
@@ -2085,6 +2094,7 @@ describe("free-trial lifecycle", () => {
     await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
       startDate: todayISODate(),
       idempotencyKey: "mock-referral-trial-sale",
       membership: { mode: "existing", planId: plan.id },
@@ -2104,6 +2114,7 @@ describe("free-trial lifecycle", () => {
       email: booking.email,
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
     });
     const memberCount = (await api.listMembers({ pageSize: 500 })).totalItems;
     await api.updateTrialBooking(booking.id, { status: "completed" });
@@ -2111,6 +2122,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-existing-member-sale",
       membership: { mode: "existing", planId: plan.id },
@@ -2128,6 +2140,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-custom-sale",
       membership: { mode: "custom", name: "Eight week transformation", price: money(150_000), durationDays: 56, includedPtSessions: 4 },
@@ -2159,6 +2172,7 @@ describe("demo controls", () => {
       phone: "+962 79 000 0001",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
     });
     expect((await api.listMembers({ pageSize: 1 })).totalItems).toBe(before.totalItems + 1);
 
@@ -2328,7 +2342,7 @@ describe("retail checkout", () => {
     const branchB = ownerSession.branches[1]!.id;
     const product = await api.upsertProduct({ sku: "MOCK-BRANCH-AUTH", name: "Branch scoped item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
     await api.recordStockMovement({ branchId: branchA, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-branch-auth-opening" });
-    const branchBMember = await api.createMember({ fullName: "Branch B Member", phone: "+962 79 900 0999", homeBranchId: branchB, preferredLanguage: "en" });
+    const branchBMember = await api.createMember({ fullName: "Branch B Member", phone: "+962 79 900 0999", homeBranchId: branchB, preferredLanguage: "en", gender: "male" });
     const settings = await api.getOrganizationSettings();
     await api.updatePaymentMethods(settings.paymentMethods.map((method) => method.key === "card" ? { ...method, enabled: false } : method));
     await api.switchDemoRole("receptionist");

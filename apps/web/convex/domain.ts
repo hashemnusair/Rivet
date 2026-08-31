@@ -45,7 +45,7 @@ import {
 } from "./workspaceModules";
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
-import { classesMutation, classesQuery } from "./classes";
+import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
@@ -64,6 +64,7 @@ import {
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
+import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -177,6 +178,22 @@ const DEFAULT_OPERATIONAL_POLICIES = {
     sessionDurationMinutes: 60,
     bookingHorizonDays: 30,
     cancellationCutoffHours: 12,
+  },
+  classBooking: {
+    enabled: true,
+    eligibilityMode: "all_active_memberships",
+    eligiblePlanIds: [],
+    bookingHorizonDays: 30,
+    cancellationCutoffHours: 2,
+    maxActiveBookingsPerMember: 8,
+    waitlistEnabled: true,
+    waitlistSize: 12,
+    noShowTracking: true,
+  },
+  retention: {
+    inactivityDays: 14,
+    expiredWinBackDays: 90,
+    defaultSnoozeDays: 7,
   },
   referrals: {
     enabled: false,
@@ -1118,6 +1135,8 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
       entry: { ...DEFAULT_OPERATIONAL_POLICIES.entry, ...data(operational.entry) },
       membership: { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operational.membership) },
       personalTraining: { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(operational.personalTraining) },
+      classBooking: { ...DEFAULT_OPERATIONAL_POLICIES.classBooking, ...data(operational.classBooking) },
+      retention: { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(operational.retention) },
       referrals: { ...DEFAULT_OPERATIONAL_POLICIES.referrals, ...data(operational.referrals) },
       memberFreezes: { ...DEFAULT_OPERATIONAL_POLICIES.memberFreezes, ...data(operational.memberFreezes) },
       operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
@@ -1236,6 +1255,8 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const entry = data(value.entry);
   const membership = data(value.membership);
   const personalTraining = data(value.personalTraining);
+  const classBooking = data(value.classBooking);
+  const retention = data(value.retention);
   const outstandingBalance = stringValue(entry.outstandingBalance, "warn");
   if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Outstanding-balance policy is invalid.", { correlationId: actor.correlationId });
   const expiryWarningDays = numberValue(entry.expiryWarningDays, 7);
@@ -1253,6 +1274,28 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
   if (!integerInRange(bookingHorizonDays, 1, 90)) domainError("VALIDATION_ERROR", "PT booking horizon must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(cancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "PT cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
+  const classEligibilityMode = stringValue(classBooking.eligibilityMode, "all_active_memberships");
+  const classBookingHorizonDays = numberValue(classBooking.bookingHorizonDays, 30);
+  const classCancellationCutoffHours = numberValue(classBooking.cancellationCutoffHours, 2);
+  const maxActiveClassBookings = numberValue(classBooking.maxActiveBookingsPerMember, 8);
+  const classWaitlistSize = numberValue(classBooking.waitlistSize, 12);
+  if (!["all_active_memberships", "selected_plans"].includes(classEligibilityMode)) domainError("VALIDATION_ERROR", "Class eligibility mode is invalid.", { correlationId: actor.correlationId });
+  if (!integerInRange(classBookingHorizonDays, 1, 120)) domainError("VALIDATION_ERROR", "Class booking horizon must be between 1 and 120 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(classCancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "Class cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
+  if (!integerInRange(maxActiveClassBookings, 1, 100)) domainError("VALIDATION_ERROR", "Active class booking limit must be between 1 and 100.", { correlationId: actor.correlationId });
+  if (!integerInRange(classWaitlistSize, 1, 200)) domainError("VALIDATION_ERROR", "Class waitlist size must be between 1 and 200.", { correlationId: actor.correlationId });
+  const eligiblePlanIds = [...new Set(arrayValue(classBooking.eligiblePlanIds).map((item) => stringValue(item).trim()).filter(Boolean))];
+  for (const planId of eligiblePlanIds) {
+    const plan = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", planId)).unique();
+    if (!plan) domainError("VALIDATION_ERROR", "A selected class-eligible plan was not found.", { correlationId: actor.correlationId });
+  }
+  if (classEligibilityMode === "selected_plans" && eligiblePlanIds.length === 0) domainError("VALIDATION_ERROR", "Select at least one plan that includes classes.", { correlationId: actor.correlationId });
+  const inactivityDays = numberValue(retention.inactivityDays, 14);
+  const expiredWinBackDays = numberValue(retention.expiredWinBackDays, 90);
+  const defaultSnoozeDays = numberValue(retention.defaultSnoozeDays, 7);
+  if (!integerInRange(inactivityDays, 3, 180)) domainError("VALIDATION_ERROR", "At-risk inactivity must be between 3 and 180 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(expiredWinBackDays, 7, 365)) domainError("VALIDATION_ERROR", "Win-back window must be between 7 and 365 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(defaultSnoozeDays, 1, 90)) domainError("VALIDATION_ERROR", "At-risk snooze must be between 1 and 90 days.", { correlationId: actor.correlationId });
   const referrals = data(value.referrals);
   const referralRewardDays = numberValue(referrals.rewardDays, 7);
   const referralCapDays = numberValue(referrals.maxRewardDaysPerWindow, 30);
@@ -1326,6 +1369,8 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
     referrals: { enabled: booleanValue(referrals.enabled), rewardDays: referralRewardDays, maxRewardDaysPerWindow: referralCapDays, windowDays: referralWindowDays },
     memberFreezes: { requestsEnabled: booleanValue(memberFreezes.requestsEnabled), freeFreezesPerWindow, extraFreezeFeeMinor, maxDaysPerFreeze, windowDays: freezeWindowDays },
     personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays, cancellationCutoffHours },
+    classBooking: { enabled: booleanValue(classBooking.enabled, true), eligibilityMode: classEligibilityMode, eligiblePlanIds, bookingHorizonDays: classBookingHorizonDays, cancellationCutoffHours: classCancellationCutoffHours, maxActiveBookingsPerMember: maxActiveClassBookings, waitlistEnabled: booleanValue(classBooking.waitlistEnabled, true), waitlistSize: classWaitlistSize, noShowTracking: booleanValue(classBooking.noShowTracking, true) },
+    retention: { inactivityDays, expiredWinBackDays, defaultSnoozeDays },
     operatingHours,
     trialSchedules,
   };
@@ -1503,6 +1548,65 @@ async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId
     .map((membership) => ({ membership, status: statusOfMembership(membership, today) }));
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
   return terms.sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5) || stringValue(b.membership.endDate).localeCompare(stringValue(a.membership.endDate)))[0]?.membership;
+}
+
+async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data[]> {
+  requirePermission(actor, "crm.read");
+  const branchId = optionalString(input.branchId);
+  if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+  const [memberRows, membershipRows, checkInRows, timelineRows, snoozeRows] = await Promise.all([
+    memberRecords(ctx, actor),
+    membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "checkIn"),
+    recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "retentionState"),
+  ]);
+  const policies = data((await settingsData(ctx, actor)).operationalPolicies);
+  const retention = { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(policies.retention) };
+  const membershipPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(policies.membership) };
+  const members = memberRows.map((row) => data(row.data)).filter((member) => !branchId || member.homeBranchId === branchId);
+  const memberships = membershipRows.map((row) => data(row.data));
+  const risks = deriveRetentionRisks({
+    today: todayIn(actor.organization.timezone || TZ_FALLBACK),
+    inactivityDays: numberValue(retention.inactivityDays, 14),
+    renewalWindowDays: numberValue(membershipPolicy.renewalWindowDays, 14),
+    expiredWinBackDays: numberValue(retention.expiredWinBackDays, 90),
+    members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
+    memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
+    checkIns: checkInRows.map((row) => { const checkIn = data(row.data); return { memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) }; }),
+    snoozes: snoozeRows.map((row) => { const snooze = data(row.data); return { memberId: stringValue(snooze.memberId), snoozedUntil: optionalString(snooze.snoozedUntil) }; }),
+    includeSnoozed: booleanValue(input.includeSnoozed),
+  }).filter((risk) => !branchId || risk.branchId === branchId)
+    .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === publicUserId(actor.user));
+  const requestedReason = optionalString(input.reason);
+  if (requestedReason && !["all", "inactive", "expiring", "expired"].includes(requestedReason)) domainError("VALIDATION_ERROR", "At-risk reason is invalid.", { correlationId: actor.correlationId });
+  const filtered = risks.filter((risk) => !requestedReason || requestedReason === "all" || risk.reasons.some((reason) => reason.kind === requestedReason));
+  const memberById = new Map(members.map((member) => [stringValue(member.id), member]));
+  const termById = new Map(memberships.map((membership) => [stringValue(membership.id), membership]));
+  const [memberSummaries, membershipSummaries] = await Promise.all([
+    toMemberSummaries(ctx, actor, filtered.map((risk) => memberById.get(risk.memberId)).filter((value): value is Data => Boolean(value))),
+    toMembershipSummaries(ctx, actor, filtered.map((risk) => termById.get(risk.membershipId)).filter((value): value is Data => Boolean(value))),
+  ]);
+  const memberSummaryById = new Map(memberSummaries.map((member) => [stringValue(member.id), member]));
+  const membershipSummaryById = new Map(membershipSummaries.map((membership) => [stringValue(membership.id), membership]));
+  const contactsByMember = new Map<string, Data[]>();
+  for (const row of timelineRows) {
+    const event = data(row.data);
+    if (event.type !== "call_attempt" || !event.memberId) continue;
+    const contacts = contactsByMember.get(stringValue(event.memberId)) ?? [];
+    contacts.push(event);
+    contactsByMember.set(stringValue(event.memberId), contacts);
+  }
+  for (const contacts of contactsByMember.values()) contacts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const search = optionalString(input.search)?.trim().toLowerCase();
+  return filtered.flatMap((risk) => {
+    const member = memberSummaryById.get(risk.memberId);
+    const membership = membershipSummaryById.get(risk.membershipId);
+    if (!member || !membership) return [];
+    if (search && ![member.fullName, member.memberNumber, member.phone, membership.planName].some((value) => stringValue(value).toLowerCase().includes(search))) return [];
+    const contact = contactsByMember.get(risk.memberId)?.[0];
+    return [{ ...risk, member, membership, lastContactAt: optionalString(contact?.occurredAt), lastContactOutcome: optionalString(data(contact?.meta).outcome), recommendedSnoozeDays: numberValue(retention.defaultSnoozeDays, 7) }];
+  });
 }
 
 async function outstandingForMember(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data> {
@@ -2577,6 +2681,8 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
   const userId = publicUserId(user);
   const email = user.email.trim().toLowerCase();
   if (!email) domainError("CONFIGURATION_ERROR", "The authenticated Clerk identity is missing an email claim.");
+  const gender = optionalString(input.gender);
+  if (gender !== "female" && gender !== "male") domainError("VALIDATION_ERROR", "Choose female or male before saving your profile.", { fieldErrors: { gender: ["Choose female or male"] } });
   const existing = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
   const legacy = existing ? undefined : await legacyCustomerProfileForUser(ctx, userId);
   const profileId = existing?.publicId ?? optionalString(legacy?.id) ?? newPublicId();
@@ -4578,6 +4684,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       .filter((value) => stringValue(value.membershipId) === context.membership.publicId)
       .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)));
   }
+  if (operation === "customer.classes") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return await customerClassesQuery(ctx, context);
+  }
   if (operation === "customer.pt") return await customerPtExperience(ctx, recordId(input.membershipId));
   if (operation === "customer.pt.slots") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
@@ -5300,6 +5410,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       items.sort((a, b) => numberValue(a.daysUntilExpiry) - numberValue(b.daysUntilExpiry));
       return page(items, input);
     }
+    case "retention.queue": {
+      const items = await retentionQueueItems(ctx, actor, input);
+      return page(items, input);
+    }
     case "checkins.preview": {
       requirePermission(actor, "members.read");
       const branchId = recordId(input.branchId);
@@ -5516,7 +5630,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "operations.equipment.recommendation":
       return await operationsQuery(ctx, actor, operation, input);
     case "classes.sessions.list":
+    case "classes.occurrences.list":
     case "classes.coaches.list":
+    case "classes.coachPayout":
       return await classesQuery(ctx, actor, operation, input);
     case "accounting.accounts.list":
     case "finance.accounts.list":
@@ -5854,6 +5970,13 @@ function normalizedImportNumber(value: string): string {
     .trim();
 }
 
+function normalizedImportGender(value: string | undefined): "male" | "female" | undefined {
+  const normalized = value?.normalize("NFKC").trim().toLocaleLowerCase();
+  if (["male", "m", "man", "men", "ذكر"].includes(normalized ?? "")) return "male";
+  if (["female", "f", "woman", "women", "أنثى", "انثى"].includes(normalized ?? "")) return "female";
+  return undefined;
+}
+
 function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
   if (!value?.trim()) return {};
   const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
@@ -5915,6 +6038,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const headers = (rows.shift() ?? []).map(normalizedHeader);
   const nameIndex = firstHeader(headers, ["full_name", "name", "member_name"]);
   const phoneIndex = firstHeader(headers, ["phone", "mobile", "mobile_number"]);
+  const genderIndex = firstHeader(headers, ["gender", "sex", "member_gender"]);
   const emailIndex = firstHeader(headers, ["email", "email_address"]);
   const planIndex = firstHeader(headers, ["source_plan_name", "plan", "plan_name", "membership_plan"]);
   const membershipStartIndex = firstHeader(headers, ["membership_start_date", "membership_start", "start_date"]);
@@ -5926,7 +6050,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const historicalPaidIndex = firstHeader(headers, ["historical_paid_total", "total_paid"]);
   const historicalPaymentDateIndex = firstHeader(headers, ["historical_payment_date", "last_payment_date"]);
   const historicalPaymentReferenceIndex = firstHeader(headers, ["historical_payment_reference", "payment_reference"]);
-  if (nameIndex < 0 || phoneIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name and phone columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone"] } });
+  if (nameIndex < 0 || phoneIndex < 0 || genderIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name, phone, and gender columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone, gender"] } });
   if (rows.length > 10_000) domainError("VALIDATION_ERROR", "A single import can contain at most 10,000 members.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
   const migrationCutoffDate = optionalString(input.migrationCutoffDate) ?? todayIn(actor.organization.timezone || TZ_FALLBACK);
   if (!validImportDate(migrationCutoffDate)) domainError("VALIDATION_ERROR", "Choose a valid migration cutoff date.", { correlationId: actor.correlationId, fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
@@ -5949,6 +6073,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
     const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
+    const gender = normalizedImportGender(optionalString(values[genderIndex]));
     const email = optionalString(values[emailIndex])?.trim().toLowerCase();
     const sourcePlanName = optionalString(values[planIndex])?.trim();
     const planId = sourcePlanName ? planMappings.get(normalize(sourcePlanName)) : undefined;
@@ -5973,6 +6098,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
     const errors = [
       ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
       ...(LEAD_PHONE_PATTERN.test(phone) ? [] : ["Enter a valid phone number"]),
+      ...(gender ? [] : ["Gender must be male or female"]),
       ...(!email || (email.length <= 254 && LEAD_EMAIL_PATTERN.test(email)) ? [] : ["Enter a valid email address"]),
       ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
       ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
@@ -5995,7 +6121,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
       ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
-    return { rowNumber: index + 2, fullName, phone, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
+    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
   });
   const id = newPublicId();
   const now = Date.now();
@@ -6156,6 +6282,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
     const result = await createMemberMutation(ctx, actor, {
       fullName: row.fullName,
       phone: row.phone,
+      gender: row.gender,
       email: row.email,
       homeBranchId: importData.branchId,
       preferredLanguage: "en",
@@ -6259,7 +6386,8 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const fullName = stringValue(input.fullName).trim();
   const phone = normalizedLeadPhone(input.phone, actor);
   const email = normalizedLeadEmail(input.email, actor);
-  if (!fullName || !phone) domainError("VALIDATION_ERROR", "Name and phone are required.", { correlationId: actor.correlationId, fieldErrors: { ...(fullName ? {} : { fullName: ["Full name is required"] }), ...(phone ? {} : { phone: ["Phone is required"] }) } });
+  const gender = optionalString(input.gender);
+  if (!fullName || !phone || (gender !== "male" && gender !== "female")) domainError("VALIDATION_ERROR", "Name, phone, and gender are required.", { correlationId: actor.correlationId, fieldErrors: { ...(fullName ? {} : { fullName: ["Full name is required"] }), ...(phone ? {} : { phone: ["Phone is required"] }), ...(gender === "male" || gender === "female" ? {} : { gender: ["Choose male or female"] }) } });
   const homeBranchId = recordId(input.homeBranchId);
   const branch = await branchByPublicId(ctx, actor.organization._id, homeBranchId);
   assertBranchAccess(actor, branch);
@@ -6295,7 +6423,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     fullNameAr: optionalString(input.fullNameAr),
     phone,
     email,
-    gender: optionalString(input.gender),
+    gender,
     dateOfBirth: optionalString(input.dateOfBirth),
     homeBranchId,
     status: "active",
@@ -7308,6 +7436,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
   if (operation === "customer.referral.ensure") return await ensureCustomerReferralLink(ctx, recordId(input.membershipId), stringValue(request.correlationId, newPublicId()));
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "customer.classes.book" || operation === "customer.classes.cancel") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return await customerClassesMutation(ctx, context, operation, input, stringValue(request.correlationId, newPublicId()));
+  }
   if (operation === "customer.membership.freezeRequest") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const organization = context.organization;
@@ -8774,6 +8906,23 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
       return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+    }
+    case "retention.snooze": {
+      requirePermission(actor, "crm.write");
+      const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const memberData = data(member.data);
+      const until = stringValue(input.until);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today || until > addDays(today, 90)) domainError("VALIDATION_ERROR", "Choose a snooze date within the next 90 days.", { correlationId: actor.correlationId });
+      const publicId = `retention:${member.publicId}`;
+      const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "retentionState").eq("publicId", publicId)).unique();
+      const before = existing ? data(existing.data) : undefined;
+      const value = { id: publicId, memberId: member.publicId, snoozedUntil: until, snoozedAt: isoNow(), snoozedById: publicUserId(actor.user), reason: optionalString(input.reason)?.trim() };
+      if (existing) await patchRecord(ctx, actor, existing, value);
+      else await insertRecord(ctx, actor, "retentionState", value, { branchId: optionalString(memberData.homeBranchId), memberPublicId: member.publicId });
+      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, body: value.reason, meta: { kind: "retention_snooze", until } });
+      await insertAudit(ctx, actor, { category: "crm", action: "retention.snooze", entityType: "member", entityId: member.publicId, entityLabel: `${stringValue(memberData.fullName)} · ${stringValue(memberData.memberNumber)}`, summary: `At-risk follow-up snoozed until ${until}`, reason: value.reason, before, after: value, branchId: optionalString(memberData.homeBranchId) });
+      return undefined;
     }
     case "plans.create": {
       requirePermission(actor, "settings.manage");
@@ -10618,6 +10767,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.roster.add":
     case "classes.roster.remove":
     case "classes.attendance.set":
+    case "classes.occurrence.roster.add":
+    case "classes.occurrence.roster.remove":
+    case "classes.occurrence.attendance.set":
+    case "classes.occurrence.attendance.finalize":
+    case "classes.occurrence.coach.substitute":
     case "classes.coach.upsert":
     case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
@@ -10668,7 +10822,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
     { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
   );
-  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
+  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, timelineRecords, offerRecords, trialBookingRecords, retentionStateRows] = await Promise.all([
     memberRecords(ctx, actor),
     membershipRecords(ctx, actor),
     recordsOf(ctx, actor, "plan"),
@@ -10680,13 +10834,15 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     recordsOf(ctx, actor, "timeline"),
     recordsOf(ctx, actor, "offer"),
     recordsOf(ctx, actor, "trialBooking"),
+    recordsOf(ctx, actor, "retentionState"),
   ]);
   const members = memberRows.map((record) => data(record.data)).filter(inBranch);
   const memberships = membershipRows.map((record) => data(record.data)).filter(inBranch);
   const plans = planRows.map((record) => data(record.data));
   const leads = leadRows.map((record) => data(record.data)).filter(inBranch);
   const tasks = taskRows.map((record) => data(record.data)).filter(inBranch);
-  const checkins = checkinRows.map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
+  const allCheckins = checkinRows.map((record) => data(record.data)).filter(inBranch);
+  const checkins = allCheckins.filter((checkin) => inRange(checkin, "occurredAt"));
   const charges = chargeRows.map((record) => data(record.data));
   const shifts = shiftRows.map((record) => data(record.data)).filter(inBranch);
   const activitiesByLead = new Map<string, Data[]>();
@@ -10820,6 +10976,42 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         dueAt: `${stringValue(membership.endDate)}T20:59:59.999Z`,
         href: `/members/${stringValue(member.id)}?action=renew`,
         action: { kind: "navigate", label: hasPermission(actor, "memberships.sell") ? "Renew" : "Open" },
+      });
+    }
+
+    const operationalPolicies = data((await settingsData(ctx, actor)).operationalPolicies);
+    const retentionPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(operationalPolicies.retention) };
+    const membershipPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operationalPolicies.membership) };
+    const retentionRisks = deriveRetentionRisks({
+      today,
+      inactivityDays: numberValue(retentionPolicy.inactivityDays, 14),
+      renewalWindowDays: numberValue(membershipPolicy.renewalWindowDays, 14),
+      expiredWinBackDays: numberValue(retentionPolicy.expiredWinBackDays, 90),
+      members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
+      memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
+      checkIns: allCheckins.map((checkIn) => ({ memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) })),
+      snoozes: retentionStateRows.map((row) => { const state = data(row.data); return { memberId: stringValue(state.memberId), snoozedUntil: optionalString(state.snoozedUntil) }; }),
+    }).filter((risk) => queueBranchVisible(risk.branchId))
+      .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === actorPublicId)
+      // Expiring-only members already have the dedicated renewal item above.
+      .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
+      .slice(0, 6);
+    for (const risk of retentionRisks) {
+      const member = memberById.get(risk.memberId);
+      const term = memberships.find((membership) => stringValue(membership.id) === risk.membershipId);
+      if (!member || !term) continue;
+      const plan = planById.get(stringValue(term.planId));
+      queueItems.push({
+        id: `at-risk:${risk.memberId}`,
+        kind: "at_risk",
+        priority: risk.priority,
+        title: `Reconnect with ${stringValue(member.fullName)}`,
+        detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${stringValue(plan.name)}` : ""}`,
+        subjectName: stringValue(member.fullName),
+        branchName: branchNameById.get(risk.branchId),
+        occurredAt: risk.lastVisitAt,
+        href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
+        action: { kind: "navigate", label: "Follow up" },
       });
     }
   }

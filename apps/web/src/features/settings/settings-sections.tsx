@@ -1027,6 +1027,8 @@ type OperationalPoliciesInput = {
   personalTraining?: Partial<OperationalPolicies["personalTraining"]>;
   referrals?: Partial<OperationalPolicies["referrals"]>;
   memberFreezes?: Partial<OperationalPolicies["memberFreezes"]>;
+  classBooking?: Partial<OperationalPolicies["classBooking"]>;
+  retention?: Partial<OperationalPolicies["retention"]>;
   operatingHours?: OperationalPolicies["operatingHours"];
   trialSchedules?: OperationalPolicies["trialSchedules"];
 };
@@ -1068,6 +1070,24 @@ export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): 
       windowDays: 365,
       ...value?.memberFreezes,
     },
+    classBooking: {
+      enabled: true,
+      eligibilityMode: "all_active_memberships",
+      eligiblePlanIds: [],
+      bookingHorizonDays: 30,
+      cancellationCutoffHours: 2,
+      maxActiveBookingsPerMember: 8,
+      waitlistEnabled: true,
+      waitlistSize: 12,
+      noShowTracking: true,
+      ...value?.classBooking,
+    },
+    retention: {
+      inactivityDays: 14,
+      expiredWinBackDays: 90,
+      defaultSnoozeDays: 7,
+      ...value?.retention,
+    },
     operatingHours: Array.isArray(value?.operatingHours)
       ? value.operatingHours.map((schedule) => ({ ...schedule, days: normalizedOperatingDays(schedule.days) }))
       : [],
@@ -1080,6 +1100,7 @@ export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): 
 export function OperationalRulesSection() {
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
+  const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
   const [policies, setPolicies] = useState<OperationalPolicies | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState("");
 
@@ -1106,7 +1127,7 @@ export function OperationalRulesSection() {
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
     onSuccess: async () => {
       toast.success("Operational rules saved and audited.");
-      await invalidate([qk.settings, qk.renewalQueue({}), qk.checkIns({})]);
+      await invalidate([qk.settings, qk.renewalQueue({}), qk.checkIns({}), qk.customerClasses("all")]);
     },
     onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save operational rules."),
   });
@@ -1124,6 +1145,10 @@ export function OperationalRulesSection() {
     setPolicies((current) => current ? { ...current, memberFreezes: { ...current.memberFreezes, [key]: value } } : current);
   const updateMembership = <K extends keyof OperationalPolicies["membership"]>(key: K, value: OperationalPolicies["membership"][K]) =>
     setPolicies((current) => current ? { ...current, membership: { ...current.membership, [key]: value } } : current);
+  const updateClassBooking = <K extends keyof OperationalPolicies["classBooking"]>(key: K, value: OperationalPolicies["classBooking"][K]) =>
+    setPolicies((current) => current ? { ...current, classBooking: { ...current.classBooking, [key]: value } } : current);
+  const updateRetention = <K extends keyof OperationalPolicies["retention"]>(key: K, value: OperationalPolicies["retention"][K]) =>
+    setPolicies((current) => current ? { ...current, retention: { ...current.retention, [key]: value } } : current);
   const updateHours = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["operatingHours"][number]["days"][WeekdayKey]>) =>
     setPolicies((current) => current ? {
       ...current,
@@ -1166,6 +1191,40 @@ export function OperationalRulesSection() {
               <span><span className="block text-[13px] font-medium">Enforce operating hours</span><span className="block text-[11.5px] text-ink-3">Outside-hours entries require a manager override.</span></span>
               <Switch checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} aria-label="Enforce operating hours" />
             </label>
+          </div>
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Member class booking</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">Control who can self-book, how far ahead they can book, and what happens when a class fills.</p>
+          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
+            <span><span className="block text-[13px] font-medium">Member self-booking</span><span className="block text-[11.5px] text-ink-3">When off, reception still manages dated class rosters.</span></span>
+            <Switch checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} aria-label="Member class self-booking" />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Membership eligibility">
+              <Select value={policies.classBooking.eligibilityMode} onValueChange={(value) => updateClassBooking("eligibilityMode", value as OperationalPolicies["classBooking"]["eligibilityMode"])} disabled={!policies.classBooking.enabled}>
+                <SelectTrigger aria-label="Class membership eligibility"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="all_active_memberships">All active memberships</SelectItem><SelectItem value="selected_plans">Only selected plans</SelectItem></SelectContent>
+              </Select>
+            </Field>
+            <Field label="Booking horizon (days)"><Input type="number" min={1} max={120} value={policies.classBooking.bookingHorizonDays} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(event.target.value))} /></Field>
+            <Field label="Cancellation cutoff (hours)"><Input type="number" min={0} max={72} value={policies.classBooking.cancellationCutoffHours} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(event.target.value))} /></Field>
+            <Field label="Max active bookings"><Input type="number" min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(event.target.value))} /></Field>
+          </div>
+          {policies.classBooking.eligibilityMode === "selected_plans" ? <div className="mt-4 rounded-md border border-line p-3"><p className="text-[12px] font-medium">Plans that include classes</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{plansQuery.data?.items.map((plan) => { const checked = policies.classBooking.eligiblePlanIds.includes(plan.id); return <label key={plan.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2 text-[12px]"><span>{plan.name}</span><Switch checked={checked} onCheckedChange={(value) => updateClassBooking("eligiblePlanIds", value ? [...policies.classBooking.eligiblePlanIds, plan.id] : policies.classBooking.eligiblePlanIds.filter((id) => id !== plan.id))} aria-label={`${plan.name} includes classes`} /></label>; })}</div></div> : null}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5"><span><span className="block text-[13px] font-medium">Waitlist</span><span className="block text-[11.5px] text-ink-3">Promote the earliest waiting member automatically.</span></span><Switch checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} aria-label="Class waitlist" /></label>
+            <Field label="Waitlist size"><Input type="number" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} /></Field>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5 sm:col-span-2"><span><span className="block text-[13px] font-medium">Track no-shows</span><span className="block text-[11.5px] text-ink-3">Only unmarked bookings become no-shows after staff finalizes attendance.</span></span><Switch checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} aria-label="Track class no-shows" /></label>
+          </div>
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-1 font-display text-[15px] font-semibold">Retention radar</h2>
+          <p className="mb-4 text-[12.5px] text-ink-3">Tune when RIVET asks the team to contact inactive, expiring, and recently expired members.</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Inactive after (days)"><Input type="number" min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(event.target.value))} /></Field>
+            <Field label="Win-back window"><Input type="number" min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(event.target.value))} /></Field>
+            <Field label="Default snooze"><Input type="number" min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(event.target.value))} /></Field>
           </div>
         </section>
         <section className="panel p-5">

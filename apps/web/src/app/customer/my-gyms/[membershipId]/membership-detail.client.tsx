@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, Copy, CreditCard, Dumbbell, Gift, MapPin, QrCode, ScanLine, Share2, Ticket, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, Clock3, Copy, CreditCard, Dumbbell, Gift, MapPin, QrCode, ScanLine, Share2, Ticket, UserRoundCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -19,6 +19,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import type { CustomerClassOccurrence } from "@/lib/domain/types";
 import type { CustomerMembership, CustomerReferralProgram, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
 import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
@@ -29,7 +30,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
   const gyms = useMarketplaceGyms();
   const { ready, identitySignedIn } = useMemberGate();
   const membership = memberships.find((item) => item.id === membershipId);
-  const [tab, setTab] = useState<"membership" | "pt">(() => searchParams.get("section") === "pt" ? "pt" : "membership");
+  const [tab, setTab] = useState<"membership" | "classes" | "pt">(() => searchParams.get("section") === "pt" ? "pt" : searchParams.get("section") === "classes" ? "classes" : "membership");
   const [qrOpen, setQrOpen] = useState(false);
   const [qrToken, setQrToken] = useState("");
   const [qrExpiresAt, setQrExpiresAt] = useState<string>();
@@ -112,6 +113,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
 
       <div className="mt-5 flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label={`${gym.name} account sections`}>
         <button type="button" role="tab" aria-selected={tab === "membership"} onClick={() => setTab("membership")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "membership" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>Membership details</button>
+        <button type="button" role="tab" aria-selected={tab === "classes"} onClick={() => setTab("classes")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "classes" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><CalendarDays className="size-3.5" /> Classes</button>
         <button type="button" role="tab" aria-selected={tab === "pt"} onClick={() => setTab("pt")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "pt" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><Dumbbell className="size-3.5" /> PT</button>
       </div>
 
@@ -124,11 +126,65 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         <FreezeRequestCard membershipId={membership.id} />
         {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}
         <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
-      </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
+      </div> : tab === "classes" ? <CustomerClassesPanel membershipId={membership.id} /> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
     </main>
   );
+}
+
+function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
+  const invalidate = useInvalidate();
+  const experience = useApiQuery(qk.customerClasses(membershipId), (api) => api.getCustomerClassExperience(membershipId));
+  const book = useApiMutation((api, occurrenceId: string) => api.bookCustomerClass({ membershipId, occurrenceId }), {
+    onSuccess: async (result) => {
+      toast.success(result.outcome === "waitlisted" ? "You joined the waitlist." : "Class booked.");
+      await invalidate([qk.customerClasses(membershipId)]);
+    },
+  });
+  const cancel = useApiMutation((api, occurrenceId: string) => api.cancelCustomerClass({ membershipId, occurrenceId }), {
+    onSuccess: async (result) => {
+      toast.success(result.outcome === "late_cancelled" ? "Late cancellation recorded. No fee or membership penalty was added." : "Class booking cancelled.");
+      await invalidate([qk.customerClasses(membershipId)]);
+    },
+  });
+
+  if (experience.isLoading) return <div className="mt-5 grid gap-4 md:grid-cols-2"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>;
+  if (experience.isError) return <div className="mt-5"><ErrorState title="Classes could not be loaded" description="Your membership was not changed. Try again to load the live timetable." onRetry={() => experience.refetch()} /></div>;
+  const value = experience.data!;
+  if (!value.policy.enabled) return <section className="mt-5 rounded-lg border border-line bg-surface p-6 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h2 className="mt-3 text-[16px] font-semibold">Class booking is managed at reception</h2><p className="mt-1 text-[12.5px] text-ink-3">{value.gymName} has not enabled member self-booking yet.</p></section>;
+
+  const grouped = new Map<string, CustomerClassOccurrence[]>();
+  for (const occurrence of value.upcoming) grouped.set(occurrence.date, [...(grouped.get(occurrence.date) ?? []), occurrence]);
+  return <div className="mt-5 space-y-5" role="tabpanel" aria-label="Classes">
+    <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <div><p className="eyebrow">Weekly timetable</p><h2 className="mt-1 font-display text-[20px] font-semibold">Book your next class</h2><p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-ink-2">Live spots, waitlists, and cancellations—without calling reception.</p></div>
+        <div className="flex gap-5 text-right"><div><p className="text-[10.5px] text-ink-3">Booking window</p><p className="mt-1 font-mono text-[13px]">{value.policy.bookingHorizonDays} days</p></div><div><p className="text-[10.5px] text-ink-3">No-shows</p><p className="mt-1 font-mono text-[13px]">{value.noShowCount}</p></div></div>
+      </div>
+      {value.profileCorrectionRequired ? <div className="border-t border-warning/30 bg-warning-bg px-5 py-3 text-[12.5px] text-warning-deep">Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.</div> : null}
+    </section>
+
+    {grouped.size ? [...grouped.entries()].map(([date, occurrences]) => <section key={date} aria-labelledby={`classes-${date}`}>
+      <div className="mb-2 flex items-baseline justify-between gap-3"><h3 id={`classes-${date}`} className="text-[14px] font-semibold">{formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><span className="font-mono text-[10.5px] text-ink-3">{occurrences.length} class{occurrences.length === 1 ? "" : "es"}</span></div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{occurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
+    </section>) : <section className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes in the booking window</h3><p className="mt-1 text-[12px] text-ink-3">New dates will appear here as soon as the gym schedules them.</p></section>}
+
+    {value.history.length ? <details className="rounded-lg border border-line bg-surface"><summary className="cursor-pointer px-4 py-3 text-[13px] font-semibold">Booking history <span className="ms-2 font-mono text-[10.5px] font-normal text-ink-3">{value.history.length}</span></summary><div className="divide-y divide-line border-t border-line">{value.history.map((occurrence) => <div key={occurrence.id} className="flex items-center justify-between gap-3 px-4 py-3"><div><p className="text-[12.5px] font-medium">{occurrence.name}</p><p className="mt-0.5 text-[11px] text-ink-3">{formatDateTime(occurrence.startsAt)}</p></div><Badge variant="outline">{occurrence.booking?.status.replaceAll("_", " ") ?? "Not booked"}</Badge></div>)}</div></details> : null}
+  </div>;
+}
+
+function CustomerClassCard({ occurrence, busy, onBook, onCancel }: { occurrence: CustomerClassOccurrence; busy: boolean; onBook: () => void; onCancel: () => void }) {
+  const active = occurrence.booking && ["booked", "waitlisted"].includes(occurrence.booking.status);
+  const full = occurrence.spotsRemaining === 0;
+  return <article className="group overflow-hidden rounded-lg border border-line bg-surface">
+    {occurrence.imageUrl ? <div className="h-28 bg-cover bg-center transition-transform duration-300 group-hover:scale-[1.01]" role="img" aria-label={occurrence.imageAltText ?? occurrence.name} style={{ backgroundImage: `linear-gradient(rgb(0 0 0 / .08), rgb(0 0 0 / .24)), url(${occurrence.imageUrl})` }} /> : <div className="h-2 bg-[var(--tenant-brand-primary)]" />}
+    <div className="p-4">
+      <div className="flex items-start justify-between gap-3"><div><h4 className="text-[14px] font-semibold">{occurrence.name}</h4><p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-ink-3"><Clock3 className="size-3" /> {formatTime(occurrence.startsAt)} · {Math.round((Date.parse(occurrence.endsAt) - Date.parse(occurrence.startsAt)) / 60_000)} min</p></div><Badge variant="outline">{occurrence.audience === "mixed" ? "Everyone" : occurrence.audience === "women" ? "Women" : "Men"}</Badge></div>
+      <div className="mt-3 flex items-center justify-between border-y border-line py-2.5 text-[11.5px]"><span className="flex items-center gap-1.5 text-ink-2"><UserRoundCheck className="size-3.5" /> {occurrence.coachName ?? "Coach TBA"}</span><span className={cn("font-mono", full ? "text-warning-deep" : "text-ink-3")}>{full ? `${occurrence.waitlistCount} waiting` : `${occurrence.spotsRemaining} spots left`}</span></div>
+      {active ? <div className="mt-3 flex items-center justify-between gap-3"><div><p className="text-[12px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p><p className="mt-0.5 text-[10.5px] text-ink-3">Cancel anytime; late cancellation is recorded without a fee.</p></div><Button size="sm" variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button></div> : <div className="mt-3"><Button className="w-full" loading={busy} disabled={!occurrence.canBook} onClick={onBook}>{full ? "Join waitlist" : "Book class"}</Button>{occurrence.bookingBlockReason ? <p className="mt-2 text-[10.5px] leading-4 text-ink-3">{occurrence.bookingBlockReason}</p> : null}</div>}
+    </div>
+  </article>;
 }
 
 function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerReferralProgram; gymName: string }) {

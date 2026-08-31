@@ -34,6 +34,7 @@ async function createReferred(t: TestConvex<typeof schema>, suffix: string): Pro
   const created = await owner.mutation(api.domain.mutate, operation("members.create", {
     fullName: `Referred ${suffix}`,
     phone: `+96279000${suffix.padStart(4, "1")}`,
+    gender: "female",
     homeBranchId: "branch-referral",
     preferredLanguage: "en",
     referredByMemberId: "referrer-1",
@@ -134,6 +135,7 @@ describe("referral rewards", () => {
     await expect(manager.mutation(api.domain.mutate, operation("members.create", {
       fullName: "Cross Branch Referral",
       phone: "+962790000223",
+      gender: "female",
       homeBranchId: "branch-referral",
       preferredLanguage: "en",
       referredByMemberId: "referrer-other",

@@ -1,6 +1,8 @@
 import type {
   AuditCategory,
   AuditEvent,
+  AtRiskMemberItem,
+  AtRiskMemberQuery,
   AccountingAccount,
   AccountingJournalEntryDetail,
   AccountingJournalEntrySummary,
@@ -237,6 +239,7 @@ export interface MemberImportRow {
   rowNumber: number;
   fullName: string;
   phone: string;
+  gender?: "male" | "female";
   email?: string;
   status: "valid" | "duplicate" | "invalid" | "committed" | "skipped";
   errors: string[];
@@ -259,6 +262,7 @@ export interface MemberImportRow {
 export type MemberImportField =
   | "fullName"
   | "phone"
+  | "gender"
   | "email"
   | "sourcePlanName"
   | "membershipStartDate"
@@ -995,6 +999,9 @@ export interface GymOSApi {
   completeLeadSale(leadId: UUID, input: CompleteLeadSaleInput): Promise<CompleteLeadSaleResult>;
   listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>;
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: Page<RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  listAtRiskMembers(query: AtRiskMemberQuery): Promise<Page<AtRiskMemberItem>>;
+  subscribeAtRiskMembers(query: AtRiskMemberQuery, onValue: (page: Page<AtRiskMemberItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  snoozeAtRiskMember(input: import("@/lib/domain/types").SnoozeAtRiskMemberInput): Promise<void>;
 
   // Check-in
   previewCheckIn(input: { branchId: UUID; query: string }): Promise<CheckInPreview>;
@@ -1128,6 +1135,16 @@ export interface GymOSApi {
   addClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
   removeClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
   setClassAttendance(input: import("@/lib/domain/types").ClassAttendanceInput): Promise<import("@/lib/domain/types").ClassSession>;
+  listClassOccurrences(query: import("@/lib/domain/types").ClassOccurrenceQuery): Promise<import("@/lib/domain/types").ClassOccurrence[]>;
+  getCustomerClassExperience(membershipId: UUID): Promise<import("@/lib/domain/types").CustomerClassExperience>;
+  bookCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
+  cancelCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
+  addClassOccurrenceAttendee(input: import("@/lib/domain/types").ClassOccurrenceRosterInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  removeClassOccurrenceAttendee(input: { occurrenceId: UUID; bookingId: UUID; reason?: string }): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  setClassOccurrenceAttendance(input: import("@/lib/domain/types").ClassOccurrenceAttendanceInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  finalizeClassOccurrenceAttendance(input: { occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  substituteClassOccurrenceCoach(input: import("@/lib/domain/types").SubstituteClassCoachInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  getCoachPayoutReport(input: { month: string; coachId?: UUID }): Promise<import("@/lib/domain/types").CoachPayoutReport>;
   listClassCoaches(): Promise<import("@/lib/domain/types").ClassCoach[]>;
   upsertClassCoach(input: import("@/lib/domain/types").UpsertClassCoachInput): Promise<import("@/lib/domain/types").ClassCoach>;
   removeClassCoach(coachId: UUID): Promise<{ id: UUID }>;

@@ -96,6 +96,7 @@ describe("CRM lead identity and assignment integrity", () => {
     const created = await owner.mutation(api.domain.mutate, operation("members.create", {
       fullName: "Jordan Phone Member",
       phone: "079 321 4567",
+      gender: "female",
       homeBranchId: "crm-integrity-branch-a",
       preferredLanguage: "en",
     })) as { member: { id: string; phone: string } };
@@ -226,7 +227,7 @@ describe("CRM lead identity and assignment integrity", () => {
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
     const sales = t.withIdentity({ subject: "clerk-crm-integrity-sales" });
-    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Bulk Member", phone: "+962790009999", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Bulk Member", phone: "+962790009999", gender: "female", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
 
     const view = await owner.mutation(api.domain.mutate, operation("savedViews.save", { surface: "members", name: "Balances", state: { membership: "outstanding", sort: "-outstanding" }, isDefault: true })) as { id: string; isDefault: boolean };
     expect(view.isDefault).toBe(true);
@@ -251,8 +252,8 @@ describe("CRM lead identity and assignment integrity", () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
-    const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Primary", phone: "+962790007777", email: "duplicate@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
-    const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Candidate", phone: "0790007777", email: "duplicate@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Primary", phone: "+962790007777", email: "duplicate@example.com", gender: "female", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Duplicate Candidate", phone: "0790007777", email: "duplicate@example.com", gender: "female", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
     await owner.mutation(api.domain.mutate, operation("members.note", { memberId: second.member.id, body: "Historical note on duplicate identity" }));
     const cases = await owner.query(api.domain.query, operation("duplicates.list", { status: "open" })) as { items: Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }> };
     const duplicate = cases.items.find((item) => new Set([item.primary.id, item.candidate.id]).has(first.member.id) && new Set([item.primary.id, item.candidate.id]).has(second.member.id));
@@ -272,8 +273,8 @@ describe("CRM lead identity and assignment integrity", () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
-    const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Primary", phone: "+962790006666", email: "owned@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
-    const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Candidate", phone: "0790006666", email: "owned@example.com", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const first = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Primary", phone: "+962790006666", email: "owned@example.com", gender: "female", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
+    const second = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Owned Candidate", phone: "0790006666", email: "owned@example.com", gender: "female", homeBranchId: "crm-integrity-branch-a" })) as { member: { id: string } };
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "crm-integrity-org-a")).unique();
       const record = organization ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", second.member.id)).unique() : null;

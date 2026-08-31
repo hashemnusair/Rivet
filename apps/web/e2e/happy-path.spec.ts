@@ -36,6 +36,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 
     // ---- Work the expiring-members queue ----------------------------------
     await page.goto("/crm/queues");
+    await page.getByRole("button", { name: "Renewals", exact: true }).click();
     await page.getByTestId("follow-up-filters").getByRole("button", { name: "Expiring", exact: true }).click();
 
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
@@ -68,6 +69,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
   test("changes an expiring member's plan with an explicit successor term", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/crm/queues");
+    await page.getByRole("button", { name: "Renewals", exact: true }).click();
     await page.getByTestId("follow-up-filters").getByRole("button", { name: "Expiring", exact: true }).click();
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await firstRow.click();

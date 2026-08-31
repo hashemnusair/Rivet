@@ -125,6 +125,7 @@ describe("CRM lead workflow language and transitions", () => {
     await user.click(screen.getByTestId("sell-membership"));
     await screen.findByRole("dialog", { name: "Complete membership sale" });
 
+    await user.selectOptions(screen.getByRole("combobox", { name: "Gender" }), "female");
     await user.selectOptions(screen.getByRole("combobox", { name: "Preferred language" }), "ar");
     await waitFor(() => expect(screen.getByTestId("confirm-membership-sale")).not.toBeDisabled());
     await user.click(screen.getByTestId("confirm-membership-sale"));

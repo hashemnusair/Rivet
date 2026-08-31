@@ -434,6 +434,9 @@ export interface ClassCoach {
   name: string;
   phone?: string;
   specialty?: string;
+  /** Optional reporting rate. It never creates a payable or ledger entry. */
+  payPerClassMinor?: number;
+  currency?: string;
   createdAt: string;
 }
 
@@ -442,6 +445,133 @@ export interface UpsertClassCoachInput {
   name: string;
   phone?: string;
   specialty?: string;
+  payPerClassMinor?: number;
+}
+
+export type ClassBookingStatus = "booked" | "waitlisted" | "cancelled" | "late_cancelled" | "attended" | "no_show";
+
+export interface ClassOccurrenceRosterEntry {
+  bookingId: UUID;
+  memberId: UUID;
+  membershipId: UUID;
+  name: string;
+  status: ClassBookingStatus;
+  bookedAt: ISODateTime;
+  fromWaitlist: boolean;
+  noShowCount?: number;
+}
+
+export interface ClassOccurrence {
+  id: UUID;
+  templateId: UUID;
+  branchId: UUID;
+  branchName: string;
+  date: ISODate;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  name: string;
+  regularCoachId?: UUID;
+  regularCoachName?: string;
+  coachId?: UUID;
+  coachName?: string;
+  substituted: boolean;
+  capacity: number;
+  audience: ClassAudience;
+  imageUrl?: string;
+  imageAltText?: string;
+  notes?: string;
+  status: "scheduled" | "cancelled" | "completed";
+  attendanceFinalizedAt?: ISODateTime;
+  bookedCount: number;
+  waitlistCount: number;
+  spotsRemaining: number;
+  roster: ClassOccurrenceRosterEntry[];
+}
+
+export interface CustomerClassOccurrence extends Omit<ClassOccurrence, "roster"> {
+  booking?: {
+    id: UUID;
+    status: ClassBookingStatus;
+    position?: number;
+    fromWaitlist: boolean;
+  };
+  canBook: boolean;
+  bookingBlockReason?: string;
+}
+
+export interface ClassBookingPolicy {
+  enabled: boolean;
+  eligibilityMode: "all_active_memberships" | "selected_plans";
+  eligiblePlanIds: UUID[];
+  bookingHorizonDays: number;
+  cancellationCutoffHours: number;
+  maxActiveBookingsPerMember: number;
+  waitlistEnabled: boolean;
+  waitlistSize: number;
+  noShowTracking: boolean;
+}
+
+export interface CustomerClassExperience {
+  membershipId: UUID;
+  gymName: string;
+  timezone: string;
+  policy: ClassBookingPolicy;
+  upcoming: CustomerClassOccurrence[];
+  history: CustomerClassOccurrence[];
+  noShowCount: number;
+  profileCorrectionRequired: boolean;
+}
+
+export interface ClassBookingResult {
+  occurrence: CustomerClassOccurrence;
+  outcome: "booked" | "waitlisted" | "cancelled" | "late_cancelled";
+  promotedMemberId?: UUID;
+}
+
+export interface ClassOccurrenceQuery {
+  branchId: UUID;
+  fromDate: ISODate;
+  toDate: ISODate;
+  coachId?: UUID;
+}
+
+export interface ClassOccurrenceRosterInput {
+  occurrenceId: UUID;
+  memberId: UUID;
+  membershipId: UUID;
+  overrideReason?: string;
+}
+
+export interface ClassOccurrenceAttendanceInput {
+  occurrenceId: UUID;
+  bookingId: UUID;
+  attended: boolean;
+}
+
+export interface SubstituteClassCoachInput {
+  occurrenceId: UUID;
+  coachId: UUID;
+  reason: string;
+}
+
+export interface CoachPayoutLine {
+  occurrenceId: UUID;
+  date: ISODate;
+  className: string;
+  regularCoachName?: string;
+  deliveredCoachName: string;
+  substituted: boolean;
+  attendedCount: number;
+  rate: Money;
+}
+
+export interface CoachPayoutReport {
+  coachId?: UUID;
+  coachName?: string;
+  month: string;
+  currency: string;
+  lines: CoachPayoutLine[];
+  total: Money;
 }
 
 export interface UpsertClassSessionInput {
@@ -833,7 +963,7 @@ export interface CreateMemberInput {
   fullNameAr?: string;
   phone: string;
   email?: string;
-  gender?: "male" | "female";
+  gender: "male" | "female";
   dateOfBirth?: ISODate;
   homeBranchId: UUID;
   preferredLanguage: PreferredLanguage;
@@ -1567,7 +1697,7 @@ export type UpdateLeadInput = Partial<
 export interface ConvertLeadInput {
   homeBranchId: UUID;
   preferredLanguage: PreferredLanguage;
-  gender?: "male" | "female";
+  gender: "male" | "female";
   dateOfBirth?: ISODate;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -2629,6 +2759,7 @@ export interface DashboardAlert {
 
 export type TodayQueueKind =
   | "follow_up"
+  | "at_risk"
   | "renewal"
   | "outstanding_balance"
   | "access_denial"
@@ -2684,6 +2815,41 @@ export interface DashboardData {
   alerts: DashboardAlert[];
   todayQueue: TodayQueueData;
   recentActivity: TimelineEvent[];
+}
+
+export type RetentionRiskKind = "inactive" | "expiring" | "expired";
+
+export interface RetentionRiskReason {
+  kind: RetentionRiskKind;
+  label: string;
+  daysInactive?: number;
+  daysUntilExpiry?: number;
+  daysSinceExpiry?: number;
+}
+
+export interface AtRiskMemberItem {
+  member: MemberSummary;
+  membership: MembershipSummary;
+  reasons: RetentionRiskReason[];
+  priority: TodayQueuePriority;
+  lastVisitAt?: ISODateTime;
+  lastContactAt?: ISODateTime;
+  lastContactOutcome?: string;
+  snoozedUntil?: ISODate;
+  recommendedSnoozeDays: number;
+}
+
+export interface AtRiskMemberQuery extends ListQuery {
+  branchId?: UUID;
+  reason?: RetentionRiskKind | "all";
+  includeSnoozed?: boolean;
+  search?: string;
+}
+
+export interface SnoozeAtRiskMemberInput {
+  memberId: UUID;
+  until: ISODate;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -2834,6 +3000,12 @@ export interface OperationalPolicies {
     sessionDurationMinutes: 60;
     bookingHorizonDays: number;
     cancellationCutoffHours: number;
+  };
+  classBooking: ClassBookingPolicy;
+  retention: {
+    inactivityDays: number;
+    expiredWinBackDays: number;
+    defaultSnoozeDays: number;
   };
   /** Gym-customizable member-referral rewards: free days added to the
    * referrer's active membership when a referred person buys their first

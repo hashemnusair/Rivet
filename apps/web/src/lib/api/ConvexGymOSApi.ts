@@ -577,6 +577,9 @@ export class ConvexGymOSApi implements GymOSApi {
   completeLeadSale(leadId: T.UUID, input: T.CompleteLeadSaleInput): Promise<T.CompleteLeadSaleResult> { return this.mutate("leads.complete_sale", { leadId, ...input }); }
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> { return this.query("renewal.queue", query); }
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: T.Page<T.RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("renewal.queue", query, onValue, onError); }
+  listAtRiskMembers(query: T.AtRiskMemberQuery): Promise<T.Page<T.AtRiskMemberItem>> { return this.query("retention.queue", query); }
+  subscribeAtRiskMembers(query: T.AtRiskMemberQuery, onValue: (page: T.Page<T.AtRiskMemberItem>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("retention.queue", query, onValue, onError); }
+  async snoozeAtRiskMember(input: T.SnoozeAtRiskMemberInput): Promise<void> { await this.mutate("retention.snooze", input); }
 
   previewCheckIn(input: { branchId: T.UUID; query: string }): Promise<T.CheckInPreview> { return this.query("checkins.preview", input); }
   createCheckIn(input: T.CreateCheckInInput): Promise<T.CheckInResult> { return this.mutate("checkins.create", input); }
@@ -699,6 +702,16 @@ export class ConvexGymOSApi implements GymOSApi {
   addClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> { return this.mutate("classes.roster.add", input); }
   removeClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> { return this.mutate("classes.roster.remove", input); }
   setClassAttendance(input: T.ClassAttendanceInput): Promise<T.ClassSession> { return this.mutate("classes.attendance.set", input); }
+  listClassOccurrences(query: T.ClassOccurrenceQuery): Promise<T.ClassOccurrence[]> { return this.query("classes.occurrences.list", query); }
+  getCustomerClassExperience(membershipId: T.UUID): Promise<T.CustomerClassExperience> { return this.query("customer.classes", { membershipId }); }
+  bookCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> { return this.mutate("customer.classes.book", input); }
+  cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> { return this.mutate("customer.classes.cancel", input); }
+  addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.add", input); }
+  removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.remove", input); }
+  setClassOccurrenceAttendance(input: T.ClassOccurrenceAttendanceInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.set", input); }
+  finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.finalize", input); }
+  substituteClassOccurrenceCoach(input: T.SubstituteClassCoachInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.coach.substitute", input); }
+  getCoachPayoutReport(input: { month: string; coachId?: T.UUID }): Promise<T.CoachPayoutReport> { return this.query("classes.coachPayout", input); }
   listClassCoaches(): Promise<T.ClassCoach[]> { return this.query("classes.coaches.list", {}); }
   upsertClassCoach(input: T.UpsertClassCoachInput): Promise<T.ClassCoach> { return this.mutate("classes.coach.upsert", input); }
   removeClassCoach(coachId: T.UUID): Promise<{ id: T.UUID }> { return this.mutate("classes.coach.remove", { coachId }); }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X } from "lucide-react";
+import { CalendarCheck2, Check, Download, ImagePlus, Plus, Printer, RefreshCcw, Repeat2, Trash2, UserPlus, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,13 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
+import { MoneyText } from "@/components/shared/data-display";
 import { qk } from "@/lib/api/keys";
-import type { ClassAudience, ClassCoach, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
+import type { ClassAudience, ClassCoach, ClassSession, CoachPayoutReport, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { getApi } from "@/lib/api/client";
+import { addDays, formatDate, formatDateTime, todayISODate } from "@/lib/utils/dates";
 
 // Default visible day; the window stretches automatically when a class is
 // scheduled outside it, so nothing can render off-grid.
@@ -28,6 +30,25 @@ function minuteLabel(minute: number): string {
 
 function rangeLabel(item: Pick<ClassSession, "startMinute" | "durationMinutes">): string {
   return `${minuteLabel(item.startMinute)}–${minuteLabel(item.startMinute + item.durationMinutes)}`;
+}
+
+function csvCell(value: string | number): string {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadPayoutCsv(report: CoachPayoutReport): void {
+  const rows = [
+    ["date", "coach", "class", "substitute", "attended", "rate_minor", "currency"],
+    ...report.lines.map((line) => [line.date, line.deliveredCoachName, line.className, line.substituted ? "yes" : "no", line.attendedCount, line.rate.amount, line.rate.currency]),
+  ];
+  const blob = new Blob([rows.map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `rivet-coach-payout-${report.month}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Greedy lane packing so overlapping classes stack instead of colliding. */
@@ -75,9 +96,20 @@ export default function ClassesPage() {
   const sessionsQuery = useApiQuery(qk.classSessions(branchId ?? "none"), (api) => api.listClassSessions({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const coachesQuery = useApiQuery(["classCoaches"] as const, (api) => api.listClassCoaches());
   const coaches: ClassCoach[] = coachesQuery.data ?? [];
+  const [weekStart, setWeekStart] = useState(() => todayISODate());
+  const [coachFilter, setCoachFilter] = useState("");
+  const weekEnd = addDays(weekStart, 6);
+  const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd, coachId: coachFilter || undefined }), { enabled: Boolean(branchId) });
 
   const [editor, setEditor] = useState<EditorState>();
   const [manageId, setManageId] = useState<string>();
+  const [manageOccurrenceId, setManageOccurrenceId] = useState<string>();
+  const [overrideReason, setOverrideReason] = useState("");
+  const [substituteCoachId, setSubstituteCoachId] = useState("");
+  const [substituteReason, setSubstituteReason] = useState("");
+  const [payoutOpen, setPayoutOpen] = useState(false);
+  const [payoutMonth, setPayoutMonth] = useState(() => todayISODate().slice(0, 7));
+  const [payoutCoachId, setPayoutCoachId] = useState("");
   const [menu, setMenu] = useState<MenuState>();
   const [deleteTarget, setDeleteTarget] = useState<ClassSession>();
   const [deleteReason, setDeleteReason] = useState("");
@@ -87,10 +119,12 @@ export default function ClassesPage() {
   const memberLookup = useApiQuery(
     qk.members({ search: normalizedMemberSearch, pageSize: 6 }),
     (api) => api.listMembers({ search: normalizedMemberSearch, pageSize: 6 }),
-    { enabled: Boolean(manageId && canRoster && normalizedMemberSearch.length >= 2) },
+    { enabled: Boolean((manageId || manageOccurrenceId) && canRoster && normalizedMemberSearch.length >= 2) },
   );
   const memberResults: MemberSummary[] = memberLookup.data?.items.filter((member) => member.status !== "archived") ?? [];
   const managed = sessionsQuery.data?.find((item) => item.id === manageId);
+  const managedOccurrence = occurrencesQuery.data?.find((item) => item.id === manageOccurrenceId);
+  const payoutQuery = useApiQuery(qk.coachPayout(payoutMonth, payoutCoachId || undefined), (api) => api.getCoachPayoutReport({ month: payoutMonth, coachId: payoutCoachId || undefined }), { enabled: payoutOpen });
 
   useEffect(() => {
     if (!menu) return;
@@ -100,7 +134,7 @@ export default function ClassesPage() {
     return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", close); };
   }, [menu]);
 
-  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none")]); };
+  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined), qk.coachPayout(payoutMonth, payoutCoachId || undefined)]); };
 
   const save = useApiMutation((api) => {
     if (!editor) throw new Error("Nothing to save.");
@@ -133,8 +167,21 @@ export default function ClassesPage() {
   });
   const removeAttendee = useApiMutation((api, memberId: string) => api.removeClassAttendee({ sessionId: manageId!, memberId }), { onSuccess: refresh });
   const setAttendance = useApiMutation((api, input: { memberId: string; attended: boolean }) => api.setClassAttendance({ sessionId: manageId!, ...input }), { onSuccess: refresh });
+  const addOccurrenceAttendee = useApiMutation(async (api, memberId: string) => {
+    const memberships = await api.listMemberships({ memberId, status: "active", pageSize: 50 });
+    const membership = memberships.items.find((item) => item.homeBranchId === managedOccurrence?.branchId) ?? memberships.items[0];
+    if (!membership) throw new Error("This member has no active membership for this class.");
+    return api.addClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, memberId, membershipId: membership.id, overrideReason: overrideReason.trim() || undefined });
+  }, { onSuccess: async () => { setMemberSearch(""); setOverrideReason(""); await refresh(); } });
+  const removeOccurrenceAttendee = useApiMutation((api, bookingId: string) => api.removeClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, bookingId, reason: "Removed from the dated roster by staff" }), { onSuccess: refresh });
+  const setOccurrenceAttendance = useApiMutation((api, input: { bookingId: string; attended: boolean }) => api.setClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId!, ...input }), { onSuccess: refresh });
+  const finalizeOccurrence = useApiMutation((api) => api.finalizeClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId! }), { onSuccess: refresh, successMessage: "Attendance finalized. Unmarked bookings were recorded using the gym's no-show policy." });
+  const substituteCoach = useApiMutation((api) => api.substituteClassOccurrenceCoach({ occurrenceId: manageOccurrenceId!, coachId: substituteCoachId, reason: substituteReason.trim() }), {
+    onSuccess: async () => { setSubstituteCoachId(""); setSubstituteReason(""); await refresh(); },
+    successMessage: "Coach substitution recorded for this class only.",
+  });
 
-  const upsertCoach = useApiMutation((api, input: { name: string; phone?: string; specialty?: string }) => api.upsertClassCoach(input), {
+  const upsertCoach = useApiMutation((api, input: { name: string; phone?: string; specialty?: string; payPerClassMinor?: number }) => api.upsertClassCoach(input), {
     onSuccess: async () => { await invalidate([["classCoaches"]]); },
     successMessage: "Coach saved.",
   });
@@ -152,6 +199,14 @@ export default function ClassesPage() {
     setManageId(undefined);
     setMenu(undefined);
     setEditor({ sessionId: target.id, branchId: target.branchId, name: target.name, coachId: target.coachId ?? "", dayOfWeek: target.dayOfWeek, startMinute: target.startMinute, durationMinutes: target.durationMinutes, capacity: target.capacity, audience: target.audience, notes: target.notes ?? "", imageAssetId: target.imageAssetId, imageUrl: target.imageUrl, uploading: false, isNew: false });
+  };
+
+  const openNextOccurrence = (templateId: string) => {
+    const next = occurrencesQuery.data?.find((occurrence) => occurrence.templateId === templateId && occurrence.status !== "cancelled");
+    if (!next) { toast.error("No dated class is available in this seven-day view."); return; }
+    setManageOccurrenceId(next.id);
+    setMemberSearch("");
+    setOverrideReason("");
   };
 
   const uploadImage = async (file: File) => {
@@ -199,7 +254,7 @@ export default function ClassesPage() {
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8" data-print-root>
       <div className="mx-auto max-w-[1600px]">
         <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
-          <div><p className="eyebrow">Studio</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Weekly class schedule</h1><p className="mt-2 text-[12.5px] text-ink-2">One timetable for every week. Select a class to manage its roster; managers can edit it from there.</p></div>
+          <div><p className="eyebrow">Studio</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Classes</h1><p className="mt-2 text-[12.5px] text-ink-2">Run this week&apos;s dated rosters first. Managers maintain the repeating timetable below.</p></div>
           <div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
               <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
@@ -207,17 +262,32 @@ export default function ClassesPage() {
               </select>
             ) : null}
             {canManage ? <Button variant="secondary" onClick={() => setCoachesOpen(true)}><Users /> Coaches</Button> : null}
+            {canManage ? <Button variant="secondary" onClick={() => setPayoutOpen(true)}><Download /> Coach payout</Button> : null}
             <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer /> Print</Button>
             {canManage ? <Button variant="signal" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>
         </div>
+
+        <section className="mt-6 overflow-hidden rounded-lg border border-line bg-surface print:hidden" aria-labelledby="dated-classes-title">
+          <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line p-4">
+            <div><p className="eyebrow">Live operations</p><h2 id="dated-classes-title" className="mt-1 text-[17px] font-semibold">Dated classes · {formatDate(weekStart)}–{formatDate(weekEnd)}</h2><p className="mt-1 text-[11.5px] text-ink-3">Bookings and attendance belong to one date. Nothing here changes future weeks.</p></div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="grid gap-1 text-[10.5px] font-medium text-ink-3">Week starts<Input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} className="w-[150px]" /></label>
+              <label className="grid gap-1 text-[10.5px] font-medium text-ink-3">Coach<select aria-label="Filter dated classes by coach" className="h-9 min-w-[170px] rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={coachFilter} onChange={(event) => setCoachFilter(event.target.value)}><option value="">All coaches</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select></label>
+              <Button size="sm" variant="ghost" onClick={() => occurrencesQuery.refetch()} aria-label="Refresh dated classes"><RefreshCcw /></Button>
+            </div>
+          </header>
+          {occurrencesQuery.isLoading ? <div className="grid gap-3 p-4 md:grid-cols-3"><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div> : occurrencesQuery.isError ? <div className="p-4"><ErrorState title="Dated classes could not be loaded" description="The repeating timetable is still available below. No roster changes were made." onRetry={() => occurrencesQuery.refetch()} /></div> : occurrencesQuery.data?.length ? <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">{occurrencesQuery.data.map((occurrence) => <button key={occurrence.id} type="button" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); setOverrideReason(""); }} className="rounded-md border border-line p-4 text-start transition-colors hover:border-line-3 hover:bg-sunken/50"><div className="flex items-start justify-between gap-3"><div><p className="text-[13.5px] font-semibold">{occurrence.name}</p><p className="mt-1 text-[11.5px] text-ink-3">{formatDateTime(occurrence.startsAt)} · {occurrence.coachName ?? "Coach TBA"}</p></div><span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${occurrence.attendanceFinalizedAt ? "bg-success-bg text-success-deep" : "bg-sunken text-ink-2"}`}>{occurrence.attendanceFinalizedAt ? "Finalized" : occurrence.status}</span></div><div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center"><div><p className="font-mono text-[13px]">{occurrence.bookedCount}/{occurrence.capacity}</p><p className="text-[9.5px] text-ink-3">booked</p></div><div><p className="font-mono text-[13px]">{occurrence.waitlistCount}</p><p className="text-[9.5px] text-ink-3">waiting</p></div><div><p className="font-mono text-[13px]">{occurrence.roster.filter((entry) => entry.status === "attended").length}</p><p className="text-[9.5px] text-ink-3">present</p></div></div></button>)}</div> : <div className="p-8 text-center"><CalendarCheck2 className="mx-auto size-6 text-ink-3" /><p className="mt-3 text-[13px] font-medium">No classes in this view</p><p className="mt-1 text-[11.5px] text-ink-3">Adjust the week or coach filter, or add a repeating class below.</p></div>}
+        </section>
+
+        <div className="mt-8 flex items-center gap-2 print:hidden"><Repeat2 className="size-4 text-ink-3" /><div><h2 className="text-[15px] font-semibold">Repeating timetable</h2><p className="text-[11px] text-ink-3">Changes here affect future dated classes.</p></div></div>
 
         <div className="hidden print:block"><p className="text-[20px] font-semibold">{branchName} — weekly class schedule</p></div>
 
         {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : sessionsQuery.isError ? (
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
         ) : (
-          <div className="mt-6 overflow-x-auto rounded-lg border border-line bg-surface" data-print-schedule>
+          <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface" data-print-schedule>
             <div style={{ minWidth: `${110 + visibleHours * 72}px` }}>
               <div className="grid" style={{ gridTemplateColumns: "110px 1fr" }}>
                 <div className="border-b border-line bg-sunken px-3 py-2 font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Day</div>
@@ -251,7 +321,7 @@ export default function ClassesPage() {
                             <button
                               key={item.id}
                               type="button"
-                              onClick={(event) => { event.stopPropagation(); setManageId(item.id); setMemberSearch(""); }}
+                              onClick={(event) => { event.stopPropagation(); openNextOccurrence(item.id); }}
                               onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
                               className="absolute overflow-hidden rounded-md border border-signal/50 bg-signal-bg/70 px-2 py-1 text-start text-[10px] leading-tight shadow-sm transition-colors hover:border-signal"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3, Math.min(width, 100 - left))}%`, top: `${4 + item.lane * 52}px`, height: "48px" }}
@@ -283,7 +353,7 @@ export default function ClassesPage() {
               return (
                 <>
                   <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => openEdit(target)}>Edit class</button>
-                  <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); setManageId(target.id); }}>Who is in</button>
+                  <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); openNextOccurrence(target.id); }}>Open next dated class</button>
                   <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] text-danger hover:bg-danger-bg" onClick={() => { setMenu(undefined); setDeleteTarget(target); setDeleteReason(""); }}>Remove from schedule</button>
                 </>
               );
@@ -352,7 +422,7 @@ export default function ClassesPage() {
               ) : <div className="divide-y divide-line rounded-md border border-line">
                 {coaches.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No coaches yet — add the first one below.</p> : coaches.map((coach) => (
                   <div key={coach.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[10.5px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p></div>
+                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[10.5px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{coach.payPerClassMinor !== undefined ? `JD ${(coach.payPerClassMinor / 1000).toFixed(3)} per delivered class` : "No reporting rate"}</p></div>
                     <Button variant="ghost" size="sm" aria-label={`Remove ${coach.name}`} loading={removeCoach.isPending} onClick={() => removeCoach.mutate(coach.id)}><X /></Button>
                   </div>
                 ))}
@@ -363,6 +433,27 @@ export default function ClassesPage() {
               <Button variant="secondary" onClick={() => setCoachesOpen(false)}>Done</Button>
             </DialogFooter>
           </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(managedOccurrence)} onOpenChange={(open) => { if (!open) { setManageOccurrenceId(undefined); setMemberSearch(""); setOverrideReason(""); setSubstituteCoachId(""); setSubstituteReason(""); } }}>
+          <DialogContent className="max-w-2xl">
+            {managedOccurrence ? <>
+              <DialogHeader><DialogTitle>{managedOccurrence.name}</DialogTitle><DialogDescription>{formatDateTime(managedOccurrence.startsAt)} · {managedOccurrence.branchName} · {managedOccurrence.coachName ?? "Coach TBA"} · {managedOccurrence.bookedCount}/{managedOccurrence.capacity} booked{managedOccurrence.waitlistCount ? ` · ${managedOccurrence.waitlistCount} waiting` : ""}</DialogDescription></DialogHeader>
+              <DialogBody className="grid gap-5">
+                {managedOccurrence.imageUrl ? <div className="h-32 rounded-md border border-line bg-cover bg-center" role="img" aria-label={managedOccurrence.imageAltText ?? `${managedOccurrence.name} photo`} style={{ backgroundImage: `url(${managedOccurrence.imageUrl})` }} /> : null}
+                <section><div className="flex items-center justify-between gap-3"><p className="eyebrow">Dated roster</p>{managedOccurrence.attendanceFinalizedAt ? <span className="text-[10.5px] font-medium text-success-deep">Finalized {formatDateTime(managedOccurrence.attendanceFinalizedAt)}</span> : <span className="text-[10.5px] text-ink-3">Attendance stays editable until finalized</span>}</div>
+                  <div className="mt-2 divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-3 py-2.5"><label className="flex min-w-0 items-center gap-2.5 text-[12.5px]"><input type="checkbox" checked={entry.status === "attended"} disabled={!canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[9.5px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[9px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[9.5px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-3 py-5 text-center text-[11.5px] text-ink-3">No one is booked for this date yet.</p>}</div>
+                </section>
+                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <section><p className="eyebrow">Add at the desk</p><div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[11px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="font-mono text-[10px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[10.5px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></section> : null}
+                {canManage && !managedOccurrence.attendanceFinalizedAt ? <section className="rounded-md border border-line bg-sunken/40 p-3"><p className="text-[12px] font-semibold">Substitute this date only</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><select aria-label="Substitute coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose substitute</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Record substitute</Button></div></section> : null}
+              </DialogBody>
+              <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canRoster && !managedOccurrence.attendanceFinalizedAt ? <Button variant="signal" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => finalizeOccurrence.mutate()}><Check /> Finalize attendance</Button> : null}</DialogFooter>
+            </> : null}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={payoutOpen} onOpenChange={setPayoutOpen}>
+          <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Coach payout report</DialogTitle><DialogDescription>Delivered, attendance-finalized classes multiplied by each coach&apos;s snapshotted reporting rate. No money records are created.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-[11px] font-medium">Month<Input type="month" value={payoutMonth} onChange={(event) => setPayoutMonth(event.target.value)} /></label><label className="grid gap-1 text-[11px] font-medium">Coach<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={payoutCoachId} onChange={(event) => setPayoutCoachId(event.target.value)}><option value="">All coaches</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select></label></div>{payoutQuery.isLoading ? <Skeleton className="h-44 w-full" /> : payoutQuery.isError ? <ErrorState title="Coach payout could not be loaded" onRetry={() => payoutQuery.refetch()} /> : payoutQuery.data ? <><div className="overflow-hidden rounded-md border border-line"><div className="grid grid-cols-[90px_minmax(0,1fr)_120px] border-b border-line bg-sunken px-3 py-2 text-[9.5px] font-medium uppercase tracking-wide text-ink-3"><span>Date</span><span>Delivered class</span><span className="text-end">Rate</span></div>{payoutQuery.data.lines.length ? payoutQuery.data.lines.map((line) => <div key={line.occurrenceId} className="grid grid-cols-[90px_minmax(0,1fr)_120px] items-center border-b border-line px-3 py-2.5 text-[11.5px] last:border-b-0"><span>{formatDate(line.date)}</span><span className="truncate"><span className="font-medium">{line.deliveredCoachName}</span> · {line.className}{line.substituted ? " · substitute" : ""} · {line.attendedCount} attended</span><span className="text-end"><MoneyText money={line.rate} /></span></div>) : <p className="px-4 py-8 text-center text-[12px] text-ink-3">No finalized delivered classes in this period.</p>}</div><div className="flex items-center justify-between rounded-md bg-ink px-4 py-3 text-paper"><span className="text-[12px]">Reporting total</span><span className="text-[16px] font-semibold"><MoneyText money={payoutQuery.data.total} /></span></div></> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setPayoutOpen(false)}>Close</Button><Button disabled={!payoutQuery.data?.lines.length} onClick={() => payoutQuery.data && downloadPayoutCsv(payoutQuery.data)}><Download /> Export CSV</Button></DialogFooter></DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(managed)} onOpenChange={(open) => { if (!open) setManageId(undefined); }}>
@@ -424,19 +515,22 @@ export default function ClassesPage() {
   );
 }
 
-function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; phone?: string; specialty?: string }) => void; pending: boolean }) {
+function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; phone?: string; specialty?: string; payPerClassMinor?: number }) => void; pending: boolean }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [specialty, setSpecialty] = useState("");
+  const [payPerClass, setPayPerClass] = useState("");
   return (
     <div className="grid gap-2 rounded-md border border-dashed border-line-2 p-3">
       <p className="text-[12px] font-medium">Add a coach</p>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" aria-label="Coach name" />
         <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone (optional)" aria-label="Coach phone" />
         <Input value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="Specialty (optional)" aria-label="Coach specialty" />
+        <Input type="number" min={0} step={0.5} value={payPerClass} onChange={(event) => setPayPerClass(event.target.value)} placeholder="Pay per class · JOD" aria-label="Coach pay per class in JOD" />
       </div>
-      <div className="flex justify-end"><Button size="sm" loading={pending} disabled={!name.trim()} onClick={() => { onSubmit({ name: name.trim(), phone: phone.trim() || undefined, specialty: specialty.trim() || undefined }); setName(""); setPhone(""); setSpecialty(""); }}><Plus /> Add coach</Button></div>
+      <p className="text-[10.5px] leading-4 text-ink-3">The rate is reporting-only. It never creates a payment, payable, or ledger entry.</p>
+      <div className="flex justify-end"><Button size="sm" loading={pending} disabled={!name.trim() || (payPerClass !== "" && Number(payPerClass) < 0)} onClick={() => { onSubmit({ name: name.trim(), phone: phone.trim() || undefined, specialty: specialty.trim() || undefined, payPerClassMinor: payPerClass === "" ? undefined : Math.round(Number(payPerClass) * 1000) }); setName(""); setPhone(""); setSpecialty(""); setPayPerClass(""); }}><Plus /> Add coach</Button></div>
     </div>
   );
 }

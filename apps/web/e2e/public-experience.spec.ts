@@ -150,6 +150,25 @@ test.describe("RIVET member experience", () => {
     await expect(referrals.getByRole("button", { name: "Share link" })).toBeVisible();
     await expect(referrals.getByRole("button", { name: "Copy" })).toBeVisible();
   });
+
+  test("lets a member book and cancel a dated class from My Gyms", async ({ page }) => {
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await page.goto("/customer/my-gyms/membership-lina-forge");
+
+    await page.getByRole("tab", { name: "Classes" }).click();
+    await expect(page.getByRole("heading", { name: "Book your next class" })).toBeVisible();
+    const book = page.getByRole("button", { name: "Book class" }).first();
+    await expect(book).toBeEnabled();
+    await book.click();
+    await expect(page.getByText("Class booked.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Booked", { exact: true }).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Cancel" }).first().click();
+    await expect(page.getByText("Class booking cancelled.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Book class" }).first()).toBeEnabled();
+  });
 });
 
 test.describe("RIVET gym applications", () => {

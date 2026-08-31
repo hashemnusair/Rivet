@@ -23,6 +23,7 @@ const signupSchema = z
       .min(9, "Enter your mobile number")
       .max(30, "Use 30 characters or fewer")
       .regex(/^\+?[\d\s()\-]{9,30}$/, "Enter a valid mobile number"),
+    gender: z.enum(["female", "male"], { message: "Choose female or male" }),
     password: z.string().min(8, "Use at least 8 characters"),
     confirmPassword: z.string(),
   })
@@ -32,6 +33,7 @@ const signupSchema = z
   });
 
 export type CustomerSignupValues = z.infer<typeof signupSchema>;
+type CustomerSignupDraft = Omit<CustomerSignupValues, "gender"> & { gender: "" | CustomerSignupValues["gender"] };
 
 const SAFE_CONTEXT_VALUE = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,119}$/;
 const PUBLIC_PLANS = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
@@ -164,7 +166,7 @@ function clerkFieldFor(error: unknown): keyof CustomerSignupValues | undefined {
 }
 
 function emptyErrors() {
-  return { fullName: undefined, email: undefined, phone: undefined, password: undefined, confirmPassword: undefined } as Record<keyof CustomerSignupValues, string | undefined>;
+  return { fullName: undefined, email: undefined, phone: undefined, gender: undefined, password: undefined, confirmPassword: undefined } as Record<keyof CustomerSignupValues, string | undefined>;
 }
 
 function normalizePhoneForClerk(value: string): string {
@@ -190,7 +192,7 @@ export function CustomerSignupClient() {
   const [context] = useState<CustomerSignupContext>(() =>
     typeof window === "undefined" ? { returnTo: DEFAULT_RETURN_TO } : resolveCustomerSignupContext(window.location.search),
   );
-  const [values, setValues] = useState<CustomerSignupValues>({ fullName: "", email: "", phone: "", password: "", confirmPassword: "" });
+  const [values, setValues] = useState<CustomerSignupDraft>({ fullName: "", email: "", phone: "", gender: "", password: "", confirmPassword: "" });
   const [fieldErrors, setFieldErrors] = useState(emptyErrors);
   const [step, setStep] = useState<"details" | "verify-email" | "profile-pending">("details");
   const [verificationKind, setVerificationKind] = useState<VerificationKind>("email");
@@ -202,7 +204,7 @@ export function CustomerSignupClient() {
   const [finalizedReturnTo, setFinalizedReturnTo] = useState(context.returnTo);
   const busy = submitting || fetchStatus === "fetching";
 
-  const updateValue = (key: keyof CustomerSignupValues, value: string) => {
+  const updateValue = (key: keyof CustomerSignupDraft, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
     setFieldErrors((current) => ({ ...current, [key]: undefined }));
     setFormError(undefined);
@@ -216,7 +218,14 @@ export function CustomerSignupClient() {
     router.replace(returnTo);
   };
 
-  const finishProfile = async (profileValues: CustomerSignupValues, returnTo = finalizedReturnTo) => {
+  const finishProfile = async (profileDraft: CustomerSignupDraft, returnTo = finalizedReturnTo) => {
+    const parsedProfile = signupSchema.safeParse(profileDraft);
+    if (!parsedProfile.success) {
+      setProfileError("Review the required profile details and try again.");
+      setStep("details");
+      return;
+    }
+    const profileValues = parsedProfile.data;
     setSubmitting(true);
     setProfileError(undefined);
     try {
@@ -226,6 +235,7 @@ export function CustomerSignupClient() {
         fullName: profileValues.fullName.trim(),
         email: profileValues.email.trim().toLowerCase(),
         phone: profileValues.phone.trim(),
+        gender: profileValues.gender,
       });
       navigateToReturn(returnTo);
     } catch {
@@ -236,8 +246,15 @@ export function CustomerSignupClient() {
     }
   };
 
-  const finalize = async (profileValues: CustomerSignupValues) => {
+  const finalize = async (profileDraft: CustomerSignupDraft) => {
     if (!signUp) return;
+    const parsedProfile = signupSchema.safeParse(profileDraft);
+    if (!parsedProfile.success) {
+      setFormError("Review the required account details and try again.");
+      setStep("details");
+      return;
+    }
+    const profileValues = parsedProfile.data;
     setSubmitting(true);
     setFormError(undefined);
     // Clerk calls this callback before activating the session. Capture its
@@ -259,8 +276,11 @@ export function CustomerSignupClient() {
     await finishProfile(profileValues, decoratedReturnTo);
   };
 
-  const startVerification = async (profileValues: CustomerSignupValues): Promise<VerificationStart> => {
+  const startVerification = async (profileDraft: CustomerSignupDraft): Promise<VerificationStart> => {
     if (!signUp) return { status: "error", message: "The signup session is not ready. Please try again." };
+    const parsedProfile = signupSchema.safeParse(profileDraft);
+    if (!parsedProfile.success) return { status: "error", message: "Review the required account details and try again." };
+    const profileValues = parsedProfile.data;
 
     // Clerk v7 can require a phone number at the identity boundary even when
     // the first password call leaves it in missingFields. Submit it through
@@ -447,6 +467,13 @@ export function CustomerSignupClient() {
           </Field>
           <Field label="Mobile number" htmlFor="customer-signup-phone" error={fieldErrors.phone} hint="Gyms use this to confirm your trial booking." required>
             <Input id="customer-signup-phone" type="tel" value={values.phone} onChange={(event) => updateValue("phone", event.target.value)} autoComplete="tel" placeholder="+962 79 000 0000" aria-invalid={Boolean(fieldErrors.phone)} />
+          </Field>
+          <Field label="Gender" htmlFor="customer-signup-gender" error={fieldErrors.gender} required>
+            <select id="customer-signup-gender" value={values.gender} onChange={(event) => updateValue("gender", event.target.value)} className="h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" aria-invalid={Boolean(fieldErrors.gender)} required>
+              <option value="" disabled>Choose female or male</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select>
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Password" htmlFor="customer-signup-password" error={fieldErrors.password} required>

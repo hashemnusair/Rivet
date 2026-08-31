@@ -67,6 +67,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
+import { deriveRetentionRisks } from "@/lib/retention/at-risk";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -633,6 +634,13 @@ function normalizedImportNumber(value: string): string {
   return value.replace(/[٠-٩۰-۹]/g, (character) => String(digits.indexOf(character) % 10)).replace(/٬/g, ",").replace(/٫/g, ".").trim();
 }
 
+function normalizedImportGender(value: string | undefined): "male" | "female" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (["male", "m", "man", "men", "ذكر"].includes(normalized ?? "")) return "male";
+  if (["female", "f", "woman", "women", "أنثى", "انثى"].includes(normalized ?? "")) return "female";
+  return undefined;
+}
+
 function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
   if (!value?.trim()) return {};
   const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
@@ -678,6 +686,8 @@ export class MockGymOSApi implements GymOSApi {
   private platformInvoices: PlatformBillingInvoice[];
   private classSessions: T.ClassSession[] = [];
   private classCoaches: T.ClassCoach[] = [];
+  private classOccurrences: T.ClassOccurrence[] = [];
+  private retentionStates: Array<{ memberId: string; snoozedUntil?: string; reason?: string }> = [];
   private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
   private referralLinks = new Map<string, { token: string; memberId: string; membershipId: string; gymId: string }>();
   private freezeRequests: T.MembershipFreezeRequest[] = [];
@@ -740,6 +750,8 @@ export class MockGymOSApi implements GymOSApi {
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
+    this.classOccurrences = [];
+    this.retentionStates = [];
     this.referralRewards = [];
     this.referralLinks.clear();
     this.freezeRequests = [];
@@ -1300,6 +1312,7 @@ export class MockGymOSApi implements GymOSApi {
 
   registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> {
     return this.respond(() => {
+      if (input.gender !== "female" && input.gender !== "male") throw ApiError.of(ERR.VALIDATION, "Choose female or male before creating your profile.");
       const persona = {
         id: `customer-${Date.now()}`,
         name: input.fullName,
@@ -1325,6 +1338,7 @@ export class MockGymOSApi implements GymOSApi {
 
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> {
     return this.respond(() => {
+      if (input.gender !== "female" && input.gender !== "male") throw ApiError.of(ERR.VALIDATION, "Choose female or male before saving your profile.");
       const current = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
       const next: CustomerPersona = {
         ...current,
@@ -1441,18 +1455,22 @@ export class MockGymOSApi implements GymOSApi {
   private customerOperationalMembership(customerMembershipId: string): { member: MemberRecord; membership: MembershipRecord } {
     const projection = INITIAL_CUSTOMER_MEMBERSHIPS.find((item) => item.id === customerMembershipId && item.customerId === this.activeCustomerId);
     if (!projection) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+    const today = this.today();
+    const activeTerms = (memberId?: string) => this.db.memberships
+      .filter((candidate) => (!memberId || candidate.memberId === memberId)
+        && !candidate.cancelledAt
+        && candidate.startDate <= today
+        && candidate.endDate >= today
+        && !(candidate.totalVisits !== undefined && (candidate.remainingVisits ?? 0) <= 0))
+      .sort((left, right) => right.endDate.localeCompare(left.endDate));
     // Demo members are generated, so the bundled customer projections may not
     // share a member number with the seed; keep a stable per-projection link
     // to a real active membership so the request flow stays demoable.
     let member = this.db.members.find((candidate) => candidate.memberNumber === projection.memberNumber);
-    let membership = member ? this.db.memberships.filter((candidate) => candidate.memberId === member!.id && !candidate.cancelledAt).sort((left, right) => right.endDate.localeCompare(left.endDate))[0] : undefined;
+    let membership = member ? activeTerms(member.id)[0] : undefined;
     if (!member || !membership) {
       const linkedId = this.customerMemberLinks.get(customerMembershipId);
-      const today = this.today();
-      const fallbackMembership = (linkedId
-        ? this.db.memberships.filter((candidate) => candidate.memberId === linkedId && !candidate.cancelledAt)
-        : this.db.memberships.filter((candidate) => !candidate.cancelledAt && candidate.endDate >= today))
-        .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
+      const fallbackMembership = activeTerms(linkedId)[0];
       const fallbackMember = fallbackMembership ? this.db.members.find((candidate) => candidate.id === fallbackMembership.memberId && candidate.status !== "archived") : undefined;
       if (!fallbackMembership || !fallbackMember) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       this.customerMemberLinks.set(customerMembershipId, fallbackMember.id);
@@ -1581,6 +1599,7 @@ export class MockGymOSApi implements GymOSApi {
       const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
       const phoneIndex = header.findIndex((item) => ["phone", "mobile", "mobile_number"].includes(item));
+      const genderIndex = header.findIndex((item) => ["gender", "sex", "member_gender"].includes(item));
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
       const planIndex = header.findIndex((item) => ["source_plan_name", "plan", "plan_name", "membership_plan"].includes(item));
       const membershipStartIndex = header.findIndex((item) => ["membership_start_date", "membership_start", "start_date"].includes(item));
@@ -1592,7 +1611,7 @@ export class MockGymOSApi implements GymOSApi {
       const historicalPaidIndex = header.findIndex((item) => ["historical_paid_total", "total_paid"].includes(item));
       const historicalPaymentDateIndex = header.findIndex((item) => ["historical_payment_date", "last_payment_date"].includes(item));
       const historicalPaymentReferenceIndex = header.findIndex((item) => ["historical_payment_reference", "payment_reference"].includes(item));
-      if (nameIndex < 0 || phoneIndex < 0) throw ApiError.of(ERR.VALIDATION, "CSV headers must include full name and phone columns.", { fieldErrors: { csv: ["Required headers: full_name, phone"] } });
+      if (nameIndex < 0 || phoneIndex < 0 || genderIndex < 0) throw ApiError.of(ERR.VALIDATION, "CSV headers must include full name, phone, and gender columns.", { fieldErrors: { csv: ["Required headers: full_name, phone, gender"] } });
       if (rows.length > 10_000) throw ApiError.of(ERR.VALIDATION, "A single import can contain at most 10,000 members.", { fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
       const migrationCutoffDate = input.migrationCutoffDate ?? this.today();
       if (!validImportDate(migrationCutoffDate)) throw ApiError.of(ERR.VALIDATION, "Choose a valid migration cutoff date.", { fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
@@ -1602,6 +1621,7 @@ export class MockGymOSApi implements GymOSApi {
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
         const fullName = values[nameIndex]?.trim() ?? "";
         const phone = normalizePhoneForStorage(values[phoneIndex] ?? "", this.db.organization.phoneCountryCallingCode);
+        const gender = normalizedImportGender(values[genderIndex]);
         const email = emailIndex >= 0 ? normalizeOptionalEmail(values[emailIndex]) : undefined;
         const sourcePlanName = planIndex >= 0 ? values[planIndex]?.trim() || undefined : undefined;
         const planId = sourcePlanName ? planMappings.get(sourcePlanName.toLowerCase()) : undefined;
@@ -1626,6 +1646,7 @@ export class MockGymOSApi implements GymOSApi {
         const errors = [
           ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
           ...(isValidLeadPhone(phone, this.db.organization.phoneCountryCallingCode) ? [] : ["Enter a valid phone number"]),
+          ...(gender ? [] : ["Gender must be male or female"]),
           ...(isValidOptionalEmail(email) ? [] : ["Enter a valid email address"]),
           ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
           ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
@@ -1648,7 +1669,7 @@ export class MockGymOSApi implements GymOSApi {
           ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
           ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
         ];
-        return { rowNumber: index + 2, fullName, phone, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
+        return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
       const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
@@ -1686,6 +1707,7 @@ export class MockGymOSApi implements GymOSApi {
           memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
           fullName: row.fullName,
           phone: row.phone,
+          gender: row.gender,
           email: row.email,
           homeBranchId: branch.id,
           status: "active",
@@ -2978,6 +3000,8 @@ export class MockGymOSApi implements GymOSApi {
     this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
+    this.classOccurrences = [];
+    this.retentionStates = [];
     this.referralRewards = [];
     this.referralLinks.clear();
     this.freezeRequests = [];
@@ -3995,6 +4019,38 @@ export class MockGymOSApi implements GymOSApi {
             action: { kind: "navigate", label: permissions.includes("memberships.sell") ? "Renew" : "Open" },
           });
         }
+
+        const retentionRisks = deriveRetentionRisks({
+          today,
+          inactivityDays: this.db.operationalPolicies.retention.inactivityDays,
+          renewalWindowDays: this.db.operationalPolicies.membership.renewalWindowDays,
+          expiredWinBackDays: this.db.operationalPolicies.retention.expiredWinBackDays,
+          members: this.db.members,
+          memberships: this.db.memberships,
+          checkIns: this.db.checkIns,
+          snoozes: this.retentionStates,
+        }).filter((risk) => queueBranchVisible(risk.branchId))
+          .filter((risk) => role !== "salesperson" || risk.assignedSalespersonId === actor.id)
+          .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
+          .slice(0, 6);
+        for (const risk of retentionRisks) {
+          const member = memberById.get(risk.memberId);
+          const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
+          if (!member || !membership) continue;
+          const plan = this.db.plans.find((candidate) => candidate.id === membership.planId);
+          queueItems.push({
+            id: `at-risk:${risk.memberId}`,
+            kind: "at_risk",
+            priority: risk.priority,
+            title: `Reconnect with ${member.fullName}`,
+            detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${plan.name}` : ""}`,
+            subjectName: member.fullName,
+            branchName: branchNameById.get(risk.branchId),
+            occurredAt: risk.lastVisitAt,
+            href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
+            action: { kind: "navigate", label: "Follow up" },
+          });
+        }
       }
 
       if (permissions.includes("payments.collect") || permissions.includes("reports.financial.read")) {
@@ -4278,11 +4334,12 @@ export class MockGymOSApi implements GymOSApi {
   createMember(input: T.CreateMemberInput): Promise<T.CreateMemberResult> {
     return this.respond(() => {
       this.require("members.write");
-      if (!input.fullName.trim() || !input.phone.trim()) {
-        throw ApiError.of(ERR.VALIDATION, "Name and phone are required.", {
+      if (!input.fullName.trim() || !input.phone.trim() || !["male", "female"].includes(input.gender)) {
+        throw ApiError.of(ERR.VALIDATION, "Name, phone, and gender are required.", {
           fieldErrors: {
             ...(input.fullName.trim() ? {} : { fullName: ["Full name is required"] }),
             ...(input.phone.trim() ? {} : { phone: ["Phone is required"] }),
+            ...(["male", "female"].includes(input.gender) ? {} : { gender: ["Choose male or female"] }),
           },
         });
       }
@@ -6241,6 +6298,7 @@ export class MockGymOSApi implements GymOSApi {
         fullName: lead.fullName,
         phone: lead.phone,
         email: lead.email,
+        gender: input.gender,
         homeBranchId: input.homeBranchId,
         preferredLanguage: input.preferredLanguage,
         marketingOptIn: input.marketingOptIn,
@@ -6363,6 +6421,57 @@ export class MockGymOSApi implements GymOSApi {
 
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: T.Page<T.RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeOnce(() => this.listRenewalQueue(query), onValue, onError);
+  }
+
+  listAtRiskMembers(query: T.AtRiskMemberQuery): Promise<T.Page<T.AtRiskMemberItem>> {
+    return this.respond(() => {
+      this.require("crm.read");
+      const branchId = this.branchScopedBranchId(query.branchId);
+      const risks = deriveRetentionRisks({
+        today: this.today(),
+        inactivityDays: this.db.operationalPolicies.retention.inactivityDays,
+        renewalWindowDays: this.db.operationalPolicies.membership.renewalWindowDays,
+        expiredWinBackDays: this.db.operationalPolicies.retention.expiredWinBackDays,
+        members: this.db.members,
+        memberships: this.db.memberships,
+        checkIns: this.db.checkIns,
+        snoozes: this.retentionStates,
+        includeSnoozed: query.includeSnoozed,
+      }).filter((risk) => !branchId || risk.branchId === branchId)
+        .filter((risk) => currentRole(this.db) !== "salesperson" || risk.assignedSalespersonId === this.actor().id)
+        .filter((risk) => !query.reason || query.reason === "all" || risk.reasons.some((reason) => reason.kind === query.reason));
+      const search = query.search?.trim().toLowerCase();
+      const items = risks.flatMap((risk): T.AtRiskMemberItem[] => {
+        const member = this.db.members.find((candidate) => candidate.id === risk.memberId);
+        const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
+        if (!member || !membership) return [];
+        const memberSummary = this.toMemberSummary(member);
+        const membershipSummary = this.toMembershipSummary(membership);
+        if (search && ![memberSummary.fullName, memberSummary.memberNumber, memberSummary.phone, membershipSummary.planName].some((value) => value.toLowerCase().includes(search))) return [];
+        const contact = this.db.activities.filter((activity) => activity.memberId === member.id && activity.type === "call_attempt").sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
+        return [{ ...risk, member: memberSummary, membership: membershipSummary, lastContactAt: contact?.occurredAt, lastContactOutcome: contact?.meta?.outcome ? String(contact.meta.outcome) : undefined, recommendedSnoozeDays: this.db.operationalPolicies.retention.defaultSnoozeDays }];
+      });
+      return paginate(this.maybeEmpty(items), query);
+    });
+  }
+
+  subscribeAtRiskMembers(query: T.AtRiskMemberQuery, onValue: (page: T.Page<T.AtRiskMemberItem>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listAtRiskMembers(query), onValue, onError);
+  }
+
+  snoozeAtRiskMember(input: T.SnoozeAtRiskMemberInput): Promise<void> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      const today = this.today();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.until) || input.until <= today || input.until > addDays(today, 90)) throw ApiError.of(ERR.VALIDATION, "Choose a snooze date within the next 90 days.");
+      const existing = this.retentionStates.find((state) => state.memberId === member.id);
+      if (existing) Object.assign(existing, { snoozedUntil: input.until, reason: input.reason?.trim() });
+      else this.retentionStates.push({ memberId: member.id, snoozedUntil: input.until, reason: input.reason?.trim() });
+      this.activity({ memberId: member.id, type: "note", title: `Retention follow-up snoozed until ${input.until}`, body: input.reason?.trim(), actorId: this.actor().id, actorName: this.actor().name, meta: { kind: "retention_snooze", until: input.until } });
+      this.audit({ category: "crm", action: "retention.snooze", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `At-risk follow-up snoozed until ${input.until}`, reason: input.reason?.trim(), after: { until: input.until }, branchId: member.homeBranchId });
+    });
   }
 
   private evaluateForMember(member: MemberRecord, branchId: T.UUID): {
@@ -9175,8 +9284,8 @@ export class MockGymOSApi implements GymOSApi {
 
   private seedClassCoaches(): T.ClassCoach[] {
     return [
-      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", createdAt: nowISO() },
-      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", createdAt: nowISO() },
+      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", payPerClassMinor: 15_000, currency: this.db.organization.currency, createdAt: nowISO() },
+      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", payPerClassMinor: 18_000, currency: this.db.organization.currency, createdAt: nowISO() },
     ];
   }
 
@@ -9283,11 +9392,13 @@ export class MockGymOSApi implements GymOSApi {
       if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Coach name is required and must be 60 characters or fewer.");
       const existing = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
       if (input.coachId && existing) {
-        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined });
+        if (input.payPerClassMinor !== undefined && (!Number.isSafeInteger(input.payPerClassMinor) || input.payPerClassMinor < 0 || input.payPerClassMinor > 10_000_000)) throw ApiError.of(ERR.VALIDATION, "Pay per class must be a valid non-negative amount.");
+        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, payPerClassMinor: input.payPerClassMinor, currency: this.db.organization.currency });
         for (const session of this.classSessions.filter((candidate) => candidate.coachId === existing.id)) session.coachName = name;
         return { ...existing };
       }
-      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, createdAt: nowISO() };
+      if (input.payPerClassMinor !== undefined && (!Number.isSafeInteger(input.payPerClassMinor) || input.payPerClassMinor < 0 || input.payPerClassMinor > 10_000_000)) throw ApiError.of(ERR.VALIDATION, "Pay per class must be a valid non-negative amount.");
+      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, payPerClassMinor: input.payPerClassMinor, currency: this.db.organization.currency, createdAt: nowISO() };
       this.classCoaches.push(created);
       return { ...created };
     });
@@ -9346,6 +9457,263 @@ export class MockGymOSApi implements GymOSApi {
         this.audit({ category: "operations", action: "classes.attendance.set", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `${input.attended ? "Marked" : "Unmarked"} ${entry.name} ${input.attended ? "present in" : "for"} ${session.name}` });
       }
       return this.classSessionView(session);
+    });
+  }
+
+  private mockClassInstant(date: string, minute: number): string {
+    const hours = String(Math.floor(minute / 60)).padStart(2, "0");
+    const minutes = String(minute % 60).padStart(2, "0");
+    return new Date(`${date}T${hours}:${minutes}:00+03:00`).toISOString();
+  }
+
+  private materializeClassOccurrence(template: T.ClassSession, date: string): T.ClassOccurrence {
+    const id = `occ:${template.id}:${date}`;
+    const existing = this.classOccurrences.find((candidate) => candidate.id === id);
+    if (existing) return existing;
+    const branch = this.db.branches.find((candidate) => candidate.id === template.branchId)!;
+    const coach = template.coachId ? this.classCoaches.find((candidate) => candidate.id === template.coachId) : undefined;
+    const startsAt = this.mockClassInstant(date, template.startMinute);
+    const occurrence: T.ClassOccurrence = {
+      id,
+      templateId: template.id,
+      branchId: template.branchId,
+      branchName: branch.name,
+      date,
+      startsAt,
+      endsAt: new Date(Date.parse(startsAt) + template.durationMinutes * 60_000).toISOString(),
+      name: template.name,
+      regularCoachId: coach?.id,
+      regularCoachName: coach?.name,
+      coachId: coach?.id,
+      coachName: coach?.name,
+      substituted: false,
+      capacity: template.capacity,
+      audience: template.audience,
+      imageUrl: template.imageUrl,
+      imageAltText: template.imageAltText,
+      notes: template.notes,
+      status: "scheduled",
+      bookedCount: 0,
+      waitlistCount: 0,
+      spotsRemaining: template.capacity,
+      roster: [],
+    };
+    this.classOccurrences.push(occurrence);
+    return occurrence;
+  }
+
+  private refreshClassOccurrence(occurrence: T.ClassOccurrence): T.ClassOccurrence {
+    const noShowsByMember = new Map<string, number>();
+    for (const row of this.classOccurrences) {
+      for (const entry of row.roster) {
+        if (entry.status === "no_show") noShowsByMember.set(entry.memberId, (noShowsByMember.get(entry.memberId) ?? 0) + 1);
+      }
+    }
+    occurrence.bookedCount = occurrence.roster.filter((entry) => ["booked", "attended", "no_show"].includes(entry.status)).length;
+    occurrence.waitlistCount = occurrence.roster.filter((entry) => entry.status === "waitlisted").length;
+    occurrence.spotsRemaining = Math.max(0, occurrence.capacity - occurrence.bookedCount);
+    return { ...occurrence, roster: occurrence.roster.map((entry) => ({ ...entry, noShowCount: noShowsByMember.get(entry.memberId) ?? 0 })) };
+  }
+
+  private classOccurrenceById(occurrenceId: string): T.ClassOccurrence {
+    let occurrence = this.classOccurrences.find((candidate) => candidate.id === occurrenceId);
+    if (!occurrence) {
+      const match = /^occ:(.+):(\d{4}-\d{2}-\d{2})$/.exec(occurrenceId);
+      const template = match ? this.classSessions.find((candidate) => candidate.id === match[1]) : undefined;
+      if (template && match) occurrence = this.materializeClassOccurrence(template, match[2]!);
+    }
+    if (!occurrence || !this.branchIsVisible(occurrence.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class occurrence not found.");
+    return occurrence;
+  }
+
+  listClassOccurrences(query: T.ClassOccurrenceQuery): Promise<T.ClassOccurrence[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      const branch = this.db.branches.find((candidate) => candidate.id === query.branchId && candidate.status === "active");
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(query.fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(query.toDate) || query.fromDate > query.toDate) throw ApiError.of(ERR.VALIDATION, "Choose a valid class date range.");
+      for (let date = query.fromDate; date <= query.toDate; date = addDays(date, 1)) {
+        const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+        for (const template of this.classSessions.filter((candidate) => candidate.branchId === branch.id && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+      }
+      return this.classOccurrences
+        .filter((candidate) => candidate.branchId === branch.id && candidate.date >= query.fromDate && candidate.date <= query.toDate && (!query.coachId || candidate.coachId === query.coachId))
+        .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+        .map((candidate) => this.refreshClassOccurrence(candidate));
+    });
+  }
+
+  private getCustomerClassExperienceSync(membershipId: T.UUID): T.CustomerClassExperience {
+    const projection = INITIAL_CUSTOMER_MEMBERSHIPS.find((candidate) => candidate.id === membershipId && candidate.customerId === this.activeCustomerId);
+    if (!projection) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+    const { member, membership } = this.customerOperationalMembership(membershipId);
+    const policy = this.db.operationalPolicies.classBooking;
+    const fromDate = this.today();
+    const toDate = addDays(fromDate, policy.bookingHorizonDays);
+    for (let date = fromDate; date <= toDate; date = addDays(date, 1)) {
+      const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+      for (const template of this.classSessions.filter((candidate) => candidate.branchId === membership.homeBranchId && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+    }
+    const profileCorrectionRequired = member.gender !== "male" && member.gender !== "female";
+    const planEligible = policy.eligibilityMode === "all_active_memberships" || policy.eligiblePlanIds.includes(membership.planId);
+    const membershipUsable = !membership.cancelledAt && membership.startDate <= fromDate && membership.endDate >= fromDate && !(membership.activeFreeze && membership.activeFreeze.startDate <= fromDate && membership.activeFreeze.endDate >= fromDate);
+    const activeCount = this.classOccurrences.reduce((count, occurrence) => count + occurrence.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status) && occurrence.startsAt >= nowISO()).length, 0);
+    const view = (occurrence: T.ClassOccurrence): T.CustomerClassOccurrence => {
+      const ownBookings = occurrence.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted", "attended", "no_show", "late_cancelled", "cancelled"].includes(entry.status)).sort((left, right) => right.bookedAt.localeCompare(left.bookedAt));
+      const booking = ownBookings[0];
+      const activeBooking = ownBookings.find((entry) => ["booked", "waitlisted"].includes(entry.status));
+      const waitlist = occurrence.roster.filter((entry) => entry.status === "waitlisted");
+      const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
+      const genderMismatch = audienceGender !== undefined && member.gender !== audienceGender;
+      const canBook = policy.enabled && membershipUsable && planEligible && !profileCorrectionRequired && !genderMismatch && !activeBooking && activeCount < policy.maxActiveBookingsPerMember && occurrence.status === "scheduled";
+      const bookingBlockReason = canBook ? undefined
+        : !policy.enabled ? "Online class booking is not enabled for this gym."
+          : !membershipUsable ? "Your membership is not active for this class."
+            : !planEligible ? "This membership plan does not include classes."
+              : profileCorrectionRequired ? "Add male or female to your profile before booking."
+                : genderMismatch ? `This class is for ${occurrence.audience}.`
+                  : activeCount >= policy.maxActiveBookingsPerMember ? `You already have ${policy.maxActiveBookingsPerMember} active class bookings.`
+                    : undefined;
+      const { roster: _roster, ...summary } = this.refreshClassOccurrence(occurrence);
+      return {
+        ...summary,
+        booking: booking ? { id: booking.bookingId, status: booking.status, position: booking.status === "waitlisted" ? waitlist.findIndex((entry) => entry.bookingId === booking.bookingId) + 1 : undefined, fromWaitlist: booking.fromWaitlist } : undefined,
+        canBook,
+        bookingBlockReason,
+      };
+    };
+    const all = this.classOccurrences.filter((candidate) => candidate.branchId === membership.homeBranchId && (candidate.date >= fromDate || candidate.roster.some((entry) => entry.memberId === member.id))).sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+    return {
+      membershipId,
+      gymName: projection.gymName ?? this.db.organization.name,
+      timezone: this.db.organization.timezone,
+      policy: { ...policy, eligiblePlanIds: [...policy.eligiblePlanIds] },
+      upcoming: all.filter((candidate) => candidate.date >= fromDate).map(view),
+      history: all.filter((candidate) => candidate.date < fromDate && candidate.roster.some((entry) => entry.memberId === member.id)).slice(-20).reverse().map(view),
+      noShowCount: all.reduce((count, candidate) => count + candidate.roster.filter((entry) => entry.memberId === member.id && entry.status === "no_show").length, 0),
+      profileCorrectionRequired,
+    };
+  }
+
+  getCustomerClassExperience(membershipId: T.UUID): Promise<T.CustomerClassExperience> {
+    return this.respond(() => this.getCustomerClassExperienceSync(membershipId));
+  }
+
+  bookCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
+    return this.respond(() => {
+      const experience = this.getCustomerClassExperienceSync(input.membershipId);
+      const candidate = experience.upcoming.find((occurrence) => occurrence.id === input.occurrenceId);
+      if (!candidate) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
+      if (!candidate.canBook) throw ApiError.of(ERR.VALIDATION, candidate.bookingBlockReason ?? "This class cannot be booked.");
+      const { member, membership } = this.customerOperationalMembership(input.membershipId);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const full = occurrence.bookedCount >= occurrence.capacity;
+      if (full && (!experience.policy.waitlistEnabled || occurrence.waitlistCount >= experience.policy.waitlistSize)) throw ApiError.of(ERR.CONFLICT, "This class and its waitlist are full.");
+      const status: T.ClassBookingStatus = full ? "waitlisted" : "booked";
+      occurrence.roster.push({ bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status, bookedAt: nowISO(), fromWaitlist: false });
+      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: status };
+    });
+  }
+
+  private customerOccurrenceFor(membershipId: string, occurrenceId: string): T.CustomerClassOccurrence {
+    const occurrence = this.getCustomerClassExperienceSync(membershipId).upcoming.find((candidate) => candidate.id === occurrenceId);
+    if (!occurrence) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
+    return occurrence;
+  }
+
+  cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
+    return this.respond(() => {
+      const { member } = this.customerOperationalMembership(input.membershipId);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const booking = occurrence.roster.find((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status));
+      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Active class booking not found.");
+      const late = booking.status === "booked" && Date.parse(occurrence.startsAt) - Date.now() < this.db.operationalPolicies.classBooking.cancellationCutoffHours * 3_600_000;
+      booking.status = late ? "late_cancelled" : "cancelled";
+      if (!late) {
+        const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
+        if (next) { next.status = "booked"; next.fromWaitlist = true; }
+      }
+      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: booking.status, promotedMemberId: occurrence.roster.find((entry) => entry.fromWaitlist && entry.status === "booked")?.memberId };
+    });
+  }
+
+  addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      const membership = this.db.memberships.find((candidate) => candidate.id === input.membershipId && candidate.memberId === member?.id);
+      if (!member || !membership) throw ApiError.of(ERR.NOT_FOUND, "Member membership not found.");
+      if (occurrence.roster.some((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status))) return this.refreshClassOccurrence(occurrence);
+      if (occurrence.bookedCount >= occurrence.capacity && !input.overrideReason?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to override class capacity.");
+      const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
+      if (audienceGender !== undefined && member.gender !== audienceGender && !input.overrideReason?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to override the class audience rule.");
+      occurrence.roster.push({ bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status: "booked", bookedAt: nowISO(), fromWaitlist: false });
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId && ["booked", "waitlisted"].includes(entry.status));
+      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Class booking not found.");
+      booking.status = "cancelled";
+      const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
+      if (next) { next.status = "booked"; next.fromWaitlist = true; }
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  setClassOccurrenceAttendance(input: T.ClassOccurrenceAttendanceInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      if (occurrence.attendanceFinalizedAt) throw ApiError.of(ERR.CONFLICT, "Attendance is already finalized.");
+      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId && ["booked", "attended"].includes(entry.status));
+      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Class booking not found.");
+      booking.status = input.attended ? "attended" : "booked";
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      if (Date.parse(occurrence.endsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "Attendance can be finalized after the class ends.");
+      occurrence.attendanceFinalizedAt = nowISO();
+      occurrence.status = "completed";
+      if (this.db.operationalPolicies.classBooking.noShowTracking) for (const booking of occurrence.roster) if (booking.status === "booked") booking.status = "no_show";
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  substituteClassOccurrenceCoach(input: T.SubstituteClassCoachInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const coach = this.classCoaches.find((candidate) => candidate.id === input.coachId);
+      if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
+      occurrence.coachId = coach.id;
+      occurrence.coachName = coach.name;
+      occurrence.substituted = coach.id !== occurrence.regularCoachId;
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  getCoachPayoutReport(input: { month: string; coachId?: T.UUID }): Promise<T.CoachPayoutReport> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      if (!/^\d{4}-\d{2}$/.test(input.month)) throw ApiError.of(ERR.VALIDATION, "Month must use YYYY-MM.");
+      const lines = this.classOccurrences.filter((occurrence) => occurrence.status === "completed" && occurrence.date.startsWith(input.month) && occurrence.coachId && (!input.coachId || occurrence.coachId === input.coachId)).map((occurrence) => {
+        const coach = this.classCoaches.find((candidate) => candidate.id === occurrence.coachId)!;
+        return { occurrenceId: occurrence.id, date: occurrence.date, className: occurrence.name, regularCoachName: occurrence.regularCoachName, deliveredCoachName: coach.name, substituted: occurrence.substituted, attendedCount: occurrence.roster.filter((entry) => entry.status === "attended").length, rate: money(coach.payPerClassMinor ?? 0, this.db.organization.currency) } satisfies T.CoachPayoutLine;
+      }).sort((left, right) => left.date.localeCompare(right.date));
+      const coach = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
+      return { coachId: coach?.id, coachName: coach?.name, month: input.month, currency: this.db.organization.currency, lines, total: money(lines.reduce((sum, line) => sum + line.rate.amount, 0), this.db.organization.currency) };
     });
   }
 

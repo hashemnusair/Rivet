@@ -12,12 +12,14 @@ test.describe("class calendar roles", () => {
     await enterStaff(page, "receptionist");
     await page.goto("/classes");
 
-    await expect(page.getByRole("heading", { name: "Weekly class schedule" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Classes", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Dated classes/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "New class" })).toHaveCount(0);
-    await page.getByRole("button", { name: /Morning HIIT/ }).click();
-    await expect(page.getByText("Who is in")).toBeVisible();
-    await expect(page.getByLabel("Add member")).toBeVisible();
-    await expect(page.getByRole("checkbox").first()).toBeEnabled();
+    await page.locator('section[aria-labelledby="dated-classes-title"]').getByRole("button", { name: /Morning HIIT/ }).first().click();
+    await expect(page.getByText("Dated roster", { exact: true })).toBeVisible();
+    await page.getByLabel("Add member to dated class").fill("Yara Sweidan");
+    await page.getByRole("button", { name: /Yara Sweidan/ }).click();
+    await expect(page.getByRole("checkbox", { name: "Mark Yara Sweidan present" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Edit class" })).toHaveCount(0);
   });
 

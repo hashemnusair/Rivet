@@ -530,6 +530,85 @@ export default defineSchema({
     .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
     .index("by_public_id", ["organizationId", "publicId"]),
 
+  /** A dated snapshot of one weekly class template. Occurrences are created
+   * lazily on the first booking or staff action so an empty timetable does
+   * not generate unbounded records. */
+  classOccurrences: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    templateId: v.id("classSessions"),
+    templatePublicId: v.string(),
+    branchId: v.id("branches"),
+    date: v.string(),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    name: v.string(),
+    regularCoachId: v.optional(v.string()),
+    regularCoachName: v.optional(v.string()),
+    coachId: v.optional(v.string()),
+    coachName: v.optional(v.string()),
+    substitutionReason: v.optional(v.string()),
+    capacity: v.number(),
+    audience: v.union(v.literal("mixed"), v.literal("women"), v.literal("men")),
+    imageAssetId: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    status: v.union(v.literal("scheduled"), v.literal("cancelled"), v.literal("completed")),
+    cancelReason: v.optional(v.string()),
+    attendanceFinalizedAt: v.optional(v.number()),
+    attendanceFinalizedBy: v.optional(v.string()),
+    payRateMinor: v.optional(v.number()),
+    payCurrency: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"])
+    .index("by_template_date", ["organizationId", "templateId", "date"])
+    .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
+    .index("by_coach_start", ["organizationId", "coachId", "startsAt"]),
+
+  classBookings: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    occurrenceId: v.id("classOccurrences"),
+    occurrencePublicId: v.string(),
+    templatePublicId: v.string(),
+    branchId: v.id("branches"),
+    memberPublicId: v.string(),
+    membershipPublicId: v.string(),
+    memberName: v.string(),
+    startsAt: v.number(),
+    status: v.union(v.literal("booked"), v.literal("waitlisted"), v.literal("cancelled"), v.literal("late_cancelled"), v.literal("attended"), v.literal("no_show")),
+    bookedAt: v.number(),
+    waitlistedAt: v.optional(v.number()),
+    promotedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    fromWaitlist: v.boolean(),
+    bookedBy: v.union(v.literal("member"), v.literal("staff")),
+    bookedByUserPublicId: v.string(),
+    overrideReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"])
+    .index("by_occurrence", ["organizationId", "occurrenceId"])
+    .index("by_occurrence_member", ["organizationId", "occurrenceId", "memberPublicId"])
+    .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
+    .index("by_member_start", ["organizationId", "memberPublicId", "startsAt"])
+    .index("by_membership_start", ["organizationId", "membershipPublicId", "startsAt"]),
+
+  /** Small projection updated only when attendance is finalized. This keeps
+   * the staff-visible member no-show count cheap without scanning booking
+   * history for every roster row. */
+  classMemberStats: defineTable({
+    organizationId: v.id("organizations"),
+    memberPublicId: v.string(),
+    noShowCount: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_member", ["organizationId", "memberPublicId"]),
+
   facilityTasks: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),

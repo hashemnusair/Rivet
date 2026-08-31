@@ -17,6 +17,7 @@ export const qk = {
   lead: (id: string) => ["leads", "detail", id] as const,
   tasks: (params?: unknown) => ["tasks", params] as const,
   renewalQueue: (params?: unknown) => ["renewalQueue", params] as const,
+  atRisk: (params?: unknown) => ["atRisk", params] as const,
   checkIns: (params?: unknown) => ["checkIns", params] as const,
   occupancy: (branchId: string) => ["occupancy", branchId] as const,
   transactions: (params?: unknown) => ["transactions", params] as const,
@@ -57,6 +58,9 @@ export const qk = {
   workspaceRecents: ["workspaceRecents"] as const,
   workspacePins: ["workspacePins"] as const,
   classSessions: (branchId: string) => ["classSessions", branchId] as const,
+  classOccurrences: (branchId: string, fromDate: string, toDate: string, coachId?: string) => ["classOccurrences", branchId, fromDate, toDate, coachId ?? "all"] as const,
+  customerClasses: (membershipId: string) => ["customerClasses", membershipId] as const,
+  coachPayout: (month: string, coachId?: string) => ["coachPayout", month, coachId ?? "all"] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */
@@ -70,6 +74,7 @@ export const INVALIDATE_ALL = [
   "leads",
   "tasks",
   "renewalQueue",
+  "atRisk",
   "checkIns",
   "occupancy",
   "transactions",
@@ -91,4 +96,8 @@ export const INVALIDATE_ALL = [
   "workspaceSearch",
   "workspaceRecents",
   "workspacePins",
+  "classSessions",
+  "classOccurrences",
+  "customerClasses",
+  "coachPayout",
 ] as const;

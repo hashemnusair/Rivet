@@ -9,6 +9,8 @@ describe("normalizeOperationalPolicies", () => {
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       referrals: { enabled: false, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
       memberFreezes: { requestsEnabled: false, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
+      classBooking: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       operatingHours: [],
       trialSchedules: [],
     });

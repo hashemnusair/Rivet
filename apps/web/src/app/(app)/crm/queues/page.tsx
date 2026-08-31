@@ -1,11 +1,12 @@
 "use client";
 
-import { PhoneCall, RefreshCw, RotateCcw, UserPlus, X } from "lucide-react";
+import { Activity, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { RenewalQueueItem } from "@/lib/domain/types";
+import type { AtRiskMemberItem, RenewalQueueItem, RetentionRiskKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
@@ -16,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
+import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 
 type RenewalBucket = "expiring" | "expired";
 
@@ -28,7 +31,106 @@ const BUCKETS: Array<{ value: RenewalBucket; label: string; hint: string }> = [
 ];
 
 export default function QueuesPage() {
-  return <WorkspaceModuleBoundary moduleKey="revenue"><RenewalQueuePage /></WorkspaceModuleBoundary>;
+  return <WorkspaceModuleBoundary moduleKey="revenue"><RetentionWorkspace /></WorkspaceModuleBoundary>;
+}
+
+function RetentionWorkspace() {
+  const [view, setView] = useState<"at-risk" | "renewals">("at-risk");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "renewals") setView("renewals");
+  }, []);
+  return <div className="space-y-4">
+    <PageHeader eyebrow="Growth" title="Retention" description="See who needs attention, understand why, and take the next action without digging through reports." />
+    <div className="inline-flex rounded-md border border-line-2 bg-surface p-1" role="group" aria-label="Retention workspace">
+      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={cn("flex min-h-10 items-center gap-2 rounded-sm px-3.5 text-[12.5px] font-medium transition-colors", view === "at-risk" ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken")}><Activity className="size-3.5" /> At risk</button>
+      <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={cn("flex min-h-10 items-center gap-2 rounded-sm px-3.5 text-[12.5px] font-medium transition-colors", view === "renewals" ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken")}><CalendarClock className="size-3.5" /> Renewals</button>
+    </div>
+    {view === "at-risk" ? <AtRiskQueuePage /> : <RenewalQueuePage />}
+  </div>;
+}
+
+const RISK_FILTERS: Array<{ value: RetentionRiskKind | "all"; label: string; hint: string }> = [
+  { value: "all", label: "All attention", hint: "The most urgent inactive, expiring, and expired members." },
+  { value: "inactive", label: "Not visiting", hint: "Active members who have stopped checking in." },
+  { value: "expiring", label: "Expiring", hint: "Active memberships inside the gym's renewal window." },
+  { value: "expired", label: "Win back", hint: "Recently expired members with no newer term." },
+];
+
+function AtRiskQueuePage() {
+  const { session } = useApp();
+  const [reason, setReason] = useState<RetentionRiskKind | "all">("all");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string>();
+  const panelRef = useRef<HTMLElement | null>(null);
+  const query = useMemo(() => ({ branchId: session?.activeBranchId, reason, search: search.trim() || undefined, pageSize: 100 }), [reason, search, session?.activeBranchId]);
+  const risks = useRealtimeApiQuery({
+    queryKey: qk.atRisk(query),
+    query: (api) => api.listAtRiskMembers(query),
+    subscribe: (api, onValue, onError) => api.subscribeAtRiskMembers(query, onValue, onError),
+  });
+  const items = risks.data?.items ?? [];
+  const selectedItem = items.find((item) => item.member.id === selectedId);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("member");
+    if (requested) setSelectedId(requested);
+  }, []);
+  useEffect(() => {
+    if (selectedItem && window.innerWidth < 1280) panelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [selectedItem]);
+
+  return <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
+    <aside className="panel h-fit self-start lg:sticky lg:top-4" aria-label="At-risk filters">
+      <header className="border-b border-line px-4 py-3"><p className="eyebrow">Focus the queue</p><h2 className="mt-1 text-[15px] font-semibold">Who needs attention?</h2></header>
+      <div className="space-y-4 p-4">
+        <label htmlFor="risk-search" className="grid gap-1.5 text-[11px] font-medium text-ink-2">Find a member<div className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-4" /><Input id="risk-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or number" className="ps-9" /></div></label>
+        <div className="border-t border-line pt-4">
+          <p className="text-[11px] font-medium text-ink-2">Reason</p>
+          <div className="mt-2 grid gap-1 rounded-md border border-line-2 bg-surface p-1" role="group" aria-label="At-risk reason">
+            {RISK_FILTERS.map((option) => <button key={option.value} type="button" aria-pressed={reason === option.value} onClick={() => { setReason(option.value); setSelectedId(undefined); }} className={cn("rounded-sm px-3 py-2.5 text-start text-[12.5px] font-medium transition-colors", reason === option.value ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken")}>{option.label}</button>)}
+          </div>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">{RISK_FILTERS.find((option) => option.value === reason)?.hint}</p>
+        </div>
+        <div className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[11px] leading-relaxed text-ink-3">Frozen memberships and newly joined members are excluded. Thresholds follow Settings → Rules & hours.</div>
+      </div>
+    </aside>
+
+    <div className={cn("grid gap-4", selectedItem && "xl:grid-cols-[minmax(0,1fr)_360px]")}>
+      <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="risk-results-title">
+        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><p className="eyebrow">Retention radar</p><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">Recommended follow-ups</h2><p className="mt-0.5 text-[12px] text-ink-3">Each member appears once, with every current reason shown.</p></div><div className="flex shrink-0 items-center gap-2"><span className="font-mono text-[11px] tabular text-ink-3">{risks.data?.totalItems ?? 0}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label="Refresh at-risk members"><RefreshCw className="size-3.5" /></Button></div></header>
+        {risks.isLoading ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError ? <ErrorState className="m-4" title="At-risk members could not be loaded" onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title="Nobody matches this view" description="That is either good news or a sign that the filter is too narrow." compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { setSearch(""); setReason("all"); }}>Clear filters</Button> : undefined} /> : <ul className="divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
+      </section>
+      {selectedItem ? <AtRiskPanel ref={panelRef} item={selectedItem} onClose={() => setSelectedId(undefined)} /> : null}
+    </div>
+  </div>;
+}
+
+function AtRiskRow({ item, selected, onClick }: { item: AtRiskMemberItem; selected: boolean; onClick: () => void }) {
+  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="truncate text-[13px] font-medium">{item.member.fullName}</span><span className={cn("rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]", item.priority === "urgent" ? "bg-danger-soft text-danger" : item.priority === "high" ? "bg-warning-soft text-warning-deep" : "bg-sunken text-ink-3")}>{item.priority}</span></span><span className="mt-1 block truncate text-[11.5px] text-ink-3">{item.reasons.map((risk) => risk.label).join(" · ")}</span></span><span className="hidden shrink-0 text-end sm:block"><span className="block text-[11.5px] font-medium">{item.membership.planName}</span><span className="block text-[10.5px] text-ink-3">{item.lastContactAt ? <>contacted <RelativeText iso={item.lastContactAt} /></> : "not contacted"}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" /></button></li>;
+}
+
+function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: () => void; ref: React.Ref<HTMLElement> }) {
+  const initialMessage = item.reasons.some((reason) => reason.kind === "expired")
+    ? `Hi ${item.member.fullName.split(/\s+/)[0]}, we have missed seeing you at the gym. If you would like to return, reply here and we will help you find the right membership.`
+    : item.reasons.some((reason) => reason.kind === "expiring")
+      ? `Hi ${item.member.fullName.split(/\s+/)[0]}, your membership is ending soon. Reply here and we will make renewal easy for you.`
+      : `Hi ${item.member.fullName.split(/\s+/)[0]}, we have not seen you at the gym lately. Is everything okay? Reply here if we can help.`;
+  return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16"><header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="eyebrow">Recommended follow-up</p><h3 className="truncate font-display text-[16px] font-semibold">{item.member.fullName}</h3><p className="font-mono text-[11.5px] text-ink-3" dir="ltr">{item.member.phone}</p></div><button type="button" onClick={onClose} aria-label="Close member panel" className="rounded-sm p-1 text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header><div className="space-y-4 px-4 py-3.5"><div className="space-y-2">{item.reasons.map((reason) => <div key={reason.kind} className="rounded-md border border-line bg-sunken px-3 py-2"><p className="text-[12.5px] font-medium">{reason.label}</p><p className="mt-0.5 text-[10.5px] capitalize text-ink-3">{reason.kind === "expired" ? "Win-back opportunity" : `${reason.kind} membership signal`}</p></div>)}</div><dl className="space-y-1.5 border-t border-line pt-3 text-[12px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>{item.lastVisitAt ? <ContextRow label="Last visit"><RelativeText iso={item.lastVisitAt} /></ContextRow> : <ContextRow label="Last visit">No recorded visit</ContextRow>}{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}</dl><div className="border-t border-line pt-3"><p className="eyebrow">Take action</p><div className="mt-3 grid grid-cols-2 gap-2"><Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button><WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} className="w-full" /><LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} /><SnoozeRiskDialog item={item} onSnoozed={onClose} /></div></div><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${item.member.id}`}>Open member record</Link></Button></div></aside>;
+}
+
+function SnoozeRiskDialog({ item, onSnoozed }: { item: AtRiskMemberItem; onSnoozed: () => void }) {
+  const { session } = useApp();
+  const invalidate = useInvalidate();
+  const today = todayISODate(session?.organization?.timezone);
+  const [open, setOpen] = useState(false);
+  const [until, setUntil] = useState(addDays(today, item.recommendedSnoozeDays));
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    setUntil(addDays(today, item.recommendedSnoozeDays));
+    setReason("");
+  }, [item.member.id, item.recommendedSnoozeDays, today]);
+  const snooze = useApiMutation((api) => api.snoozeAtRiskMember({ memberId: item.member.id, until, reason: reason.trim() || undefined }), { onSuccess: async () => { toast.success(`Follow-up snoozed until ${formatDate(until)}.`); setOpen(false); await invalidate(); onSnoozed(); }, onError: () => toast.error("Follow-up could not be snoozed.") });
+  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Snooze</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Snooze this follow-up</DialogTitle><DialogDescription>{item.member.fullName} leaves the active queue until the selected date. The decision stays in the timeline and audit trail.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[11px] font-medium text-ink-2">Return to queue<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[11px] font-medium text-ink-2">Note <span className="font-normal text-ink-4">Optional</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Snooze follow-up</Button></DialogFooter></DialogContent></Dialog></>;
 }
 
 function RenewalQueuePage() {
@@ -78,10 +180,7 @@ function RenewalQueuePage() {
     setSelectedId(undefined);
   };
 
-  return <div className="space-y-4">
-    <PageHeader eyebrow="Growth" title="Follow-ups" description="Filter expiring and expired memberships by a number of days or an exact date range." />
-
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
+  return <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="panel h-fit self-start lg:sticky lg:top-4" aria-label="Follow-up filters" data-testid="follow-up-filters">
         <header className="border-b border-line px-4 py-3">
           <p className="eyebrow">Filter work</p>
@@ -147,8 +246,7 @@ function RenewalQueuePage() {
         <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><div><p className="eyebrow">Contact</p><p className="mt-1 text-[11px] text-ink-3">Call or open a ready-to-edit WhatsApp follow-up.</p></div><div className="mt-3 grid grid-cols-2 gap-2"><LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} /><WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} className="w-full" /></div></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>Open member record</Link></Button></div></div>
         </aside> : null}
       </div>
-    </div>
-  </div>;
+    </div>;
 }
 
 function RenewalRow({ item, selected, onClick }: { item: RenewalQueueItem; selected: boolean; onClick: () => void }) {

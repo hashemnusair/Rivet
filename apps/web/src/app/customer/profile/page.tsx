@@ -60,6 +60,11 @@ export default function MemberProfilePage() {
     setSaving(true);
     setSaved(false);
     setError(undefined);
+    if (form.gender !== "female" && form.gender !== "male") {
+      setError("Choose female or male before saving your profile.");
+      setSaving(false);
+      return;
+    }
     try {
       await updateCustomerProfile({ ...form, fullName: form.fullName?.trim(), phone: form.phone?.trim() });
       setSaved(true);
@@ -90,9 +95,9 @@ export default function MemberProfilePage() {
               <Field label="Email" htmlFor="profile-email" hint="Your authenticated email cannot be changed here"><Input id="profile-email" value={customer.email} disabled readOnly autoComplete="email" /></Field>
               <Field label="Phone" htmlFor="profile-phone"><Input id="profile-phone" value={form.phone ?? ""} onChange={(event) => update("phone", event.target.value)} autoComplete="tel" /></Field>
               <Field label="Birth date" htmlFor="profile-birth-date"><Input id="profile-birth-date" type="date" value={form.dateOfBirth ?? ""} onChange={(event) => update("dateOfBirth", event.target.value)} autoComplete="bday" /></Field>
-              <Field label="Gender" htmlFor="profile-gender">
-                <select id="profile-gender" value={form.gender ?? ""} onChange={(event) => update("gender", event.target.value)} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink">
-                  <option value="">Prefer not to say</option><option value="female">Female</option><option value="male">Male</option>
+              <Field label="Gender" htmlFor="profile-gender" required>
+                <select id="profile-gender" value={form.gender ?? ""} onChange={(event) => update("gender", event.target.value)} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink" required>
+                  <option value="" disabled>Choose female or male</option><option value="female">Female</option><option value="male">Male</option>
                 </select>
               </Field>
               <Field label="Preferred language" htmlFor="profile-language" hint="This changes service communication language only">

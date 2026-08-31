@@ -1997,6 +1997,18 @@ export function buildSeed(now: Date = new Date()): MockDb {
         maximumExtensionDays: 365,
       },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
+      classBooking: {
+        enabled: true,
+        eligibilityMode: "all_active_memberships",
+        eligiblePlanIds: [],
+        bookingHorizonDays: 30,
+        cancellationCutoffHours: 2,
+        maxActiveBookingsPerMember: 8,
+        waitlistEnabled: true,
+        waitlistSize: 12,
+        noShowTracking: true,
+      },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
     referrals: {
       enabled: true,
       rewardDays: 7,

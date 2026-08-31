@@ -20,7 +20,7 @@ async function seed(t: TestConvex<typeof schema>) {
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
-    member: { fullName: "Rana Saleh", phone: "0791234567", email: "rana.sale@example.com", homeBranchId: "member-sale-branch", preferredLanguage: "en" },
+    member: { fullName: "Rana Saleh", phone: "0791234567", email: "rana.sale@example.com", gender: "female", homeBranchId: "member-sale-branch", preferredLanguage: "en" },
     sale: { planId: "member-sale-plan", startDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }), payment: { amount: { amount: 40_000, currency: "JOD" }, method: "card", externalReference: "POS-1001" } },
     idempotencyKey: "member-sale-request-0001",
     ...overrides,
@@ -54,7 +54,7 @@ describe("atomic front-desk member sale", () => {
     await expect(owner.mutation(api.domain.mutate, operation("members.create_and_sell", request({ sale: { planId: "member-sale-plan", startDate: "2026-09-01" } })))).rejects.toThrow(/different member sale/i);
 
     const duplicateRequest = request({
-      member: { fullName: "Rana's Sister", phone: "0791234567", homeBranchId: "member-sale-branch", preferredLanguage: "en" },
+      member: { fullName: "Rana's Sister", phone: "0791234567", gender: "female", homeBranchId: "member-sale-branch", preferredLanguage: "en" },
       sale: { planId: "member-sale-plan", startDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) },
       idempotencyKey: "member-sale-request-duplicate",
     });

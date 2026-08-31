@@ -25,6 +25,7 @@ test.describe("staged finance and reconciliation", () => {
       await owner.goto("/members/new", { waitUntil: "domcontentloaded" });
       await owner.getByTestId("member-name").fill(fullName);
       await owner.getByTestId("member-phone").fill(phone);
+      await chooseFirstAvailableOption(owner, "Gender");
       await chooseFirstAvailableOption(owner, "Home branch");
       await owner.getByTestId("save-member").click();
       await expect(owner).toHaveURL(/\/members\/[0-9a-f-]+$/);

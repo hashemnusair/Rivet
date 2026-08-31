@@ -24,11 +24,11 @@ describe("member migration batches", () => {
     const owner = t.withIdentity({ subject: "clerk-import-owner" });
     const preview = await owner.mutation(api.domain.mutate, operation("members.import.preview", {
       branchId: "import-branch",
-      csv: "full_name,phone,email\r\nRana Odeh,0791234567,rana@example.com",
+      csv: "full_name,phone,gender,email\r\nRana Odeh,0791234567,female,rana@example.com",
       sourceFileName: "legacy-members.xlsx",
       sourceKind: "xlsx",
       sourceHeaders: ["Customer", "Mobile", "E-mail"],
-      columnMapping: { fullName: 0, phone: 1, email: 2 },
+      columnMapping: { fullName: 0, phone: 1, gender: 2, email: 3 },
     })) as { id: string; rows: Array<{ status: string }>; sourceFileName: string };
     expect(preview).toMatchObject({ sourceFileName: "legacy-members.xlsx", rows: [{ status: "valid" }] });
 
@@ -51,7 +51,7 @@ describe("member migration batches", () => {
       branchId: "import-branch",
       migrationCutoffDate: "2026-08-30",
       planMappings: { Monthly: "import-plan" },
-      csv: "full_name,phone,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\r\nMira Saleh,0797778899,mira@example.com,Monthly,2026-08-01,2026-10-07,,2026-08-28,2026-09-03,12.500,80.000,2026-08-20,OLD-44",
+      csv: "full_name,phone,gender,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\r\nMira Saleh,0797778899,female,mira@example.com,Monthly,2026-08-01,2026-10-07,,2026-08-28,2026-09-03,12.500,80.000,2026-08-20,OLD-44",
     })) as { id: string; rows: Array<{ status: string; openingBalanceMinor: number; historicalPaidMinor: number }>; membershipRows: number };
     expect(preview).toMatchObject({ membershipRows: 1, rows: [{ status: "valid", openingBalanceMinor: 12_500, historicalPaidMinor: 80_000 }] });
 

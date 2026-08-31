@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,17 @@ import MembershipDetailClient from "./membership-detail.client";
 
 const state = vi.hoisted(() => ({
   memberships: [] as CustomerMembership[],
+  getCustomerClassExperience: vi.fn(),
+  bookCustomerClass: vi.fn(),
+  cancelCustomerClass: vi.fn(),
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  getApi: () => ({
+    getCustomerClassExperience: state.getCustomerClassExperience,
+    bookCustomerClass: state.bookCustomerClass,
+    cancelCustomerClass: state.cancelCustomerClass,
+  }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -29,6 +40,18 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 describe("member visit history", () => {
   beforeEach(() => {
     state.memberships = INITIAL_CUSTOMER_MEMBERSHIPS;
+    state.getCustomerClassExperience.mockReset().mockResolvedValue({
+      membershipId: INITIAL_CUSTOMER_MEMBERSHIPS[0]!.id,
+      gymName: "Forge Fitness",
+      timezone: "Asia/Amman",
+      policy: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      upcoming: [{ id: "occ-strength", templateId: "strength", branchId: "abdoun", branchName: "Abdoun", date: "2026-09-02", startsAt: "2026-09-02T15:00:00.000Z", endsAt: "2026-09-02T16:00:00.000Z", name: "Strength circuit", coachName: "Rana", substituted: false, capacity: 12, audience: "mixed", status: "scheduled", bookedCount: 10, waitlistCount: 0, spotsRemaining: 2, canBook: true }],
+      history: [],
+      noShowCount: 0,
+      profileCorrectionRequired: false,
+    });
+    state.bookCustomerClass.mockReset().mockResolvedValue({ outcome: "booked", occurrence: {} });
+    state.cancelCustomerClass.mockReset().mockResolvedValue({ outcome: "cancelled", occurrence: {} });
   });
 
   it("keeps recent activity collapsed until the member opens it", async () => {
@@ -75,5 +98,20 @@ describe("member visit history", () => {
     expect(within(referral).getByText("10/30 days")).toBeInTheDocument();
     expect(within(referral).getByText("2")).toBeInTheDocument();
     expect(within(referral).getByText("20")).toBeInTheDocument();
+  });
+
+  it("shows the live class schedule and books through the member-owned operation", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
+
+    await user.click(screen.getByRole("tab", { name: "Classes" }));
+    expect(await screen.findByRole("heading", { name: "Book your next class" })).toBeInTheDocument();
+    expect(screen.getByText("Strength circuit")).toBeInTheDocument();
+    expect(screen.getByText("2 spots left")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Book class" }));
+
+    await waitFor(() => expect(state.bookCustomerClass).toHaveBeenCalledWith({ membershipId: membership.id, occurrenceId: "occ-strength" }));
   });
 });

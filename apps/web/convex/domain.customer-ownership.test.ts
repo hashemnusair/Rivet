@@ -407,6 +407,7 @@ describe("exported Convex customer ownership boundaries", () => {
       trialId: "trial-b",
       fullName: "Customer A Updated",
       phone: "+962799999999",
+      gender: "female",
     }));
     expect(registered).toMatchObject({ id: "profile-a", userId: "user-a", email: "a@example.com" });
 
@@ -606,6 +607,7 @@ describe("exported Convex customer ownership boundaries", () => {
       branchId: "directory-branch-a",
       fullName: "Customer A",
       phone: "+962799999991",
+      gender: "female",
       preferredDate: trialDate,
       preferredTime: "13:45",
       goal: "Strength",
@@ -691,6 +693,7 @@ describe("exported Convex customer ownership boundaries", () => {
       preferredDate: trialDate,
       preferredTime: "13:45",
       goal: "Join a friend at the gym",
+      gender: "female",
       referralToken: token,
     })) as TrialBookingResult;
 
@@ -715,6 +718,7 @@ describe("exported Convex customer ownership boundaries", () => {
       fullName: "Customer A",
       email: "a@example.com",
       phone: "+962799999991",
+      gender: "female",
       preferredDate: trialDate,
       preferredTime: "13:45",
       goal: "Strength",
@@ -746,6 +750,7 @@ describe("exported Convex customer ownership boundaries", () => {
       fullName: "Customer A",
       email: "a@example.com",
       phone: "+962799999991",
+      gender: "female",
       preferredDate: trialDate,
       preferredTime: "15:45",
       goal: "Strength",

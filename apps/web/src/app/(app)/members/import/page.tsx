@@ -17,10 +17,10 @@ import { inferMemberImportMapping, mappedMemberCsv, OPTIONAL_MEMBERSHIP_IMPORT_F
 import { qk } from "@/lib/api/keys";
 import { getApi } from "@/lib/api/client";
 
-const SAMPLE_CSV = `full_name,phone,email,plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference
-Samira Haddad,+962790000001,samira@example.com,,,,,,,,,,
-Yousef Nasser,0790000002,yousef@example.com,,,,,,,,,,
-Layla Haddad,+447700900123,layla@example.com,,,,,,,,,,`;
+const SAMPLE_CSV = `full_name,phone,gender,email,plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference
+Samira Haddad,+962790000001,female,samira@example.com,,,,,,,,,,
+Yousef Nasser,0790000002,male,yousef@example.com,,,,,,,,,,
+Layla Haddad,+447700900123,female,layla@example.com,,,,,,,,,,`;
 const MAX_FILE_BYTES = 5_000_000;
 const TEMPLATE_DOWNLOAD = `data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE_CSV)}`;
 
@@ -88,7 +88,7 @@ export default function MemberImportPage() {
   const sourcePlans = useMemo(() => sourcePlanNames(matrix, mapping), [mapping, matrix]);
   const validRows = useMemo(() => preview?.rows.filter((row) => row.status === "valid") ?? [], [preview]);
   const rejectedCsv = useMemo(() => preview ? rejectedMemberRowsCsv(preview.rows) : "", [preview]);
-  const hasRequiredMapping = mapping.fullName != null && mapping.phone != null && mapping.fullName !== mapping.phone;
+  const hasRequiredMapping = mapping.fullName != null && mapping.phone != null && mapping.gender != null && new Set([mapping.fullName, mapping.phone, mapping.gender]).size === 3;
   const hasMembershipColumns = OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.some(({ field }) => mapping[field] != null);
   const hasCompletePlanMapping = sourcePlans.every((sourceName) => Boolean(planMappings[sourceName]));
 
@@ -210,8 +210,8 @@ export default function MemberImportPage() {
     </section>
 
     {headers.length ? <section className="panel overflow-hidden">
-      <header className="border-b border-line px-5 py-4"><h2 className="font-display text-[15px] font-semibold text-ink">Match the columns</h2><p className="mt-1 text-[12.5px] text-ink-2">Name and phone are required. Everything else is optional, so a simple contact list still works.</p></header>
-      <div className="grid gap-4 p-5 md:grid-cols-3"><MappingSelect label="Full name" required headers={headers} value={mapping.fullName} onChange={(value) => setMapping((current) => ({ ...current, fullName: value }))} /><MappingSelect label="Phone" required headers={headers} value={mapping.phone} onChange={(value) => setMapping((current) => ({ ...current, phone: value }))} /><MappingSelect label="Email" headers={headers} value={mapping.email} onChange={(value) => setMapping((current) => ({ ...current, email: value }))} /></div>
+      <header className="border-b border-line px-5 py-4"><h2 className="font-display text-[15px] font-semibold text-ink">Match the columns</h2><p className="mt-1 text-[12.5px] text-ink-2">Name, phone, and gender are required. RIVET accepts male/female, M/F, and the Arabic equivalents.</p></header>
+      <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4"><MappingSelect label="Full name" required headers={headers} value={mapping.fullName} onChange={(value) => setMapping((current) => ({ ...current, fullName: value }))} /><MappingSelect label="Phone" required headers={headers} value={mapping.phone} onChange={(value) => setMapping((current) => ({ ...current, phone: value }))} /><MappingSelect label="Gender" required headers={headers} value={mapping.gender} onChange={(value) => setMapping((current) => ({ ...current, gender: value }))} /><MappingSelect label="Email" headers={headers} value={mapping.email} onChange={(value) => setMapping((current) => ({ ...current, email: value }))} /></div>
       <div className="border-t border-line px-5 py-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-[13px] font-semibold text-ink">Bring over current memberships</h3><p className="mt-1 max-w-3xl text-[12px] leading-5 text-ink-2">Optional. Map active or scheduled terms, current freezes, outstanding balances, and read-only payment history. RIVET never invents old receipts or cash activity.</p></div><label className="w-full space-y-1.5 sm:w-52"><span className="text-[12px] font-medium text-ink">Data accurate as of</span><Input type="date" value={migrationCutoffDate} onChange={(event) => { setMigrationCutoffDate(event.target.value); setPreview(undefined); setResult(undefined); }} aria-label="Migration cutoff date" /></label></div>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field, label }) => <MappingSelect key={field} label={label} headers={headers} value={mapping[field]} onChange={(value) => { setMapping((current) => ({ ...current, [field]: value })); if (field === "sourcePlanName") setPlanMappings({}); setPreview(undefined); setResult(undefined); }} />)}</div>

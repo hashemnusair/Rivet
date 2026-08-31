@@ -11,6 +11,7 @@ import {
   ListChecks,
   ShieldAlert,
   Wrench,
+  UserRoundSearch,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils/cn";
 
 const KIND_META: Record<TodayQueueKind, { icon: LucideIcon; label: string }> = {
   follow_up: { icon: CalendarClock, label: "Follow-up" },
+  at_risk: { icon: UserRoundSearch, label: "At risk" },
   renewal: { icon: ClipboardCheck, label: "Renewal" },
   outstanding_balance: { icon: Banknote, label: "Balance" },
   access_denial: { icon: DoorOpen, label: "Entry" },

@@ -14,7 +14,7 @@ test.describe("member file import", () => {
     await page.getByLabel("Choose member file").setInputFiles({
       name: "pilot-members.csv",
       mimeType: "text/csv",
-      buffer: Buffer.from("full_name,phone,email\nDina Qasem,0798112233,dina.qasem@example.com"),
+      buffer: Buffer.from("full_name,phone,gender,email\nDina Qasem,0798112233,female,dina.qasem@example.com"),
     });
 
     await expect(page.getByText("pilot-members.csv")).toBeVisible();

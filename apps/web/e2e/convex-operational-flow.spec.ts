@@ -35,6 +35,7 @@ test.describe("staged Convex operational flow", () => {
 
       await page.getByTestId("member-name").fill(fullName);
       await page.getByTestId("member-phone").fill(phone);
+      await chooseFirstAvailableOption(page, "Gender");
       await chooseFirstAvailableOption(page, "Home branch");
       await page.getByTestId("save-member").click();
       await expect(page).toHaveURL(/\/members\/[0-9a-f-]+$/);

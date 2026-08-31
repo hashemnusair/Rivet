@@ -121,6 +121,7 @@ describe("CustomerSignupClient", () => {
     fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: " Lina Haddad " } });
     fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "lina@example.com" } });
     fireEvent.change(screen.getByLabelText(/Mobile number/), { target: { value: "+962790000000" } });
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "secret-password" } });
     fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "secret-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
@@ -142,7 +143,7 @@ describe("CustomerSignupClient", () => {
     await waitFor(() => {
       expect(signUp.verifications.verifyEmailCode).toHaveBeenCalledWith({ code: "123456" });
       expect(signUp.finalize).toHaveBeenCalledWith({ navigate: expect.any(Function) });
-      expect(state.registerCustomer).toHaveBeenCalledWith({ fullName: "Lina Haddad", email: "lina@example.com", phone: "+962790000000" });
+      expect(state.registerCustomer).toHaveBeenCalledWith({ fullName: "Lina Haddad", email: "lina@example.com", phone: "+962790000000", gender: "female" });
       expect(state.registerCustomer.mock.calls[0]?.[0]).not.toHaveProperty("customerId");
       expect(state.registerCustomer.mock.calls[0]?.[0]).not.toHaveProperty("password");
       expect(state.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun&plan=Pro&interval=annual");
@@ -156,6 +157,7 @@ describe("CustomerSignupClient", () => {
     for (const [label, value] of [[/Full name/, "Lina Haddad"], [/Email address/, "lina@example.com"], [/Mobile number/, "+962790000000"], [/^Password/, "secret-password"], [/Confirm password/, "secret-password"]] as const) {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await waitFor(() => expect(screen.getByLabelText(/verification code/i)).toBeVisible());
     fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: "123456" } });
@@ -171,6 +173,7 @@ describe("CustomerSignupClient", () => {
     fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Lina Haddad" } });
     fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "lina@example.com" } });
     fireEvent.change(screen.getByLabelText(/Mobile number/), { target: { value: "+962790000000" } });
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "secret-password" } });
     fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "secret-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
@@ -205,6 +208,7 @@ describe("CustomerSignupClient", () => {
     for (const [label, value] of [[/Full name/, "Lina Haddad"], [/Email address/, "lina@example.com"], [/Mobile number/, "+962790000000"], [/^Password/, "secret-password"], [/Confirm password/, "secret-password"]] as const) {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => {
@@ -229,6 +233,7 @@ describe("CustomerSignupClient", () => {
     for (const [label, value] of [[/Full name/, "Lina Haddad"], [/Email address/, "lina@example.com"], [/Mobile number/, "+962790000000"], [/^Password/, "secret-password"], [/Confirm password/, "secret-password"]] as const) {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await waitFor(() => expect(screen.getByLabelText(/verification code/i)).toBeVisible());
     fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: "123456" } });

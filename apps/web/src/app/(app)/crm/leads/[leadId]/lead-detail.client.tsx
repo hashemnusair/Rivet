@@ -336,6 +336,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
   const [homeBranchId, setHomeBranchId] = useState(branchId);
   const [preferredLanguage, setPreferredLanguage] = useState<"en" | "ar">("en");
+  const [gender, setGender] = useState<"male" | "female" | "">("");
   const [marketingOptIn, setMarketingOptIn] = useState(true);
   const [marketingPreferenceSource, setMarketingPreferenceSource] = useState<"system_default" | "staff_selected">("system_default");
   const [mode, setMode] = useState<"existing" | "custom">("existing");
@@ -357,6 +358,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
     if (!open) return;
     setHomeBranchId(branchId);
     setPreferredLanguage("en");
+    setGender("");
     setMarketingOptIn(true);
     setMarketingPreferenceSource("system_default");
     setStartDate(todayISODate());
@@ -371,8 +373,11 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   }, [availablePlans, mode, planId]);
 
   const mutation = useApiMutation(
-    (api) => api.completeLeadSale(leadId, {
+    (api) => {
+      if (!gender) throw new Error("Choose male or female before completing the sale.");
+      return api.completeLeadSale(leadId, {
       homeBranchId,
+      gender,
       preferredLanguage,
       marketingOptIn,
       marketingPreferenceSource,
@@ -381,7 +386,8 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
       membership: mode === "existing"
         ? { mode: "existing", planId }
         : { mode: "custom", name: customName.trim(), price: fromMajor(Number(customPrice)), durationDays: Number(customDurationDays), includedPtSessions: Number(customPtSessions) },
-    }),
+      });
+    },
     {
       onSuccess: (result) => {
         const memberHref = `/members/${result.member.id}`;
@@ -404,7 +410,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   );
 
   const customValid = customName.trim().length >= 2 && customPrice.trim().length > 0 && Number(customPrice) >= 0 && Number.isInteger(Number(customDurationDays)) && Number(customDurationDays) >= 1 && Number(customDurationDays) <= 730 && Number.isInteger(Number(customPtSessions)) && Number(customPtSessions) >= 0 && Number(customPtSessions) <= 100;
-  const canSubmit = Boolean(homeBranchId && startDate && idempotencyKey && (mode === "existing" ? planId : customValid));
+  const canSubmit = Boolean(homeBranchId && gender && startDate && idempotencyKey && (mode === "existing" ? planId : customValid));
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!navigationPending) onOpenChange(nextOpen); }}>
@@ -418,18 +424,27 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
             </Field>
             <Field label="Membership starts" required><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
           </div>
-          <Field label="Preferred language" required>
-            <select
-              aria-label="Preferred language"
-              className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]"
-              value={preferredLanguage}
-              onChange={(event) => setPreferredLanguage(event.target.value as "en" | "ar")}
-              disabled={navigationPending}
-            >
-              <option value="en">English</option>
-              <option value="ar">Arabic</option>
-            </select>
-          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Gender" required>
+              <select aria-label="Gender" className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" value={gender} onChange={(event) => setGender(event.target.value as "male" | "female" | "")} disabled={navigationPending} required>
+                <option value="" disabled>Choose male or female</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
+            </Field>
+            <Field label="Preferred language" required>
+              <select
+                aria-label="Preferred language"
+                className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]"
+                value={preferredLanguage}
+                onChange={(event) => setPreferredLanguage(event.target.value as "en" | "ar")}
+                disabled={navigationPending}
+              >
+                <option value="en">English</option>
+                <option value="ar">Arabic</option>
+              </select>
+            </Field>
+          </div>
           <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/40 px-3 py-3">
             <div>
               <p className="text-[13px] font-medium">Marketing messages</p>

@@ -34,7 +34,7 @@ const schema = z.object({
     .min(9, "Phone is required")
     .regex(/^\+?[\d\s()-]{9,18}$/, "Enter a valid phone number"),
   email: z.string().email("Enter a valid email").or(z.literal("")).optional(),
-  gender: z.enum(["male", "female"]).optional(),
+  gender: z.enum(["male", "female"], { message: "Choose male or female" }),
   dateOfBirth: z.string().optional(),
   homeBranchId: z.string().min(1, "Choose a home branch"),
   preferredLanguage: z.enum(["en", "ar"]),
@@ -277,14 +277,14 @@ export default function NewMemberPage() {
                 onBlur={(event) => { void emailField.onBlur(event); void checkDuplicates(); }}
               />
             </Field>
-            <Field label="Gender">
+            <Field label="Gender" required error={form.formState.errors.gender?.message}>
               <Controller
                 control={form.control}
                 name="gender"
                 render={({ field }) => (
                   <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || undefined)}>
                     <SelectTrigger aria-label="Gender">
-                      <SelectValue placeholder="Not specified" />
+                      <SelectValue placeholder="Choose male or female" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="female">Female</SelectItem>

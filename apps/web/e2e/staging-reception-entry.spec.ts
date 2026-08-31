@@ -22,6 +22,7 @@ test.describe("staged reception entry", () => {
       await manager.goto("/members/new", { waitUntil: "domcontentloaded" });
       await manager.getByTestId("member-name").fill(fullName);
       await manager.getByTestId("member-phone").fill(phone);
+      await chooseFirstAvailableOption(manager, "Gender");
       await chooseFirstAvailableOption(manager, "Home branch");
       await manager.getByTestId("save-member").click();
       await expect(manager).toHaveURL(/\/members\/[0-9a-f-]+$/);

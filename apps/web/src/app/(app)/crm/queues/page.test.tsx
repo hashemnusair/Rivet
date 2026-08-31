@@ -25,6 +25,23 @@ const state = vi.hoisted(() => ({
     isLoading: false,
     isError: false,
   },
+  atRiskResult: {
+    data: {
+      items: [{
+        member: { id: "member-risk", fullName: "At Risk Member", phone: "+962790000099", memberNumber: "MAIN-1099" },
+        membership: { id: "membership-risk", status: "active", planName: "Monthly", endDate: "2026-09-10", outstanding: { amount: 0, currency: "JOD" } },
+        reasons: [{ kind: "inactive", label: "No visit in 18 days", daysInactive: 18 }],
+        priority: "high",
+        memberId: "member-risk",
+        membershipId: "membership-risk",
+        branchId: "branch-1",
+        recommendedSnoozeDays: 7,
+      }],
+      totalItems: 1,
+    },
+    isLoading: false,
+    isError: false,
+  },
 }));
 
 vi.mock("@/lib/providers/app-providers", () => ({
@@ -33,11 +50,16 @@ vi.mock("@/lib/providers/app-providers", () => ({
 
 vi.mock("@/lib/hooks/use-api", () => ({
   useApiQuery: () => ({ data: { modules: [{ key: "revenue", entitled: true, enabled: true }] }, isLoading: false, error: undefined, refetch: vi.fn() }),
+  useApiMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useInvalidate: () => vi.fn(),
 }));
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
   useRealtimeApiQuery: (options: { queryKey: unknown }) => {
     state.queryKey = options.queryKey;
+    if (Array.isArray(options.queryKey) && options.queryKey[0] === "atRisk") {
+      return { ...state.atRiskResult, refetch: state.refetch };
+    }
     return { ...state.result, refetch: state.refetch };
   },
 }));
@@ -56,8 +78,10 @@ describe("follow-up workspace layout", () => {
     state.refetch.mockReset();
   });
 
-  it("places vertical filters beside the found matches workspace", () => {
+  it("places vertical filters beside the found matches workspace", async () => {
+    const user = userEvent.setup();
     render(<QueuesPage />);
+    await user.click(screen.getByRole("button", { name: "Renewals" }));
 
     expect(screen.getByRole("complementary", { name: "Follow-up filters" })).toBeInTheDocument();
     expect(screen.getByTestId("follow-up-results")).toBeInTheDocument();
@@ -68,9 +92,21 @@ describe("follow-up workspace layout", () => {
     expect(screen.getByText("Renewal Member")).toBeInTheDocument();
   });
 
+  it("opens the recommended retention action with its exact risk reason", async () => {
+    const user = userEvent.setup();
+    render(<QueuesPage />);
+
+    expect(screen.getByText("No visit in 18 days")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /At Risk Member/ }));
+    expect(screen.getByRole("heading", { name: "At Risk Member" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Call" })).toHaveAttribute("href", "tel:+962790000099");
+    expect(screen.getByTestId("whatsapp-handoff")).toBeInTheDocument();
+  });
+
   it("changes the renewal query when the filter rail switches buckets", async () => {
     const user = userEvent.setup();
     render(<QueuesPage />);
+    await user.click(screen.getByRole("button", { name: "Renewals" }));
 
     await user.click(screen.getByRole("button", { name: "Expired" }));
 
@@ -88,6 +124,7 @@ describe("follow-up workspace layout", () => {
   it("exposes the selected member row as a pressed control", async () => {
     const user = userEvent.setup();
     render(<QueuesPage />);
+    await user.click(screen.getByRole("button", { name: "Renewals" }));
 
     const row = screen.getByRole("button", { name: /Renewal Member/ });
     expect(row).toHaveAttribute("aria-pressed", "false");
