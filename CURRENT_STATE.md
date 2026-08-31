@@ -20,6 +20,38 @@
   credit, with crisp black grid lines and outline chips that survive printers
   ignoring background graphics.
 
+## Settings workspace polish and Finance navigation — 31 August 2026
+
+- Settings now uses one intentional workspace: a contained, sticky section
+  rail on desktop and a compact section picker on tablet/mobile. The selected
+  section is stored in the URL, so refresh, Back, and shared links preserve
+  context without a second page scrollbar or an abandoned left column.
+- Operational rules were rebuilt as four aligned groups — Entry and access,
+  Class booking, Membership and retention, and Referrals and freeze requests.
+  Units sit inside their inputs, related switches live in their panel headers,
+  and disabled policy fields remain legible without nested cards.
+- Hours and free-trial windows now have a separate full-width, branch-specific
+  weekly editor. This removes the long rules stack beside the former narrow
+  schedule column and gives the schedule a responsive table/stack layout.
+- Editable Settings surfaces share a sticky change bar with Discard, Save,
+  saving/failure/success states, Cmd/Ctrl+S, validation-aware navigation
+  protection, and browser-unload protection. Organization, receipts, Brand
+  Kit, operational email, and the two operational editors use the common
+  treatment; modal-owned saves remain local to their dialogs.
+- Reports is a first-class Finance destination in the primary sidebar,
+  directly after Payments. It is no longer duplicated inside the Payments
+  switcher, and `/reports` no longer makes Payments appear active.
+- Desktop and 390px mobile browser reviews covered Operational rules, Hours &
+  trials, branch selection, dirty-state controls, field alignment, and the
+  Finance navigation. No application console error was observed; the only
+  warning was Clerk's expected local development-key notice.
+- Verification passed TypeScript, zero-warning lint and the secret-output
+  audit, 176 Vitest files / 1,059 tests plus 14 repository-safety tests, the
+  59-route Production build, 47 credential-free Playwright journeys with 14
+  isolated-staging journeys explicitly skipped, the Production dependency
+  audit, and `git diff --check`. This is frontend-only work and requires no
+  Convex deployment or Production data mutation.
+
 ## Member login handoff regression fix, 31 August 2026
 
 - Member login now selects the authenticated member's existing Convex profile
