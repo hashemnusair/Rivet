@@ -13,9 +13,11 @@ test.describe("class calendar roles", () => {
     await page.goto("/classes");
 
     await expect(page.getByRole("heading", { name: "Classes", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Dated classes/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "New class" })).toHaveCount(0);
-    await page.locator('section[aria-labelledby="dated-classes-title"]').getByRole("button", { name: /Morning HIIT/ }).first().click();
+    // Reception clicks the calendar chip straight into the dated roster; the
+    // manager menu never opens for this role.
+    await page.getByRole("button", { name: /Morning HIIT, Sunday/ }).click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(page.getByText("Dated roster", { exact: true })).toBeVisible();
     await page.getByLabel("Add member to dated class").fill("Yara Sweidan");
     await page.getByRole("button", { name: /Yara Sweidan/ }).click();
