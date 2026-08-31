@@ -1,5 +1,25 @@
 # GymOS / RIVET current implementation state
 
+## Member login handoff regression fix, 31 August 2026
+
+- Member login now selects the authenticated member's existing Convex profile
+  through the read-only customer experience query. It no longer calls
+  `customer.register` during sign-in.
+- The prior handoff sent only email, name, and an empty phone to a profile
+  mutation. Once gender became mandatory for profile writes, that mutation
+  rejected and left signed-in members on the login recovery panel. Opening
+  RIVET from the public header appeared to fix the session because the direct
+  member route already used the read-only subscription.
+- Focused provider coverage now proves that member sign-in selects the existing
+  identity-scoped profile and never invokes the registration mutation. Member
+  signup remains the only account-entry path that creates the full profile,
+  including required gender.
+- Both TypeScript checks, zero-warning lint and secret-output audit, 176 Vitest
+  files / 1,057 tests, the 59-route Production build, the focused login/provider
+  tests, all 7 credential-free role-routing browser journeys, and
+  `git diff --check` passed. This frontend-only fix changes no Convex schema or
+  function and requires no Convex deploy.
+
 ## Member week view, class history, and midnight guard — 31 August 2026
 
 - The member Classes tab became a one-day-at-a-time week view: arrows walk

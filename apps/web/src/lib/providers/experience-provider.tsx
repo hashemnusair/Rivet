@@ -58,7 +58,7 @@ interface ExperienceContextValue {
   registerCustomer: (input: RegisterCustomerInput) => Promise<CustomerPersona>;
   updateCustomerProfile: (input: CustomerProfileInput) => Promise<CustomerPersona>;
   updateMarketingPreference: (optedIn: boolean) => Promise<CustomerPersona>;
-  /** Signs in the authenticated person as themselves, creating their member profile once. */
+  /** Selects the authenticated person's member profile without rewriting it. */
   signInAsIdentity: (input: { email: string; fullName: string }) => Promise<CustomerPersona>;
   emailTaken: (email: string) => boolean;
   signOutCustomer: () => void;
@@ -368,7 +368,13 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
    */
   const signInAsIdentity = useCallback(async (input: { email: string; fullName: string }) => {
     if (convexMode) {
-      const persona = await getApi().registerCustomer({ email: input.email, fullName: input.fullName, phone: "" });
+      // Login is a session transition, not a profile update. Writing here used
+      // to erase optional member fields and now fails once profile writes
+      // require gender. Read the identity-scoped profile that signup or the
+      // gym-member linking flow already created instead.
+      const experience = await getApi().getCustomerExperience();
+      const persona = experience.customer;
+      if (!persona) throw new Error("The authenticated member profile is not available.");
       setCustomer(persona);
       setCustomerId(persona.id);
       return persona;

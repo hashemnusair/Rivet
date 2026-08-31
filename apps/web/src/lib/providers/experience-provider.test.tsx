@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MARKETPLACE_GYMS, type MarketplaceGym } from "@/lib/public/experience-data";
+import { MARKETPLACE_GYMS, type CustomerPersona, type MarketplaceGym } from "@/lib/public/experience-data";
 import { PUBLIC_EXPERIENCE_FIRST_SNAPSHOT_TIMEOUT_MS } from "@/lib/public/experience-refresh";
 import { ExperienceProvider, useExperience } from "./experience-provider";
 
@@ -77,6 +77,21 @@ function Probe() {
       <output data-testid="plan-count">{experience.saasPlans.length}</output>
       <output data-testid="gym-count">{experience.marketplaceGyms.length}</output>
       <button type="button" onClick={experience.retryExperience}>Retry</button>
+    </div>
+  );
+}
+
+function MemberSignInProbe() {
+  const experience = useExperience();
+  return (
+    <div>
+      <output data-testid="member-signed-in">{String(experience.customerSignedIn)}</output>
+      <button
+        type="button"
+        onClick={() => void experience.signInAsIdentity({ email: "member@example.com", fullName: "Member Example" })}
+      >
+        Select member profile
+      </button>
     </div>
   );
 }
@@ -278,5 +293,52 @@ describe("ExperienceProvider public live recovery", () => {
     await act(async () => undefined);
     expect(catalog.activeCount()).toBe(0);
     expect(marketplace.activeCount()).toBe(0);
+  });
+});
+
+describe("ExperienceProvider member sign-in", () => {
+  it("selects the existing identity-scoped profile without rewriting it", async () => {
+    const catalog = createStream<unknown>();
+    const marketplace = createStream<unknown>();
+    const customer = createStream<unknown>();
+    const persona: CustomerPersona = {
+      id: "profile-member",
+      name: "Member Example",
+      nameAr: "Member Example",
+      email: "member@example.com",
+      phone: "+962790000000",
+      gender: "female",
+      initials: "ME",
+      context: "RIVET member",
+    };
+    const getCustomerExperience = vi.fn().mockResolvedValue({ customer: persona, memberships: [], bookings: [] });
+    const registerCustomer = vi.fn();
+    state.identity = {
+      status: "ready",
+      userId: "user-member",
+      email: persona.email,
+      fullName: persona.name,
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [],
+    };
+    state.api = {
+      ...apiFor(catalog, marketplace),
+      subscribeCustomerExperience: customer.subscribe,
+      getCustomerExperience,
+      registerCustomer,
+    };
+
+    render(
+      <ExperienceProvider>
+        <MemberSignInProbe />
+      </ExperienceProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Select member profile" }));
+
+    await waitFor(() => expect(screen.getByTestId("member-signed-in")).toHaveTextContent("true"));
+    expect(getCustomerExperience).toHaveBeenCalledOnce();
+    expect(registerCustomer).not.toHaveBeenCalled();
   });
 });
