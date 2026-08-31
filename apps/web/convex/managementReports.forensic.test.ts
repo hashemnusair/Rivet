@@ -193,6 +193,22 @@ describe("forensic statement lifecycles", () => {
     expect(cashflow).toMatchObject({ operating: { netChange: { amount: 1_500 } }, investing: { netChange: { amount: 0 } }, financing: { netChange: { amount: 0 } }, closingCash: { amount: 1_500 }, reconciliation: { difference: { amount: 0 } } });
   });
 
+  it("queues a valid recognition month as pending with no contradictory reason text", async () => {
+    const { t, owner } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "forensic-org")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "forensic-branch")).unique();
+      const createdAt = Date.parse("2026-02-01T00:00:00.000Z");
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "forensic-reason-m1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-reason-m1", homeBranchId: "forensic-branch", startDate: "2026-02-01", endDate: "2026-02-28", salePrice: { amount: 28_000, currency: "JOD" }, frozenDaysUsed: 0 } });
+    });
+    await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "forensic-reason-m1", idempotencyKey: "f-reason-sale", reason: "Post deferred sale" }));
+    const refreshed = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"], fromDate: "2026-02-01", toDate: "2026-02-28" })) as { items: Array<{ sourceId: string; status: string; reason?: string }> };
+    const pendingRow = refreshed.items.find((item) => item.sourceId === "membership-revenue:forensic-reason-m1:2026-02");
+    // A valid pending fact must not display the unconfigured fallback text.
+    expect(pendingRow).toMatchObject({ status: "pending" });
+    expect(pendingRow?.reason).toBeUndefined();
+  });
+
   it("classifies cash movements honestly: financing, investing, excluded internal transfers, and flagged mixed entries", async () => {
     const { owner } = await seeded();
     const journal = (memo: string, key: string, postingDate: string, lines: Array<{ accountId: string; debit: number; credit: number }>) => operation("accounting.manual_journal.post", { scope: "branch", branchId: "forensic-branch", postingDate, memo, reason: "Controlled cash flow fixture", idempotencyKey: key, lines: lines.map((line) => ({ accountId: line.accountId, debit: { amount: line.debit, currency: "JOD" }, credit: { amount: line.credit, currency: "JOD" } })) });
