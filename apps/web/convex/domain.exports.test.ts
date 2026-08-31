@@ -58,29 +58,29 @@ describe("tenant data exports", () => {
     expect(audit).toEqual([expect.objectContaining({ entityPublicId: first.id, after: expect.objectContaining({ rowCount: 2, timezone: "Asia/Amman" }) })]);
   });
 
-  it("creates a concise personal report instead of JSON-in-CSV", async () => {
+  it("creates a concise flat personal-data CSV without internal records", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const customer = t.withIdentity({ subject: "clerk-customer-export" });
     const exported = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { idempotencyKey: "customer-export-readable-001" })) as { rowCount: number; content: string; fileName: string; mimeType: string };
 
     expect(exported.rowCount).toBeGreaterThan(5);
-    expect(exported.fileName).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.html$/);
-    expect(exported.mimeType).toBe("text/html;charset=utf-8");
-    expect(exported.content.startsWith("<!doctype html>\n")).toBe(true);
-    expect(exported.content).toContain("<h1>جنى حداد</h1>");
-    expect(exported.content).toContain("<h2>Profile</h2>");
-    expect(exported.content).toContain("<h2>Memberships</h2>");
-    expect(exported.content).toContain("Charges and balances");
-    expect(exported.content).toContain("Payments and refunds");
-    expect(exported.content).toContain("Check-ins");
-    expect(exported.content).toContain("Account activity");
+    expect(exported.fileName).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(exported.mimeType).toBe("text/csv;charset=utf-8");
+    expect(exported.content.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
+    expect(exported.content).toContain("Category,Gym,Branch,Date,Record,Details,Amount,Currency,Status");
+    expect(exported.content).toContain("Profile,,,,Full name,جنى حداد");
+    expect(exported.content).toContain("Membership,Export Gym,Main,2026-08-01,All access");
+    expect(exported.content).toContain("Charge,Export Gym,,2026-08-01,Membership balance");
+    expect(exported.content).toContain("Payment,Export Gym,Main");
+    expect(exported.content).toContain("Check-in,Export Gym,Main");
+    expect(exported.content).toContain("Account activity,Export Gym");
     expect(exported.content).toContain("40.000");
     expect(exported.content).toContain("JOD");
     expect(exported.content).not.toContain("data_json");
     expect(exported.content).not.toContain("{\"");
-    expect(exported.content).not.toContain("RIVET profile ID");
-    expect(exported.content).not.toContain("RIVET transaction ID");
+    expect(exported.content).not.toContain("profile-export");
+    expect(exported.content).not.toContain("payment-customer-export");
   });
 
   it("enforces dataset permissions and rejects idempotency-key reuse with different filters", async () => {

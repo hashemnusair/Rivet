@@ -70,7 +70,6 @@ import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLea
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "@/lib/retention/at-risk";
 import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
-import { buildPersonalDataHtmlReport } from "@/lib/exports/personal-report";
 import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -8859,41 +8858,87 @@ export class MockGymOSApi implements GymOSApi {
       const activity = memberships.flatMap((membership) => (membership.activity ?? []).map((event) => ({ gym: membership.gymName ?? this.db.organization.name, ...event })));
       const trials = this.trialBookings.filter((booking) => booking.customerId === this.activeCustomerId);
       const preferenceHistory = this.customerPreferenceHistory.get(this.activeCustomerId) ?? (profile?.marketingPreference ? [profile.marketingPreference] : []);
-      const content = buildPersonalDataHtmlReport({
-        memberName: profile?.name ?? "RIVET member",
-        generatedAt: formatExportDateTime(now, this.db.organization.timezone),
-        account: profile?.email ?? "No email recorded",
-        includedGyms: [...new Set(memberships.map((membership) => membership.gymName ?? this.db.organization.name))].join("; ") || "None",
-        profile: [
-          { label: "Full name", value: profile?.name },
-          { label: "Arabic name", value: profile?.nameAr },
-          { label: "Email", value: profile?.email },
-          { label: "Phone", value: profile?.phone },
-          { label: "Date of birth", value: profile?.dateOfBirth },
-          { label: "Gender", value: exportStatusLabel(profile?.gender) },
-          { label: "Preferred language", value: exportStatusLabel(profile?.preferredLanguage) },
-          { label: "Address", value: profile?.addressLine1 },
-          { label: "City", value: profile?.city },
-          { label: "Emergency contact", value: profile?.emergencyContactName },
-          { label: "Emergency relationship", value: profile?.emergencyContactRelationship },
-          { label: "Emergency phone", value: profile?.emergencyContactPhone },
+      const details = (...values: Array<string | undefined>) => values.filter((value): value is string => Boolean(value?.trim())).join(" · ");
+      const rows: CsvValue[][] = [];
+      const profileFields: Array<[string, string | undefined]> = [
+        ["Full name", profile?.name],
+        ["Arabic name", profile?.nameAr],
+        ["Email", profile?.email],
+        ["Phone", profile?.phone],
+        ["Date of birth", profile?.dateOfBirth],
+        ["Gender", exportStatusLabel(profile?.gender)],
+        ["Preferred language", exportStatusLabel(profile?.preferredLanguage)],
+        ["Address", profile?.addressLine1],
+        ["City", profile?.city],
+        ["Emergency contact", profile?.emergencyContactName],
+        ["Emergency relationship", profile?.emergencyContactRelationship],
+        ["Emergency phone", profile?.emergencyContactPhone],
+      ];
+      rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+      rows.push(...memberships.map((membership): CsvValue[] => [
+        "Membership",
+        membership.gymName ?? this.db.organization.name,
+        membership.branchName,
+        membership.startDate,
+        membership.planName,
+        details(`Member ${membership.memberNumber}`, `Ends ${membership.endDate}`, membership.lastCheckInAt ? `Last check-in ${formatExportDateTime(membership.lastCheckInAt, TZ)}` : undefined),
+        formatMinorUnits(membership.balanceMinor, this.db.organization.currency),
+        this.db.organization.currency,
+        exportStatusLabel(membership.status),
+      ]));
+      rows.push(...charges.map((charge): CsvValue[] => [
+        "Charge",
+        this.db.organization.name,
+        "",
+        charge.issueDate,
+        charge.description,
+        details(charge.dueDate ? `Due ${charge.dueDate}` : undefined, `Total ${formatMinorUnits(charge.total.amount, charge.total.currency)} ${charge.total.currency}`, `Paid ${formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency)} ${charge.paidAmount.currency}`),
+        formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency),
+        charge.outstandingAmount.currency,
+        exportStatusLabel(charge.status),
+      ]));
+      rows.push(...transactions.map((transaction): CsvValue[] => [
+        "Payment",
+        transaction.gymName,
+        transaction.branchName,
+        formatExportDateTime(transaction.occurredAt, TZ),
+        `${exportStatusLabel(transaction.type)} · Receipt ${transaction.receiptNumber}`,
+        details(exportStatusLabel(transaction.method), transaction.explanation),
+        formatMinorUnits(transaction.amount.amount, transaction.amount.currency),
+        transaction.amount.currency,
+        exportStatusLabel(transaction.status),
+      ]));
+      rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branchName, formatExportDateTime(visit.occurredAt, TZ), "Gym visit", "", "", "", exportStatusLabel(visit.decision)]));
+      rows.push(...activity.map((event): CsvValue[] => ["Account activity", event.gym, "", formatExportDateTime(event.occurredAt, TZ), event.title ?? exportStatusLabel(event.type), event.detail, "", "", ""]));
+      rows.push(...trials.map((booking): CsvValue[] => {
+        const relatedMembership = memberships.find((membership) => membership.gymId === booking.gymId);
+        const branchName = this.db.branches.find((branch) => branch.id === booking.branchId)?.name ?? relatedMembership?.branchName ?? "Unknown branch";
+        return ["Trial booking", relatedMembership?.gymName ?? this.db.organization.name, branchName, details(booking.preferredDate, booking.preferredTime), booking.goal || "Gym trial", "", "", "", exportStatusLabel(booking.status)];
+      }));
+      rows.push(...preferenceHistory.map((preference): CsvValue[] => [
+        "Marketing preference",
+        "",
+        "",
+        formatExportDateTime(preference.changedAt, TZ),
+        "Marketing messages",
+        `Recorded through ${exportStatusLabel(preference.source)}`,
+        "",
+        "",
+        `${preference.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(preference.status)}`,
+      ]));
+      const content = buildCsvDocument({
+        title: "My RIVET data",
+        metadata: [
+          { label: "Generated at", value: formatExportDateTime(now, this.db.organization.timezone) },
+          { label: "Account", value: profile?.email ?? "No email recorded" },
+          { label: "Included gyms", value: [...new Set(memberships.map((membership) => membership.gymName ?? this.db.organization.name))].join("; ") || "None" },
         ],
-        sections: [
-          { title: "Memberships", description: "Your current and previous gym memberships.", headers: ["Gym", "Branch", "Member number", "Plan", "Status", "Starts", "Ends", "Balance", "Currency", "Last check-in"], rows: memberships.map((membership) => [membership.gymName ?? this.db.organization.name, membership.branchName, membership.memberNumber, membership.planName, exportStatusLabel(membership.status), membership.startDate, membership.endDate, formatMinorUnits(membership.balanceMinor, this.db.organization.currency), this.db.organization.currency, formatExportDateTime(membership.lastCheckInAt, TZ)]) },
-          { title: "Charges and balances", description: "Amounts charged, paid, or still outstanding.", headers: ["Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"], rows: charges.map((charge) => [charge.description, charge.issueDate, charge.dueDate, formatMinorUnits(charge.total.amount, charge.total.currency), formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency), formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency), charge.total.currency, exportStatusLabel(charge.status)]) },
-          { title: "Payments and refunds", description: "Payments, retail purchases, refunds, and voided transactions.", headers: ["Gym", "Branch", "Receipt", "When", "Type", "Method", "Amount", "Currency", "Status", "Explanation"], rows: transactions.map((transaction) => [transaction.gymName, transaction.branchName, transaction.receiptNumber, formatExportDateTime(transaction.occurredAt, TZ), exportStatusLabel(transaction.type), exportStatusLabel(transaction.method), formatMinorUnits(transaction.amount.amount, transaction.amount.currency), transaction.amount.currency, exportStatusLabel(transaction.status), transaction.explanation]) },
-          { title: "Check-ins", description: "Your recorded gym visits.", headers: ["Gym", "Branch", "When", "Result"], rows: visits.map((visit) => [visit.gym, visit.branchName, formatExportDateTime(visit.occurredAt, TZ), exportStatusLabel(visit.decision)]) },
-          { title: "Account activity", description: "Membership changes and other events recorded on your member history.", headers: ["Gym", "When", "Activity", "Details"], rows: activity.map((event) => [event.gym, formatExportDateTime(event.occurredAt, TZ), event.title ?? exportStatusLabel(event.type), event.detail]) },
-          { title: "Trial bookings", headers: ["Gym", "Branch", "Date", "Time", "Goal", "Status"], rows: trials.map((booking) => {
-            const relatedMembership = memberships.find((membership) => membership.gymId === booking.gymId);
-            const branchName = this.db.branches.find((branch) => branch.id === booking.branchId)?.name ?? relatedMembership?.branchName ?? "Unknown branch";
-            return [relatedMembership?.gymName ?? this.db.organization.name, branchName, booking.preferredDate, booking.preferredTime, booking.goal, exportStatusLabel(booking.status)];
-          }) },
-          { title: "Marketing preference history", headers: ["Changed at", "Status", "Marketing messages", "Recorded through"], rows: preferenceHistory.map((preference) => [formatExportDateTime(preference.changedAt, TZ), exportStatusLabel(preference.status), preference.optedIn ? "Allowed" : "Not allowed", exportStatusLabel(preference.source)]) },
-        ],
+        headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+        rows,
+        emptyMessage: "No personal data was available for export.",
       });
-      const totalRows = 1 + memberships.length + charges.length + transactions.length + visits.length + activity.length + trials.length + preferenceHistory.length;
-      return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.html`, mimeType: "text/html;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      const totalRows = rows.length;
+      return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
     });
   }
 

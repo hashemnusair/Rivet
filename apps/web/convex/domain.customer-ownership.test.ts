@@ -424,8 +424,10 @@ describe("exported Convex customer ownership boundaries", () => {
 
     expect(experience.customer).toMatchObject({ id: "profile-a", email: "a@example.com", marketingPreference: { optedIn: false } });
     expect(experience.memberships.map((membership: { id: string }) => membership.id)).toEqual(["membership-a-active", "membership-a-inactive"]);
+    const currentAmmanParts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit" }).formatToParts(new Date());
+    const currentAmmanMonth = `${currentAmmanParts.find((part) => part.type === "year")?.value}-${currentAmmanParts.find((part) => part.type === "month")?.value}`;
     expect(experience.memberships[0]).toMatchObject({
-      visitsThisMonth: 1,
+      visitsThisMonth: currentAmmanMonth === "2026-08" ? 1 : 0,
       lastCheckInAt: "2026-08-08T10:00:00.000Z",
       visitHistory: [{ id: "checkin-a-allowed", memberName: "Customer A", branchName: "Gym A Main", checkedInByName: "Reception A" }],
     });

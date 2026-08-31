@@ -53,29 +53,23 @@ test.describe("downloaded export files", () => {
     expect(content).not.toContain("data_json");
   });
 
-  test("downloads a concise member report that opens in a browser", async ({ page }) => {
+  test("downloads a concise member CSV that opens in spreadsheet apps", async ({ page }) => {
     await signInMember(page);
     await page.goto("/customer/finance");
     const pending = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Download my data" }).click();
+    await page.getByRole("button", { name: "Download my data (CSV)" }).click();
     const download = await pending;
     const content = await downloadedText(download);
 
-    expect(download.suggestedFilename()).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.html$/);
-    expect(content.startsWith("<!doctype html>\n")).toBe(true);
-    expect(content).toContain("<h2>Profile</h2>");
-    expect(content).toContain("<h2>Memberships</h2>");
-    expect(content).toContain("Payments and refunds");
-    expect(content).toContain("Check-ins");
+    expect(download.suggestedFilename()).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(content.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
+    expect(content).toContain("Category,Gym,Branch,Date,Record,Details,Amount,Currency,Status");
+    expect(content).toContain("Profile,,,,Full name,Lina Haddad");
+    expect(content).toContain("Membership,");
+    expect(content).toContain("Check-in,");
     expect(content).not.toContain("data_json");
     expect(content).not.toContain("{\"");
-    expect(content).not.toContain("RIVET transaction ID");
-
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.setContent(content);
-    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Memberships" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Payments and refunds" })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(content).not.toContain("retail-sale-");
+    expect(content.split("\r\n").length).toBeGreaterThan(8);
   });
 });

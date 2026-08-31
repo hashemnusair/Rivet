@@ -50,17 +50,18 @@ describe("readable exports", () => {
     }
   });
 
-  it("renders the member's actual data as a concise browser report", async () => {
+  it("exports the member's actual data as a concise flat CSV", async () => {
     const exported = await api.requestMemberPersonalDataExport("mock-personal-export-readable");
-    expect(exported.fileName).toMatch(/\.html$/);
-    expect(exported.mimeType).toBe("text/html;charset=utf-8");
-    expect(exported.content).toContain("<h2>Profile</h2>");
-    expect(exported.content).toContain("<h2>Memberships</h2>");
-    expect(exported.content).toContain("Payments and refunds");
-    expect(exported.content).toContain("Check-ins");
+    expect(exported.fileName).toMatch(/\.csv$/);
+    expect(exported.mimeType).toBe("text/csv;charset=utf-8");
+    expect(exported.content?.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
+    expect(exported.content).toContain("Category,Gym,Branch,Date,Record,Details,Amount,Currency,Status");
+    expect(exported.content).toContain("Profile,,,,Full name,");
+    expect(exported.content).toContain("Membership,");
+    expect(exported.content).toContain("Check-in,");
     expect(exported.content).not.toContain("data_json");
     expect(exported.content).not.toContain("{\"");
-    expect(exported.content).not.toContain("RIVET membership ID");
+    expect(exported.content).not.toContain("membership-retail-customer");
   });
 });
 
