@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarCheck2, Check, ImagePlus, Plus, Printer, RefreshCcw, Repeat2, Trash2, UserPlus, Users, X, Pencil } from "lucide-react";
+import { CalendarCheck2, Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X, Pencil, Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -77,10 +77,11 @@ export default function ClassesPage() {
   const sessionsQuery = useApiQuery(qk.classSessions(branchId ?? "none"), (api) => api.listClassSessions({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const coachesQuery = useApiQuery(["classCoaches"] as const, (api) => api.listClassCoaches());
   const coaches: ClassCoach[] = coachesQuery.data ?? [];
-  const [weekStart, setWeekStart] = useState(() => todayISODate());
-  const [coachFilter, setCoachFilter] = useState("");
+  // The dated-occurrence window feeds roster management and "Open next dated
+  // class"; the calendar is the only visible surface.
+  const weekStart = todayISODate();
   const weekEnd = addDays(weekStart, 6);
-  const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd, coachId: coachFilter || undefined }), { enabled: Boolean(branchId) });
+  const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd }), { enabled: Boolean(branchId) });
 
   const [editor, setEditor] = useState<EditorState>();
   const [manageId, setManageId] = useState<string>();
@@ -112,7 +113,7 @@ export default function ClassesPage() {
     return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", close); };
   }, [menu]);
 
-  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined)]); };
+  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined)]); };
 
   const save = useApiMutation((api) => {
     if (!editor) throw new Error("Nothing to save.");
@@ -238,7 +239,7 @@ export default function ClassesPage() {
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8" data-print-root>
       <div className="mx-auto max-w-[1600px]">
         <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
-          <div><p className="eyebrow">Studio</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Classes</h1><p className="mt-2 text-[12.5px] text-ink-2">Run this week&apos;s dated rosters first. Managers maintain the repeating timetable below.</p></div>
+          <div><p className="eyebrow">Studio</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Classes</h1><p className="mt-2 text-[12.5px] text-ink-2">One fixed weekly timetable. Click a class for details, rosters, and changes; press an open slot to add one.</p></div>
           <div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
               <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
@@ -250,20 +251,6 @@ export default function ClassesPage() {
             {canManage ? <Button variant="signal" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>
         </div>
-
-        <section className="mt-6 overflow-hidden rounded-lg border border-line bg-surface print:hidden" aria-labelledby="dated-classes-title">
-          <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line p-4">
-            <div><p className="eyebrow">Live operations</p><h2 id="dated-classes-title" className="mt-1 text-[17px] font-semibold">Dated classes · {formatDate(weekStart)}–{formatDate(weekEnd)}</h2><p className="mt-1 text-[11.5px] text-ink-3">Bookings and attendance belong to one date. Nothing here changes future weeks.</p></div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="grid gap-1 text-[10.5px] font-medium text-ink-3">Week starts<Input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} className="w-[150px]" /></label>
-              <label className="grid gap-1 text-[10.5px] font-medium text-ink-3">Coach<select aria-label="Filter dated classes by coach" className="h-9 min-w-[170px] rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={coachFilter} onChange={(event) => setCoachFilter(event.target.value)}><option value="">All coaches</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select></label>
-              <Button size="sm" variant="ghost" onClick={() => occurrencesQuery.refetch()} aria-label="Refresh dated classes"><RefreshCcw /></Button>
-            </div>
-          </header>
-          {occurrencesQuery.isLoading ? <div className="grid gap-3 p-4 md:grid-cols-3"><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div> : occurrencesQuery.isError ? <div className="p-4"><ErrorState title="Dated classes could not be loaded" description="The repeating timetable is still available below. No roster changes were made." onRetry={() => occurrencesQuery.refetch()} /></div> : occurrencesQuery.data?.length ? <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">{occurrencesQuery.data.map((occurrence) => <button key={occurrence.id} type="button" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); setOverrideReason(""); }} className="rounded-md border border-line p-4 text-start transition-colors hover:border-line-3 hover:bg-sunken/50"><div className="flex items-start justify-between gap-3"><div><p className="text-[13.5px] font-semibold">{occurrence.name}</p><p className="mt-1 text-[11.5px] text-ink-3">{formatDateTime(occurrence.startsAt)} · {occurrence.coachName ?? "Coach TBA"}</p></div><span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${occurrence.attendanceFinalizedAt ? "bg-success-bg text-success-deep" : "bg-sunken text-ink-2"}`}>{occurrence.attendanceFinalizedAt ? "Finalized" : occurrence.status}</span></div><div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center"><div><p className="font-mono text-[13px]">{occurrence.bookedCount}/{occurrence.capacity}</p><p className="text-[9.5px] text-ink-3">booked</p></div><div><p className="font-mono text-[13px]">{occurrence.waitlistCount}</p><p className="text-[9.5px] text-ink-3">waiting</p></div><div><p className="font-mono text-[13px]">{occurrence.roster.filter((entry) => entry.status === "attended").length}</p><p className="text-[9.5px] text-ink-3">present</p></div></div></button>)}</div> : <div className="p-8 text-center"><CalendarCheck2 className="mx-auto size-6 text-ink-3" /><p className="mt-3 text-[13px] font-medium">No classes in this view</p><p className="mt-1 text-[11.5px] text-ink-3">Adjust the week or coach filter, or add a repeating class below.</p></div>}
-        </section>
-
-        <div className="mt-8 flex items-center gap-2 print:hidden"><Repeat2 className="size-4 text-ink-3" /><div><h2 className="text-[15px] font-semibold">Repeating timetable</h2><p className="text-[11px] text-ink-3">Changes here affect future dated classes.</p></div></div>
 
         <div className="hidden print:block" data-print-header>
           <div className="flex items-end justify-between gap-6 border-b-2 border-black pb-3">
@@ -346,16 +333,18 @@ export default function ClassesPage() {
         )}
 
         {menu ? (
-          <div className="fixed z-50 w-44 overflow-hidden rounded-md border border-line bg-surface shadow-dialog" style={{ left: menu.x, top: menu.y }} role="menu">
+          <div className="fixed z-50 w-52 overflow-hidden rounded-lg border border-line bg-surface shadow-dialog" style={{ left: Math.min(menu.x, typeof window === "undefined" ? menu.x : window.innerWidth - 224), top: menu.y }} role="menu">
             {(() => {
               const target = sessionsQuery.data?.find((item) => item.id === menu.sessionId);
               if (!target) return null;
               return (
                 <>
-                  <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => openEdit(target)}>Edit class</button>
-                  <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); openNextOccurrence(target.id); }}>Open next dated class</button>
-                  <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] text-danger hover:bg-danger-bg" onClick={() => { setMenu(undefined); setDeleteTarget(target); setDeleteReason(""); }}>Remove from schedule</button>
-                  <button type="button" role="menuitem" className="block w-full border-t border-line px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); setDetailsId(target.id); }}>View event details</button>
+                  <p className="border-b border-line px-3 py-2 text-[11px] font-semibold">{target.name}</p>
+                  <div className="p-1">
+                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] transition-colors hover:bg-sunken" onClick={() => { setMenu(undefined); setDetailsId(target.id); }}><Eye className="size-3.5 text-ink-3" aria-hidden /> View event details</button>
+                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] transition-colors hover:bg-sunken" onClick={() => { setMenu(undefined); openNextOccurrence(target.id); }}><CalendarCheck2 className="size-3.5 text-ink-3" aria-hidden /> Open next dated class</button>
+                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] text-danger transition-colors hover:bg-danger-bg" onClick={() => { setMenu(undefined); setDeleteTarget(target); setDeleteReason(""); }}><Trash2 className="size-3.5" aria-hidden /> Remove from schedule</button>
+                  </div>
                 </>
               );
             })()}
