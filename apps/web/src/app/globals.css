@@ -220,10 +220,10 @@
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Clamp the root scroller at its real bounds. On macOS trackpads and
-       momentum mice, elastic overscroll otherwise pulls the sticky app chrome
-       away from the viewport and exposes a large blank strip above it. */
-    overscroll-behavior-y: none;
+    /* Keep local edge feedback and momentum without letting root overscroll
+       chain into browser navigation or pull the app shell into a second
+       scrolling context. `contain` is intentionally softer than `none`. */
+    overscroll-behavior-y: contain;
     background: var(--color-paper);
     /* Header links are in-page anchors; glide to them instead of jumping, and
        keep the sticky header from covering whatever we land on. */
@@ -240,7 +240,7 @@
 
   body {
     min-height: 100dvh;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: contain;
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);

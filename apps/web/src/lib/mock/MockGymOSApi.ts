@@ -4142,7 +4142,7 @@ export class MockGymOSApi implements GymOSApi {
     return {
       user: { id: user.id, name: user.name, email: user.email },
       organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, brand: this.db.brand },
-      branches: this.db.branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
+      branches: visibleBranches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
       activeBranchId: activeBranchId ?? (user.branchScope === "selected" && visibleBranches.length === 1 ? visibleBranches[0]!.id : undefined),
       roles: [user.role],
       permissions: permissionsFor(this.db, user.role),

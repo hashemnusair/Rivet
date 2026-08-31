@@ -60,6 +60,22 @@ async function lookup(query: string) {
 }
 
 describe("reception console — idle", () => {
+  it("asks an all-branch owner for operating scope without mislabeling it as a role denial", async () => {
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "owner" });
+
+    expect(await screen.findByRole("heading", { name: /choose a branch to open reception/i })).toBeInTheDocument();
+    expect(screen.queryByText(/not allowed for this role/i)).not.toBeInTheDocument();
+
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: branch.name }));
+
+    expect(await screen.findByTestId("reception-search")).toHaveFocus();
+    expect((await api.getSession()).activeBranchId).toBe(branch.id);
+    expect(window.sessionStorage.getItem("rivet.demo.branch")).toBe(branch.id);
+  });
+
   it("focuses the lookup lane and invites the next member", async () => {
     await renderWithApp(<ReceptionPage />, { role: "receptionist" });
 

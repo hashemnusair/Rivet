@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Ban,
   Banknote,
+  Building2,
   CheckCircle2,
   CornerDownLeft,
   Lock,
@@ -17,7 +18,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
-import type { CheckInPreview, CheckInResult, MembershipSummary } from "@/lib/domain/types";
+import type { CheckInPreview, CheckInResult, MembershipSummary, Session } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -28,7 +29,7 @@ import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { Button } from "@/components/ui/button";
 import { Kbd, Monogram } from "@/components/ui/misc";
-import { ForbiddenState } from "@/components/ui/states";
+import { ForbiddenState, StatePanel } from "@/components/ui/states";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
@@ -36,7 +37,7 @@ import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
 
 export default function ReceptionPage() {
-  const { session } = useApp();
+  const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
 
@@ -52,7 +53,10 @@ export default function ReceptionPage() {
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [recentPage, setRecentPage] = useState(1);
   const [dialog, setDialog] = useState<"override" | "collect" | "renew" | "openShift" | "closeShift" | null>(null);
+  const [branchSelecting, setBranchSelecting] = useState<string | null>(null);
+  const [branchSelectionError, setBranchSelectionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const automaticBranchAttempt = useRef<string | null>(null);
 
   // Gate on the live *and* debounced query. Checking only the debounced value
   // would keep the previous member's verdict on screen for one debounce window
@@ -95,7 +99,30 @@ export default function ReceptionPage() {
 
   useEffect(() => {
     focusInput();
-  }, [focusInput]);
+  }, [branchId, focusInput]);
+
+  const chooseBranch = useCallback(async (nextBranchId: string) => {
+    setBranchSelecting(nextBranchId);
+    setBranchSelectionError(null);
+    try {
+      await setBranch(nextBranchId);
+    } catch {
+      setBranchSelectionError("That branch could not be opened. Check your connection and try again.");
+    } finally {
+      setBranchSelecting(null);
+    }
+  }, [setBranch]);
+
+  // A sole accessible branch is unambiguous. This also makes branch-assigned
+  // reception accounts land directly at their desk without an unnecessary
+  // organization-wide intermediate state.
+  useEffect(() => {
+    if (branchId || session?.branches.length !== 1) return;
+    const onlyBranchId = session.branches[0]!.id;
+    if (automaticBranchAttempt.current === onlyBranchId) return;
+    automaticBranchAttempt.current = onlyBranchId;
+    void chooseBranch(onlyBranchId);
+  }, [branchId, chooseBranch, session?.branches]);
 
   /** A recorded verdict remains visible until staff explicitly starts the next lane. */
   const resetLane = useCallback(() => {
@@ -137,8 +164,11 @@ export default function ReceptionPage() {
 
   if (!branchId || !branch) {
     return (
-      <ForbiddenState
-        description="Pick a single branch from the branch selector — the desk works one door at a time."
+      <ReceptionBranchState
+        branches={session?.branches ?? []}
+        selectingBranchId={branchSelecting}
+        error={branchSelectionError}
+        onSelect={(nextBranchId) => void chooseBranch(nextBranchId)}
       />
     );
   }
@@ -393,6 +423,74 @@ export default function ReceptionPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function ReceptionBranchState({
+  branches,
+  selectingBranchId,
+  error,
+  onSelect,
+}: {
+  branches: Session["branches"];
+  selectingBranchId: string | null;
+  error: string | null;
+  onSelect: (branchId: string) => void;
+}) {
+  if (branches.length === 0) {
+    return (
+      <StatePanel
+        icon={Building2}
+        title="No active branch is available"
+        description="Ask an owner to activate a branch or assign this account to one before opening Reception."
+      />
+    );
+  }
+
+  const openingOnlyBranch = branches.length === 1;
+  return (
+    <StatePanel
+      icon={Building2}
+      title={openingOnlyBranch ? "Opening Reception…" : "Choose a branch to open Reception"}
+      description={openingOnlyBranch
+        ? `Setting this desk to ${branches[0]!.name}.`
+        : "Reception works one branch at a time. Choose where this desk is operating."}
+      action={
+        openingOnlyBranch ? (
+          error ? (
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-[12px] text-danger" role="alert">{error}</p>
+              <Button
+                type="button"
+                variant="secondary"
+                loading={selectingBranchId === branches[0]!.id}
+                onClick={() => onSelect(branches[0]!.id)}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : null
+        ) : (
+          <div className="flex max-w-xl flex-wrap justify-center gap-2" aria-label="Reception branch">
+            {branches.map((candidate) => (
+              <Button
+                key={candidate.id}
+                type="button"
+                variant="secondary"
+                size="lg"
+                loading={selectingBranchId === candidate.id}
+                disabled={selectingBranchId !== null}
+                onClick={() => onSelect(candidate.id)}
+              >
+                <Building2 aria-hidden />
+                {candidate.name}
+              </Button>
+            ))}
+            {error ? <p className="basis-full pt-1 text-[12px] text-danger" role="alert">{error}</p> : null}
+          </div>
+        )
+      }
+    />
   );
 }
 

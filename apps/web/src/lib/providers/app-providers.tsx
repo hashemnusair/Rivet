@@ -223,8 +223,22 @@ function SessionProvider({ children }: { children: ReactNode }) {
     convexSessionKey.current = key;
     setSessionLoading(true);
 
-    void getApi()
-      .getSession()
+    const api = getApi();
+    const rememberedBranch = window.sessionStorage.getItem(STORAGE_KEYS.branch) as UUID | null;
+    const loadSession = async () => {
+      if (!rememberedBranch) return await api.getSession();
+      try {
+        // The branch is presentation context, never an authorization claim.
+        // Convex validates it against the signed-in membership on every call.
+        return await api.setActiveBranch(rememberedBranch);
+      } catch (error) {
+        if (!isApiError(error) || (error.code !== ERR.FORBIDDEN && error.code !== ERR.NOT_FOUND)) throw error;
+        window.sessionStorage.removeItem(STORAGE_KEYS.branch);
+        return await api.getSession();
+      }
+    };
+
+    void loadSession()
       .then((nextSession) => {
         setSession(nextSession);
         setSignedIn(true);
@@ -329,19 +343,18 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const setBranch = useCallback(
     async (branchId: UUID | undefined) => {
       const s = await getApi().setActiveBranch(branchId);
-      if (!convexMode) {
-        if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
-        else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
-      }
+      if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
+      else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
       queryClient.invalidateQueries();
     },
-    [convexMode, queryClient],
+    [queryClient],
   );
 
   const selectOrganization = useCallback(async (organizationId: UUID) => {
     if (!convexMode) return;
     const nextSession = await getApi().selectOrganization(organizationId);
+    window.sessionStorage.removeItem(STORAGE_KEYS.branch);
     setSession(nextSession);
     queryClient.clear();
   }, [convexMode, queryClient]);

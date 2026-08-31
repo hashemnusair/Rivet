@@ -124,6 +124,20 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 });
 
 test.describe("reception check-in", () => {
+  test("treats a missing branch as operating scope and remembers the desk", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/reception");
+
+    await expect(page.getByRole("heading", { name: "Choose a branch to open Reception" })).toBeVisible();
+    await expect(page.getByText("Not allowed for this role")).toHaveCount(0);
+    await page.getByRole("button", { name: "Forge — Abdoun" }).click();
+    await expect(page.getByTestId("reception-search")).toBeFocused();
+
+    await page.reload();
+    await expect(page.getByTestId("reception-search")).toBeFocused();
+    await expect(page.getByText("Front desk · Forge — Abdoun")).toBeVisible();
+  });
+
   test("looks a member up, checks them in, and updates today's attendance log", async ({ page }) => {
     await signIn(page, "Reception");
     // Reception signs straight into the console, not the dashboard.
@@ -308,7 +322,7 @@ test.describe("settings navigation", () => {
       html: getComputedStyle(document.documentElement).overscrollBehaviorY,
       body: getComputedStyle(document.body).overscrollBehaviorY,
     }));
-    expect(rootScrollPhysics).toEqual({ html: "none", body: "none" });
+    expect(rootScrollPhysics).toEqual({ html: "contain", body: "contain" });
     const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);
