@@ -148,7 +148,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
     if (!upcoming || autoAdvanced.current) return;
     autoAdvanced.current = true;
     const start = todayISODate();
-    const end = addDays(start, 6 - new Date(`${start}T12:00:00Z`).getUTCDay());
+    const end = addDays(start, 6);
     const firstWithClasses = upcoming
       .map((occurrence) => occurrence.date)
       .filter((value) => value >= start && value <= end)
@@ -174,9 +174,9 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   if (!value.policy.enabled) return <section className="mt-5 rounded-lg border border-line bg-surface p-6 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h2 className="mt-3 text-[16px] font-semibold">Class booking is managed at reception</h2><p className="mt-1 text-[12.5px] text-ink-3">{value.gymName} has not enabled member self-booking yet.</p></section>;
 
   const today = todayISODate();
-  // Sunday-first week, matching the gym's schedule.
-  const weekStart = addDays(today, -new Date(`${today}T12:00:00Z`).getUTCDay());
-  const weekEnd = addDays(weekStart, 6);
+  // Rolling seven days, matching the staff view's dated window: a new day
+  // opens at the far end as each day passes.
+  const weekEnd = addDays(today, 6);
   const date = selectedDate < today ? today : selectedDate > weekEnd ? weekEnd : selectedDate;
   const dayOccurrences = value.upcoming.filter((occurrence) => occurrence.date === date);
   const attendedCount = value.history.filter((occurrence) => occurrence.booking?.status === "attended").length;
@@ -192,7 +192,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
     {panelView === "week" ? <section aria-label="This week's classes">
       <div className="mb-3 flex items-center justify-between gap-3">
         <Button variant="secondary" size="sm" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
-        <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[10.5px] text-ink-3">This week only — next week opens on Sunday.</p></div>
+        <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[10.5px] text-ink-3">Next 7 days — a new day opens as each one passes.</p></div>
         <Button variant="secondary" size="sm" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
       </div>
       {dayOccurrences.length ? (

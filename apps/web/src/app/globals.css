@@ -446,9 +446,13 @@
   }
   .print-schedule [data-print-schedule] button {
     background: #fff !important;
-    border: 1.5px solid #000 !important;
+    border: 1px solid #000 !important;
     box-shadow: none !important;
     color: #000 !important;
+    transform: none !important;
+  }
+  .print-schedule [data-print-schedule] [data-chip-accent] {
+    background: #000 !important;
   }
   .print-schedule [data-print-schedule] button * {
     color: #000 !important;

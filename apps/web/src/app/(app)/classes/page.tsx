@@ -12,6 +12,7 @@ import { qk } from "@/lib/api/keys";
 import type { ClassAudience, ClassCoach, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { cn } from "@/lib/utils/cn";
 import { getApi } from "@/lib/api/client";
 import { addDays, formatDate, formatDateTime, todayISODate } from "@/lib/utils/dates";
 
@@ -236,10 +237,10 @@ export default function ClassesPage() {
   const branchName = branches.find((branch) => branch.id === branchId)?.name ?? "";
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8" data-print-root>
+    <div className="px-4 py-5 sm:px-6 lg:px-8" data-print-root>
       <div className="mx-auto max-w-[1600px]">
-        <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
-          <div><p className="eyebrow">Studio</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Classes</h1><p className="mt-2 text-[12.5px] text-ink-2">One fixed weekly timetable. Click a class for details, rosters, and changes; press an open slot to add one.</p></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="min-w-0"><h1 className="text-[22px] font-semibold tracking-tight">Classes</h1><p className="mt-0.5 text-[12px] text-ink-3">Click a class for details and rosters; press an open slot to add one.</p></div>
           <div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
               <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
@@ -274,32 +275,36 @@ export default function ClassesPage() {
         {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : sessionsQuery.isError ? (
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface" data-print-schedule>
-            <div style={{ minWidth: `${110 + visibleHours * 72}px` }}>
-              <div className="grid" style={{ gridTemplateColumns: "110px 1fr" }}>
-                <div className="border-b border-line bg-sunken px-3 py-2 font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Day</div>
-                <div className="relative border-b border-s border-line bg-sunken">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface shadow-sm" data-print-schedule>
+            <div style={{ minWidth: `${96 + visibleHours * 76}px` }}>
+              <div className="grid" style={{ gridTemplateColumns: "96px 1fr" }}>
+                <div className="border-b border-line" />
+                <div className="relative border-b border-line">
                   <div className="grid h-full" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
                     {Array.from({ length: visibleHours }, (_, index) => (
-                      <div key={index} className="border-s border-line/60 py-2 text-center font-mono text-[8px] uppercase tracking-[.05em] text-ink-3 first:border-s-0">{String(firstHour + index).padStart(2, "0")}:00</div>
+                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[9px] text-ink-3">{String(firstHour + index).padStart(2, "0")}:00</div>
                     ))}
                   </div>
                 </div>
                 {DAYS.map((label, day) => {
                   const items = byDay[day]!;
                   const lanes = Math.max(1, items[0]?.laneCount ?? 1);
+                  const isToday = new Date().getDay() === day;
                   return (
                     <div key={label} className="contents">
-                      <div className="border-b border-line px-3 py-3 text-[11.5px] font-semibold">{label}</div>
+                      <div className={cn("flex items-center gap-1.5 border-b border-line/70 px-3 text-[11.5px]", isToday ? "font-semibold" : "font-medium text-ink-2")}>
+                        {isToday ? <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} /> : null}
+                        {label}
+                      </div>
                       <div
-                        className={`relative border-b border-s border-line ${canManage ? "cursor-cell" : ""}`}
-                        style={{ minHeight: `${Math.max(56, lanes * 52 + 8)}px` }}
+                        className={cn("relative border-b border-line/70", canManage && "cursor-cell", isToday && "bg-sunken/40")}
+                        style={{ minHeight: `${Math.max(64, lanes * 58 + 10)}px` }}
                         onClick={rowClick(day)}
                         role={canManage ? "button" : undefined}
                         aria-label={canManage ? `Add a class on ${label}` : undefined}
                       >
                         <div className="pointer-events-none absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
-                          {Array.from({ length: visibleHours }, (_, index) => <div key={index} className="border-s border-line/40 first:border-s-0" />)}
+                          {Array.from({ length: visibleHours }, (_, index) => <div key={index} className="border-s border-line/25 first:border-s-0" />)}
                         </div>
                         {items.map((item) => {
                           const left = ((item.startMinute - firstHour * 60) / (visibleHours * 60)) * 100;
@@ -310,16 +315,17 @@ export default function ClassesPage() {
                               type="button"
                               onClick={(event) => { event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); else openNextOccurrence(item.id); }}
                               onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
-                              className="absolute overflow-hidden rounded-md border border-signal/50 bg-signal-bg/70 px-2 py-1 text-start text-[10px] leading-tight shadow-sm transition-colors hover:border-signal"
-                              style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3, Math.min(width, 100 - left))}%`, top: `${4 + item.lane * 52}px`, height: "48px" }}
+                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[10.5px] leading-tight shadow-sm transition-all hover:-translate-y-px hover:border-line-3 hover:shadow-md"
+                              style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3.5, Math.min(width, 100 - left))}%`, top: `${5 + item.lane * 58}px`, height: "54px" }}
                               aria-label={`${item.name}, ${DAYS[item.dayOfWeek]} ${rangeLabel(item)}`}
                               title={`${item.name} — ${rangeLabel(item)} · ${item.roster.length}/${item.capacity}${item.coachName ? ` · ${item.coachName}` : ""}`}
                             >
-                              <span className="flex items-center gap-1">
-                                <span className="truncate font-semibold">{item.name}</span>
-                                {item.audience !== "mixed" ? <span className="shrink-0 rounded-sm bg-night px-1 font-mono text-[7px] uppercase text-night-ink">{item.audience === "women" ? "W" : "M"}</span> : null}
+                              <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
+                              <span className="flex items-center gap-1.5">
+                                <span className="truncate text-[11px] font-semibold">{item.name}</span>
+                                {item.audience !== "mixed" ? <span className="shrink-0 rounded-full border border-line-2 px-1.5 text-[8px] font-medium text-ink-2">{item.audience === "women" ? "Women" : "Men"}</span> : null}
                               </span>
-                              <span className="block truncate text-ink-3">{item.roster.length}/{item.capacity}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
+                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3">{rangeLabel(item).split("–")[0]} · {item.roster.length}/{item.capacity}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
                             </button>
                           );
                         })}
