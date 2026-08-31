@@ -166,6 +166,17 @@ export interface CustomerReferralProgram {
   successfulReferrals: number;
   recordedReferrals: number;
   sharePath?: string;
+  /** Dated, member-safe reward history — never names the referred person. */
+  history: CustomerReferralRewardEvent[];
+}
+
+export type CustomerReferralRewardStatus = "applied" | "capped" | "ineligible" | "pending";
+
+export interface CustomerReferralRewardEvent {
+  id: string;
+  occurredAt: string;
+  days: number;
+  status: CustomerReferralRewardStatus;
 }
 
 export interface CustomerVisit {
@@ -224,6 +235,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     id: "forge-fitness",
     name: "Forge Fitness Club",
     shortName: "FORGE",
+    contactPhone: "+962 79 555 0100",
     tagline: "Strength, conditioning, and a floor that remembers your name.",
     description:
       "A serious but welcoming training club with two Amman branches, coached small groups, open gym, and practical plans for people who train consistently.",
@@ -435,6 +447,7 @@ export const INITIAL_CUSTOMER_MEMBERSHIPS: CustomerMembership[] = [
       remainingDays: 30,
       successfulReferrals: 0,
       recordedReferrals: 0,
+      history: [],
     },
     visitHistory: [
       { id: "visit-lina-3", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-30T19:12:00+03:00", decision: "allowed", checkedInByName: "Front desk" },

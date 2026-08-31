@@ -2670,6 +2670,30 @@ async function customerReferralProgramData(ctx: ReadContext, organization: Organ
   const currentRewards = memberRewards.filter((row) => row.createdAt >= windowStart);
   const earnedDays = currentRewards.reduce((sum, row) => sum + numberValue(data(row.data).days), 0);
   const link = links.map((row) => data(row.data)).find((row) => booleanValue(row.active, true) && row.membershipId === internalMembershipId);
+  // Attributed members whose first sale has not landed yet appear as dated
+  // "pending" rows. History rows carry only dates, days, and status — never
+  // the referred person's name or any other identifying detail.
+  const rewardedReferredIds = new Set(memberRewards.map((row) => stringValue(data(row.data).referredMemberId)));
+  const attributedMembers = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect())
+    .map((row) => data(row.data))
+    .filter((row) => stringValue(row.referredByMemberId) === memberId && stringValue(row.status) !== "archived" && !rewardedReferredIds.has(stringValue(row.id)));
+  const history = [
+    ...memberRewards.map((row) => {
+      const value = data(row.data);
+      const status = stringValue(value.status);
+      return {
+        occurredAt: stringValue(value.createdAt, utcIso(row.createdAt)),
+        days: numberValue(value.days),
+        status: status === "applied" ? "applied" : status === "cap_reached" ? "capped" : "ineligible",
+      };
+    }),
+    ...attributedMembers.map((row) => ({ occurredAt: stringValue(row.createdAt), days: 0, status: "pending" })),
+  ]
+    .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)))
+    .slice(0, 24)
+    // Synthetic ids: reward row ids embed the referred member's id, which
+    // must never reach the referrer's browser.
+    .map((event, index) => ({ id: `referral-event-${index}`, ...event }));
   return {
     membershipId: portalMembershipId,
     enabled: booleanValue(policy.enabled),
@@ -2681,6 +2705,7 @@ async function customerReferralProgramData(ctx: ReadContext, organization: Organ
     successfulReferrals: memberRewards.filter((row) => stringValue(data(row.data).status) === "applied").length,
     recordedReferrals: memberRewards.length,
     sharePath: link ? `/customer/gyms/${encodeURIComponent(gymId)}?ref=${encodeURIComponent(stringValue(link.id))}` : undefined,
+    history,
   };
 }
 

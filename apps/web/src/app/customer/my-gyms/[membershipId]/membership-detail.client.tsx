@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, Copy, CreditCard, Dumbbell, Gift, MapPin, QrCode, ScanLine, Share2, Ticket, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, Copy, CreditCard, Dumbbell, Gift, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, Ticket, Users } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -19,7 +19,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
-import type { CustomerMembership, CustomerReferralProgram, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerReferralProgram, CustomerReferralRewardEvent, CustomerVisit, MarketplaceGym } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
 import { addDays, daysFromToday, diffDays, formatDate, formatDateTime, formatTime, formatWeekday, todayISODate } from "@/lib/utils/dates";
 
@@ -122,7 +122,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         </div>
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
         <FreezeRequestCard membershipId={membership.id} />
-        {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}
+        {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} gymPhone={gym.contactPhone} /> : null}
         <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
@@ -131,7 +131,14 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
   );
 }
 
-function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerReferralProgram; gymName: string }) {
+const REFERRAL_STATUS_META: Record<CustomerReferralRewardEvent["status"], { label: string; explanation: string; tone: string }> = {
+  applied: { label: "Applied", explanation: "Your friend bought their first membership, so the free days were added.", tone: "bg-success-bg text-success-deep" },
+  capped: { label: "Capped", explanation: "This landed after the reward cap for the current window was reached.", tone: "bg-warning-bg text-warning-deep" },
+  ineligible: { label: "Not applied", explanation: "There was no active membership to extend when the reward landed.", tone: "bg-sunken-2 text-ink-2" },
+  pending: { label: "Waiting", explanation: "Counts once your friend buys their first membership.", tone: "bg-sunken-2 text-ink-2" },
+};
+
+function ReferralCard({ initialProgram, gymName, gymPhone }: { initialProgram: CustomerReferralProgram; gymName: string; gymPhone?: string }) {
   const [program, setProgram] = useState(initialProgram);
   useEffect(() => setProgram(initialProgram), [initialProgram]);
   const ensureLink = useApiMutation((api, membershipId: string) => api.ensureCustomerReferralLink(membershipId), { onSuccess: setProgram });
@@ -151,8 +158,28 @@ function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerRef
   };
   return <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="referral-title">
     <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
-      <div className="p-5"><span className="flex size-9 items-center justify-center rounded-md bg-success-bg text-success-deep"><Gift className="size-4" aria-hidden /></span><p className="eyebrow mt-4">Member referrals</p><h2 id="referral-title" className="mt-1 font-display text-[18px] font-semibold">Bring a friend. Earn {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"}.</h2><p className="mt-2 max-w-2xl text-[12.5px] leading-5 text-ink-2">Share your link. If your friend books through it and buys their first membership, {gymName} applies the reward automatically.</p><div className="mt-4 flex flex-wrap gap-2">{sharePath ? <><Button onClick={() => void share()}><Share2 /> Share link</Button><Button variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button></> : <Button loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>}</div></div>
+      <div className="p-5"><span className="flex size-9 items-center justify-center rounded-md bg-success-bg text-success-deep"><Gift className="size-4" aria-hidden /></span><p className="eyebrow mt-4">Member referrals</p><h2 id="referral-title" className="mt-1 font-display text-[18px] font-semibold">Bring a friend. Earn {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"}.</h2><p className="mt-2 max-w-2xl text-[12.5px] leading-5 text-ink-2">Share your link. If your friend books through it and buys their first membership, {gymName} applies the reward automatically.</p><div className="mt-4 flex flex-wrap gap-2">{sharePath ? <><Button onClick={() => void share()}><Share2 /> Share link</Button><Button variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button></> : <Button loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>}{gymPhone ? <><Button variant="secondary" asChild><a href={`https://wa.me/${gymPhone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(`Hi ${gymName}, I want to refer a friend from my membership.`)}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp the gym</a></Button><Button variant="ghost" asChild><a href={`tel:${gymPhone}`}><Phone /> Call</a></Button></> : null}</div></div>
       <div className="border-t border-line bg-sunken p-5 lg:border-s lg:border-t-0"><div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Users className="size-4 text-ink-3" /> Reward progress</span><span className="font-mono text-[11px] text-ink-3">{program.earnedDays}/{program.maxRewardDaysPerWindow} days</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className="h-full rounded-full bg-success transition-[width]" style={{ width: `${progress}%` }} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-[11.5px]"><div><dt className="text-ink-3">Successful referrals</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.successfulReferrals}</dd></div><div><dt className="text-ink-3">Days still available</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.remainingDays}</dd></div></dl><p className="mt-4 text-[10.5px] leading-4 text-ink-3">The {program.maxRewardDaysPerWindow}-day cap looks back {program.windowDays} days. A referral counts once, after the first membership sale.</p></div>
+    </div>
+    <div className="border-t border-line p-5">
+      <h3 className="text-[12.5px] font-medium text-ink">Reward history</h3>
+      {program.history.length === 0 ? (
+        <p className="mt-2 max-w-xl text-[12px] leading-5 text-ink-3">No rewards yet. Your first {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"} arrive after a friend joins through your link and buys their first membership.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line" aria-label="Referral reward history">
+          {program.history.map((event) => {
+            const meta = REFERRAL_STATUS_META[event.status];
+            return (
+              <li key={event.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-[12.5px]">
+                <span className="w-24 shrink-0 text-ink-3">{formatDate(event.occurredAt)}</span>
+                <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-medium", meta.tone)}>{meta.label}</span>
+                <span className="font-medium text-ink">{event.days > 0 ? `+${event.days} day${event.days === 1 ? "" : "s"}` : "0 days"}</span>
+                <span className="min-w-0 flex-1 basis-full text-[11.5px] text-ink-3 sm:basis-auto">{meta.explanation}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   </section>;
 }

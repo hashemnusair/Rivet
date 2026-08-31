@@ -960,7 +960,24 @@ export class MockGymOSApi implements GymOSApi {
     const currentRewards = rewards.filter((reward) => Date.parse(reward.createdAt) >= windowStart);
     const earnedDays = currentRewards.reduce((sum, reward) => sum + reward.days, 0);
     const link = this.referralLinks.get(membership.id);
-    return { membershipId: membership.id, enabled: policy.enabled, rewardDays: policy.rewardDays, maxRewardDaysPerWindow: policy.maxRewardDaysPerWindow, windowDays: policy.windowDays, earnedDays, remainingDays: Math.max(0, policy.maxRewardDaysPerWindow - earnedDays), successfulReferrals: rewards.filter((reward) => reward.status === "applied").length, recordedReferrals: rewards.length, sharePath: link ? `/customer/gyms/${encodeURIComponent(membership.gymId)}?ref=${encodeURIComponent(link.token)}` : undefined };
+    // Parity with Convex: dated history without the referred person's identity.
+    const rewardedReferredIds = new Set(rewards.map((reward) => reward.referredMemberId));
+    const pending = this.db.members
+      .filter((candidate) => (candidate as MemberRecord & { referredByMemberId?: string }).referredByMemberId === member.id && candidate.status !== "archived" && !rewardedReferredIds.has(candidate.id))
+      .map((candidate) => ({ occurredAt: candidate.createdAt, days: 0, status: "pending" as const }));
+    const history = [
+      ...rewards.map((reward) => ({
+        occurredAt: reward.createdAt,
+        days: reward.days,
+        status: reward.status === "applied" ? ("applied" as const) : reward.status === "cap_reached" ? ("capped" as const) : ("ineligible" as const),
+      })),
+      ...pending,
+    ]
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .slice(0, 24)
+      // Parity with Convex: synthetic ids so nothing keys back to the referred member.
+      .map((event, index) => ({ id: `referral-event-${index}`, ...event }));
+    return { membershipId: membership.id, enabled: policy.enabled, rewardDays: policy.rewardDays, maxRewardDaysPerWindow: policy.maxRewardDaysPerWindow, windowDays: policy.windowDays, earnedDays, remainingDays: Math.max(0, policy.maxRewardDaysPerWindow - earnedDays), successfulReferrals: rewards.filter((reward) => reward.status === "applied").length, recordedReferrals: rewards.length, sharePath: link ? `/customer/gyms/${encodeURIComponent(membership.gymId)}?ref=${encodeURIComponent(link.token)}` : undefined, history };
   }
 
   getCustomerExperience(): Promise<CustomerExperience> {

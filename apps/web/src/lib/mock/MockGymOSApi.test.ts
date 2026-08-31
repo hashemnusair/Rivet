@@ -2093,6 +2093,9 @@ describe("free-trial lifecycle", () => {
     expect(referrerMembership.endDate).toBe(addDays(originalEndDate, 7));
     const after = (await api.getCustomerExperience()).memberships.find((item) => item.id === customerMembership.id)!.referral!;
     expect(after).toMatchObject({ earnedDays: 7, remainingDays: 23, successfulReferrals: 1, recordedReferrals: 1 });
+    // The dated history reports the applied reward without naming the friend.
+    expect(after.history[0]).toMatchObject({ days: 7, status: "applied" });
+    expect(JSON.stringify(after.history)).not.toMatch(/Referral Prospect|referral-prospect/);
   });
 
   it("reuses one matching member created by the legacy CRM flow and only adds the membership", async () => {
