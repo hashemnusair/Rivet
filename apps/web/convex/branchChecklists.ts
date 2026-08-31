@@ -2,7 +2,6 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import {
   domainError,
-  hasPermission,
   publicBranchId,
   publicUserId,
   requirePermission,
@@ -194,7 +193,7 @@ export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, ope
             .filter((row) => actor.branchScope === "all" || actor.branchIds.includes(row.branchId));
       const branches = new Map((await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).map((branch) => [branch._id, publicBranchId(branch)]));
       return rows
-        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1))
         .map((row) => templateView(row, branches.get(row.branchId) ?? ""));
     }
 
@@ -230,7 +229,7 @@ export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, ope
           overdue: pastDue && progress.requiredPending > 0,
         };
       });
-      return { branchId: branchPublic, date, runs: views.sort((a, b) => String(a.type).localeCompare(String(b.type)) || String(a.name).localeCompare(String(b.name))) };
+      return { branchId: branchPublic, date, runs: views.sort((a, b) => (a.type === b.type ? String(a.name).localeCompare(String(b.name)) : a.type === "opening" ? -1 : 1)) };
     }
 
     default:

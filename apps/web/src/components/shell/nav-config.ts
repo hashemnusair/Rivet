@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   CalendarDays,
+  ClipboardCheck,
   Boxes,
   Gauge,
   KanbanSquare,
@@ -42,6 +43,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { href: "/reception", label: "Reception", icon: ShieldCheck },
+      { href: "/checklists", label: "Daily checklist", icon: ClipboardCheck, anyPermission: ["members.read"] },
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
       { href: "/classes", label: "Classes", icon: CalendarDays, anyPermission: ["members.read"] },
       { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },

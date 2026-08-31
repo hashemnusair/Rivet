@@ -1090,7 +1090,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.branchId && !this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
       return this.checklistTemplates
         .filter((template) => (input.branchId ? template.branchId === input.branchId : this.branchIsVisible(template.branchId)))
-        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1))
         .map((template) => ({ ...template, items: template.items.map((item) => ({ ...item })) }));
     });
   }
@@ -1146,7 +1146,7 @@ export class MockGymOSApi implements GymOSApi {
             progress: { done: 0, total: 0, requiredPending: 0, failedRequired: 0 }, complete: false, overdue: false,
           });
         })
-        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1));
       return { branchId: input.branchId, date, runs };
     });
   }
