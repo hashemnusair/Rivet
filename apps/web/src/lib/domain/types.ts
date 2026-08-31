@@ -506,6 +506,9 @@ export interface ClassBookingPolicy {
   waitlistEnabled: boolean;
   waitlistSize: number;
   noShowTracking: boolean;
+  /** Optional visible calendar bounds; automatic when unset. */
+  calendarStartHour?: number;
+  calendarEndHour?: number;
 }
 
 export interface CustomerClassExperience {

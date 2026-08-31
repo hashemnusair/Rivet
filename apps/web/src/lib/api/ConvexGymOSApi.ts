@@ -715,6 +715,7 @@ export class ConvexGymOSApi implements GymOSApi {
   removeClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> { return this.mutate("classes.roster.remove", input); }
   setClassAttendance(input: T.ClassAttendanceInput): Promise<T.ClassSession> { return this.mutate("classes.attendance.set", input); }
   listClassOccurrences(query: T.ClassOccurrenceQuery): Promise<T.ClassOccurrence[]> { return this.query("classes.occurrences.list", query); }
+  getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> { return this.query("classes.calendar", {}); }
   getCustomerClassExperience(membershipId: T.UUID): Promise<T.CustomerClassExperience> { return this.query("customer.classes", { membershipId }); }
   bookCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> { return this.mutate("customer.classes.book", input); }
   cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> { return this.mutate("customer.classes.cancel", input); }

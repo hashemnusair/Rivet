@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import type { ClassAudience, ClassCoach, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { PageHeader } from "@/components/shared/chrome";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { getApi } from "@/lib/api/client";
@@ -83,6 +84,7 @@ export default function ClassesPage() {
   const weekStart = todayISODate();
   const weekEnd = addDays(weekStart, 6);
   const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd }), { enabled: Boolean(branchId) });
+  const calendarBoundsQuery = useApiQuery(qk.classCalendarBounds, (api) => api.getClassCalendarBounds());
 
   const [editor, setEditor] = useState<EditorState>();
   const [manageId, setManageId] = useState<string>();
@@ -215,16 +217,21 @@ export default function ClassesPage() {
   const byDay = useMemo(() => DAYS.map((_, day) => withLanes((sessionsQuery.data ?? []).filter((item) => item.dayOfWeek === day))), [sessionsQuery.data]);
 
   const { firstHour, visibleHours } = useMemo(() => {
-    let first = DEFAULT_FIRST_HOUR;
-    let last = DEFAULT_LAST_HOUR;
-    for (const item of sessionsQuery.data ?? []) {
+    const sessions = sessionsQuery.data ?? [];
+    const bounds = calendarBoundsQuery.data;
+    // The window hugs the gym's own classes so the grid always fits without
+    // horizontal scrolling; explicit Settings hours widen or pin it, and any
+    // class outside them still stretches the window rather than hiding.
+    let first = bounds?.startHour ?? (sessions.length ? 23 : DEFAULT_FIRST_HOUR);
+    let last = bounds?.endHour ?? (sessions.length ? 1 : DEFAULT_LAST_HOUR);
+    for (const item of sessions) {
       first = Math.min(first, Math.floor(item.startMinute / 60));
       last = Math.max(last, Math.ceil((item.startMinute + item.durationMinutes) / 60));
     }
-    // The visible day never extends past midnight; a legacy class that
-    // crosses it renders clipped at 24:00 instead of stretching the grid.
-    return { firstHour: first, visibleHours: Math.max(1, Math.min(24, last) - first) };
-  }, [sessionsQuery.data]);
+    // Never past midnight; a legacy overnight class renders clipped at 24:00.
+    last = Math.min(24, Math.max(last, first + 4));
+    return { firstHour: Math.max(0, first), visibleHours: Math.max(1, last - first) };
+  }, [sessionsQuery.data, calendarBoundsQuery.data]);
 
   const rowClick = (day: number) => (event: React.MouseEvent<HTMLDivElement>) => {
     if (!canManage || event.target !== event.currentTarget) return;
@@ -237,11 +244,13 @@ export default function ClassesPage() {
   const branchName = branches.find((branch) => branch.id === branchId)?.name ?? "";
 
   return (
-    <div className="px-4 py-5 sm:px-6 lg:px-8" data-print-root>
-      <div className="mx-auto max-w-[1600px]">
-        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <div className="min-w-0"><h1 className="text-[22px] font-semibold tracking-tight">Classes</h1><p className="mt-0.5 text-[12px] text-ink-3">Click a class for details and rosters; press an open slot to add one.</p></div>
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-5" data-print-root>
+      <div className="print:hidden">
+        <PageHeader
+          eyebrow="Operations"
+          title="Classes"
+          description="One fixed weekly timetable. Click a class for details and rosters; press an open slot to add one."
+          actions={<div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
               <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
@@ -250,8 +259,9 @@ export default function ClassesPage() {
             {canManage ? <Button variant="secondary" onClick={() => setCoachesOpen(true)}><Users /> Coaches</Button> : null}
             <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer /> Print</Button>
             {canManage ? <Button variant="signal" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
-          </div>
-        </div>
+          </div>}
+        />
+      </div>
 
         <div className="hidden print:block" data-print-header>
           <div className="flex items-end justify-between gap-6 border-b-2 border-black pb-3">
@@ -276,7 +286,7 @@ export default function ClassesPage() {
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface shadow-sm" data-print-schedule>
-            <div style={{ minWidth: `${96 + visibleHours * 76}px` }}>
+            <div className="min-w-[560px]">
               <div className="grid" style={{ gridTemplateColumns: "96px 1fr" }}>
                 <div className="border-b border-line" />
                 <div className="relative border-b border-line">
@@ -539,7 +549,6 @@ export default function ClassesPage() {
             ) : null}
           </DialogContent>
         </Dialog>
-      </div>
     </div>
   );
 }

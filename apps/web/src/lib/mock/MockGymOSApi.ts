@@ -9096,6 +9096,10 @@ export class MockGymOSApi implements GymOSApi {
   updateOperationalPolicies(input: T.OperationalPolicies): Promise<T.OrganizationSettings> {
     return this.respond(() => {
       this.require("settings.manage");
+      const calendar = input.classBooking ?? {};
+      if (calendar.calendarStartHour !== undefined && (!Number.isSafeInteger(calendar.calendarStartHour) || calendar.calendarStartHour < 0 || calendar.calendarStartHour > 23)) throw ApiError.of(ERR.VALIDATION, "Calendar start hour must be between 00 and 23.");
+      if (calendar.calendarEndHour !== undefined && (!Number.isSafeInteger(calendar.calendarEndHour) || calendar.calendarEndHour < 1 || calendar.calendarEndHour > 24)) throw ApiError.of(ERR.VALIDATION, "Calendar end hour must be between 01 and 24.");
+      if (calendar.calendarStartHour !== undefined && calendar.calendarEndHour !== undefined && calendar.calendarEndHour <= calendar.calendarStartHour) throw ApiError.of(ERR.VALIDATION, "The calendar must end after it starts.");
       this.db.operationalPolicies = structuredClone(input);
       this.audit({
         category: "settings",
@@ -9657,6 +9661,13 @@ export class MockGymOSApi implements GymOSApi {
       const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
       this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
       return result;
+    });
+  }
+
+  getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {
+    return this.respond(() => {
+      const policy = this.db.operationalPolicies.classBooking;
+      return { startHour: policy.calendarStartHour, endHour: policy.calendarEndHour };
     });
   }
 

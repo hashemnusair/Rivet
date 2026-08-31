@@ -1006,6 +1006,12 @@ async function removeCoach(ctx: MutationCtx, actor: ActorContext, input: Data): 
 export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
   switch (operation) {
     case "classes.sessions.list": return await listClassSessions(ctx, actor, input);
+    case "classes.calendar": {
+      const policy = await classPolicy(ctx, actor.organization._id);
+      const start = Number(policy.calendarStartHour);
+      const end = Number(policy.calendarEndHour);
+      return { startHour: Number.isSafeInteger(start) ? start : undefined, endHour: Number.isSafeInteger(end) ? end : undefined };
+    }
     case "classes.occurrences.list": return await staffOccurrences(ctx, actor, input);
     case "classes.coaches.list": return await listCoaches(ctx, actor);
     default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { correlationId: actor.correlationId });

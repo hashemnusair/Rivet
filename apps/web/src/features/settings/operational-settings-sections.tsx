@@ -290,6 +290,24 @@ export function OperationalRulesSection() {
               <div className="flex min-h-9 items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-ink">Waitlist</p><p className="mt-0.5 text-[11.5px] text-ink-3">Promote the earliest waiting member automatically.</p></div><Switch checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} aria-label="Class waitlist" /></div>
               <NumberSetting label="Waitlist limit" unit="members" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} />
               <div className="flex min-h-9 items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-ink">Track no-shows</p><p className="mt-0.5 text-[11.5px] text-ink-3">Count only after attendance is finalized.</p></div><Switch checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} aria-label="Track class no-shows" /></div>
+              <div className="sm:col-span-2 border-t border-line pt-3">
+                <p className="text-[13px] font-medium text-ink">Calendar hours</p>
+                <p className="mt-0.5 text-[11.5px] text-ink-3">The visible day on the classes calendar. Automatic hugs your first and last class.</p>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <label className="grid gap-1 text-[11px] text-ink-3">First hour
+                    <select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={policies.classBooking.calendarStartHour ?? ""} onChange={(event) => updateClassBooking("calendarStartHour", event.target.value === "" ? undefined : Number(event.target.value))} aria-label="Calendar first hour">
+                      <option value="">Automatic</option>
+                      {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-[11px] text-ink-3">Last hour
+                    <select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={policies.classBooking.calendarEndHour ?? ""} onChange={(event) => updateClassBooking("calendarEndHour", event.target.value === "" ? undefined : Number(event.target.value))} aria-label="Calendar last hour">
+                      <option value="">Automatic</option>
+                      {Array.from({ length: 24 }, (_, index) => { const hour = index + 1; return <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>; })}
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
           </fieldset>
         </SettingsPanel>

@@ -189,18 +189,20 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
       <button type="button" role="tab" aria-selected={panelView === "history"} onClick={() => setPanelView("history")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "history" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>My history{attendedCount ? <span className="ms-1.5 font-mono text-[10.5px] font-normal opacity-70">{attendedCount}</span> : null}</button>
     </div>
 
-    {panelView === "week" ? <section aria-label="This week's classes">
+    {panelView === "week" ? <section aria-label="This week's classes" className="animate-fade-up">
       <div className="mb-3 flex items-center justify-between gap-3">
         <Button variant="secondary" size="sm" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
         <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[10.5px] text-ink-3">Next 7 days — a new day opens as each one passes.</p></div>
         <Button variant="secondary" size="sm" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
       </div>
-      {dayOccurrences.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{dayOccurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
-      ) : (
-        <div className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes on this day</h3><p className="mt-1 text-[12px] text-ink-3">Use the arrows to check the rest of the week.</p></div>
-      )}
-    </section> : <section aria-label="My class history" className="overflow-hidden rounded-lg border border-line bg-surface">
+      <div key={date} className="animate-fade-up">
+        {dayOccurrences.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{dayOccurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
+        ) : (
+          <div className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes on this day</h3><p className="mt-1 text-[12px] text-ink-3">Use the arrows to check the rest of the week.</p></div>
+        )}
+      </div>
+    </section> : <section aria-label="My class history" className="animate-fade-up overflow-hidden rounded-lg border border-line bg-surface">
       {value.history.length ? <div className="divide-y divide-line">{value.history.map((occurrence) => {
         const status = occurrence.booking?.status;
         return <div key={occurrence.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">

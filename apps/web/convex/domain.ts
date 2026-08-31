@@ -1365,13 +1365,18 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
     }
     trialSchedules.push({ branchId, days: validatedDays });
   }
+  const calendarStartHour = classBooking.calendarStartHour === undefined || classBooking.calendarStartHour === null || classBooking.calendarStartHour === "" ? undefined : Number(classBooking.calendarStartHour);
+  const calendarEndHour = classBooking.calendarEndHour === undefined || classBooking.calendarEndHour === null || classBooking.calendarEndHour === "" ? undefined : Number(classBooking.calendarEndHour);
+  if (calendarStartHour !== undefined && (!Number.isSafeInteger(calendarStartHour) || calendarStartHour < 0 || calendarStartHour > 23)) domainError("VALIDATION_ERROR", "Calendar start hour must be between 00 and 23.", { correlationId: actor.correlationId });
+  if (calendarEndHour !== undefined && (!Number.isSafeInteger(calendarEndHour) || calendarEndHour < 1 || calendarEndHour > 24)) domainError("VALIDATION_ERROR", "Calendar end hour must be between 01 and 24.", { correlationId: actor.correlationId });
+  if (calendarStartHour !== undefined && calendarEndHour !== undefined && calendarEndHour <= calendarStartHour) domainError("VALIDATION_ERROR", "The calendar must end after it starts.", { correlationId: actor.correlationId });
   return {
     entry: { outstandingBalance, expiryWarningDays, duplicateScanWindowMinutes, enforceOperatingHours: booleanValue(entry.enforceOperatingHours) },
     membership: { allowOverlappingMemberships: booleanValue(membership.allowOverlappingMemberships), renewalWindowDays, minimumFreezeDays, maximumExtensionDays },
     referrals: { enabled: booleanValue(referrals.enabled), rewardDays: referralRewardDays, maxRewardDaysPerWindow: referralCapDays, windowDays: referralWindowDays },
     memberFreezes: { requestsEnabled: booleanValue(memberFreezes.requestsEnabled), freeFreezesPerWindow, extraFreezeFeeMinor, maxDaysPerFreeze, windowDays: freezeWindowDays },
     personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays, cancellationCutoffHours },
-    classBooking: { enabled: booleanValue(classBooking.enabled, true), eligibilityMode: classEligibilityMode, eligiblePlanIds, bookingHorizonDays: classBookingHorizonDays, cancellationCutoffHours: classCancellationCutoffHours, maxActiveBookingsPerMember: maxActiveClassBookings, waitlistEnabled: booleanValue(classBooking.waitlistEnabled, true), waitlistSize: classWaitlistSize, noShowTracking: booleanValue(classBooking.noShowTracking, true) },
+    classBooking: { enabled: booleanValue(classBooking.enabled, true), eligibilityMode: classEligibilityMode, eligiblePlanIds, bookingHorizonDays: classBookingHorizonDays, cancellationCutoffHours: classCancellationCutoffHours, maxActiveBookingsPerMember: maxActiveClassBookings, waitlistEnabled: booleanValue(classBooking.waitlistEnabled, true), waitlistSize: classWaitlistSize, noShowTracking: booleanValue(classBooking.noShowTracking, true), calendarStartHour, calendarEndHour },
     retention: { inactivityDays, expiredWinBackDays, defaultSnoozeDays },
     operatingHours,
     trialSchedules,
@@ -5656,6 +5661,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "operations.equipment_work_orders.list":
     case "operations.equipment.recommendation":
       return await operationsQuery(ctx, actor, operation, input);
+    case "classes.calendar":
     case "classes.sessions.list":
     case "classes.occurrences.list":
     case "classes.coaches.list":

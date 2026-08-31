@@ -29,6 +29,18 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("weekly class schedule", () => {
+  it("serves the gym's calendar hours to any staff actor", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").collect())[0]!;
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "settings", publicId: "settings", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "settings", operationalPolicies: { classBooking: { calendarStartHour: 8, calendarEndHour: 20 } } } });
+    });
+    const reception = t.withIdentity({ subject: "clerk-reception-classes" });
+    const bounds = await reception.query(api.domain.query, operation("classes.calendar", {})) as { startHour?: number; endHour?: number };
+    expect(bounds).toEqual({ startHour: 8, endHour: 20 });
+  });
+
   it("manages the coach directory and keeps class snapshots in step", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

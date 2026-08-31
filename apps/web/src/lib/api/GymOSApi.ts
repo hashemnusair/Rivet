@@ -1152,6 +1152,7 @@ export interface GymOSApi {
   removeClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
   setClassAttendance(input: import("@/lib/domain/types").ClassAttendanceInput): Promise<import("@/lib/domain/types").ClassSession>;
   listClassOccurrences(query: import("@/lib/domain/types").ClassOccurrenceQuery): Promise<import("@/lib/domain/types").ClassOccurrence[]>;
+  getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }>;
   getCustomerClassExperience(membershipId: UUID): Promise<import("@/lib/domain/types").CustomerClassExperience>;
   bookCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
   cancelCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
