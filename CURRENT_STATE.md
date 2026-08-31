@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## Human-readable exports and reliable downloads — 31 August 2026
+
+- Every user-facing export path was inventoried and moved onto shared,
+  spreadsheet-safe CSV and browser-download primitives. CSV files now include
+  a UTF-8 byte-order mark for Excel, CRLF rows, correct quoting, neutralized
+  spreadsheet formulas, sanitized filenames, and delayed object-URL cleanup so
+  Safari has time to finish downloading.
+- The staff Export center no longer puts serialized application objects into a
+  `data_json` cell. Member, lead, payment, membership-liability, audit,
+  personal-training, and operations exports now have explicit human-readable
+  columns, names instead of opaque identifiers where available, gym-local
+  dates and times, labelled statuses, major-unit money plus currency, branch
+  scope, applied filters, and a generated-at preamble. Empty exports retain
+  their useful column headings.
+- A member's “Export my data” archive is now a labelled, sectioned record of
+  profile, memberships, charges and balances, payments and refunds, check-ins,
+  activity timeline, class bookings, trial bookings, and marketing-preference
+  history. It preserves Arabic and other Unicode text and omits the former raw
+  JSON blob.
+- Reports, operational analytics, platform billing, receipt text downloads,
+  import templates/rejected rows, and facility QR downloads now use the same
+  reliable download path. The finance overview export reads every bounded API
+  page in the selected date range instead of exporting only the visible first
+  25 transactions.
+- Production and mock adapters share the same export contract. The server
+  continues to enforce tenant, role, branch, row-count, and byte-size bounds;
+  no browser-side formatter can widen an actor's data scope.
+- New regression coverage verifies formula safety, Unicode, money/date/status
+  formatting, tenant isolation, row and byte limits, idempotency, all seven
+  staff datasets, and the complete member archive. Playwright downloads three
+  representative files to disk and inspects the real contents: staff member
+  directory, complete finance range, and member personal archive.
+- Verification passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, 177 Vitest files / 1,067 tests plus 14 repository-safety
+  tests, the 59-page Production build, 53 credential-free Playwright journeys
+  with 14 isolated-staging journeys explicitly skipped, the Production
+  dependency audit, and `git diff --check`.
+- This batch changes Convex export functions and therefore requires the normal
+  exact-target Production Convex deployment before the hosted app receives the
+  server-generated staff and member archive formats. No Production data,
+  provider setting, schema record, or environment variable was changed here.
+
 ## Payout removal, event details, overlap guard, and branded print — 31 August 2026
 
 - Coach payout is gone end to end: the classes-page button, dialog, and CSV,
