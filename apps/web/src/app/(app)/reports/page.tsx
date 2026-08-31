@@ -11,11 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { MoneyText } from "@/components/shared/data-display";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { formatMoney, money } from "@/lib/utils/money";
+import { buildSectionedCsvDocument, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "@/lib/exports/csv";
+import { downloadTextFile } from "@/lib/exports/download";
 import type { TransactionSummary } from "@/lib/domain/types";
 import { OperationalReports, OPERATIONAL_REPORT_LABELS, type OperationalReportKind } from "@/features/reports/operational-reports";
 
@@ -56,30 +58,70 @@ export default function ReportsPage() {
   const collected = dashboard?.kpis.revenueThisMonth ?? money(0);
   const refunds = transactions.filter((item) => item.type === "refund").reduce((sum, item) => sum + item.amount.amount, 0);
 
-  const exportCsv = () => {
-    if (!dashboard) return;
-    const rows = [
-      ["RIVET operational report", `${from} to ${to}`],
-      [],
-      ["Metric", "Value"],
-      ["Revenue today", formatMoney(dashboard.kpis.revenueToday)],
-      ["Revenue this month", formatMoney(dashboard.kpis.revenueThisMonth)],
-      ["Outstanding", formatMoney(dashboard.kpis.outstandingTotal)],
-      ["New members", String(dashboard.kpis.newMembersThisMonth)],
-      ["Check-ins today", String(dashboard.kpis.checkInsToday)],
-      [],
-      ["Transaction ID", "Occurred", "Member", "Branch", "Method", "Type", "Amount", "Status", "Receipt"],
-      ...transactions.map((item) => [item.id, item.occurredAt, item.memberName, item.branchName, item.method, item.type, formatMoney(item.amount), item.status, item.receiptNumber]),
-    ];
-    const csv = rows.map((row) => row.map((cell) => csvCell(String(cell ?? ""))).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `rivet-report-${from}-${to}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
+  const exportReport = useApiMutation(async (api) => {
+    const all: TransactionSummary[] = [];
+    let nextPage = 1;
+    let totalPages = 1;
+    do {
+      const result = await api.listTransactions({ branchId: session?.activeBranchId, from, to, page: nextPage, pageSize: 100, sort: "-occurredAt" });
+      all.push(...result.items);
+      totalPages = result.totalPages;
+      nextPage += 1;
+    } while (nextPage <= totalPages);
+    return all;
+  }, {
+    successMessage: (items) => `Exported all ${items.length} transactions in this report.`,
+    onSuccess: (items) => {
+      if (!dashboard) return;
+      const timeZone = session?.organization.timezone ?? "Asia/Amman";
+      const activeBranch = session?.branches.find((branch) => branch.id === session.activeBranchId);
+      downloadTextFile({
+        fileName: `rivet-finance-report-${from}-${to}.csv`,
+        mimeType: "text/csv;charset=utf-8",
+        content: buildSectionedCsvDocument({
+          title: "Finance overview and transaction ledger",
+          metadata: [
+            { label: "Date range", value: `${from} to ${to}` },
+            { label: "Timezone", value: timeZone },
+            { label: "Branch scope", value: activeBranch?.name ?? "All accessible branches" },
+          ],
+          sections: [
+            {
+              title: "Overview",
+              headers: ["Metric", "Value"],
+              rows: [
+                ["Revenue today", formatMoney(dashboard.kpis.revenueToday)],
+                ["Revenue this month", formatMoney(dashboard.kpis.revenueThisMonth)],
+                ["Outstanding balance", formatMoney(dashboard.kpis.outstandingTotal)],
+                ["New members this month", dashboard.kpis.newMembersThisMonth],
+                ["Check-ins today", dashboard.kpis.checkInsToday],
+              ],
+            },
+            {
+              title: "Transactions",
+              headers: ["When", "Member", "Member number", "Branch", "Payment method", "Transaction type", "Amount", "Currency", "Status", "Receipt number", "Recorded by", "External reference", "RIVET transaction ID"],
+              rows: items.map((item) => [
+                formatExportDateTime(item.occurredAt, timeZone),
+                item.memberName,
+                item.memberNumber,
+                item.branchName,
+                exportStatusLabel(item.method),
+                exportStatusLabel(item.type),
+                formatMinorUnits(item.amount.amount, item.amount.currency),
+                item.amount.currency,
+                exportStatusLabel(item.status),
+                item.receiptNumber,
+                item.collectedByName,
+                item.externalReference,
+                item.id,
+              ]),
+              emptyMessage: "No transactions in this date range.",
+            },
+          ],
+        }),
+      });
+    },
+  });
 
   return (
     <div className="space-y-5">
@@ -87,7 +129,7 @@ export default function ReportsPage() {
         eyebrow="Finance"
         title="Reports"
         description="Revenue, collections, and member activity over any date range."
-        actions={<Button variant="signal" onClick={exportCsv} disabled={!dashboard || transactions.length === 0}><Download /> Export CSV</Button>}
+        actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || (transactionsQuery.data?.totalItems ?? 0) === 0}><Download /> Export all transactions</Button> : undefined}
       />
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner, manager, and auditor access is required for financial reporting." />}>
@@ -155,8 +197,4 @@ function summarizePayments(items: TransactionSummary[]) {
     map.set(item.method, current);
   }
   return [...map.values()].sort((a, b) => b.amount - a.amount);
-}
-
-function csvCell(value: string) {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

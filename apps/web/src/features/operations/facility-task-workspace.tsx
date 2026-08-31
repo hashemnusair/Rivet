@@ -16,6 +16,7 @@ import { qk } from "@/lib/api/keys";
 import type { FacilityTask, FacilityTaskKind, FacilityTaskSeverity, FacilityTaskStatus, UpsertFacilityTaskInput, Zone } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
+import { downloadTextFile } from "@/lib/exports/download";
 
 const ACTIVE_STATUSES = new Set<FacilityTaskStatus>(["open", "in_progress", "blocked"]);
 
@@ -102,12 +103,7 @@ function ZoneQrDialog({ branchId, zones, selectedZoneId, onClose }: { branchId: 
     const svg = document.getElementById("facility-zone-qr");
     if (!svg || !zone) return;
     const source = new XMLSerializer().serializeToString(svg);
-    const objectUrl = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = `rivet-${zone.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-task-qr.svg`;
-    anchor.click();
-    URL.revokeObjectURL(objectUrl);
+    downloadTextFile({ content: source, fileName: `rivet-${zone.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-task-qr.svg`, mimeType: "image/svg+xml;charset=utf-8" });
   };
 
   return (

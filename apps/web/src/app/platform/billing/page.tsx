@@ -13,6 +13,8 @@ import { useApiMutation } from "@/lib/hooks/use-api";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { exponentFor, formatMoney } from "@/lib/utils/money";
+import { buildCsvDocument, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "@/lib/exports/csv";
+import { downloadTextFile } from "@/lib/exports/download";
 
 type InvoiceAction = { invoice: PlatformBillingInvoice; kind: "payment" | "past_due" | "void" };
 
@@ -305,13 +307,33 @@ function Card({ icon, label, value, detail, warning = false }: { icon: React.Rea
 }
 
 function downloadInvoices(invoices: PlatformBillingInvoice[]) {
-  const csv = [["Invoice", "Gym", "Invoice type", "Cycle key", "Billing interval", "Period start", "Period end", "Issued", "Due", "Grace ends", "Amount minor", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided"], ...invoices.map((invoice) => [invoice.id, invoice.gym, isSubscriptionChange(invoice) ? "subscription change" : isAutomaticRenewal(invoice) ? "automatic renewal" : "manual exception", invoice.cycleKey ?? "", invoice.billingInterval ?? "", invoice.periodStart ?? "", invoice.periodEnd ?? "", invoice.issuedAt ?? invoice.date, invoice.dueAt ?? "", graceEndAt(invoice) ?? "", invoice.amountMinor ?? invoice.amount, invoice.currency ?? "", invoice.status, invoice.pastDueAt ?? "", invoice.paymentReference ?? "", invoice.paidAt ?? "", invoice.voidedAt ?? ""])]
-    .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "rivet-platform-invoices.csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const timeZone = "Asia/Amman";
+  downloadTextFile({
+    fileName: "rivet-platform-invoices.csv",
+    mimeType: "text/csv;charset=utf-8",
+    content: buildCsvDocument({
+      title: "RIVET platform invoice ledger",
+      metadata: [{ label: "Timezone", value: timeZone }],
+      headers: ["Invoice ID", "Gym", "Invoice type", "Billing interval", "Service period starts", "Service period ends", "Issued", "Due", "Grace period ends", "Amount", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided", "Cycle key"],
+      rows: invoices.map((invoice) => [
+        invoice.id,
+        invoice.gym,
+        isSubscriptionChange(invoice) ? "Subscription change" : isAutomaticRenewal(invoice) ? "Automatic renewal" : "Manual exception",
+        exportStatusLabel(invoice.billingInterval),
+        invoice.periodStart,
+        invoice.periodEnd,
+        formatExportDateTime(invoice.issuedAt ?? invoice.date, timeZone),
+        formatExportDateTime(invoice.dueAt, timeZone),
+        formatExportDateTime(graceEndAt(invoice), timeZone),
+        invoice.amountMinor === undefined ? invoice.amount : formatMinorUnits(invoice.amountMinor, invoice.currency),
+        invoice.currency,
+        exportStatusLabel(invoice.status),
+        formatExportDateTime(invoice.pastDueAt, timeZone),
+        invoice.paymentReference,
+        formatExportDateTime(invoice.paidAt, timeZone),
+        formatExportDateTime(invoice.voidedAt, timeZone),
+        invoice.cycleKey,
+      ]),
+    }),
+  });
 }

@@ -1,4 +1,5 @@
 import type { MemberImportColumnMapping, MemberImportField, MemberImportRow } from "@/lib/api/GymOSApi";
+import { buildCsvDocument, exportStatusLabel, formatMinorUnits } from "@/lib/exports/csv";
 
 export type ImportMatrix = string[][];
 
@@ -106,10 +107,12 @@ export function sourcePlanNames(matrix: ImportMatrix, mapping: MemberImportColum
   return [...new Set(matrix.slice(1).map((row) => row[mapping.sourcePlanName!]?.trim()).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
 }
 
-export function rejectedMemberRowsCsv(rows: MemberImportRow[]): string {
+export function rejectedMemberRowsCsv(rows: MemberImportRow[], currency = "JOD"): string {
   const rejected = rows.filter((row) => row.status === "duplicate" || row.status === "invalid" || row.status === "skipped");
-  return [
-    "source_row,full_name,phone,gender,email,source_plan,membership_start,membership_end,opening_balance_minor,result,reason",
-    ...rejected.map((row) => [row.rowNumber, row.fullName, row.phone, row.gender, row.email, row.sourcePlanName, row.membershipStartDate, row.membershipEndDate, row.openingBalanceMinor, row.status, row.errors.join("; ")].map(csvCell).join(",")),
-  ].join("\r\n");
+  return buildCsvDocument({
+    title: "Member import rows requiring attention",
+    headers: ["Source row", "Full name", "Phone", "Gender", "Email", "Source plan", "Membership starts", "Membership ends", "Opening balance", "Currency", "Result", "What needs attention"],
+    rows: rejected.map((row) => [row.rowNumber, row.fullName, row.phone, exportStatusLabel(row.gender), row.email, row.sourcePlanName, row.membershipStartDate, row.membershipEndDate, formatMinorUnits(row.openingBalanceMinor, currency), currency, exportStatusLabel(row.status), row.errors.join("; ")]),
+    emptyMessage: "Every row passed preview; there are no rejected rows.",
+  });
 }

@@ -17,6 +17,8 @@ import { useApp } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
+import { buildCsvDocument, buildSectionedCsvDocument, formatMinorUnits, type CsvMetadataItem } from "@/lib/exports/csv";
+import { downloadTextFile } from "@/lib/exports/download";
 import type { ClassUtilizationReport, PeakHoursReport, RetentionReport, RenewalForecastReport, CollectionsReport, CrmFunnelReport, ControlTrendsReport } from "@/lib/domain/types";
 
 export type OperationalReportKind = "peak-hours" | "classes" | "retention" | "renewals" | "collections" | "crm" | "controls";
@@ -34,23 +36,13 @@ export const OPERATIONAL_REPORT_LABELS: Record<OperationalReportKind, string> = 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const RANGED: Record<OperationalReportKind, boolean> = { "peak-hours": true, classes: true, retention: false, renewals: false, collections: true, crm: true, controls: true };
 
-function csvCell(value: string) {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-function downloadCsv(fileName: string, rows: string[][]) {
-  const csv = rows.map((row) => row.map((cell) => csvCell(cell)).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function jd(minor: number) {
-  return (minor / 1000).toFixed(3);
+function downloadCsv(fileName: string, title: string, rows: string[][], metadata: CsvMetadataItem[] = []) {
+  const [headers = [], ...dataRows] = rows;
+  downloadTextFile({
+    fileName,
+    mimeType: "text/csv;charset=utf-8",
+    content: buildCsvDocument({ title, metadata, headers, rows: dataRows }),
+  });
 }
 
 /** Read-only analytics views under Reports. All math happens on the server. */
@@ -107,10 +99,10 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
         view === "peak-hours" && peakQuery.data ? <PeakHoursView report={peakQuery.data} from={from} to={to} />
         : view === "classes" && classesQuery.data ? <ClassesView report={classesQuery.data} from={from} to={to} />
         : view === "retention" && retentionQuery.data ? <RetentionView report={retentionQuery.data} />
-        : view === "renewals" && renewalsQuery.data ? <RenewalsView report={renewalsQuery.data} />
-        : view === "collections" && collectionsQuery.data ? <CollectionsView report={collectionsQuery.data} from={from} to={to} />
+        : view === "renewals" && renewalsQuery.data ? <RenewalsView report={renewalsQuery.data} currency={session?.organization.currency ?? "JOD"} />
+        : view === "collections" && collectionsQuery.data ? <CollectionsView report={collectionsQuery.data} from={from} to={to} currency={session?.organization.currency ?? "JOD"} />
         : view === "crm" && crmQuery.data ? <CrmView report={crmQuery.data} from={from} to={to} />
-        : view === "controls" && controlsQuery.data ? <ControlsView report={controlsQuery.data} from={from} to={to} />
+        : view === "controls" && controlsQuery.data ? <ControlsView report={controlsQuery.data} from={from} to={to} currency={session?.organization.currency ?? "JOD"} />
         : null
       ) : null}
     </div>
@@ -121,10 +113,10 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
 
 function ClassesView({ report, from, to }: { report: ClassUtilizationReport; from: string; to: string }) {
   const percent = (value?: number) => value === undefined ? "—" : `${Math.round(value * 100)}%`;
-  const exportCsv = () => downloadCsv(`rivet-class-utilization-${from}-${to}.csv`, [
+  const exportCsv = () => downloadCsv(`rivet-class-utilization-${from}-${to}.csv`, "Class utilization", [
     ["Class", "Occurrences", "Completed", "Class cancellations", "Capacity", "Confirmed bookings", "Fill rate", "Attended", "No-shows", "Attendance rate", "Waitlist demand", "Booking cancellations"],
     ...report.rows.map((row) => [row.className, String(row.occurrences), String(row.completedOccurrences), String(row.cancelledOccurrences), String(row.capacity), String(row.booked), percent(row.fillRate), String(row.attended), String(row.noShows), percent(row.attendanceRate), String(row.waitlisted), String(row.cancelled)]),
-  ]);
+  ], [{ label: "Date range", value: `${from} to ${to} (gym-local dates)` }]);
   return (
     <section className="panel overflow-hidden">
       <ReportHeader
@@ -193,10 +185,10 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
     const last = Math.max(...report.cells.map((cell) => cell.hour));
     return Array.from({ length: last - first + 1 }, (_, index) => first + index);
   }, [report.cells]);
-  const exportCsv = () => downloadCsv(`rivet-peak-hours-${from}-${to}.csv`, [
+  const exportCsv = () => downloadCsv(`rivet-peak-hours-${from}-${to}.csv`, "Peak hours", [
     ["Weekday", "Hour", "Accepted check-ins"],
     ...report.cells.map((cell) => [WEEKDAYS[cell.weekday]!, `${String(cell.hour).padStart(2, "0")}:00`, String(cell.count)]),
-  ]);
+  ], [{ label: "Date range", value: `${from} to ${to} (gym-local dates)` }]);
   return (
     <section className="panel overflow-hidden">
       <ReportHeader
@@ -247,7 +239,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
 function RetentionView({ report }: { report: RetentionReport }) {
   const cell = (checkpoint: { retained: number; eligible: number }) =>
     checkpoint.eligible === 0 ? <span className="text-ink-4">too new</span> : <span className="tabular">{Math.round((checkpoint.retained / checkpoint.eligible) * 100)}% <span className="text-[10.5px] text-ink-3">({checkpoint.retained}/{checkpoint.eligible})</span></span>;
-  const exportCsv = () => downloadCsv("rivet-retention-cohorts.csv", [
+  const exportCsv = () => downloadCsv("rivet-retention-cohorts.csv", "Retention cohorts", [
     ["Cohort month", "Members", "1 month retained", "1 month eligible", "3 months retained", "3 months eligible", "6 months retained", "6 months eligible", "12 months retained", "12 months eligible"],
     ...report.cohorts.map((cohort) => [cohort.cohortMonth, String(cohort.size), String(cohort.months1.retained), String(cohort.months1.eligible), String(cohort.months3.retained), String(cohort.months3.eligible), String(cohort.months6.retained), String(cohort.months6.eligible), String(cohort.months12.retained), String(cohort.months12.eligible)]),
   ]);
@@ -286,11 +278,11 @@ function RetentionView({ report }: { report: RetentionReport }) {
 
 // --- Renewals ---------------------------------------------------------------
 
-function RenewalsView({ report }: { report: RenewalForecastReport }) {
+function RenewalsView({ report, currency }: { report: RenewalForecastReport; currency: string }) {
   const total = report.buckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  const exportCsv = () => downloadCsv("rivet-renewal-forecast.csv", [
-    ["Bucket", "Member", "Plan", "Ends", "Value (JOD)"],
-    ...report.buckets.flatMap((bucket) => bucket.rows.map((row) => [bucket.label, row.memberName, row.planName, row.endDate, jd(row.valueMinor)])),
+  const exportCsv = () => downloadCsv("rivet-renewal-forecast.csv", "Renewal forecast", [
+    ["Window", "Member", "Plan", "Membership ends", "Expected value", "Currency"],
+    ...report.buckets.flatMap((bucket) => bucket.rows.map((row) => [bucket.label, row.memberName, row.planName, row.endDate, formatMinorUnits(row.valueMinor, currency), currency])),
   ]);
   return (
     <section className="panel overflow-hidden">
@@ -337,15 +329,15 @@ function RenewalsView({ report }: { report: RenewalForecastReport }) {
 
 // --- Collections ------------------------------------------------------------
 
-function CollectionsView({ report, from, to }: { report: CollectionsReport; from: string; to: string }) {
-  const exportCsv = () => downloadCsv(`rivet-collections-${from}-${to}.csv`, [
-    ["Metric", "Count", "Amount (JOD)"],
-    ["Charged in period", String(report.chargedCount), jd(report.chargedMinor)],
-    ["Collected in period", String(report.collectedCount), jd(report.collectedMinor)],
-    ["Refunded in period", String(report.refundedCount), jd(report.refundedMinor)],
-    ["Voided in period", String(report.voidedCount), jd(report.voidedMinor)],
-    ["Outstanding now (all time)", "", jd(report.outstandingNowMinor)],
-  ]);
+function CollectionsView({ report, from, to, currency }: { report: CollectionsReport; from: string; to: string; currency: string }) {
+  const exportCsv = () => downloadCsv(`rivet-collections-${from}-${to}.csv`, "Collection efficiency", [
+    ["Metric", "Count", "Amount", "Currency"],
+    ["Charged in period", String(report.chargedCount), formatMinorUnits(report.chargedMinor, currency), currency],
+    ["Collected in period", String(report.collectedCount), formatMinorUnits(report.collectedMinor, currency), currency],
+    ["Refunded in period", String(report.refundedCount), formatMinorUnits(report.refundedMinor, currency), currency],
+    ["Voided in period", String(report.voidedCount), formatMinorUnits(report.voidedMinor, currency), currency],
+    ["Outstanding now (all time)", "", formatMinorUnits(report.outstandingNowMinor, currency), currency],
+  ], [{ label: "Date range", value: `${from} to ${to} (gym-local dates)` }]);
   return (
     <section className="panel overflow-hidden">
       <ReportHeader
@@ -368,7 +360,7 @@ function CollectionsView({ report, from, to }: { report: CollectionsReport; from
 // --- CRM --------------------------------------------------------------------
 
 function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; to: string }) {
-  const exportCsv = () => downloadCsv(`rivet-crm-funnel-${from}-${to}.csv`, [
+  const exportCsv = () => downloadCsv(`rivet-crm-funnel-${from}-${to}.csv`, "CRM response and conversion", [
     ["Metric", "Value"],
     ["Leads created", String(report.leadsCreated)],
     ["Leads with a recorded contact", String(report.leadsContacted)],
@@ -377,7 +369,7 @@ function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; 
     ["Trials attended", String(report.trialsAttended)],
     ["Memberships sold from these leads", String(report.membershipsSold)],
     ["Attended-trial to sale", report.trialToSaleRate === undefined ? "—" : `${Math.round(report.trialToSaleRate * 100)}%`],
-  ]);
+  ], [{ label: "Date range", value: `${from} to ${to} (gym-local dates)` }]);
   return (
     <section className="panel overflow-hidden">
       <ReportHeader
@@ -404,18 +396,34 @@ function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; 
 
 // --- Controls ---------------------------------------------------------------
 
-function ControlsView({ report, from, to }: { report: ControlTrendsReport; from: string; to: string }) {
-  const exportCsv = () => downloadCsv(`rivet-commercial-controls-${from}-${to}.csv`, [
-    ["Control", "Count", "Amount (JOD)"],
-    ["Refunds", String(report.refunds.count), jd(report.refunds.amountMinor)],
-    ["Voids", String(report.voids.count), jd(report.voids.amountMinor)],
-    ["Discounted invoices", String(report.discounts.count), jd(report.discounts.amountMinor)],
-    ["Price overrides", String(report.priceOverrides.count), jd(report.priceOverrides.amountMinor)],
-    ["Staff overrides", String(report.staffOverrides.count), ""],
-    [],
-    ["When", "Action", "Summary", "By", "Reason"],
-    ...report.recent.map((event) => [event.occurredAt, event.action, event.summary, event.actorName, event.reason ?? ""]),
-  ]);
+function ControlsView({ report, from, to, currency }: { report: ControlTrendsReport; from: string; to: string; currency: string }) {
+  const exportCsv = () => downloadTextFile({
+    fileName: `rivet-commercial-controls-${from}-${to}.csv`,
+    mimeType: "text/csv;charset=utf-8",
+    content: buildSectionedCsvDocument({
+      title: "Commercial controls",
+      metadata: [{ label: "Date range", value: `${from} to ${to} (gym-local dates)` }],
+      sections: [
+        {
+          title: "Summary",
+          headers: ["Control", "Count", "Amount", "Currency"],
+          rows: [
+            ["Refunds", report.refunds.count, formatMinorUnits(report.refunds.amountMinor, currency), currency],
+            ["Voids", report.voids.count, formatMinorUnits(report.voids.amountMinor, currency), currency],
+            ["Discounted invoices", report.discounts.count, formatMinorUnits(report.discounts.amountMinor, currency), currency],
+            ["Price overrides", report.priceOverrides.count, formatMinorUnits(report.priceOverrides.amountMinor, currency), currency],
+            ["Staff overrides", report.staffOverrides.count, "", ""],
+          ],
+        },
+        {
+          title: "Recent audit evidence",
+          headers: ["When", "Action", "Summary", "Recorded by", "Reason"],
+          rows: report.recent.map((event) => [event.occurredAt, event.action.replaceAll("_", " "), event.summary, event.actorName, event.reason ?? ""]),
+          emptyMessage: "No sensitive commercial actions in this period.",
+        },
+      ],
+    }),
+  });
   return (
     <section className="panel overflow-hidden">
       <ReportHeader

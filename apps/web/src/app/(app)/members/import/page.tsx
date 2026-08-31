@@ -16,20 +16,16 @@ import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { inferMemberImportMapping, mappedMemberCsv, OPTIONAL_MEMBERSHIP_IMPORT_FIELDS, parseCsvMatrix, rejectedMemberRowsCsv, sourcePlanNames, type ImportMatrix } from "@/lib/imports/member-import";
 import { qk } from "@/lib/api/keys";
 import { getApi } from "@/lib/api/client";
+import { downloadTextFile } from "@/lib/exports/download";
 
 const SAMPLE_CSV = `full_name,phone,gender,email,plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference
 Samira Haddad,+962790000001,female,samira@example.com,,,,,,,,,,
 Yousef Nasser,0790000002,male,yousef@example.com,,,,,,,,,,
 Layla Haddad,+447700900123,female,layla@example.com,,,,,,,,,,`;
 const MAX_FILE_BYTES = 5_000_000;
-const TEMPLATE_DOWNLOAD = `data:text/csv;charset=utf-8,${encodeURIComponent(SAMPLE_CSV)}`;
 
 function newIdempotencyKey(importId: string, cursor: number): string {
   return `${importId}-${cursor}-${crypto.randomUUID()}`;
-}
-
-function downloadHref(content: string): string {
-  return `data:text/csv;charset=utf-8,${encodeURIComponent(content)}`;
 }
 
 function todayInTimezone(timezone?: string): string {
@@ -87,7 +83,8 @@ export default function MemberImportPage() {
   const mappedCsv = useMemo(() => mappedMemberCsv(matrix, mapping), [mapping, matrix]);
   const sourcePlans = useMemo(() => sourcePlanNames(matrix, mapping), [mapping, matrix]);
   const validRows = useMemo(() => preview?.rows.filter((row) => row.status === "valid") ?? [], [preview]);
-  const rejectedCsv = useMemo(() => preview ? rejectedMemberRowsCsv(preview.rows) : "", [preview]);
+  const rejectedRows = useMemo(() => preview?.rows.filter((row) => ["duplicate", "invalid", "skipped"].includes(row.status)) ?? [], [preview]);
+  const rejectedCsv = useMemo(() => rejectedMemberRowsCsv(rejectedRows, session?.organization.currency ?? "JOD"), [rejectedRows, session?.organization.currency]);
   const hasRequiredMapping = mapping.fullName != null && mapping.phone != null && mapping.gender != null && new Set([mapping.fullName, mapping.phone, mapping.gender]).size === 3;
   const hasMembershipColumns = OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.some(({ field }) => mapping[field] != null);
   const hasCompletePlanMapping = sourcePlans.every((sourceName) => Boolean(planMappings[sourceName]));
@@ -204,7 +201,7 @@ export default function MemberImportPage() {
           <div className="flex size-11 items-center justify-center rounded-md bg-sunken text-ink-2"><FileSpreadsheet className="size-5" aria-hidden /></div><h3 className="mt-3 text-[14px] font-semibold text-ink">{fileName || "Drop a member file here"}</h3><p className="mt-1 text-[12px] text-ink-3">{fileName ? `${Math.max(1, Math.ceil(fileSize / 1024)).toLocaleString()} KB · ${Math.max(0, matrix.length - 1).toLocaleString()} data rows` : "CSV or XLSX · up to 5 MB · maximum 10,000 members"}</p><Button type="button" variant={fileName ? "secondary" : "primary"} className="mt-4" onClick={() => fileInputRef.current?.click()}><Upload /> {fileName ? "Replace file" : "Choose file"}</Button><input ref={fileInputRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" aria-label="Choose member file" onChange={(event) => { void loadFile(event.target.files?.[0]); event.target.value = ""; }} />
         </div>
         {fileError ? <p className="text-[12px] text-danger" role="alert">{fileError}</p> : null}
-        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setShowCsvText((current) => !current)}>{showCsvText ? "Hide pasted list" : matrix.length ? "Paste a different CSV" : "Paste CSV instead"}</Button><Button asChild variant="ghost" size="sm"><a href={TEMPLATE_DOWNLOAD} download="rivet-member-import-template.csv"><Download /> Download template</a></Button></div>
+        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setShowCsvText((current) => !current)}>{showCsvText ? "Hide pasted list" : matrix.length ? "Paste a different CSV" : "Paste CSV instead"}</Button><Button type="button" variant="ghost" size="sm" onClick={() => downloadTextFile({ content: `\uFEFF${SAMPLE_CSV.replaceAll("\n", "\r\n")}\r\n`, fileName: "rivet-member-import-template.csv", mimeType: "text/csv;charset=utf-8" })}><Download /> Download template</Button></div>
         {showCsvText ? <label className="block space-y-1.5"><span className="text-[12.5px] font-medium text-ink">Paste CSV text</span><Textarea rows={7} value={csvText} onChange={(event) => updateCsvText(event.target.value)} placeholder={SAMPLE_CSV} aria-label="Member CSV content" className="font-mono text-[12px]" /></label> : null}
       </div>
     </section>
@@ -222,7 +219,7 @@ export default function MemberImportPage() {
     </section> : null}
 
     {preview ? <section className="panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4"><div><h2 className="font-display text-[15px] font-semibold text-ink">Review before import</h2><p className="mt-1 text-[12.5px] text-ink-2">{preview.totalRows} rows · {preview.validRows} ready · {preview.duplicateRows} duplicates · {preview.errorRows} invalid</p>{preview.membershipRows ? <p className="mt-1 text-[11.5px] text-ink-3">{preview.membershipRows} membership terms · {preview.openingBalanceRows ?? 0} opening balances · {preview.historicalEvidenceRows ?? 0} payment-history records · cutoff {preview.migrationCutoffDate}</p> : null}</div><div className="flex flex-wrap gap-2">{rejectedCsv.split("\r\n").length > 2 ? <Button asChild variant="secondary"><a href={downloadHref(rejectedCsv)} download={`rivet-rejected-${preview.id}.csv`}><Download /> Rejected rows</a></Button> : null}<Button onClick={commit} disabled={validRows.length === 0 || committing || preview.status === "completed" || preview.status === "undone"} loading={committing}>{committing ? "Importing…" : preview.status === "processing" ? "Resume import" : preview.status === "completed" ? "Import complete" : `Import ${validRows.length} ${validRows.length === 1 ? "member" : "members"}`}</Button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4"><div><h2 className="font-display text-[15px] font-semibold text-ink">Review before import</h2><p className="mt-1 text-[12.5px] text-ink-2">{preview.totalRows} rows · {preview.validRows} ready · {preview.duplicateRows} duplicates · {preview.errorRows} invalid</p>{preview.membershipRows ? <p className="mt-1 text-[11.5px] text-ink-3">{preview.membershipRows} membership terms · {preview.openingBalanceRows ?? 0} opening balances · {preview.historicalEvidenceRows ?? 0} payment-history records · cutoff {preview.migrationCutoffDate}</p> : null}</div><div className="flex flex-wrap gap-2">{rejectedRows.length > 0 ? <Button type="button" variant="secondary" onClick={() => downloadTextFile({ content: rejectedCsv, fileName: `rivet-rejected-${preview.id}.csv`, mimeType: "text/csv;charset=utf-8" })}><Download /> Rejected rows</Button> : null}<Button onClick={commit} disabled={validRows.length === 0 || committing || preview.status === "completed" || preview.status === "undone"} loading={committing}>{committing ? "Importing…" : preview.status === "processing" ? "Resume import" : preview.status === "completed" ? "Import complete" : `Import ${validRows.length} ${validRows.length === 1 ? "member" : "members"}`}</Button></div></div>
       <div className="max-h-[32rem] overflow-auto"><table className="w-full min-w-[960px] text-start text-[12.5px]"><thead className="sticky top-0 bg-sunken text-[11px] uppercase tracking-[0.08em] text-ink-3"><tr><th className="px-5 py-2 text-start font-medium">Row</th><th className="px-3 py-2 text-start font-medium">Member</th><th className="px-3 py-2 text-start font-medium">Phone</th><th className="px-3 py-2 text-start font-medium">Membership</th><th className="px-3 py-2 text-start font-medium">Opening balance</th><th className="px-5 py-2 text-start font-medium">Result</th></tr></thead><tbody className="divide-y divide-line">{preview.rows.map((row) => <tr key={row.rowNumber}><td className="px-5 py-3 font-mono text-ink-3">{row.rowNumber}</td><td className="px-3 py-3"><p className="font-medium text-ink">{row.fullName || "—"}</p><p className="mt-0.5 text-[11px] text-ink-3">{row.email || "No email"}</p></td><td className="px-3 py-3 font-mono text-ink-2" dir="ltr">{row.phone || "—"}</td><td className="px-3 py-3 text-ink-2">{row.planName ? <><p className="font-medium text-ink">{row.planName}</p><p className="mt-0.5 text-[11px] text-ink-3">{row.membershipStartDate} → {row.membershipEndDate}{row.freezeStartDate ? " · frozen" : ""}</p></> : "Profile only"}</td><td className="px-3 py-3 tabular-nums text-ink-2">{row.openingBalanceMinor ? formatMinor(row.openingBalanceMinor, preview.currency ?? session?.organization.currency ?? "JOD") : "—"}</td><td className="px-5 py-3"><span className={row.status === "valid" || row.status === "committed" ? "text-success-deep" : row.status === "duplicate" ? "text-warning-deep" : "text-danger"}>{row.status === "valid" ? "Ready" : row.status === "committed" ? "Imported" : row.status === "duplicate" ? "Duplicate" : row.status === "invalid" ? "Needs attention" : "Skipped"}</span>{row.errors.length ? <span className="ms-2 text-[11px] text-ink-3">{row.errors.join("; ")}</span> : null}</td></tr>)}</tbody></table></div>
     </section> : null}
 
