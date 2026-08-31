@@ -431,6 +431,35 @@
     overflow: visible !important;
     border: none;
   }
+  /* Landscape schedule sheet: full-width grid, crisp black lines, chips that
+     survive printers with background graphics turned off. */
+  .print-schedule [data-print-schedule] > div {
+    min-width: 0 !important;
+  }
+  .print-schedule [data-print-header] {
+    display: block !important;
+    margin-bottom: 6mm;
+  }
+  .print-schedule [data-print-schedule] .border-line,
+  .print-schedule [data-print-schedule] [class*="border-line"] {
+    border-color: #444 !important;
+  }
+  .print-schedule [data-print-schedule] button {
+    background: #fff !important;
+    border: 1.5px solid #000 !important;
+    box-shadow: none !important;
+    color: #000 !important;
+  }
+  .print-schedule [data-print-schedule] button * {
+    color: #000 !important;
+  }
+  .print-schedule [data-print-schedule] .font-mono,
+  .print-schedule [data-print-schedule] [class*="text-ink-3"] {
+    color: #222 !important;
+  }
+  .print-schedule [data-print-root] {
+    font-size: 11px;
+  }
   #receipt-print {
     position: absolute;
     inset: 0;

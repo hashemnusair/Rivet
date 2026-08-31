@@ -1160,7 +1160,6 @@ export interface GymOSApi {
   setClassOccurrenceAttendance(input: import("@/lib/domain/types").ClassOccurrenceAttendanceInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
   finalizeClassOccurrenceAttendance(input: { occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassOccurrence>;
   substituteClassOccurrenceCoach(input: import("@/lib/domain/types").SubstituteClassCoachInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
-  getCoachPayoutReport(input: { month: string; coachId?: UUID }): Promise<import("@/lib/domain/types").CoachPayoutReport>;
   listClassCoaches(): Promise<import("@/lib/domain/types").ClassCoach[]>;
   upsertClassCoach(input: import("@/lib/domain/types").UpsertClassCoachInput): Promise<import("@/lib/domain/types").ClassCoach>;
   removeClassCoach(coachId: UUID): Promise<{ id: UUID }>;

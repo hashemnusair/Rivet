@@ -5659,7 +5659,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.sessions.list":
     case "classes.occurrences.list":
     case "classes.coaches.list":
-    case "classes.coachPayout":
       return await classesQuery(ctx, actor, operation, input);
     case "checklists.templates.list":
     case "checklists.day":

@@ -110,8 +110,8 @@ describe("dated class booking", () => {
     const reception = t.withIdentity({ subject: "clerk-reception-class-booking" });
     const a = t.withIdentity({ subject: "clerk-customer-class-a" });
     const date = "2026-09-02";
-    const coach = await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Rana", payPerClassMinor: 15_000 })) as { id: string };
-    const substitute = await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Dana", payPerClassMinor: 20_000 })) as { id: string };
+    const coach = await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Rana" })) as { id: string };
+    const substitute = await owner.mutation(api.domain.mutate, operation("classes.coach.upsert", { name: "Dana" })) as { id: string };
     const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-class-booking", name: "Conditioning", coachId: coach.id, dayOfWeek: 3, startMinute: 8 * 60, durationMinutes: 60, capacity: 5, audience: "mixed" })) as { id: string };
     const occurrenceId = `occ:${template.id}:${date}`;
     await a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId }));
@@ -120,8 +120,6 @@ describe("dated class booking", () => {
     vi.setSystemTime(new Date("2026-09-02T07:30:00.000Z"));
     const finalized = await reception.mutation(api.domain.mutate, operation("classes.occurrence.attendance.finalize", { occurrenceId })) as { status: string };
     expect(finalized.status).toBe("completed");
-    const report = await owner.query(api.domain.query, operation("classes.coachPayout", { month: "2026-09", coachId: substitute.id })) as { total: { amount: number }; lines: Array<{ substituted: boolean; rate: { amount: number } }> };
-    expect(report).toMatchObject({ total: { amount: 20_000 }, lines: [{ substituted: true, rate: { amount: 20_000 } }] });
     const staffView = await owner.query(api.domain.query, operation("classes.occurrences.list", { branchId: "branch-class-booking", fromDate: date, toDate: date })) as Array<{ roster: Array<{ memberId: string; noShowCount: number }> }>;
     expect(staffView[0]?.roster[0]).toMatchObject({ memberId: "member-class-a", noShowCount: 1 });
     const persisted = await t.run(async (ctx) => ({ bookings: await ctx.db.query("classBookings").collect(), stats: await ctx.db.query("classMemberStats").collect(), payments: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "payment")).collect() }));

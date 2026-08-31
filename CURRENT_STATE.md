@@ -1,5 +1,25 @@
 # GymOS / RIVET current implementation state
 
+## Payout removal, event details, overlap guard, and branded print — 31 August 2026
+
+- Coach payout is gone end to end: the classes-page button, dialog, and CSV,
+  the `classes.coachPayout` operation, the coach pay-per-class fields in the
+  directory UI and both adapters, and the client types. It had no footprint in
+  Reports or the financial statements; the retired optional occurrence columns
+  stay in the schema so historical rows keep validating.
+- The timetable chip menu gained “View event details”: a popup with photo,
+  day, time, duration, coach, audience, booked count, and notes, plus a pen
+  Edit button that jumps straight into the editor and an Open-next-dated-class
+  action.
+- Two classes can no longer overlap on the same branch and weekday — both
+  backends reject the save naming the clashing class and its start time;
+  back-to-back classes remain fine.
+- Print got a real sheet: the run injects an A4-landscape page rule for just
+  that print (receipts keep their layout), and the output opens with the gym's
+  Brand Kit logo, gym and branch name, print date, and an "Operated by RIVET™"
+  credit, with crisp black grid lines and outline chips that survive printers
+  ignoring background graphics.
+
 ## Member login handoff regression fix, 31 August 2026
 
 - Member login now selects the authenticated member's existing Convex profile

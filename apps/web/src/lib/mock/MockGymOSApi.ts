@@ -9696,8 +9696,8 @@ export class MockGymOSApi implements GymOSApi {
 
   private seedClassCoaches(): T.ClassCoach[] {
     return [
-      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", payPerClassMinor: 15_000, currency: this.db.organization.currency, createdAt: nowISO() },
-      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", payPerClassMinor: 18_000, currency: this.db.organization.currency, createdAt: nowISO() },
+      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", currency: this.db.organization.currency, createdAt: nowISO() },
+      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", currency: this.db.organization.currency, createdAt: nowISO() },
     ];
   }
 
@@ -9734,6 +9734,8 @@ export class MockGymOSApi implements GymOSApi {
       if (!Number.isSafeInteger(input.startMinute) || input.startMinute < 0 || input.startMinute > 1425) throw ApiError.of(ERR.VALIDATION, "Start time is invalid.");
       if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
       if (input.startMinute + input.durationMinutes > 1440) throw ApiError.of(ERR.VALIDATION, "A class must end by midnight. Start it earlier or shorten the duration.");
+      const clashing = this.classSessions.find((candidate) => candidate.id !== input.sessionId && candidate.branchId === input.branchId && candidate.dayOfWeek === input.dayOfWeek && input.startMinute < candidate.startMinute + candidate.durationMinutes && candidate.startMinute < input.startMinute + input.durationMinutes);
+      if (clashing) throw ApiError.of(ERR.VALIDATION, `This time overlaps “${clashing.name}” at ${String(Math.floor(clashing.startMinute / 60)).padStart(2, "0")}:${String(clashing.startMinute % 60).padStart(2, "0")}. Pick another slot.`);
       if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
       if (!["mixed", "women", "men"].includes(input.audience)) throw ApiError.of(ERR.VALIDATION, "Audience must be mixed, women, or men.");
       let coachName: string | undefined;
@@ -9805,13 +9807,11 @@ export class MockGymOSApi implements GymOSApi {
       if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Coach name is required and must be 60 characters or fewer.");
       const existing = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
       if (input.coachId && existing) {
-        if (input.payPerClassMinor !== undefined && (!Number.isSafeInteger(input.payPerClassMinor) || input.payPerClassMinor < 0 || input.payPerClassMinor > 10_000_000)) throw ApiError.of(ERR.VALIDATION, "Pay per class must be a valid non-negative amount.");
-        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, payPerClassMinor: input.payPerClassMinor, currency: this.db.organization.currency });
+        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, currency: this.db.organization.currency });
         for (const session of this.classSessions.filter((candidate) => candidate.coachId === existing.id)) session.coachName = name;
         return { ...existing };
       }
-      if (input.payPerClassMinor !== undefined && (!Number.isSafeInteger(input.payPerClassMinor) || input.payPerClassMinor < 0 || input.payPerClassMinor > 10_000_000)) throw ApiError.of(ERR.VALIDATION, "Pay per class must be a valid non-negative amount.");
-      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, payPerClassMinor: input.payPerClassMinor, currency: this.db.organization.currency, createdAt: nowISO() };
+      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, currency: this.db.organization.currency, createdAt: nowISO() };
       this.classCoaches.push(created);
       return { ...created };
     });
@@ -10114,19 +10114,6 @@ export class MockGymOSApi implements GymOSApi {
       occurrence.coachName = coach.name;
       occurrence.substituted = coach.id !== occurrence.regularCoachId;
       return this.refreshClassOccurrence(occurrence);
-    });
-  }
-
-  getCoachPayoutReport(input: { month: string; coachId?: T.UUID }): Promise<T.CoachPayoutReport> {
-    return this.respond(() => {
-      this.require("operations.manage");
-      if (!/^\d{4}-\d{2}$/.test(input.month)) throw ApiError.of(ERR.VALIDATION, "Month must use YYYY-MM.");
-      const lines = this.classOccurrences.filter((occurrence) => occurrence.status === "completed" && occurrence.date.startsWith(input.month) && occurrence.coachId && (!input.coachId || occurrence.coachId === input.coachId)).map((occurrence) => {
-        const coach = this.classCoaches.find((candidate) => candidate.id === occurrence.coachId)!;
-        return { occurrenceId: occurrence.id, date: occurrence.date, className: occurrence.name, regularCoachName: occurrence.regularCoachName, deliveredCoachName: coach.name, substituted: occurrence.substituted, attendedCount: occurrence.roster.filter((entry) => entry.status === "attended").length, rate: money(coach.payPerClassMinor ?? 0, this.db.organization.currency) } satisfies T.CoachPayoutLine;
-      }).sort((left, right) => left.date.localeCompare(right.date));
-      const coach = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
-      return { coachId: coach?.id, coachName: coach?.name, month: input.month, currency: this.db.organization.currency, lines, total: money(lines.reduce((sum, line) => sum + line.rate.amount, 0), this.db.organization.currency) };
     });
   }
 

@@ -434,8 +434,6 @@ export interface ClassCoach {
   name: string;
   phone?: string;
   specialty?: string;
-  /** Optional reporting rate. It never creates a payable or ledger entry. */
-  payPerClassMinor?: number;
   currency?: string;
   createdAt: string;
 }
@@ -445,7 +443,6 @@ export interface UpsertClassCoachInput {
   name: string;
   phone?: string;
   specialty?: string;
-  payPerClassMinor?: number;
 }
 
 export type ClassBookingStatus = "booked" | "waitlisted" | "cancelled" | "late_cancelled" | "attended" | "no_show";
@@ -552,26 +549,6 @@ export interface SubstituteClassCoachInput {
   occurrenceId: UUID;
   coachId: UUID;
   reason: string;
-}
-
-export interface CoachPayoutLine {
-  occurrenceId: UUID;
-  date: ISODate;
-  className: string;
-  regularCoachName?: string;
-  deliveredCoachName: string;
-  substituted: boolean;
-  attendedCount: number;
-  rate: Money;
-}
-
-export interface CoachPayoutReport {
-  coachId?: UUID;
-  coachName?: string;
-  month: string;
-  currency: string;
-  lines: CoachPayoutLine[];
-  total: Money;
 }
 
 export interface UpsertClassSessionInput {

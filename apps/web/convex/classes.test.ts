@@ -67,6 +67,10 @@ describe("weekly class schedule", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Late night", dayOfWeek: 0, startMinute: 22 * 60 + 30, durationMinutes: 120, capacity: 10, audience: "mixed" })), "VALIDATION_ERROR");
 
     const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Morning HIIT", dayOfWeek: 0, startMinute: 6 * 60, durationMinutes: 90, capacity: 2, audience: "mixed" })) as { id: string };
+    // Two classes never overlap on the same branch and day; adjacent is fine.
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Clashing", dayOfWeek: 0, startMinute: 7 * 60, durationMinutes: 60, capacity: 5, audience: "mixed" })), "VALIDATION_ERROR");
+    const adjacent = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Back to back", dayOfWeek: 0, startMinute: 7 * 60 + 30, durationMinutes: 30, capacity: 5, audience: "mixed" })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("classes.session.delete", { sessionId: adjacent.id, reason: "Test cleanup." }));
 
     await reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-a" }));
     const duplicated = await reception.mutation(api.domain.mutate, operation("classes.roster.add", { sessionId: created.id, memberId: "member-a" })) as { roster: unknown[] };

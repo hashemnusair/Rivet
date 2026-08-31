@@ -100,12 +100,12 @@ async function classPolicy(ctx: ReadContext, organizationId: Id<"organizations">
   return { ...DEFAULT_CLASS_POLICY, ...configured, eligiblePlanIds: Array.isArray(configured.eligiblePlanIds) ? configured.eligiblePlanIds.filter((item): item is string => typeof item === "string") : [] };
 }
 
-async function coachSnapshot(ctx: ReadContext, organizationId: Id<"organizations">, coachId: string | undefined): Promise<{ name?: string; payPerClassMinor?: number } | undefined> {
+async function coachSnapshot(ctx: ReadContext, organizationId: Id<"organizations">, coachId: string | undefined): Promise<{ name?: string } | undefined> {
   if (!coachId) return undefined;
   const coach = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "coach").eq("publicId", coachId)).unique();
   if (!coach) return undefined;
   const value = valueData(coach.data);
-  return { name: optionalText(value.name), payPerClassMinor: Number.isSafeInteger(value.payPerClassMinor) && value.payPerClassMinor >= 0 ? value.payPerClassMinor : undefined };
+  return { name: optionalText(value.name) };
 }
 
 async function ensureOccurrence(ctx: MutationCtx, organization: Organization, template: ClassSession, date: string): Promise<ClassOccurrence> {
@@ -134,7 +134,6 @@ async function ensureOccurrence(ctx: MutationCtx, organization: Organization, te
     imageAssetId: template.imageAssetId,
     notes: template.notes,
     status: "scheduled",
-    payRateMinor: coach?.payPerClassMinor,
     payCurrency: organization.currency,
     createdAt: now,
     updatedAt: now,
@@ -315,6 +314,21 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
   }
   const now = Date.now();
   const requestedId = optionalText(input.sessionId);
+  // Two classes never share the floor: reject any time overlap with another
+  // class in this branch on the same weekday.
+  const branchSessions = await ctx.db.query("classSessions").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect();
+  const clash = branchSessions.find((candidate) => {
+    if (candidate.publicId === requestedId) return false;
+    const slot = weeklySlot(candidate, actor.organization.timezone || "Asia/Amman");
+    if (slot.dayOfWeek !== dayOfWeek) return false;
+    const candidateEnd = slot.startMinute + candidate.durationMinutes;
+    return startMinute < candidateEnd && slot.startMinute < startMinute + durationMinutes;
+  });
+  if (clash) {
+    const slot = weeklySlot(clash, actor.organization.timezone || "Asia/Amman");
+    const label = `${String(Math.floor(slot.startMinute / 60)).padStart(2, "0")}:${String(slot.startMinute % 60).padStart(2, "0")}`;
+    domainError("VALIDATION_ERROR", `This time overlaps “${clash.name}” at ${label}. Pick another slot.`, { correlationId: actor.correlationId, fieldErrors: { startMinute: ["Overlaps another class"] } });
+  }
   const existing = requestedId
     ? await ctx.db.query("classSessions").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedId)).unique()
     : null;
@@ -931,7 +945,7 @@ async function substituteOccurrenceCoach(ctx: MutationCtx, actor: ActorContext, 
   const coach = await coachByPublicId(ctx, actor, coachId);
   const snapshot = valueData(coach.data);
   const before = { coachId: occurrence.coachId, coachName: occurrence.coachName };
-  await ctx.db.patch(occurrence._id, { coachId, coachName: String(snapshot.name ?? coachId), substitutionReason: String(input.reason).trim(), payRateMinor: Number.isSafeInteger(snapshot.payPerClassMinor) && snapshot.payPerClassMinor >= 0 ? snapshot.payPerClassMinor : undefined, payCurrency: actor.organization.currency, updatedAt: Date.now() });
+  await ctx.db.patch(occurrence._id, { coachId, coachName: String(snapshot.name ?? coachId), substitutionReason: String(input.reason).trim(), updatedAt: Date.now() });
   const updated = (await ctx.db.get(occurrence._id))!;
   await occurrenceAudit(ctx, { organization: actor.organization, branchId: occurrence.branchId, actor: actor.user, actorRole: actor.role, correlationId: actor.correlationId, action: "classes.coach.substitute", occurrence: updated, summary: `${String(snapshot.name)} will cover ${occurrence.name}`, reason: String(input.reason).trim(), before, after: { coachId, coachName: snapshot.name } });
   const branch = await ctx.db.get(updated.branchId);
@@ -939,28 +953,9 @@ async function substituteOccurrenceCoach(ctx: MutationCtx, actor: ActorContext, 
   return await occurrenceView(ctx, actor.organization, persistedOccurrenceData(updated, branch!), all);
 }
 
-async function coachPayoutReport(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {
-  requirePermission(actor, "operations.manage");
-  const month = optionalText(input.month) ?? todayISODate(actor.organization.timezone || "Asia/Amman").slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month)) domainError("VALIDATION_ERROR", "Choose a valid payout month.", { correlationId: actor.correlationId });
-  const from = `${month}-01`;
-  const to = addDays(`${month === "9999-12" ? "9999-12" : new Date(`${month}-01T12:00:00.000Z`).getUTCMonth() === 11 ? `${Number(month.slice(0, 4)) + 1}-01` : `${month.slice(0, 5)}${String(Number(month.slice(5, 7)) + 1).padStart(2, "0")}`}-01`, -1);
-  const lower = Date.parse(localDateTimeToISO(from, "00:00", actor.organization.timezone || "Asia/Amman"));
-  const upper = Date.parse(localDateTimeToISO(addDays(to, 1), "00:00", actor.organization.timezone || "Asia/Amman")) - 1;
-  const coachId = optionalText(input.coachId);
-  const occurrences = await ctx.db.query("classOccurrences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
-  const delivered = occurrences.filter((row) => row.status === "completed" && Boolean(row.attendanceFinalizedAt) && row.startsAt >= lower && row.startsAt <= upper && (!coachId || row.coachId === coachId));
-  const lines = await Promise.all(delivered.sort((a, b) => a.startsAt - b.startsAt).map(async (row) => {
-    const bookings = await ctx.db.query("classBookings").withIndex("by_occurrence", (q) => q.eq("organizationId", actor.organization._id).eq("occurrenceId", row._id)).collect();
-    return { occurrenceId: row.publicId, date: row.date, className: row.name, regularCoachName: row.regularCoachName, deliveredCoachName: row.coachName ?? "Unassigned", substituted: Boolean(row.coachId && row.regularCoachId && row.coachId !== row.regularCoachId), attendedCount: bookings.filter((booking) => booking.status === "attended").length, rate: { amount: row.payRateMinor ?? 0, currency: row.payCurrency ?? actor.organization.currency } };
-  }));
-  const coach = coachId ? await coachByPublicId(ctx, actor, coachId) : undefined;
-  return { coachId, coachName: coach ? String(valueData(coach.data).name ?? coachId) : undefined, month, currency: actor.organization.currency, lines, total: { amount: lines.reduce((sum, line) => sum + Number(valueData(line.rate).amount ?? 0), 0), currency: actor.organization.currency } };
-}
-
 function coachView(row: Doc<"domainRecords">, currency?: string): Data {
   const value = row.data as Data;
-  return { id: row.publicId, name: String(value.name ?? row.publicId), phone: optionalText(value.phone), specialty: optionalText(value.specialty), payPerClassMinor: Number.isSafeInteger(value.payPerClassMinor) ? value.payPerClassMinor : undefined, currency, createdAt: new Date(row.createdAt).toISOString() };
+  return { id: row.publicId, name: String(value.name ?? row.publicId), phone: optionalText(value.phone), specialty: optionalText(value.specialty), currency, createdAt: new Date(row.createdAt).toISOString() };
 }
 
 async function listCoaches(ctx: QueryCtx, actor: ActorContext): Promise<Data[]> {
@@ -976,15 +971,13 @@ async function upsertCoach(ctx: MutationCtx, actor: ActorContext, input: Data): 
   if (name.length > 60) domainError("VALIDATION_ERROR", "Coach name must be 60 characters or fewer.", { correlationId: actor.correlationId });
   const phone = optionalText(input.phone);
   const specialty = optionalText(input.specialty);
-  const payPerClassMinor = input.payPerClassMinor === undefined || input.payPerClassMinor === null || input.payPerClassMinor === "" ? undefined : Number(input.payPerClassMinor);
-  if (payPerClassMinor !== undefined && (!Number.isSafeInteger(payPerClassMinor) || payPerClassMinor < 0 || payPerClassMinor > 10_000_000)) domainError("VALIDATION_ERROR", "Per-class pay must be a valid non-negative amount.", { correlationId: actor.correlationId });
   const now = Date.now();
   const requestedId = optionalText(input.coachId);
   const existing = requestedId
     ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "coach").eq("publicId", requestedId)).unique()
     : null;
   if (existing) {
-    await ctx.db.patch(existing._id, { data: { ...(existing.data as Data), name, phone, specialty, payPerClassMinor }, updatedAt: now });
+    await ctx.db.patch(existing._id, { data: { ...(existing.data as Data), name, phone, specialty }, updatedAt: now });
     // Keep coach-name snapshots on classes in step with the directory.
     const sessions = await ctx.db.query("classSessions").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
     for (const session of sessions.filter((candidate) => candidate.coachUserId === existing.publicId && candidate.coachName !== name)) {
@@ -993,7 +986,7 @@ async function upsertCoach(ctx: MutationCtx, actor: ActorContext, input: Data): 
     return coachView((await ctx.db.get(existing._id))!, actor.organization.currency);
   }
   const publicId = crypto.randomUUID();
-  const id = await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "coach", publicId, createdAt: now, updatedAt: now, data: { id: publicId, name, phone, specialty, payPerClassMinor } });
+  const id = await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "coach", publicId, createdAt: now, updatedAt: now, data: { id: publicId, name, phone, specialty } });
   return coachView((await ctx.db.get(id))!, actor.organization.currency);
 }
 
@@ -1015,7 +1008,6 @@ export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation
     case "classes.sessions.list": return await listClassSessions(ctx, actor, input);
     case "classes.occurrences.list": return await staffOccurrences(ctx, actor, input);
     case "classes.coaches.list": return await listCoaches(ctx, actor);
-    case "classes.coachPayout": return await coachPayoutReport(ctx, actor, input);
     default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { correlationId: actor.correlationId });
   }
 }

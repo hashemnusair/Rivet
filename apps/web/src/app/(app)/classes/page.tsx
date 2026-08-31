@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarCheck2, Check, Download, ImagePlus, Plus, Printer, RefreshCcw, Repeat2, Trash2, UserPlus, Users, X } from "lucide-react";
+import { CalendarCheck2, Check, ImagePlus, Plus, Printer, RefreshCcw, Repeat2, Trash2, UserPlus, Users, X, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,8 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
-import { MoneyText } from "@/components/shared/data-display";
 import { qk } from "@/lib/api/keys";
-import type { ClassAudience, ClassCoach, ClassSession, CoachPayoutReport, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
+import type { ClassAudience, ClassCoach, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { getApi } from "@/lib/api/client";
@@ -32,24 +31,6 @@ function rangeLabel(item: Pick<ClassSession, "startMinute" | "durationMinutes">)
   return `${minuteLabel(item.startMinute)}–${minuteLabel(item.startMinute + item.durationMinutes)}`;
 }
 
-function csvCell(value: string | number): string {
-  const text = String(value);
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
-function downloadPayoutCsv(report: CoachPayoutReport): void {
-  const rows = [
-    ["date", "coach", "class", "substitute", "attended", "rate_minor", "currency"],
-    ...report.lines.map((line) => [line.date, line.deliveredCoachName, line.className, line.substituted ? "yes" : "no", line.attendedCount, line.rate.amount, line.rate.currency]),
-  ];
-  const blob = new Blob([rows.map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `rivet-coach-payout-${report.month}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 /** Greedy lane packing so overlapping classes stack instead of colliding. */
 function withLanes(items: ClassSession[]): Array<ClassSession & { lane: number; laneCount: number }> {
@@ -107,10 +88,8 @@ export default function ClassesPage() {
   const [overrideReason, setOverrideReason] = useState("");
   const [substituteCoachId, setSubstituteCoachId] = useState("");
   const [substituteReason, setSubstituteReason] = useState("");
-  const [payoutOpen, setPayoutOpen] = useState(false);
-  const [payoutMonth, setPayoutMonth] = useState(() => todayISODate().slice(0, 7));
-  const [payoutCoachId, setPayoutCoachId] = useState("");
   const [menu, setMenu] = useState<MenuState>();
+  const [detailsId, setDetailsId] = useState<string>();
   const [deleteTarget, setDeleteTarget] = useState<ClassSession>();
   const [deleteReason, setDeleteReason] = useState("");
   const [coachesOpen, setCoachesOpen] = useState(false);
@@ -124,7 +103,6 @@ export default function ClassesPage() {
   const memberResults: MemberSummary[] = memberLookup.data?.items.filter((member) => member.status !== "archived") ?? [];
   const managed = sessionsQuery.data?.find((item) => item.id === manageId);
   const managedOccurrence = occurrencesQuery.data?.find((item) => item.id === manageOccurrenceId);
-  const payoutQuery = useApiQuery(qk.coachPayout(payoutMonth, payoutCoachId || undefined), (api) => api.getCoachPayoutReport({ month: payoutMonth, coachId: payoutCoachId || undefined }), { enabled: payoutOpen });
 
   useEffect(() => {
     if (!menu) return;
@@ -134,7 +112,7 @@ export default function ClassesPage() {
     return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", close); };
   }, [menu]);
 
-  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined), qk.coachPayout(payoutMonth, payoutCoachId || undefined)]); };
+  const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, coachFilter || undefined)]); };
 
   const save = useApiMutation((api) => {
     if (!editor) throw new Error("Nothing to save.");
@@ -181,7 +159,7 @@ export default function ClassesPage() {
     successMessage: "Coach substitution recorded for this class only.",
   });
 
-  const upsertCoach = useApiMutation((api, input: { name: string; phone?: string; specialty?: string; payPerClassMinor?: number }) => api.upsertClassCoach(input), {
+  const upsertCoach = useApiMutation((api, input: { name: string; phone?: string; specialty?: string }) => api.upsertClassCoach(input), {
     onSuccess: async () => { await invalidate([["classCoaches"]]); },
     successMessage: "Coach saved.",
   });
@@ -223,7 +201,11 @@ export default function ClassesPage() {
 
   const printSchedule = () => {
     document.documentElement.classList.add("print-schedule");
-    const cleanup = () => { document.documentElement.classList.remove("print-schedule"); window.removeEventListener("afterprint", cleanup); };
+    // Landscape applies only to this print run; receipts keep their own layout.
+    const pageStyle = document.createElement("style");
+    pageStyle.textContent = "@page { size: A4 landscape; margin: 9mm; }";
+    document.head.appendChild(pageStyle);
+    const cleanup = () => { document.documentElement.classList.remove("print-schedule"); pageStyle.remove(); window.removeEventListener("afterprint", cleanup); };
     window.addEventListener("afterprint", cleanup);
     window.print();
   };
@@ -264,7 +246,6 @@ export default function ClassesPage() {
               </select>
             ) : null}
             {canManage ? <Button variant="secondary" onClick={() => setCoachesOpen(true)}><Users /> Coaches</Button> : null}
-            {canManage ? <Button variant="secondary" onClick={() => setPayoutOpen(true)}><Download /> Coach payout</Button> : null}
             <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer /> Print</Button>
             {canManage ? <Button variant="signal" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>
@@ -284,7 +265,24 @@ export default function ClassesPage() {
 
         <div className="mt-8 flex items-center gap-2 print:hidden"><Repeat2 className="size-4 text-ink-3" /><div><h2 className="text-[15px] font-semibold">Repeating timetable</h2><p className="text-[11px] text-ink-3">Changes here affect future dated classes.</p></div></div>
 
-        <div className="hidden print:block"><p className="text-[20px] font-semibold">{branchName} — weekly class schedule</p></div>
+        <div className="hidden print:block" data-print-header>
+          <div className="flex items-end justify-between gap-6 border-b-2 border-black pb-3">
+            <div className="flex items-center gap-4">
+              {session?.organization.brand?.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- print header needs a plain img so browsers reliably render it on paper
+                <img src={session.organization.brand.logoUrl} alt="" className="h-12 w-auto max-w-40 object-contain" />
+              ) : null}
+              <div>
+                <p className="font-display text-[24px] font-semibold leading-tight">{session?.organization.name ?? "Weekly class schedule"}</p>
+                <p className="text-[12px]">{branchName} · Weekly class schedule</p>
+              </div>
+            </div>
+            <div className="text-end text-[10px] leading-4">
+              <p>Printed {formatDate(todayISODate())}</p>
+              <p>Operated by RIVET™</p>
+            </div>
+          </div>
+        </div>
 
         {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : sessionsQuery.isError ? (
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
@@ -357,6 +355,7 @@ export default function ClassesPage() {
                   <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => openEdit(target)}>Edit class</button>
                   <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); openNextOccurrence(target.id); }}>Open next dated class</button>
                   <button type="button" role="menuitem" className="block w-full px-3 py-2 text-start text-[12.5px] text-danger hover:bg-danger-bg" onClick={() => { setMenu(undefined); setDeleteTarget(target); setDeleteReason(""); }}>Remove from schedule</button>
+                  <button type="button" role="menuitem" className="block w-full border-t border-line px-3 py-2 text-start text-[12.5px] hover:bg-sunken" onClick={() => { setMenu(undefined); setDetailsId(target.id); }}>View event details</button>
                 </>
               );
             })()}
@@ -425,7 +424,7 @@ export default function ClassesPage() {
               ) : <div className="divide-y divide-line rounded-md border border-line">
                 {coaches.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No coaches yet — add the first one below.</p> : coaches.map((coach) => (
                   <div key={coach.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[10.5px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p><p className="mt-0.5 text-[10.5px] text-ink-3">{coach.payPerClassMinor !== undefined ? `JD ${(coach.payPerClassMinor / 1000).toFixed(3)} per delivered class` : "No reporting rate"}</p></div>
+                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[10.5px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p></div>
                     <Button variant="ghost" size="sm" aria-label={`Remove ${coach.name}`} loading={removeCoach.isPending} onClick={() => removeCoach.mutate(coach.id)}><X /></Button>
                   </div>
                 ))}
@@ -455,8 +454,40 @@ export default function ClassesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={payoutOpen} onOpenChange={setPayoutOpen}>
-          <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Coach payout report</DialogTitle><DialogDescription>Delivered, attendance-finalized classes multiplied by each coach&apos;s snapshotted reporting rate. No money records are created.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-[11px] font-medium">Month<Input type="month" value={payoutMonth} onChange={(event) => setPayoutMonth(event.target.value)} /></label><label className="grid gap-1 text-[11px] font-medium">Coach<select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={payoutCoachId} onChange={(event) => setPayoutCoachId(event.target.value)}><option value="">All coaches</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select></label></div>{payoutQuery.isLoading ? <Skeleton className="h-44 w-full" /> : payoutQuery.isError ? <ErrorState title="Coach payout could not be loaded" onRetry={() => payoutQuery.refetch()} /> : payoutQuery.data ? <><div className="overflow-hidden rounded-md border border-line"><div className="grid grid-cols-[90px_minmax(0,1fr)_120px] border-b border-line bg-sunken px-3 py-2 text-[9.5px] font-medium uppercase tracking-wide text-ink-3"><span>Date</span><span>Delivered class</span><span className="text-end">Rate</span></div>{payoutQuery.data.lines.length ? payoutQuery.data.lines.map((line) => <div key={line.occurrenceId} className="grid grid-cols-[90px_minmax(0,1fr)_120px] items-center border-b border-line px-3 py-2.5 text-[11.5px] last:border-b-0"><span>{formatDate(line.date)}</span><span className="truncate"><span className="font-medium">{line.deliveredCoachName}</span> · {line.className}{line.substituted ? " · substitute" : ""} · {line.attendedCount} attended</span><span className="text-end"><MoneyText money={line.rate} /></span></div>) : <p className="px-4 py-8 text-center text-[12px] text-ink-3">No finalized delivered classes in this period.</p>}</div><div className="flex items-center justify-between rounded-md bg-ink px-4 py-3 text-paper"><span className="text-[12px]">Reporting total</span><span className="text-[16px] font-semibold"><MoneyText money={payoutQuery.data.total} /></span></div></> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setPayoutOpen(false)}>Close</Button><Button disabled={!payoutQuery.data?.lines.length} onClick={() => payoutQuery.data && downloadPayoutCsv(payoutQuery.data)}><Download /> Export CSV</Button></DialogFooter></DialogContent>
+        <Dialog open={Boolean(detailsId)} onOpenChange={(open) => { if (!open) setDetailsId(undefined); }}>
+          <DialogContent className="max-w-md">
+            {(() => {
+              const target = sessionsQuery.data?.find((item) => item.id === detailsId);
+              if (!target) return null;
+              return (
+                <>
+                  <DialogHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <DialogTitle>{target.name}</DialogTitle>
+                      {canManage ? <Button variant="secondary" size="sm" onClick={() => { setDetailsId(undefined); openEdit(target); }} aria-label={`Edit ${target.name}`}><Pencil /> Edit</Button> : null}
+                    </div>
+                    <DialogDescription>Repeats every {DAYS[target.dayOfWeek]}.</DialogDescription>
+                  </DialogHeader>
+                  <DialogBody className="grid gap-3">
+                    {target.imageUrl ? <div className="h-32 rounded-md border border-line bg-cover bg-center" role="img" aria-label={target.imageAltText ?? `${target.name} photo`} style={{ backgroundImage: `url(${target.imageUrl})` }} /> : null}
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12.5px]">
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Time</dt><dd className="mt-0.5 font-medium">{rangeLabel(target)}</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Who is it for?</dt><dd className="mt-0.5 font-medium">{AUDIENCE_LABEL[target.audience]}</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Booked</dt><dd className="mt-0.5 font-medium">{target.roster.length}/{target.capacity}</dd></div>
+                    </dl>
+                    {target.notes ? <div><p className="text-[10.5px] uppercase tracking-wide text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
+                  </DialogBody>
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={() => setDetailsId(undefined)}>Close</Button>
+                    <Button onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Open next dated class</Button>
+                  </DialogFooter>
+                </>
+              );
+            })()}
+          </DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(managed)} onOpenChange={(open) => { if (!open) setManageId(undefined); }}>
@@ -518,11 +549,10 @@ export default function ClassesPage() {
   );
 }
 
-function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; phone?: string; specialty?: string; payPerClassMinor?: number }) => void; pending: boolean }) {
+function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; phone?: string; specialty?: string }) => void; pending: boolean }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [specialty, setSpecialty] = useState("");
-  const [payPerClass, setPayPerClass] = useState("");
   return (
     <div className="grid gap-2 rounded-md border border-dashed border-line-2 p-3">
       <p className="text-[12px] font-medium">Add a coach</p>
@@ -530,10 +560,8 @@ function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; ph
         <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" aria-label="Coach name" />
         <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone (optional)" aria-label="Coach phone" />
         <Input value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="Specialty (optional)" aria-label="Coach specialty" />
-        <Input type="number" min={0} step={0.5} value={payPerClass} onChange={(event) => setPayPerClass(event.target.value)} placeholder="Pay per class · JOD" aria-label="Coach pay per class in JOD" />
       </div>
-      <p className="text-[10.5px] leading-4 text-ink-3">The rate is reporting-only. It never creates a payment, payable, or ledger entry.</p>
-      <div className="flex justify-end"><Button size="sm" loading={pending} disabled={!name.trim() || (payPerClass !== "" && Number(payPerClass) < 0)} onClick={() => { onSubmit({ name: name.trim(), phone: phone.trim() || undefined, specialty: specialty.trim() || undefined, payPerClassMinor: payPerClass === "" ? undefined : Math.round(Number(payPerClass) * 1000) }); setName(""); setPhone(""); setSpecialty(""); setPayPerClass(""); }}><Plus /> Add coach</Button></div>
+      <div className="flex justify-end"><Button size="sm" loading={pending} disabled={!name.trim()} onClick={() => { onSubmit({ name: name.trim(), phone: phone.trim() || undefined, specialty: specialty.trim() || undefined }); setName(""); setPhone(""); setSpecialty(""); }}><Plus /> Add coach</Button></div>
     </div>
   );
 }

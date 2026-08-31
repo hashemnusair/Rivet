@@ -60,7 +60,6 @@ export const qk = {
   classSessions: (branchId: string) => ["classSessions", branchId] as const,
   classOccurrences: (branchId: string, fromDate: string, toDate: string, coachId?: string) => ["classOccurrences", branchId, fromDate, toDate, coachId ?? "all"] as const,
   customerClasses: (membershipId: string) => ["customerClasses", membershipId] as const,
-  coachPayout: (month: string, coachId?: string) => ["coachPayout", month, coachId ?? "all"] as const,
   analytics: (kind: string, params: Record<string, unknown>) => ["analytics", kind, params] as const,
   checklistTemplates: (branchId?: string) => ["checklistTemplates", branchId ?? "all"] as const,
   checklistDay: (branchId: string, date?: string) => ["checklistDay", branchId, date ?? "today"] as const,
@@ -102,5 +101,4 @@ export const INVALIDATE_ALL = [
   "classSessions",
   "classOccurrences",
   "customerClasses",
-  "coachPayout",
 ] as const;
