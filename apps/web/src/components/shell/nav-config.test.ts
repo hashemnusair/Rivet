@@ -17,6 +17,7 @@ describe("primary workspace navigation", () => {
       "Leads",
       "Follow-ups",
       "Payments",
+      "Reports",
       "Statements",
       "Audit log",
       "Data exports",
@@ -31,7 +32,6 @@ describe("primary workspace navigation", () => {
       "/memberships",
       "/plans",
       "/payments/shifts",
-      "/reports",
       "/automations",
     ]));
     expect(hrefs.some((href) => href.includes("facilit"))).toBe(false);
@@ -63,6 +63,7 @@ describe("primary workspace navigation", () => {
     const ledger = NAV_SECTIONS.find((section) => section.label === "Management ledger");
 
     expect(finance?.items.some((item) => item.href === "/finance")).toBe(false);
+    expect(finance?.items.map((item) => item.href)).toEqual(["/payments", "/reports"]);
     expect(ledger?.items).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/finance", label: "Statements" })]));
   });
 

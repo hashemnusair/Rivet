@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Banknote, FileBarChart } from "lucide-react";
+import { ArrowLeftRight, Banknote } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -19,7 +19,6 @@ interface FinanceLink {
 export const FINANCE_LINKS: readonly FinanceLink[] = [
   { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
   { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
-  { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
 ];
 
 export function financeLinkIsVisible(
@@ -34,11 +33,10 @@ export function financeLinkIsVisible(
 
 function financeLinkIsActive(href: string, pathname: string) {
   if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/receipts");
-  if (href === "/reports") return pathname === "/reports";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** One small secondary switcher keeps finance routes discoverable without three primary nav entries. */
+/** Payments and cash shifts share one compact switcher. Reports live in the primary sidebar. */
 export function FinanceNav() {
   const pathname = usePathname();
   const { session } = useApp();

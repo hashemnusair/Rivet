@@ -12,6 +12,7 @@ import {
   CircleHelp,
   Dumbbell,
   Download,
+  FileBarChart,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Finance",
     items: [
       { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
+      { href: "/reports", label: "Reports", icon: FileBarChart, anyPermission: ["reports.financial.read"] },
     ],
   },
   {

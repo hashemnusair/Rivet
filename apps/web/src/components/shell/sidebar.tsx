@@ -12,9 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
 export function navIsActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard" || pathname === "/";
-  // The Payments entry fronts the whole finance cluster, whose Reports view
-  // lives outside the /payments segment.
-  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/") || pathname === "/reports" || pathname.startsWith("/reports/");
+  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/");
   // Lead detail pages live under /crm/leads but belong to the pipeline entry.
   if (href === "/crm/pipeline") return pathname === "/crm/pipeline" || pathname.startsWith("/crm/pipeline/") || pathname.startsWith("/crm/leads");
   // Match the route itself and descendants, but not similarly prefixed routes.

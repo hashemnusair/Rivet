@@ -19,10 +19,10 @@ describe("navIsActive", () => {
     expect(navIsActive("/payments", "/payments/receipts/receipt-1")).toBe(true);
   });
 
-  it("keeps the Payments entry active across the whole finance cluster", () => {
+  it("keeps Payments and Reports as separate primary destinations", () => {
     expect(navIsActive("/payments", "/payments/shifts")).toBe(true);
-    expect(navIsActive("/payments", "/reports")).toBe(true);
-    expect(navIsActive("/finance", "/reports")).toBe(false);
+    expect(navIsActive("/payments", "/reports")).toBe(false);
+    expect(navIsActive("/reports", "/reports")).toBe(true);
   });
 
   it("keeps the pipeline entry active on lead detail pages", () => {
