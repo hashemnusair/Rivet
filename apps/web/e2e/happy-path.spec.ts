@@ -304,6 +304,11 @@ test.describe("settings navigation", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/settings");
 
+    const rootScrollPhysics = await page.evaluate(() => ({
+      html: getComputedStyle(document.documentElement).overscrollBehaviorY,
+      body: getComputedStyle(document.body).overscrollBehaviorY,
+    }));
+    expect(rootScrollPhysics).toEqual({ html: "none", body: "none" });
     const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);
