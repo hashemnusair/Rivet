@@ -11,7 +11,9 @@
 import type * as accessMaintenance from "../accessMaintenance.js";
 import type * as accounting from "../accounting.js";
 import type * as accountingLedger from "../accountingLedger.js";
+import type * as analyticsReports from "../analyticsReports.js";
 import type * as automations from "../automations.js";
+import type * as branchChecklists from "../branchChecklists.js";
 import type * as brand from "../brand.js";
 import type * as classes from "../classes.js";
 import type * as crons from "../crons.js";
@@ -60,7 +62,9 @@ declare const fullApi: ApiFromModules<{
   accessMaintenance: typeof accessMaintenance;
   accounting: typeof accounting;
   accountingLedger: typeof accountingLedger;
+  analyticsReports: typeof analyticsReports;
   automations: typeof automations;
+  branchChecklists: typeof branchChecklists;
   brand: typeof brand;
   classes: typeof classes;
   crons: typeof crons;
