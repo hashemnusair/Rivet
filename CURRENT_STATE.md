@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## Member export report and Production correction — 31 August 2026
+## Mobile-friendly member CSV correction — 1 September 2026
 
 - A hosted member download exposed that Production Convex was still serving
   the pre-export-pass function bundle. Its CSV contained serialized records,
@@ -8,34 +8,35 @@
   code and Vercel frontend had already been pushed. The prior release stopped
   before the required Convex deployment; this was a release gap, not a browser
   or spreadsheet problem.
-- “Export my data” is now “Download my data” and produces a standalone,
-  responsive HTML report that opens directly in a browser. It contains only
-  the member's recorded profile, memberships, charges and balances, payments
-  and refunds, check-ins, account activity, class and trial bookings, and
-  marketing-preference history. Blank profile fields are omitted; serialized
+- “Download my data (CSV)” now produces one UTF-8 spreadsheet file that opens
+  in mobile or desktop Numbers, Excel, and Google Sheets. Every record uses the
+  same nine columns: category, gym, branch, date, record, details, amount,
+  currency, and status. The export contains only recorded profile,
+  membership, balance, payment, check-in, activity, class, trial, and
+  marketing-preference facts. Empty profile fields are omitted; serialized
   JSON, internal record ids, database metadata, and duplicate technical
   columns are absent.
-- The report is self-contained, escaped against injected markup, printable,
-  legible at a 390px viewport without page overflow, and styled in RIVET's
-  existing restrained visual language. Production and mock adapters generate
-  the same contract.
+- The temporary HTML member-report path and its generator were removed rather
+  than retained as a fallback. Production and mock adapters now generate the
+  same flat CSV contract. Arabic and other Unicode text remain intact, money
+  uses human major units, dates use the gym/member timezone, and spreadsheet
+  formula prefixes are neutralized.
 - The staff/owner CSV datasets remain spreadsheets, but the final opaque RIVET
   member, lead, transaction, charge, audit, PT-order, and operations record-id
   columns were removed. Names, member numbers, receipt numbers, SKUs, external
   references, dates, money, statuses, branch context, and other operationally
   useful fields remain.
 - Verification passed both TypeScript checks, zero-warning lint and the
-  secret-output audit, 178 Vitest files / 1,068 tests plus 14 repository-safety
-  tests, the 59-page Production build, the focused three-file download browser
+  secret-output audit, 177 Vitest files / 1,067 tests plus 14 repository-safety
+  tests, the 59-page Production build, the focused three-download browser
   suite, and `git diff --check`.
-- Application commit `edbc472` is pushed to matching `main` and `origin/main`.
-  Vercel Production deployment `26PqfNb16qGGW13JGBB5KJ3x2u8N` completed for
-  that exact commit. The guarded Convex dry run used an explicit temporary
-  env-file selector and printed Production `descriptive-meerkat-589`; schema
-  validation passed and no indexes were deleted. The matching backend then
-  deployed successfully and the read-only health check returned `status: ok`.
-  Earlier dry-run attempts printed Development `fleet-otter-621` and therefore
-  were not deployed. No Production tenant record or product data was mutated.
+- Application commit `df3442b` is pushed to `main`. The guarded Convex dry run
+  explicitly printed Production `descriptive-meerkat-589`; schema validation
+  passed and no indexes were deleted. The exact backend then deployed
+  successfully and the read-only Production health check returned `status:
+  ok`. Vercel and GitHub checks were triggered by the pushed commit. No
+  Production tenant record, product data, provider setting, or environment
+  variable was mutated.
 
 ## Human-readable exports and reliable downloads — 31 August 2026
 
@@ -51,11 +52,11 @@
   dates and times, labelled statuses, major-unit money plus currency, branch
   scope, applied filters, and a generated-at preamble. Empty exports retain
   their useful column headings.
-- A member's “Export my data” archive is now a labelled, sectioned record of
+- A member's “Download my data (CSV)” archive is one normalized table of
   profile, memberships, charges and balances, payments and refunds, check-ins,
   activity timeline, class bookings, trial bookings, and marketing-preference
   history. It preserves Arabic and other Unicode text and omits the former raw
-  JSON blob.
+  JSON blob and all opaque internal record identifiers.
 - Reports, operational analytics, platform billing, receipt text downloads,
   import templates/rejected rows, and facility QR downloads now use the same
   reliable download path. The finance overview export reads every bounded API
@@ -74,10 +75,9 @@
   tests, the 59-page Production build, 53 credential-free Playwright journeys
   with 14 isolated-staging journeys explicitly skipped, the Production
   dependency audit, and `git diff --check`.
-- This batch changes Convex export functions and therefore requires the normal
-  exact-target Production Convex deployment before the hosted app receives the
-  server-generated staff and member archive formats. No Production data,
-  provider setting, schema record, or environment variable was changed here.
+- The member CSV correction was deployed through the normal exact-target
+  Production Convex gate. No Production data, provider setting, schema record,
+  or environment variable was changed by the deployment.
 
 ## Payout removal, event details, overlap guard, and branded print — 31 August 2026
 
