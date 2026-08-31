@@ -197,7 +197,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
       </div>
       <div key={date} className="animate-fade-up">
         {dayOccurrences.length ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{dayOccurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{dayOccurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={(book.isPending && book.variables === occurrence.id) || (cancel.isPending && cancel.variables === occurrence.id)} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
         ) : (
           <div className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes on this day</h3><p className="mt-1 text-[12px] text-ink-3">Use the arrows to check the rest of the week.</p></div>
         )}

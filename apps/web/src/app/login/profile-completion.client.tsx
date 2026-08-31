@@ -50,8 +50,11 @@ function ProfileCompletionForm() {
     try {
       await user.update({ firstName: values.firstName, lastName: values.lastName });
       toast.success("Your profile is ready.");
-    } catch {
-      setError("root", { message: "We could not save your name. Please try again." });
+    } catch (error) {
+      // Surface Clerk's own reason so a stuck sign-in is diagnosable instead
+      // of a dead end behind a generic message.
+      const clerkMessage = (error as { errors?: Array<{ longMessage?: string; message?: string }> })?.errors?.[0];
+      setError("root", { message: clerkMessage?.longMessage ?? clerkMessage?.message ?? (error instanceof Error ? error.message : "We could not save your name. Please try again.") });
     }
   });
 
@@ -62,7 +65,7 @@ function ProfileCompletionForm() {
           <UserRound className="size-4 text-signal" /> Finish setting up your profile
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">
-          Enter the name your gym team or membership should display. You only need to do this once.
+          You are signed in{user?.primaryEmailAddress ? <> as <span className="font-medium">{user.primaryEmailAddress.emailAddress}</span></> : null}, but this account has no name yet. Enter the name your gym team or membership should display — you only do this once.
         </p>
 
         <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit} noValidate>
