@@ -148,4 +148,30 @@ describe("branch checklists", () => {
     const stranger = t.withIdentity({ subject: "clerk-total-stranger" });
     await expect(stranger.query(api.domain.query, operation("checklists.day", { branchId: "branch-a" }))).rejects.toThrow();
   });
+
+
+  it("contributes due, overdue, and failed checklist items to the Today queue", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-check" });
+    const template = await owner.mutation(api.domain.mutate, operation("checklists.template.upsert", { ...TEMPLATE_INPUT, dueTime: "00:01" })) as { id: string; items: Array<{ id: string }> };
+
+    const dashboard = await owner.query(api.domain.query, operation("dashboard", {})) as { todayQueue: { items: Array<{ id: string; kind: string; title: string; priority: string }> } };
+    const due = dashboard.todayQueue.items.find((item) => item.id === `checklist-due:${template.id}:${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman" }).format(Date.now())}`);
+    expect(due).toBeDefined();
+    expect(due!.kind).toBe("branch_checklist");
+    expect(due!.title).toMatch(/Overdue: Opening walkthrough/);
+
+    await owner.mutation(api.domain.mutate, operation("checklists.item.set", { templateId: template.id, itemId: template.items[1]!.id, status: "failed", reason: "Broken tap." }));
+    const withFailure = await owner.query(api.domain.query, operation("dashboard", {})) as { todayQueue: { items: Array<{ id: string; priority: string }> } };
+    expect(withFailure.todayQueue.items.some((item) => item.id.startsWith(`checklist-failed:${template.id}`) && item.priority === "urgent")).toBe(true);
+
+    // Completing every required item clears the due entry — done work never
+    // reappears in Today.
+    await owner.mutation(api.domain.mutate, operation("checklists.item.set", { templateId: template.id, itemId: template.items[0]!.id, status: "completed" }));
+    await owner.mutation(api.domain.mutate, operation("checklists.item.set", { templateId: template.id, itemId: template.items[1]!.id, status: "completed", reason: "Tap fixed and verified." }));
+    const cleared = await owner.query(api.domain.query, operation("dashboard", {})) as { todayQueue: { items: Array<{ id: string }> } };
+    expect(cleared.todayQueue.items.some((item) => item.id.startsWith(`checklist-due:${template.id}`))).toBe(false);
+    expect(cleared.todayQueue.items.some((item) => item.id.startsWith(`checklist-failed:${template.id}`))).toBe(false);
+  });
 });

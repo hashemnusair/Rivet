@@ -384,6 +384,9 @@ export async function checklistTodayQueueItems(ctx: ReadContext, actor: ActorCon
   const branches = new Map((await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).map((branch) => [branch._id, { publicId: publicBranchId(branch), name: branch.name }]));
   const items: Data[] = [];
   for (const template of templates) {
+    // Role-safe queue: only the responsible role sees its checklist, plus
+    // owner/manager oversight. A coach is never nagged about the desk's list.
+    if (actor.role !== template.assignedRole && actor.role !== "owner" && actor.role !== "manager") continue;
     const branch = branches.get(template.branchId);
     if (!branch || !branchVisible(branch.publicId)) continue;
     const run = await ctx.db.query("checklistRuns").withIndex("by_template_date", (q) => q.eq("organizationId", actor.organization._id).eq("templateId", template._id).eq("localDate", today)).unique();

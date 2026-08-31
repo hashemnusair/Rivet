@@ -4428,6 +4428,43 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
+      const checklistRole = currentRole(this.db) === "salesperson" ? "sales" : currentRole(this.db);
+      for (const template of this.checklistTemplates) {
+        if (!template.active || !queueBranchVisible(template.branchId)) continue;
+        if (checklistRole !== template.assignedRole && checklistRole !== "owner" && checklistRole !== "manager") continue;
+        const run = this.checklistRuns.find((candidate) => candidate.templateId === template.id && candidate.localDate === today);
+        const items = run ? run.items : template.items.map((item) => ({ required: item.required, status: "pending" as const }));
+        const requiredPending = items.filter((item) => item.required && item.status === "pending").length;
+        const failedRequired = items.filter((item) => item.required && item.status === "failed").length;
+        const done = items.filter((item) => item.status !== "pending").length;
+        const pastDue = this.checklistLocalTimeNow() > template.dueTime;
+        if (failedRequired > 0) {
+          queueItems.push({
+            id: `checklist-failed:${template.id}:${today}`,
+            kind: "branch_checklist",
+            priority: "urgent",
+            title: `Fix ${failedRequired} failed ${template.name} item${failedRequired === 1 ? "" : "s"}`,
+            detail: `${branchNameById.get(template.branchId) ?? "Branch"} · ${template.type} checklist`,
+            branchName: branchNameById.get(template.branchId),
+            href: `/checklists?branch=${encodeURIComponent(template.branchId)}`,
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+        if (requiredPending > 0) {
+          queueItems.push({
+            id: `checklist-due:${template.id}:${today}`,
+            kind: "branch_checklist",
+            priority: pastDue ? "high" : "normal",
+            title: `${pastDue ? "Overdue" : "Due"}: ${template.name}`,
+            detail: `${branchNameById.get(template.branchId) ?? "Branch"} · ${done}/${items.length} done · due ${template.dueTime}`,
+            branchName: branchNameById.get(template.branchId),
+            overdue: pastDue,
+            href: `/checklists?branch=${encodeURIComponent(template.branchId)}`,
+            action: { kind: "navigate", label: "Open" },
+          });
+        }
+      }
+
       const todayQueue = finalizeTodayQueue(queueItems, nowISO());
 
       const recentActivity = this.db.activities

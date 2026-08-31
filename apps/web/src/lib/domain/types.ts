@@ -2634,7 +2634,8 @@ export type TodayQueueKind =
   | "access_denial"
   | "approval"
   | "cash_variance"
-  | "facility_task";
+  | "facility_task"
+  | "branch_checklist";
 
 export type TodayQueuePriority = "urgent" | "high" | "normal";
 
