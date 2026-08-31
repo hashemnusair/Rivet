@@ -1,7 +1,10 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, requirePermission, publicBranchId, type ActorContext } from "./security";
+import { occurrenceTimes, weeklySlot } from "./classes";
+import { addDays } from "../src/lib/utils/dates";
 import {
+  classUtilizationReport,
   collectionsReport,
   controlTrendsReport,
   crmFunnelReport,
@@ -137,6 +140,66 @@ export async function analyticsQuery(ctx: ReadContext, actor: ActorContext, oper
         .filter(({ row, value }) => branchVisible(scope, rowBranchPublicId(scope, row) ?? (str(value.branchId) || undefined)))
         .map(({ value }) => ({ occurredAt: str(value.occurredAt), decision: str(value.decision, "allowed") }));
       return peakHoursReport(checkIns, range, timezone);
+    }
+
+    case "analytics.class_utilization": {
+      const range = requireRange(input, actor);
+      const fromMs = Date.parse(`${range.from}T00:00:00Z`) - RANGE_MARGIN_MS;
+      const toMs = Date.parse(`${range.to}T00:00:00Z`) + DAY_MS + RANGE_MARGIN_MS;
+      const branchIds = [...scope.publicById.entries()]
+        .filter(([, publicId]) => branchVisible(scope, publicId))
+        .map(([branchId]) => branchId);
+      const occurrenceRows: Array<Doc<"classOccurrences">> = [];
+      const bookingRows: Array<Doc<"classBookings">> = [];
+      for (const branchId of branchIds) {
+        occurrenceRows.push(...await ctx.db.query("classOccurrences").withIndex("by_branch_start", (q) => q
+          .eq("organizationId", actor.organization._id)
+          .eq("branchId", branchId)
+          .gte("startsAt", fromMs)
+          .lte("startsAt", toMs)).collect());
+        bookingRows.push(...await ctx.db.query("classBookings").withIndex("by_branch_start", (q) => q
+          .eq("organizationId", actor.organization._id)
+          .eq("branchId", branchId)
+          .gte("startsAt", fromMs)
+          .lte("startsAt", toMs)).collect());
+      }
+      const persistedKeys = new Set(occurrenceRows.map((occurrence) => `${occurrence.templatePublicId}:${occurrence.date}`));
+      const projectedOccurrences = occurrenceRows.map((occurrence) => ({
+          id: String(occurrence._id),
+          templateId: occurrence.templatePublicId,
+          name: occurrence.name,
+          startsAt: new Date(occurrence.startsAt).toISOString(),
+          capacity: occurrence.capacity,
+          status: occurrence.status,
+        }));
+      const templates = (await ctx.db.query("classSessions").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect())
+        .filter((template) => template.status !== "cancelled" && branchVisible(scope, scope.publicById.get(template.branchId)));
+      for (let date = range.from; date <= range.to; date = addDays(date, 1)) {
+        const weekday = new Date(`${date}T12:00:00.000Z`).getUTCDay();
+        for (const template of templates) {
+          const slot = weeklySlot(template, timezone);
+          if (slot.dayOfWeek !== weekday || persistedKeys.has(`${template.publicId}:${date}`)) continue;
+          const times = occurrenceTimes(date, slot.startMinute, template.durationMinutes, timezone);
+          projectedOccurrences.push({
+            id: `virtual:${template.publicId}:${date}`,
+            templateId: template.publicId,
+            name: template.name,
+            startsAt: new Date(times.startsAt).toISOString(),
+            capacity: template.capacity,
+            status: "scheduled",
+          });
+        }
+      }
+      return classUtilizationReport(
+        projectedOccurrences,
+        bookingRows.map((booking) => ({
+          occurrenceId: String(booking.occurrenceId),
+          status: booking.status,
+          fromWaitlist: booking.fromWaitlist,
+        })),
+        range,
+        timezone,
+      );
     }
 
     case "analytics.retention": {

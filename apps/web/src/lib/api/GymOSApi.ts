@@ -843,6 +843,7 @@ export interface GymOSApi {
 
   // --- Read-only operational analytics (Reports area) ---
   getPeakHoursReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").PeakHoursReport>;
+  getClassUtilizationReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ClassUtilizationReport>;
   getRetentionReport(input: import("@/lib/domain/types").AnalyticsBranchInput): Promise<import("@/lib/domain/types").RetentionReport>;
   getRenewalForecastReport(input: import("@/lib/domain/types").AnalyticsBranchInput): Promise<import("@/lib/domain/types").RenewalForecastReport>;
   getCollectionsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").CollectionsReport>;

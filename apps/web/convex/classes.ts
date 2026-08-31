@@ -88,7 +88,7 @@ function occurrenceInputParts(value: unknown): { templatePublicId: string; date:
   return templatePublicId && validDate(date) ? { templatePublicId, date } : undefined;
 }
 
-function occurrenceTimes(date: string, startMinute: number, durationMinutes: number, timezone: string): { startsAt: number; endsAt: number } {
+export function occurrenceTimes(date: string, startMinute: number, durationMinutes: number, timezone: string): { startsAt: number; endsAt: number } {
   const time = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
   const startsAt = Date.parse(localDateTimeToISO(date, time, timezone || "Asia/Amman"));
   return { startsAt, endsAt: startsAt + durationMinutes * 60_000 };
@@ -219,7 +219,7 @@ async function classImageView(ctx: ReadContext, actor: ActorContext, assetId: st
 }
 
 /** Legacy dated rows normalize into the weekly template in the gym timezone. */
-function weeklySlot(session: ClassSession, timezone: string): { dayOfWeek: number; startMinute: number } {
+export function weeklySlot(session: ClassSession, timezone: string): { dayOfWeek: number; startMinute: number } {
   if (session.dayOfWeek !== undefined && session.startMinute !== undefined) {
     return { dayOfWeek: session.dayOfWeek, startMinute: session.startMinute };
   }

@@ -5665,6 +5665,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "checklists.day":
       return await checklistsQuery(ctx, actor, operation, input);
     case "analytics.peak_hours":
+    case "analytics.class_utilization":
     case "analytics.retention":
     case "analytics.renewal_forecast":
     case "analytics.collections":

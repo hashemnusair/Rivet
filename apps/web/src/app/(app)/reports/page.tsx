@@ -95,7 +95,7 @@ export default function ReportsPage() {
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner, manager, and auditor access is required for financial reporting." />}>
         <nav aria-label="Report views" className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
-          {(["overview", "peak-hours", "retention", "renewals", "collections", "crm", "controls"] as const).map((kind) => (
+          {(["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"] as const).map((kind) => (
             <button
               key={kind}
               type="button"

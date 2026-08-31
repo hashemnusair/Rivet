@@ -17,12 +17,13 @@ import { useApp } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import type { PeakHoursReport, RetentionReport, RenewalForecastReport, CollectionsReport, CrmFunnelReport, ControlTrendsReport } from "@/lib/domain/types";
+import type { ClassUtilizationReport, PeakHoursReport, RetentionReport, RenewalForecastReport, CollectionsReport, CrmFunnelReport, ControlTrendsReport } from "@/lib/domain/types";
 
-export type OperationalReportKind = "peak-hours" | "retention" | "renewals" | "collections" | "crm" | "controls";
+export type OperationalReportKind = "peak-hours" | "classes" | "retention" | "renewals" | "collections" | "crm" | "controls";
 
 export const OPERATIONAL_REPORT_LABELS: Record<OperationalReportKind, string> = {
   "peak-hours": "Peak hours",
+  classes: "Classes",
   retention: "Retention",
   renewals: "Renewals",
   collections: "Collections",
@@ -31,7 +32,7 @@ export const OPERATIONAL_REPORT_LABELS: Record<OperationalReportKind, string> = 
 };
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const RANGED: Record<OperationalReportKind, boolean> = { "peak-hours": true, retention: false, renewals: false, collections: true, crm: true, controls: true };
+const RANGED: Record<OperationalReportKind, boolean> = { "peak-hours": true, classes: true, retention: false, renewals: false, collections: true, crm: true, controls: true };
 
 function csvCell(value: string) {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -64,13 +65,14 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
   const params = { branchId: branchInput, from, to };
 
   const peakQuery = useApiQuery(qk.analytics("peak-hours", params), (api) => api.getPeakHoursReport({ branchId: branchInput, from, to }), { enabled: view === "peak-hours" });
+  const classesQuery = useApiQuery(qk.analytics("classes", params), (api) => api.getClassUtilizationReport({ branchId: branchInput, from, to }), { enabled: view === "classes" });
   const retentionQuery = useApiQuery(qk.analytics("retention", { branchId: branchInput }), (api) => api.getRetentionReport({ branchId: branchInput }), { enabled: view === "retention" });
   const renewalsQuery = useApiQuery(qk.analytics("renewals", { branchId: branchInput }), (api) => api.getRenewalForecastReport({ branchId: branchInput }), { enabled: view === "renewals" });
   const collectionsQuery = useApiQuery(qk.analytics("collections", params), (api) => api.getCollectionsReport({ branchId: branchInput, from, to }), { enabled: view === "collections" });
   const crmQuery = useApiQuery(qk.analytics("crm", params), (api) => api.getCrmFunnelReport({ branchId: branchInput, from, to }), { enabled: view === "crm" });
   const controlsQuery = useApiQuery(qk.analytics("controls", params), (api) => api.getControlTrendsReport({ branchId: branchInput, from, to }), { enabled: view === "controls" });
 
-  const active = { "peak-hours": peakQuery, retention: retentionQuery, renewals: renewalsQuery, collections: collectionsQuery, crm: crmQuery, controls: controlsQuery }[view];
+  const active = { "peak-hours": peakQuery, classes: classesQuery, retention: retentionQuery, renewals: renewalsQuery, collections: collectionsQuery, crm: crmQuery, controls: controlsQuery }[view];
 
   return (
     <div className="space-y-4">
@@ -103,6 +105,7 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
 
       {!active.isLoading && !active.error ? (
         view === "peak-hours" && peakQuery.data ? <PeakHoursView report={peakQuery.data} from={from} to={to} />
+        : view === "classes" && classesQuery.data ? <ClassesView report={classesQuery.data} from={from} to={to} />
         : view === "retention" && retentionQuery.data ? <RetentionView report={retentionQuery.data} />
         : view === "renewals" && renewalsQuery.data ? <RenewalsView report={renewalsQuery.data} />
         : view === "collections" && collectionsQuery.data ? <CollectionsView report={collectionsQuery.data} from={from} to={to} />
@@ -111,6 +114,55 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
         : null
       ) : null}
     </div>
+  );
+}
+
+// --- Classes ---------------------------------------------------------------
+
+function ClassesView({ report, from, to }: { report: ClassUtilizationReport; from: string; to: string }) {
+  const percent = (value?: number) => value === undefined ? "—" : `${Math.round(value * 100)}%`;
+  const exportCsv = () => downloadCsv(`rivet-class-utilization-${from}-${to}.csv`, [
+    ["Class", "Occurrences", "Completed", "Class cancellations", "Capacity", "Confirmed bookings", "Fill rate", "Attended", "No-shows", "Attendance rate", "Waitlist demand", "Booking cancellations"],
+    ...report.rows.map((row) => [row.className, String(row.occurrences), String(row.completedOccurrences), String(row.cancelledOccurrences), String(row.capacity), String(row.booked), percent(row.fillRate), String(row.attended), String(row.noShows), percent(row.attendanceRate), String(row.waitlisted), String(row.cancelled)]),
+  ]);
+  return (
+    <section className="panel overflow-hidden">
+      <ReportHeader
+        title="Class utilization"
+        definition="Dated class capacity and saved roster outcomes in the selected period. Fill rate is confirmed seats divided by offered capacity; cancelled classes are excluded. Attendance rate uses only finalized attended/no-show outcomes. Waitlist demand includes members promoted from a waitlist."
+        onExport={exportCsv}
+        exportDisabled={report.rows.length === 0}
+      />
+      {report.rows.length === 0 ? (
+        <EmptyState icon={FileBarChart} title="No dated classes in this period" description="Class utilization appears after the weekly timetable produces dated occurrences." />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 divide-line border-b border-line sm:grid-cols-3 xl:grid-cols-6">
+            <StatCell label="Occurrences">{report.totals.occurrences}</StatCell>
+            <StatCell label="Fill rate">{percent(report.totals.fillRate)}</StatCell>
+            <StatCell label="Attendance">{percent(report.totals.attendanceRate)}</StatCell>
+            <StatCell label="Waitlist demand">{report.totals.waitlisted}</StatCell>
+            <StatCell label="No-shows" tone={report.totals.noShows > 0 ? "warning" : undefined}>{report.totals.noShows}</StatCell>
+            <StatCell label="Cancelled classes" tone={report.totals.cancelledOccurrences > 0 ? "warning" : undefined}>{report.totals.cancelledOccurrences}</StatCell>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Class</TableHead><TableHead className="text-end">Dates</TableHead><TableHead className="text-end">Booked / capacity</TableHead><TableHead className="text-end">Fill</TableHead><TableHead className="text-end">Attended</TableHead><TableHead className="text-end">No-shows</TableHead><TableHead className="text-end">Waitlist</TableHead><TableHead className="text-end">Cancellations</TableHead></TableRow></TableHeader>
+              <TableBody>{report.rows.map((row) => <TableRow key={`${row.templateId}:${row.className}`}>
+                <TableCell><p className="font-medium">{row.className}</p>{row.cancelledOccurrences ? <p className="mt-0.5 text-[10.5px] text-warning-deep">{row.cancelledOccurrences} class cancellation{row.cancelledOccurrences === 1 ? "" : "s"}</p> : null}</TableCell>
+                <TableCell className="text-end tabular">{row.occurrences}</TableCell>
+                <TableCell className="text-end tabular">{row.booked} / {row.capacity}</TableCell>
+                <TableCell className="text-end tabular">{percent(row.fillRate)}</TableCell>
+                <TableCell className="text-end tabular">{row.attended}</TableCell>
+                <TableCell className={cn("text-end tabular", row.noShows > 0 && "text-warning-deep")}>{row.noShows}</TableCell>
+                <TableCell className="text-end tabular">{row.waitlisted}</TableCell>
+                <TableCell className="text-end tabular">{row.cancelled}</TableCell>
+              </TableRow>)}</TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

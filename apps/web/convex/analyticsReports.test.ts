@@ -95,4 +95,72 @@ describe("operational analytics queries", () => {
     const retention = await owner.query(api.domain.query, operation("analytics.retention", {})) as { cohorts: Array<{ size: number }> };
     expect(retention.cohorts.length).toBeGreaterThan(0);
   });
+
+  it("reports dated class utilization from branch-scoped occurrences without writing", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").collect())[0]!;
+      const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+      const branchA = branches.find((branch) => branch.publicId === "branch-a")!;
+      const templateId = await ctx.db.insert("classSessions", {
+        organizationId: organization._id,
+        publicId: "class-strength",
+        branchId: branchA._id,
+        name: "Strength",
+        dayOfWeek: new Date().getUTCDay(),
+        startMinute: 18 * 60,
+        durationMinutes: 60,
+        capacity: 4,
+        status: "scheduled",
+        roster: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const occurrenceId = await ctx.db.insert("classOccurrences", {
+        organizationId: organization._id,
+        publicId: "occ-strength",
+        templateId,
+        templatePublicId: "class-strength",
+        branchId: branchA._id,
+        date: today(),
+        startsAt: Date.now(),
+        endsAt: Date.now() + 3_600_000,
+        name: "Strength",
+        capacity: 4,
+        audience: "mixed",
+        status: "completed",
+        attendanceFinalizedAt: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      for (const [index, status] of (["attended", "no_show"] as const).entries()) {
+        await ctx.db.insert("classBookings", {
+          organizationId: organization._id,
+          publicId: `booking-${index}`,
+          occurrenceId,
+          occurrencePublicId: "occ-strength",
+          templatePublicId: "class-strength",
+          branchId: branchA._id,
+          memberPublicId: `member-${index}`,
+          membershipPublicId: `membership-${index}`,
+          memberName: `Member ${index}`,
+          startsAt: Date.now(),
+          status,
+          bookedAt: Date.now(),
+          fromWaitlist: index === 1,
+          bookedBy: "staff",
+          bookedByUserPublicId: "owner-analytics",
+          updatedAt: Date.now(),
+        });
+      }
+    });
+    const owner = t.withIdentity({ subject: "clerk-owner-analytics" });
+    const before = await t.run(async (ctx) => (await ctx.db.query("classOccurrences").collect()).length);
+    const report = await owner.query(api.domain.query, operation("analytics.class_utilization", { from: today(), to: today(), branchId: "branch-a" })) as { rows: Array<Record<string, unknown>>; totals: Record<string, number> };
+    expect(report.rows[0]).toMatchObject({ className: "Strength", occurrences: 1, capacity: 4, booked: 2, attended: 1, noShows: 1, waitlisted: 1, fillRate: 0.5, attendanceRate: 0.5 });
+    expect(report.totals).toMatchObject({ occurrences: 1, booked: 2, attended: 1, noShows: 1 });
+    const after = await t.run(async (ctx) => (await ctx.db.query("classOccurrences").collect()).length);
+    expect(after).toBe(before);
+  });
 });

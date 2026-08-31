@@ -121,7 +121,134 @@ export function peakHoursReport(checkIns: PeakHoursInputCheckIn[], range: LocalD
   return { cells, admittedTotal, excludedTotal, busiest };
 }
 
-// --- B. Retention cohorts ---------------------------------------------------
+// --- B. Class utilization --------------------------------------------------
+
+export interface ClassUtilizationInputOccurrence {
+  id: string;
+  templateId: string;
+  name: string;
+  startsAt: string;
+  capacity: number;
+  status: "scheduled" | "cancelled" | "completed";
+}
+
+export interface ClassUtilizationInputBooking {
+  occurrenceId: string;
+  status: "booked" | "waitlisted" | "cancelled" | "late_cancelled" | "attended" | "no_show";
+  fromWaitlist?: boolean;
+}
+
+export interface ClassUtilizationRow {
+  templateId: string;
+  className: string;
+  occurrences: number;
+  completedOccurrences: number;
+  cancelledOccurrences: number;
+  capacity: number;
+  booked: number;
+  attended: number;
+  waitlisted: number;
+  cancelled: number;
+  noShows: number;
+  /** Confirmed seats divided by offered capacity. Cancelled occurrences are excluded. */
+  fillRate?: number;
+  /** Attended divided by finalized attendance outcomes. */
+  attendanceRate?: number;
+}
+
+export interface ClassUtilizationReport {
+  rows: ClassUtilizationRow[];
+  totals: Omit<ClassUtilizationRow, "templateId" | "className" | "fillRate" | "attendanceRate"> & {
+    fillRate?: number;
+    attendanceRate?: number;
+  };
+}
+
+/**
+ * Aggregates dated class occurrences without guessing historical states. A
+ * confirmed seat is currently booked or finalized as attended/no-show;
+ * cancelled bookings and live waitlist rows are reported separately. A
+ * promoted member contributes to waitlist demand through `fromWaitlist` while
+ * their current confirmed booking is counted once.
+ */
+export function classUtilizationReport(
+  occurrences: ClassUtilizationInputOccurrence[],
+  bookings: ClassUtilizationInputBooking[],
+  range: LocalDateRange,
+  timeZone: string,
+): ClassUtilizationReport {
+  const visibleOccurrences = occurrences.filter((occurrence) => inLocalRange(occurrence.startsAt, range, timeZone));
+  const occurrenceById = new Map(visibleOccurrences.map((occurrence) => [occurrence.id, occurrence]));
+  const rows = new Map<string, ClassUtilizationRow>();
+  const ensureRow = (occurrence: ClassUtilizationInputOccurrence) => {
+    const key = `${occurrence.templateId}:${occurrence.name}`;
+    let row = rows.get(key);
+    if (!row) {
+      row = {
+        templateId: occurrence.templateId,
+        className: occurrence.name,
+        occurrences: 0,
+        completedOccurrences: 0,
+        cancelledOccurrences: 0,
+        capacity: 0,
+        booked: 0,
+        attended: 0,
+        waitlisted: 0,
+        cancelled: 0,
+        noShows: 0,
+      };
+      rows.set(key, row);
+    }
+    return row;
+  };
+
+  for (const occurrence of visibleOccurrences) {
+    const row = ensureRow(occurrence);
+    row.occurrences += 1;
+    if (occurrence.status === "cancelled") row.cancelledOccurrences += 1;
+    else row.capacity += Math.max(0, occurrence.capacity);
+    if (occurrence.status === "completed") row.completedOccurrences += 1;
+  }
+
+  for (const booking of bookings) {
+    const occurrence = occurrenceById.get(booking.occurrenceId);
+    if (!occurrence || occurrence.status === "cancelled") continue;
+    const row = ensureRow(occurrence);
+    if (["booked", "attended", "no_show"].includes(booking.status)) row.booked += 1;
+    if (booking.status === "attended") row.attended += 1;
+    if (booking.status === "no_show") row.noShows += 1;
+    if (booking.status === "waitlisted" || booking.fromWaitlist) row.waitlisted += 1;
+    if (booking.status === "cancelled" || booking.status === "late_cancelled") row.cancelled += 1;
+  }
+
+  const withRates = [...rows.values()].map((row) => ({
+    ...row,
+    fillRate: row.capacity > 0 ? row.booked / row.capacity : undefined,
+    attendanceRate: row.attended + row.noShows > 0 ? row.attended / (row.attended + row.noShows) : undefined,
+  })).sort((left, right) => right.occurrences - left.occurrences || left.className.localeCompare(right.className));
+
+  const totals = withRates.reduce((sum, row) => ({
+    occurrences: sum.occurrences + row.occurrences,
+    completedOccurrences: sum.completedOccurrences + row.completedOccurrences,
+    cancelledOccurrences: sum.cancelledOccurrences + row.cancelledOccurrences,
+    capacity: sum.capacity + row.capacity,
+    booked: sum.booked + row.booked,
+    attended: sum.attended + row.attended,
+    waitlisted: sum.waitlisted + row.waitlisted,
+    cancelled: sum.cancelled + row.cancelled,
+    noShows: sum.noShows + row.noShows,
+  }), { occurrences: 0, completedOccurrences: 0, cancelledOccurrences: 0, capacity: 0, booked: 0, attended: 0, waitlisted: 0, cancelled: 0, noShows: 0 });
+  return {
+    rows: withRates,
+    totals: {
+      ...totals,
+      fillRate: totals.capacity > 0 ? totals.booked / totals.capacity : undefined,
+      attendanceRate: totals.attended + totals.noShows > 0 ? totals.attended / (totals.attended + totals.noShows) : undefined,
+    },
+  };
+}
+
+// --- C. Retention cohorts ---------------------------------------------------
 
 export interface RetentionInputMembership {
   memberId: string;

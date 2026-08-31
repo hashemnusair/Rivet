@@ -2907,6 +2907,8 @@ export interface CreateChecklistTaskInput {
 export type {
   PeakHoursReport,
   PeakHoursCell,
+  ClassUtilizationReport,
+  ClassUtilizationRow,
   RetentionReport,
   RetentionCohort,
   RetentionCheckpoint,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addMonthsIso,
+  classUtilizationReport,
   collectionsReport,
   controlTrendsReport,
   crmFunnelReport,
@@ -51,6 +52,34 @@ describe("peak hours", () => {
       { weekday: 1, hour: 0, count: 1 },
       { weekday: 1, hour: 7, count: 1 },
     ]);
+  });
+});
+
+describe("class utilization", () => {
+  it("separates confirmed seats, waitlist pressure, cancellations, and finalized attendance", () => {
+    const report = classUtilizationReport(
+      [
+        { id: "o1", templateId: "strength", name: "Strength", startsAt: "2026-06-10T15:00:00.000Z", capacity: 4, status: "completed" },
+        { id: "o2", templateId: "strength", name: "Strength", startsAt: "2026-06-12T15:00:00.000Z", capacity: 4, status: "scheduled" },
+        { id: "o3", templateId: "yoga", name: "Yoga", startsAt: "2026-06-13T15:00:00.000Z", capacity: 10, status: "cancelled" },
+        { id: "outside", templateId: "strength", name: "Strength", startsAt: "2026-05-12T15:00:00.000Z", capacity: 4, status: "completed" },
+      ],
+      [
+        { occurrenceId: "o1", status: "attended" },
+        { occurrenceId: "o1", status: "no_show" },
+        { occurrenceId: "o1", status: "cancelled" },
+        { occurrenceId: "o2", status: "booked", fromWaitlist: true },
+        { occurrenceId: "o2", status: "waitlisted" },
+        { occurrenceId: "o3", status: "booked" },
+        { occurrenceId: "outside", status: "attended" },
+      ],
+      { from: "2026-06-01", to: "2026-06-30" },
+      TZ,
+    );
+    expect(report.rows).toHaveLength(2);
+    expect(report.rows[0]).toMatchObject({ className: "Strength", occurrences: 2, capacity: 8, booked: 3, attended: 1, noShows: 1, waitlisted: 2, cancelled: 1, fillRate: 3 / 8, attendanceRate: 1 / 2 });
+    expect(report.rows[1]).toMatchObject({ className: "Yoga", occurrences: 1, cancelledOccurrences: 1, capacity: 0, booked: 0 });
+    expect(report.totals).toMatchObject({ occurrences: 3, capacity: 8, booked: 3, attended: 1, waitlisted: 2, cancelled: 1, noShows: 1 });
   });
 });
 

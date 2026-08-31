@@ -50,7 +50,7 @@ import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
 import { discountNeedsApproval, effectiveRolePermissions, PERMISSION_CATALOG_VERSION, PERMISSIONS, type Permission } from "@/lib/domain/permissions";
 import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex } from "@/lib/domain/brand";
-import { collectionsReport, controlTrendsReport, crmFunnelReport, peakHoursReport, renewalForecastReport, retentionReport } from "@/lib/analytics/operational-reports";
+import { classUtilizationReport, collectionsReport, controlTrendsReport, crmFunnelReport, peakHoursReport, renewalForecastReport, retentionReport } from "@/lib/analytics/operational-reports";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
@@ -1239,6 +1239,47 @@ export class MockGymOSApi implements GymOSApi {
       const visible = this.analyticsBranchFilter(input.branchId);
       const checkIns = this.db.checkIns.filter((checkIn) => visible(checkIn.branchId)).map((checkIn) => ({ occurredAt: checkIn.occurredAt, decision: checkIn.decision }));
       return peakHoursReport(checkIns, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getClassUtilizationReport(input: T.AnalyticsReportInput): Promise<T.ClassUtilizationReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const occurrences = this.classOccurrences.filter((occurrence) => visible(occurrence.branchId));
+      const projected = occurrences.map((occurrence) => ({
+        id: occurrence.id,
+        templateId: occurrence.templateId,
+        name: occurrence.name,
+        startsAt: occurrence.startsAt,
+        capacity: occurrence.capacity,
+        status: occurrence.status,
+      }));
+      const persistedKeys = new Set(occurrences.map((occurrence) => `${occurrence.templateId}:${occurrence.date}`));
+      for (let date = input.from; date <= input.to; date = addDays(date, 1)) {
+        const weekday = new Date(`${date}T12:00:00.000Z`).getUTCDay();
+        for (const template of this.classSessions.filter((session) => visible(session.branchId))) {
+          if (template.dayOfWeek !== weekday || persistedKeys.has(`${template.id}:${date}`)) continue;
+          projected.push({
+            id: `virtual:${template.id}:${date}`,
+            templateId: template.id,
+            name: template.name,
+            startsAt: this.mockClassInstant(date, template.startMinute),
+            capacity: template.capacity,
+            status: "scheduled",
+          });
+        }
+      }
+      return classUtilizationReport(
+        projected,
+        occurrences.flatMap((occurrence) => occurrence.roster.map((booking) => ({
+          occurrenceId: occurrence.id,
+          status: booking.status,
+          fromWaitlist: booking.fromWaitlist,
+        }))),
+        { from: input.from, to: input.to },
+        this.analyticsTimezone(),
+      );
     });
   }
 
