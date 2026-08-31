@@ -269,8 +269,25 @@ test.describe("personal training operations", () => {
 test.describe("settings navigation", () => {
   test("uses the compact selector on tablets and the searchable rail on desktop", async ({ page }) => {
     await signIn(page, "Owner");
-    await page.setViewportSize({ width: 900, height: 900 });
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/settings");
+
+    const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);
+    await expect(mobileSectionPicker).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeHidden();
+    await mobileSectionPicker.click();
+    await page.getByRole("option", { name: "Operational rules" }).click();
+    await page.evaluate(() => window.scrollTo({ top: 320 }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const y = (await mobileSectionPicker.boundingBox())?.y ?? -1;
+      return y >= 63 && y <= 66;
+    }).toBe(true);
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.evaluate(() => window.scrollTo({ top: 0 }));
 
     const sectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(sectionPicker).toBeVisible();
@@ -284,6 +301,9 @@ test.describe("settings navigation", () => {
     const rail = page.getByRole("tablist");
     await expect(rail).toBeVisible();
     await expect(rail).toHaveAttribute("aria-orientation", "vertical");
+    const settingsNavigation = page.getByRole("navigation", { name: "Settings sections" });
+    const verticalFit = await settingsNavigation.evaluate((node) => ({ scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
+    expect(verticalFit.scrollHeight).toBeLessThanOrEqual(verticalFit.clientHeight + 1);
     // The rail never scrolls sideways — sections stack vertically.
     const dimensions = await rail.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);

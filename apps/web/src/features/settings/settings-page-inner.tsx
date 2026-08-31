@@ -127,8 +127,9 @@ export function SettingsPageInner() {
         data-state={isActive ? "active" : "inactive"}
         aria-current={isActive ? "page" : undefined}
         onClick={() => select(entry.id)}
+        data-touch-target
         className={cn(
-          "flex min-h-9 w-full cursor-pointer items-center rounded-md px-3 text-start text-[13px] transition-colors",
+          "flex min-h-8 w-full cursor-pointer items-center rounded-md px-3 text-start text-[13px] transition-colors",
           isActive ? "bg-sunken font-semibold text-ink" : "text-ink-2 hover:bg-sunken/60 hover:text-ink",
         )}
       >
@@ -143,23 +144,25 @@ export function SettingsPageInner() {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-4">
+    <div className="-mt-2 mx-auto max-w-[1480px] space-y-3 lg:-mt-3">
       <PageHeader
-        eyebrow="System"
         title="Settings"
         description="Organization, branches, people, permissions and receipts. Everything sensitive here is audited."
+        className="py-0.5"
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
-        <div className="space-y-4 lg:grid lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
-          <div className="lg:hidden">
-            <label className="mb-1.5 block text-[12px] font-medium text-ink-2" htmlFor="mobile-settings-section">Settings section</label>
-            <Select value={active.id} onValueChange={select}>
-              <SelectTrigger id="mobile-settings-section" aria-label="Settings section"><SelectValue /></SelectTrigger>
-              <SelectContent>{ALL_ENTRIES.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}</SelectContent>
-            </Select>
+        <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
+          <div className="sticky top-14 z-20 -mx-4 border-y border-line/80 bg-paper px-4 py-2 sm:-mx-6 sm:px-6 lg:hidden">
+            <div className="flex items-center gap-3">
+              <label className="shrink-0 text-[12px] font-medium text-ink-2" htmlFor="mobile-settings-section">Settings section</label>
+              <Select value={active.id} onValueChange={select}>
+                <SelectTrigger id="mobile-settings-section" aria-label="Settings section" className="h-11 min-w-0 flex-1 bg-surface"><SelectValue /></SelectTrigger>
+                <SelectContent>{ALL_ENTRIES.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
           </div>
-          <nav aria-label="Settings sections" className="sticky top-[72px] hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto border-e border-line/80 py-1 pe-4 [scrollbar-gutter:stable] lg:block">
-            <div className="sticky top-0 z-10 bg-paper pb-3">
+          <nav aria-label="Settings sections" className="sticky top-16 hidden max-h-[calc(100dvh-4.5rem)] overflow-y-auto border-e border-line/80 pe-3 [scrollbar-gutter:stable] lg:block">
+            <div className="sticky top-0 z-10 bg-paper pb-2">
               <div className="relative">
                 <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
                 <Input
@@ -171,7 +174,7 @@ export function SettingsPageInner() {
                 />
               </div>
             </div>
-            <div role="tablist" aria-orientation="vertical" className="space-y-3 pb-1">
+            <div role="tablist" aria-orientation="vertical" className="space-y-2.5 pb-1">
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-0.5">{filtered.map(navButton)}</div>
@@ -181,7 +184,7 @@ export function SettingsPageInner() {
               ) : (
                 SETTINGS_GROUPS.map((group) => (
                   <div key={group.label}>
-                    <p className="eyebrow mb-1 px-3">{group.label}</p>
+                    <p className="eyebrow mb-0.5 px-3">{group.label}</p>
                     <div className="space-y-0.5">{group.entries.map(navButton)}</div>
                   </div>
                 ))

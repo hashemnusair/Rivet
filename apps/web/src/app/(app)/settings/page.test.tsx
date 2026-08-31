@@ -105,6 +105,8 @@ describe("Settings navigation and operational drafts", () => {
     const scrollTo = vi.spyOn(window, "scrollTo");
     await renderWithApp(<SettingsPageInner />);
 
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByText("System", { exact: true })).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Operational rules" }));
     expect(await screen.findByRole("heading", { name: "Entry and access" })).toBeInTheDocument();
     expect(navigation.replace).toHaveBeenLastCalledWith("/settings?section=operations", { scroll: false });
