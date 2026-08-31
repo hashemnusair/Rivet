@@ -57,6 +57,7 @@ export const qk = {
   workspaceRecents: ["workspaceRecents"] as const,
   workspacePins: ["workspacePins"] as const,
   classSessions: (branchId: string) => ["classSessions", branchId] as const,
+  analytics: (kind: string, params: Record<string, unknown>) => ["analytics", kind, params] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */

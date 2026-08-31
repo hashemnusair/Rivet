@@ -46,6 +46,7 @@ import {
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
 import { classesMutation, classesQuery } from "./classes";
+import { analyticsQuery } from "./analyticsReports";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
@@ -5543,6 +5544,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.sessions.list":
     case "classes.coaches.list":
       return await classesQuery(ctx, actor, operation, input);
+    case "analytics.peak_hours":
+    case "analytics.retention":
+    case "analytics.renewal_forecast":
+    case "analytics.collections":
+    case "analytics.crm_funnel":
+    case "analytics.control_trends":
+      return await analyticsQuery(ctx, actor, operation, input);
     case "accounting.accounts.list":
     case "finance.accounts.list":
     case "accounting.periods.list":

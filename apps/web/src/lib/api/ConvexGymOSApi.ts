@@ -372,6 +372,12 @@ export class ConvexGymOSApi implements GymOSApi {
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
   createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   ensureCustomerReferralLink(membershipId: T.UUID): Promise<CustomerReferralProgram> { return this.mutate("customer.referral.ensure", { membershipId }); }
+  getPeakHoursReport(input: T.AnalyticsReportInput): Promise<T.PeakHoursReport> { return this.query("analytics.peak_hours", input); }
+  getRetentionReport(input: T.AnalyticsBranchInput): Promise<T.RetentionReport> { return this.query("analytics.retention", input); }
+  getRenewalForecastReport(input: T.AnalyticsBranchInput): Promise<T.RenewalForecastReport> { return this.query("analytics.renewal_forecast", input); }
+  getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> { return this.query("analytics.collections", input); }
+  getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> { return this.query("analytics.crm_funnel", input); }
+  getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> { return this.query("analytics.control_trends", input); }
   getEntryPass(membershipId: string): Promise<EntryPass> { return this.mutate("customer.entryPass", { membershipId }); }
   getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> { return this.query("customer.finance.summary"); }
   listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> { return this.query("customer.finance.transactions", query); }

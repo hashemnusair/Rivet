@@ -50,6 +50,7 @@ import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
 import { discountNeedsApproval, effectiveRolePermissions, PERMISSION_CATALOG_VERSION, PERMISSIONS, type Permission } from "@/lib/domain/permissions";
 import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex } from "@/lib/domain/brand";
+import { collectionsReport, controlTrendsReport, crmFunnelReport, peakHoursReport, renewalForecastReport, retentionReport } from "@/lib/analytics/operational-reports";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
@@ -995,6 +996,109 @@ export class MockGymOSApi implements GymOSApi {
       const { member, membership: operationalMembership } = this.customerOperationalMembership(membershipId);
       if (!this.referralLinks.has(membershipId)) this.referralLinks.set(membershipId, { token: mockUuid(), memberId: member.id, membershipId: operationalMembership.id, gymId: membership.gymId });
       return this.customerReferralProgram(membership);
+    });
+  }
+
+  // --- Read-only operational analytics (parity: same shared math as Convex) ---
+
+  private analyticsBranchFilter(requested?: string): (branchId?: string) => boolean {
+    if (requested && !this.branchIsVisible(requested)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return (branchId?: string) => {
+      if (requested) return branchId === requested;
+      return branchId ? this.branchIsVisible(branchId) : true;
+    };
+  }
+
+  private analyticsTimezone(): string {
+    return this.db.organization.timezone || "Asia/Amman";
+  }
+
+  getPeakHoursReport(input: T.AnalyticsReportInput): Promise<T.PeakHoursReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const checkIns = this.db.checkIns.filter((checkIn) => visible(checkIn.branchId)).map((checkIn) => ({ occurredAt: checkIn.occurredAt, decision: checkIn.decision }));
+      return peakHoursReport(checkIns, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getRetentionReport(input: T.AnalyticsBranchInput): Promise<T.RetentionReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const memberships = this.db.memberships
+        .filter((membership) => visible(branchByMember.get(membership.memberId)))
+        .map((membership) => ({ memberId: membership.memberId, startDate: membership.startDate, endDate: membership.endDate }));
+      return retentionReport(memberships, todayISODate());
+    });
+  }
+
+  getRenewalForecastReport(input: T.AnalyticsBranchInput): Promise<T.RenewalForecastReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const names = new Map(this.db.members.map((member) => [member.id, member.fullName]));
+      const plans = new Map(this.db.plans.map((plan) => [plan.id, { name: plan.name, priceMinor: plan.basePrice.amount }]));
+      const memberships = this.db.memberships
+        .filter((membership) => visible(branchByMember.get(membership.memberId)))
+        .map((membership) => ({ id: membership.id, memberId: membership.memberId, planId: membership.planId, startDate: membership.startDate, endDate: membership.endDate }));
+      return renewalForecastReport(memberships, names, plans, todayISODate());
+    });
+  }
+
+  getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const charges = this.db.charges
+        .filter((charge) => visible(branchByMember.get(charge.memberId)))
+        .map((charge) => ({ createdAt: charge.createdAt, issueDate: charge.issueDate, totalMinor: charge.total.amount, outstandingMinor: charge.outstandingAmount.amount }));
+      const payments = this.db.payments
+        .filter((payment) => visible(payment.branchId))
+        .map((payment) => ({ occurredAt: payment.occurredAt, type: payment.type, status: payment.status, amountMinor: payment.amount.amount }));
+      return collectionsReport(charges, payments, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const leads = this.db.leads
+        .filter((lead) => visible(lead.branchId))
+        .map((lead) => ({ id: lead.id, createdAt: lead.createdAt, convertedMemberId: lead.convertedMemberId }));
+      const leadIds = new Set(leads.map((lead) => lead.id));
+      const activities = this.db.activities
+        .filter((activity) => activity.leadId && leadIds.has(activity.leadId))
+        .map((activity) => ({ leadId: activity.leadId, type: activity.type, occurredAt: activity.occurredAt, outcome: typeof activity.meta?.outcome === "string" ? activity.meta.outcome : undefined }));
+      const trials = this.trialBookings
+        .filter((booking) => !booking.leadId || leadIds.has(booking.leadId))
+        .map((booking) => ({ leadId: booking.leadId, createdAt: booking.createdAt, status: booking.status }));
+      return crmFunnelReport(leads, activities, trials, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const audits = this.db.audits
+        .filter((audit) => !audit.branchId || visible(audit.branchId))
+        .map((audit) => ({ id: audit.id, action: audit.action, occurredAt: audit.occurredAt, summary: audit.summary, actorName: audit.actorName, reason: audit.reason, entityPublicId: audit.entityId }));
+      const payments = this.db.payments
+        .filter((payment) => visible(payment.branchId))
+        .map((payment) => ({ occurredAt: payment.occurredAt, type: payment.type, status: payment.status, amountMinor: payment.amount.amount }));
+      const discounts = this.db.charges
+        .filter((charge) => visible(branchByMember.get(charge.memberId)))
+        .map((charge) => ({ createdAt: charge.createdAt, issueDate: charge.issueDate, discountMinor: charge.discount.amount }));
+      const priceOverrides = this.db.audits
+        .filter((audit) => audit.action === "membership.price_override")
+        .map((audit) => ({ occurredAt: audit.occurredAt, amountMinor: typeof audit.after?.price === "number" ? audit.after.price : 0 }));
+      return controlTrendsReport(audits, payments, discounts, priceOverrides, { from: input.from, to: input.to }, this.analyticsTimezone(), 50);
     });
   }
 

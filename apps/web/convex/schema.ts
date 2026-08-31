@@ -1464,6 +1464,7 @@ export default defineSchema({
     .index("by_entity_type", ["entityType"])
     .index("by_entity_type_public_id", ["entityType", "publicId"])
     .index("by_organization_type", ["organizationId", "entityType"])
+    .index("by_organization_type_created", ["organizationId", "entityType", "createdAt"])
     .index("by_organization_public_id", ["organizationId", "publicId"])
     .index("by_organization_type_public_id", ["organizationId", "entityType", "publicId"])
     .index("by_organization_branch_type", ["organizationId", "branchId", "entityType"])

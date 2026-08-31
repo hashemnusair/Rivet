@@ -2675,6 +2675,33 @@ export interface TodayQueueData {
   overdueKindCounts: Partial<Record<TodayQueueKind, number>>;
 }
 
+// Read-only operational analytics (shared math in lib/analytics).
+export type {
+  PeakHoursReport,
+  PeakHoursCell,
+  RetentionReport,
+  RetentionCohort,
+  RetentionCheckpoint,
+  RenewalForecastReport,
+  RenewalForecastBucket,
+  RenewalForecastRow,
+  CollectionsReport,
+  CrmFunnelReport,
+  ControlTrendsReport,
+} from "@/lib/analytics/operational-reports";
+
+export interface AnalyticsReportInput {
+  branchId?: UUID;
+  /** Inclusive tenant-local calendar date. */
+  from: ISODate;
+  /** Inclusive tenant-local calendar date. */
+  to: ISODate;
+}
+
+export interface AnalyticsBranchInput {
+  branchId?: UUID;
+}
+
 export interface DashboardData {
   kpis: DashboardKpis;
   revenueSeries: RevenuePoint[]; // last 30 days
