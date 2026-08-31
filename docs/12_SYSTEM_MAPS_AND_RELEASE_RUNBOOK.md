@@ -347,6 +347,20 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
   is `READY` for that exact tip; the canonical site returned HTTP 200.
 
+### Management Ledger forensic audit corrections — 31 August 2026
+
+- The full statements-system audit lives in
+  `docs/18_MANAGEMENT_STATEMENTS_FORENSIC_AUDIT.md` (accounting contract,
+  source-to-statement matrix, findings, open policy decisions). Behavior
+  changes shipped with it: void sources are dependency-gated on the posted
+  original payment (otherwise `excluded`); the balance sheet reports
+  `cumulativeEarnings` (legacy `currentEarnings` alias retained one release);
+  cash flow uses `cashflow-classification.v2` (transfer exclusion,
+  mixed-entry warning, documented cash definition); statements warn when a
+  posted source's operational record drifts in amount/currency/branch; mock
+  parity gaps closed (account 5900, freeze-history recognition, GM
+  drill-downs). Convex functions changed with no schema change.
+
 ### Management Ledger accounting completeness — 26 August 2026 (working-tree update)
 
 - A complete source refresh now persists its scope, candidate digest, and

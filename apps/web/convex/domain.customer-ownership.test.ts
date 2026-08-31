@@ -14,6 +14,12 @@ declare global {
 const modules = import.meta.glob("./**/*.ts");
 const originalEntryPassSecret = process.env.ENTRY_PASS_SIGNING_SECRET;
 const trialDate = (() => { const date = new Date(Date.now() + 3 * 86_400_000); return date.toISOString().slice(0, 10); })();
+// visitsThisMonth follows the tenant's Asia/Amman business month, so a fixed
+// calendar date stops counting the moment the real clock crosses into the
+// next month. Anchor the counted check-in to the 1st of the current Amman
+// month at a UTC hour that is unambiguously the same Amman day.
+const AMMAN_MONTH = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit" }).format(new Date()).slice(0, 7);
+const CURRENT_MONTH_CHECKIN_AT = `${AMMAN_MONTH}-01T10:00:00.000Z`;
 
 function operation(operationName: string, input: Record<string, unknown> = {}) {
   return { operation: operationName, input, correlationId: `cor-test-${operationName}` };
@@ -246,7 +252,7 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       endDate: "2026-09-01",
       visitsThisMonth: 1,
       balanceMinor: 0,
-      lastCheckInAt: "2026-08-08T10:00:00.000Z",
+      lastCheckInAt: CURRENT_MONTH_CHECKIN_AT,
     }, branchA);
     await insertRecord(organizationA, "customerMembership", "membership-a-inactive", {
       customerUserId: "user-a",
@@ -303,7 +309,7 @@ async function seedFixtures(t: TestConvex<typeof schema>) {
       branchName: "Gym A Main",
       decision: "allowed",
       actorName: "Reception A",
-      occurredAt: "2026-08-08T10:00:00.000Z",
+      occurredAt: CURRENT_MONTH_CHECKIN_AT,
     }, branchA);
     await insertRecord(organizationA, "checkIn", "checkin-a-blocked", {
       memberId: "member-a",
@@ -424,11 +430,9 @@ describe("exported Convex customer ownership boundaries", () => {
 
     expect(experience.customer).toMatchObject({ id: "profile-a", email: "a@example.com", marketingPreference: { optedIn: false } });
     expect(experience.memberships.map((membership: { id: string }) => membership.id)).toEqual(["membership-a-active", "membership-a-inactive"]);
-    const currentAmmanParts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit" }).formatToParts(new Date());
-    const currentAmmanMonth = `${currentAmmanParts.find((part) => part.type === "year")?.value}-${currentAmmanParts.find((part) => part.type === "month")?.value}`;
     expect(experience.memberships[0]).toMatchObject({
-      visitsThisMonth: currentAmmanMonth === "2026-08" ? 1 : 0,
-      lastCheckInAt: "2026-08-08T10:00:00.000Z",
+      visitsThisMonth: 1,
+      lastCheckInAt: CURRENT_MONTH_CHECKIN_AT,
       visitHistory: [{ id: "checkin-a-allowed", memberName: "Customer A", branchName: "Gym A Main", checkedInByName: "Reception A" }],
     });
     expect(experience.bookings).toEqual([]);

@@ -79,6 +79,65 @@
   Production Convex gate. No Production data, provider setting, schema record,
   or environment variable was changed by the deployment.
 
+## Management-statements forensic audit and corrections — 31 August 2026
+
+- A full forensic audit of the management ledger and statements system was
+  executed and recorded in the new living document
+  `docs/18_MANAGEMENT_STATEMENTS_FORENSIC_AUDIT.md` (accounting contract,
+  source-to-statement matrix, findings with severity/root cause/fix/test,
+  open policy decisions, limitations). The trigger question — fractional
+  fils on whole-dinar membership revenue — was proven correct by policy:
+  JOD's ISO exponent is 3 and the daily-weighted-largest-remainder
+  allocation always re-sums to the exact net sale price, now covered by 17
+  hand-calculated allocator regression tests
+  (`convex/accounting.allocation.test.ts`).
+- **Fixed (both adapters, high severity first):** a void of a never-posted
+  payment no longer fabricates a cash outflow — void facts require the
+  original payment source to be posted and are otherwise `excluded` with an
+  explicit reason; the balance sheet's misnamed `currentEarnings` is now
+  `cumulativeEarnings` (equal-valued deprecated alias retained for deploy
+  skew, UI copy/equation updated, "As of {date}" scope label);
+  `cashflow-classification.v2` excludes internal cash-to-cash transfers from
+  the classified sections, warns on mixed-activity compound entries, and
+  accurately documents the cash definition and priority rule; statements now
+  warn when a posted source's operational record changed after posting
+  (amount/currency/branch drift → review for owner reversal + corrected
+  posting); the mock adapter gained the missing 5900 account, recognition
+  now honors completed freeze history (not just the active flag), and the
+  GM cash-variance metric exposes drill-down ids.
+- **Statement UX:** the income statement explains why fils appear (naming
+  the allocation policy and its conservation guarantee) whenever recognition
+  candidates exist, and the net-income caption includes other income.
+- **New regression evidence** (each test fails against the pre-audit code):
+  full membership lifecycle with hand-derived statements (sale → payment →
+  two recognized months → refund → cancellation drift warning → reversal
+  restoring deferred revenue exactly), full retail lifecycle (PO receipt →
+  sale → COGS → refund → stock restoration across all three statements),
+  adversarial cash-flow classification (financing/investing/excluded
+  transfer/flagged mixed entry, zero reconciliation difference), and void
+  conservation (payment + void net to an empty trial balance) in
+  `convex/managementReports.forensic.test.ts`; mock parity for
+  classification v2, cumulative earnings, freeze history, account 5900, and
+  GM drill-downs in `src/lib/mock/managementReports.test.ts`.
+- Verified this working tree: full Vitest suite (178 files / 1,085 tests),
+  app + Convex typechecks, Convex codegen check, ESLint with secret-output
+  audit, production build, and `git diff --check` — all clean. Browser
+  evidence: the finance-relevant Playwright specs (happy-path +
+  role-routing, 27 tests) passed in a dedicated run; the full
+  credential-free suite then ran 48 passed / 14 credential-gated skipped
+  with two role-routing `page.goto` 60-second timeouts under full parallel
+  load — both green again on an isolated rerun, so they are load flakes,
+  not product failures. A mock-mode browser walkthrough covered the hub,
+  all three statements (desktop and mobile widths), and ledger controls
+  (100-fact queue refresh; the seeded never-posted void visibly `excluded`
+  with its new reason; 17-account chart in both modes). Two unrelated
+  fixed-date test fixtures that broke at the real Aug→Sep midnight rollover
+  were re-anchored to the tenant clock
+  (`domain.customer-ownership.test.ts` current-month check-in, mock GM
+  week-ago range). Convex functions changed with **no schema change**; the
+  backend deploy is owed via `pnpm convex:deploy -- --yes` per the deploy
+  split after these changes land on `main`.
+
 ## Payout removal, event details, overlap guard, and branded print — 31 August 2026
 
 - Coach payout is gone end to end: the classes-page button, dialog, and CSV,

@@ -341,8 +341,10 @@ function validAccountingMonth(value: string): boolean {
  * Allocate a net membership amount by inclusive service days. Integer minor
  * units are distributed by quotient/remainder so allocations always sum to
  * the source amount and never depend on floating point rounding.
+ * Exported so regression tests can prove conservation independently of any
+ * tenant fixture.
  */
-function allocateMembershipByMonth(netAmount: number, startDate: string, endDate: string, options?: { cancellationDate?: string; freezes?: unknown }): MonthlyAllocation[] {
+export function allocateMembershipByMonth(netAmount: number, startDate: string, endDate: string, options?: { cancellationDate?: string; freezes?: unknown }): MonthlyAllocation[] {
   if (!Number.isSafeInteger(netAmount) || netAmount < 0 || startDate > endDate || calendarMonthSpan(startDate, endDate) > MAX_MEMBERSHIP_SERVICE_MONTHS) return [];
   const windows = freezeWindows(options?.freezes, startDate, endDate);
   const serviceDates: string[] = [];
@@ -388,7 +390,7 @@ function equipmentServiceDate(input: { installationDate?: unknown; purchaseDate?
   return {};
 }
 
-function monthlyDepreciationAmount(costMinor: number, usefulLifeMonths: number, monthIndex: number): number | undefined {
+export function monthlyDepreciationAmount(costMinor: number, usefulLifeMonths: number, monthIndex: number): number | undefined {
   if (!Number.isSafeInteger(costMinor) || costMinor <= 0 || !Number.isSafeInteger(usefulLifeMonths) || usefulLifeMonths < 1 || monthIndex < 0 || monthIndex >= usefulLifeMonths) return undefined;
   const base = Math.floor(costMinor / usefulLifeMonths);
   const remainder = costMinor - base * usefulLifeMonths;
@@ -797,6 +799,11 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
     const invalidType = !validType || (sourceType === "payment" && sourceStatus === "voided");
     const normalizedAmount = amount.amount === undefined ? undefined : sourceType === "refund" ? Math.abs(amount.amount) : amount.amount;
     const invalidAmount = normalizedAmount === undefined || normalizedAmount <= 0;
+    // A void asserts that a previously posted collection never happened. If
+    // the original payment was never posted, there is no ledger effect to
+    // reverse, and posting the void would fabricate a cash outflow.
+    const voidOriginalStatus = sourceType === "void" && !invalidType ? (await sourcePostingByIdentity(ctx, actor, "payment", sourceId))?.status : undefined;
+    const voidWithoutPostedOriginal = sourceType === "void" && !invalidType && voidOriginalStatus !== "posted";
     const debit = sourceType === "payment" ? paymentAccount(method) : retailSale ? "4200" : "1200";
     const credit = sourceType === "payment" ? retailSale ? "4200" : "1200" : paymentAccount(method);
     // Policy codes are code-owned and use a stable hyphenated namespace.
@@ -814,9 +821,9 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
       policyCode,
       debitAccountCode: debit,
       creditAccountCode: credit,
-      details: { method, sourcePaymentType, sourceStatus, saleType: retailSale ? "retail" : "membership" },
-      status: invalidCurrency ? "excluded" : invalidType || invalidAmount ? "unconfigured" : undefined,
-      reason: invalidCurrency ? `Source currency ${sourceCurrency} does not match organization currency ${currency}.` : invalidType ? "The source fact does not match the requested accounting source type or lifecycle status." : invalidAmount ? "The source fact has no positive amount." : undefined,
+      details: { method, sourcePaymentType, sourceStatus, saleType: retailSale ? "retail" : "membership", ...(sourceType === "void" ? { originalPaymentPostingStatus: voidOriginalStatus ?? "never_posted" } : {}) },
+      status: invalidCurrency ? "excluded" : invalidType || invalidAmount ? "unconfigured" : voidWithoutPostedOriginal ? "excluded" : undefined,
+      reason: invalidCurrency ? `Source currency ${sourceCurrency} does not match organization currency ${currency}.` : invalidType ? "The source fact does not match the requested accounting source type or lifecycle status." : invalidAmount ? "The source fact has no positive amount." : voidWithoutPostedOriginal ? "The voided payment was never posted to the ledger, so the void has no ledger effect to reverse." : undefined,
     };
   }
 
@@ -1477,7 +1484,7 @@ export async function sourceQueueCoverageForReport(
   ctx: QueryCtx,
   actor: ActorContext,
   input: { branch?: Doc<"branches">; fromDate: string; toDate: string },
-): Promise<{ status: "proven" | "refresh_required"; candidates: SourceQueueCandidateFact[]; candidateDigest: string; lastQueueProjectionAt?: string }> {
+): Promise<{ status: "proven" | "refresh_required"; candidates: SourceQueueCandidateFact[]; candidateDigest: string; lastQueueProjectionAt?: string; postedDriftCount: number }> {
   const allCandidates = await discoverSourceCandidates(ctx, actor, SUPPORTED_SOURCE_TYPES, input.branch, { fromDate: input.fromDate, toDate: input.toDate });
   const candidates: SourceQueueCandidateFact[] = [];
   for (const candidate of allCandidates) {
@@ -1503,7 +1510,16 @@ export async function sourceQueueCoverageForReport(
   const matchingDigest = fullScan || Boolean(reportRun && reportRun.candidateDigest === candidateDigest && reportRun.candidateCount === candidates.length);
   const proven = Boolean(reportRun && matchingDigest && current);
   const lastQueueProjectionAt = runs.length > 0 ? new Date(Math.max(...runs.map((run) => run.scannedAt))).toISOString() : undefined;
-  return { status: proven ? "proven" : "refresh_required", candidates, candidateDigest, lastQueueProjectionAt };
+  // Posted rows are immutable accounting decisions, so coverage never asks
+  // them to match a re-projection. But when the operational record itself has
+  // materially changed since posting (amount, currency, or branch), the books
+  // silently diverge from operational truth unless the report says so.
+  const postedDriftCount = candidates.filter((item) => item.row?.status === "posted" && (
+    item.row.amountMinor !== item.fact.amountMinor ||
+    item.row.currency !== item.fact.currency ||
+    item.row.branchId !== item.fact.branch?._id
+  )).length;
+  return { status: proven ? "proven" : "refresh_required", candidates, candidateDigest, lastQueueProjectionAt, postedDriftCount };
 }
 
 async function refreshSourceProjection(ctx: MutationCtx, actor: ActorContext, fact: SourceFact): Promise<{ row: SourcePosting; created: boolean; updated: boolean; skippedPosted: boolean }> {

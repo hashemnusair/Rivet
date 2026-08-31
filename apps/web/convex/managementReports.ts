@@ -42,9 +42,9 @@ type MetricProjection = {
 
 const DISCLAIMER = "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting.";
 const CASHFLOW_POLICY = {
-  code: "cashflow-classification.v1",
-  version: 1,
-  description: "Actual cash and clearing account movements are classified as investing when paired with fixed assets, financing when paired with equity or non-current financing, and operating otherwise.",
+  code: "cashflow-classification.v2",
+  version: 2,
+  description: "Cash on hand and card/bank-transfer clearing accounts are treated as cash. Each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. Entries that only move money between cash accounts are internal transfers and are excluded from the classified sections.",
 };
 const CASH_CODES = new Set(["1100", "1110", "1120"]);
 type SourceStatus = "pending" | "posted" | "unconfigured" | "excluded" | "failed" | "reversed";
@@ -232,6 +232,7 @@ async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject)
   if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
   const unresolvedPostingCount = sourceRows.filter((row) => ["pending", "unconfigured", "excluded", "failed"].includes(row.status)).length;
   if (unresolvedPostingCount > 0) warnings.add("Some authoritative source facts are not posted; review the source queue before relying on these figures.");
+  if (queueCoverage.postedDriftCount > 0) warnings.add(`${queueCoverage.postedDriftCount} posted accounting ${queueCoverage.postedDriftCount === 1 ? "source posting no longer matches" : "source postings no longer match"} the current operational record (amount, currency, or branch changed after posting). Review the source queue and use an owner reversal plus a corrected posting where needed.`);
   if (recognitionStatus === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
   if (depreciationStatus === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
   return { branch, branchIdsByPublicId, fromDate, toDate, generatedAt: iso(Date.now()), accounts, sourceCounts, sourceRows, entries, policies, queueCoverage: queueCoverage.status, warnings: [...warnings], lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, membershipRevenueRecognition: recognitionStatus, depreciationCoverage: depreciationStatus };
@@ -355,22 +356,27 @@ async function balanceSheet(ctx: QueryCtx, actor: ActorContext, input: JsonObjec
   const currentLiabilities = sectionFromGroups(bundles, new Set(["liability_current"]), report.accounts, currency);
   const noncurrentLiabilities = sectionFromGroups(bundles, new Set(["liability_noncurrent"]), report.accounts, currency);
   const equity = sectionFromGroups(bundles, new Set(["equity"]), report.accounts, currency);
-  const cumulativeIncomeBundles = bundles;
-  const recognizedRevenue = sectionFromGroups(cumulativeIncomeBundles, new Set(["revenue", "other_income"]), report.accounts, currency).total.amount;
-  const cumulativeCosts = sectionFromGroups(cumulativeIncomeBundles, new Set(["cost_of_sales", "operating_expense", "other_expense"]), report.accounts, currency).total.amount;
-  const currentEarnings = recognizedRevenue - cumulativeCosts;
+  // All revenue and expense activity from ledger inception through the as-of
+  // date. There is no period-close/retained-earnings roll-up yet, so this is
+  // cumulative unclosed earnings — not current-period income. The legacy
+  // `currentEarnings` field name is kept as an alias for one release so a
+  // frontend and backend deployed minutes apart cannot disagree.
+  const recognizedRevenue = sectionFromGroups(bundles, new Set(["revenue", "other_income"]), report.accounts, currency).total.amount;
+  const cumulativeCosts = sectionFromGroups(bundles, new Set(["cost_of_sales", "operating_expense", "other_expense"]), report.accounts, currency).total.amount;
+  const cumulativeEarnings = recognizedRevenue - cumulativeCosts;
   const totalAssets = currentAssets.total.amount + noncurrentAssets.total.amount;
   const totalLiabilities = currentLiabilities.total.amount + noncurrentLiabilities.total.amount;
-  const totalEquity = equity.total.amount + currentEarnings;
+  const totalEquity = equity.total.amount + cumulativeEarnings;
   const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
   const difference = totalAssets - totalLiabilitiesAndEquity;
-  return { ...reportMeta(actor, report), asOfDate: report.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, currentEarnings: money(currentEarnings, currency), totalAssets: money(totalAssets, currency), totalLiabilities: money(totalLiabilities, currency), totalEquity: money(totalEquity, currency), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity, currency), difference: money(difference, currency), balanced: difference === 0 };
+  return { ...reportMeta(actor, report), asOfDate: report.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, cumulativeEarnings: money(cumulativeEarnings, currency), currentEarnings: money(cumulativeEarnings, currency), totalAssets: money(totalAssets, currency), totalLiabilities: money(totalLiabilities, currency), totalEquity: money(totalEquity, currency), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity, currency), difference: money(difference, currency), balanced: difference === 0 };
 }
 
-function cashflowCategory(bundle: JournalBundle, cashLine: JournalLine, accounts: Map<string, Account>): "operating" | "investing" | "financing" {
-  const counterparts = bundle.lines.filter((line) => line._id !== cashLine._id && !CASH_CODES.has(line.accountCode));
-  if (counterparts.some((line) => line.accountCode === "1500" || line.statementGroup === "asset_noncurrent" || accounts.get(line.accountCode)?.accountType === "asset" && accounts.get(line.accountCode)?.statementGroup === "asset_noncurrent")) return "investing";
-  if (counterparts.some((line) => line.accountCode === "3000" || line.statementGroup === "liability_noncurrent" || accounts.get(line.accountCode)?.accountType === "equity")) return "financing";
+/** Classification of one non-cash counterpart line under cashflow-classification.v2. */
+function counterpartCashflowCategory(line: JournalLine, accounts: Map<string, Account>): "operating" | "investing" | "financing" {
+  const account = accounts.get(line.accountCode);
+  if (line.accountCode === "1500" || line.statementGroup === "asset_noncurrent" || account?.statementGroup === "asset_noncurrent") return "investing";
+  if (line.accountCode === "3000" || line.statementGroup === "equity" || line.statementGroup === "liability_noncurrent" || account?.accountType === "equity") return "financing";
   return "operating";
 }
 
@@ -390,16 +396,29 @@ async function cashflowStatement(ctx: QueryCtx, actor: ActorContext, input: Json
       if (bundle.entry.postingDate <= report.toDate) through += delta;
     }
   }
+  const mixedEntryIds: string[] = [];
   for (const bundle of period) {
-    for (const line of bundle.lines) {
-      if (!CASH_CODES.has(line.accountCode)) continue;
-      const category = cashflowCategory(bundle, line, report.accounts);
+    const cashLines = bundle.lines.filter((line) => CASH_CODES.has(line.accountCode));
+    if (cashLines.length === 0) continue;
+    const counterparts = bundle.lines.filter((line) => !CASH_CODES.has(line.accountCode));
+    // Every line is a cash account: an internal transfer between cash and
+    // clearing accounts. Its net cash change is exactly zero, so excluding it
+    // keeps the reconciliation intact while the classified sections stop
+    // reporting money the business never received or spent.
+    if (counterparts.length === 0) continue;
+    const categories = new Set(counterparts.map((line) => counterpartCashflowCategory(line, report.accounts)));
+    const category: "operating" | "investing" | "financing" = categories.has("investing") ? "investing" : categories.has("financing") ? "financing" : "operating";
+    if (categories.size > 1) mixedEntryIds.push(bundle.entry.publicId);
+    for (const line of cashLines) {
       const key = `${category}:${line.accountCode}`;
       const current = categoryRows.get(key) ?? { category, code: line.accountCode, name: line.accountName, amount: 0, ids: new Set<string>() };
       current.amount += line.debitMinor - line.creditMinor;
       current.ids.add(bundle.entry.publicId);
       categoryRows.set(key, current);
     }
+  }
+  if (mixedEntryIds.length > 0) {
+    report.warnings.push(`${mixedEntryIds.length} journal ${mixedEntryIds.length === 1 ? "entry pairs" : "entries pair"} one cash movement with counterparts from more than one activity; the whole movement is classified by priority (investing, then financing, then operating) under ${CASHFLOW_POLICY.code}. Post separate journals to split such movements precisely.`);
   }
   const section = (category: "operating" | "investing" | "financing"): CashflowSectionProjection => {
     const lines = [...categoryRows.values()].filter((row) => row.category === category).sort((left, right) => left.code.localeCompare(right.code)).map((row): StatementLineProjection => ({ accountId: accountId(report.accounts.get(row.code), row.code), accountCode: row.code, accountName: row.name, amount: money(row.amount, currency), entryIds: [...row.ids].sort() }));

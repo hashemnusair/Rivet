@@ -2442,6 +2442,15 @@ export interface BalanceSheet extends ManagementReportCompleteness {
   assets: BalanceSheetSections;
   liabilities: BalanceSheetSections;
   equity: ManagementStatementSection;
+  /**
+   * All revenue and expense activity from ledger inception through the as-of
+   * date. There is no period-close/retained-earnings roll-up, so this is
+   * cumulative unclosed earnings — not current-period income. Optional only
+   * to tolerate a backend deployed before the field existed; prefer it over
+   * the legacy alias below.
+   */
+  cumulativeEarnings?: Money;
+  /** @deprecated Misnamed legacy alias of `cumulativeEarnings`; same value. */
   currentEarnings: Money;
   totalAssets: Money;
   totalLiabilities: Money;

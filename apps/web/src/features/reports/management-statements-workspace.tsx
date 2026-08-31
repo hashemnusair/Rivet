@@ -162,13 +162,14 @@ function statementWarnings(report: ManagementReportCompleteness | undefined, kin
   return dedupeStatementWarnings(warnings);
 }
 
-function ReportQuality({ report, warnings }: { report?: ManagementReportCompleteness; warnings?: readonly string[] }) {
+function ReportQuality({ report, warnings, kind }: { report?: ManagementReportCompleteness; warnings?: readonly string[]; kind?: ManagementStatementKind }) {
   if (!report) return null;
   const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings);
   return (
     <section className="space-y-2" aria-label="Statement quality and scope">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
-        <span dir="ltr">{formatDate(report.fromDate)} – {formatDate(report.toDate)}</span>
+        {/* A balance sheet is a cumulative position, not period activity. */}
+        <span dir="ltr">{kind === "balance" ? `As of ${formatDate(report.toDate)}` : `${formatDate(report.fromDate)} – ${formatDate(report.toDate)}`}</span>
         <span aria-hidden>·</span>
         <span>{report.branchId ? "Selected branch" : "All accessible branches"}</span>
         <span aria-hidden>·</span>
@@ -187,8 +188,14 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard label="Total revenue" value={<MoneyText money={report.totalRevenue} />} tone="positive" />
         <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" />
-        <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue less cost of sales, operating expenses, and other expenses." />
+        <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue and other income, less cost of sales, operating expenses, and other expenses." />
       </div>
+      {report.membershipRevenueRecognition !== "not_available" ? (
+        <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3">
+          <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p><span className="font-medium text-ink-2">Why fils appear:</span> membership revenue is earned by service day — each term&rsquo;s net price is split across its calendar days in exact minor units, so a whole-dinar membership can show fils in one month&rsquo;s earned revenue. The earned months of a term always add back to its exact net sale price <span dir="ltr">(daily-weighted-largest-remainder.v1)</span>.</p>
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <StatementSectionCard title="Revenue" section={report.revenue} tone="positive" />
         <StatementSectionCard title="Cost of sales" section={report.costOfSales} tone="negative" />
@@ -201,6 +208,8 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
 }
 
 function BalanceSheetView({ report }: { report: BalanceSheet }) {
+  // Canonical field with a deploy-skew fallback to the deprecated alias.
+  const cumulativeEarnings = report.cumulativeEarnings ?? report.currentEarnings;
   return (
     <div className="space-y-4" data-testid="balance-sheet">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -210,7 +219,7 @@ function BalanceSheetView({ report }: { report: BalanceSheet }) {
       </div>
       <section className={cn("rounded-md border px-4 py-3", report.balanced ? "border-success/40 bg-success-bg text-success-deep" : "border-danger/40 bg-danger-bg text-danger")} role="status" aria-label="Balance sheet equation">
         <div className="flex flex-wrap items-center gap-2"><Scale className="size-4" aria-hidden /><p className="font-medium">{report.balanced ? "Balance sheet equation reconciles" : "Balance sheet equation needs review"}</p><ReportStatusBadge status={report.balanced ? "available" : "not_available"} /></div>
-        <p className="mt-1 text-[12px]">Assets = liabilities + equity + current earnings · difference <span dir="ltr" className="font-medium"><MoneyText money={report.difference} /></span></p>
+        <p className="mt-1 text-[12px]">Assets = liabilities + equity + cumulative earnings · difference <span dir="ltr" className="font-medium"><MoneyText money={report.difference} /></span></p>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <StatementSectionCard title="Current assets" section={report.assets.current} />
@@ -218,7 +227,7 @@ function BalanceSheetView({ report }: { report: BalanceSheet }) {
         <StatementSectionCard title="Current liabilities" section={report.liabilities.current} />
         <StatementSectionCard title="Non-current liabilities" section={report.liabilities.noncurrent} />
         <StatementSectionCard title="Equity" section={report.equity} />
-        <SummaryCard label="Cumulative earnings" value={<MoneyText money={report.currentEarnings} />} context="Earnings accumulated through the as-of date and included in the equation." />
+        <SummaryCard label="Cumulative earnings" value={<MoneyText money={cumulativeEarnings} />} context="Revenue less costs accumulated from ledger inception through the as-of date; closes the equation because no period-end earnings roll-up exists yet." />
       </div>
     </div>
   );
@@ -415,7 +424,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
       <PageHeader eyebrow="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} />
-      <ReportQuality report={report} warnings={reportWarnings} />
+      <ReportQuality report={report} warnings={reportWarnings} kind={kind} />
       {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}
       <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
       {reportView}

@@ -234,6 +234,7 @@ const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" 
   { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
   { code: "5600", name: "Depreciation expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "non_cash", normalBalance: "debit" },
+  { code: "5900", name: "Other operating expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
 ];
 
 function mockAccount(orgId: string, definition: (typeof MOCK_ACCOUNT_DEFINITIONS)[number]): T.AccountingAccount {
@@ -343,6 +344,18 @@ function mockMembershipAllocations(amount: number, start: string | undefined, en
     rows.set(month, row);
   }
   return [...rows.values()].filter((row) => row.amount > 0);
+}
+
+/**
+ * Recognition must exclude every freeze the membership has ever had, not just
+ * the one currently active — completed historical freezes still removed
+ * service days. Mirrors the Convex fact, which reads `freezes` plus
+ * `activeFreeze`.
+ */
+function mockMembershipFreezeWindows(membership: { freezes?: readonly T.FreezePeriod[]; activeFreeze?: T.FreezePeriod }): T.FreezePeriod[] {
+  const rows = [...(membership.freezes ?? [])];
+  if (membership.activeFreeze && !rows.some((row) => row.id === membership.activeFreeze!.id)) rows.push(membership.activeFreeze);
+  return rows;
 }
 
 function mockMonthlyDepreciationAmount(cost: number | undefined, usefulLife: number | undefined, monthIndex: number): number | undefined {
@@ -7874,7 +7887,7 @@ export class MockGymOSApi implements GymOSApi {
     return { lines, total: money(lines.reduce((sum, row) => sum + row.amount.amount, 0)) };
   }
 
-  private mockSourceQueueCoverage(range: { fromDate: string; toDate: string; branchId?: T.UUID }): { status: "proven" | "refresh_required"; candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }>; lastQueueProjectionAt?: string } {
+  private mockSourceQueueCoverage(range: { fromDate: string; toDate: string; branchId?: T.UUID }): { status: "proven" | "refresh_required"; candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }>; lastQueueProjectionAt?: string; postedDriftCount: number } {
     const allCandidates = this.mockAccountingSourceCandidates(MOCK_ACCOUNTING_SOURCE_TYPES, range.branchId, { fromDate: range.fromDate, toDate: range.toDate });
     const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }> = [];
     for (const candidate of allCandidates) {
@@ -7896,7 +7909,15 @@ export class MockGymOSApi implements GymOSApi {
     const runMatches = Boolean(reportRun && (fullScan || (reportRun.candidateDigest === candidateDigest && reportRun.candidateCount === candidates.length)));
     const current = candidates.every((candidate) => candidate.current);
     const latest = runs.map((run) => run.scannedAt).sort().at(-1);
-    return { status: runMatches && current ? "proven" : "refresh_required", candidates, lastQueueProjectionAt: latest };
+    // Posted rows are immutable, but a materially changed operational record
+    // (amount, currency, branch) must not leave the posted amount looking
+    // current — mirrored from the Convex coverage helper.
+    const postedDriftCount = candidates.filter((candidate) => candidate.row?.status === "posted" && (
+      candidate.row.amount?.amount !== candidate.fact.amount ||
+      candidate.row.currency !== (candidate.fact.currency ?? this.db.organization.currency) ||
+      candidate.row.branchId !== candidate.fact.branchId
+    )).length;
+    return { status: runMatches && current ? "proven" : "refresh_required", candidates, lastQueueProjectionAt: latest, postedDriftCount };
   }
 
   private managementReportMetadata(range: { fromDate: string; toDate: string; branchId?: T.UUID }): T.ManagementReportCompleteness & { membershipRevenueRecognition: T.ManagementMetricStatus; depreciationCoverage: T.ManagementMetricStatus } {
@@ -7914,6 +7935,7 @@ export class MockGymOSApi implements GymOSApi {
     const warnings = new Set<string>();
     if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
     if (sourceRows.some((row) => ["pending", "unconfigured", "excluded", "failed"].includes(row.status))) warnings.add("Some authoritative accounting sources are not posted; pending, excluded, or failed facts are omitted from the statements.");
+    if (queueCoverage.postedDriftCount > 0) warnings.add(`${queueCoverage.postedDriftCount} posted accounting ${queueCoverage.postedDriftCount === 1 ? "source posting no longer matches" : "source postings no longer match"} the current operational record (amount, currency, or branch changed after posting). Review the source queue and use an owner reversal plus a corrected posting where needed.`);
     if (membershipRevenueRecognition === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
     if (depreciationCoverage === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
     const policyVersions = [...new Map(this.accountingEntries
@@ -7949,14 +7971,16 @@ export class MockGymOSApi implements GymOSApi {
       const currentLiabilities = this.managementStatementSection(entries, ["liability_current"], "credit");
       const noncurrentLiabilities = this.managementStatementSection(entries, ["liability_noncurrent"], "credit");
       const equity = this.managementStatementSection(entries, ["equity"], "credit");
+      // Cumulative unclosed earnings through the as-of date; there is no
+      // period-close roll-up. `currentEarnings` is a deploy-skew alias.
       const recognizedRevenue = this.managementStatementSection(entries, ["revenue", "other_income"], "credit").total.amount;
       const recognizedCosts = this.managementStatementSection(entries, ["cost_of_sales", "operating_expense", "other_expense"], "debit").total.amount;
-      const currentEarnings = recognizedRevenue - recognizedCosts;
+      const cumulativeEarnings = recognizedRevenue - recognizedCosts;
       const totalAssets = currentAssets.total.amount + noncurrentAssets.total.amount;
       const totalLiabilities = currentLiabilities.total.amount + noncurrentLiabilities.total.amount;
-      const totalEquity = equity.total.amount + currentEarnings;
+      const totalEquity = equity.total.amount + cumulativeEarnings;
       const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
-      return { ...this.managementReportMetadata(range), asOfDate: range.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, currentEarnings: money(currentEarnings), totalAssets: money(totalAssets), totalLiabilities: money(totalLiabilities), totalEquity: money(totalEquity), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity), difference: money(totalAssets - totalLiabilitiesAndEquity), balanced: totalAssets === totalLiabilitiesAndEquity };
+      return { ...this.managementReportMetadata(range), asOfDate: range.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, cumulativeEarnings: money(cumulativeEarnings), currentEarnings: money(cumulativeEarnings), totalAssets: money(totalAssets), totalLiabilities: money(totalLiabilities), totalEquity: money(totalEquity), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity), difference: money(totalAssets - totalLiabilitiesAndEquity), balanced: totalAssets === totalLiabilitiesAndEquity };
     });
   }
 
@@ -7973,10 +7997,20 @@ export class MockGymOSApi implements GymOSApi {
         const lines = [...rows.values()].filter((row) => row.category === category).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, amount: money(row.amount), entryIds: [...row.ids].sort() }));
         return { category, lines, netChange: money(lines.reduce((sum, line) => sum + line.amount.amount, 0)) };
       };
+      const mixedEntryIds: string[] = [];
       for (const entry of entries) {
-        for (const cashLine of entry.lines.filter((line) => ["1100", "1110", "1120"].includes(line.accountCode))) {
-          const counterparts = entry.lines.filter((line) => line !== cashLine && !["1100", "1110", "1120"].includes(line.accountCode));
-          const category: T.ManagementCashflowCategory = counterparts.some((line) => line.statementGroup === "asset_noncurrent") ? "investing" : counterparts.some((line) => line.statementGroup === "equity" || line.statementGroup === "liability_noncurrent") ? "financing" : "operating";
+        const cashLines = entry.lines.filter((line) => ["1100", "1110", "1120"].includes(line.accountCode));
+        if (cashLines.length === 0) continue;
+        const counterparts = entry.lines.filter((line) => !["1100", "1110", "1120"].includes(line.accountCode));
+        // Cash-only entries are internal transfers: net cash change is zero,
+        // so excluding them keeps the reconciliation intact while the
+        // classified sections stop reporting money that never moved
+        // externally. Mirrors cashflow-classification.v2 in Convex.
+        if (counterparts.length === 0) continue;
+        const categories = new Set<T.ManagementCashflowCategory>(counterparts.map((line) => line.accountCode === "1500" || line.statementGroup === "asset_noncurrent" ? "investing" : line.accountCode === "3000" || line.statementGroup === "equity" || line.statementGroup === "liability_noncurrent" ? "financing" : "operating"));
+        const category: T.ManagementCashflowCategory = categories.has("investing") ? "investing" : categories.has("financing") ? "financing" : "operating";
+        if (categories.size > 1) mixedEntryIds.push(entry.id);
+        for (const cashLine of cashLines) {
           const account = this.accountingAccounts.find((candidate) => candidate.code === cashLine.accountCode) ?? this.accountingAccount(cashLine.accountId);
           const key = `${category}:${account.code}`;
           const current = rows.get(key) ?? { category, account, amount: 0, ids: new Set<string>() };
@@ -7997,6 +8031,7 @@ export class MockGymOSApi implements GymOSApi {
       const expectedClosingCash = openingCash + netChange;
       const asOfCash = throughCash;
       const metadata = this.managementReportMetadata(range);
+      if (mixedEntryIds.length > 0) metadata.warnings.push(`${mixedEntryIds.length} journal ${mixedEntryIds.length === 1 ? "entry pairs" : "entries pair"} one cash movement with counterparts from more than one activity; the whole movement is classified by priority (investing, then financing, then operating) under cashflow-classification.v2. Post separate journals to split such movements precisely.`);
       const reconciliationStatus: T.ManagementReconciliationStatus = metadata.queueCoverage === "proven"
         ? expectedClosingCash === asOfCash ? "proven" : "not_available"
         : "unproven";
@@ -8023,7 +8058,7 @@ export class MockGymOSApi implements GymOSApi {
           note: reconciliationNote,
         },
         balanced: reconciliationStatus === "proven" && expectedClosingCash === asOfCash,
-        classificationPolicy: { code: "cashflow-classification.v1", version: 1, description: "Actual cash and clearing account movements are classified as investing when paired with fixed assets, financing when paired with equity or non-current financing, and operating otherwise." },
+        classificationPolicy: { code: "cashflow-classification.v2", version: 2, description: "Cash on hand and card/bank-transfer clearing accounts are treated as cash. Each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. Entries that only move money between cash accounts are internal transfers and are excluded from the classified sections." },
       };
     });
   }
@@ -8067,8 +8102,8 @@ export class MockGymOSApi implements GymOSApi {
       const completedRepairs = this.db.equipmentWorkOrders.filter((row) => row.status === "completed" && managementLocalDate(row.updatedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.updatedAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
       const repairCostRows = completedRepairs.filter((row) => row.totalCost !== undefined || row.partsCost !== undefined || row.laborCost !== undefined);
       metrics.push({ key: "equipment_repair_cost", label: "Recorded equipment repair cost", status: repairCostRows.length > 0 ? "available" : "not_configured", value: repairCostRows.length > 0 ? money(repairCostRows.reduce((sum, row) => sum + (row.totalCost?.amount ?? (row.partsCost?.amount ?? 0) + (row.laborCost?.amount ?? 0)), 0)) : undefined, unit: "money", sourceCount: repairCostRows.length, drilldownIds: repairCostRows.map((row) => row.id), note: repairCostRows.length > 0 ? undefined : "No completed repair work orders with configured costs are recorded in this period." });
-      const variance = this.db.shifts.filter((shift) => this.managementBranchVisible(shift.branchId, range.branchId) && shift.closedAt && managementLocalDate(shift.closedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(shift.closedAt, this.db.organization.timezone) <= range.toDate && shift.variance).map((shift) => shift.variance!.amount);
-      metrics.push({ key: "cash_variance", label: "Recorded cash shift variance", status: variance.length > 0 ? "available" : "not_available", value: variance.length > 0 ? money(variance.reduce((sum, amount) => sum + amount, 0)) : undefined, unit: "money", sourceCount: variance.length, drilldownIds: [] });
+      const varianceShifts = this.db.shifts.filter((shift) => this.managementBranchVisible(shift.branchId, range.branchId) && shift.closedAt && managementLocalDate(shift.closedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(shift.closedAt, this.db.organization.timezone) <= range.toDate && shift.variance);
+      metrics.push({ key: "cash_variance", label: "Recorded cash shift variance", status: varianceShifts.length > 0 ? "available" : "not_available", value: varianceShifts.length > 0 ? money(varianceShifts.reduce((sum, shift) => sum + (shift.variance?.amount ?? 0), 0)) : undefined, unit: "money", sourceCount: varianceShifts.length, drilldownIds: varianceShifts.map((shift) => shift.id).slice(0, 100) });
       return { ...metadata, metrics };
     });
   }
@@ -8207,7 +8242,7 @@ export class MockGymOSApi implements GymOSApi {
         const recognitionBase = original?.amount?.amount !== undefined ? Math.min(netAmount, original.amount.amount) : netAmount;
         const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
         const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
-        const freezes = membership.activeFreeze ? [membership.activeFreeze] : [];
+        const freezes = mockMembershipFreezeWindows(membership);
         const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes });
         if (allocations.length === 0) {
           if (mockTimestampInDateRange(membership.createdAt, this.db.organization.timezone, dateRange)) add("membership_revenue_recognition", `membership-revenue:${membership.id}:unconfigured`, membership.homeBranchId);
@@ -8316,13 +8351,18 @@ export class MockGymOSApi implements GymOSApi {
       if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Payment source not found.");
       const isRetail = payment.type === "retail_sale" || ("retailSaleId" in payment && Boolean(payment.retailSaleId));
       const valid = sourceType === "payment" ? (payment.type === "payment" || isRetail) && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : (payment.type === "payment" || isRetail) && payment.status === "voided";
+      // Mirrors Convex: a void only reverses a collection that actually
+      // reached the ledger. Without a posted original there is nothing to
+      // reverse, and posting the void would fabricate a cash outflow.
+      const voidOriginalStatus = sourceType === "void" && valid ? this.accountingSources.find((row) => row.sourceType === "payment" && row.sourceId === sourceId)?.status : undefined;
+      const voidWithoutPostedOriginal = sourceType === "void" && valid && voidOriginalStatus !== "posted";
       const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : isRetail ? "4200" : "1200";
       const creditCode = sourceType === "payment" ? (isRetail ? "4200" : "1200") : accountForMethod(payment.method);
       const normalizedAmount = sourceType === "refund" ? Math.abs(payment.amount.amount) : payment.amount.amount;
       const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
       const policyPrefix = isRetail ? (sourceType === "payment" ? "retail-sale" : sourceType === "refund" ? "retail-refund" : "retail-void") : sourceType;
       const policyVersion = isRetail ? 2 : 1;
-      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${policyPrefix}-${payment.method}.v${policyVersion}`, status: currencyMismatch ? "excluded" : valid && normalizedAmount > 0 ? undefined : "unconfigured", reason: currencyMismatch ? "Payment currency does not match organization currency." : valid ? normalizedAmount > 0 ? undefined : "Payment source has no positive amount." : "Payment lifecycle does not match the requested accounting source type.", details: { method: payment.method, saleType: isRetail ? "retail" : "membership" } };
+      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${policyPrefix}-${payment.method}.v${policyVersion}`, status: currencyMismatch ? "excluded" : !valid || normalizedAmount <= 0 ? "unconfigured" : voidWithoutPostedOriginal ? "excluded" : undefined, reason: currencyMismatch ? "Payment currency does not match organization currency." : !valid ? "Payment lifecycle does not match the requested accounting source type." : normalizedAmount <= 0 ? "Payment source has no positive amount." : voidWithoutPostedOriginal ? "The voided payment was never posted to the ledger, so the void has no ledger effect to reverse." : undefined, details: { method: payment.method, saleType: isRetail ? "retail" : "membership", ...(sourceType === "void" ? { originalPaymentPostingStatus: voidOriginalStatus ?? "never_posted" } : {}) } };
     }
     if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
       const membership = this.db.memberships.find((candidate) => candidate.id === sourceId);
@@ -8353,7 +8393,7 @@ export class MockGymOSApi implements GymOSApi {
       const recognitionBase = dependencyValid ? Math.min(netAmount, original.amount!.amount) : netAmount;
       const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
       const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
-      const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes: membership.activeFreeze ? [membership.activeFreeze] : [] });
+      const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes: mockMembershipFreezeWindows(membership) });
       const selected = allocations.find((allocation) => allocation.month === serviceMonth);
       const occurredAt = selected ? tenantDateIso(accountingMonthEnd(selected.month), this.db.organization.timezone) : membership.createdAt;
       const currencyMismatch = sourceCurrency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;

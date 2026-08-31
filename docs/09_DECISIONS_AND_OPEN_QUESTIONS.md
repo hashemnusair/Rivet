@@ -163,3 +163,23 @@ The JOD 25.000 refund-review threshold is an explicit MVP assumption, not a fina
 Entry and membership rules are now tenant settings enforced by Convex, not presentation-only preferences. Until a gym explicitly changes them, RIVET warns (but does not block) for outstanding balances, warns seven days before expiry, suppresses duplicate scans for two minutes, opens the renewal queue fourteen days before expiry, requires at least a one-day freeze, caps manual extensions at 365 days, and prevents overlapping membership terms. Operating-hour enforcement is off by default so an unconfigured branch cannot accidentally lock out every member.
 
 When hours are enabled, each active branch receives a seven-day local-time schedule and outside-hours entry is blocked unless an authorized manager records an override. Membership branch transfers require the date-override permission and a reason, update both the membership and the member's home branch, and append timeline plus audit events. These defaults are pilot assumptions; each gym owner should confirm balance policy, hours, freeze minimum, renewal cadence, overlap handling, and extension authority during onboarding.
+
+## Management-ledger audit policies — 2026-08-31
+
+The forensic statements audit (docs/18) fixed defects and made three policy
+decisions explicit:
+
+- **Voids are dependency-gated.** A void source posts only when the original
+  payment source is already posted; otherwise it is `excluded` because there
+  is no ledger effect to reverse. Refunds deliberately remain standalone
+  (their cash-out is a real event even when the collection is still pending).
+- **Cash-flow classification is `cashflow-classification.v2`.** Cash = cash
+  on hand plus card/bank-transfer clearing. Classification is by non-cash
+  counterparts with investing → financing → operating priority; all-cash
+  entries are internal transfers excluded from the sections; mixed-activity
+  compound entries warn and should be posted as split journals.
+- **The balance sheet reports `cumulativeEarnings`** (revenue − costs from
+  ledger inception; there is no period close). `currentEarnings` remains a
+  deprecated equal-valued alias for one release. A retained-earnings close, a
+  supplier-payment source type, and refund-shortens-service semantics remain
+  open owner/accountant decisions recorded in docs/18 §4.
