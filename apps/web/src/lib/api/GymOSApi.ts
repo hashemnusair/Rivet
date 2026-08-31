@@ -844,6 +844,13 @@ export interface GymOSApi {
   getCollectionsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").CollectionsReport>;
   getCrmFunnelReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").CrmFunnelReport>;
   getControlTrendsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ControlTrendsReport>;
+
+  // --- Daily branch checklists ---
+  listChecklistTemplates(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").ChecklistTemplate[]>;
+  upsertChecklistTemplate(input: import("@/lib/domain/types").UpsertChecklistTemplateInput): Promise<import("@/lib/domain/types").ChecklistTemplate>;
+  getChecklistDay(input: { branchId: UUID; date?: string }): Promise<import("@/lib/domain/types").ChecklistDay>;
+  setChecklistItem(input: import("@/lib/domain/types").SetChecklistItemInput): Promise<import("@/lib/domain/types").ChecklistRun>;
+  createChecklistMaintenanceTask(input: import("@/lib/domain/types").CreateChecklistTaskInput): Promise<import("@/lib/domain/types").ChecklistRun>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
   getCustomerFinancialSummary(): Promise<CustomerFinancialSummary>;
   listCustomerTransactions(query: CustomerTransactionQuery): Promise<Page<CustomerTransaction>>;

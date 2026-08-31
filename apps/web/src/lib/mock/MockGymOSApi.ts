@@ -680,6 +680,8 @@ export class MockGymOSApi implements GymOSApi {
   private classSessions: T.ClassSession[] = [];
   private classCoaches: T.ClassCoach[] = [];
   private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
+  private checklistTemplates: T.ChecklistTemplate[] = [];
+  private checklistRuns: Array<T.ChecklistRun & { id: string }> = [];
   private referralLinks = new Map<string, { token: string; memberId: string; membershipId: string; gymId: string }>();
   private freezeRequests: T.MembershipFreezeRequest[] = [];
   private customerMemberLinks = new Map<string, string>();
@@ -743,6 +745,7 @@ export class MockGymOSApi implements GymOSApi {
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
     this.referralLinks.clear();
+    this.seedChecklists();
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
@@ -996,6 +999,211 @@ export class MockGymOSApi implements GymOSApi {
       const { member, membership: operationalMembership } = this.customerOperationalMembership(membershipId);
       if (!this.referralLinks.has(membershipId)) this.referralLinks.set(membershipId, { token: mockUuid(), memberId: member.id, membershipId: operationalMembership.id, gymId: membership.gymId });
       return this.customerReferralProgram(membership);
+    });
+  }
+
+  // --- Daily branch checklists (parity with convex/branchChecklists) ---
+
+  private static readonly CHECKLIST_ROLES: readonly T.ChecklistRole[] = ["owner", "manager", "sales", "receptionist", "trainer", "auditor"];
+
+  private seedChecklists(): void {
+    const branch = this.db.branches[0];
+    if (!branch) { this.checklistTemplates = []; this.checklistRuns = []; return; }
+    const item = (id: string, label: string, extra: Partial<T.ChecklistTemplateItem> = {}, order = 0): T.ChecklistTemplateItem => ({ id, label, required: true, order, ...extra });
+    this.checklistTemplates = [
+      {
+        id: "checklist-opening-abdoun", branchId: branch.id, type: "opening", name: "Opening walkthrough", active: true, dueTime: "07:30", assignedRole: "receptionist",
+        items: [
+          item("open-1", "Unlock doors and turn on lights", {}, 0),
+          item("open-2", "Check changing rooms are clean", { zoneId: this.db.zones.find((zone) => zone.branchId === branch.id)?.id, offerMaintenance: true }, 1),
+          item("open-3", "Test the entry scanner", {}, 2),
+          item("open-4", "Put out fresh towels", { required: false }, 3),
+        ],
+        createdAt: nowISO(), updatedAt: nowISO(),
+      },
+      {
+        id: "checklist-closing-abdoun", branchId: branch.id, type: "closing", name: "Closing walkthrough", active: true, dueTime: "23:30", assignedRole: "receptionist",
+        items: [
+          item("close-1", "Rack all weights", { offerMaintenance: true }, 0),
+          item("close-2", "Switch off cardio machines", {}, 1),
+          item("close-3", "Lock the back door", {}, 2),
+        ],
+        createdAt: nowISO(), updatedAt: nowISO(),
+      },
+    ];
+    this.checklistRuns = [];
+  }
+
+  private checklistLocalTimeNow(): string {
+    const timezone = this.db.organization.timezone || "Asia/Amman";
+    const value = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(Date.now());
+    return value === "24:00" ? "00:00" : value;
+  }
+
+  private checklistProgress(items: T.ChecklistRunItem[]): T.ChecklistRun["progress"] {
+    return {
+      done: items.filter((item) => item.status !== "pending").length,
+      total: items.length,
+      requiredPending: items.filter((item) => item.required && item.status === "pending").length,
+      failedRequired: items.filter((item) => item.required && item.status === "failed").length,
+    };
+  }
+
+  private checklistRunView(run: T.ChecklistRun & { id?: string }): T.ChecklistRun {
+    const progress = this.checklistProgress(run.items);
+    const today = todayISODate(this.db.organization.timezone);
+    const pastDue = run.localDate < today || (run.localDate === today && this.checklistLocalTimeNow() > run.dueTime);
+    return { ...run, items: [...run.items].sort((a, b) => a.order - b.order).map((item) => ({ ...item })), progress, complete: progress.requiredPending === 0, overdue: pastDue && progress.requiredPending > 0 };
+  }
+
+  private checklistTemplateOrThrow(templateId: string): T.ChecklistTemplate {
+    const template = this.checklistTemplates.find((candidate) => candidate.id === templateId);
+    if (!template) throw ApiError.of(ERR.NOT_FOUND, "Checklist not found.");
+    if (!this.branchIsVisible(template.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return template;
+  }
+
+  private ensureChecklistRun(template: T.ChecklistTemplate, date: string): T.ChecklistRun & { id: string } {
+    const existing = this.checklistRuns.find((run) => run.templateId === template.id && run.localDate === date);
+    if (existing) return existing;
+    const run: T.ChecklistRun & { id: string } = {
+      id: mockUuid(),
+      templateId: template.id,
+      branchId: template.branchId,
+      type: template.type,
+      localDate: date,
+      name: template.name,
+      dueTime: template.dueTime,
+      assignedRole: template.assignedRole,
+      items: [...template.items].sort((a, b) => a.order - b.order).map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
+      progress: { done: 0, total: template.items.length, requiredPending: template.items.filter((item) => item.required).length, failedRequired: 0 },
+      complete: template.items.every((item) => !item.required),
+      overdue: false,
+    };
+    this.checklistRuns.push(run);
+    return run;
+  }
+
+  listChecklistTemplates(input: { branchId?: T.UUID } = {}): Promise<T.ChecklistTemplate[]> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      if (input.branchId && !this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      return this.checklistTemplates
+        .filter((template) => (input.branchId ? template.branchId === input.branchId : this.branchIsVisible(template.branchId)))
+        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+        .map((template) => ({ ...template, items: template.items.map((item) => ({ ...item })) }));
+    });
+  }
+
+  upsertChecklistTemplate(input: T.UpsertChecklistTemplateInput): Promise<T.ChecklistTemplate> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      if (!this.branchIsVisible(input.branchId) || !this.db.branches.some((branch) => branch.id === input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (input.type !== "opening" && input.type !== "closing") throw ApiError.of(ERR.VALIDATION, "type must be opening or closing.");
+      const name = input.name?.trim();
+      if (!name) throw ApiError.of(ERR.VALIDATION, "Name is required.");
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.dueTime ?? "")) throw ApiError.of(ERR.VALIDATION, "Due time must be HH:MM.");
+      if (!MockGymOSApi.CHECKLIST_ROLES.includes(input.assignedRole)) throw ApiError.of(ERR.VALIDATION, "Choose a valid gym role.");
+      if (!Array.isArray(input.items) || input.items.length === 0) throw ApiError.of(ERR.VALIDATION, "A checklist needs at least one item.");
+      if (input.items.length > 50) throw ApiError.of(ERR.VALIDATION, "A checklist holds at most 50 items.");
+      const items: T.ChecklistTemplateItem[] = input.items.map((raw, index) => {
+        const label = raw.label?.trim();
+        if (!label) throw ApiError.of(ERR.VALIDATION, `Item ${index + 1} label is required.`);
+        if (raw.zoneId && !this.db.zones.some((zone) => zone.id === raw.zoneId && zone.branchId === input.branchId && zone.status === "active")) {
+          throw ApiError.of(ERR.VALIDATION, "A linked gym space must belong to this branch.");
+        }
+        return { id: raw.id ?? mockUuid(), label: label.slice(0, 120), instructions: raw.instructions?.trim() ? raw.instructions.trim().slice(0, 400) : undefined, required: raw.required !== false, order: index, zoneId: raw.zoneId, offerMaintenance: raw.offerMaintenance === true ? true : undefined };
+      });
+      const active = input.active !== false;
+      if (input.templateId) {
+        const existing = this.checklistTemplateOrThrow(input.templateId);
+        if (existing.branchId !== input.branchId) throw ApiError.of(ERR.VALIDATION, "A checklist cannot move between branches.");
+        const beforeName = existing.name;
+        Object.assign(existing, { type: input.type, name: name.slice(0, 80), dueTime: input.dueTime, assignedRole: input.assignedRole, items, active, updatedAt: nowISO() });
+        this.audit({ category: "operations", action: "checklists.template.update", entityType: "checklist_template", entityId: existing.id, entityLabel: existing.name, summary: `Checklist "${existing.name}" updated`, before: { name: beforeName }, after: { name: existing.name }, branchId: existing.branchId });
+        return { ...existing, items: existing.items.map((item) => ({ ...item })) };
+      }
+      const created: T.ChecklistTemplate = { id: mockUuid(), branchId: input.branchId, type: input.type, name: name.slice(0, 80), active, dueTime: input.dueTime, assignedRole: input.assignedRole, items, createdAt: nowISO(), updatedAt: nowISO() };
+      this.checklistTemplates.push(created);
+      this.audit({ category: "operations", action: "checklists.template.create", entityType: "checklist_template", entityId: created.id, entityLabel: created.name, summary: `Checklist "${created.name}" created`, branchId: created.branchId });
+      return { ...created, items: created.items.map((item) => ({ ...item })) };
+    });
+  }
+
+  getChecklistDay(input: { branchId: T.UUID; date?: string }): Promise<T.ChecklistDay> {
+    return this.respond(() => {
+      if (!this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw ApiError.of(ERR.VALIDATION, "date must be a calendar date.");
+      const runs = this.checklistTemplates
+        .filter((template) => template.active && template.branchId === input.branchId)
+        .map((template) => {
+          const existing = this.checklistRuns.find((run) => run.templateId === template.id && run.localDate === date);
+          if (existing) return this.checklistRunView(existing);
+          return this.checklistRunView({
+            templateId: template.id, branchId: template.branchId, type: template.type, localDate: date, name: template.name, dueTime: template.dueTime, assignedRole: template.assignedRole,
+            items: template.items.map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
+            progress: { done: 0, total: 0, requiredPending: 0, failedRequired: 0 }, complete: false, overdue: false,
+          });
+        })
+        .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+      return { branchId: input.branchId, date, runs };
+    });
+  }
+
+  setChecklistItem(input: T.SetChecklistItemInput): Promise<T.ChecklistRun> {
+    return this.respond(() => {
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      if (!template.active) throw ApiError.of(ERR.VALIDATION, "This checklist is disabled.");
+      if (!["pending", "completed", "failed", "skipped"].includes(input.status)) throw ApiError.of(ERR.VALIDATION, "Unknown item status.");
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      const run = this.ensureChecklistRun(template, date);
+      const item = run.items.find((candidate) => candidate.itemId === input.itemId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Checklist item not found.");
+      const reason = input.reason?.trim() || undefined;
+      const isCorrection = item.status !== "pending";
+      if (isCorrection && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      if ((input.status === "failed" || input.status === "skipped") && item.required && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const actorUser = currentUser(this.db);
+      const previous = { status: item.status, actorName: item.actorName, at: item.at };
+      Object.assign(item, {
+        status: input.status,
+        actorId: input.status === "pending" ? undefined : actorUser.id,
+        actorName: input.status === "pending" ? undefined : actorUser.name,
+        at: input.status === "pending" ? undefined : nowISO(),
+        note: input.note?.trim() || undefined,
+        reason,
+      });
+      if (isCorrection) {
+        this.audit({ category: "operations", action: "checklists.item.correct", entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `Corrected "${item.label}" to ${input.status}`, reason, before: { status: previous.status, actorName: previous.actorName ?? null, at: previous.at ?? null }, after: { status: input.status }, branchId: run.branchId });
+      } else if (input.status === "failed" || input.status === "skipped") {
+        this.audit({ category: "operations", action: `checklists.item.${input.status === "failed" ? "fail" : "skip"}`, entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `${input.status === "failed" ? "Failed" : "Skipped"} "${item.label}"`, reason, branchId: run.branchId });
+      }
+      return this.checklistRunView(run);
+    });
+  }
+
+  createChecklistMaintenanceTask(input: T.CreateChecklistTaskInput): Promise<T.ChecklistRun> {
+    return this.respond(async () => {
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      const run = this.ensureChecklistRun(template, date);
+      const item = run.items.find((candidate) => candidate.itemId === input.itemId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Checklist item not found.");
+      if (item.facilityTaskId) throw ApiError.of(ERR.CONFLICT, "A maintenance task is already linked to this item.");
+      const zoneId = input.zoneId ?? item.zoneId;
+      if (!zoneId) throw ApiError.of(ERR.VALIDATION, "Choose the gym space this task belongs to.");
+      const task = await this.upsertFacilityTask({
+        branchId: run.branchId,
+        zoneId,
+        kind: "incident",
+        severity: item.required ? "high" : "medium",
+        title: input.title?.trim() || `${item.label} — ${run.name}`,
+        notes: input.notes?.trim() || (item.reason ? `From the daily checklist: ${item.reason}` : `From the daily checklist run of ${run.localDate}.`),
+      });
+      item.facilityTaskId = task.id;
+      this.audit({ category: "operations", action: "checklists.maintenance_escalated", entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `Maintenance task created for "${item.label}"`, branchId: run.branchId });
+      return this.checklistRunView(run);
     });
   }
 
@@ -3101,6 +3309,7 @@ export class MockGymOSApi implements GymOSApi {
     this.classSessions = this.seedClassSessions();
     this.referralRewards = [];
     this.referralLinks.clear();
+    this.seedChecklists();
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));

@@ -530,6 +530,68 @@ export default defineSchema({
     .index("by_branch_start", ["organizationId", "branchId", "startsAt"])
     .index("by_public_id", ["organizationId", "publicId"]),
 
+  checklistTemplates: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    type: v.union(v.literal("opening"), v.literal("closing")),
+    name: v.string(),
+    active: v.boolean(),
+    /** Branch-local due time, HH:MM. */
+    dueTime: v.string(),
+    /** Gym role expected to run this checklist. */
+    assignedRole: v.string(),
+    items: v.array(v.object({
+      id: v.string(),
+      label: v.string(),
+      instructions: v.optional(v.string()),
+      required: v.boolean(),
+      order: v.number(),
+      zoneId: v.optional(v.string()),
+      offerMaintenance: v.optional(v.boolean()),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_branch", ["organizationId", "branchId"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
+  checklistRuns: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    branchId: v.id("branches"),
+    templateId: v.id("checklistTemplates"),
+    templatePublicId: v.string(),
+    type: v.union(v.literal("opening"), v.literal("closing")),
+    /** Branch-local calendar date the run belongs to. */
+    localDate: v.string(),
+    templateName: v.string(),
+    dueTime: v.string(),
+    assignedRole: v.string(),
+    items: v.array(v.object({
+      itemId: v.string(),
+      label: v.string(),
+      instructions: v.optional(v.string()),
+      required: v.boolean(),
+      order: v.number(),
+      zoneId: v.optional(v.string()),
+      offerMaintenance: v.optional(v.boolean()),
+      status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("skipped")),
+      actorId: v.optional(v.string()),
+      actorName: v.optional(v.string()),
+      at: v.optional(v.string()),
+      note: v.optional(v.string()),
+      reason: v.optional(v.string()),
+      facilityTaskId: v.optional(v.string()),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_template_date", ["organizationId", "templateId", "localDate"])
+    .index("by_branch_date", ["organizationId", "branchId", "localDate"])
+    .index("by_public_id", ["organizationId", "publicId"]),
+
   facilityTasks: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),

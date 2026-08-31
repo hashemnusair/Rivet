@@ -58,6 +58,8 @@ export const qk = {
   workspacePins: ["workspacePins"] as const,
   classSessions: (branchId: string) => ["classSessions", branchId] as const,
   analytics: (kind: string, params: Record<string, unknown>) => ["analytics", kind, params] as const,
+  checklistTemplates: (branchId?: string) => ["checklistTemplates", branchId ?? "all"] as const,
+  checklistDay: (branchId: string, date?: string) => ["checklistDay", branchId, date ?? "today"] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */

@@ -47,6 +47,7 @@ import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBran
 import { operationsMutation, operationsQuery } from "./operations";
 import { classesMutation, classesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
+import { checklistsMutation, checklistsQuery } from "./branchChecklists";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
@@ -5544,6 +5545,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.sessions.list":
     case "classes.coaches.list":
       return await classesQuery(ctx, actor, operation, input);
+    case "checklists.templates.list":
+    case "checklists.day":
+      return await checklistsQuery(ctx, actor, operation, input);
     case "analytics.peak_hours":
     case "analytics.retention":
     case "analytics.renewal_forecast":
@@ -10654,6 +10658,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.coach.upsert":
     case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
+    case "checklists.template.upsert":
+    case "checklists.run.ensure":
+    case "checklists.item.set":
+    case "checklists.item.create_task":
+      return await checklistsMutation(ctx, actor, operation, input);
     case "accounting.manual_journal.post":
     case "finance.manual_journal.post":
     case "accounting.source.post":
