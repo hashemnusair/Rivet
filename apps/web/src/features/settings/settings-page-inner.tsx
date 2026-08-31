@@ -114,7 +114,6 @@ export function SettingsPageInner() {
       const nextSearch = new URLSearchParams(searchParams.toString());
       nextSearch.set("section", id);
       router.replace(`${pathname}?${nextSearch.toString()}`, { scroll: false });
-      if (process.env.NODE_ENV !== "test") window.scrollTo({ top: 0 });
     });
 
   const navButton = (entry: SettingsEntry) => {
@@ -133,7 +132,11 @@ export function SettingsPageInner() {
           isActive ? "bg-sunken font-semibold text-ink" : "text-ink-2 hover:bg-sunken/60 hover:text-ink",
         )}
       >
-        {isActive ? <span aria-hidden className="me-2 h-4 w-px shrink-0" style={{ backgroundColor: "var(--tenant-brand-primary)" }} /> : null}
+        <span
+          aria-hidden
+          className="me-2 h-4 w-px shrink-0"
+          style={{ backgroundColor: isActive ? "var(--tenant-brand-primary)" : "transparent" }}
+        />
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
       </button>
     );
@@ -155,8 +158,8 @@ export function SettingsPageInner() {
               <SelectContent>{ALL_ENTRIES.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <nav aria-label="Settings sections" className="sticky top-[72px] hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-lg border border-line bg-surface p-2 lg:block">
-            <div className="sticky top-0 z-10 bg-surface pb-2">
+          <nav aria-label="Settings sections" className="sticky top-[72px] hidden max-h-[calc(100dvh-5.5rem)] overflow-y-auto border-e border-line/80 py-1 pe-4 [scrollbar-gutter:stable] lg:block">
+            <div className="sticky top-0 z-10 bg-paper pb-3">
               <div className="relative">
                 <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
                 <Input

@@ -291,6 +291,13 @@ test.describe("settings navigation", () => {
     await page.getByRole("textbox", { name: "Search settings" }).fill("freeze");
     await expect(page.getByRole("tab")).toHaveCount(1);
     await expect(page.getByRole("tab", { name: "Operational rules" })).toBeVisible();
+
+    // Selecting a rail item must not jump the page and move the remaining touch targets.
+    await page.evaluate(() => window.scrollTo({ top: 360 }));
+    const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
+    expect(scrollBeforeSelection).toBeGreaterThan(0);
+    await page.getByRole("tab", { name: "Operational rules" }).click();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeSelection);
   });
 });
 

@@ -102,6 +102,7 @@ describe("Settings gym spaces", () => {
 describe("Settings navigation and operational drafts", () => {
   it("keeps operational rules and branch hours as separate linkable sections", async () => {
     const user = userEvent.setup();
+    const scrollTo = vi.spyOn(window, "scrollTo");
     await renderWithApp(<SettingsPageInner />);
 
     await user.click(screen.getByRole("tab", { name: "Operational rules" }));
@@ -111,6 +112,8 @@ describe("Settings navigation and operational drafts", () => {
     await user.click(screen.getByRole("tab", { name: "Hours & trials" }));
     expect(await screen.findByRole("heading", { name: "Branch hours and free trials" })).toBeInTheDocument();
     expect(navigation.replace).toHaveBeenLastCalledWith("/settings?section=hours", { scroll: false });
+    expect(scrollTo).not.toHaveBeenCalled();
+    scrollTo.mockRestore();
   });
 
   it("protects edited operational rules and restores the saved value on discard", async () => {
