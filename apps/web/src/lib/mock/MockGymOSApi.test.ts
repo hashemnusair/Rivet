@@ -46,17 +46,21 @@ describe("readable exports", () => {
       expect(exported.content).not.toContain("data_json");
       expect(exported.content).not.toContain("[object Object]");
       expect(exported.content).not.toContain("{\"");
+      expect(exported.content).not.toMatch(/RIVET (member|lead|transaction|charge|audit|PT order|record) ID/);
     }
   });
 
-  it("separates the member's profile, memberships, money, visits, and history", async () => {
+  it("renders the member's actual data as a concise browser report", async () => {
     const exported = await api.requestMemberPersonalDataExport("mock-personal-export-readable");
-    expect(exported.content).toContain("Profile\r\nField,Value");
-    expect(exported.content).toContain("Memberships\r\nGym,Branch,Member number,Plan");
+    expect(exported.fileName).toMatch(/\.html$/);
+    expect(exported.mimeType).toBe("text/html;charset=utf-8");
+    expect(exported.content).toContain("<h2>Profile</h2>");
+    expect(exported.content).toContain("<h2>Memberships</h2>");
     expect(exported.content).toContain("Payments and refunds");
     expect(exported.content).toContain("Check-ins");
     expect(exported.content).not.toContain("data_json");
     expect(exported.content).not.toContain("{\"");
+    expect(exported.content).not.toContain("RIVET membership ID");
   });
 });
 

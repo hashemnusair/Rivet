@@ -49,6 +49,7 @@ describe("tenant data exports", () => {
     expect(first.content).toContain("Member number,Full name,Arabic name,Phone");
     expect(first.content).not.toContain("data_json");
     expect(first.content).not.toContain("{\"");
+    expect(first.content).not.toContain("RIVET member ID");
     expect(first.content).not.toContain("Must Not Leak");
     expect(replay.id).toBe(first.id);
     const history = await owner.query(api.domain.query, operation("exports.list")) as Array<{ id: string; content?: string }>;
@@ -57,23 +58,29 @@ describe("tenant data exports", () => {
     expect(audit).toEqual([expect.objectContaining({ entityPublicId: first.id, after: expect.objectContaining({ rowCount: 2, timezone: "Asia/Amman" }) })]);
   });
 
-  it("creates a readable, sectioned personal archive instead of JSON-in-CSV", async () => {
+  it("creates a concise personal report instead of JSON-in-CSV", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
     const customer = t.withIdentity({ subject: "clerk-customer-export" });
-    const exported = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { idempotencyKey: "customer-export-readable-001" })) as { rowCount: number; content: string };
+    const exported = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { idempotencyKey: "customer-export-readable-001" })) as { rowCount: number; content: string; fileName: string; mimeType: string };
 
     expect(exported.rowCount).toBeGreaterThan(5);
-    expect(exported.content.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
-    expect(exported.content).toContain("Profile\r\nField,Value\r\nFull name,جنى حداد");
-    expect(exported.content).toContain("Memberships\r\nGym,Branch,Member number,Plan");
+    expect(exported.fileName).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.html$/);
+    expect(exported.mimeType).toBe("text/html;charset=utf-8");
+    expect(exported.content.startsWith("<!doctype html>\n")).toBe(true);
+    expect(exported.content).toContain("<h1>جنى حداد</h1>");
+    expect(exported.content).toContain("<h2>Profile</h2>");
+    expect(exported.content).toContain("<h2>Memberships</h2>");
     expect(exported.content).toContain("Charges and balances");
     expect(exported.content).toContain("Payments and refunds");
     expect(exported.content).toContain("Check-ins");
-    expect(exported.content).toContain("Activity timeline");
-    expect(exported.content).toContain("40.000,JOD");
+    expect(exported.content).toContain("Account activity");
+    expect(exported.content).toContain("40.000");
+    expect(exported.content).toContain("JOD");
     expect(exported.content).not.toContain("data_json");
     expect(exported.content).not.toContain("{\"");
+    expect(exported.content).not.toContain("RIVET profile ID");
+    expect(exported.content).not.toContain("RIVET transaction ID");
   });
 
   it("enforces dataset permissions and rejects idempotency-key reuse with different filters", async () => {
@@ -120,7 +127,8 @@ describe("tenant data exports", () => {
     const manager = t.withIdentity({ subject: "clerk-manager-export" });
     const exported = await manager.mutation(api.domain.mutate, operation("exports.request", { kind: "personal_training", filters: {}, idempotencyKey: "export-pt-scoped-001" })) as { rowCount: number; content: string };
     expect(exported.rowCount).toBe(1);
-    expect(exported.content).toContain("order-visible");
-    expect(exported.content).not.toContain("order-hidden");
+    expect(exported.content).toContain("Visible package");
+    expect(exported.content).not.toContain("Hidden package");
+    expect(exported.content).not.toContain("order-visible");
   });
 });

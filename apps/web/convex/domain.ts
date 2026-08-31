@@ -67,7 +67,8 @@ import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
-import { buildCsvDocument, buildSectionedCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "../src/lib/exports/csv";
+import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "../src/lib/exports/csv";
+import { buildPersonalDataHtmlReport } from "../src/lib/exports/personal-report";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -4411,13 +4412,13 @@ const STAFF_EXPORT_TITLES: Record<StaffExportKind, string> = {
 };
 
 const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
-  members: ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Member status", "Membership status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Last check-in", "Preferred language", "Marketing consent", "Tags", "Notes", "Created", "RIVET member ID"],
-  leads: ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Last contacted", "Last contact outcome", "Overdue", "Lost reason", "Created", "Updated", "RIVET lead ID"],
-  payments: ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason", "RIVET transaction ID"],
-  audit: ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status", "RIVET audit ID"],
-  membership_liabilities: ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "Collectible now", "Created", "RIVET charge ID"],
-  personal_training: ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated", "RIVET PT order ID"],
-  operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When", "RIVET record ID"],
+  members: ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Member status", "Membership status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Last check-in", "Preferred language", "Marketing consent", "Tags", "Notes", "Created"],
+  leads: ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Last contacted", "Last contact outcome", "Overdue", "Lost reason", "Created", "Updated"],
+  payments: ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason"],
+  audit: ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status"],
+  membership_liabilities: ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "Collectible now", "Created"],
+  personal_training: ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated"],
+  operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When"],
 };
 
 function exportFilterSummary(filters: Data): string {
@@ -4493,7 +4494,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Tags": exportList(summary.tags),
         "Notes": optionalString(raw.notes),
         "Created": formatExportDateTime(optionalString(summary.createdAt), timezone),
-        "RIVET member ID": summary.id,
       };
     });
   }
@@ -4520,7 +4520,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Lost reason": optionalString(lead.lostReason),
         "Created": formatExportDateTime(optionalString(lead.createdAt), timezone),
         "Updated": formatExportDateTime(optionalString(lead.updatedAt), timezone),
-        "RIVET lead ID": lead.id,
       };
     });
   }
@@ -4545,7 +4544,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "External reference": payment.externalReference,
         "Refund reason": payment.refundReason,
         "Void reason": payment.voidReason,
-        "RIVET transaction ID": payment.id,
       };
     });
   }
@@ -4569,7 +4567,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
           "Status": exportStatusLabel(optionalString(charge.status)),
           "Collectible now": booleanValue(charge.collectible),
           "Created": formatExportDateTime(optionalString(charge.createdAt), timezone),
-          "RIVET charge ID": charge.id,
         };
       });
   }
@@ -4590,7 +4587,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Summary": event.summary,
         "Reason": event.reason,
         "Approval status": exportStatusLabel(event.approvalStatus),
-        "RIVET audit ID": event.id,
       }));
   }
   if (kind === "personal_training") {
@@ -4611,7 +4607,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Refunded amount": formatMinorUnits(order.refundedMinor, order.currency),
         "Created": formatExportDateTime(order.createdAt, timezone),
         "Updated": formatExportDateTime(order.updatedAt, timezone),
-        "RIVET PT order ID": order.id,
       };
     });
   }
@@ -4651,7 +4646,6 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     "Reason": row.reason,
     "Reference type": exportStatusLabel(row.referenceType),
     "When": formatExportDateTime(row.occurredAt, timezone),
-    "RIVET record ID": row.id,
   }));
 }
 
@@ -4762,85 +4756,83 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
     preferenceEvents,
   ];
   const totalRows = 1 + sectionedRows.reduce((sum, rows) => sum + rows.length, 0);
-  const content = buildSectionedCsvDocument({
-    title: "My RIVET data",
-    metadata: [
-      { label: "Generated at", value: formatExportDateTime(now, personalTimezone) },
-      { label: "Account", value: stringValue(profile.email, user.email) },
-      { label: "Included gyms", value: [...organizations.values()].map((organization) => organization.name).join("; ") || "None" },
+  const content = buildPersonalDataHtmlReport({
+    memberName: stringValue(profile.name, user.fullName),
+    generatedAt: formatExportDateTime(now, personalTimezone),
+    account: stringValue(profile.email, user.email),
+    includedGyms: [...organizations.values()].map((organization) => organization.name).join("; ") || "None",
+    profile: [
+      { label: "Full name", value: stringValue(profile.name, user.fullName) },
+      { label: "Arabic name", value: optionalString(profile.nameAr) },
+      { label: "Email", value: stringValue(profile.email, user.email) },
+      { label: "Phone", value: optionalString(profile.phone) },
+      { label: "Date of birth", value: optionalString(profile.dateOfBirth) },
+      { label: "Gender", value: exportStatusLabel(optionalString(profile.gender)) },
+      { label: "Preferred language", value: exportStatusLabel(optionalString(profile.preferredLanguage)) },
+      { label: "Address", value: optionalString(profile.addressLine1) },
+      { label: "City", value: optionalString(profile.city) },
+      { label: "Emergency contact", value: optionalString(profile.emergencyContactName) },
+      { label: "Emergency relationship", value: optionalString(profile.emergencyContactRelationship) },
+      { label: "Emergency phone", value: optionalString(profile.emergencyContactPhone) },
     ],
     sections: [
       {
-        title: "Profile",
-        headers: ["Field", "Value"],
-        rows: [
-          ["Full name", stringValue(profile.name, user.fullName)],
-          ["Arabic name", optionalString(profile.nameAr)],
-          ["Email", stringValue(profile.email, user.email)],
-          ["Phone", optionalString(profile.phone)],
-          ["Date of birth", optionalString(profile.dateOfBirth)],
-          ["Gender", exportStatusLabel(optionalString(profile.gender))],
-          ["Preferred language", exportStatusLabel(optionalString(profile.preferredLanguage))],
-          ["Address", optionalString(profile.addressLine1)],
-          ["City", optionalString(profile.city)],
-          ["Emergency contact", optionalString(profile.emergencyContactName)],
-          ["Emergency relationship", optionalString(profile.emergencyContactRelationship)],
-          ["Emergency phone", optionalString(profile.emergencyContactPhone)],
-          ["RIVET profile ID", optionalString(profile.id) ?? userId],
-        ],
-      },
-      {
         title: "Memberships",
-        headers: ["Gym", "Branch", "Member number", "Plan", "Status", "Starts", "Ends", "Balance", "Currency", "Last check-in", "RIVET membership ID"],
+        description: "Your current and previous gym memberships.",
+        headers: ["Gym", "Branch", "Member number", "Plan", "Status", "Starts", "Ends", "Balance", "Currency", "Last check-in"],
         rows: memberships.map((membership) => {
           const context = contexts.find((item) => item.membershipId === membership.membershipId || item.membershipId === membership.id);
           const currency = context?.organization.currency ?? JOD;
-          return [membership.gymName, membership.branchName, membership.memberNumber, membership.planName, exportStatusLabel(optionalString(membership.status)), membership.startDate, membership.endDate, formatMinorUnits(numberValue(membership.balanceMinor), currency), currency, formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK), membership.id];
+          return [membership.gymName, membership.branchName, membership.memberNumber, membership.planName, exportStatusLabel(optionalString(membership.status)), membership.startDate, membership.endDate, formatMinorUnits(numberValue(membership.balanceMinor), currency), currency, formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK)];
         }),
       },
       {
         title: "Charges and balances",
-        headers: ["Gym", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "RIVET charge ID"],
-        rows: charges.map((charge) => [charge.gym, charge.description, charge.issueDate, charge.dueDate, charge.total, charge.paid, charge.outstanding, charge.currency, charge.status, charge.id]),
+        description: "Amounts charged, paid, or still outstanding.",
+        headers: ["Gym", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"],
+        rows: charges.map((charge) => [charge.gym, charge.description, charge.issueDate, charge.dueDate, charge.total, charge.paid, charge.outstanding, charge.currency, charge.status]),
       },
       {
         title: "Payments and refunds",
-        headers: ["Gym", "Branch", "Receipt", "When", "Type", "Method", "Amount", "Currency", "Status", "Explanation", "RIVET transaction ID"],
-        rows: transactions.map((transaction) => [transaction.gymName, transaction.branchName, transaction.receiptNumber, formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK), exportStatusLabel(optionalString(transaction.type)), exportStatusLabel(optionalString(transaction.method)), formatMinorUnits(amountOf(transaction.amount), currencyOf(transaction.amount, JOD)), currencyOf(transaction.amount, JOD), exportStatusLabel(optionalString(transaction.status)), transaction.explanation, transaction.id]),
+        description: "Payments, retail purchases, refunds, and voided transactions.",
+        headers: ["Gym", "Branch", "Receipt", "When", "Type", "Method", "Amount", "Currency", "Status", "Explanation"],
+        rows: transactions.map((transaction) => [transaction.gymName, transaction.branchName, transaction.receiptNumber, formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK), exportStatusLabel(optionalString(transaction.type)), exportStatusLabel(optionalString(transaction.method)), formatMinorUnits(amountOf(transaction.amount), currencyOf(transaction.amount, JOD)), currencyOf(transaction.amount, JOD), exportStatusLabel(optionalString(transaction.status)), transaction.explanation]),
       },
       {
         title: "Check-ins",
-        headers: ["Gym", "Branch", "When", "Result", "Reason", "Recorded by", "RIVET check-in ID"],
-        rows: visits.map((visit) => [visit.gym, visit.branch, visit.occurredAt, visit.result, visit.reason, visit.recordedBy, visit.id]),
+        description: "Your recorded gym visits.",
+        headers: ["Gym", "Branch", "When", "Result", "Reason"],
+        rows: visits.map((visit) => [visit.gym, visit.branch, visit.occurredAt, visit.result, visit.reason]),
       },
       {
-        title: "Activity timeline",
-        headers: ["Gym", "When", "Type", "Title", "Detail", "Recorded by", "RIVET event ID"],
-        rows: timeline.map((event) => [event.gym, event.occurredAt, event.type, event.title, event.detail, event.recordedBy, event.id]),
+        title: "Account activity",
+        description: "Membership changes and other events recorded on your member history.",
+        headers: ["Gym", "When", "Activity", "Details"],
+        rows: timeline.map((event) => [event.gym, event.occurredAt, event.title || event.type, event.detail]),
       },
       {
         title: "Class bookings",
-        headers: ["Gym", "Branch", "Class", "Starts", "Status", "Booked at", "Promoted from waitlist", "RIVET booking ID"],
-        rows: classBookings.map((booking) => [booking.gym, booking.branch, booking.className, booking.startsAt, booking.status, booking.bookedAt, booking.fromWaitlist, booking.id]),
+        headers: ["Gym", "Branch", "Class", "Starts", "Status", "Booked at", "Promoted from waitlist"],
+        rows: classBookings.map((booking) => [booking.gym, booking.branch, booking.className, booking.startsAt, booking.status, booking.bookedAt, booking.fromWaitlist]),
       },
       {
         title: "Trial bookings",
-        headers: ["Gym", "Branch", "Preferred date", "Preferred time", "Goal", "Status", "Created", "RIVET trial ID"],
+        headers: ["Gym", "Branch", "Preferred date", "Preferred time", "Goal", "Status", "Created"],
         rows: trialBookings.map((booking) => {
           const gymId = stringValue(booking.gymId);
-          return [marketplaceNames.get(gymId) ?? gymId, marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? booking.branchId, booking.preferredDate, booking.preferredTime, booking.goal, exportStatusLabel(optionalString(booking.status)), formatExportDateTime(optionalString(booking.createdAt), personalTimezone), booking.id];
+          return [marketplaceNames.get(gymId) ?? "Unknown gym", marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? "Unknown branch", booking.preferredDate, booking.preferredTime, booking.goal, exportStatusLabel(optionalString(booking.status)), formatExportDateTime(optionalString(booking.createdAt), personalTimezone)];
         }),
       },
       {
         title: "Marketing preference history",
-        headers: ["Changed at", "Status", "Opted in", "Source", "Wording version"],
-        rows: [...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event) => [formatExportDateTime(event.changedAt, personalTimezone), exportStatusLabel(event.status), event.optedIn, exportStatusLabel(event.source), event.wordingVersion]),
+        headers: ["Changed at", "Status", "Marketing messages", "Recorded through"],
+        rows: [...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event) => [formatExportDateTime(event.changedAt, personalTimezone), exportStatusLabel(event.status), event.optedIn ? "Allowed" : "Not allowed", exportStatusLabel(event.source)]),
       },
     ],
   });
   if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
-  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.html`, mimeType: "text/html;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
 function workspaceInternalHref(value: unknown, correlationId: string): string {

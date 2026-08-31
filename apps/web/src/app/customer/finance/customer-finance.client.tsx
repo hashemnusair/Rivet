@@ -40,10 +40,10 @@ export function CustomerFinanceClient() {
   const summary = useApiQuery(qk.customerFinance("summary"), (api) => api.getCustomerFinancialSummary(), { enabled });
   const transactions = useApiQuery(qk.customerFinance(query), (api) => api.listCustomerTransactions(query), { enabled });
   const personalExport = useApiMutation((api) => api.requestMemberPersonalDataExport(crypto.randomUUID()), {
-    successMessage: "Your personal-data export is ready.",
+    successMessage: "Your readable data report is ready.",
     onSuccess: (job) => {
       if (!job.content || !job.fileName) return;
-      downloadTextFile({ content: job.content, fileName: job.fileName, mimeType: job.mimeType ?? "text/csv;charset=utf-8" });
+      downloadTextFile({ content: job.content, fileName: job.fileName, mimeType: job.mimeType ?? "text/html;charset=utf-8" });
     },
   });
 
@@ -73,7 +73,7 @@ export function CustomerFinanceClient() {
     <main className="mx-auto max-w-[1080px] px-4 py-7 pb-24 sm:px-6 lg:px-8 lg:py-10">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="eyebrow">Member finance</p><h1 className="mt-1 font-display text-[27px] font-semibold tracking-tight">Payments and receipts</h1><p className="mt-1 max-w-2xl text-[13px] text-ink-2">See what each gym recorded, open the matching receipt, and understand refunds or remaining balances.</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="secondary" loading={personalExport.isPending} onClick={() => personalExport.mutate()}><Download /> Export my data</Button><Button asChild variant="secondary"><Link href="/customer/my-gyms"><WalletCards /> My gyms</Link></Button></div>
+        <div className="flex flex-wrap gap-2"><Button variant="secondary" loading={personalExport.isPending} onClick={() => personalExport.mutate()} title="Download a readable offline report"><Download /> Download my data</Button><Button asChild variant="secondary"><Link href="/customer/my-gyms"><WalletCards /> My gyms</Link></Button></div>
       </header>
 
       {summary.isLoading ? <div className="mt-7 grid gap-3 sm:grid-cols-3">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-24" />)}</div> : summary.isError ? <div className="mt-7"><ErrorState onRetry={() => summary.refetch()} /></div> : summary.data ? (

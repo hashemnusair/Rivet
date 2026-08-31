@@ -37,6 +37,7 @@ test.describe("downloaded export files", () => {
     expect(content).toContain("Forge");
     expect(content).not.toContain("data_json");
     expect(content).not.toContain("[object Object]");
+    expect(content).not.toContain("RIVET member ID");
   });
 
   test("downloads the complete finance range rather than the visible table page", async ({ page }) => {
@@ -52,19 +53,29 @@ test.describe("downloaded export files", () => {
     expect(content).not.toContain("data_json");
   });
 
-  test("downloads a member archive as labelled sections", async ({ page }) => {
+  test("downloads a concise member report that opens in a browser", async ({ page }) => {
     await signInMember(page);
     await page.goto("/customer/finance");
     const pending = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export my data" }).click();
-    const content = await downloadedText(await pending);
+    await page.getByRole("button", { name: "Download my data" }).click();
+    const download = await pending;
+    const content = await downloadedText(download);
 
-    expect(content.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
-    expect(content).toContain("Profile\r\nField,Value");
-    expect(content).toContain("Memberships\r\nGym,Branch,Member number,Plan");
+    expect(download.suggestedFilename()).toMatch(/^rivet-my-data-\d{4}-\d{2}-\d{2}\.html$/);
+    expect(content.startsWith("<!doctype html>\n")).toBe(true);
+    expect(content).toContain("<h2>Profile</h2>");
+    expect(content).toContain("<h2>Memberships</h2>");
     expect(content).toContain("Payments and refunds");
     expect(content).toContain("Check-ins");
     expect(content).not.toContain("data_json");
     expect(content).not.toContain("{\"");
+    expect(content).not.toContain("RIVET transaction ID");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setContent(content);
+    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Memberships" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Payments and refunds" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });
