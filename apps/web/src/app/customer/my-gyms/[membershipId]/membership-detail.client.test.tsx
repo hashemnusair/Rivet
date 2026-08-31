@@ -113,7 +113,7 @@ describe("member visit history", () => {
     render(<QueryClientProvider client={queryClient}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
 
     await user.click(screen.getByRole("tab", { name: "Classes" }));
-    expect(await screen.findByRole("heading", { name: "Book your next class" })).toBeInTheDocument();
+    expect(await screen.findByRole("tablist", { name: "Classes views" })).toBeInTheDocument();
     // The pager opens on today and shows only that day's classes.
     expect(screen.getByText("Strength circuit")).toBeInTheDocument();
     expect(screen.queryByText("Sunrise yoga")).not.toBeInTheDocument();

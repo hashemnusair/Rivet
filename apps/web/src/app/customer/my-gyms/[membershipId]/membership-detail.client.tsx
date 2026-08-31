@@ -127,7 +127,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} gymPhone={gym.contactPhone} /> : null}
         <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : tab === "classes" ? <CustomerClassesPanel membershipId={membership.id} /> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
-      <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} />
+      {tab === "membership" ? <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} /> : null}
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
     </main>
   );
@@ -182,13 +182,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const attendedCount = value.history.filter((occurrence) => occurrence.booking?.status === "attended").length;
 
   return <div className="mt-5 space-y-5" role="tabpanel" aria-label="Classes">
-    <section className="overflow-hidden rounded-lg border border-line bg-surface">
-      <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <div><p className="eyebrow">This week</p><h2 className="mt-1 font-display text-[20px] font-semibold">Book your next class</h2><p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-ink-2">Live spots, waitlists, and cancellations—without calling reception.</p></div>
-        <div className="flex gap-5 text-right"><div><p className="text-[10.5px] text-ink-3">Booking window</p><p className="mt-1 font-mono text-[13px]">{value.policy.bookingHorizonDays} days</p></div><div><p className="text-[10.5px] text-ink-3">No-shows</p><p className="mt-1 font-mono text-[13px]">{value.noShowCount}</p></div></div>
-      </div>
-      {value.profileCorrectionRequired ? <div className="border-t border-warning/30 bg-warning-bg px-5 py-3 text-[12.5px] text-warning-deep">Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.</div> : null}
-    </section>
+    {value.profileCorrectionRequired ? <div className="rounded-lg border border-warning/30 bg-warning-bg px-5 py-3 text-[12.5px] text-warning-deep">Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.</div> : null}
 
     <div className="flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label="Classes views">
       <button type="button" role="tab" aria-selected={panelView === "week"} onClick={() => setPanelView("week")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "week" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>This week</button>

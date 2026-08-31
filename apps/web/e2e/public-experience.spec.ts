@@ -158,7 +158,7 @@ test.describe("RIVET member experience", () => {
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
     await page.getByRole("tab", { name: "Classes" }).click();
-    await expect(page.getByRole("heading", { name: "Book your next class" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Classes views" })).toBeVisible();
     const book = page.getByRole("button", { name: "Book class" }).first();
     await expect(book).toBeEnabled();
     await book.click();
