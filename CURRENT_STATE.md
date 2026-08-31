@@ -1,5 +1,60 @@
 # GymOS / RIVET current implementation state
 
+## Referral polish, operational analytics, and daily branch checklists — 31 August 2026
+
+- Branch `codex/referral-analytics-checklists` (base `277aca4`) carries this
+  batch in seven reviewable commits; it deliberately avoids class booking,
+  waitlists, coach payouts, class/coach/At-risk analytics, and win-back, which
+  belong to the parallel dated-class workstream.
+- The member referral card gained a dated reward history built purely from
+  existing `referralReward` facts — applied, capped, and ineligible rewards
+  plus pending rows for attributed members awaiting a first sale — with
+  synthetic event ids so nothing keys back to the referred person, a clearer
+  pre-first-referral empty state, and manual WhatsApp/call actions from the
+  gym's published contact number. Convex and mock projections stay identical;
+  new ownership, privacy, parity, and component tests cover it.
+- A read-only analytics pack lives under Reports beside the existing overview:
+  Peak hours (accepted check-ins by gym-local weekday/hour with a heatmap and
+  accessible table), Retention cohorts (first-membership-month cohorts with
+  age-gated denominators), Renewal forecast (mutually exclusive 7/14/30-day
+  buckets excluding memberships with successor terms), Collection efficiency
+  (voided never counts as collected; outstanding-now is explicitly not a
+  period figure), CRM response and conversion (persisted call-attempt,
+  trial, and conversion facts; median first response), and Commercial
+  controls (refund/void/discount/override counts with money from payment and
+  charge facts and audit drill-down). All math sits in one pure library
+  (`src/lib/analytics/operational-reports`) called by both adapters, uses a
+  new `by_organization_type_created` index with timezone margins, enforces
+  `reports.financial.read` plus branch scope server-side, caps ranges at one
+  year, exports full filtered CSVs, and writes nothing.
+- Daily branch checklists are additive `checklistTemplates`/`checklistRuns`
+  tables: opening/closing templates per branch with local due times, a
+  responsible gym role, and up to 50 ordered items (optional gym-space links
+  and per-item maintenance offers). Runs snapshot the template per
+  branch-local date, are created idempotently inside one serializable
+  transaction, and mark due/overdue from the branch clock when the page
+  opens — no cron. One-tap completion records actor and time; failed or
+  skipped required items and any correction demand a reason and an immutable
+  audit row; failed items escalate into real facility tasks through the
+  existing operations contract. Owners/managers manage templates under
+  Settings → Daily checklists; staff run them from a new Daily checklist page
+  built for tablets (large targets, explicit states). The Today queue gains
+  role-safe `branch_checklist` entries (due, overdue, failed) via one
+  isolated helper call in each adapter's dashboard, kept as its own commit
+  for cheap re-merging against the parallel branch.
+- Deferred analytics integration notes: class utilization needs the dated
+  class-occurrence records (per-occurrence roster/capacity) the parallel
+  branch introduces; coach delivery/payout analytics need per-occurrence
+  attendance linked to coach ids and any pay-rate facts; At-risk recovery
+  reporting needs the At-risk queue's persisted outreach facts. No
+  placeholder reports were created for these.
+- Local gate for the batch: both TypeScript checks, zero-warning lint and
+  secret audit, 172 Vitest files / 1,039 tests, the Production build, the
+  credential-free Playwright suite, `pnpm audit --prod`, and
+  `git diff --check`. No Convex deployment, provider activation, Production
+  mutation, or push to `main` was performed from this branch.
+
+
 ## Credentialed release verification — 31 August 2026
 
 - The isolated Development release pass exercised the owner-settings,

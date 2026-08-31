@@ -33,6 +33,7 @@ const KIND_META: Record<TodayQueueKind, { icon: LucideIcon; label: string }> = {
   approval: { icon: ShieldAlert, label: "Approval" },
   cash_variance: { icon: ListChecks, label: "Cash" },
   facility_task: { icon: Wrench, label: "Maintenance" },
+  branch_checklist: { icon: ClipboardCheck, label: "Checklist" },
 };
 
 export function TodayQueue({

@@ -2765,7 +2765,8 @@ export type TodayQueueKind =
   | "access_denial"
   | "approval"
   | "cash_variance"
-  | "facility_task";
+  | "facility_task"
+  | "branch_checklist";
 
 export type TodayQueuePriority = "urgent" | "high" | "normal";
 
@@ -2804,6 +2805,129 @@ export interface TodayQueueData {
   kindCounts: Partial<Record<TodayQueueKind, number>>;
   overdueItems: number;
   overdueKindCounts: Partial<Record<TodayQueueKind, number>>;
+}
+
+// --- Daily branch checklists -----------------------------------------------
+
+export type ChecklistType = "opening" | "closing";
+export type ChecklistItemStatus = "pending" | "completed" | "failed" | "skipped";
+/** Server-side gym role keys a checklist can be assigned to. */
+export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor";
+
+export interface ChecklistTemplateItem {
+  id: string;
+  label: string;
+  instructions?: string;
+  required: boolean;
+  order: number;
+  /** Optional linked gym space (zone public id). */
+  zoneId?: UUID;
+  /** Offer one-tap maintenance-task creation when this item fails. */
+  offerMaintenance?: boolean;
+}
+
+export interface ChecklistTemplate {
+  id: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  name: string;
+  active: boolean;
+  /** Branch-local due time, HH:MM. */
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  items: ChecklistTemplateItem[];
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertChecklistTemplateInput {
+  templateId?: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  name: string;
+  active?: boolean;
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  items: Array<Pick<ChecklistTemplateItem, "label"> & Partial<Omit<ChecklistTemplateItem, "label" | "order">>>;
+}
+
+export interface ChecklistRunItem extends Omit<ChecklistTemplateItem, "id"> {
+  itemId: string;
+  status: ChecklistItemStatus;
+  actorId?: UUID;
+  actorName?: string;
+  at?: ISODateTime;
+  note?: string;
+  reason?: string;
+  facilityTaskId?: UUID;
+}
+
+export interface ChecklistRun {
+  /** Absent until the first recorded result persists the run. */
+  id?: UUID;
+  templateId: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  localDate: ISODate;
+  name: string;
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  items: ChecklistRunItem[];
+  progress: { done: number; total: number; requiredPending: number; failedRequired: number };
+  complete: boolean;
+  overdue: boolean;
+}
+
+export interface ChecklistDay {
+  branchId: UUID;
+  date: ISODate;
+  runs: ChecklistRun[];
+}
+
+export interface SetChecklistItemInput {
+  templateId: UUID;
+  date?: ISODate;
+  itemId: string;
+  status: ChecklistItemStatus;
+  note?: string;
+  /** Required when failing/skipping a required item or correcting a recorded result. */
+  reason?: string;
+}
+
+export interface CreateChecklistTaskInput {
+  templateId: UUID;
+  date?: ISODate;
+  itemId: string;
+  zoneId?: UUID;
+  title?: string;
+  notes?: string;
+}
+
+// Read-only operational analytics (shared math in lib/analytics).
+export type {
+  PeakHoursReport,
+  PeakHoursCell,
+  RetentionReport,
+  RetentionCohort,
+  RetentionCheckpoint,
+  RenewalForecastReport,
+  RenewalForecastBucket,
+  RenewalForecastRow,
+  CollectionsReport,
+  CrmFunnelReport,
+  ControlTrendsReport,
+} from "@/lib/analytics/operational-reports";
+
+export interface AnalyticsReportInput {
+  branchId?: UUID;
+  /** Inclusive tenant-local calendar date. */
+  from: ISODate;
+  /** Inclusive tenant-local calendar date. */
+  to: ISODate;
+}
+
+export interface AnalyticsBranchInput {
+  branchId?: UUID;
 }
 
 export interface DashboardData {

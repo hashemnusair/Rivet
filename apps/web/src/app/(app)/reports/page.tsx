@@ -18,6 +18,7 @@ import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { formatMoney, money } from "@/lib/utils/money";
 import type { TransactionSummary } from "@/lib/domain/types";
 import { FinanceNav } from "@/features/finance/finance-nav";
+import { OperationalReports, OPERATIONAL_REPORT_LABELS, type OperationalReportKind } from "@/features/reports/operational-reports";
 
 type Range = 7 | 30 | 90;
 
@@ -26,9 +27,12 @@ type Range = 7 | 30 | 90;
  * dashboard and transaction contracts used by the operating screens, so an
  * export cannot drift away from the ledger that staff see at the desk.
  */
+type ReportsView = "overview" | OperationalReportKind;
+
 export default function ReportsPage() {
   const { session } = useApp();
   const { can } = usePermissions();
+  const [view, setView] = useState<ReportsView>("overview");
   const [range, setRange] = useState<Range>(30);
   const [to, setTo] = useState(todayISODate());
   const [transactionPage, setTransactionPage] = useState(1);
@@ -37,12 +41,12 @@ export default function ReportsPage() {
   const dashboardQuery = useApiQuery(
     qk.dashboard(session?.activeBranchId),
     (api) => api.getDashboard({ branchId: session?.activeBranchId, from, to }),
-    { enabled: Boolean(session) && can("reports.financial.read") },
+    { enabled: Boolean(session) && can("reports.financial.read") && view === "overview" },
   );
   const transactionsQuery = useApiQuery(
     qk.transactions({ report: true, branchId: session?.activeBranchId, from, to, page: transactionPage }),
     (api) => api.listTransactions({ branchId: session?.activeBranchId, from, to, page: transactionPage, pageSize: 25, sort: "-occurredAt" }),
-    { enabled: Boolean(session) && can("reports.financial.read") },
+    { enabled: Boolean(session) && can("reports.financial.read") && view === "overview" },
   );
 
   const dashboard = dashboardQuery.data;
@@ -90,6 +94,21 @@ export default function ReportsPage() {
       <FinanceNav />
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner, manager, and auditor access is required for financial reporting." />}>
+        <nav aria-label="Report views" className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
+          {(["overview", "peak-hours", "retention", "renewals", "collections", "crm", "controls"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              aria-current={view === kind ? "page" : undefined}
+              onClick={() => setView(kind)}
+              className={`cursor-pointer rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${view === kind ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken hover:text-ink"}`}
+            >
+              {kind === "overview" ? "Overview" : OPERATIONAL_REPORT_LABELS[kind]}
+            </button>
+          ))}
+        </nav>
+
+        {view !== "overview" ? <OperationalReports view={view} /> : <>
         <section className="panel flex flex-wrap items-end gap-3 p-4">
           <div className="flex gap-1.5">
             {[7, 30, 90].map((value) => <Button key={value} size="sm" variant={range === value ? "primary" : "secondary"} onClick={() => { setRange(value as Range); setTransactionPage(1); }}>{value} days</Button>)}
@@ -119,6 +138,7 @@ export default function ReportsPage() {
 
           <section className="panel overflow-hidden"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="eyebrow">Ledger export</p><h2 className="mt-1 text-[16px] font-semibold">Transactions in range</h2></div><Badge variant="outline">{transactionsQuery.data?.totalItems ?? 0} records</Badge></header>{transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">No transactions in this range.</p> : <><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>When</TableHead><TableHead>Member</TableHead><TableHead>Branch</TableHead><TableHead>Method</TableHead><TableHead>Type</TableHead><TableHead className="text-end">Amount</TableHead><TableHead>Status</TableHead><TableHead>Receipt</TableHead></TableRow></TableHeader><TableBody>{transactions.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[11.5px]">{formatDate(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[10px] text-ink-3">{item.memberNumber}</p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px] capitalize">{item.method.replace("_", " ")}</TableCell><TableCell className="text-[12px] capitalize">{item.type}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} /></TableCell><TableCell><Badge variant={item.status === "completed" ? "success" : item.status === "voided" ? "signal" : "warning"}>{item.status}</Badge></TableCell><TableCell className="font-mono text-[10px]">{item.receiptNumber}</TableCell></TableRow>)}</TableBody></Table></div>{transactionsQuery.data ? <div className="px-4 pb-3"><DataPagination page={transactionsQuery.data} onPage={setTransactionPage} /></div> : null}</>}</section>
         </> : null}
+        </>}
       </Gate>
     </div>
   );

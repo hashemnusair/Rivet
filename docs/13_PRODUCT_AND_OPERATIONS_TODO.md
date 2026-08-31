@@ -17,6 +17,30 @@ values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 31 August 2026
 
+### Referral polish, operational analytics, and daily checklists — 31 August 2026 (branch)
+
+- [x] Polish the member referral area: dated privacy-safe reward history
+  (applied/capped/ineligible/pending), gym WhatsApp/call contact actions,
+  clearer eligibility and cap copy, improved empty state, hidden entirely when
+  referrals are disabled; ownership, projection, parity, and component tests.
+- [x] Add the read-only Reports analytics pack (peak hours, retention cohorts,
+  renewal forecast, collection efficiency, CRM response/conversion, commercial
+  controls) with shared pure math, a bounded created-range index, branch-scope
+  and permission enforcement, tenant-local boundaries, full-result CSV export,
+  visible definitions, and explicit loading/error/empty states.
+- [x] Add daily branch checklists: template settings (opening/closing, local
+  due time, responsible role, ordered items, gym-space links, disable without
+  deleting), an idempotent one-run-per-branch-local-date model, a tablet-first
+  staff page with reasoned failure/skip/correction and audited facility-task
+  escalation, and role-safe Today-queue entries in an isolated commit.
+- [ ] After the parallel dated-class/At-risk branch lands: build class
+  utilization (needs per-occurrence rosters), coach delivery/payout analytics
+  (needs occurrence attendance by coach and pay facts), and At-risk recovery
+  reporting (needs persisted outreach facts); then re-merge the one-line Today
+  wiring and run the exact-target Convex release for the combined schema
+  (checklist tables plus the `by_organization_type_created` index).
+
+
 ### Credentialed release verification — 31 August 2026
 
 - [x] Run and clean up the isolated owner-settings, staff-authorization,

@@ -2103,6 +2103,9 @@ describe("free-trial lifecycle", () => {
     expect(referrerMembership.endDate).toBe(addDays(originalEndDate, 7));
     const after = (await api.getCustomerExperience()).memberships.find((item) => item.id === customerMembership.id)!.referral!;
     expect(after).toMatchObject({ earnedDays: 7, remainingDays: 23, successfulReferrals: 1, recordedReferrals: 1 });
+    // The dated history reports the applied reward without naming the friend.
+    expect(after.history[0]).toMatchObject({ days: 7, status: "applied" });
+    expect(JSON.stringify(after.history)).not.toMatch(/Referral Prospect|referral-prospect/);
   });
 
   it("reuses one matching member created by the legacy CRM flow and only adds the membership", async () => {
@@ -2624,5 +2627,41 @@ describe("management accounting mock contract", () => {
     await expect(api.listInventory({ branchId: branch.id, productId: product.id })).resolves.toEqual([]);
     expect(internals.db.stockMovements.some((movement) => movement.productId === product.id && movement.type === "return" && movement.productName === "Mock refundable retired stock")).toBe(true);
     expect(internals.db.stockMovements.find((movement) => movement.productId === product.id && movement.type === "return")?.unitCost).toEqual(money(400, "JOD"));
+  });
+});
+
+describe("branch checklists parity", () => {
+  it("mirrors the convex day flow: lazy run, reason gates, correction, and escalation", async () => {
+    const templates = await api.listChecklistTemplates();
+    const opening = templates.find((template) => template.type === "opening")!;
+    expect(opening.items.length).toBeGreaterThan(2);
+
+    const day = await api.getChecklistDay({ branchId: opening.branchId });
+    const pendingRun = day.runs.find((run) => run.templateId === opening.id)!;
+    expect(pendingRun.id).toBeUndefined();
+    expect(pendingRun.progress.total).toBe(opening.items.length);
+
+    const afterComplete = await api.setChecklistItem({ templateId: opening.id, itemId: opening.items[0]!.id, status: "completed" });
+    expect(afterComplete.id).toBeTruthy();
+    expect(afterComplete.items.find((item) => item.itemId === opening.items[0]!.id)).toMatchObject({ status: "completed" });
+    expect(afterComplete.items.find((item) => item.itemId === opening.items[0]!.id)!.actorName).toBeTruthy();
+
+    // Failing a required item needs a reason; the linked space escalates.
+    const requiredWithZone = opening.items.find((item) => item.zoneId)!;
+    await expect(api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "failed" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "failed", reason: "Shower drain blocked." });
+    const escalated = await api.createChecklistMaintenanceTask({ templateId: opening.id, itemId: requiredWithZone.id });
+    expect(escalated.items.find((item) => item.itemId === requiredWithZone.id)!.facilityTaskId).toBeTruthy();
+    await expect(api.createChecklistMaintenanceTask({ templateId: opening.id, itemId: requiredWithZone.id })).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // A recorded result only changes with a reasoned correction.
+    await expect(api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "completed" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    const corrected = await api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "completed", reason: "Drain cleared." });
+    expect(corrected.items.find((item) => item.itemId === requiredWithZone.id)).toMatchObject({ status: "completed" });
+
+    // Same template + date stays one run.
+    const again = await api.getChecklistDay({ branchId: opening.branchId });
+    expect(again.runs.filter((run) => run.templateId === opening.id)).toHaveLength(1);
+    expect(again.runs.find((run) => run.templateId === opening.id)!.id).toBe(afterComplete.id);
   });
 });

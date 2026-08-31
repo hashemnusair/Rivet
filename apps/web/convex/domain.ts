@@ -46,6 +46,8 @@ import {
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
+import { analyticsQuery } from "./analyticsReports";
+import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
@@ -2776,6 +2778,30 @@ async function customerReferralProgramData(ctx: ReadContext, organization: Organ
   const currentRewards = memberRewards.filter((row) => row.createdAt >= windowStart);
   const earnedDays = currentRewards.reduce((sum, row) => sum + numberValue(data(row.data).days), 0);
   const link = links.map((row) => data(row.data)).find((row) => booleanValue(row.active, true) && row.membershipId === internalMembershipId);
+  // Attributed members whose first sale has not landed yet appear as dated
+  // "pending" rows. History rows carry only dates, days, and status — never
+  // the referred person's name or any other identifying detail.
+  const rewardedReferredIds = new Set(memberRewards.map((row) => stringValue(data(row.data).referredMemberId)));
+  const attributedMembers = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect())
+    .map((row) => data(row.data))
+    .filter((row) => stringValue(row.referredByMemberId) === memberId && stringValue(row.status) !== "archived" && !rewardedReferredIds.has(stringValue(row.id)));
+  const history = [
+    ...memberRewards.map((row) => {
+      const value = data(row.data);
+      const status = stringValue(value.status);
+      return {
+        occurredAt: stringValue(value.createdAt, utcIso(row.createdAt)),
+        days: numberValue(value.days),
+        status: status === "applied" ? "applied" : status === "cap_reached" ? "capped" : "ineligible",
+      };
+    }),
+    ...attributedMembers.map((row) => ({ occurredAt: stringValue(row.createdAt), days: 0, status: "pending" })),
+  ]
+    .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)))
+    .slice(0, 24)
+    // Synthetic ids: reward row ids embed the referred member's id, which
+    // must never reach the referrer's browser.
+    .map((event, index) => ({ id: `referral-event-${index}`, ...event }));
   return {
     membershipId: portalMembershipId,
     enabled: booleanValue(policy.enabled),
@@ -2787,6 +2813,7 @@ async function customerReferralProgramData(ctx: ReadContext, organization: Organ
     successfulReferrals: memberRewards.filter((row) => stringValue(data(row.data).status) === "applied").length,
     recordedReferrals: memberRewards.length,
     sharePath: link ? `/customer/gyms/${encodeURIComponent(gymId)}?ref=${encodeURIComponent(stringValue(link.id))}` : undefined,
+    history,
   };
 }
 
@@ -5634,6 +5661,16 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.coaches.list":
     case "classes.coachPayout":
       return await classesQuery(ctx, actor, operation, input);
+    case "checklists.templates.list":
+    case "checklists.day":
+      return await checklistsQuery(ctx, actor, operation, input);
+    case "analytics.peak_hours":
+    case "analytics.retention":
+    case "analytics.renewal_forecast":
+    case "analytics.collections":
+    case "analytics.crm_funnel":
+    case "analytics.control_trends":
+      return await analyticsQuery(ctx, actor, operation, input);
     case "accounting.accounts.list":
     case "finance.accounts.list":
     case "accounting.periods.list":
@@ -10775,6 +10812,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.coach.upsert":
     case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
+    case "checklists.template.upsert":
+    case "checklists.run.ensure":
+    case "checklists.item.set":
+    case "checklists.item.create_task":
+      return await checklistsMutation(ctx, actor, operation, input);
     case "accounting.manual_journal.post":
     case "finance.manual_journal.post":
     case "accounting.source.post":
@@ -11127,6 +11169,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
       }
     }
   }
+  queueItems.push(...(await checklistTodayQueueItems(ctx, actor, queueBranchVisible)) as Array<Data & TodayQueueSortableItem>);
   const todayQueue = finalizeTodayQueue(queueItems, isoNow());
   const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
   return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };

@@ -708,6 +708,32 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(persisted.audit).toMatchObject({ actorRole: "member", entityPublicId: "member-a" });
   });
 
+  it("returns a dated reward history that never exposes the referred person", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    await t.run(async (ctx) => {
+      const settings = (await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "settings").eq("publicId", "settings")).unique())!;
+      const value = settings.data as Record<string, unknown>;
+      const operationalPolicies = value.operationalPolicies as Record<string, unknown>;
+      await ctx.db.patch(settings._id, { data: { ...value, operationalPolicies: { ...operationalPolicies, referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 } } } });
+      const organization = (await ctx.db.query("organizations").collect())[0]!;
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "referralReward", publicId: "referral-member-friend", createdAt: now - 86_400_000, updatedAt: now, data: { id: "referral-member-friend", referrerId: "member-a", referrerName: "Customer A", referredMemberId: "member-friend", referredMemberName: "Secret Friend", days: 7, requestedDays: 7, status: "applied", createdAt: new Date(now - 86_400_000).toISOString() } });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "member", publicId: "member-waiting", memberPublicId: "member-waiting", createdAt: now, updatedAt: now, data: { id: "member-waiting", fullName: "Waiting Person", memberNumber: "WAIT-1", status: "active", referredByMemberId: "member-a", homeBranchId: "branch-a", createdAt: new Date(now).toISOString() } });
+    });
+
+    const referrer = t.withIdentity({ subject: "clerk-customer-a" });
+    const program = await referrer.mutation(api.domain.mutate, operation("customer.referral.ensure", { membershipId: "membership-a-active" })) as { history: Array<{ id: string; occurredAt: string; days: number; status: string }> };
+    expect(program.history).toHaveLength(2);
+    expect(program.history.map((event) => event.status).sort()).toEqual(["applied", "pending"]);
+    expect(program.history.find((event) => event.status === "applied")).toMatchObject({ days: 7 });
+    const serialized = JSON.stringify(program.history);
+    expect(serialized).not.toContain("Secret Friend");
+    expect(serialized).not.toContain("Waiting Person");
+    expect(serialized).not.toContain("member-friend");
+    expect(serialized).not.toContain("member-waiting");
+  });
+
   it("replays customer trial requests idempotently with a privacy-safe guard", async () => {
     const t = convexTest(schema, modules);
     await seedFixtures(t);

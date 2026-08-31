@@ -21,6 +21,7 @@ import {
 import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-section";
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 import { BrandKitSection } from "@/features/settings/brand-kit-section";
+import { ChecklistsSection } from "@/features/settings/checklists-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 
 interface SettingsEntry {
@@ -72,6 +73,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     label: "Operations",
     entries: [
       { id: "operations", label: "Rules & hours", keywords: "policies entry check-in scan freeze referral trial renewal operating hours lifecycle", component: OperationalRulesSection },
+      { id: "checklists", label: "Daily checklists", keywords: "opening closing walkthrough morning night tasks", component: ChecklistsSection },
     ],
   },
 ];
