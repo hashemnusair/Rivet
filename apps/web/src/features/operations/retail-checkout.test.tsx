@@ -63,17 +63,18 @@ describe("retail checkout", () => {
     expect(hasSellableRetailPrice(product({ retailPrice: { amount: 1_000, currency: "USD" } }), "JOD")).toBe(false);
   });
 
-  it("honors a valid branch and product deep link and preselects that item", async () => {
+  it("honors a valid branch and product deep link without repeating a sole assigned branch", async () => {
     const probe = new MockGymOSApi();
     const session = await probe.getSession();
     const productToSell = (await probe.listProducts()).find((item) => item.retailPrice?.amount && item.retailPrice.amount > 0)!;
     checkoutSearchParams = new URLSearchParams({ branchId: session.branches[0]!.id, productId: productToSell.id });
 
-    await renderWithApp(<RetailCheckout />, { role: "receptionist" });
+    await renderWithApp(<><GlobalBranchProbe /><RetailCheckout /></>, { role: "receptionist" });
 
     await screen.findByText("Protein bar");
     expect(await screen.findByRole("button", { name: `Add another ${productToSell.name}` })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Checkout branch" })).toHaveTextContent(session.branches[0]!.name);
+    expect(screen.getByTestId("global-branch")).toHaveTextContent(session.branches[0]!.id);
+    expect(screen.queryByRole("combobox", { name: "Checkout branch" })).not.toBeInTheDocument();
   });
 
   it("does not silently use the first branch when the app is scoped to all branches", async () => {

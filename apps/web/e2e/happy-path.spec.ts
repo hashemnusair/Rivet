@@ -322,7 +322,18 @@ test.describe("settings navigation", () => {
       html: getComputedStyle(document.documentElement).overscrollBehaviorY,
       body: getComputedStyle(document.body).overscrollBehaviorY,
     }));
-    expect(rootScrollPhysics).toEqual({ html: "contain", body: "contain" });
+    expect(rootScrollPhysics).toEqual({ html: "none", body: "none" });
+    await expect(page.getByTestId("app-scroll-shell")).toHaveAttribute("data-damped-overscroll", "true");
+    const dampedEdge = await page.evaluate(() => {
+      window.scrollTo({ top: 0 });
+      const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
+      const event = new WheelEvent("wheel", { deltaY: -240, cancelable: true });
+      window.dispatchEvent(event);
+      return { prevented: event.defaultPrevented, transform: shell?.style.transform ?? "" };
+    });
+    expect(dampedEdge.prevented).toBe(true);
+    expect(dampedEdge.transform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
+    await expect.poll(() => page.getByTestId("app-scroll-shell").evaluate((node) => (node as HTMLElement).style.transform)).toBe("");
     const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);

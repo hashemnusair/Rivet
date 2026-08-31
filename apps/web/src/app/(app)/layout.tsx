@@ -12,6 +12,7 @@ import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
+import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll";
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 
@@ -21,6 +22,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const identity = useRivetIdentity();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const scrollShellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
@@ -39,6 +41,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const binding = useRef(false);
   const identityName = identity.fullName || identity.email || "RIVET user";
   const identityEmail = identity.email || "";
+  const identityStillResolving = identity.status === "loading" || identity.status === "pending";
   const sessionMatchesIdentity = convexMode || Boolean(
     signedIn &&
       session &&
@@ -46,6 +49,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       session.user.name === identityName &&
       session.user.email === identityEmail,
   );
+  const workspaceReady = Boolean(identityReady && !sessionLoading && !identityStillResolving && identitySignedIn && signedIn);
+
+  useDampedRootOverscroll(scrollShellRef, workspaceReady);
 
   useEffect(() => {
     if (convexMode || binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;
@@ -54,8 +60,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       binding.current = false;
     });
   }, [convexMode, gymRole, identityEmail, identityName, sessionLoading, sessionMatchesIdentity, signIn]);
-
-  const identityStillResolving = identity.status === "loading" || identity.status === "pending";
 
   useEffect(() => {
     if (!identityReady || sessionLoading || identityStillResolving) return;
@@ -83,7 +87,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (identityDestination && identityDestination.area !== "gym") router.replace(identityDestination.href);
   }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, previewMemberSignedIn, previewPlatformAdminSignedIn, sessionLoading, router]);
 
-  if (!identityReady || sessionLoading || identityStillResolving || !identitySignedIn || !signedIn) {
+  if (!workspaceReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Loading workspace">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
@@ -102,13 +106,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           instead, so the content column keeps the full viewport width. */}
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-[margin] duration-200",
+          "transition-[margin] duration-200",
           sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
         )}
       >
-        <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
-        {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <div ref={scrollShellRef} data-testid="app-scroll-shell" className="flex min-h-screen flex-col">
+          <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
+          {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        </div>
       </div>
       </div>
     </TenantBrandProvider>

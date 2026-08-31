@@ -220,10 +220,10 @@
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Keep local edge feedback and momentum without letting root overscroll
-       chain into browser navigation or pull the app shell into a second
-       scrolling context. `contain` is intentionally softer than `none`. */
-    overscroll-behavior-y: contain;
+    /* Suppress the browser's large root rubber-band. The authenticated shell
+       adds back a deliberately tiny damped response at the true page edges;
+       ordinary scroll momentum remains native. */
+    overscroll-behavior-y: none;
     background: var(--color-paper);
     /* Header links are in-page anchors; glide to them instead of jumping, and
        keep the sticky header from covering whatever we land on. */
@@ -240,7 +240,7 @@
 
   body {
     min-height: 100dvh;
-    overscroll-behavior-y: contain;
+    overscroll-behavior-y: none;
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
