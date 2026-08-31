@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## Member export report and Production correction — 31 August 2026
+
+- A hosted member download exposed that Production Convex was still serving
+  the pre-export-pass function bundle. Its CSV contained serialized records,
+  opaque identifiers, and raw metadata even though the corrected repository
+  code and Vercel frontend had already been pushed. The prior release stopped
+  before the required Convex deployment; this was a release gap, not a browser
+  or spreadsheet problem.
+- “Export my data” is now “Download my data” and produces a standalone,
+  responsive HTML report that opens directly in a browser. It contains only
+  the member's recorded profile, memberships, charges and balances, payments
+  and refunds, check-ins, account activity, class and trial bookings, and
+  marketing-preference history. Blank profile fields are omitted; serialized
+  JSON, internal record ids, database metadata, and duplicate technical
+  columns are absent.
+- The report is self-contained, escaped against injected markup, printable,
+  legible at a 390px viewport without page overflow, and styled in RIVET's
+  existing restrained visual language. Production and mock adapters generate
+  the same contract.
+- The staff/owner CSV datasets remain spreadsheets, but the final opaque RIVET
+  member, lead, transaction, charge, audit, PT-order, and operations record-id
+  columns were removed. Names, member numbers, receipt numbers, SKUs, external
+  references, dates, money, statuses, branch context, and other operationally
+  useful fields remain.
+- Verification passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, 178 Vitest files / 1,068 tests plus 14 repository-safety
+  tests, the 59-page Production build, the focused three-file download browser
+  suite, and `git diff --check`.
+- Application commit `edbc472` is pushed to matching `main` and `origin/main`.
+  Vercel Production deployment `26PqfNb16qGGW13JGBB5KJ3x2u8N` completed for
+  that exact commit. The guarded Convex dry run used an explicit temporary
+  env-file selector and printed Production `descriptive-meerkat-589`; schema
+  validation passed and no indexes were deleted. The matching backend then
+  deployed successfully and the read-only health check returned `status: ok`.
+  Earlier dry-run attempts printed Development `fleet-otter-621` and therefore
+  were not deployed. No Production tenant record or product data was mutated.
+
 ## Human-readable exports and reliable downloads — 31 August 2026
 
 - Every user-facing export path was inventoried and moved onto shared,
