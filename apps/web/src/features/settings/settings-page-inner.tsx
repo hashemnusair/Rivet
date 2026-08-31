@@ -148,7 +148,7 @@ export function SettingsPageInner() {
       <PageHeader
         title="Settings"
         description="Organization, branches, people, permissions and receipts. Everything sensitive here is audited."
-        className="py-0.5"
+        className="bg-paper py-0.5 lg:sticky lg:top-14 lg:z-20 lg:h-[72px] lg:border-b lg:border-line/80 lg:py-2"
       />
       <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
         <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
@@ -161,7 +161,7 @@ export function SettingsPageInner() {
               </Select>
             </div>
           </div>
-          <nav aria-label="Settings sections" className="sticky top-16 hidden max-h-[calc(100dvh-4.5rem)] overflow-y-auto border-e border-line/80 pe-3 [scrollbar-gutter:stable] lg:block">
+          <nav aria-label="Settings sections" className="sticky top-[140px] hidden max-h-[calc(100dvh-9.25rem)] overflow-y-auto border-e border-line/80 pe-3 [scrollbar-gutter:stable] lg:block">
             <div className="sticky top-0 z-10 bg-paper pb-2">
               <div className="relative">
                 <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />

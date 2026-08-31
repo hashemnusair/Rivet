@@ -266,6 +266,38 @@ test.describe("personal training operations", () => {
   });
 });
 
+test.describe("members filtering", () => {
+  test("keeps the wide toolbar on one row and reflows without overflow on phones", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.setViewportSize({ width: 1180, height: 900 });
+    await page.goto("/members");
+
+    const toolbar = page.getByTestId("member-filters");
+    await expect(toolbar).toBeVisible();
+    const wideMetrics = await toolbar.evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      rowTops: Array.from(node.children, (child) => Math.round(child.getBoundingClientRect().top)),
+    }));
+    expect(new Set(wideMetrics.rowTops).size).toBe(1);
+    expect(wideMetrics.scrollWidth).toBeLessThanOrEqual(wideMetrics.clientWidth + 1);
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const tabletMetrics = await toolbar.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(tabletMetrics.scrollWidth).toBeLessThanOrEqual(tabletMetrics.clientWidth + 1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phoneMetrics = await toolbar.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(phoneMetrics.scrollWidth).toBeLessThanOrEqual(phoneMetrics.clientWidth + 1);
+    const toolbarBox = await toolbar.boundingBox();
+    const searchBox = await page.getByTestId("member-search").boundingBox();
+    expect(toolbarBox).not.toBeNull();
+    expect(searchBox).not.toBeNull();
+    expect(searchBox!.width).toBeGreaterThanOrEqual(toolbarBox!.width - 1);
+    await expect(page.getByRole("button", { name: "Save current view" })).toBeVisible();
+  });
+});
+
 test.describe("settings navigation", () => {
   test("uses the compact selector on tablets and the searchable rail on desktop", async ({ page }) => {
     await signIn(page, "Owner");
@@ -316,6 +348,14 @@ test.describe("settings navigation", () => {
     await page.evaluate(() => window.scrollTo({ top: 360 }));
     const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
     expect(scrollBeforeSelection).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const y = (await page.getByRole("heading", { name: "Settings" }).boundingBox())?.y ?? -1;
+      return y >= 63 && y <= 66;
+    }).toBe(true);
+    await expect.poll(async () => {
+      const y = (await settingsNavigation.boundingBox())?.y ?? -1;
+      return y >= 139 && y <= 141;
+    }).toBe(true);
     await page.getByRole("tab", { name: "Operational rules" }).click();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeSelection);
   });
