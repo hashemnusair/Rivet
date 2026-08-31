@@ -63,6 +63,8 @@ describe("weekly class schedule", () => {
 
     await expectCode(reception.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "HIIT", dayOfWeek: 0, startMinute: 360, durationMinutes: 60, capacity: 2, audience: "mixed" })), "FORBIDDEN");
     await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Bad day", dayOfWeek: 9, startMinute: 360, durationMinutes: 60, capacity: 2, audience: "mixed" })), "VALIDATION_ERROR");
+    // A class may not cross midnight: 22:30 + 120 minutes must be rejected.
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Late night", dayOfWeek: 0, startMinute: 22 * 60 + 30, durationMinutes: 120, capacity: 10, audience: "mixed" })), "VALIDATION_ERROR");
 
     const created = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-classes", name: "Morning HIIT", dayOfWeek: 0, startMinute: 6 * 60, durationMinutes: 90, capacity: 2, audience: "mixed" })) as { id: string };
 

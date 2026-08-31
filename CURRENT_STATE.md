@@ -1,5 +1,23 @@
 # GymOS / RIVET current implementation state
 
+## Member week view, class history, and midnight guard — 31 August 2026
+
+- The member Classes tab became a one-day-at-a-time week view: arrows walk
+  from today to the end of the current week (Sunday-first, matching the gym
+  schedule), cards sit three across on desktop and stack on mobile, and the
+  copy says plainly that next week opens on Sunday. A "My history" view lists
+  past classes with Attended, No-show, and cancellation badges from the
+  member's own booking facts.
+- Classes can no longer cross midnight: Convex and the mock reject a start
+  time plus duration past 24:00 with a plain message, the staff editor
+  disables Save and explains why before the request is even sent, and the
+  timetable's hour window is clamped at midnight so an existing overnight
+  class renders clipped at 24:00 instead of stretching the grid and hiding at
+  the far right — which is how the "test" class vanished.
+- Left-clicking a timetable chip now opens the same three-option menu as
+  right-click (Edit class, Open next dated class, Remove from schedule);
+  right-click still works.
+
 ## Dated classes, coach operations, retention, and integrated operations — 31 August 2026
 
 - A fresh GitHub fetch confirmed `main` and `origin/main` matched at `277aca4`

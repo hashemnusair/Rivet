@@ -237,7 +237,9 @@ export default function ClassesPage() {
       first = Math.min(first, Math.floor(item.startMinute / 60));
       last = Math.max(last, Math.ceil((item.startMinute + item.durationMinutes) / 60));
     }
-    return { firstHour: first, visibleHours: Math.max(1, last - first) };
+    // The visible day never extends past midnight; a legacy class that
+    // crosses it renders clipped at 24:00 instead of stretching the grid.
+    return { firstHour: first, visibleHours: Math.max(1, Math.min(24, last) - first) };
   }, [sessionsQuery.data]);
 
   const rowClick = (day: number) => (event: React.MouseEvent<HTMLDivElement>) => {
@@ -321,7 +323,7 @@ export default function ClassesPage() {
                             <button
                               key={item.id}
                               type="button"
-                              onClick={(event) => { event.stopPropagation(); openNextOccurrence(item.id); }}
+                              onClick={(event) => { event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); else openNextOccurrence(item.id); }}
                               onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
                               className="absolute overflow-hidden rounded-md border border-signal/50 bg-signal-bg/70 px-2 py-1 text-start text-[10px] leading-tight shadow-sm transition-colors hover:border-signal"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3, Math.min(width, 100 - left))}%`, top: `${4 + item.lane * 52}px`, height: "48px" }}
@@ -384,12 +386,13 @@ export default function ClassesPage() {
                     </div>
                   </label>
                 </div>
+                {editor.startMinute + editor.durationMinutes > 1440 ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep">This class would run past midnight. Start it earlier or shorten the duration.</p> : null}
                 <label className="grid gap-1.5 text-[12px] font-medium">Notes<Textarea value={editor.notes} maxLength={500} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder="Bring boxing gloves…" /></label>
               </DialogBody>
             ) : null}
             <DialogFooter>
               <Button variant="secondary" onClick={() => setEditor(undefined)} disabled={save.isPending}>Cancel</Button>
-              <Button variant="signal" loading={save.isPending} disabled={!editor?.name.trim() || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200} onClick={() => save.mutate()}><Check /> Save class</Button>
+              <Button variant="signal" loading={save.isPending} disabled={!editor?.name.trim() || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200 || editor.startMinute + editor.durationMinutes > 1440} onClick={() => save.mutate()}><Check /> Save class</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

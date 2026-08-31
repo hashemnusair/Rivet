@@ -296,6 +296,11 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
   const dayOfWeek = boundedInteger(input.dayOfWeek, "Day", 0, 6, actor);
   const startMinute = boundedInteger(input.startMinute, "Start time", 0, DAY_MINUTES - 15, actor);
   const durationMinutes = boundedInteger(input.durationMinutes, "Duration", 15, MAX_DURATION_MINUTES, actor);
+  // A class lives inside one calendar day: crossing midnight would split its
+  // occurrence across dates and push the timetable window past the visible day.
+  if (startMinute + durationMinutes > DAY_MINUTES) {
+    domainError("VALIDATION_ERROR", "A class must end by midnight. Start it earlier or shorten the duration.", { correlationId: actor.correlationId, fieldErrors: { startMinute: ["Must end by midnight"] } });
+  }
   const capacity = boundedInteger(input.capacity, "Capacity", 1, MAX_CAPACITY, actor);
   const audience = optionalText(input.audience) ?? "mixed";
   if (!AUDIENCES.includes(audience as (typeof AUDIENCES)[number])) domainError("VALIDATION_ERROR", "Audience must be mixed, women, or men.", { correlationId: actor.correlationId });

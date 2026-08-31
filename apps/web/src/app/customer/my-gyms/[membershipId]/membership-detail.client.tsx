@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarDays, Clock3, Copy, CreditCard, Dumbbell, Gift, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, Ticket, UserRoundCheck, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, CreditCard, Dumbbell, Gift, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, Ticket, UserRoundCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -136,6 +136,10 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
 function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const invalidate = useInvalidate();
   const experience = useApiQuery(qk.customerClasses(membershipId), (api) => api.getCustomerClassExperience(membershipId));
+  // One day at a time, bounded to the current week (Sunday–Saturday). The
+  // view resets to the new week automatically when the week rolls over.
+  const [panelView, setPanelView] = useState<"week" | "history">("week");
+  const [selectedDate, setSelectedDate] = useState(() => todayISODate());
   const book = useApiMutation((api, occurrenceId: string) => api.bookCustomerClass({ membershipId, occurrenceId }), {
     onSuccess: async (result) => {
       toast.success(result.outcome === "waitlisted" ? "You joined the waitlist." : "Class booked.");
@@ -154,23 +158,48 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const value = experience.data!;
   if (!value.policy.enabled) return <section className="mt-5 rounded-lg border border-line bg-surface p-6 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h2 className="mt-3 text-[16px] font-semibold">Class booking is managed at reception</h2><p className="mt-1 text-[12.5px] text-ink-3">{value.gymName} has not enabled member self-booking yet.</p></section>;
 
-  const grouped = new Map<string, CustomerClassOccurrence[]>();
-  for (const occurrence of value.upcoming) grouped.set(occurrence.date, [...(grouped.get(occurrence.date) ?? []), occurrence]);
+  const today = todayISODate();
+  // Sunday-first week, matching the gym's schedule.
+  const weekStart = addDays(today, -new Date(`${today}T12:00:00Z`).getUTCDay());
+  const weekEnd = addDays(weekStart, 6);
+  const date = selectedDate < today ? today : selectedDate > weekEnd ? weekEnd : selectedDate;
+  const dayOccurrences = value.upcoming.filter((occurrence) => occurrence.date === date);
+  const attendedCount = value.history.filter((occurrence) => occurrence.booking?.status === "attended").length;
+
   return <div className="mt-5 space-y-5" role="tabpanel" aria-label="Classes">
     <section className="overflow-hidden rounded-lg border border-line bg-surface">
       <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <div><p className="eyebrow">Weekly timetable</p><h2 className="mt-1 font-display text-[20px] font-semibold">Book your next class</h2><p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-ink-2">Live spots, waitlists, and cancellations—without calling reception.</p></div>
+        <div><p className="eyebrow">This week</p><h2 className="mt-1 font-display text-[20px] font-semibold">Book your next class</h2><p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-ink-2">Live spots, waitlists, and cancellations—without calling reception.</p></div>
         <div className="flex gap-5 text-right"><div><p className="text-[10.5px] text-ink-3">Booking window</p><p className="mt-1 font-mono text-[13px]">{value.policy.bookingHorizonDays} days</p></div><div><p className="text-[10.5px] text-ink-3">No-shows</p><p className="mt-1 font-mono text-[13px]">{value.noShowCount}</p></div></div>
       </div>
       {value.profileCorrectionRequired ? <div className="border-t border-warning/30 bg-warning-bg px-5 py-3 text-[12.5px] text-warning-deep">Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.</div> : null}
     </section>
 
-    {grouped.size ? [...grouped.entries()].map(([date, occurrences]) => <section key={date} aria-labelledby={`classes-${date}`}>
-      <div className="mb-2 flex items-baseline justify-between gap-3"><h3 id={`classes-${date}`} className="text-[14px] font-semibold">{formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><span className="font-mono text-[10.5px] text-ink-3">{occurrences.length} class{occurrences.length === 1 ? "" : "es"}</span></div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{occurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
-    </section>) : <section className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes in the booking window</h3><p className="mt-1 text-[12px] text-ink-3">New dates will appear here as soon as the gym schedules them.</p></section>}
+    <div className="flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label="Classes views">
+      <button type="button" role="tab" aria-selected={panelView === "week"} onClick={() => setPanelView("week")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "week" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>This week</button>
+      <button type="button" role="tab" aria-selected={panelView === "history"} onClick={() => setPanelView("history")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "history" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>My history{attendedCount ? <span className="ms-1.5 font-mono text-[10.5px] font-normal opacity-70">{attendedCount}</span> : null}</button>
+    </div>
 
-    {value.history.length ? <details className="rounded-lg border border-line bg-surface"><summary className="cursor-pointer px-4 py-3 text-[13px] font-semibold">Booking history <span className="ms-2 font-mono text-[10.5px] font-normal text-ink-3">{value.history.length}</span></summary><div className="divide-y divide-line border-t border-line">{value.history.map((occurrence) => <div key={occurrence.id} className="flex items-center justify-between gap-3 px-4 py-3"><div><p className="text-[12.5px] font-medium">{occurrence.name}</p><p className="mt-0.5 text-[11px] text-ink-3">{formatDateTime(occurrence.startsAt)}</p></div><Badge variant="outline">{occurrence.booking?.status.replaceAll("_", " ") ?? "Not booked"}</Badge></div>)}</div></details> : null}
+    {panelView === "week" ? <section aria-label="This week's classes">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Button variant="secondary" size="sm" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
+        <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[10.5px] text-ink-3">This week only — next week opens on Sunday.</p></div>
+        <Button variant="secondary" size="sm" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
+      </div>
+      {dayOccurrences.length ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{dayOccurrences.map((occurrence) => <CustomerClassCard key={occurrence.id} occurrence={occurrence} busy={book.isPending || cancel.isPending} onBook={() => book.mutate(occurrence.id)} onCancel={() => cancel.mutate(occurrence.id)} />)}</div>
+      ) : (
+        <div className="rounded-lg border border-line bg-surface p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes on this day</h3><p className="mt-1 text-[12px] text-ink-3">Use the arrows to check the rest of the week.</p></div>
+      )}
+    </section> : <section aria-label="My class history" className="overflow-hidden rounded-lg border border-line bg-surface">
+      {value.history.length ? <div className="divide-y divide-line">{value.history.map((occurrence) => {
+        const status = occurrence.booking?.status;
+        return <div key={occurrence.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0"><p className="text-[13px] font-medium">{occurrence.name}</p><p className="mt-0.5 text-[11px] text-ink-3">{formatDateTime(occurrence.startsAt)}{occurrence.coachName ? ` · ${occurrence.coachName}` : ""}</p></div>
+          <Badge variant={status === "attended" ? "success" : status === "no_show" ? "warning" : "outline"}>{status === "attended" ? "Attended" : status === "no_show" ? "No-show" : status ? status.replaceAll("_", " ") : "Not booked"}</Badge>
+        </div>;
+      })}</div> : <div className="p-8 text-center"><CalendarDays className="mx-auto size-6 text-ink-3" /><h3 className="mt-3 text-[15px] font-semibold">No classes yet</h3><p className="mt-1 text-[12px] text-ink-3">Classes you attend will appear here.</p></div>}
+    </section>}
   </div>;
 }
 

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS, type CustomerMembership } from "@/lib/public/experience-data";
+import { addDays, todayISODate } from "@/lib/utils/dates";
 import MembershipDetailClient from "./membership-detail.client";
 
 const state = vi.hoisted(() => ({
@@ -45,8 +46,13 @@ describe("member visit history", () => {
       gymName: "Forge Fitness",
       timezone: "Asia/Amman",
       policy: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
-      upcoming: [{ id: "occ-strength", templateId: "strength", branchId: "abdoun", branchName: "Abdoun", date: "2026-09-02", startsAt: "2026-09-02T15:00:00.000Z", endsAt: "2026-09-02T16:00:00.000Z", name: "Strength circuit", coachName: "Rana", substituted: false, capacity: 12, audience: "mixed", status: "scheduled", bookedCount: 10, waitlistCount: 0, spotsRemaining: 2, canBook: true }],
-      history: [],
+      upcoming: [
+        { id: "occ-strength", templateId: "strength", branchId: "abdoun", branchName: "Abdoun", date: todayISODate(), startsAt: `${todayISODate()}T15:00:00.000Z`, endsAt: `${todayISODate()}T16:00:00.000Z`, name: "Strength circuit", coachName: "Rana", substituted: false, capacity: 12, audience: "mixed", status: "scheduled", bookedCount: 10, waitlistCount: 0, spotsRemaining: 2, canBook: true },
+        { id: "occ-tomorrow", templateId: "yoga", branchId: "abdoun", branchName: "Abdoun", date: addDays(todayISODate(), 1), startsAt: `${addDays(todayISODate(), 1)}T08:00:00.000Z`, endsAt: `${addDays(todayISODate(), 1)}T09:00:00.000Z`, name: "Sunrise yoga", coachName: "Lina", substituted: false, capacity: 10, audience: "mixed", status: "scheduled", bookedCount: 1, waitlistCount: 0, spotsRemaining: 9, canBook: true },
+      ],
+      history: [
+        { id: "occ-past", templateId: "strength", branchId: "abdoun", branchName: "Abdoun", date: addDays(todayISODate(), -7), startsAt: `${addDays(todayISODate(), -7)}T15:00:00.000Z`, endsAt: `${addDays(todayISODate(), -7)}T16:00:00.000Z`, name: "Strength circuit", coachName: "Rana", substituted: false, capacity: 12, audience: "mixed", status: "completed", bookedCount: 12, waitlistCount: 0, spotsRemaining: 0, canBook: false, booking: { id: "bk-1", status: "attended", fromWaitlist: false } },
+      ],
       noShowCount: 0,
       profileCorrectionRequired: false,
     });
@@ -108,11 +114,25 @@ describe("member visit history", () => {
 
     await user.click(screen.getByRole("tab", { name: "Classes" }));
     expect(await screen.findByRole("heading", { name: "Book your next class" })).toBeInTheDocument();
+    // The pager opens on today and shows only that day's classes.
     expect(screen.getByText("Strength circuit")).toBeInTheDocument();
+    expect(screen.queryByText("Sunrise yoga")).not.toBeInTheDocument();
     expect(screen.getByText("2 spots left")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Book class" }));
-
     await waitFor(() => expect(state.bookCustomerClass).toHaveBeenCalledWith({ membershipId: membership.id, occurrenceId: "occ-strength" }));
+
+    // The arrow walks to tomorrow within the current week.
+    const nextDay = screen.getByRole("button", { name: "Next day" });
+    if (!(nextDay as HTMLButtonElement).disabled) {
+      await user.click(nextDay);
+      expect(screen.getByText("Sunrise yoga")).toBeInTheDocument();
+      expect(screen.queryByText("Strength circuit")).not.toBeInTheDocument();
+    }
+
+    // History lists what the member actually attended.
+    await user.click(screen.getByRole("tab", { name: /My history/ }));
+    expect(screen.getByLabelText("My class history")).toBeInTheDocument();
+    expect(screen.getByText("Attended")).toBeInTheDocument();
   });
 
   it("lists a dated, privacy-safe reward history with gym contact actions", () => {

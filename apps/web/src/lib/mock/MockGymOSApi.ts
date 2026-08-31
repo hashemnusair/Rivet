@@ -9729,6 +9729,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!Number.isSafeInteger(input.dayOfWeek) || input.dayOfWeek < 0 || input.dayOfWeek > 6) throw ApiError.of(ERR.VALIDATION, "Day must be a weekday index between 0 and 6.");
       if (!Number.isSafeInteger(input.startMinute) || input.startMinute < 0 || input.startMinute > 1425) throw ApiError.of(ERR.VALIDATION, "Start time is invalid.");
       if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
+      if (input.startMinute + input.durationMinutes > 1440) throw ApiError.of(ERR.VALIDATION, "A class must end by midnight. Start it earlier or shorten the duration.");
       if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
       if (!["mixed", "women", "men"].includes(input.audience)) throw ApiError.of(ERR.VALIDATION, "Audience must be mixed, women, or men.");
       let coachName: string | undefined;
