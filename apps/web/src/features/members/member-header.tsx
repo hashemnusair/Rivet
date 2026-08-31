@@ -12,7 +12,7 @@ import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -317,7 +317,7 @@ export function MemberHeader({
             <DialogDescription>{memberOwnsProfile ? "Personal details are synchronized from the member account. This gym can still manage branch, tags, service notes, and membership operations." : "Identity, contact, branch and service notes. Changes are authorized and audited server-side."}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <FieldGrid className="sm:grid-cols-2">
               <Field label="Full name" required><Input disabled={memberOwnsProfile} value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
               <Field label="Arabic name"><Input disabled={memberOwnsProfile} dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
               <Field label="Phone" required><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
@@ -336,7 +336,7 @@ export function MemberHeader({
               </Field>
               <Field label="Emergency contact"><Input disabled={memberOwnsProfile} value={editForm.emergencyContactName} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactName: event.target.value }))} /></Field>
               <Field label="Emergency phone"><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.emergencyContactPhone} onChange={(event) => setEditForm((form) => ({ ...form, emergencyContactPhone: event.target.value }))} /></Field>
-            </div>
+            </FieldGrid>
             <Field label="Tags" hint="Comma-separated"><Input value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} placeholder="VIP, morning, personal training" /></Field>
             <Field label="Service notes"><Textarea value={editForm.notes} onChange={(event) => setEditForm((form) => ({ ...form, notes: event.target.value }))} placeholder="Non-sensitive operational context for staff" /></Field>
             <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/30 px-3 py-3">

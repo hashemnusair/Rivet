@@ -8,7 +8,7 @@ import { z } from "zod";
 import { MoneyText } from "@/components/shared/data-display";
 import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -156,7 +156,7 @@ export function QuickMembershipStep({
               </label>
 
               {collectNow ? (
-                <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
+                <FieldGrid className="mt-4 gap-4 border-t border-line pt-4 sm:grid-cols-2">
                   <Field label="Amount (JOD)" error={form.formState.errors.payAmount?.message} hint="Leave blank to collect the full amount.">
                     <Input inputMode="decimal" className="min-h-11" placeholder={plan ? toMajor(plan.basePrice).toFixed(3) : "0.000"} {...form.register("payAmount")} />
                   </Field>
@@ -180,7 +180,7 @@ export function QuickMembershipStep({
                       <Input className="min-h-11" placeholder="e.g. POS-88213" {...form.register("paymentReference")} />
                     </Field>
                   ) : null}
-                </div>
+                </FieldGrid>
               ) : (
                 <div className="mt-4 flex items-start gap-3 border-t border-line pt-4 text-[12.5px] text-ink-2">
                   <ReceiptText className="mt-0.5 size-4 shrink-0 text-warning-deep" aria-hidden />

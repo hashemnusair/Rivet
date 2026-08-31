@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -157,14 +157,14 @@ export function FreezeDialog({
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <FieldGrid alignFrom="base" className="grid-cols-2">
               <Field label="Freeze from" required error={form.formState.errors.startDate?.message}>
                 <Input type="date" {...form.register("startDate")} />
               </Field>
               <Field label="Freeze until" required error={form.formState.errors.endDate?.message}>
                 <Input type="date" {...form.register("endDate")} />
               </Field>
-            </div>
+            </FieldGrid>
             <BeforeAfter
               rows={[
                 { label: "Freeze length", before: "—", after: `${days} day${days === 1 ? "" : "s"}` },

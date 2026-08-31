@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { qk } from "@/lib/api/keys";
@@ -81,10 +81,10 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
                 <SelectContent>{activePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {formatMoney(plan.basePrice)}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <FieldGrid alignFrom="base" className="grid-cols-2">
               <Field label={`Offer price (${props.currency})`} required><Input type="number" min="0" step="0.001" value={price} onChange={(event) => setPrice(event.target.value)} /></Field>
               <Field label="Expires after" hint="1–60 days"><Input type="number" min="1" max="60" value={expiresInDays} onChange={(event) => setExpiresInDays(event.target.value)} /></Field>
-            </div>
+            </FieldGrid>
           </DialogBody>
           <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={create.isPending} disabled={!planId || !price || Number(price) < 0 || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
         </DialogContent>

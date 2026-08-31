@@ -16,7 +16,7 @@ import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -251,7 +251,7 @@ export default function NewMemberPage() {
       >
         <section className="panel p-5">
           <h2 className="mb-4 font-display text-[15px] font-semibold">Identity</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Full name" required error={form.formState.errors.fullName?.message}>
               <Input autoFocus placeholder="e.g. Layan Al-Masri" data-testid="member-name" {...form.register("fullName")} />
             </Field>
@@ -297,7 +297,7 @@ export default function NewMemberPage() {
             <Field label="Date of birth">
               <Input type="date" {...form.register("dateOfBirth")} />
             </Field>
-          </div>
+          </FieldGrid>
           {checkingDupes ? <p className="mt-2 text-[12px] text-ink-3">Checking for duplicates…</p> : null}
           {duplicateCheckError ? (
             <div role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-3 text-[12.5px] text-warning-deep">
@@ -323,7 +323,7 @@ export default function NewMemberPage() {
           <div className="space-y-5 border-t border-line p-5">
           <section>
           <h2 className="mb-4 font-display text-[15px] font-semibold">Membership context</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Home branch" required error={form.formState.errors.homeBranchId?.message}>
               <Controller
                 control={form.control}
@@ -399,19 +399,19 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-          </div>
+          </FieldGrid>
         </section>
 
         <section className="border-t border-line pt-5">
           <h2 className="mb-4 font-display text-[15px] font-semibold">Emergency & notes</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Emergency contact name">
               <Input {...form.register("emergencyContactName")} />
             </Field>
             <Field label="Emergency contact phone">
               <Input dir="ltr" placeholder="+962 7…" {...form.register("emergencyContactPhone")} />
             </Field>
-          </div>
+          </FieldGrid>
           <Field label="Notes" className="mt-4">
             <Textarea placeholder="Anything the team should know — schedule preferences, goals, payment habits…" {...form.register("notes")} />
           </Field>

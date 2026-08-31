@@ -35,7 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -267,7 +267,7 @@ export function MembershipSaleDialog({
                 ) : null}
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
+              <FieldGrid alignFrom="base" className="grid-cols-2">
                 <Field label="Start date" required>
                   <Input type="date" {...form.register("startDate")} />
                 </Field>
@@ -282,7 +282,7 @@ export function MembershipSaleDialog({
                     {...form.register("priceOverride")}
                   />
                 </Field>
-              </div>
+              </FieldGrid>
 
               {needsOverrideReason ? (
                 <Field label="Override reason" required error={form.formState.errors.overrideReason?.message} hint="Price and date changes are recorded in the audit trail.">
@@ -290,14 +290,14 @@ export function MembershipSaleDialog({
                 </Field>
               ) : null}
 
-              <div className="grid grid-cols-2 gap-3">
+              <FieldGrid alignFrom="base" className="grid-cols-2">
                 <Field label="Discount (JOD)" hint={canDiscount ? undefined : "No discount permission"}>
                   <Input inputMode="decimal" placeholder="0.000" disabled={!canDiscount} {...form.register("discount")} />
                 </Field>
                 <Field label="Discount reason" error={form.formState.errors.discountReason?.message}>
                   <Input placeholder="e.g. Corporate rate" disabled={!canDiscount} {...form.register("discountReason")} />
                 </Field>
-              </div>
+              </FieldGrid>
 
               {needsApproval ? (
                 <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
@@ -317,7 +317,7 @@ export function MembershipSaleDialog({
                   />
                 </label>
                 {watchPayNow ? (
-                  <div className="mt-3 grid grid-cols-2 gap-3">
+                  <FieldGrid alignFrom="base" className="mt-3 grid-cols-2">
                     <Field label="Amount (JOD)">
                       <Input inputMode="decimal" placeholder={toMajor(total).toFixed(3)} {...form.register("payAmount")} />
                     </Field>
@@ -346,7 +346,7 @@ export function MembershipSaleDialog({
                         <Input {...form.register("paymentReference")} placeholder="e.g. POS-88213" />
                       </Field>
                     ) : null}
-                  </div>
+                  </FieldGrid>
                 ) : renewalStartsInFuture ? (
                   <p className="mt-2 text-[12px] text-ink-3">
                     This upcoming invoice becomes collectible when the successor term begins.

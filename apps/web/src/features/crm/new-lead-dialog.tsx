@@ -17,7 +17,7 @@ import { localDateTimeToISO } from "@/lib/utils/dates";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -128,14 +128,14 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           mutation.mutate({ ...v, branchId: selectedBranchId });
         })}>
           <DialogBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <FieldGrid alignFrom="base" className="grid-cols-2">
               <Field label="Full name" required error={form.formState.errors.fullName?.message}>
                 <Input autoFocus {...form.register("fullName")} />
               </Field>
               <Field label="Phone" required error={form.formState.errors.phone?.message}>
                 <Input dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
               </Field>
-            </div>
+            </FieldGrid>
             <details className="group rounded-md border border-line bg-sunken/25" open={!activeBranchId || undefined}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 text-[13px] font-medium text-ink-2">
                 <span>
@@ -148,7 +148,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
                   <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
                 </Field>
-                <div className="grid grid-cols-2 gap-3">
+                <FieldGrid alignFrom="base" className="grid-cols-2">
                   <Field label="Branch" required error={form.formState.errors.branchId?.message}>
                     <Controller
                       control={form.control}
@@ -190,8 +190,8 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                       )}
                     />
                   </Field>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                </FieldGrid>
+                <FieldGrid className="sm:grid-cols-3">
                   <Field label="Owner">
                     <Controller
                       control={form.control}
@@ -219,7 +219,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   <Field label="First follow-up">
                     <Input type="date" {...form.register("nextFollowUp")} />
                   </Field>
-                </div>
+                </FieldGrid>
                 <Field label="Notes">
                   <Textarea placeholder="What did they ask about?" {...form.register("notes")} />
                 </Field>

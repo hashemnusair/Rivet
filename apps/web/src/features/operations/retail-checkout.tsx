@@ -27,7 +27,7 @@ import { PageHeader } from "@/components/shared/chrome";
 import { MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
@@ -224,14 +224,14 @@ function CustomerPicker({
             </>
           )
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <FieldGrid className="sm:grid-cols-2">
             <Field label="Guest name" required>
               <Input value={guest.fullName} onChange={(event) => onGuest({ ...guest, fullName: event.target.value })} placeholder="Full name" autoComplete="name" required />
             </Field>
             <Field label="Phone number" required hint="Used on the printed receipt">
               <Input dir="ltr" value={guest.phone} onChange={(event) => onGuest({ ...guest, phone: event.target.value })} placeholder="07…" autoComplete="tel" required />
             </Field>
-          </div>
+          </FieldGrid>
         )}
       </div>
     </section>

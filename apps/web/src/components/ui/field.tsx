@@ -6,6 +6,7 @@ const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelElement>
   ({ className, ...props }, ref) => (
     <label
       ref={ref}
+      data-slot="field-label"
       className={cn("block text-[13px] font-medium text-ink-2 mb-1.5", className)}
       {...props}
     />
@@ -51,7 +52,7 @@ function Field({
       })
     : children;
   return (
-    <div className={cn("min-w-0", className)}>
+    <div data-slot="field" className={cn("min-w-0", className)}>
       {label ? (
         <Label htmlFor={controlId}>
           {label}
@@ -67,6 +68,27 @@ function Field({
         <p id={controlId ? `${controlId}-hint` : undefined} className="mt-1.5 text-xs text-ink-3">{hint}</p>
       ) : null}
     </div>
+  );
+}
+
+const fieldGridLabelAlignment = {
+  base: "[&>[data-slot=field]>[data-slot=field-label]]:flex [&>[data-slot=field]>[data-slot=field-label]]:min-h-[2lh] [&>[data-slot=field]>[data-slot=field-label]]:items-end",
+  sm: "sm:[&>[data-slot=field]>[data-slot=field-label]]:flex sm:[&>[data-slot=field]>[data-slot=field-label]]:min-h-[2lh] sm:[&>[data-slot=field]>[data-slot=field-label]]:items-end",
+  md: "md:[&>[data-slot=field]>[data-slot=field-label]]:flex md:[&>[data-slot=field]>[data-slot=field-label]]:min-h-[2lh] md:[&>[data-slot=field]>[data-slot=field-label]]:items-end",
+} as const;
+
+/** Multi-column field group with a shared two-line label rhythm. */
+function FieldGrid({
+  alignFrom = "sm",
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { alignFrom?: keyof typeof fieldGridLabelAlignment }) {
+  return (
+    <div
+      data-slot="field-grid"
+      className={cn("grid gap-3", fieldGridLabelAlignment[alignFrom], className)}
+      {...props}
+    />
   );
 }
 
@@ -87,4 +109,4 @@ const Separator = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { 
 );
 Separator.displayName = "Separator";
 
-export { Label, Field, Separator };
+export { Label, Field, FieldGrid, Separator };

@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -166,7 +166,7 @@ export function CollectPaymentDialog({
                     </Select>
                   </Field>
                 ) : null}
-                <div className="grid grid-cols-2 gap-3">
+                <FieldGrid alignFrom="base" className="grid-cols-2">
                   <Field label="Amount (JOD)" required error={form.formState.errors.amount?.message}>
                     <Input inputMode="decimal" autoFocus max={toMajor(outstanding).toFixed(3)} step="0.001" data-testid="payment-amount" {...form.register("amount")} />
                   </Field>
@@ -190,7 +190,7 @@ export function CollectPaymentDialog({
                       )}
                     />
                   </Field>
-                </div>
+                </FieldGrid>
                 <Field label="External reference" required={referenceRequired} error={form.formState.errors.reference?.message} hint={referenceRequired ? "Enter the POS slip or provider reference." : "Optional for this payment method."}>
                   <Input {...form.register("reference")} placeholder="e.g. POS-88213" />
                 </Field>

@@ -15,7 +15,7 @@ import { RelativeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1183,10 +1183,10 @@ export function OperationalRulesSection() {
                 </SelectContent>
               </Select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <FieldGrid alignFrom="base" className="grid-cols-2">
               <Field label="Expiry warning (days)"><Input type="number" min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} /></Field>
               <Field label="Duplicate scan window"><Input type="number" min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} /></Field>
-            </div>
+            </FieldGrid>
             <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
               <span><span className="block text-[13px] font-medium">Enforce operating hours</span><span className="block text-[11.5px] text-ink-3">Outside-hours entries require a manager override.</span></span>
               <Switch checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} aria-label="Enforce operating hours" />
@@ -1200,7 +1200,7 @@ export function OperationalRulesSection() {
             <span><span className="block text-[13px] font-medium">Member self-booking</span><span className="block text-[11.5px] text-ink-3">When off, reception still manages dated class rosters.</span></span>
             <Switch checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} aria-label="Member class self-booking" />
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <FieldGrid className="sm:grid-cols-2">
             <Field label="Membership eligibility">
               <Select value={policies.classBooking.eligibilityMode} onValueChange={(value) => updateClassBooking("eligibilityMode", value as OperationalPolicies["classBooking"]["eligibilityMode"])} disabled={!policies.classBooking.enabled}>
                 <SelectTrigger aria-label="Class membership eligibility"><SelectValue /></SelectTrigger>
@@ -1210,7 +1210,7 @@ export function OperationalRulesSection() {
             <Field label="Booking horizon (days)"><Input type="number" min={1} max={120} value={policies.classBooking.bookingHorizonDays} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(event.target.value))} /></Field>
             <Field label="Cancellation cutoff (hours)"><Input type="number" min={0} max={72} value={policies.classBooking.cancellationCutoffHours} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(event.target.value))} /></Field>
             <Field label="Max active bookings"><Input type="number" min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(event.target.value))} /></Field>
-          </div>
+          </FieldGrid>
           {policies.classBooking.eligibilityMode === "selected_plans" ? <div className="mt-4 rounded-md border border-line p-3"><p className="text-[12px] font-medium">Plans that include classes</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{plansQuery.data?.items.map((plan) => { const checked = policies.classBooking.eligiblePlanIds.includes(plan.id); return <label key={plan.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2 text-[12px]"><span>{plan.name}</span><Switch checked={checked} onCheckedChange={(value) => updateClassBooking("eligiblePlanIds", value ? [...policies.classBooking.eligiblePlanIds, plan.id] : policies.classBooking.eligiblePlanIds.filter((id) => id !== plan.id))} aria-label={`${plan.name} includes classes`} /></label>; })}</div></div> : null}
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5"><span><span className="block text-[13px] font-medium">Waitlist</span><span className="block text-[11.5px] text-ink-3">Promote the earliest waiting member automatically.</span></span><Switch checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} aria-label="Class waitlist" /></label>
@@ -1221,20 +1221,20 @@ export function OperationalRulesSection() {
         <section className="panel p-5">
           <h2 className="mb-1 font-display text-[15px] font-semibold">Retention radar</h2>
           <p className="mb-4 text-[12.5px] text-ink-3">Tune when RIVET asks the team to contact inactive, expiring, and recently expired members.</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <FieldGrid className="sm:grid-cols-3">
             <Field label="Inactive after (days)"><Input type="number" min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(event.target.value))} /></Field>
             <Field label="Win-back window"><Input type="number" min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(event.target.value))} /></Field>
             <Field label="Default snooze"><Input type="number" min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(event.target.value))} /></Field>
-          </div>
+          </FieldGrid>
         </section>
         <section className="panel p-5">
           <h2 className="mb-1 font-display text-[15px] font-semibold">Membership lifecycle</h2>
           <p className="mb-4 text-[12.5px] text-ink-3">Guardrails for sales, renewals and sensitive date changes.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FieldGrid className="sm:grid-cols-3">
             <Field label="Renewal window"><Input type="number" min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(event.target.value))} /></Field>
             <Field label="Minimum freeze"><Input type="number" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} /></Field>
             <Field label="Maximum extension"><Input type="number" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} /></Field>
-          </div>
+          </FieldGrid>
           <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
             <span><span className="block text-[13px] font-medium">Allow overlapping memberships</span><span className="block text-[11.5px] text-ink-3">Off prevents accidental duplicate active terms.</span></span>
             <Switch checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} aria-label="Allow overlapping memberships" />
@@ -1247,11 +1247,11 @@ export function OperationalRulesSection() {
             <span><span className="block text-[13px] font-medium">Reward referrals</span><span className="block text-[11.5px] text-ink-3">Off records nothing and grants nothing.</span></span>
             <Switch checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} aria-label="Reward referrals" />
           </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FieldGrid className="sm:grid-cols-3">
             <Field label="Free days per referral"><Input type="number" min={1} max={90} value={policies.referrals.rewardDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("rewardDays", Number(event.target.value))} /></Field>
             <Field label="Max days per member"><Input type="number" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} /></Field>
             <Field label="Cap resets after (days)"><Input type="number" min={7} max={365} value={policies.referrals.windowDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} /></Field>
-          </div>
+          </FieldGrid>
         </section>
         <section className="panel p-5">
           <h2 className="mb-1 font-display text-[15px] font-semibold">Member freeze requests</h2>
@@ -1260,12 +1260,12 @@ export function OperationalRulesSection() {
             <span><span className="block text-[13px] font-medium">Accept freeze requests</span><span className="block text-[11.5px] text-ink-3">Off hides the request option in the member app.</span></span>
             <Switch checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} aria-label="Accept freeze requests" />
           </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FieldGrid className="sm:grid-cols-2">
             <Field label="Free freezes per window"><Input type="number" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} /></Field>
             <Field label="Fee after that (JOD)"><Input type="number" min={0} max={1000} step={0.5} value={policies.memberFreezes.extraFreezeFeeMinor / 1000} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 1000))} /></Field>
             <Field label="Max days per freeze"><Input type="number" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} /></Field>
             <Field label="Counter resets after (days)"><Input type="number" min={30} max={730} value={policies.memberFreezes.windowDays} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} /></Field>
-          </div>
+          </FieldGrid>
         </section>
       </div>
 

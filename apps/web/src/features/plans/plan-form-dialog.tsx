@@ -12,7 +12,7 @@ import { fromMajor, toMajor } from "@/lib/utils/money";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/switch";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
+import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioCard } from "@/components/ui/radio-group";
 
@@ -129,14 +129,14 @@ export function PlanFormDialog({
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
-            <div className="grid grid-cols-[1fr_110px] gap-3">
+            <FieldGrid alignFrom="base" className="grid-cols-[1fr_110px]">
               <Field label="Plan name" required error={form.formState.errors.name?.message}>
                 <Input placeholder="e.g. Quarterly" {...form.register("name")} />
               </Field>
               <Field label="Code" required error={form.formState.errors.code?.message}>
                 <Input placeholder="Q3" className="font-mono uppercase" {...form.register("code")} />
               </Field>
-            </div>
+            </FieldGrid>
 
             <Field label="Plan type">
               <Controller
@@ -157,7 +157,7 @@ export function PlanFormDialog({
               />
             </Field>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <FieldGrid className="sm:grid-cols-3">
               {kind === "time" ? (
                 <Field label="Duration (days)" required error={form.formState.errors.durationDays?.message}>
                   <Input type="number" min={1} {...form.register("durationDays")} />
@@ -181,7 +181,7 @@ export function PlanFormDialog({
               <Field label="Included PT sessions" error={form.formState.errors.includedPtSessions?.message}>
                 <Input type="number" min={0} max={100} {...form.register("includedPtSessions")} />
               </Field>
-            </div>
+            </FieldGrid>
 
             <Field label="Branch access" error={form.formState.errors.branchIds?.message as string | undefined}>
               <Controller
