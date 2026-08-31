@@ -1,11 +1,64 @@
 # GymOS / RIVET current implementation state
 
+## Dated classes, coach operations, retention, and integrated operations — 31 August 2026
+
+- A fresh GitHub fetch confirmed `main` and `origin/main` matched at `277aca4`
+  before implementation. No newer Elias commit was waiting. The separate
+  `codex/referral-analytics-checklists` branch was discovered after its seven
+  reviewable commits landed and was merged intact through `6a970cd`; neither
+  workstream's history was rewritten.
+- The weekly class timetable now produces dated occurrences for staff and
+  members. An authenticated member can view their branch schedule, book a
+  confirmed place, join a bounded FIFO waitlist, cancel, and receive an in-app
+  promotion notice. The server owns capacity, duplicate booking, booking
+  horizon, cancellation cutoff, active-booking limit, plan eligibility,
+  branch access, membership status, and Women/Men audience checks. Late
+  cancellations are recorded without a fee or membership penalty.
+- Class policy is configurable per gym. New profiles and imports require
+  `male` or `female`; legacy missing-gender members must correct their profile
+  before self-booking a restricted class. Staff may override an audience
+  mismatch only with a reason and immutable audit evidence.
+- Reception can open a dated roster, add or remove a member, and mark
+  attendance. A manager/owner finalizes attendance only after the class ends;
+  only then do unmarked confirmed bookings become no-shows. Per-member no-show
+  totals use a small projection instead of scanning class history for every
+  roster row.
+- Coaches have a filtered weekly view, an audited reason-gated substitution
+  flow, optional pay-per-class configuration, and a read-only monthly payout
+  report/CSV. Each delivered occurrence snapshots its applicable rate, so a
+  later rate change cannot rewrite a prior month. The report creates no charge,
+  payment, cash-shift, journal, or ledger record.
+- CRM gained a branch-safe At-risk queue for inactive, expiring, and recently
+  expired members. It excludes frozen/future/archived/ineligible records,
+  explains the exact risk, and exposes Call, manual WhatsApp, contact logging,
+  follow-up, configurable snooze, and member actions. Highest-priority risks
+  also enter Today; all outreach remains on the member timeline.
+- The parallel work adds privacy-safe member referral history and gym contact
+  actions, six bounded read-only operational reports, and daily branch
+  opening/closing checklists with template ownership, local due times,
+  one-tap tablet controls, reasoned failure/correction, Today escalation, and
+  conversion of failed items into existing maintenance tasks.
+- Commit `6cc54a6` closes the analytics dependency between the branches with a
+  branch-scoped Class utilization report and CSV. It includes untouched
+  zero-booking timetable dates as offered capacity, while reported bookings,
+  attendance, waitlists, cancellations, and no-shows come only from saved
+  roster facts. Cancelled classes are shown but excluded from fill capacity.
+- The merged code keeps Convex and mock contracts aligned, enforces reporting
+  and branch permissions server-side, and preserves `FRONTEND_HANDOFF.md` as
+  the frozen historical artifact. This batch has not deployed Convex, enabled
+  a provider, or mutated Production tenant data; exact-target deployment and
+  signed-in acceptance belong to the release step after the repository push.
+- The final combined static gate passed both TypeScript checks, zero-warning
+  lint and secret-output audit, 176 Vitest files / 1,054 tests plus 14
+  repository-safety tests, the 59-route Production build, the Production
+  dependency audit, and `git diff --check`.
+- The final clean-server credential-free Playwright gate passed 47 journeys,
+  skipped the 14 explicitly isolated-staging journeys, and failed none.
+
 ## Referral polish, operational analytics, and daily branch checklists — 31 August 2026
 
-- Branch `codex/referral-analytics-checklists` (base `277aca4`) carries this
-  batch in seven reviewable commits; it deliberately avoids class booking,
-  waitlists, coach payouts, class/coach/At-risk analytics, and win-back, which
-  belong to the parallel dated-class workstream.
+- Branch `codex/referral-analytics-checklists` (base `277aca4`) carried this
+  batch in seven reviewable commits before integration through `6a970cd`.
 - The member referral card gained a dated reward history built purely from
   existing `referralReward` facts — applied, capped, and ineligible rewards
   plus pending rows for attributed members awaiting a first sale — with

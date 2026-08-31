@@ -1,11 +1,11 @@
 # RIVET engineering handoff plan
 
-Last updated: 30 August 2026
-Current application tip: `31eae98`. Convex Production
-`descriptive-meerkat-589` is deployed through partner-preserving merge
-`d2a45e2`; `156f9b1` remains the last fully documented signed-in acceptance
-closure. Membership-state migration and member referral sharing still need the
-normal exact-target backend/hosted release procedure.
+Last updated: 31 August 2026
+Current code tip before this documentation reconciliation: `6cc54a6`. Convex
+Production `descriptive-meerkat-589` was last fully verified at the earlier
+release `b1da867`; the combined classes/coaches/retention, referral analytics,
+and daily-checklist schema/functions need the normal exact-target backend and
+hosted release procedure after the final repository tip is pushed.
 
 ## Purpose
 
@@ -24,6 +24,31 @@ and the complete chronological implementation record is
 
 ## Current state at handoff
 
+- `6a970cd` merges the seven-commit referral/analytics/checklists workstream
+  into the dated classes/coaches/retention workstream without squashing partner
+  history. `6cc54a6` completes their shared Class utilization dependency.
+- Members now self-book dated classes and bounded FIFO waitlists under a
+  gym-owned policy; staff manage dated rosters and finalize attendance;
+  managers substitute coaches with a reason; coach rates are snapshotted into
+  a read-only monthly payout report. Capacity, ownership, audience, policy,
+  branch scope, and final no-shows are server-owned.
+- CRM now has a practical At-risk/win-back queue and Today projection with
+  manual phone/WhatsApp actions, contact/follow-up evidence, and configurable
+  snooze. Reports now cover Peak hours, Class utilization, Retention,
+  Renewals, Collections, CRM, and commercial Controls. Daily branch checklists
+  connect failed operating items to Maintenance.
+- New profiles/imports require `male` or `female`. This implements the product
+  owner's Jordan policy; legacy missing values are corrected explicitly and
+  never guessed during audience-restricted booking.
+- This application batch has not yet been deployed to Convex Production. The
+  frontend must not be treated as backend-compatible until the exact combined
+  schema/functions pass the guarded Production dry run/deploy and signed-in
+  acceptance.
+- The combined static gate passed both TypeScript checks, lint/secret audit,
+  176 Vitest files / 1,054 tests plus 14 repository-safety tests, the 59-route
+  Production build, dependency audit, and diff check.
+- The final credential-free Playwright run passed 47 journeys, skipped the 14
+  explicitly isolated-staging journeys, and failed none.
 - The current local application adds complete-or-fail export cleanup, bounded
   customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
   member and membership-state migration mapper with batch

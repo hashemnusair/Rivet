@@ -1,8 +1,9 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-31 for credentialed release verification.
-The latest application work is local on `main`; the last fully recorded
-Production closure and deployment evidence remains dated 2026-08-29.
+Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
+daily-checklist implementation. The last fully recorded Production closure is
+the earlier `b1da867` release; code through `6cc54a6` still needs the guarded
+exact-target release procedure after final Git integration.
 
 ## Purpose
 
@@ -16,6 +17,34 @@ This is the orientation and release-control document for RIVET. Use it to answer
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
 ## Current repository state — 31 August 2026
+
+### Combined dated-class and daily-operations batch — 31 August 2026
+
+- Additive Convex tables are `classOccurrences`, `classBookings`,
+  `classMemberStats`, `checklistTemplates`, and `checklistRuns`. The analytics
+  work also adds `domainRecords.by_organization_type_created`. Treat all of
+  these as one deployment unit; do not publish only the frontend surfaces.
+- Dated class writes own capacity, membership/branch access, audience policy,
+  waitlists, attendance finalization, promotion, no-show projection,
+  substitution, timeline, and audit evidence. Coach payout and all analytics
+  operations are read-only and create no money or ledger facts.
+- Daily checklist runs are idempotent per template and branch-local date.
+  Templates snapshot into a run so later edits do not rewrite completed work;
+  failures/corrections are reasoned and audited, and maintenance escalation
+  uses the existing operations contract.
+- Reports use server branch scope and tenant-local boundaries. Class
+  utilization derives untouched weekly timetable dates in the requested range
+  as zero-booking capacity, then overlays saved occurrence/booking facts. This
+  avoids the false claim that only interacted-with classes were offered.
+- Application history preserves the parallel branch through merge `6a970cd`;
+  the class-utilization completion is `6cc54a6`. No provider was enabled and no
+  Production tenant record was mutated by this implementation batch.
+- The combined static gate passed both TypeScript checks, zero-warning
+  lint/secret audit, 176 Vitest files / 1,054 tests plus 14 repository-safety
+  tests, the 59-route Production build, dependency audit, and diff check.
+- The final clean-server Playwright run passed all 47 credential-free journeys;
+  the 14 isolated-staging journeys were explicitly skipped and no journey
+  failed.
 
 ### Credentialed Development release pass — 31 August 2026
 

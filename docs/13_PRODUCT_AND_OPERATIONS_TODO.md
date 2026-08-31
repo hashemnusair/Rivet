@@ -17,7 +17,47 @@ values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 31 August 2026
 
-### Referral polish, operational analytics, and daily checklists — 31 August 2026 (branch)
+### Dated classes, coach operations, retention, and parallel operations — 31 August 2026
+
+- [x] Complete member class self-service with dated occurrences, branch and
+  membership ownership, gym-configurable policy, server-owned capacity,
+  duplicate/horizon/cutoff/active-booking guards, plan eligibility, mandatory
+  binary gender profiles, audience enforcement, bounded FIFO waitlists,
+  audited promotion/cancellation, in-app notices, and member history.
+- [x] Complete the staff occurrence workflow: dated rosters, reception
+  add/remove/attendance, post-class attendance finalization, no-show projection,
+  manager/owner scheduling, coach filtering, and reason-gated audience
+  override. Never derive a no-show merely because a receptionist forgot to
+  click an attendance checkbox.
+- [x] Add coach operations: per-date substitution with a required reason,
+  regular-versus-cover coach evidence, optional per-class pay, snapshotted
+  delivered rates, and a read-only monthly payout report/CSV with no financial
+  mutation.
+- [x] Add the CRM At-risk/win-back surface and Today integration for inactive,
+  expiring, and recently expired members, with truthful reasons, exclusions,
+  last-contact context, Call/manual WhatsApp/contact/follow-up/member actions,
+  configurable snooze, timeline evidence, server branch scope, and mock parity.
+- [x] Merge the complete referral-polish, operational-analytics, and daily
+  branch-checklist branch without rewriting its seven commits or losing either
+  side of the shared schema, member portal, Today, API, and mock contracts.
+- [x] Finish the post-merge Class utilization report with scheduled zero-booking
+  capacity, confirmed bookings, attendance, waitlist demand, booking and class
+  cancellations, no-shows, tenant-local ranges, branch scope, definitions, and
+  full CSV export. The coach payout report remains in Classes, where the
+  operational source facts live.
+- [ ] Add an At-risk recovery aggregate only after pilot use establishes a
+  stable outcome taxonomy for contacted, returned, renewed, snoozed, and lost;
+  the working queue and timeline facts are implemented now, but a premature
+  dashboard would manufacture meaning from ordinary contact events.
+- [x] Pass both TypeScript checks, zero-warning lint/secret audit, 176 Vitest
+  files / 1,054 tests plus 14 repository-safety tests, the 59-route Production
+  build, the Production dependency audit, and `git diff --check` on the merged
+  implementation.
+- [x] Pass the final clean-server browser gate: 47 credential-free Playwright
+  journeys passed, 14 isolated-staging journeys were explicitly skipped, and
+  zero failed.
+
+### Referral polish, operational analytics, and daily checklists — 31 August 2026 (integrated)
 
 - [x] Polish the member referral area: dated privacy-safe reward history
   (applied/capped/ineligible/pending), gym WhatsApp/call contact actions,
@@ -33,12 +73,10 @@ values, applicant details, and provider credentials out of this file.
   deleting), an idempotent one-run-per-branch-local-date model, a tablet-first
   staff page with reasoned failure/skip/correction and audited facility-task
   escalation, and role-safe Today-queue entries in an isolated commit.
-- [ ] After the parallel dated-class/At-risk branch lands: build class
-  utilization (needs per-occurrence rosters), coach delivery/payout analytics
-  (needs occurrence attendance by coach and pay facts), and At-risk recovery
-  reporting (needs persisted outreach facts); then re-merge the one-line Today
-  wiring and run the exact-target Convex release for the combined schema
-  (checklist tables plus the `by_organization_type_created` index).
+- [x] Merge the parallel dated-class/At-risk branch, preserve the Today wiring,
+  and add Class utilization plus the existing read-only coach payout report.
+  Exact-target Convex release of the combined schema remains an operator step
+  after the final repository tip is pushed.
 
 
 ### Credentialed release verification — 31 August 2026
@@ -236,10 +274,11 @@ values, applicant details, and provider credentials out of this file.
   tests, a 58-page Production build, clean Production dependency audit,
   `git diff --check`, and 46 credential-free Playwright passes / 14 explicit
   staging-only skips / zero failures.
-- [ ] Evaluate the next low-friction maintenance slice with pilot gyms:
-  assignee-aware work, recurring opening/closing checklists, optional photo
-  evidence, and overdue escalation. Keep it out until the real daily owner is
-  clear.
+- [x] Add recurring per-branch opening/closing checklist templates, role
+  ownership, branch-local due/overdue state, reasoned exceptions, Today
+  escalation, and failed-item conversion into a maintenance task. Photo
+  evidence remains deliberately deferred until its file-retention/legal policy
+  is approved.
 - [ ] Keep Arabic/translation and final measured optimization last.
 
 Release evidence: the application slices are `ea19e03` through `0db74af`,

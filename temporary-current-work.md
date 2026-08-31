@@ -116,6 +116,32 @@ diff check. Final GitHub, Vercel, and exact-target Convex evidence belongs in
 the living handoff after release; this file remains a temporary product-working
 record only.
 
+## Dated classes, retention, and parallel operations batch
+
+- [x] Member class schedule, booking, cancellation, policy, capacity, gender
+  audience enforcement, bounded FIFO waitlist, promotion notice, and history.
+- [x] Staff dated rosters, attendance, explicit finalization, no-show counts,
+  coach schedule filter, reason-gated substitution, snapshotted per-class pay,
+  and read-only payout CSV.
+- [x] CRM At-risk/win-back queue and Today integration with exact reasons,
+  exclusions, manual phone/WhatsApp, contact/follow-up evidence, and snooze.
+- [x] Parallel referral history/contact polish, operational analytics, and
+  daily branch opening/closing checklists integrated without squashing history.
+- [x] Class utilization completed after integration, including zero-booking
+  offered capacity and saved roster outcomes.
+- [ ] Guarded exact-target Convex/Vercel release and signed-in acceptance for
+  the final pushed tip. This is release work, not unfinished feature code.
+
+The implementation commits are `e8c96d7`, merge `6a970cd`, and `6cc54a6`.
+`FRONTEND_HANDOFF.md` remains unchanged. Arabic, legal document collection,
+online payments, automated SMS/provider delivery, and measured final
+performance work remain deferred by product decision.
+The final combined static gate passed 176 Vitest files / 1,054 tests, 14
+repository-safety tests, both TypeScript checks, zero-warning lint/secret
+audit, the 59-route Production build, dependency audit, and diff check.
+The final clean-server Playwright gate passed 47 credential-free journeys,
+skipped the 14 explicitly isolated-staging journeys, and failed none.
+
 ## Creative low-friction ideas to evaluate
 
 - **Reception mode:** one large search field, recent members, keyboard shortcuts, and a single dominant action based on the result.
