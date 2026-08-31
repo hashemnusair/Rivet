@@ -67,6 +67,7 @@ import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
+import { buildCsvDocument, buildSectionedCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "../src/lib/exports/csv";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -4399,30 +4400,49 @@ function requireExportPermission(actor: ActorContext, kind: StaffExportKind): vo
   return requirePermission(actor, "operations.manage");
 }
 
-function csvCell(value: unknown): string {
-  if (value === undefined || value === null) return "";
-  const serialized = typeof value === "object" ? JSON.stringify(value) : String(value);
-  const raw = typeof value === "string" && /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : serialized;
-  return /[",\r\n]/.test(raw) ? `"${raw.replaceAll('"', '""')}"` : raw;
+const STAFF_EXPORT_TITLES: Record<StaffExportKind, string> = {
+  members: "Member directory",
+  leads: "CRM leads",
+  payments: "Payment ledger",
+  audit: "Audit log",
+  membership_liabilities: "Outstanding member balances",
+  personal_training: "Personal training package orders",
+  operations: "Products, suppliers, and inventory activity",
+};
+
+const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
+  members: ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Member status", "Membership status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Last check-in", "Preferred language", "Marketing consent", "Tags", "Notes", "Created", "RIVET member ID"],
+  leads: ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Last contacted", "Last contact outcome", "Overdue", "Lost reason", "Created", "Updated", "RIVET lead ID"],
+  payments: ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason", "RIVET transaction ID"],
+  audit: ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status", "RIVET audit ID"],
+  membership_liabilities: ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "Collectible now", "Created", "RIVET charge ID"],
+  personal_training: ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated", "RIVET PT order ID"],
+  operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When", "RIVET record ID"],
+};
+
+function exportFilterSummary(filters: Data): string {
+  const entries = Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  return entries.length > 0
+    ? entries.map(([key, value]) => `${exportStatusLabel(key)}: ${String(value)}`).join("; ")
+    : "None";
 }
 
-function csvFromRows(rows: Data[], metadata: Data): { content: string; rowCount: number; totalRows: number; complete: boolean } {
-  const normalized = rows.slice(0, 2_000).map((row) => ({ ...metadata, ...row }));
-  const headers = [...new Set(["export_generated_at", "export_timezone", "export_branch_scope", "export_filters", ...normalized.flatMap((row) => Object.keys(row))])];
-  const header = headers.map(csvCell).join(",");
-  let content = `${header}\r\n`;
-  let rowCount = 0;
-  for (const row of normalized) {
-    const line = `${headers.map((key) => csvCell(row[key])).join(",")}\r\n`;
-    if (content.length + line.length > 750_000) break;
-    content += line;
-    rowCount += 1;
-  }
-  return { content, rowCount, totalRows: rows.length, complete: rowCount === rows.length };
-}
-
-function exportRecordRow(recordType: string, id: string, value: Data): Data {
-  return { record_type: recordType, record_id: id, ...value };
+function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+  const normalized = rows.slice(0, 2_000);
+  const content = buildCsvDocument({
+    title: metadata.title,
+    metadata: [
+      { label: "Generated at", value: formatExportDateTime(metadata.generatedAt, metadata.timezone) },
+      { label: "Timezone", value: metadata.timezone },
+      { label: "Branch scope", value: metadata.branchScope },
+      { label: "Applied filters", value: exportFilterSummary(metadata.filters) },
+    ],
+    headers: metadata.headers,
+    rows: normalized.map((row) => metadata.headers.map((header) => row[header] as string | number | boolean | null | undefined)),
+  });
+  const contentBytes = new TextEncoder().encode(content).byteLength;
+  const complete = normalized.length === rows.length && contentBytes <= 750_000;
+  return { content, rowCount: complete ? normalized.length : contentBytes > 750_000 ? 0 : normalized.length, totalRows: rows.length, complete };
 }
 
 function exportMatchesFilters(row: Data, filters: Data): boolean {
@@ -4439,38 +4459,200 @@ function exportMatchesFilters(row: Data, filters: Data): boolean {
 }
 
 async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data): Promise<Data[]> {
-  if (["members", "leads", "payments"].includes(kind)) {
-    const entityType = kind === "members" ? "member" : kind === "leads" ? "lead" : "payment";
-    return (await recordsOf(ctx, actor, entityType)).map((record) => exportRecordRow(entityType, record.publicId, data(record.data))).filter((row) => exportMatchesFilters(row, filters));
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const currency = actor.organization.currency || JOD;
+  const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  const branchPublicIdsByInternalId = new Map(branches.map((branch) => [String(branch._id), publicBranchId(branch)]));
+
+  if (kind === "members") {
+    const memberValues = (await memberRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const summaries = await toMemberSummaries(ctx, actor, memberValues);
+    const rawById = new Map(memberValues.map((row) => [stringValue(row.id), row]));
+    return summaries.map((summary) => {
+      const raw: Data = rawById.get(stringValue(summary.id)) ?? {};
+      const preference = data(raw.marketingPreference);
+      const marketingStatus = optionalString(preference.status) ?? (raw.marketingOptIn === false ? "explicit_opt_out" : "unknown");
+      return {
+        "Member number": summary.memberNumber,
+        "Full name": summary.fullName,
+        "Arabic name": summary.fullNameAr,
+        "Phone": summary.phone,
+        "Email": summary.email,
+        "Gender": exportStatusLabel(optionalString(raw.gender)),
+        "Member status": exportStatusLabel(optionalString(summary.status)),
+        "Membership status": exportStatusLabel(optionalString(summary.membershipStatus)),
+        "Current plan": summary.currentPlanName,
+        "Membership ends": summary.membershipEndDate,
+        "Outstanding amount": formatMinorUnits(amountOf(summary.outstanding), currency),
+        "Currency": currency,
+        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? "Unknown branch",
+        "Last check-in": formatExportDateTime(optionalString(summary.lastCheckInAt), timezone),
+        "Preferred language": exportStatusLabel(optionalString(raw.preferredLanguage)),
+        "Marketing consent": exportStatusLabel(marketingStatus),
+        "Tags": exportList(summary.tags),
+        "Notes": optionalString(raw.notes),
+        "Created": formatExportDateTime(optionalString(summary.createdAt), timezone),
+        "RIVET member ID": summary.id,
+      };
+    });
+  }
+  if (kind === "leads") {
+    const leadValues = (await recordsOf(ctx, actor, "lead")).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const summaries = await toLeadSummaries(ctx, actor, leadValues);
+    return summaries.map((lead) => {
+      const expected = data(lead.expectedValue);
+      const expectedCurrency = currencyOf(expected, currency);
+      return {
+        "Full name": lead.fullName,
+        "Phone": lead.phone,
+        "Email": lead.email,
+        "Branch": lead.branchName,
+        "Stage": exportStatusLabel(optionalString(lead.stage)),
+        "Source": exportStatusLabel(optionalString(lead.source)),
+        "Owner": lead.ownerName ?? "Unassigned",
+        "Expected value": lead.expectedValue ? formatMinorUnits(amountOf(expected), expectedCurrency) : "",
+        "Currency": lead.expectedValue ? expectedCurrency : "",
+        "Next follow-up": formatExportDateTime(optionalString(lead.nextFollowUpAt), timezone),
+        "Last contacted": formatExportDateTime(optionalString(lead.lastContactAt), timezone),
+        "Last contact outcome": exportStatusLabel(optionalString(lead.lastContactOutcome)),
+        "Overdue": booleanValue(lead.overdue),
+        "Lost reason": optionalString(lead.lostReason),
+        "Created": formatExportDateTime(optionalString(lead.createdAt), timezone),
+        "Updated": formatExportDateTime(optionalString(lead.updatedAt), timezone),
+        "RIVET lead ID": lead.id,
+      };
+    });
+  }
+  if (kind === "payments") {
+    const values = (await paymentRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const transactions = await toTransactionSummaries(ctx, actor, values);
+    return transactions.map((payment) => {
+      const paymentCurrency = currencyOf(payment.amount, currency);
+      return {
+        "When": formatExportDateTime(optionalString(payment.occurredAt), timezone),
+        "Member": payment.memberName,
+        "Member number": payment.memberNumber,
+        "Branch": payment.branchName,
+        "Receipt number": payment.receiptNumber,
+        "Transaction type": exportStatusLabel(optionalString(payment.type)),
+        "Payment method": exportStatusLabel(optionalString(payment.method)),
+        "Amount": formatMinorUnits(amountOf(payment.amount), paymentCurrency),
+        "Currency": paymentCurrency,
+        "Status": exportStatusLabel(optionalString(payment.status)),
+        "Refunded amount": payment.refundedAmount ? formatMinorUnits(amountOf(payment.refundedAmount), paymentCurrency) : "",
+        "Recorded by": payment.collectedByName,
+        "External reference": payment.externalReference,
+        "Refund reason": payment.refundReason,
+        "Void reason": payment.voidReason,
+        "RIVET transaction ID": payment.id,
+      };
+    });
   }
   if (kind === "membership_liabilities") {
-    return (await recordsOf(ctx, actor, "charge")).map((record) => exportRecordRow("membership_liability", record.publicId, data(record.data))).filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters(row, filters));
+    const members = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
+    return (await chargeRecords(ctx, actor)).map((record): Data => ({ id: record.publicId, ...chargeProjection(data(record.data), todayIn(timezone)) }))
+      .filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters({ ...row, homeBranchId: members.get(stringValue(row.memberId))?.homeBranchId }, filters))
+      .map((charge) => {
+        const member = members.get(stringValue(charge.memberId));
+        const chargeCurrency = currencyOf(charge.total, currency);
+        return {
+          "Member": member ? member.fullName : "Unknown member",
+          "Member number": member ? member.memberNumber : "",
+          "Description": charge.description,
+          "Issued": charge.issueDate,
+          "Due": charge.dueDate,
+          "Total": formatMinorUnits(amountOf(charge.total), chargeCurrency),
+          "Paid": formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
+          "Outstanding": formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
+          "Currency": chargeCurrency,
+          "Status": exportStatusLabel(optionalString(charge.status)),
+          "Collectible now": booleanValue(charge.collectible),
+          "Created": formatExportDateTime(optionalString(charge.createdAt), timezone),
+          "RIVET charge ID": charge.id,
+        };
+      });
   }
   if (kind === "audit") {
     let events = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
     if (actor.branchScope === "selected") events = events.filter((event) => !event.branchId || actor.branchIds.includes(event.branchId));
-    return events.map((event) => exportRecordRow("audit_event", event.publicId, { actorId: event.actorPublicId, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, correlationId: event.correlationId, occurredAt: utcIso(event.occurredAt) })).filter((row) => exportMatchesFilters(row, filters));
+    return events.map((event) => ({ id: event.publicId, branchId: event.branchId ? branchPublicIdsByInternalId.get(String(event.branchId)) : undefined, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, occurredAt: utcIso(event.occurredAt) }))
+      .filter((row) => exportMatchesFilters(row, filters))
+      .map((event) => ({
+        "When": formatExportDateTime(event.occurredAt, timezone),
+        "Branch": event.branchId ? branchNames.get(event.branchId) ?? "Unknown branch" : "Organization-wide",
+        "Recorded by": event.actorName,
+        "Role": exportStatusLabel(event.actorRole),
+        "Category": exportStatusLabel(event.category),
+        "Action": event.action.replaceAll("_", " "),
+        "Record type": exportStatusLabel(event.entityType),
+        "Record": event.entityLabel,
+        "Summary": event.summary,
+        "Reason": event.reason,
+        "Approval status": exportStatusLabel(event.approvalStatus),
+        "RIVET audit ID": event.id,
+      }));
   }
   if (kind === "personal_training") {
     const orders = await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
-    const visibleMemberIds = new Set((await memberRecords(ctx, actor)).map((record) => record.publicId));
-    return orders.filter((order) => visibleMemberIds.has(order.memberPublicId)).map((order) => exportRecordRow("pt_package_order", order.publicId, { memberId: order.memberPublicId, membershipId: order.membershipPublicId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters));
+    const visibleMembers = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
+    return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters)).map((order) => {
+      const member = visibleMembers.get(order.memberId);
+      return {
+        "Member": member?.fullName ?? "Unknown member",
+        "Member number": member?.memberNumber,
+        "Package": order.packageName,
+        "Sessions purchased": order.sessions,
+        "Total price": formatMinorUnits(order.totalPriceMinor, order.currency),
+        "Currency": order.currency,
+        "Status": exportStatusLabel(order.status),
+        "Paid": formatExportDateTime(order.paidAt, timezone),
+        "Refunded sessions": order.refundedSessions,
+        "Refunded amount": formatMinorUnits(order.refundedMinor, order.currency),
+        "Created": formatExportDateTime(order.createdAt, timezone),
+        "Updated": formatExportDateTime(order.updatedAt, timezone),
+        "RIVET PT order ID": order.id,
+      };
+    });
   }
-  const [products, suppliers, balances, movements, branches] = await Promise.all([
+  const [products, suppliers, balances, movements, operationBranches] = await Promise.all([
     ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("suppliers").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("inventoryBalances").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
   ]);
-  const branchPublicIds = new Map(branches.map((branch) => [branch._id, publicBranchId(branch)]));
+  const branchPublicIds = new Map(operationBranches.map((branch) => [branch._id, publicBranchId(branch)]));
   const scoped = <T extends { branchId?: Id<"branches"> }>(rows: T[]) => actor.branchScope === "all" ? rows : rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
-  return [
-    ...products.map((row) => exportRecordRow("product", row.publicId, { sku: row.sku, name: row.name, unit: row.unit, reorderPoint: row.reorderPoint, status: row.status, retailPriceMinor: row.retailPriceMinor, retailPriceCurrency: row.retailPriceCurrency })),
-    ...suppliers.map((row) => exportRecordRow("supplier", row.publicId, { name: row.name, contactName: row.contactName, email: row.email, phone: row.phone, status: row.status })),
-    ...scoped(balances).map((row) => exportRecordRow("inventory_balance", row.publicId, { branchId: branchPublicIds.get(row.branchId), productId: String(row.productId), quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, totalCostMinor: row.totalCostMinor, totalCostCurrency: row.totalCostCurrency })),
-    ...scoped(movements).map((row) => exportRecordRow("stock_movement", row.publicId, { branchId: branchPublicIds.get(row.branchId), productSku: row.productSku, productName: row.productName, type: row.type, quantityDelta: row.quantityDelta, totalCostMinor: row.totalCostMinor, totalCostCurrency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, referenceId: row.referenceId, occurredAt: utcIso(row.occurredAt) })),
-  ].filter((row) => exportMatchesFilters(row, filters));
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+  const operationRows: Data[] = [
+    ...products.map((row) => ({ recordType: "Product", id: row.publicId, sku: row.sku, itemName: row.name, unit: row.unit, reorderPoint: row.reorderPoint, status: row.status, amountMinor: row.retailPriceMinor, currency: row.retailPriceCurrency })),
+    ...suppliers.map((row) => ({ recordType: "Supplier", id: row.publicId, itemName: row.name, contactName: row.contactName, email: row.email, phone: row.phone, status: row.status })),
+    ...scoped(balances).map((row) => ({ recordType: "Inventory balance", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: productById.get(String(row.productId))?.sku, itemName: productById.get(String(row.productId))?.name, quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency })),
+    ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
+  ];
+  return operationRows.filter((row) => exportMatchesFilters(row, filters)).map((row) => ({
+    "Record type": row.recordType,
+    "Branch": row.branchId ? branchNames.get(row.branchId) ?? "Unknown branch" : "Organization-wide",
+    "SKU": row.sku,
+    "Product or supplier": row.itemName,
+    "Unit": row.unit ? exportStatusLabel(row.unit) : "",
+    "Status": exportStatusLabel(row.status),
+    "Reorder point": row.reorderPoint,
+    "Quantity on hand": row.quantityOnHand,
+    "Committed quantity": row.committedQuantity,
+    "Movement type": exportStatusLabel(row.movementType),
+    "Quantity change": row.quantityChange,
+    "Amount": row.amountMinor === undefined ? "" : formatMinorUnits(row.amountMinor, row.currency),
+    "Currency": row.currency,
+    "Contact name": row.contactName,
+    "Phone": row.phone,
+    "Email": row.email,
+    "Reason": row.reason,
+    "Reference type": exportStatusLabel(row.referenceType),
+    "When": formatExportDateTime(row.occurredAt, timezone),
+    "RIVET record ID": row.id,
+  }));
 }
 
 function exportJobView(value: Data): Data {
@@ -4482,24 +4664,183 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   const idempotencyKey = stringValue(input.idempotencyKey).trim();
   if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
   const userId = publicUserId(user);
-  const profile = await customerProfileForUser(ctx, userId);
-  const memberships = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
-  const rows: Data[] = [{ record_type: "profile", record_id: optionalString(profile?.id) ?? userId, data: profile ?? { userId } }];
-  const organizations = new Map<string, Organization>();
-  for (const membership of memberships) {
-    rows.push({ record_type: "membership", record_id: membership.publicId, data: data(membership.data) });
-    const organization = await ctx.db.get(membership.organizationId);
-    if (organization) organizations.set(String(organization._id), organization);
-    for (const entityType of ["payment", "charge", "checkin", "timeline"]) {
-      const records = await recordsOfMember(ctx, membership.organizationId, membership.memberPublicId ?? stringValue(data(membership.data).memberId), entityType);
-      rows.push(...records.map((record) => ({ record_type: entityType, record_id: record.publicId, data: data(record.data) })));
-    }
+  const [experience, contexts, preferenceEvents] = await Promise.all([
+    customerExperience(ctx),
+    customerFinanceContexts(ctx),
+    ctx.db.query("customerMarketingPreferenceEvents").withIndex("by_user_id", (q) => q.eq("userId", userId)).collect(),
+  ]);
+  const profile = data(experience.customer);
+  const memberships = arrayValue(experience.memberships).map(data);
+  const trialBookings = arrayValue(experience.bookings).map(data);
+  const marketplaceGyms = await marketplaceRows(ctx);
+  const marketplaceNames = new Map(marketplaceGyms.map((gym) => [gym.publicId, stringValue(data(gym.data).name, gym.publicId)]));
+  const marketplaceBranchNames = new Map(marketplaceGyms.flatMap((gym) => arrayValue(data(gym.data).branches).map(data).map((branch) => [`${gym.publicId}:${stringValue(branch.id)}`, stringValue(branch.name, stringValue(branch.id))] as const)));
+  const organizations = new Map(contexts.map((context) => [String(context.organization._id), context.organization]));
+  const organizationsByPublicId = new Map(contexts.map((context) => [publicOrganizationId(context.organization), context.organization]));
+  const personalTimezone = contexts[0]?.organization.timezone || TZ_FALLBACK;
+  const transactions = await customerFinancialTransactions(ctx, contexts);
+  const charges: Data[] = [];
+  const visits: Data[] = [];
+  const timeline: Data[] = [];
+  const classBookings: Data[] = [];
+  for (const context of contexts) {
+    const timezone = context.organization.timezone || TZ_FALLBACK;
+    const currency = context.organization.currency || JOD;
+    const [chargeRecordsForMember, checkInRecords, timelineRecords, bookings, branches] = await Promise.all([
+      recordsOfMember(ctx, context.organization._id, context.memberId, "charge"),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "checkIn"),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "timeline"),
+      ctx.db.query("classBookings").withIndex("by_member_start", (q) => q.eq("organizationId", context.organization._id).eq("memberPublicId", context.memberId)).collect(),
+      ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+    ]);
+    const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+    const branchNamesByInternalId = new Map(branches.map((branch) => [String(branch._id), branch.name]));
+    charges.push(...chargeRecordsForMember.map((record) => {
+      const charge = chargeProjection(data(record.data), todayIn(timezone));
+      const chargeCurrency = currencyOf(charge.total, currency);
+      return {
+        gym: context.organization.name,
+        description: charge.description,
+        issueDate: charge.issueDate,
+        dueDate: charge.dueDate,
+        total: formatMinorUnits(amountOf(charge.total), chargeCurrency),
+        paid: formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
+        outstanding: formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
+        currency: chargeCurrency,
+        status: exportStatusLabel(optionalString(charge.status)),
+        id: record.publicId,
+      };
+    }));
+    visits.push(...checkInRecords.map((record) => {
+      const checkIn = data(record.data);
+      return {
+        gym: context.organization.name,
+        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? "Gym branch",
+        occurredAt: formatExportDateTime(optionalString(checkIn.occurredAt), timezone),
+        result: exportStatusLabel(optionalString(checkIn.decision)),
+        reason: exportList(checkIn.reasonCodes) || optionalString(checkIn.reason),
+        recordedBy: optionalString(checkIn.actorName),
+        id: record.publicId,
+      };
+    }));
+    timeline.push(...timelineRecords.map((record) => {
+      const event = data(record.data);
+      return {
+        gym: context.organization.name,
+        occurredAt: formatExportDateTime(optionalString(event.occurredAt), timezone),
+        type: exportStatusLabel(optionalString(event.type)),
+        title: optionalString(event.title),
+        detail: optionalString(event.body) ?? optionalString(event.detail),
+        recordedBy: optionalString(event.actorName),
+        id: record.publicId,
+      };
+    }));
+    const resolvedClassBookings = await Promise.all(bookings.map(async (booking): Promise<Data> => {
+      const occurrence = await ctx.db.get(booking.occurrenceId);
+      return {
+        gym: context.organization.name,
+        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? "Gym branch",
+        className: occurrence?.name ?? "Class",
+        startsAt: formatExportDateTime(booking.startsAt, timezone),
+        status: exportStatusLabel(booking.status),
+        bookedAt: formatExportDateTime(booking.bookedAt, timezone),
+        fromWaitlist: booking.fromWaitlist,
+        id: booking.publicId,
+      };
+    }));
+    classBookings.push(...resolvedClassBookings);
   }
   const now = isoNow();
-  const csv = csvFromRows(rows, { export_generated_at: now, export_timezone: "UTC", export_branch_scope: "authenticated member records", export_filters: "{}" });
-  if (!csv.complete) domainError("CONFLICT", `Your personal-data export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
+  const sectionedRows = [
+    memberships,
+    charges,
+    transactions,
+    visits,
+    timeline,
+    classBookings,
+    trialBookings,
+    preferenceEvents,
+  ];
+  const totalRows = 1 + sectionedRows.reduce((sum, rows) => sum + rows.length, 0);
+  const content = buildSectionedCsvDocument({
+    title: "My RIVET data",
+    metadata: [
+      { label: "Generated at", value: formatExportDateTime(now, personalTimezone) },
+      { label: "Account", value: stringValue(profile.email, user.email) },
+      { label: "Included gyms", value: [...organizations.values()].map((organization) => organization.name).join("; ") || "None" },
+    ],
+    sections: [
+      {
+        title: "Profile",
+        headers: ["Field", "Value"],
+        rows: [
+          ["Full name", stringValue(profile.name, user.fullName)],
+          ["Arabic name", optionalString(profile.nameAr)],
+          ["Email", stringValue(profile.email, user.email)],
+          ["Phone", optionalString(profile.phone)],
+          ["Date of birth", optionalString(profile.dateOfBirth)],
+          ["Gender", exportStatusLabel(optionalString(profile.gender))],
+          ["Preferred language", exportStatusLabel(optionalString(profile.preferredLanguage))],
+          ["Address", optionalString(profile.addressLine1)],
+          ["City", optionalString(profile.city)],
+          ["Emergency contact", optionalString(profile.emergencyContactName)],
+          ["Emergency relationship", optionalString(profile.emergencyContactRelationship)],
+          ["Emergency phone", optionalString(profile.emergencyContactPhone)],
+          ["RIVET profile ID", optionalString(profile.id) ?? userId],
+        ],
+      },
+      {
+        title: "Memberships",
+        headers: ["Gym", "Branch", "Member number", "Plan", "Status", "Starts", "Ends", "Balance", "Currency", "Last check-in", "RIVET membership ID"],
+        rows: memberships.map((membership) => {
+          const context = contexts.find((item) => item.membershipId === membership.membershipId || item.membershipId === membership.id);
+          const currency = context?.organization.currency ?? JOD;
+          return [membership.gymName, membership.branchName, membership.memberNumber, membership.planName, exportStatusLabel(optionalString(membership.status)), membership.startDate, membership.endDate, formatMinorUnits(numberValue(membership.balanceMinor), currency), currency, formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK), membership.id];
+        }),
+      },
+      {
+        title: "Charges and balances",
+        headers: ["Gym", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "RIVET charge ID"],
+        rows: charges.map((charge) => [charge.gym, charge.description, charge.issueDate, charge.dueDate, charge.total, charge.paid, charge.outstanding, charge.currency, charge.status, charge.id]),
+      },
+      {
+        title: "Payments and refunds",
+        headers: ["Gym", "Branch", "Receipt", "When", "Type", "Method", "Amount", "Currency", "Status", "Explanation", "RIVET transaction ID"],
+        rows: transactions.map((transaction) => [transaction.gymName, transaction.branchName, transaction.receiptNumber, formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK), exportStatusLabel(optionalString(transaction.type)), exportStatusLabel(optionalString(transaction.method)), formatMinorUnits(amountOf(transaction.amount), currencyOf(transaction.amount, JOD)), currencyOf(transaction.amount, JOD), exportStatusLabel(optionalString(transaction.status)), transaction.explanation, transaction.id]),
+      },
+      {
+        title: "Check-ins",
+        headers: ["Gym", "Branch", "When", "Result", "Reason", "Recorded by", "RIVET check-in ID"],
+        rows: visits.map((visit) => [visit.gym, visit.branch, visit.occurredAt, visit.result, visit.reason, visit.recordedBy, visit.id]),
+      },
+      {
+        title: "Activity timeline",
+        headers: ["Gym", "When", "Type", "Title", "Detail", "Recorded by", "RIVET event ID"],
+        rows: timeline.map((event) => [event.gym, event.occurredAt, event.type, event.title, event.detail, event.recordedBy, event.id]),
+      },
+      {
+        title: "Class bookings",
+        headers: ["Gym", "Branch", "Class", "Starts", "Status", "Booked at", "Promoted from waitlist", "RIVET booking ID"],
+        rows: classBookings.map((booking) => [booking.gym, booking.branch, booking.className, booking.startsAt, booking.status, booking.bookedAt, booking.fromWaitlist, booking.id]),
+      },
+      {
+        title: "Trial bookings",
+        headers: ["Gym", "Branch", "Preferred date", "Preferred time", "Goal", "Status", "Created", "RIVET trial ID"],
+        rows: trialBookings.map((booking) => {
+          const gymId = stringValue(booking.gymId);
+          return [marketplaceNames.get(gymId) ?? gymId, marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? booking.branchId, booking.preferredDate, booking.preferredTime, booking.goal, exportStatusLabel(optionalString(booking.status)), formatExportDateTime(optionalString(booking.createdAt), personalTimezone), booking.id];
+        }),
+      },
+      {
+        title: "Marketing preference history",
+        headers: ["Changed at", "Status", "Opted in", "Source", "Wording version"],
+        rows: [...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event) => [formatExportDateTime(event.changedAt, personalTimezone), exportStatusLabel(event.status), event.optedIn, exportStatusLabel(event.source), event.wordingVersion]),
+      },
+    ],
+  });
+  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
-  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
 function workspaceInternalHref(value: unknown, correlationId: string): string {
@@ -8581,7 +8922,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const generatedAt = isoNow();
       const branchScope = branchId ? `branch:${branchId}` : actor.branchScope === "all" ? "all accessible branches" : `${actor.branchIds.length} assigned branches`;
       const rows = await staffExportRows(ctx, actor, kind, filters);
-      const csv = csvFromRows(rows, { export_generated_at: generatedAt, export_timezone: actor.organization.timezone || TZ_FALLBACK, export_branch_scope: branchScope, export_filters: JSON.stringify(filters) });
+      const csv = csvFromRows(rows, {
+        title: STAFF_EXPORT_TITLES[kind],
+        headers: STAFF_EXPORT_HEADERS[kind],
+        generatedAt,
+        timezone: actor.organization.timezone || TZ_FALLBACK,
+        branchScope,
+        filters,
+      });
       const id = newPublicId();
       const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
       const status = csv.complete ? "completed" : "failed";

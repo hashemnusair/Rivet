@@ -16,9 +16,18 @@ async function seed(t: TestConvex<typeof schema>) {
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "branch-export", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "owner-export", authSubject: "clerk-owner-export", email: "owner@example.com", fullName: "Owner Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const auditor = await ctx.db.insert("users", { publicId: "auditor-export", authSubject: "clerk-auditor-export", email: "auditor@example.com", fullName: "Auditor Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("users", { publicId: "customer-export", authSubject: "clerk-customer-export", email: "customer@example.com", fullName: "Customer Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: auditor, role: "auditor", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-export", branchId: branch, memberPublicId: "member-export", createdAt: now, updatedAt: now, data: { id: "member-export", fullName: "Doe, \"Jane\"", memberNumber: "M-100", phone: "+962790000000", email: "=2+2", homeBranchId: "branch-export", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("customerProfiles", { publicId: "profile-export", userId: "customer-export", name: "جنى حداد", nameAr: "جنى حداد", email: "customer@example.com", phone: "+962790000010", gender: "female", preferredLanguage: "ar", initials: "جح", context: "RIVET member", createdAt: now, updatedAt: now });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "member-customer-export", fullName: "جنى حداد", memberNumber: "M-200", phone: "+962790000010", email: "customer@example.com", homeBranchId: "branch-export", customerProfileId: "profile-export", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "membership-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "membership-customer-export", memberId: "member-customer-export", planId: "plan-export", homeBranchId: "branch-export", startDate: "2026-08-01", endDate: "2026-12-31", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "customerMembership", publicId: "portal-membership-export", branchId: branch, memberPublicId: "member-customer-export", customerUserPublicId: "customer-export", customerProfilePublicId: "profile-export", createdAt: now, updatedAt: now, data: { id: "portal-membership-export", customerUserId: "customer-export", customerId: "profile-export", memberId: "member-customer-export", membershipId: "membership-customer-export", gymId: "org-export", branchId: "branch-export", branchName: "Main", memberNumber: "M-200", planName: "All access", status: "active", startDate: "2026-08-01", endDate: "2026-12-31", balanceMinor: 15_000 } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "charge", publicId: "charge-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "charge-customer-export", memberId: "member-customer-export", description: "Membership balance", total: { amount: 15_000, currency: "JOD" }, paidAmount: { amount: 0, currency: "JOD" }, outstandingAmount: { amount: 15_000, currency: "JOD" }, status: "unpaid", issueDate: "2026-08-01", dueDate: "2026-08-31", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "payment", publicId: "payment-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "payment-customer-export", memberId: "member-customer-export", membershipId: "membership-customer-export", branchId: "branch-export", receiptId: "receipt-customer-export", receiptNumber: "R-200", type: "payment", status: "completed", amount: { amount: 40_000, currency: "JOD" }, method: "cash", occurredAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "checkIn", publicId: "checkin-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "checkin-customer-export", memberId: "member-customer-export", branchId: "branch-export", branchName: "Main", decision: "allowed", occurredAt: new Date(now).toISOString(), actorName: "Reception" } });
+    await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "timeline", publicId: "timeline-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "timeline-customer-export", memberId: "member-customer-export", type: "membership_sale", title: "Membership sold", body: "All access", occurredAt: new Date(now).toISOString(), actorName: "Owner Export" } });
     await ctx.db.insert("domainRecords", { organizationId: foreignOrganization, entityType: "member", publicId: "foreign-member", createdAt: now, updatedAt: now, data: { id: "foreign-member", fullName: "Must Not Leak", memberNumber: "F-1" } });
   });
 }
@@ -31,17 +40,40 @@ describe("tenant data exports", () => {
     const input = { kind: "members", filters: { branchId: "branch-export" }, idempotencyKey: "export-members-001" };
     const first = await owner.mutation(api.domain.mutate, operation("exports.request", input)) as { id: string; rowCount: number; content: string; timezone: string; branchScope: string };
     const replay = await owner.mutation(api.domain.mutate, operation("exports.request", input)) as { id: string };
-    expect(first).toMatchObject({ rowCount: 1, timezone: "Asia/Amman", branchScope: "branch:branch-export" });
+    expect(first).toMatchObject({ rowCount: 2, timezone: "Asia/Amman", branchScope: "branch:branch-export" });
     expect(first.content).toContain('"Doe, ""Jane"""');
     expect(first.content).toContain("'=2+2");
     expect(first.content).not.toContain(",=2+2,");
-    expect(first.content).toContain("export_generated_at");
+    expect(first.content.startsWith("\uFEFFRIVET export,Member directory\r\n")).toBe(true);
+    expect(first.content).toContain("Generated at");
+    expect(first.content).toContain("Member number,Full name,Arabic name,Phone");
+    expect(first.content).not.toContain("data_json");
+    expect(first.content).not.toContain("{\"");
     expect(first.content).not.toContain("Must Not Leak");
     expect(replay.id).toBe(first.id);
     const history = await owner.query(api.domain.query, operation("exports.list")) as Array<{ id: string; content?: string }>;
     expect(history).toEqual([expect.objectContaining({ id: first.id, content: expect.any(String) })]);
     const audit = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).filter((event) => event.action === "data.export"));
-    expect(audit).toEqual([expect.objectContaining({ entityPublicId: first.id, after: expect.objectContaining({ rowCount: 1, timezone: "Asia/Amman" }) })]);
+    expect(audit).toEqual([expect.objectContaining({ entityPublicId: first.id, after: expect.objectContaining({ rowCount: 2, timezone: "Asia/Amman" }) })]);
+  });
+
+  it("creates a readable, sectioned personal archive instead of JSON-in-CSV", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const customer = t.withIdentity({ subject: "clerk-customer-export" });
+    const exported = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { idempotencyKey: "customer-export-readable-001" })) as { rowCount: number; content: string };
+
+    expect(exported.rowCount).toBeGreaterThan(5);
+    expect(exported.content.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
+    expect(exported.content).toContain("Profile\r\nField,Value\r\nFull name,جنى حداد");
+    expect(exported.content).toContain("Memberships\r\nGym,Branch,Member number,Plan");
+    expect(exported.content).toContain("Charges and balances");
+    expect(exported.content).toContain("Payments and refunds");
+    expect(exported.content).toContain("Check-ins");
+    expect(exported.content).toContain("Activity timeline");
+    expect(exported.content).toContain("40.000,JOD");
+    expect(exported.content).not.toContain("data_json");
+    expect(exported.content).not.toContain("{\"");
   });
 
   it("enforces dataset permissions and rejects idempotency-key reuse with different filters", async () => {
@@ -65,7 +97,7 @@ describe("tenant data exports", () => {
     });
 
     const result = await t.withIdentity({ subject: "clerk-owner-export" }).mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: {}, idempotencyKey: "export-members-oversized" })) as { status: string; rowCount: number; totalRows: number; content?: string; failureMessage?: string };
-    expect(result).toMatchObject({ status: "failed", rowCount: 0, totalRows: 1, failureMessage: expect.stringContaining("safe single-download limit") });
+    expect(result).toMatchObject({ status: "failed", rowCount: 0, totalRows: 2, failureMessage: expect.stringContaining("safe single-download limit") });
     expect(result.content).toBeUndefined();
   });
 

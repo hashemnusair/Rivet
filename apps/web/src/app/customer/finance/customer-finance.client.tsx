@@ -17,6 +17,7 @@ import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import type { CustomerTransactionQuery } from "@/lib/domain/qol";
+import { downloadTextFile } from "@/lib/exports/download";
 
 const TYPE_LABELS: Record<string, string> = { payment: "Payment", refund: "Refund", void: "Void", retail_sale: "Retail purchase" };
 
@@ -42,12 +43,7 @@ export function CustomerFinanceClient() {
     successMessage: "Your personal-data export is ready.",
     onSuccess: (job) => {
       if (!job.content || !job.fileName) return;
-      const url = URL.createObjectURL(new Blob([job.content], { type: job.mimeType ?? "text/csv;charset=utf-8" }));
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = job.fileName;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      downloadTextFile({ content: job.content, fileName: job.fileName, mimeType: job.mimeType ?? "text/csv;charset=utf-8" });
     },
   });
 

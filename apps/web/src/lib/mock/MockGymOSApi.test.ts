@@ -36,6 +36,30 @@ async function freshMemberForSale(): Promise<MemberSummary> {
   return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en", gender: "male" })).member;
 }
 
+describe("readable exports", () => {
+  it("keeps every staff dataset flat, labelled, and spreadsheet-safe", async () => {
+    for (const kind of ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const) {
+      const exported = await api.requestExport({ kind, filters: {}, idempotencyKey: `mock-export-${kind}` });
+      expect(exported.status).toBe("completed");
+      expect(exported.content?.startsWith("\uFEFFRIVET export,")).toBe(true);
+      expect(exported.content).toContain("Generated at");
+      expect(exported.content).not.toContain("data_json");
+      expect(exported.content).not.toContain("[object Object]");
+      expect(exported.content).not.toContain("{\"");
+    }
+  });
+
+  it("separates the member's profile, memberships, money, visits, and history", async () => {
+    const exported = await api.requestMemberPersonalDataExport("mock-personal-export-readable");
+    expect(exported.content).toContain("Profile\r\nField,Value");
+    expect(exported.content).toContain("Memberships\r\nGym,Branch,Member number,Plan");
+    expect(exported.content).toContain("Payments and refunds");
+    expect(exported.content).toContain("Check-ins");
+    expect(exported.content).not.toContain("data_json");
+    expect(exported.content).not.toContain("{\"");
+  });
+});
+
 describe("session and role switching", () => {
   it("returns a session with the organization, branches and permissions", async () => {
     const session = await api.getSession();
