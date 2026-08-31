@@ -56,6 +56,15 @@ values, applicant details, and provider credentials out of this file.
 - [x] Pass the final clean-server browser gate: 47 credential-free Playwright
   journeys passed, 14 isolated-staging journeys were explicitly skipped, and
   zero failed.
+- [x] Push application tip `fdd6dac`, pass all three jobs in GitHub Actions run
+  `33349634901`, complete exact-SHA Vercel deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19`, and deploy the additive backend to exact
+  Convex Production `descriptive-meerkat-589`. Schema validation and health
+  passed; 21 indexes were added and none deleted.
+- [ ] Run signed-in owner, reception, and member acceptance for Classes,
+  At-risk, Reports, and Daily checklists on the deployed application. Use the
+  intended Elias Test tenant and avoid disposable Production writes unless
+  explicitly approved.
 
 ### Referral polish, operational analytics, and daily checklists — 31 August 2026 (integrated)
 
@@ -75,8 +84,7 @@ values, applicant details, and provider credentials out of this file.
   escalation, and role-safe Today-queue entries in an isolated commit.
 - [x] Merge the parallel dated-class/At-risk branch, preserve the Today wiring,
   and add Class utilization plus the existing read-only coach payout report.
-  Exact-target Convex release of the combined schema remains an operator step
-  after the final repository tip is pushed.
+  The exact-target Convex release of the combined schema is complete.
 
 
 ### Credentialed release verification — 31 August 2026

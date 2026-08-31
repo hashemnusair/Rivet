@@ -1,11 +1,9 @@
 # RIVET engineering handoff plan
 
 Last updated: 31 August 2026
-Current code tip before this documentation reconciliation: `6cc54a6`. Convex
-Production `descriptive-meerkat-589` was last fully verified at the earlier
-release `b1da867`; the combined classes/coaches/retention, referral analytics,
-and daily-checklist schema/functions need the normal exact-target backend and
-hosted release procedure after the final repository tip is pushed.
+Application tip before this release-record update: `fdd6dac`. Convex Production
+`descriptive-meerkat-589`, Vercel, and GitHub CI contain the matching combined
+classes/coaches/retention, referral analytics, and daily-checklist release.
 
 ## Purpose
 
@@ -40,15 +38,19 @@ and the complete chronological implementation record is
 - New profiles/imports require `male` or `female`. This implements the product
   owner's Jordan policy; legacy missing values are corrected explicitly and
   never guessed during audience-restricted booking.
-- This application batch has not yet been deployed to Convex Production. The
-  frontend must not be treated as backend-compatible until the exact combined
-  schema/functions pass the guarded Production dry run/deploy and signed-in
-  acceptance.
+- The exact combined schema/functions passed the guarded dry run and deployed
+  to Convex Production `descriptive-meerkat-589`: schema validation completed,
+  21 additive indexes were installed, and no index was deleted. The read-only
+  health operation returned `status: ok`.
 - The combined static gate passed both TypeScript checks, lint/secret audit,
   176 Vitest files / 1,054 tests plus 14 repository-safety tests, the 59-route
   Production build, dependency audit, and diff check.
 - The final credential-free Playwright run passed 47 journeys, skipped the 14
   explicitly isolated-staging journeys, and failed none.
+- Application tip `fdd6dac` is on matching local/GitHub `main`; GitHub Actions
+  run `33349634901` passed all three jobs and Vercel deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19` completed. No provider or Production tenant
+  data was enabled, seeded, imported, restored, or mutated by this release.
 - The current local application adds complete-or-fail export cleanup, bounded
   customer/duplicate reads, safe push-subscription revocation, a CSV/XLSX
   member and membership-state migration mapper with batch

@@ -1,9 +1,7 @@
 # 12 — System Maps and Release Runbook
 
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
-daily-checklist implementation. The last fully recorded Production closure is
-the earlier `b1da867` release; code through `6cc54a6` still needs the guarded
-exact-target release procedure after final Git integration.
+daily-checklist Production release at application tip `fdd6dac`.
 
 ## Purpose
 
@@ -45,6 +43,14 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 - The final clean-server Playwright run passed all 47 credential-free journeys;
   the 14 isolated-staging journeys were explicitly skipped and no journey
   failed.
+- Application tip `fdd6dac` is pushed on matching local/GitHub `main`.
+  GitHub Actions run `33349634901` passed all three jobs, and Vercel deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19` completed for that exact SHA.
+- The guarded names-only check and dry run selected Production
+  `descriptive-meerkat-589`. The matching deploy completed schema validation,
+  added 21 class/checklist/reporting indexes, deleted none, and returned
+  `status: ok` from the read-only health operation. No provider activation,
+  seed, import, restore, or Production tenant-data write occurred.
 
 ### Credentialed Development release pass — 31 August 2026
 

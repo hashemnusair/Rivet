@@ -45,15 +45,25 @@
   roster facts. Cancelled classes are shown but excluded from fill capacity.
 - The merged code keeps Convex and mock contracts aligned, enforces reporting
   and branch permissions server-side, and preserves `FRONTEND_HANDOFF.md` as
-  the frozen historical artifact. This batch has not deployed Convex, enabled
-  a provider, or mutated Production tenant data; exact-target deployment and
-  signed-in acceptance belong to the release step after the repository push.
+  the frozen historical artifact.
 - The final combined static gate passed both TypeScript checks, zero-warning
   lint and secret-output audit, 176 Vitest files / 1,054 tests plus 14
   repository-safety tests, the 59-route Production build, the Production
   dependency audit, and `git diff --check`.
 - The final clean-server credential-free Playwright gate passed 47 journeys,
   skipped the 14 explicitly isolated-staging journeys, and failed none.
+- Application-bearing tip `fdd6dac` is pushed on matching `main` and
+  `origin/main`. GitHub Actions run `33349634901` passed all three jobs,
+  including generated-code consistency, the complete static/build gate, and
+  credential-free Playwright. Vercel's exact-SHA deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19` completed successfully.
+- The guarded Convex dry run and deploy explicitly targeted Production
+  `descriptive-meerkat-589`, completed schema validation, installed 21
+  additive class/checklist/reporting indexes, and deleted none. The read-only
+  `health:check` returned `status: ok`. No provider was enabled and no
+  Production tenant record, money record, import, seed, or restore was run.
+  Signed-in role acceptance of the new surfaces remains a release-verification
+  task, not unfinished implementation.
 
 ## Referral polish, operational analytics, and daily branch checklists — 31 August 2026
 

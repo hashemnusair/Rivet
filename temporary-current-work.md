@@ -129,8 +129,10 @@ record only.
   daily branch opening/closing checklists integrated without squashing history.
 - [x] Class utilization completed after integration, including zero-booking
   offered capacity and saved roster outcomes.
-- [ ] Guarded exact-target Convex/Vercel release and signed-in acceptance for
-  the final pushed tip. This is release work, not unfinished feature code.
+- [x] Guarded exact-target Convex and Vercel release for application tip
+  `fdd6dac`, with all GitHub jobs green and Production health `ok`.
+- [ ] Signed-in owner/reception/member acceptance of the new surfaces. This is
+  release verification, not unfinished feature code.
 
 The implementation commits are `e8c96d7`, merge `6a970cd`, and `6cc54a6`.
 `FRONTEND_HANDOFF.md` remains unchanged. Arabic, legal document collection,
@@ -141,6 +143,10 @@ repository-safety tests, both TypeScript checks, zero-warning lint/secret
 audit, the 59-route Production build, dependency audit, and diff check.
 The final clean-server Playwright gate passed 47 credential-free journeys,
 skipped the 14 explicitly isolated-staging journeys, and failed none.
+GitHub Actions run `33349634901` passed all three jobs. Vercel deployment
+`A9RNZUP3tK2taFs2vU7VVD9Mho19` completed for `fdd6dac`; the guarded Convex
+Production deploy targeted `descriptive-meerkat-589`, added 21 indexes, deleted
+none, and returned `status: ok` from the read-only health check.
 
 ## Creative low-friction ideas to evaluate
 
