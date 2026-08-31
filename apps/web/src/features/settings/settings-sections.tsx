@@ -1,13 +1,13 @@
 "use client";
 
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PERMISSIONS, ROLE_LABELS } from "@/lib/domain/permissions";
-import type { Branch, NotificationSettings, OperationalPolicies, PaymentMethod, RoleKey, StaffUser, WeekdayKey, Zone, ZoneKind } from "@/lib/domain/types";
+import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
@@ -15,13 +15,14 @@ import { RelativeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldGrid } from "@/components/ui/field";
+import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Checkbox, Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SettingsSaveBar } from "@/features/settings/settings-layout";
 
 // ---------------------------------------------------------------------------
 // Organization
@@ -31,9 +32,16 @@ export function OrganizationSection() {
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
   const [form, setForm] = useState({ name: "", timezone: "", locale: "", phoneCountryCallingCode: "962", defaultLanguage: "en" as "en" | "ar" });
+  const [baseline, setBaseline] = useState<typeof form | null>(null);
+  const dirty = Boolean(baseline && JSON.stringify(form) !== JSON.stringify(baseline));
+  const dirtyRef = useRef(dirty);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
 
   useEffect(() => {
-    if (org) setForm({ name: org.name, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, defaultLanguage: org.defaultLanguage });
+    if (!org || dirtyRef.current) return;
+    const next = { name: org.name, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, defaultLanguage: org.defaultLanguage };
+    setForm(next);
+    setBaseline(next);
   }, [org]);
 
   const save = useApiMutation((api) => api.updateOrganizationSettings(form), {
@@ -46,65 +54,26 @@ export function OrganizationSection() {
   if (settingsQuery.isLoading) return <Skeleton className="h-64 w-full" />;
   if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
 
+  const commit = async () => {
+    await save.mutateAsync();
+    setBaseline(form);
+  };
+
   return (
-    <section className="panel max-w-2xl p-5">
-      <h2 className="mb-1 font-display text-[15px] font-semibold">Organization</h2>
-      <p className="mb-4 text-[12.5px] text-ink-3">Identity and locale for the whole tenant. Currency is fixed to JOD for this deployment.</p>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Organization name">
-          <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-        </Field>
-        <Field label="Timezone">
-          <Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}>
-            <SelectTrigger aria-label="Timezone">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Asia/Amman">Asia/Amman (UTC+3)</SelectItem>
-              <SelectItem value="Asia/Riyadh">Asia/Riyadh (UTC+3)</SelectItem>
-              <SelectItem value="Asia/Dubai">Asia/Dubai (UTC+4)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Locale">
-          <Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}>
-            <SelectTrigger aria-label="Locale">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en-JO">English (Jordan)</SelectItem>
-              <SelectItem value="ar-JO">العربية (الأردن)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Default phone country" hint="Used only for local numbers. Numbers beginning with + or 00 keep their own country code.">
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3">+</span>
-            <Input
-              className="ps-7 font-mono"
-              inputMode="numeric"
-              aria-label="Default phone country calling code"
-              value={form.phoneCountryCallingCode}
-              onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))}
-            />
-          </div>
-        </Field>
-        <Field label="Default staff language">
-          <Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}>
-            <SelectTrigger aria-label="Default language">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="ar">العربية</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <div className="mt-5 flex justify-end">
-        <Button onClick={() => save.mutate()} loading={save.isPending}>Save changes</Button>
-      </div>
-    </section>
+    <div className="max-w-2xl pb-4">
+      <section className="panel p-5">
+        <h2 className="mb-1 font-display text-[15px] font-semibold">Organization</h2>
+        <p className="mb-4 text-[12.5px] text-ink-3">Identity and locale for the whole tenant. Currency is fixed to JOD for this deployment.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Organization name"><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+          <Field label="Timezone"><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label="Timezone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">Asia/Amman (UTC+3)</SelectItem><SelectItem value="Asia/Riyadh">Asia/Riyadh (UTC+3)</SelectItem><SelectItem value="Asia/Dubai">Asia/Dubai (UTC+4)</SelectItem></SelectContent></Select></Field>
+          <Field label="Locale"><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label="Locale"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">English (Jordan)</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
+          <Field label="Default phone country" hint="Used only for local numbers. Numbers beginning with + or 00 keep their own country code."><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3">+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label="Default phone country calling code" value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
+          <Field label="Default staff language"><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent></Select></Field>
+        </div>
+      </section>
+      <SettingsSaveBar dirty={dirty} saving={save.isPending} onSave={commit} onDiscard={() => { if (baseline) setForm(baseline); }} saveLabel="Save organization" />
+    </div>
   );
 }
 
@@ -831,9 +800,16 @@ export function ReceiptsSection() {
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
   const [form, setForm] = useState({ receiptPrefix: "R-", receiptFooter: "", taxRatePercent: 0 });
+  const [baseline, setBaseline] = useState<typeof form | null>(null);
+  const dirty = Boolean(baseline && JSON.stringify(form) !== JSON.stringify(baseline));
+  const dirtyRef = useRef(dirty);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
 
   useEffect(() => {
-    if (org) setForm({ receiptPrefix: org.receiptPrefix, receiptFooter: org.receiptFooter, taxRatePercent: org.taxRatePercent });
+    if (!org || dirtyRef.current) return;
+    const next = { receiptPrefix: org.receiptPrefix, receiptFooter: org.receiptFooter, taxRatePercent: org.taxRatePercent };
+    setForm(next);
+    setBaseline(next);
   }, [org]);
 
   const save = useApiMutation(
@@ -847,28 +823,26 @@ export function ReceiptsSection() {
   );
 
   if (settingsQuery.isLoading) return <Skeleton className="h-64 w-full" />;
+  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
+
+  const commit = async () => {
+    await save.mutateAsync();
+    setBaseline(form);
+  };
 
   return (
-    <section className="panel max-w-2xl p-5">
-      <h2 className="mb-1 font-display text-[15px] font-semibold">Receipts & tax</h2>
-      <p className="mb-4 text-[12.5px] text-ink-3">
-        Numbering is sequential and collision-safe. Next receipt: <span className="font-mono">{org?.receiptPrefix}{org?.nextReceiptNumber}</span>
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Receipt prefix">
-          <Input value={form.receiptPrefix} onChange={(e) => setForm((f) => ({ ...f, receiptPrefix: e.target.value }))} className="font-mono w-28" maxLength={6} />
-        </Field>
-        <Field label="Sales tax (%)" hint="0 = tax not itemized on receipts.">
-          <Input type="number" min={0} max={30} step={0.5} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: Number(e.target.value) }))} className="font-mono w-28" />
-        </Field>
-      </div>
-      <Field label="Receipt footer" className="mt-4">
-        <Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} />
-      </Field>
-      <div className="mt-5 flex justify-end">
-        <Button onClick={() => save.mutate()} loading={save.isPending}>Save changes</Button>
-      </div>
-    </section>
+    <div className="max-w-2xl pb-4">
+      <section className="panel p-5">
+        <h2 className="mb-1 font-display text-[15px] font-semibold">Receipts & tax</h2>
+        <p className="mb-4 text-[12.5px] text-ink-3">Numbering is sequential and collision-safe. Next receipt: <span className="font-mono">{org?.receiptPrefix}{org?.nextReceiptNumber}</span></p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Receipt prefix"><Input value={form.receiptPrefix} onChange={(e) => setForm((f) => ({ ...f, receiptPrefix: e.target.value }))} className="w-28 font-mono" maxLength={6} /></Field>
+          <Field label="Sales tax (%)" hint="0 = tax not itemized on receipts."><Input type="number" min={0} max={30} step={0.5} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: Number(e.target.value) }))} className="w-28 font-mono" /></Field>
+        </div>
+        <Field label="Receipt footer" className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
+      </section>
+      <SettingsSaveBar dirty={dirty} saving={save.isPending} onSave={commit} onDiscard={() => { if (baseline) setForm(baseline); }} saveLabel="Save receipt settings" />
+    </div>
   );
 }
 
@@ -967,343 +941,6 @@ export function NotificationsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Operational rules & hours
+// Operational rules and hours
 // ---------------------------------------------------------------------------
-const WEEKDAY_ROWS: Array<{ key: WeekdayKey; label: string }> = [
-  { key: "sun", label: "Sunday" },
-  { key: "mon", label: "Monday" },
-  { key: "tue", label: "Tuesday" },
-  { key: "wed", label: "Wednesday" },
-  { key: "thu", label: "Thursday" },
-  { key: "fri", label: "Friday" },
-  { key: "sat", label: "Saturday" },
-];
-
-type OperatingDays = OperationalPolicies["operatingHours"][number]["days"];
-type TrialDays = OperationalPolicies["trialSchedules"][number]["days"];
-
-function defaultOperatingDays(): OperatingDays {
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, {
-    enabled: key !== "fri",
-    opensAt: key === "sat" ? "07:00" : "06:00",
-    closesAt: key === "sat" ? "22:00" : "23:00",
-  }])) as OperatingDays;
-}
-
-function defaultTrialDays(): TrialDays {
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { enabled: false, opensAt: "09:00", closesAt: "20:00" }])) as TrialDays;
-}
-
-function normalizedOperatingDays(days?: OperatingDays): OperatingDays {
-  const defaults = defaultOperatingDays();
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => [key, { ...defaults[key], ...(days?.[key] ?? {}) }])) as OperatingDays;
-}
-
-function normalizedTrialDays(days?: TrialDays): TrialDays {
-  const source: Partial<TrialDays> = days ?? {};
-  return Object.fromEntries(WEEKDAY_ROWS.map(({ key }) => {
-    const day = source[key] as TrialDays[WeekdayKey] & { slots?: string[] } | undefined;
-    if (typeof day?.enabled === "boolean") return [key, day];
-    const slots = [...(day?.slots ?? [])].sort();
-    const onlySlot = slots.length === 1 ? slots[0] : undefined;
-    const [onlyHour = 0, onlyMinute = 0] = onlySlot?.split(":").map(Number) ?? [];
-    const legacyClosingMinutes = Math.min(23 * 60 + 59, onlyHour * 60 + onlyMinute + 60);
-    return [key, {
-      enabled: slots.length > 0,
-      opensAt: slots[0] ?? "09:00",
-      closesAt: onlySlot ? `${String(Math.floor(legacyClosingMinutes / 60)).padStart(2, "0")}:${String(legacyClosingMinutes % 60).padStart(2, "0")}` : (slots.at(-1) ?? "20:00"),
-    }];
-  })) as TrialDays;
-}
-
-/**
- * New workspaces and older staging tenants may not have the nested policy
- * record yet. Keep the settings screen readable until the owner saves the
- * canonical shape, while preserving any schedules already present.
- */
-type OperationalPoliciesInput = {
-  entry?: Partial<OperationalPolicies["entry"]>;
-  membership?: Partial<OperationalPolicies["membership"]>;
-  personalTraining?: Partial<OperationalPolicies["personalTraining"]>;
-  referrals?: Partial<OperationalPolicies["referrals"]>;
-  memberFreezes?: Partial<OperationalPolicies["memberFreezes"]>;
-  classBooking?: Partial<OperationalPolicies["classBooking"]>;
-  retention?: Partial<OperationalPolicies["retention"]>;
-  operatingHours?: OperationalPolicies["operatingHours"];
-  trialSchedules?: OperationalPolicies["trialSchedules"];
-};
-
-export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): OperationalPolicies {
-  return {
-    entry: {
-      outstandingBalance: "warn",
-      expiryWarningDays: 7,
-      duplicateScanWindowMinutes: 2,
-      enforceOperatingHours: false,
-      ...value?.entry,
-    },
-    membership: {
-      allowOverlappingMemberships: false,
-      renewalWindowDays: 14,
-      minimumFreezeDays: 1,
-      maximumExtensionDays: 365,
-      ...value?.membership,
-    },
-    personalTraining: {
-      sessionDurationMinutes: 60,
-      bookingHorizonDays: 30,
-      cancellationCutoffHours: 12,
-      ...value?.personalTraining,
-    },
-    referrals: {
-      enabled: false,
-      rewardDays: 7,
-      maxRewardDaysPerWindow: 30,
-      windowDays: 90,
-      ...value?.referrals,
-    },
-    memberFreezes: {
-      requestsEnabled: false,
-      freeFreezesPerWindow: 1,
-      extraFreezeFeeMinor: 10_000,
-      maxDaysPerFreeze: 30,
-      windowDays: 365,
-      ...value?.memberFreezes,
-    },
-    classBooking: {
-      enabled: true,
-      eligibilityMode: "all_active_memberships",
-      eligiblePlanIds: [],
-      bookingHorizonDays: 30,
-      cancellationCutoffHours: 2,
-      maxActiveBookingsPerMember: 8,
-      waitlistEnabled: true,
-      waitlistSize: 12,
-      noShowTracking: true,
-      ...value?.classBooking,
-    },
-    retention: {
-      inactivityDays: 14,
-      expiredWinBackDays: 90,
-      defaultSnoozeDays: 7,
-      ...value?.retention,
-    },
-    operatingHours: Array.isArray(value?.operatingHours)
-      ? value.operatingHours.map((schedule) => ({ ...schedule, days: normalizedOperatingDays(schedule.days) }))
-      : [],
-    trialSchedules: Array.isArray(value?.trialSchedules)
-      ? value.trialSchedules.map((schedule) => ({ ...schedule, days: normalizedTrialDays(schedule.days) }))
-      : [],
-  };
-}
-
-export function OperationalRulesSection() {
-  const invalidate = useInvalidate();
-  const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
-  const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
-  const [policies, setPolicies] = useState<OperationalPolicies | null>(null);
-  const [selectedBranchId, setSelectedBranchId] = useState("");
-
-  useEffect(() => {
-    const settings = settingsQuery.data;
-    if (!settings) return;
-    const branches = settings.branches ?? [];
-    const operationalPolicies = normalizeOperationalPolicies(settings.operationalPolicies);
-    const branchIds = branches.filter((branch) => branch.status === "active").map((branch) => branch.id);
-    setPolicies({
-      ...operationalPolicies,
-      operatingHours: branchIds.map((branchId) => operationalPolicies.operatingHours.find((schedule) => schedule.branchId === branchId) ?? { branchId, days: defaultOperatingDays() }),
-      trialSchedules: branchIds.map((branchId) => {
-        const schedule = operationalPolicies.trialSchedules.find((candidate) => candidate.branchId === branchId);
-        return schedule ? { ...schedule, days: normalizedTrialDays(schedule.days) } : { branchId, days: defaultTrialDays() };
-      }),
-    });
-    // Branch schedules are edited one concrete branch at a time. Never pick
-    // the first branch implicitly after a stale selection or an all-branch
-    // scope is restored.
-    setSelectedBranchId((current) => branchIds.includes(current) ? current : "");
-  }, [settingsQuery.data]);
-
-  const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
-    onSuccess: async () => {
-      toast.success("Operational rules saved and audited.");
-      await invalidate([qk.settings, qk.renewalQueue({}), qk.checkIns({}), qk.customerClasses("all")]);
-    },
-    onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save operational rules."),
-  });
-
-  if (settingsQuery.isLoading || !policies) return <Skeleton className="h-96 w-full" />;
-  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
-  const selectedSchedule = policies.operatingHours.find((schedule) => schedule.branchId === selectedBranchId);
-  const selectedTrialSchedule = policies.trialSchedules.find((schedule) => schedule.branchId === selectedBranchId);
-  const branches = settingsQuery.data?.branches?.filter((branch) => branch.status === "active") ?? [];
-  const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
-    setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
-  const updateReferrals = <K extends keyof OperationalPolicies["referrals"]>(key: K, value: OperationalPolicies["referrals"][K]) =>
-    setPolicies((current) => current ? { ...current, referrals: { ...current.referrals, [key]: value } } : current);
-  const updateFreezes = <K extends keyof OperationalPolicies["memberFreezes"]>(key: K, value: OperationalPolicies["memberFreezes"][K]) =>
-    setPolicies((current) => current ? { ...current, memberFreezes: { ...current.memberFreezes, [key]: value } } : current);
-  const updateMembership = <K extends keyof OperationalPolicies["membership"]>(key: K, value: OperationalPolicies["membership"][K]) =>
-    setPolicies((current) => current ? { ...current, membership: { ...current.membership, [key]: value } } : current);
-  const updateClassBooking = <K extends keyof OperationalPolicies["classBooking"]>(key: K, value: OperationalPolicies["classBooking"][K]) =>
-    setPolicies((current) => current ? { ...current, classBooking: { ...current.classBooking, [key]: value } } : current);
-  const updateRetention = <K extends keyof OperationalPolicies["retention"]>(key: K, value: OperationalPolicies["retention"][K]) =>
-    setPolicies((current) => current ? { ...current, retention: { ...current.retention, [key]: value } } : current);
-  const updateHours = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["operatingHours"][number]["days"][WeekdayKey]>) =>
-    setPolicies((current) => current ? {
-      ...current,
-      operatingHours: current.operatingHours.map((schedule) => schedule.branchId === selectedBranchId ? {
-        ...schedule,
-        days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } },
-      } : schedule),
-    } : current);
-  const updateTrialWindow = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["trialSchedules"][number]["days"][WeekdayKey]>) =>
-    setPolicies((current) => current ? {
-      ...current,
-      trialSchedules: current.trialSchedules.map((schedule) => schedule.branchId === selectedBranchId ? {
-        ...schedule,
-        days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } },
-      } : schedule),
-    } : current);
-
-  return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(440px,1.1fr)]">
-      <div className="space-y-5">
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Entry rules</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">These rules are evaluated by Convex for every QR scan and manual check-in.</p>
-          <div className="space-y-4">
-            <Field label="Outstanding balance">
-              <Select value={policies.entry.outstandingBalance} onValueChange={(value) => updateEntry("outstandingBalance", value as OperationalPolicies["entry"]["outstandingBalance"])}>
-                <SelectTrigger aria-label="Outstanding balance policy"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="allow">Allow silently</SelectItem>
-                  <SelectItem value="warn">Allow with warning</SelectItem>
-                  <SelectItem value="block">Block entry</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <FieldGrid alignFrom="base" className="grid-cols-2">
-              <Field label="Expiry warning (days)"><Input type="number" min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} /></Field>
-              <Field label="Duplicate scan window"><Input type="number" min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} /></Field>
-            </FieldGrid>
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
-              <span><span className="block text-[13px] font-medium">Enforce operating hours</span><span className="block text-[11.5px] text-ink-3">Outside-hours entries require a manager override.</span></span>
-              <Switch checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} aria-label="Enforce operating hours" />
-            </label>
-          </div>
-        </section>
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Member class booking</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">Control who can self-book, how far ahead they can book, and what happens when a class fills.</p>
-          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
-            <span><span className="block text-[13px] font-medium">Member self-booking</span><span className="block text-[11.5px] text-ink-3">When off, reception still manages dated class rosters.</span></span>
-            <Switch checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} aria-label="Member class self-booking" />
-          </label>
-          <FieldGrid className="sm:grid-cols-2">
-            <Field label="Membership eligibility">
-              <Select value={policies.classBooking.eligibilityMode} onValueChange={(value) => updateClassBooking("eligibilityMode", value as OperationalPolicies["classBooking"]["eligibilityMode"])} disabled={!policies.classBooking.enabled}>
-                <SelectTrigger aria-label="Class membership eligibility"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="all_active_memberships">All active memberships</SelectItem><SelectItem value="selected_plans">Only selected plans</SelectItem></SelectContent>
-              </Select>
-            </Field>
-            <Field label="Booking horizon (days)"><Input type="number" min={1} max={120} value={policies.classBooking.bookingHorizonDays} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(event.target.value))} /></Field>
-            <Field label="Cancellation cutoff (hours)"><Input type="number" min={0} max={72} value={policies.classBooking.cancellationCutoffHours} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(event.target.value))} /></Field>
-            <Field label="Max active bookings"><Input type="number" min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} disabled={!policies.classBooking.enabled} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(event.target.value))} /></Field>
-          </FieldGrid>
-          {policies.classBooking.eligibilityMode === "selected_plans" ? <div className="mt-4 rounded-md border border-line p-3"><p className="text-[12px] font-medium">Plans that include classes</p><div className="mt-2 grid gap-2 sm:grid-cols-2">{plansQuery.data?.items.map((plan) => { const checked = policies.classBooking.eligiblePlanIds.includes(plan.id); return <label key={plan.id} className="flex cursor-pointer items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2 text-[12px]"><span>{plan.name}</span><Switch checked={checked} onCheckedChange={(value) => updateClassBooking("eligiblePlanIds", value ? [...policies.classBooking.eligiblePlanIds, plan.id] : policies.classBooking.eligiblePlanIds.filter((id) => id !== plan.id))} aria-label={`${plan.name} includes classes`} /></label>; })}</div></div> : null}
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5"><span><span className="block text-[13px] font-medium">Waitlist</span><span className="block text-[11.5px] text-ink-3">Promote the earliest waiting member automatically.</span></span><Switch checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} aria-label="Class waitlist" /></label>
-            <Field label="Waitlist size"><Input type="number" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} /></Field>
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5 sm:col-span-2"><span><span className="block text-[13px] font-medium">Track no-shows</span><span className="block text-[11.5px] text-ink-3">Only unmarked bookings become no-shows after staff finalizes attendance.</span></span><Switch checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} aria-label="Track class no-shows" /></label>
-          </div>
-        </section>
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Retention radar</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">Tune when RIVET asks the team to contact inactive, expiring, and recently expired members.</p>
-          <FieldGrid className="sm:grid-cols-3">
-            <Field label="Inactive after (days)"><Input type="number" min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(event.target.value))} /></Field>
-            <Field label="Win-back window"><Input type="number" min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(event.target.value))} /></Field>
-            <Field label="Default snooze"><Input type="number" min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(event.target.value))} /></Field>
-          </FieldGrid>
-        </section>
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Membership lifecycle</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">Guardrails for sales, renewals and sensitive date changes.</p>
-          <FieldGrid className="sm:grid-cols-3">
-            <Field label="Renewal window"><Input type="number" min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(event.target.value))} /></Field>
-            <Field label="Minimum freeze"><Input type="number" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} /></Field>
-            <Field label="Maximum extension"><Input type="number" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} /></Field>
-          </FieldGrid>
-          <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
-            <span><span className="block text-[13px] font-medium">Allow overlapping memberships</span><span className="block text-[11.5px] text-ink-3">Off prevents accidental duplicate active terms.</span></span>
-            <Switch checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} aria-label="Allow overlapping memberships" />
-          </label>
-        </section>
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Referral rewards</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">When a referred person buys their first membership, the referrer gets free days on their active membership — capped per member inside a rolling window.</p>
-          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
-            <span><span className="block text-[13px] font-medium">Reward referrals</span><span className="block text-[11.5px] text-ink-3">Off records nothing and grants nothing.</span></span>
-            <Switch checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} aria-label="Reward referrals" />
-          </label>
-          <FieldGrid className="sm:grid-cols-3">
-            <Field label="Free days per referral"><Input type="number" min={1} max={90} value={policies.referrals.rewardDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("rewardDays", Number(event.target.value))} /></Field>
-            <Field label="Max days per member"><Input type="number" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} /></Field>
-            <Field label="Cap resets after (days)"><Input type="number" min={7} max={365} value={policies.referrals.windowDays} disabled={!policies.referrals.enabled} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} /></Field>
-          </FieldGrid>
-        </section>
-        <section className="panel p-5">
-          <h2 className="mb-1 font-display text-[15px] font-semibold">Member freeze requests</h2>
-          <p className="mb-4 text-[12.5px] text-ink-3">Members ask from their app; your team approves. The policy decides what is free and what carries a fee — for example the first freeze free, the second for 10 JOD.</p>
-          <label className="mb-4 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
-            <span><span className="block text-[13px] font-medium">Accept freeze requests</span><span className="block text-[11.5px] text-ink-3">Off hides the request option in the member app.</span></span>
-            <Switch checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} aria-label="Accept freeze requests" />
-          </label>
-          <FieldGrid className="sm:grid-cols-2">
-            <Field label="Free freezes per window"><Input type="number" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} /></Field>
-            <Field label="Fee after that (JOD)"><Input type="number" min={0} max={1000} step={0.5} value={policies.memberFreezes.extraFreezeFeeMinor / 1000} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 1000))} /></Field>
-            <Field label="Max days per freeze"><Input type="number" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} /></Field>
-            <Field label="Counter resets after (days)"><Input type="number" min={30} max={730} value={policies.memberFreezes.windowDays} disabled={!policies.memberFreezes.requestsEnabled} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} /></Field>
-          </FieldGrid>
-        </section>
-      </div>
-
-      <section className="panel self-start overflow-hidden">
-        <header className="border-b border-line p-5">
-          <h2 className="font-display text-[15px] font-semibold">Branch hours and free trials</h2>
-          <p className="mb-3 text-[12.5px] text-ink-3">Opening hours and trial-request windows use the organization timezone. Members may request any time inside the saved trial window.</p>
-          <Select value={selectedBranchId || "none"} onValueChange={(value) => setSelectedBranchId(value === "none" ? "" : value)}>
-            <SelectTrigger aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
-            <SelectContent><SelectItem value="none">Choose a branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </header>
-        <div className="divide-y divide-line">
-          {selectedSchedule && selectedTrialSchedule ? WEEKDAY_ROWS.map(({ key, label }) => {
-            const day = selectedSchedule.days[key];
-            const trialWindow = selectedTrialSchedule.days[key];
-            return (
-              <div key={key} className="space-y-2 px-5 py-3">
-                <div className="grid grid-cols-[110px_1fr] items-center gap-3 sm:grid-cols-[110px_1fr_1fr]">
-                  <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><Checkbox checked={day.enabled} onCheckedChange={(value) => { const enabled = value === true; updateHours(key, { enabled }); if (!enabled) updateTrialWindow(key, { enabled: false }); }} aria-label={`${label} open`} />{label}</label>
-                  {day.enabled ? <><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></> : <span className="text-[12px] text-ink-3 sm:col-span-2">Closed</span>}
-                </div>
-                <div className="grid grid-cols-[110px_1fr] items-center gap-3 sm:grid-cols-[110px_1fr_1fr]">
-                  <label className="flex cursor-pointer items-center gap-2 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">
-                    <Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={`${label} trial requests enabled`} />
-                    Trials
-                  </label>
-                  {day.enabled && trialWindow.enabled ? <>
-                    <Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={`${label} trial window opening time`} />
-                    <Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={`${label} trial window closing time`} />
-                  </> : <span className="text-[12px] text-ink-3 sm:col-span-2">{day.enabled ? "Not offered" : "Branch closed"}</span>}
-                </div>
-              </div>
-            );
-          }) : <p className="p-5 text-[12.5px] text-ink-3">{branches.length ? "Choose a branch to edit its hours and trial window." : "Create an active branch before setting hours."}</p>}
-        </div>
-      </section>
-      <div className="xl:col-span-2 flex justify-end"><Button onClick={() => save.mutate(policies)} loading={save.isPending}>Save operational rules</Button></div>
-    </div>
-  );
-}
+export { HoursAndTrialsSection, OperationalRulesSection, normalizeOperationalPolicies } from "@/features/settings/operational-settings-sections";

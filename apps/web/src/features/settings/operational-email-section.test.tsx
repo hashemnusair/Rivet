@@ -35,7 +35,7 @@ describe("OperationalEmailSection", () => {
     await renderWithApp(<OperationalEmailSection />);
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(receipt);
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save email preferences" })).toBeEnabled();
     expect(screen.getByLabelText("Change note (optional)")).toBeInTheDocument();
   });
 
@@ -45,7 +45,7 @@ describe("OperationalEmailSection", () => {
     const update = vi.spyOn(api, "updateOperationalEmailSettings");
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(screen.getByRole("checkbox", { name: "Payment receipt" }));
-    await user.click(screen.getByRole("button", { name: "Save member service preferences" }));
+    await user.click(screen.getByRole("button", { name: "Save email preferences" }));
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith({ enabledKinds: ["payment_receipt"], reason: "" });
       expect(receipt).toHaveAttribute("data-state", "checked");
@@ -54,26 +54,26 @@ describe("OperationalEmailSection", () => {
 
     await user.click(screen.getByRole("checkbox", { name: "Payment receipt" }));
     expect(screen.getByLabelText(/Reason for disabling service messages/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save email preferences" })).toBeDisabled();
 
     await user.click(screen.getByRole("checkbox", { name: "Trial status" }));
     expect(screen.getByLabelText(/Reason for disabling service messages/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save email preferences" })).toBeDisabled();
   });
 
-  it("keeps a saved no-op update routine and ungated", async () => {
+  it("returns to a clean state after saving", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationalEmailSection />);
     const update = vi.spyOn(api, "updateOperationalEmailSettings");
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(receipt);
-    await user.click(screen.getByRole("button", { name: "Save member service preferences" }));
+    await user.click(screen.getByRole("button", { name: "Save email preferences" }));
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith({ enabledKinds: ["payment_receipt"], reason: "" });
       expect(receipt).toHaveAttribute("data-state", "checked");
       expect(screen.getByText(/Last changed by/)).toBeInTheDocument();
     });
     expect(screen.getByLabelText("Change note (optional)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Save email preferences" })).not.toBeInTheDocument();
   });
 });

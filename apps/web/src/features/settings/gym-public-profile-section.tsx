@@ -236,6 +236,9 @@ export function GymPublicProfileSection() {
       return;
     }
     setGuard({
+      title: "Unsaved public profile changes",
+      description: "Save the draft before leaving, discard the local edits and unreferenced uploads, or stay on this page.",
+      detail: "Publishing remains unavailable until these edits are saved.",
       save: () => guardActions.current.save(),
       discard: () => guardActions.current.discard(),
     });

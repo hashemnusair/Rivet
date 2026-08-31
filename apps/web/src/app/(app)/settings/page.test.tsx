@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { SettingsPageInner } from "@/features/settings/settings-page-inner";
 
-const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: navigation.push, replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: navigation.push, replace: navigation.replace, refresh: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => "/settings",
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -39,6 +39,7 @@ vi.mock("@/components/ui/dialog", () => {
 afterEach(() => {
   resetApiForTests();
   navigation.push.mockReset();
+  navigation.replace.mockReset();
 });
 
 async function editPublicProfile(user: ReturnType<typeof userEvent.setup>) {
@@ -95,5 +96,39 @@ describe("Settings gym spaces", () => {
     await waitFor(() => expect(upsertZone).toHaveBeenCalledWith(expect.objectContaining({ name: "Ladies studio", branchId: expect.any(String), kind: "floor" })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add gym space" })).not.toBeInTheDocument());
     expect(await screen.findByText("Ladies studio")).toBeInTheDocument();
+  });
+});
+
+describe("Settings navigation and operational drafts", () => {
+  it("keeps operational rules and branch hours as separate linkable sections", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<SettingsPageInner />);
+
+    await user.click(screen.getByRole("tab", { name: "Operational rules" }));
+    expect(await screen.findByRole("heading", { name: "Entry and access" })).toBeInTheDocument();
+    expect(navigation.replace).toHaveBeenLastCalledWith("/settings?section=operations", { scroll: false });
+
+    await user.click(screen.getByRole("tab", { name: "Hours & trials" }));
+    expect(await screen.findByRole("heading", { name: "Branch hours and free trials" })).toBeInTheDocument();
+    expect(navigation.replace).toHaveBeenLastCalledWith("/settings?section=hours", { scroll: false });
+  });
+
+  it("protects edited operational rules and restores the saved value on discard", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<SettingsPageInner />);
+    await user.click(screen.getByRole("tab", { name: "Operational rules" }));
+
+    const expiry = await screen.findByRole("spinbutton", { name: "Expiry warning, days" });
+    expect(expiry).toHaveValue(7);
+    await user.clear(expiry);
+    await user.type(expiry, "12");
+    expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
+
+    await user.click(screen.getByRole("tab", { name: "Organization" }));
+    expect(screen.getByRole("dialog", { name: "Unsaved settings changes" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stay" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(expiry).toHaveValue(7);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

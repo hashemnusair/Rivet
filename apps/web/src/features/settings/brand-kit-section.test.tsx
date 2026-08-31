@@ -55,10 +55,13 @@ describe("Brand Kit editor", () => {
     await expect(api.getBrandKit()).resolves.toMatchObject({ paletteKey: "gold", primaryColor: "#b88a2b", logoAltText: "Forge Fitness Club logo" });
   });
 
-  it("explains why the save control is disabled before there are edits", async () => {
+  it("reveals the save bar only after there are edits", async () => {
+    const user = userEvent.setup();
     await renderWithApp(<BrandKitSection />);
 
-    expect(await screen.findByRole("button", { name: "Save Brand Kit" })).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Change a palette, color, or logo to enable saving.");
+    expect(screen.queryByRole("button", { name: "Save Brand Kit" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("radio", { name: "gold palette" }));
+    expect(await screen.findByRole("button", { name: "Save Brand Kit" })).toBeEnabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, Palette, Save } from "lucide-react";
+import { ImagePlus, Palette } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ import { BRAND_PALETTE_PRESETS, deriveBrandTokens, normalizeBrandHex, type Brand
 import type { BrandKit, OrganizationSettings, UpdateBrandKitInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { SettingsSaveBar } from "@/features/settings/settings-layout";
 
 type PendingLogo = { file: File; altText: string; previewUrl: string };
 
@@ -122,8 +123,15 @@ export function BrandKitSection() {
         : pendingLogo && pendingLogo.altText.trim().length < 3
           ? "Add at least three characters of alt text for the logo."
           : undefined;
+  const discard = () => {
+    revokePreview(pendingLogo?.previewUrl);
+    setPendingLogo(undefined);
+    setForm(initialForm(brand));
+    if (logoInputRef.current) logoInputRef.current.value = "";
+  };
   return (
-    <section className="panel max-w-3xl p-5" data-testid="brand-kit-section">
+    <div className="max-w-3xl pb-4">
+    <section className="panel p-5" data-testid="brand-kit-section">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 rounded-md bg-sunken p-2"><Palette className="size-4 text-ink-2" aria-hidden /></span>
         <div>
@@ -174,7 +182,8 @@ export function BrandKitSection() {
       </div>
       {!isOwner ? <p className="mt-4 rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-[11.5px] text-warning-deep" role="status">Only the organization owner can save Brand Kit changes.</p> : null}
       {save.isError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11.5px] text-danger" role="alert">{isApiError(save.error) ? save.error.message : "The Brand Kit could not be saved. Try again."}</p> : null}
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-[11px] text-ink-3" role="status">{saveDisabledReason}</p><Button disabled={Boolean(saveDisabledReason)} loading={save.isPending} onClick={() => save.mutate()}><Save /> Save Brand Kit</Button></div>
     </section>
+    <SettingsSaveBar dirty={dirty} saving={save.isPending} saveDisabled={Boolean(saveDisabledReason)} saveDisabledReason={dirty ? saveDisabledReason : undefined} onSave={async () => { await save.mutateAsync(); }} onDiscard={discard} saveLabel="Save Brand Kit" />
+    </div>
   );
 }
