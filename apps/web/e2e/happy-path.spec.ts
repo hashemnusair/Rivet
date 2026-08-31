@@ -321,9 +321,10 @@ test.describe("settings navigation", () => {
     const rootScrollPhysics = await page.evaluate(() => ({
       html: getComputedStyle(document.documentElement).overscrollBehaviorY,
       body: getComputedStyle(document.body).overscrollBehaviorY,
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
     }));
-    expect(rootScrollPhysics).toEqual({ html: "none", body: "none" });
-    await expect(page.getByTestId("app-scroll-shell")).toHaveAttribute("data-damped-overscroll", "true");
+    expect(rootScrollPhysics).toEqual({ html: "none", body: "none", coarsePointer: false });
+    await expect(page.getByTestId("app-scroll-shell")).toHaveAttribute("data-overscroll-mode", "damped");
     const dampedEdge = await page.evaluate(() => {
       window.scrollTo({ top: 0 });
       const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
@@ -388,6 +389,31 @@ test.describe("settings navigation", () => {
     }).toBe(true);
     await page.getByRole("tab", { name: "Operational rules" }).click();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeSelection);
+  });
+
+  test("keeps native elasticity and pull-to-refresh available on touch-first mobile", async ({ browser, baseURL }) => {
+    const mobileContext = await browser.newContext({
+      baseURL,
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 390, height: 844 },
+    });
+    const mobilePage = await mobileContext.newPage();
+
+    try {
+      await signIn(mobilePage, "Owner");
+      await mobilePage.goto("/settings");
+
+      const rootScrollPhysics = await mobilePage.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).overscrollBehaviorY,
+        body: getComputedStyle(document.body).overscrollBehaviorY,
+        coarsePointer: matchMedia("(pointer: coarse)").matches,
+      }));
+      expect(rootScrollPhysics).toEqual({ html: "auto", body: "auto", coarsePointer: true });
+      await expect(mobilePage.getByTestId("app-scroll-shell")).toHaveAttribute("data-overscroll-mode", "native");
+    } finally {
+      await mobileContext.close();
+    }
   });
 });
 

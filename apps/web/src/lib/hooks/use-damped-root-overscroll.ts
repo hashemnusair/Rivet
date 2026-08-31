@@ -29,15 +29,24 @@ function nestedScrollerCanConsume(target: EventTarget | null, deltaY: number): b
 
 /**
  * Replaces the browser's large root rubber-band with a tiny, controlled edge
- * response. Ordinary scrolling and momentum are never intercepted; only
- * deltas that have nowhere left to scroll are damped.
+ * response on fine-pointer devices. Touch-first devices retain the platform's
+ * native elasticity and pull-to-refresh behavior.
  */
 export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const shell = shellRef.current;
     if (!shell) return;
-    shell.dataset.dampedOverscroll = "true";
+
+    const coarsePointer = window.matchMedia("(pointer: coarse)");
+    if (coarsePointer.matches) {
+      shell.dataset.overscrollMode = "native";
+      return () => {
+        delete shell.dataset.overscrollMode;
+      };
+    }
+
+    shell.dataset.overscrollMode = "damped";
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let offset = 0;
@@ -115,7 +124,7 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
       clearTimers();
       shell.style.removeProperty("transform");
       shell.style.removeProperty("transition");
-      delete shell.dataset.dampedOverscroll;
+      delete shell.dataset.overscrollMode;
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchmove", onTouchMove);

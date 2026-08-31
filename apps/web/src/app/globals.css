@@ -220,9 +220,9 @@
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Suppress the browser's large root rubber-band. The authenticated shell
-       adds back a deliberately tiny damped response at the true page edges;
-       ordinary scroll momentum remains native. */
+    /* Fine-pointer devices use the authenticated shell's restrained edge
+       response. Touch-first devices restore native elasticity below so mobile
+       browser gestures such as pull-to-refresh keep working. */
     overscroll-behavior-y: none;
     background: var(--color-paper);
     /* Header links are in-page anchors; glide to them instead of jumping, and
@@ -251,6 +251,11 @@
   /* Mouse-dense controls remain compact on office laptops, while the same
      controls meet a practical 44px target on reception tablets and phones. */
   @media (pointer: coarse) {
+    html,
+    body {
+      overscroll-behavior-y: auto;
+    }
+
     [data-touch-target] {
       min-width: 2.75rem;
       min-height: 2.75rem;
