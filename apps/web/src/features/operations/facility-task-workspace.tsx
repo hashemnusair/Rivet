@@ -96,7 +96,7 @@ function ZoneQrDialog({ branchId, zones, selectedZoneId, onClose }: { branchId: 
   const [zoneId, setZoneId] = useState(zones.some((zone) => zone.id === selectedZoneId) ? selectedZoneId! : zones[0]?.id ?? "");
   const [copied, setCopied] = useState(false);
   const zone = zones.find((candidate) => candidate.id === zoneId);
-  const path = zone ? `/operations?tab=facilities&branch=${encodeURIComponent(branchId)}&zone=${encodeURIComponent(zone.id)}&action=new-task` : "/operations?tab=facilities";
+  const path = zone ? `/maintenance?branch=${encodeURIComponent(branchId)}&zone=${encodeURIComponent(zone.id)}&action=new-task` : "/maintenance";
   const url = typeof window === "undefined" ? path : `${window.location.origin}${path}`;
 
   const download = () => {

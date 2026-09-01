@@ -9,11 +9,12 @@ describe("primary workspace navigation", () => {
     expect(items.map((item) => item.label)).toEqual([
       "Dashboard",
       "Reception",
+      "Checkout",
       "Daily checklist",
       "Members",
       "Classes",
       "Personal training",
-      "Operations",
+      "Stock & purchasing",
       "Leads",
       "Follow-ups",
       "Payments",

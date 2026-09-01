@@ -86,7 +86,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         <div className="flex items-center gap-2">
           {isRetailSale ? (
             <Button asChild variant="secondary" size="sm">
-              <Link href="/operations/checkout">New sale</Link>
+              <Link href="/checkout">New sale</Link>
             </Button>
           ) : null}
           {canRefund ? (

@@ -9,6 +9,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  ShoppingCart,
   CircleHelp,
   Dumbbell,
   Download,
@@ -44,11 +45,12 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workspace",
     items: [
       { href: "/reception", label: "Reception", icon: ShieldCheck },
+      { href: "/checkout", label: "Checkout", icon: ShoppingCart, anyPermission: ["payments.collect"], moduleKey: "operations" },
       { href: "/checklists", label: "Daily checklist", icon: ClipboardCheck, anyPermission: ["members.read"] },
       { href: "/members", label: "Members", icon: Users, anyPermission: ["members.read"] },
       { href: "/classes", label: "Classes", icon: CalendarDays, anyPermission: ["members.read"] },
       { href: "/pt", label: "Personal training", icon: Dumbbell, anyPermission: ["pt.reports.read", "pt.schedule.self", "pt.book_for_member"] },
-      { href: "/operations", label: "Operations", icon: Boxes, anyPermission: ["members.read"], moduleKey: "operations" },
+      { href: "/operations", label: "Stock & purchasing", icon: Boxes, anyPermission: ["members.read"], moduleKey: "operations" },
     ],
   },
   {

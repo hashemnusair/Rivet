@@ -40,10 +40,12 @@ describe("OperationsCommandCenter", () => {
     await renderWithApp(<OperationsCommandCenter />);
 
     expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(4);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Inventory", "Purchase orders", "Suppliers", "Payables", "Equipment"]);
     expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Equipment/ })).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByRole("tab", { name: /Checkout/ })).toBeDisabled();
+    expect(screen.queryByRole("tab", { name: /Checkout|Maintenance/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", "/checkout");
+    expect(screen.getByRole("link", { name: /Maintenance/ })).toHaveAttribute("href", "/maintenance");
     expect(screen.getByRole("combobox", { name: "Operations branch" })).toHaveTextContent("All branches");
     expect(screen.getByText(/Compare stock across branches/)).toBeInTheDocument();
     expect(await screen.findByRole("columnheader", { name: "Available" })).toBeInTheDocument();
@@ -53,7 +55,7 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByText(/Select a branch above to add items/)).toBeInTheDocument();
   });
 
-  it("uses the selected branch for independent inventory and enables checkout", async () => {
+  it("uses the selected branch for independent inventory and links checkout to that branch", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />);
     const listInventory = vi.spyOn(api, "listInventory");
@@ -63,12 +65,9 @@ describe("OperationsCommandCenter", () => {
     const selectedBranch = session.activeBranchId;
     expect(selectedBranch).toBeTruthy();
     await waitFor(() => expect(listInventory).toHaveBeenCalledWith(expect.objectContaining({ branchId: selectedBranch })));
-    expect(screen.getByRole("tab", { name: /Checkout/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", `/checkout?branchId=${encodeURIComponent(selectedBranch!)}`);
     expect(screen.getByRole("button", { name: "Add item" })).toBeEnabled();
     expect(screen.getByRole("combobox", { name: "Operations branch" })).toHaveTextContent(session.branches.find((branch) => branch.id === selectedBranch)?.name ?? "branch");
-
-    await user.click(screen.getByRole("tab", { name: /Checkout/ }));
-    expect(await screen.findByTestId("retail-checkout")).toBeInTheDocument();
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -107,41 +106,6 @@ describe("OperationsCommandCenter", () => {
 
     await user.click(screen.getByRole("tab", { name: /Inventory/ }));
     expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
-  });
-
-  it("turns maintenance into a short branch and gym-space workflow", async () => {
-    const user = userEvent.setup();
-    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
-    await selectBranch(user, "Forge — Abdoun");
-    const taskMutation = vi.spyOn(api, "upsertFacilityTask");
-
-    await user.click(screen.getByRole("tab", { name: /Maintenance/ }));
-    expect(await screen.findByTestId("operations-facilities")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Maintenance list" })).toBeInTheDocument();
-    expect(screen.getByText("Main floor inspection")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "New task" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add maintenance task" });
-    await user.click(within(dialog).getByRole("button", { name: /Cleaning needed/ }));
-    await user.clear(within(dialog).getByRole("textbox", { name: "What needs doing?" }));
-    await user.type(within(dialog).getByRole("textbox", { name: "What needs doing?" }), "Refill sanitizer station");
-    await user.click(within(dialog).getByRole("button", { name: "Add to work list" }));
-
-    await waitFor(() => expect(taskMutation).toHaveBeenCalledWith(expect.objectContaining({ branchId: expect.any(String), zoneId: expect.any(String), kind: "cleaning", title: "Refill sanitizer station" })));
-    expect(await screen.findByText("Refill sanitizer station")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Location QR" }));
-    expect(await screen.findByRole("dialog", { name: "Location task QR" })).toBeInTheDocument();
-    expect(screen.getByText(/only saves them from finding and selecting this location/i)).toBeInTheDocument();
-  });
-
-  it("opens the preselected task form from an authenticated area QR shortcut", async () => {
-    navigation.search = "tab=facilities&branch=10000000-0000-4a00-8a00-000000000002&zone=10000000-0000-4a00-8a00-000000000049&action=new-task";
-    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
-
-    expect(await screen.findByRole("dialog", { name: "Add maintenance task" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Maintenance/, hidden: true })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("combobox", { name: "Task location" })).toHaveTextContent("Main floor");
   });
 
   it("keeps equipment writes in centered dialogs and records issue and work-order changes", async () => {
@@ -198,21 +162,24 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByRole("button", { name: "Add item" })).toBeDisabled();
     await selectBranch(user);
 
-    await user.click(screen.getByRole("button", { name: "Suppliers" }));
-    expect(screen.getByRole("dialog", { name: "Suppliers" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
+    expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
+    expect(screen.getByText("Jordan Sports Supply")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Payables/ })).toHaveAttribute("href", expect.stringMatching(/^\/operations\/payables\?supplier=/));
     await user.click(screen.getByRole("button", { name: "Add supplier" }));
     expect(screen.getByRole("dialog", { name: "Add supplier" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await user.click(screen.getByRole("button", { name: "Add item" }));
+    await user.click(screen.getByRole("tab", { name: /Inventory/ }));
+    await user.click(await screen.findByRole("button", { name: "Add item" }));
     expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Available quantity" })).toHaveValue(0);
     expect(screen.getByRole("spinbutton", { name: /Selling price/ })).toBeInTheDocument();
     expect(screen.queryByText(/Refill to|Delivery time|Supplier unit cost|Preferred supplier/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await user.click(screen.getByRole("button", { name: "Purchase orders" }));
-    expect(screen.getByRole("dialog", { name: "Purchase orders" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Purchase orders/ }));
+    expect(await screen.findByTestId("operations-orders")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "New purchase order" }));
     expect(screen.getByRole("dialog", { name: "Create purchase order" })).toBeInTheDocument();
     await user.click(screen.getByRole("combobox", { name: "Purchase order source" }));
@@ -235,14 +202,13 @@ describe("OperationsCommandCenter", () => {
     expect(await screen.findByText("Protein bar")).toBeInTheDocument();
   });
 
-  it("jumps from an inventory row into checkout with that item already in the sale", async () => {
+  it("sends an inventory row's Sell action to the one checkout with that item preselected", async () => {
     const user = userEvent.setup();
     await renderWithApp(<OperationsCommandCenter />);
     await selectBranch(user);
 
     await user.click(await screen.findByRole("button", { name: "Sell Protein bar" }));
-    expect(screen.getByRole("tab", { name: /Checkout/ })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("button", { name: "Add another Protein bar" })).toBeInTheDocument();
+    expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/checkout\?branchId=.+&productId=.+$/));
   });
 
   it("opens a reorder draft with the row's product preselected", async () => {
@@ -278,10 +244,37 @@ describe("OperationsCommandCenter", () => {
     await selectBranch(user);
     expect(await screen.findByText(/read-only access to operations/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add item" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Suppliers" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
+    expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add supplier" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Equipment/ }));
     expect(await screen.findByText(/read-only access to operations/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Report issue" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open work order" })).not.toBeInTheDocument();
   });
+
+  it("forwards old checkout and maintenance deep links to their own pages", async () => {
+    navigation.search = "tab=checkout";
+    await renderWithApp(<OperationsCommandCenter />);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/checkout"));
+    resetApiForTests();
+    router.replace.mockReset();
+    navigation.search = "tab=facilities&branch=10000000-0000-4a00-8a00-000000000002&zone=zone-1&action=new-task";
+    await renderWithApp(<OperationsCommandCenter />);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/maintenance?branch=10000000-0000-4a00-8a00-000000000002&zone=zone-1&action=new-task"));
+  });
+
+  it("opens the Payables tab inside Stock & purchasing and highlights a deep-linked order", async () => {
+    const user = userEvent.setup();
+    navigation.search = "tab=payables";
+    await renderWithApp(<OperationsCommandCenter />);
+    expect(await screen.findByRole("tab", { name: /Payables/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByTestId("payables-workspace")).toBeInTheDocument();
+    expect((await screen.findAllByTestId("payable-row")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: /Purchase orders/ }));
+    expect(await screen.findByTestId("operations-orders")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect((await screen.findAllByTestId("purchase-order-row")).length).toBeGreaterThan(0);
+  });
 });
+
