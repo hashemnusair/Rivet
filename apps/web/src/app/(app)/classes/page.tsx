@@ -28,12 +28,30 @@ const AUDIENCE_LABEL: Record<ClassAudience, string> = { mixed: "Mixed", women: "
 // mixed — the calendar reads at a glance and the printed sheet inherits them.
 const AUDIENCE_ACCENT: Record<ClassAudience, string> = { mixed: "#1c1917", women: "#db2777", men: "#2563eb" };
 
+/** 24h "HH:MM" — required as the VALUE format of native time inputs only. */
 function minuteLabel(minute: number): string {
   return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
 }
 
+/** Owner-requested 12-hour display, e.g. 390 → "6:30 AM"; 1440 → "12:00 AM". */
+function meridiemLabel(minute: number, withMeridiem = true): string {
+  const hour24 = Math.floor(minute / 60) % 24;
+  const minutes = minute % 60;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${String(minutes).padStart(2, "0")}${withMeridiem ? ` ${hour24 < 12 ? "AM" : "PM"}` : ""}`;
+}
+
 function rangeLabel(item: Pick<ClassSession, "startMinute" | "durationMinutes">): string {
-  return `${minuteLabel(item.startMinute)}–${minuteLabel(item.startMinute + item.durationMinutes)}`;
+  const start = item.startMinute;
+  const end = item.startMinute + item.durationMinutes;
+  const sameMeridiem = (Math.floor(start / 60) % 24 < 12) === (Math.floor(end / 60) % 24 < 12);
+  return `${meridiemLabel(start, !sameMeridiem)}–${meridiemLabel(end)}`;
+}
+
+/** Compact hour-column label: "6 AM", "12 PM", "11 PM". */
+function hourLabel(hour: number): string {
+  const hour24 = hour % 24;
+  return `${hour24 % 12 === 0 ? 12 : hour24 % 12} ${hour24 < 12 ? "AM" : "PM"}`;
 }
 
 
@@ -318,7 +336,7 @@ export default function ClassesPage() {
                 <div className="relative border-b border-line">
                   <div className="grid h-full" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
                     {Array.from({ length: visibleHours }, (_, index) => (
-                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[10.5px] font-medium text-ink-2">{String(firstHour + index).padStart(2, "0")}:00</div>
+                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[10.5px] font-medium text-ink-2">{hourLabel(firstHour + index)}</div>
                     ))}
                   </div>
                 </div>
@@ -358,7 +376,7 @@ export default function ClassesPage() {
                             >
                               <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: AUDIENCE_ACCENT[item.audience] }} />
                               <span className="line-clamp-2 block text-[11px] font-semibold leading-[1.2]">{item.name}</span>
-                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3" dir="ltr">{rangeLabel(item)} · {bookedLabel(item)}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
+                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3" dir="ltr">{rangeLabel(item)}</span>
                             </button>
                           );
                         })}
