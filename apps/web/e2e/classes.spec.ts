@@ -18,7 +18,9 @@ test.describe("class calendar roles", () => {
     // manager menu never opens for this role.
     await page.getByRole("button", { name: /Morning HIIT, Sunday/ }).click();
     await expect(page.getByRole("menu")).toHaveCount(0);
-    await expect(page.getByText("Dated roster", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Who booked/ })).toBeVisible();
+    // Desk tools are tucked behind a disclosure so the roster stays a clean list.
+    await page.getByText("Add a member at the desk").click();
     await page.getByLabel("Add member to dated class").fill("Yara Sweidan");
     await page.getByRole("button", { name: /Yara Sweidan/ }).click();
     await expect(page.getByRole("checkbox", { name: "Mark Yara Sweidan present" })).toBeEnabled();
