@@ -27,7 +27,6 @@ const AUDIENCE_LABEL: Record<ClassAudience, string> = { mixed: "Mixed", women: "
 // Owner-requested audience colors: pink for women, blue for men, black for
 // mixed — the calendar reads at a glance and the printed sheet inherits them.
 const AUDIENCE_ACCENT: Record<ClassAudience, string> = { mixed: "#1c1917", women: "#db2777", men: "#2563eb" };
-const AUDIENCE_PILL: Record<ClassAudience, string> = { mixed: "border-line-2 text-ink-2", women: "border-pink-300 bg-pink-50 text-pink-700", men: "border-blue-300 bg-blue-50 text-blue-700" };
 
 function minuteLabel(minute: number): string {
   return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
@@ -304,13 +303,22 @@ export default function ClassesPage() {
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface shadow-sm" data-print-schedule>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2.5 text-[11.5px] text-ink-2" aria-label="Audience color legend">
+              <span className="text-[10.5px] uppercase tracking-wide text-ink-3">Classes for</span>
+              {(["mixed", "women", "men"] as const).map((audience) => (
+                <span key={audience} className="inline-flex items-center gap-1.5 font-medium">
+                  <span aria-hidden className="size-2.5 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[audience] }} />
+                  {audience === "mixed" ? "Everyone" : AUDIENCE_LABEL[audience]}
+                </span>
+              ))}
+            </div>
             <div className="min-w-[560px]">
               <div className="grid" style={{ gridTemplateColumns: "96px 1fr" }}>
                 <div className="border-b border-line" />
                 <div className="relative border-b border-line">
                   <div className="grid h-full" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
                     {Array.from({ length: visibleHours }, (_, index) => (
-                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[9px] text-ink-3">{String(firstHour + index).padStart(2, "0")}:00</div>
+                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[10.5px] font-medium text-ink-2">{String(firstHour + index).padStart(2, "0")}:00</div>
                     ))}
                   </div>
                 </div>
@@ -349,11 +357,8 @@ export default function ClassesPage() {
                               title={`${item.name} — ${rangeLabel(item)} · ${bookedLabel(item)} booked${item.coachName ? ` · ${item.coachName}` : ""}`}
                             >
                               <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: AUDIENCE_ACCENT[item.audience] }} />
-                              <span className="flex items-center gap-1.5">
-                                <span className="truncate text-[11px] font-semibold">{item.name}</span>
-                                {item.audience !== "mixed" ? <span className={cn("shrink-0 rounded-full border px-1.5 text-[8px] font-medium", AUDIENCE_PILL[item.audience])}>{item.audience === "women" ? "Women" : "Men"}</span> : null}
-                              </span>
-                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3">{rangeLabel(item).split("–")[0]} · {bookedLabel(item)}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
+                              <span className="line-clamp-2 block text-[11px] font-semibold leading-[1.2]">{item.name}</span>
+                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3" dir="ltr">{rangeLabel(item)} · {bookedLabel(item)}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
                             </button>
                           );
                         })}
