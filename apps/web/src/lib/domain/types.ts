@@ -2211,7 +2211,8 @@ export interface RetailSaleLine {
 }
 
 export interface RetailSaleCustomer {
-  kind: "member" | "guest";
+  /** `walk_in` is an anonymous sale: no member, no guest profile, nothing stored beyond this snapshot. */
+  kind: "member" | "guest" | "walk_in";
   fullName: string;
   phone?: string;
   memberId?: UUID;

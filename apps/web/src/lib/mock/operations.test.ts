@@ -197,3 +197,29 @@ describe("mock daily operations parity", () => {
     await expect(api.recordStockMovement({ branchId: branchA.id, productId: product.id, type: "adjustment", quantity: -1, reason: "Reverse cycle count correction", idempotencyKey: "mock-adjustment-negative" })).resolves.toMatchObject({ quantityDelta: -1, quantity: 1 });
   });
 });
+
+describe("mock anonymous walk-in checkout", () => {
+  it("sells to a walk-in customer with no customer record and labels the receipt honestly", async () => {
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-WALKIN", name: "Mock water", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_500, currency: "JOD" } });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 5, unitCost: { amount: 400, currency: "JOD" }, idempotencyKey: "mock-walkin-opening" });
+    const membersBefore = (await api.listMembers({ pageSize: 100 })).totalItems;
+    await api.switchDemoRole("receptionist");
+    const sale = await api.checkoutRetail({ branchId, lines: [{ productId: product.id, quantity: 2 }], method: "cash", idempotencyKey: "mock-walkin-cash" });
+    expect(sale.retailSale.customer).toEqual({ kind: "walk_in", fullName: "Walk-in customer" });
+    expect(sale.retailSale.shiftId).toBeTruthy();
+    expect(sale.member).toBeUndefined();
+    const receipt = await api.getReceipt(sale.receiptId);
+    expect(receipt.customer).toEqual({ kind: "walk_in", fullName: "Walk-in customer" });
+    expect(receipt.member).toBeUndefined();
+    const replay = await api.checkoutRetail({ branchId, lines: [{ productId: product.id, quantity: 2 }], method: "cash", idempotencyKey: "mock-walkin-cash" });
+    expect(replay.receiptId).toBe(sale.receiptId);
+    await expect(api.checkoutRetail({ branchId, memberId: "member-x", guest: { fullName: "Guest", phone: "0790000000" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-walkin-both" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.checkoutRetail({ branchId, lines: [{ productId: product.id, quantity: 1 }], method: "card", idempotencyKey: "mock-walkin-no-ref" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await api.switchDemoRole("owner");
+    expect((await api.listMembers({ pageSize: 100 })).totalItems).toBe(membersBefore);
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 3 })]);
+    const transactions = await api.listTransactions({ branchId, type: "retail_sale", pageSize: 20 });
+    expect(transactions.items.find((item) => item.receiptId === sale.receiptId)).toMatchObject({ memberName: "Walk-in customer", memberNumber: "Walk-in" });
+  });
+});

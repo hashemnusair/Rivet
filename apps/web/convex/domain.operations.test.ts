@@ -529,3 +529,54 @@ describe("daily operations typed contracts", () => {
     expect(state.tombstoneBalance).toMatchObject({ quantityOnHand: 1, sellable: false });
   });
 });
+
+describe("anonymous walk-in checkout", () => {
+  it("sells to a walk-in customer without creating any customer record and keeps member attach optional", async () => {
+    const { owner, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "WALKIN-01", name: "Water bottle", unit: "each", reorderPoint: 1, retailPrice: { amount: 1_500, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 5, unitCost: { amount: 400, currency: "JOD" }, idempotencyKey: "walkin-opening" }));
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "operations-branch-a")).unique();
+      const user = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "operations-sales")).unique();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "shift", publicId: "walkin-shift", branchId: branch!._id, createdAt: Date.now(), updatedAt: Date.now(), data: { id: "walkin-shift", branchId: "operations-branch-a", status: "open", openedById: user!.publicId, openingFloat: { amount: 0, currency: "JOD" } } });
+    });
+    const recordsBefore = await t.run(async (ctx) => (await ctx.db.query("domainRecords").collect()).filter((record) => ["member", "lead", "customer"].includes(record.entityType)).length);
+
+    const sale = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", lines: [{ productId: product.id, quantity: 2 }], method: "cash", idempotencyKey: "walkin-cash" })) as { receiptId: string; retailSale: { id: string; customer: { kind: string; fullName: string; memberId?: string; phone?: string }; total: { amount: number }; shiftId?: string } };
+    expect(sale.retailSale).toMatchObject({ customer: { kind: "walk_in", fullName: "Walk-in customer" }, total: { amount: 3_000 }, shiftId: "walkin-shift" });
+    expect(sale.retailSale.customer.memberId).toBeUndefined();
+    expect(sale.retailSale.customer.phone).toBeUndefined();
+
+    const receipt = await sales.query(api.domain.query, operation("receipts.get", { receiptId: sale.receiptId })) as { member?: unknown; customer: { kind: string; fullName: string }; retailSale: { lines: Array<{ quantity: number }> } };
+    expect(receipt).toMatchObject({ customer: { kind: "walk_in", fullName: "Walk-in customer" }, retailSale: { lines: [{ quantity: 2 }] } });
+    expect(receipt.member).toBeUndefined();
+
+    const recordsAfter = await t.run(async (ctx) => (await ctx.db.query("domainRecords").collect()).filter((record) => ["member", "lead", "customer"].includes(record.entityType)).length);
+    expect(recordsAfter).toBe(recordsBefore);
+    const replay = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", lines: [{ productId: product.id, quantity: 2 }], method: "cash", idempotencyKey: "walkin-cash" })) as { receiptId: string };
+    expect(replay.receiptId).toBe(sale.receiptId);
+
+    const shift = await owner.query(api.domain.query, operation("shifts.current", { branchId: "operations-branch-a" })) as { totals: { cashPayments: { amount: number }; paymentCount: number } };
+    expect(shift.totals).toMatchObject({ cashPayments: { amount: 3_000 }, paymentCount: 1 });
+    const inventory = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number }>;
+    expect(inventory[0]?.availableQuantity).toBe(3);
+    const transactions = await owner.query(api.domain.query, operation("transactions.list", { branchId: "operations-branch-a", type: "retail_sale" })) as { items: Array<{ memberName: string; memberNumber: string; customer?: { kind: string } }> };
+    expect(transactions.items).toEqual([expect.objectContaining({ memberName: "Walk-in customer", memberNumber: "Walk-in", customer: expect.objectContaining({ kind: "walk_in" }) })]);
+    const audits = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).filter((event) => event.action === "operations.retail_sale.create"));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.after).toMatchObject({ customer: "walk_in", method: "cash" });
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "operations-org-a")).unique();
+      await ctx.db.patch(organization!._id, { subscriptionPlan: "Pro", updatedAt: Date.now() });
+    });
+    const refreshed = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["payment"] })) as { items: Array<{ sourceId: string; status: string; policyCode?: string }> };
+    expect(refreshed.items.find((item) => item.sourceId === `retail-payment-${sale.retailSale.id}`)).toMatchObject({ status: "pending", policyCode: "retail-sale-cash.v2" });
+
+    // Attaching a member remains optional and both-at-once is still rejected.
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", memberId: "someone", guest: { fullName: "Guest", phone: "+962790000009" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "walkin-both" })), "VALIDATION_ERROR");
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", lines: [{ productId: product.id, quantity: 1 }], method: "card", idempotencyKey: "walkin-card-no-ref" })), "VALIDATION_ERROR");
+    await expectCode(sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", lines: [{ productId: product.id, quantity: 4 }], method: "cash", idempotencyKey: "walkin-overstock" })), "CONFLICT");
+  });
+});

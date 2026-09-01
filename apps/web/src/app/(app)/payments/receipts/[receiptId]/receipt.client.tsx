@@ -57,7 +57,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const isRetailSale = Boolean(retailSale?.lines?.length);
   const retailCustomer = detail.customer ?? retailSale?.customer;
   const memberSnapshot = detail.member;
-  const customerName = retailCustomer?.fullName ?? memberSnapshot?.fullName ?? "Guest customer";
+  const customerName = retailCustomer?.fullName ?? memberSnapshot?.fullName ?? "Walk-in customer";
   const customerReference = retailCustomer?.memberNumber ?? retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? "Retail sale";
   const retailTotal = retailSale?.total ?? retailSale?.subtotal;
   const paymentMethodLabel = isRetailSale && payment.method === "card" ? "Visa / card" : PAYMENT_METHOD_LABELS[payment.method];
@@ -140,7 +140,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <div className="border-b border-dashed border-line-3 py-3">
             <p className="text-[13px] font-semibold">{customerName}</p>
-            <p className="text-[11px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? "Guest sale"}</p>
+            <p className="text-[11px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? (retailCustomer?.kind === "guest" ? "Guest sale" : "Walk-in sale")}</p>
           </div>
 
           <table className="w-full border-b border-dashed border-line-3 py-3 text-[12px]">

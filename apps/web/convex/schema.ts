@@ -412,7 +412,7 @@ export default defineSchema({
     receiptNumber: v.string(),
     memberId: v.optional(v.string()),
     customer: v.object({
-      kind: v.union(v.literal("member"), v.literal("guest")),
+      kind: v.union(v.literal("member"), v.literal("guest"), v.literal("walk_in")),
       fullName: v.string(),
       phone: v.optional(v.string()),
       memberId: v.optional(v.string()),

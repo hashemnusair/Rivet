@@ -4123,7 +4123,7 @@ export class MockGymOSApi implements GymOSApi {
     const member = memberId ? this.db.members.find((m) => m.id === memberId) : undefined;
     const branch = this.db.branches.find((b) => b.id === p.branchId);
     if ("customer" in p) {
-      return { ...p, memberName: p.customer.fullName, memberNumber: p.customer.memberNumber ?? (p.customer.kind === "guest" ? "Guest" : "—"), branchName: branch?.name ?? "—" };
+      return { ...p, memberName: p.customer.fullName, memberNumber: p.customer.memberNumber ?? (p.customer.kind === "guest" ? "Guest" : p.customer.kind === "walk_in" ? "Walk-in" : "—"), branchName: branch?.name ?? "—" };
     }
     return { ...p, memberName: member?.fullName ?? "—", memberNumber: member?.memberNumber ?? "—", branchName: branch?.name ?? "—" };
   }
@@ -7250,7 +7250,7 @@ export class MockGymOSApi implements GymOSApi {
       const idempotencyKey = input.idempotencyKey.trim();
       if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
       const guest = input.guest ? { fullName: input.guest.fullName.trim(), phone: input.guest.phone.trim() } : undefined;
-      if ((input.memberId && guest) || (!input.memberId && !guest)) throw ApiError.of(ERR.VALIDATION, "Choose an existing member or enter guest details, not both.");
+      if (input.memberId && guest) throw ApiError.of(ERR.VALIDATION, "Choose an existing member or enter guest details, not both.");
       const linesInput = [...input.lines].map((line) => ({ productId: line.productId, quantity: line.quantity })).sort((a, b) => a.productId.localeCompare(b.productId));
       const externalReference = input.externalReference?.trim() || undefined;
       const signature = JSON.stringify({ branchId: branch.id, memberId: input.memberId, guest, lines: linesInput, method, externalReference });
@@ -7286,8 +7286,10 @@ export class MockGymOSApi implements GymOSApi {
         if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
         if (member.homeBranchId !== branch.id) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
         customer = { kind: "member", fullName: member.fullName, phone: member.phone, memberId: member.id, memberNumber: member.memberNumber };
+      } else if (guest) {
+        customer = { kind: "guest", fullName: guest.fullName, phone: guest.phone };
       } else {
-        customer = { kind: "guest", fullName: guest!.fullName, phone: guest!.phone };
+        customer = { kind: "walk_in", fullName: "Walk-in customer" };
       }
       const shift = method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open") : undefined;
       if (method === "cash" && !shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before checking out cash sales.");

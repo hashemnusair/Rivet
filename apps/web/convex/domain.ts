@@ -2127,7 +2127,7 @@ async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, val
     return {
       ...value,
       memberName: customerName ?? (member ? stringValue(member.fullName) : "—"),
-      memberNumber: customerNumber ?? (customer?.kind === "guest" ? "Guest" : member ? stringValue(member.memberNumber) : "—"),
+      memberNumber: customerNumber ?? (customer?.kind === "guest" ? "Guest" : customer?.kind === "walk_in" ? "Walk-in" : member ? stringValue(member.memberNumber) : "—"),
       branchName: branchesById.get(stringValue(value.branchId)) ?? "—",
     };
   });

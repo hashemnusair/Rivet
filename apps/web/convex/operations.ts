@@ -934,7 +934,9 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   const rawGuest = value(input.guest);
   const guest = input.guest === undefined ? undefined : { fullName: text(rawGuest.fullName).trim(), phone: text(rawGuest.phone).trim() };
   const memberId = optionalText(input.memberId);
-  if ((memberId && guest) || (!memberId && !guest)) domainError("VALIDATION_ERROR", "Choose an existing member or enter guest details, not both.", { correlationId: actor.correlationId });
+  // A walk-in sale needs no customer at all. A member may be attached, or
+  // guest contact details recorded when a receipt needs a name; never both.
+  if (memberId && guest) domainError("VALIDATION_ERROR", "Choose an existing member or enter guest details, not both.", { correlationId: actor.correlationId });
   const rawLines = Array.isArray(input.lines) ? input.lines : [];
   const normalizedLines = rawLines.map((raw) => ({ productId: optionalText(value(raw).productId) ?? "", quantity: integer(value(raw).quantity, Number.NaN) })).sort((left, right) => left.productId.localeCompare(right.productId));
   const externalReference = optionalText(input.externalReference);
@@ -971,7 +973,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
 
   let memberRecord: Doc<"domainRecords"> | null = null;
   let customer: {
-    kind: "member" | "guest";
+    kind: "member" | "guest" | "walk_in";
     fullName: string;
     phone?: string;
     memberId?: string;
@@ -988,8 +990,12 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     const memberHomeBranchId = optionalText(memberData.homeBranchId);
     if (memberHomeBranchId && memberHomeBranchId !== publicBranchId(branch)) domainError("NOT_FOUND", "Member not found.", { correlationId: actor.correlationId });
     customer = { kind: "member", fullName: text(memberData.fullName, "Member"), phone: optionalText(memberData.phone), memberId: memberRecord.publicId, memberNumber: optionalText(memberData.memberNumber) };
+  } else if (guest) {
+    customer = { kind: "guest", fullName: guest.fullName, phone: guest.phone };
   } else {
-    customer = { kind: "guest", fullName: guest!.fullName, phone: guest!.phone };
+    // No member, no guest profile, no placeholder record anywhere: the
+    // receipt simply says who it was for.
+    customer = { kind: "walk_in", fullName: "Walk-in customer" };
   }
 
   let shiftId: string | undefined;
