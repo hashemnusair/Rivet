@@ -454,7 +454,17 @@ export interface PayablesPage {
   totals: { outstanding: Money; original: Money; paid: Money; openCount: number };
   supplierTotals: PayablesSupplierTotal[];
   aging: PayablesAgingBucket[];
-  unattributed: { count: number; total: Money; items: UnattributedPayable[] };
+}
+
+/** Reconciliation view of 2100 balances that cannot be attributed to a supplier. */
+export interface PayablesReconciliation {
+  currency: string;
+  count: number;
+  /** Sum of the items recorded in the organization currency. */
+  total: Money;
+  foreignCurrencyCount: number;
+  truncated: boolean;
+  items: UnattributedPayable[];
 }
 
 export interface PayablesExportRow {
@@ -2362,6 +2372,8 @@ export interface ReconciliationReport {
   branchId: UUID;
   date: ISODate;
   totalsByMethod: Array<{ method: PaymentMethodKey; payments: Money; refunds: Money; net: Money; count: number }>;
+  /** Supplier payments recorded at this branch on the day; cash ones leave the drawer. */
+  supplierPayments: { cashPaid: Money; cashReturned: Money; totalPaid: Money; count: number };
   totalCollected: Money;
   totalRefunded: Money;
   discountsTotal: Money;

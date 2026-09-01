@@ -113,7 +113,7 @@ function assertOneOf<T extends string>(input: unknown, values: readonly T[], lab
   return normalized as T;
 }
 
-async function requireOperations(ctx: ReadContext, actor: ActorContext): Promise<void> {
+export async function requireOperations(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlementRow = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
@@ -134,7 +134,7 @@ async function requireOperations(ctx: ReadContext, actor: ActorContext): Promise
   }
 }
 
-function requireOperationsWrite(actor: ActorContext): void {
+export function requireOperationsWrite(actor: ActorContext): void {
   requirePermission(actor, "operations.manage");
   if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an organization owner or manager can change daily operations records.", { correlationId: actor.correlationId });
 }
@@ -158,7 +158,7 @@ async function requireRetailPaymentMethodEnabled(ctx: ReadContext, actor: ActorC
   }
 }
 
-async function branchByPublicId(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<Branch> {
+export async function branchByPublicId(ctx: ReadContext, actor: ActorContext, id: string | undefined): Promise<Branch> {
   const branch = id
     ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", id)).unique()
     : null;
@@ -261,7 +261,7 @@ async function userByPublicId(ctx: ReadContext, actor: ActorContext, id: string 
   return user;
 }
 
-async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: string; entityType: string; entityId: string; entityLabel: string; summary: string; branchId?: string; destinationBranchId?: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
+export async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: string; entityType: string; entityId: string; entityLabel: string; summary: string; branchId?: string; destinationBranchId?: string; reason?: string; before?: unknown; after?: unknown }): Promise<void> {
   const branch = input.branchId ? await branchByPublicId(ctx, actor, input.branchId) : undefined;
   const destinationBranch = input.destinationBranchId ? await branchByPublicId(ctx, actor, input.destinationBranchId) : undefined;
   await ctx.db.insert("auditEvents", {
@@ -287,7 +287,7 @@ async function audit(ctx: MutationCtx, actor: ActorContext, input: { action: str
   });
 }
 
-async function idempotentResult(ctx: MutationCtx, actor: ActorContext, operation: string, key: string, requestHash: string): Promise<Data | undefined> {
+export async function idempotentResult(ctx: MutationCtx, actor: ActorContext, operation: string, key: string, requestHash: string): Promise<Data | undefined> {
   const rows = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", operation).eq("key", key)).collect();
   const now = Date.now();
   // Idempotency records are bounded retention artifacts, not permanent
@@ -302,7 +302,7 @@ async function idempotentResult(ctx: MutationCtx, actor: ActorContext, operation
   return value(existing.result);
 }
 
-async function saveIdempotentResult(ctx: MutationCtx, actor: ActorContext, operation: string, key: string, requestHash: string, result: unknown): Promise<void> {
+export async function saveIdempotentResult(ctx: MutationCtx, actor: ActorContext, operation: string, key: string, requestHash: string, result: unknown): Promise<void> {
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation, key, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 90 * 86_400_000 });
 }
 
@@ -914,12 +914,12 @@ function retailReceiptDetail(
   };
 }
 
-async function openCashShiftForBranch(ctx: ReadContext, actor: ActorContext, branch: Branch, expectedShiftId?: string): Promise<Doc<"domainRecords"> | null> {
+export async function openCashShiftForBranch(ctx: ReadContext, actor: ActorContext, branch: Branch, expectedShiftId?: string): Promise<Doc<"domainRecords"> | null> {
   const shifts = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "shift")).collect();
   return shifts.find((shift) => shift.branchId === branch._id && value(shift.data).status === "open" && (!expectedShiftId || cashShiftPublicId(shift) === expectedShiftId)) ?? null;
 }
 
-function cashShiftPublicId(shift: Doc<"domainRecords">): string {
+export function cashShiftPublicId(shift: Doc<"domainRecords">): string {
   return optionalText(value(shift.data).id) ?? shift.publicId;
 }
 

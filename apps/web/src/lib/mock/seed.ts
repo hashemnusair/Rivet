@@ -116,6 +116,7 @@ const OPS_IDS = {
   issue: seedUuid(75),
   workOrder: seedUuid(76),
   facility: seedUuid(77),
+  purchaseOrder: seedUuid(81),
 } as const;
 
 interface Gen {
@@ -1906,7 +1907,30 @@ export function buildSeed(now: Date = new Date()): MockDb {
   const stockMovements: StockMovement[] = [{ id: seedUuid(80), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, type: "receive", quantityDelta: 40, quantity: 40, unitCost: money(650, "JOD"), referenceType: "opening_balance", idempotencyKey: "seed-opening-creatine", financialPostingStatus: "not_posted", occurredAt: iso(daysAgo(now, 30)), createdAt: iso(daysAgo(now, 30)), createdById: U.omar }];
   const inventoryTransfers: InventoryTransfer[] = [];
   const lowStockAlerts: LowStockAlert[] = [];
-  const purchaseOrders: PurchaseOrder[] = [];
+  // A fully received supplier order is the one payable the demo gym owes:
+  // JOD 1,650.000 to Jordan Sports Supply, aged from its receiving date.
+  const purchaseOrders: PurchaseOrder[] = [{
+    id: OPS_IDS.purchaseOrder,
+    organizationId: ORG_ID,
+    branchId: BRANCH_ABD,
+    sourceType: "supplier",
+    supplierId: OPS_IDS.supplier,
+    supplierName: "Jordan Sports Supply",
+    lines: [
+      { productId: OPS_IDS.creatine, sku: "SUP-CREATINE", productName: "Creatine monohydrate", orderedQuantity: 100, receivedQuantity: 100, unitCost: money(6_500, "JOD"), lineTotal: money(650_000, "JOD") },
+      { productId: OPS_IDS.protein, sku: "SUP-PROTEIN", productName: "Protein bar", orderedQuantity: 200, receivedQuantity: 200, unitCost: money(5_000, "JOD"), lineTotal: money(1_000_000, "JOD") },
+    ],
+    status: "received",
+    currency: "JOD",
+    total: money(1_650_000, "JOD"),
+    supplierInvoiceReference: "JSS-INV-2026-0147",
+    notes: "Monthly supplement restock.",
+    approvedAt: iso(daysAgo(now, 24)),
+    approvedById: U.omar,
+    receivedAt: iso(daysAgo(now, 20)),
+    createdAt: iso(daysAgo(now, 25)),
+    updatedAt: iso(daysAgo(now, 20)),
+  }];
   const facilityTasks: FacilityTask[] = [{ id: OPS_IDS.facility, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, zoneName: operationsZone.name, kind: "cleaning", severity: "medium", status: "open", title: "Main floor inspection", notes: "Check supplies and wipe high-touch surfaces.", assigneeId: U.hala, trafficContext: { checkInsLastHour: 18, occupancyPercent: 72, capturedAt: iso(hoursAgo(now, 1)) }, financialPostingStatus: "not_posted", createdAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) }];
   const equipmentAssets: EquipmentAsset[] = [{ id: OPS_IDS.asset, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, code: "TREAD-01", name: "Commercial treadmill", manufacturer: "Life Fitness", model: "Integrity 95Ti", serialNumber: "LF-AB-001", purchaseDate: iso(daysAgo(now, 900)).slice(0, 10), purchaseCost: money(2_900_000, "JOD"), warrantyEndDate: iso(daysAgo(now, 170)).slice(0, 10), status: "maintenance", expectedServiceIntervalDays: 90, expectedUsefulLifeMonths: 84, createdAt: iso(daysAgo(now, 900)), updatedAt: iso(daysAgo(now, 4)) }];
   const equipmentIssues: EquipmentIssue[] = [{ id: OPS_IDS.issue, organizationId: ORG_ID, branchId: BRANCH_ABD, assetId: OPS_IDS.asset, title: "Belt slipping under load", description: "Reported by front desk during evening peak.", severity: "high", status: "in_progress", reportedAt: iso(daysAgo(now, 4)), downtimeDays: 2, safetyStatus: "out_of_service", createdById: U.hala }];

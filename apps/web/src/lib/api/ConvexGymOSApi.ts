@@ -708,6 +708,13 @@ export class ConvexGymOSApi implements GymOSApi {
   listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> { return this.query("operations.purchase_orders.list", query); }
   receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.receive", input); }
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: T.UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<T.SupplierNotificationResult> { return this.mutate("operations.supplier_notification.preview", input); }
+  listPayables(query: T.PayablesQuery = {}): Promise<T.PayablesPage> { return this.query("operations.payables.list", query); }
+  exportPayables(query: T.PayablesQuery = {}): Promise<T.PayablesExport> { return this.query("operations.payables.export", query); }
+  listPayablesReconciliation(query: { branchId?: T.UUID } = {}): Promise<T.PayablesReconciliation> { return this.query("operations.payables.reconciliation", query); }
+  listSupplierPayments(query: T.SupplierPaymentsQuery = {}): Promise<T.Page<T.SupplierPayment>> { return this.query("operations.supplier_payments.list", query); }
+  getSupplierPayment(paymentId: T.UUID): Promise<T.SupplierPaymentDetail> { return this.query("operations.supplier_payment.get", { paymentId }); }
+  recordSupplierPayment(input: T.RecordSupplierPaymentInput): Promise<T.SupplierPaymentDetail> { return this.mutate("operations.supplier_payment.record", input); }
+  reverseSupplierPayment(input: T.ReverseSupplierPaymentInput): Promise<T.SupplierPaymentDetail> { return this.mutate("operations.supplier_payment.reverse", input); }
   listFacilityTasks(query: { branchId?: T.UUID; zoneId?: T.UUID; status?: T.FacilityTaskStatus; kind?: T.FacilityTaskKind } = {}): Promise<T.FacilityTask[]> { return this.query("operations.facility_tasks.list", query); }
   upsertFacilityTask(input: T.UpsertFacilityTaskInput): Promise<T.FacilityTask> { return this.mutate("operations.facility_task.upsert", input); }
   listClassSessions(query: T.ClassSessionQuery): Promise<T.ClassSession[]> { return this.query("classes.sessions.list", query); }

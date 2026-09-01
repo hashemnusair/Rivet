@@ -66,6 +66,7 @@ import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "@/lib/retention/at-risk";
@@ -281,6 +282,12 @@ function accountingSourceAttemptKey(sourceType: T.AccountingSourceType, sourceId
 
 function accountingSourceRequestFingerprint(input: { sourceType: T.AccountingSourceType; sourceId: T.UUID; idempotencyKey: string; reason?: string }): string {
   return stableJson({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason?.trim() ?? "" });
+}
+
+function mockPurchaseOrderLabel(order: T.PurchaseOrder): string {
+  const lines = order.lines.map((line) => `${line.productName} × ${line.receivedQuantity || line.orderedQuantity}`).join(", ");
+  const label = `Purchase order · ${lines || "no lines"}`;
+  return label.length > 96 ? `${label.slice(0, 95)}…` : label;
 }
 
 function accountingPolicyVersion(policyCode?: string): number | undefined {
@@ -7854,6 +7861,11 @@ export class MockGymOSApi implements GymOSApi {
         branchId: query.branchId,
         date: query.date,
         totalsByMethod,
+        supplierPayments: (() => {
+          const paidToday = this.db.supplierPayments.filter((payment) => payment.branchId === query.branchId && todayISODate(TZ, new Date(payment.occurredAt)) === query.date);
+          const returnedToday = this.db.supplierPayments.filter((payment) => payment.branchId === query.branchId && payment.method === "cash" && payment.status === "reversed" && payment.reversal && todayISODate(TZ, new Date(payment.reversal.reversedAt)) === query.date);
+          return { cashPaid: money(paidToday.filter((payment) => payment.method === "cash").reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), cashReturned: money(returnedToday.reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), totalPaid: money(paidToday.reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), count: paidToday.length };
+        })(),
         totalCollected: money(dayPayments.filter(isCollection).reduce((s, p) => s + p.amount.amount, 0), this.db.organization.currency),
         totalRefunded: money(dayPayments.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0), this.db.organization.currency),
         discountsTotal: money(discountsTotal, this.db.organization.currency),
@@ -9952,6 +9964,320 @@ export class MockGymOSApi implements GymOSApi {
       const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
       this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
       return result;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Supplier payables and supplier payments
+  // -------------------------------------------------------------------------
+
+  private requirePayablesRead() {
+    this.requireOperations();
+    const permissions = permissionsFor(this.db, currentRole(this.db));
+    if (!permissions.includes("operations.manage") && !permissions.includes("reports.financial.read")) throw ApiError.of(ERR.FORBIDDEN, "Supplier payables are limited to purchasing managers and finance readers.");
+  }
+
+  /** Supplier-attributed 2100 balances: fully received orders from a saved supplier. */
+  private mockPayables(scopeBranchId?: T.UUID): T.Payable[] {
+    const currency = this.db.organization.currency;
+    const today = managementLocalDate(nowISO(), this.db.organization.timezone);
+    const paid = new Map<string, number>();
+    for (const payment of this.db.supplierPayments) {
+      if (payment.status !== "recorded") continue;
+      for (const allocation of payment.allocations) paid.set(allocation.payableId, (paid.get(allocation.payableId) ?? 0) + allocation.amount.amount);
+    }
+    const payables: T.Payable[] = [];
+    for (const order of this.db.purchaseOrders) {
+      if (order.status !== "received" || !order.supplierId || order.sourceType === "private") continue;
+      if (!this.branchIsVisible(order.branchId) || (scopeBranchId && order.branchId !== scopeBranchId) || order.currency !== currency) continue;
+      const branch = this.db.branches.find((candidate) => candidate.id === order.branchId);
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === order.supplierId);
+      if (!branch || !supplier) continue;
+      const originalMinor = order.lines.reduce((sum, line) => sum + line.receivedQuantity * line.unitCost.amount, 0);
+      if (!Number.isSafeInteger(originalMinor) || originalMinor <= 0) continue;
+      const id = `purchase_order:${order.id}`;
+      const paidMinor = Math.min(originalMinor, paid.get(id) ?? 0);
+      const remainingMinor = originalMinor - paidMinor;
+      const ledgerPostingStatus = this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted";
+      const receivedAt = order.receivedAt ?? order.updatedAt;
+      payables.push({
+        id,
+        sourceType: "purchase_order",
+        sourceId: order.id,
+        sourceLabel: mockPurchaseOrderLabel(order),
+        supplierId: supplier.id,
+        supplierName: order.supplierName,
+        branchId: branch.id,
+        branchName: branch.name,
+        currency,
+        receivedAt,
+        ageDays: calendarDaysBetween(managementLocalDate(receivedAt, this.db.organization.timezone), today),
+        original: money(originalMinor, currency),
+        paid: money(paidMinor, currency),
+        remaining: money(remainingMinor, currency),
+        status: payableStatusFor(ledgerPostingStatus === "reversed", paidMinor, remainingMinor),
+        externalReference: order.supplierInvoiceReference,
+        ledgerPostingStatus,
+        href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}`,
+      });
+    }
+    return payables.sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id));
+  }
+
+  /** 2100 balances that no supplier account can own; reconciliation only. */
+  private mockUnattributedPayables(scopeBranchId?: T.UUID): T.UnattributedPayable[] {
+    const currency = this.db.organization.currency;
+    const items: T.UnattributedPayable[] = [];
+    const push = (item: Omit<T.UnattributedPayable, "id" | "branchName">) => {
+      const branch = this.db.branches.find((candidate) => candidate.id === item.branchId);
+      if (!branch || !this.branchIsVisible(item.branchId) || (scopeBranchId && item.branchId !== scopeBranchId)) return;
+      items.push({ ...item, id: `${item.sourceType}:${item.sourceId}`, branchName: branch.name });
+    };
+    for (const order of this.db.purchaseOrders) {
+      if (order.status !== "received") continue;
+      const amountMinor = order.lines.reduce((sum, line) => sum + line.receivedQuantity * line.unitCost.amount, 0);
+      const privateSource = !order.supplierId || order.sourceType === "private";
+      const foreignCurrency = order.currency !== currency;
+      if (amountMinor <= 0 || (!privateSource && !foreignCurrency)) continue;
+      push({ sourceType: "purchase_order", sourceId: order.id, sourceLabel: mockPurchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amount: money(amountMinor, order.currency), reason: foreignCurrency ? `Recorded in ${order.currency}, not ${currency}; settle it with a manual journal.` : "Private purchase: no supplier is recorded, so this balance cannot be assigned to a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted", href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}` });
+    }
+    for (const movement of this.db.stockMovements) {
+      if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
+      const amountMinor = movement.totalCost?.amount ?? (movement.unitCost ? movement.unitCost.amount * movement.quantity : undefined);
+      if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
+      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received outside a purchase order, so no supplier is recorded for this cost.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.id)}` });
+    }
+    for (const task of this.db.facilityTasks) {
+      if (task.status !== "completed" || !task.suppliesCost || task.suppliesCost.amount <= 0) continue;
+      push({ sourceType: "facility_supplies", sourceId: task.id, sourceLabel: `Facility supplies · ${task.title}`, branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amount: { ...task.suppliesCost }, reason: "Supplies cost was recorded on a completed maintenance task; no supplier is recorded.", ledgerPostingStatus: this.immutableAccountingStatus("facility_supplies", task.id) ?? task.financialPostingStatus ?? "not_posted", href: `/maintenance?task=${encodeURIComponent(task.id)}` });
+    }
+    for (const asset of this.db.equipmentAssets) {
+      if (!asset.purchaseCost || asset.purchaseCost.amount <= 0) continue;
+      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "Equipment purchase cost is recorded on the machine; the manufacturer is not a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.id)}` });
+    }
+    for (const order of this.db.equipmentWorkOrders) {
+      if (order.status !== "completed") continue;
+      const amountMinor = order.totalCost?.amount ?? (order.partsCost?.amount ?? 0) + (order.laborCost?.amount ?? 0);
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
+      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "Repair cost is recorded on a completed work order; the vendor name is a note, not a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.id)}` });
+    }
+    return items.sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || left.id.localeCompare(right.id));
+  }
+
+  private mockPayableFilters(query: T.PayablesQuery): { branchId?: T.UUID; supplierId?: T.UUID; status: T.PayableStatusFilter; search?: string } {
+    const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+    if (query.supplierId && !this.db.suppliers.some((candidate) => candidate.id === query.supplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+    const status = query.status ?? "open";
+    if (status !== "open" && status !== "all" && !PAYABLE_STATUSES.includes(status)) throw ApiError.of(ERR.VALIDATION, "Payable status filter is invalid.");
+    const search = query.search?.trim() || undefined;
+    if (search && search.length > 120) throw ApiError.of(ERR.VALIDATION, "Search text is too long.");
+    return { branchId, supplierId: query.supplierId, status, search };
+  }
+
+  private supplierPaymentView(payment: T.SupplierPayment): T.SupplierPayment {
+    return {
+      ...payment,
+      amount: { ...payment.amount },
+      allocations: payment.allocations.map((allocation) => ({ ...allocation, amount: { ...allocation.amount } })),
+      ledgerPostingStatus: this.immutableAccountingStatus("supplier_payment", payment.id) ?? "not_posted",
+      reversal: payment.reversal ? { ...payment.reversal, ledgerPostingStatus: this.immutableAccountingStatus("supplier_payment_reversal", payment.id) ?? "not_posted" } : undefined,
+    };
+  }
+
+  private supplierPaymentDetail(payment: T.SupplierPayment): T.SupplierPaymentDetail {
+    const branch = this.db.branches.find((candidate) => candidate.id === payment.branchId);
+    const payables = this.mockPayables();
+    const byId = new Map(payables.map((payable) => [payable.id, payable]));
+    return {
+      ...this.supplierPaymentView(payment),
+      organization: { name: this.db.organization.name },
+      branch: { name: branch?.name ?? "Branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
+      supplierRemaining: money(payables.filter((payable) => payable.supplierId === payment.supplierId && payable.status !== "reversed").reduce((sum, payable) => sum + payable.remaining.amount, 0), payment.amount.currency),
+      payables: payment.allocations.map((allocation) => {
+        const payable = byId.get(allocation.payableId);
+        return payable
+          ? { payableId: payable.id, sourceLabel: payable.sourceLabel, original: { ...payable.original }, paid: { ...payable.paid }, remaining: { ...payable.remaining }, status: payable.status }
+          : { payableId: allocation.payableId, sourceLabel: allocation.sourceLabel, original: { ...allocation.amount }, paid: { ...allocation.amount }, remaining: money(0, payment.amount.currency), status: "paid" as const };
+      }),
+    };
+  }
+
+  listPayables(query: T.PayablesQuery = {}): Promise<T.PayablesPage> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const filters = this.mockPayableFilters(query);
+      const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 25));
+      const offset = query.cursor === undefined ? 0 : Number.parseInt(query.cursor, 10);
+      if (query.cursor !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) throw ApiError.of(ERR.VALIDATION, "Payables cursor is invalid.");
+      const matched = this.mockPayables(filters.branchId).filter((payable) => matchesPayableFilters(payable, filters));
+      const summary = summarizePayables(matched, this.db.organization.currency);
+      return {
+        currency: this.db.organization.currency,
+        items: this.maybeEmpty(matched.slice(offset, offset + pageSize)),
+        nextCursor: offset + pageSize < matched.length ? String(offset + pageSize) : undefined,
+        matchedCount: matched.length,
+        ...summary,
+      };
+    });
+  }
+
+  exportPayables(query: T.PayablesQuery = {}): Promise<T.PayablesExport> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const filters = this.mockPayableFilters(query);
+      const matched = this.mockPayables(filters.branchId).filter((payable) => matchesPayableFilters(payable, filters));
+      const rows = matched.slice(0, 5_000);
+      return {
+        currency: this.db.organization.currency,
+        generatedAt: nowISO(),
+        truncated: matched.length > rows.length,
+        rows: rows.map((payable) => ({ supplierName: payable.supplierName, sourceLabel: payable.sourceLabel, sourceId: payable.sourceId, branchName: payable.branchName, receivedAt: payable.receivedAt, dueDate: payable.dueDate, ageDays: payable.ageDays, original: { ...payable.original }, paid: { ...payable.paid }, remaining: { ...payable.remaining }, status: payable.status, externalReference: payable.externalReference, ledgerPostingStatus: payable.ledgerPostingStatus })),
+      };
+    });
+  }
+
+  listPayablesReconciliation(query: { branchId?: T.UUID } = {}): Promise<T.PayablesReconciliation> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      const currency = this.db.organization.currency;
+      const items = this.mockUnattributedPayables(branchId);
+      const sameCurrency = items.filter((item) => item.amount.currency === currency);
+      return { currency, count: items.length, total: money(sameCurrency.reduce((sum, item) => sum + item.amount.amount, 0), currency), foreignCurrencyCount: items.length - sameCurrency.length, truncated: items.length > 100, items: this.maybeEmpty(items.slice(0, 100)) };
+    });
+  }
+
+  listSupplierPayments(query: T.SupplierPaymentsQuery = {}): Promise<T.Page<T.SupplierPayment>> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      if (query.supplierId && !this.db.suppliers.some((candidate) => candidate.id === query.supplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const rows = this.db.supplierPayments
+        .filter((payment) => this.branchIsVisible(payment.branchId) && (!branchId || payment.branchId === branchId) && (!query.supplierId || payment.supplierId === query.supplierId) && (!query.payableId || payment.allocations.some((allocation) => allocation.payableId === query.payableId)))
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))
+        .map((payment) => this.supplierPaymentView(payment));
+      return paginate(this.maybeEmpty(rows), { page: query.page, pageSize: query.pageSize });
+    });
+  }
+
+  getSupplierPayment(paymentId: T.UUID): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === paymentId);
+      if (!payment || !this.branchIsVisible(payment.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment not found.");
+      return this.supplierPaymentDetail(payment);
+    });
+  }
+
+  recordSupplierPayment(input: T.RecordSupplierPaymentInput): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const currency = this.db.organization.currency;
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === input.supplierId);
+      if (!supplier) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const branch = this.operationsBranch(input.branchId);
+      const method = input.method;
+      if (!SUPPLIER_PAYMENT_METHODS.includes(method)) throw ApiError.of(ERR.VALIDATION, "Supplier payment method must be cash, bank transfer, or CliQ.", { fieldErrors: { method: ["Choose cash, bank transfer, or CliQ"] } });
+      const positiveMinor = (value: T.Money | undefined, field: string) => {
+        if (!value || !Number.isSafeInteger(value.amount) || value.amount <= 0) throw ApiError.of(ERR.VALIDATION, `${field} must be a positive whole amount in ${currency} minor units.`, { fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
+        if (value.currency !== currency) throw ApiError.of(ERR.VALIDATION, `${field} must be in ${currency}.`, { fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
+        return value.amount;
+      };
+      const amountMinor = positiveMinor(input.amount, "amount");
+      const reference = input.reference?.trim() || undefined;
+      if (reference && reference.length > MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH) throw ApiError.of(ERR.VALIDATION, "Payment reference is too long.", { fieldErrors: { reference: [`Keep it under ${MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH} characters`] } });
+      if (method !== "cash" && !reference) throw ApiError.of(ERR.VALIDATION, "A transfer or CliQ reference is required so the payment can be found later.", { fieldErrors: { reference: ["Required for bank transfer and CliQ"] } });
+      const notes = input.notes?.trim() || undefined;
+      if (notes && notes.length > 500) throw ApiError.of(ERR.VALIDATION, "Payment notes are too long.", { fieldErrors: { notes: ["Keep it under 500 characters"] } });
+      const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
+      if (rawAllocations.length === 0 || rawAllocations.length > MAX_SUPPLIER_PAYMENT_ALLOCATIONS) throw ApiError.of(ERR.VALIDATION, `Allocate the payment to between 1 and ${MAX_SUPPLIER_PAYMENT_ALLOCATIONS} payables.`, { fieldErrors: { allocations: ["Choose at least one payable"] } });
+      const allocations = rawAllocations.map((raw) => ({ payableId: raw.payableId?.trim() ?? "", amountMinor: positiveMinor(raw.amount, "allocation") })).sort((left, right) => left.payableId.localeCompare(right.payableId));
+      if (allocations.some((allocation) => !allocation.payableId)) throw ApiError.of(ERR.VALIDATION, "Every allocation needs a payable.");
+      if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) throw ApiError.of(ERR.VALIDATION, "A payable can appear only once in an allocation.");
+      const allocatedMinor = allocationsTotalMinor(allocations);
+      if (!Number.isSafeInteger(allocatedMinor)) throw ApiError.of(ERR.VALIDATION, "Allocation total is too large.");
+      if (allocatedMinor !== amountMinor) throw ApiError.of(ERR.VALIDATION, "Allocations must add up to the payment amount exactly.", { fieldErrors: { allocations: ["Allocated total does not match the payment amount"] } });
+      const signature = JSON.stringify({ supplierId: supplier.id, branchId: branch.id, method, amountMinor, reference, notes, allocations });
+      const replay = this.operationsIdempotent("supplier_payment.record", idempotencyKey, signature) as T.SupplierPaymentDetail | undefined;
+      if (replay) return replay;
+      if (supplier.status !== "active") throw ApiError.of(ERR.CONFLICT, "This supplier is archived. Restore it before recording a payment.");
+      const payables = this.mockPayables();
+      const byId = new Map(payables.map((payable) => [payable.id, payable]));
+      for (const allocation of allocations) {
+        const payable = byId.get(allocation.payableId);
+        if (!payable) throw ApiError.of(ERR.NOT_FOUND, `Payable ${allocation.payableId} is not an open supplier balance you can see.`);
+        if (payable.supplierId !== supplier.id) throw ApiError.of(ERR.VALIDATION, `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`);
+        if (payable.status === "paid" || payable.status === "reversed") throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { details: { payableId: payable.id, status: payable.status } });
+        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${(payable.remaining.amount / 1000).toFixed(3)} outstanding; the allocation would overpay it.`, { details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
+      }
+      let shiftId: T.UUID | undefined;
+      if (method === "cash") {
+        const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} before paying a supplier in cash.`);
+        shiftId = shift.id;
+        if (input.expectedShiftId && input.expectedShiftId !== shift.id) throw ApiError.of(ERR.CONFLICT, "The open cash shift changed since this screen loaded. Refresh and record the payment again.", { details: { reason: "SHIFT_STALE", openShiftId: shift.id } });
+      }
+      const now = nowISO();
+      const payment: T.SupplierPayment = {
+        id: mockUuid(),
+        organizationId: this.db.organization.id,
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        branchId: branch.id,
+        branchName: branch.name,
+        method,
+        amount: money(amountMinor, currency),
+        reference,
+        notes,
+        status: "recorded",
+        shiftId,
+        allocations: allocations.map((allocation) => { const payable = byId.get(allocation.payableId)!; return { payableId: allocation.payableId, sourceType: payable.sourceType, sourceLabel: payable.sourceLabel, amount: money(allocation.amountMinor, currency) }; }),
+        recordedById: this.actor().id,
+        recordedByName: this.actor().name,
+        occurredAt: now,
+        ledgerPostingStatus: "not_posted",
+        idempotencyKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.db.supplierPayments.unshift(payment);
+      this.audit({ category: "operations", action: "operations.supplier_payment.record", entityType: "supplier_payment", entityId: payment.id, entityLabel: supplier.name, summary: `Paid ${supplier.name} ${currency} ${(amountMinor / 1000).toFixed(3)} by ${method.replace("_", " ")}`, after: { amountMinor, currency, method, reference: reference ?? null, shiftId: shiftId ?? null, allocations: allocations.map((allocation) => `${allocation.payableId}=${allocation.amountMinor}`).join(", ") }, branchId: branch.id });
+      const detail = this.supplierPaymentDetail(payment);
+      this.operationsIdempotency.set(`supplier_payment.record:${idempotencyKey}`, { signature, result: detail });
+      return detail;
+    });
+  }
+
+  reverseSupplierPayment(input: T.ReverseSupplierPaymentInput): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === input.paymentId);
+      if (!payment || !this.branchIsVisible(payment.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment not found.");
+      const reason = input.reason.trim();
+      const signature = JSON.stringify({ paymentId: payment.id, reason });
+      const replay = this.operationsIdempotent("supplier_payment.reverse", idempotencyKey, signature) as T.SupplierPaymentDetail | undefined;
+      if (replay) return replay;
+      if (payment.status === "reversed") throw ApiError.of(ERR.CONFLICT, "This supplier payment was already reversed. The original stays on record; nothing else changes.", { details: { reversedAt: payment.reversal?.reversedAt } });
+      let reversalShiftId: T.UUID | undefined;
+      if (payment.method === "cash") {
+        const branch = this.operationsBranch(payment.branchId);
+        const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`);
+        reversalShiftId = shift.id;
+      }
+      const now = nowISO();
+      payment.status = "reversed";
+      payment.reversal = { reason, reversedAt: now, reversedById: this.actor().id, reversedByName: this.actor().name, shiftId: reversalShiftId, ledgerPostingStatus: "not_posted" };
+      payment.updatedAt = now;
+      this.audit({ category: "operations", action: "operations.supplier_payment.reverse", entityType: "supplier_payment", entityId: payment.id, entityLabel: payment.supplierName, summary: `Reversed ${payment.supplierName} payment of ${payment.amount.currency} ${(payment.amount.amount / 1000).toFixed(3)} (${payment.method.replace("_", " ")})`, reason, before: { status: "recorded" }, after: { status: "reversed", reversalShiftId: reversalShiftId ?? null, reopenedAllocations: payment.allocations.map((allocation) => `${allocation.payableId}=${allocation.amount.amount}`).join(", ") }, branchId: payment.branchId });
+      const detail = this.supplierPaymentDetail(payment);
+      this.operationsIdempotency.set(`supplier_payment.reverse:${idempotencyKey}`, { signature, result: detail });
+      return detail;
     });
   }
 

@@ -45,7 +45,7 @@ import {
 } from "./workspaceModules";
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
-import { supplierCashShiftMovements } from "./payables";
+import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -6024,6 +6024,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "operations.equipment_work_orders.list":
     case "operations.equipment.recommendation":
       return await operationsQuery(ctx, actor, operation, input);
+    case "operations.payables.list":
+    case "operations.payables.export":
+    case "operations.payables.reconciliation":
+    case "operations.supplier_payments.list":
+    case "operations.supplier_payment.get":
+      return await payablesQuery(ctx, actor, operation, input);
     case "classes.calendar":
     case "classes.sessions.list":
     case "classes.occurrences.list":
@@ -6320,7 +6326,9 @@ async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branch
     return { method, payments: money(collected, actor.organization.currency), refunds: money(refunded, actor.organization.currency), net: signedMoney(collected - refunded, actor.organization.currency), count: rows.length };
   }).filter((item) => item.count > 0);
   const shifts = (await recordsOf(ctx, actor, "shift")).map((record) => data(record.data)).filter((shift) => shift.branchId === branchId && businessDate(stringValue(shift.openedAt), actor.organization.timezone || TZ_FALLBACK) === date);
-  return { branchId, date, totalsByMethod, totalCollected: money(payments.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
+  const branchDoc = await branchByPublicId(ctx, actor.organization._id, branchId);
+  const supplierPayments = branchDoc ? await supplierPaymentsForDay(ctx, actor, branchDoc._id, date) : { cashPaidMinor: 0, cashReturnedMinor: 0, totalPaidMinor: 0, count: 0 };
+  return { branchId, date, totalsByMethod, supplierPayments: { cashPaid: money(supplierPayments.cashPaidMinor, actor.organization.currency), cashReturned: money(supplierPayments.cashReturnedMinor, actor.organization.currency), totalPaid: money(supplierPayments.totalPaidMinor, actor.organization.currency), count: supplierPayments.count }, totalCollected: money(payments.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
 }
 
 function parseCsv(value: string): string[][] {
@@ -11176,6 +11184,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.equipment_issue.update":
     case "operations.equipment_work_order.upsert":
       return await operationsMutation(ctx, actor, operation, input);
+    case "operations.supplier_payment.record":
+    case "operations.supplier_payment.reverse":
+      return await payablesMutation(ctx, actor, operation, input);
     case "classes.session.upsert":
     case "classes.session.delete":
     case "classes.roster.add":

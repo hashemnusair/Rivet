@@ -1148,6 +1148,15 @@ export interface GymOSApi {
   receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
 
+  // Supplier payables and supplier payments (Growth+ operations module)
+  listPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesPage>;
+  exportPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesExport>;
+  listPayablesReconciliation(query?: { branchId?: UUID }): Promise<import("@/lib/domain/types").PayablesReconciliation>;
+  listSupplierPayments(query?: import("@/lib/domain/types").SupplierPaymentsQuery): Promise<Page<import("@/lib/domain/types").SupplierPayment>>;
+  getSupplierPayment(paymentId: UUID): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+  recordSupplierPayment(input: import("@/lib/domain/types").RecordSupplierPaymentInput): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+  reverseSupplierPayment(input: import("@/lib/domain/types").ReverseSupplierPaymentInput): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+
   listFacilityTasks(query?: { branchId?: UUID; zoneId?: UUID; status?: import("@/lib/domain/types").FacilityTaskStatus; kind?: import("@/lib/domain/types").FacilityTaskKind }): Promise<import("@/lib/domain/types").FacilityTask[]>;
   /** Fixed weekly class schedule for one branch. */
   listClassSessions(query: import("@/lib/domain/types").ClassSessionQuery): Promise<import("@/lib/domain/types").ClassSession[]>;
