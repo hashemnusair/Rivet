@@ -17,6 +17,39 @@ values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 31 August 2026
 
+### Supplier payables, supplier payments, and the canonical checkout — 2 September 2026
+
+- [x] Add the server-owned payables projection (received supplier orders,
+  recorded allocations, oldest-first, aging from the receiving date, no
+  invented due dates), the reconciliation list of unattributed 2100 costs,
+  and a readable filtered CSV export.
+- [x] Add reason-gated, idempotent, tenant/branch-scoped supplier payments
+  (cash from the open drawer, bank transfer, CliQ) with oldest-first
+  allocation, overpayment/credit/cross-supplier/cross-currency guards, a
+  single-shot reversal that reopens amounts and restores drawer truth, and
+  audit events for both.
+- [x] Add the `supplier_payment` / `supplier_payment_reversal` accounting
+  sources with stable per-method policies, dependency-gated reversal, and
+  operational versus ledger-posted state in every UI.
+- [x] Ship the Payables destination, the Record supplier payment dialog,
+  payment history, and the supplier payment confirmation (remittance record).
+- [x] Make walk-in the default checkout (no customer object, no disposable
+  guest record), keep member attach and receipt details optional, and make
+  `/checkout` the one canonical implementation with a redirect from the old
+  route and no embedded copy.
+- [x] Rework Operations into Stock & purchasing (Inventory, Purchase orders,
+  Suppliers, Payables, Equipment) with Maintenance on its own page, split the
+  command center into bounded modules, and add desktop and 390/360 px browser
+  coverage for checkout plus the payables settle-and-reverse journey.
+- [ ] Deploy the additive Convex schema (`supplierPayments`, two accounting
+  source-type literals, the `walk_in` customer literal) to exact Production
+  `descriptive-meerkat-589` once Hashem authorizes that deployment; until
+  then Production keeps the previous backend and the new screens must not be
+  exercised against it.
+- [ ] Run signed-in owner and reception acceptance for Payables, supplier
+  payment/reversal, the walk-in checkout, and Stock & purchasing on the
+  deployed application.
+
 ### Dated classes, coach operations, retention, and parallel operations — 31 August 2026
 
 - [x] Complete member class self-service with dated occurrences, branch and

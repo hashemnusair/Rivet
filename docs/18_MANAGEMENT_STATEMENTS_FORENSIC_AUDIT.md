@@ -62,6 +62,8 @@ contract below.
 | `equipment_acquisition` | purchase date (tenant-anchored) | purchase cost | 1500 / 2100 | |
 | `equipment_depreciation` (`equipment-depreciation:{id}:{YYYY-MM}`) | tenant-local month end | **straight-line-monthly-remainder.v1** over `min(cost, posted acquisition)` | 5600 / 1550 | requires posted acquisition; retired/replaced assets stop and demand an audited effective date |
 | `equipment_repair` | work order completed | total or parts+labor | 5200 / 2100 | |
+| `supplier_payment` | payment recorded (operational fact) | payment amount | 2100 / 1100 (cash) or 2100 / 1120 (bank transfer, CliQ) | `supplier-payment-{method}.v1`; excluded when reversed before it posted; a payment recorded operationally is not yet posted |
+| `supplier_payment_reversal` | reversal recorded | original amount | 1100 or 1120 / 2100 | **requires the original settlement to be `posted`**; otherwise `excluded` — same rule as voids |
 | manual journal | stated posting date | arbitrary balanced lines | any | owner-only, reasoned, fingerprinted |
 
 Unsupported cases (`adjustment` movements, missing cost, missing branch,
@@ -279,10 +281,14 @@ Not defects; the system currently takes the safest documented behavior:
 3. **Refunds never touch deferred revenue.** Service value ends via
    cancellation only. If a gym wants refunds to shorten service, that is a
    commercial policy change.
-4. **AP settlement is out of scope**: supplier payables (2100) accrue with
-   no payment source type yet; equipment/PO purchases therefore never hit
-   the cash-flow statement until such a source exists (owner manual journals
-   can bridge).
+4. **AP settlement (revised 2 September 2026).** Supplier purchase orders
+   are now settled through `supplier_payment` / `supplier_payment_reversal`
+   sources (§8), so paid supplier invoices reach the cash-flow statement as
+   operating outflows. Balances with no supplier account (private purchases,
+   equipment, repairs, facility supplies, stock received outside an order)
+   still have no settlement source: they are shown as reconciliation items
+   in Payables and are settled by owner manual journals until a decision is
+   taken on how to attribute them.
 5. **Legacy v1 retail policies** stay frozen on historical rows by design.
 
 ## 5. Known limitations
@@ -358,3 +364,41 @@ model's monthly fils and monthly clicks an explicit product decision:
   (recognition, cancellation drift, reversal), the no-schedule guarantee for
   v2 sales, and review-exclusion persistence/reconsideration in both
   adapters.
+
+## 8. Addendum — supplier payables and settlement (2 September 2026)
+
+- **Payables are a projection, not a table.** A payable is a fully received
+  purchase order placed with a saved supplier, in the organization currency,
+  valued at Σ receivedQty × unitCost (the same amount the
+  `purchase_order_receipt` fact posts). Paid = Σ allocations of recorded,
+  non-reversed supplier payments; remaining = original − paid; status is
+  unpaid / partially paid / paid, or reversed when the receipt's ledger
+  posting was reversed. Aging counts tenant-local calendar days from the
+  receiving date; a due date appears only when the supplier recorded one.
+- **Settlement sources.** `supplier_payment` posts Dr 2100 and credits
+  1100 (cash) or 1120 (bank transfer, CliQ) under
+  `supplier-payment-{cash|bank-transfer|cliq}.v1`.
+  `supplier_payment_reversal` posts the opposite entry under
+  `supplier-payment-reversal-{method}.v1` and is dependency-gated on a
+  posted original, exactly like a void. A payment reversed before it ever
+  posted is `excluded` on both sides so no cash outflow is fabricated. The
+  operational record carries `financialPostingStatus` for the settlement
+  and `reversalFinancialPostingStatus` for the reversal; the Payables UI,
+  the confirmation, and payment history always distinguish "recorded" from
+  "posted to ledger".
+- **Cash truth.** Cash supplier payments leave the drawer of the shift that
+  funded them and, when reversed, come back into the shift open at the time
+  of the reversal; both sides are counted where they physically happened
+  (`supplierCashPayments` / `supplierCashReversals` in shift totals, the
+  close-shift expected-cash formula, and daily reconciliation). Recording a
+  cash payment requires the branch's open shift and refuses a stale one;
+  reversing a cash payment requires an open shift to receive the cash.
+- **Not attributed on purpose.** Private purchases, equipment acquisitions,
+  repairs, facility supplies, and stock received outside an order still
+  credit 2100 with no supplier; they appear as reconciliation items and are
+  never assigned to a supplier automatically. Cross-currency purchase orders
+  are listed there too.
+- Verified by `convex/domain.payables.test.ts`, the supplier-payment cases
+  in `convex/accounting.test.ts`, mock parity in
+  `src/lib/mock/payables.test.ts`, and the browser journey in
+  `e2e/checkout-and-payables.spec.ts`.

@@ -1,5 +1,67 @@
 # GymOS / RIVET current implementation state
 
+## Supplier payables, supplier payments, walk-in checkout, Stock & purchasing — 2 September 2026
+
+- **Accounts payable is now settleable.** A server-owned payables projection
+  (`convex/payables.ts`) derives what the gym owes from fully received
+  supplier purchase orders and recorded payment allocations: oldest-first,
+  cursor-paged, filtered by branch/supplier/status/search, with per-supplier
+  totals and aging from the receiving date. No due date is ever invented; a
+  payable shows one only when the supplier recorded it. Costs with no supplier
+  account (private purchases, stock received outside an order, facility
+  supplies, equipment purchases, repairs) are listed as reconciliation items
+  and never auto-assigned to a supplier.
+- **Supplier payments** (`operations.supplier_payment.record`): cash, bank
+  transfer or CliQ; one payment across several payables of the same supplier;
+  oldest-first suggested allocation the operator can edit; no overpayment,
+  credit balances, cross-supplier, cross-currency or cross-tenant
+  allocations; transfers require a searchable reference and are never claimed
+  as externally verified; cash requires the branch's open cash shift, counts
+  as a real drawer outflow in shift totals/close/reconciliation, and refuses a
+  stale shift. Replays are idempotent only after tenant, supplier and branch
+  access are established. **Reversal** (`…reverse`) is reason-gated,
+  single-shot, keeps the original immutable, reopens the allocations, and
+  returns cash to the currently open drawer. Reads need `operations.manage`
+  or `reports.financial.read`; writes need `operations.manage`.
+- **Accounting:** new source types `supplier_payment` (Dr 2100 / Cr 1100 cash,
+  Dr 2100 / Cr 1120 bank transfer and CliQ) and `supplier_payment_reversal`
+  (the opposite entries), each with stable per-method policy codes. A
+  reversal posts only after the original settlement is posted; a payment
+  reversed before posting is excluded on both sides. UI copy everywhere keeps
+  "recorded" and "posted to ledger" apart. Additive schema change:
+  `supplierPayments` table (five indexes) plus two source-type literals and a
+  `walk_in` customer literal. **Convex Production deployment is owed** to
+  `descriptive-meerkat-589`; not run in this sprint.
+- **Payables UI:** `/operations/payables` (also the Payables tab of Stock &
+  purchasing): outstanding/oldest/aging cards, per-supplier totals, the
+  oldest-first table, payment history per payable, a Record supplier payment
+  dialog, readable CSV export of the complete filtered result, and a
+  supplier payment confirmation (a remittance record, not a customer receipt)
+  with print, download, record-another, and reverse.
+- **Checkout:** one canonical `/checkout` in primary staff navigation;
+  `/operations/checkout` redirects with its parameters and the embedded
+  operations tab is gone. Walk-in is the default (the server accepts a sale
+  with no customer object and stores a `walk_in` snapshot; no member, lead or
+  disposable guest record is created); a member can be attached optionally;
+  receipt details sit behind a secondary action. Branch rules: the assigned
+  branch is preselected, owners choose, "All branches" is never a sale.
+  Dense scan-ready product rows, desktop side cart, phone bottom sheet with a
+  sticky total (390/360 px, 44 px targets, no sideways scroll), open-shift
+  check before cash, per-draft idempotency key with a double-submit guard,
+  and a completion screen (amount, method, receipt, stock updated, open
+  receipt, next sale, refund/void when authorized).
+- **Operations → Stock & purchasing:** Inventory, Purchase orders (status
+  filter, order deep links), Suppliers (payables links), Payables, Equipment;
+  Maintenance moved to `/maintenance` (QR shortcuts and old `?tab=facilities`
+  links forward there). The 82 KB command center is split into inventory,
+  purchasing, equipment and shared modules.
+- Tests: Convex (`domain.payables.test.ts`, accounting settlement policies,
+  walk-in checkout), mock parity (`payables.test.ts`, walk-in), pure helpers
+  (allocation, aging, CSV), component tests (payables workspace,
+  confirmation, checkout flow, Stock & purchasing tabs, maintenance page) and
+  Playwright journeys (desktop and 390/360 px checkout, payables
+  settle/reverse, tab and redirect coverage).
+
 ## Whole-price membership revenue, review exclusions, classes booking truth — 1 September 2026
 
 - **Owner policy decision executed:** membership sales/renewals now post the

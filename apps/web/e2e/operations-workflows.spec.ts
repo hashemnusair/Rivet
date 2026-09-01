@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("daily operations workflows", () => {
-  test("gates writes on a concrete branch, opens purchasing dialogs, and resolves an equipment issue", async ({ page }) => {
+test.describe("stock and purchasing workflows", () => {
+  test("gates writes on a concrete branch, moves purchasing into tabs, and resolves an equipment issue", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
     await page.getByRole("button", { name: /Open .+ workspace/i }).click();
     await page.goto("/operations");
     await expect(page.getByTestId("operations-command-center")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Stock & purchasing" })).toBeVisible();
 
     // The all-branches comparison view is deliberately read-only: branch
     // writes stay disabled until one concrete branch is chosen.
@@ -18,11 +19,16 @@ test.describe("daily operations workflows", () => {
     await expect(page.getByText(/Select a branch above to add items/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Add item" })).toBeEnabled();
 
-    // Maintenance uses everyday gym language while retaining the same
-    // branch-safe task model underneath.
-    await page.getByRole("tab", { name: "Maintenance" }).click();
-    await expect(page.getByRole("heading", { name: "Maintenance list" })).toBeVisible();
-    await expect(page.getByText(/Cleaning, inspections, and incidents/)).toBeVisible();
+    // Purchasing lives in its own tabs now; a received supplier order shows
+    // up as a payable with the supplier's outstanding balance.
+    await page.getByRole("tab", { name: "Purchase orders" }).click();
+    await expect(page.getByTestId("operations-orders")).toBeVisible();
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await expect(page.getByTestId("purchase-order-row").first()).toContainText("Jordan Sports Supply");
+    await page.getByRole("tab", { name: "Suppliers" }).click();
+    await expect(page.getByTestId("supplier-row").first()).toContainText("Jordan Sports Supply");
+    await page.getByRole("tab", { name: "Payables" }).click();
+    await expect(page.getByTestId("payable-row").first()).toContainText("Jordan Sports Supply");
     await page.getByRole("tab", { name: "Inventory" }).click();
 
     // Stock movements between branches go through the transfer dialog.
@@ -42,5 +48,11 @@ test.describe("daily operations workflows", () => {
     await issueCard.getByRole("button", { name: "Resolve issue" }).click();
     await expect(issueCard).toContainText("resolved");
     await expect(issueCard.getByRole("button", { name: "Resolve issue" })).toHaveCount(0);
+
+    // Maintenance is linked from here and lives on its own page.
+    await page.getByRole("link", { name: "Maintenance" }).click();
+    await expect(page).toHaveURL(/\/maintenance/);
+    await expect(page.getByRole("heading", { name: "Maintenance list" })).toBeVisible();
+    await expect(page.getByTestId("operations-facilities").getByText(/Cleaning, inspections, and incidents/)).toBeVisible();
   });
 });

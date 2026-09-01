@@ -46,9 +46,9 @@ async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth")
   const primaryNav = page.locator('aside[aria-label="Primary navigation"]');
   await expect(primaryNav).toBeVisible();
   if (plan === "Starter") {
-    await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toHaveCount(0);
+    await expect(primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true })).toHaveCount(0);
   } else {
-    await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
+    await expect(primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
   }
   await expect(primaryNav.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toHaveCount(0);
@@ -71,11 +71,11 @@ async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth")
 async function expectPremiumWorkspace(page: Page) {
   const primaryNav = page.locator('aside[aria-label="Primary navigation"]');
   await expect(primaryNav).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Operations", exact: true })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Statements", exact: true })).toBeVisible();
 
-  await primaryNav.getByRole("link", { name: "Operations", exact: true }).click();
+  await primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true }).click();
   await expect(page).toHaveURL(/\/operations$/);
   await expect(page.getByTestId("operations-command-center")).toBeVisible();
 
@@ -114,7 +114,7 @@ test.describe("RIVET platform subscription entitlements", () => {
     await page.goto("/login/gym");
     await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Operations", exact: true })).toBeVisible();
+    await expect(page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
 
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();

@@ -1342,7 +1342,10 @@ describe("membership sale and renewal", () => {
     const plans = (await api.listPlans({ status: "active", pageSize: 10 })).items;
     const originalPlan = plans[0]!;
     const replacement = plans.find((plan) => plan.id !== originalPlan.id)!;
-    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: "2026-08-01", overrideReason: "Historical test sale date." });
+    // Anchor the sale to the first day of the current tenant-local month so the
+    // term is still running when the plan changes at "next renewal"; a fixed
+    // historical date silently expires as the calendar moves on.
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: `${todayISODate("Asia/Amman").slice(0, 7)}-01`, overrideReason: "Current-month test sale date." });
 
     const changed = await api.changeMembershipPlan(sale.membership.id, {
       planId: replacement.id,

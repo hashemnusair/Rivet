@@ -200,3 +200,28 @@ approved audited **review exclusions** (`accounting.source.exclude` /
 counting toward statement completeness warnings, and warnings stopped
 counting `excluded` rows or not-yet-due current-month schedules. Details in
 docs/18 §7.
+
+## Supplier payments settle accounts payable — 2026-09-02
+
+Accepted policy: a supplier payment is an operational fact recorded by an
+owner or manager (`operations.manage`) against one supplier's received
+purchase orders, oldest first, never exceeding what is outstanding and never
+leaving a credit balance. Cash comes out of the branch's open cash drawer
+and is part of shift and reconciliation truth; bank transfers and CliQ are
+recorded with the reference staff typed and are never claimed as verified.
+The ledger settles 2100 against 1100 (cash) or 1120 (bank transfer, CliQ)
+under stable per-method policy codes; a reversal is the opposite entry and
+only posts after the original did. Recording and posting remain separate
+steps, and every screen says which one has happened.
+
+Decisions taken in the same change: payables read access reuses
+`reports.financial.read` or `operations.manage` rather than a new permission
+(no catalog migration); reversing a cash payment after its shift closed
+puts the cash into the shift open at reversal time rather than rewriting the
+closed shift; due dates are shown only when a supplier recorded one.
+
+Still open for the owner/accountant: how to attribute costs that have no
+supplier account (equipment, repairs, facility supplies, private purchases)
+so they can be settled without a manual journal; whether supplier credit
+notes should exist; whether partial receipts should create partial payables
+before an order is fully received.
