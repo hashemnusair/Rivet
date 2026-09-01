@@ -33,6 +33,7 @@ import type * as membershipJobs from "../membershipJobs.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
 import type * as operationalEmail from "../operationalEmail.js";
 import type * as operations from "../operations.js";
+import type * as payables from "../payables.js";
 import type * as permissions from "../permissions.js";
 import type * as platformGymDetail from "../platformGymDetail.js";
 import type * as platformOverview from "../platformOverview.js";
@@ -84,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   notificationDelivery: typeof notificationDelivery;
   operationalEmail: typeof operationalEmail;
   operations: typeof operations;
+  payables: typeof payables;
   permissions: typeof permissions;
   platformGymDetail: typeof platformGymDetail;
   platformOverview: typeof platformOverview;
