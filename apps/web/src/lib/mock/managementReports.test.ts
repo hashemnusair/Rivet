@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockGymOSApi } from "./MockGymOSApi";
+import { MockGymOSApi, mockMembershipAllocations, mockMembershipFreezeWindows } from "./MockGymOSApi";
 import { BRANCH_ABD } from "./seed";
 import { todayISODate } from "@/lib/utils/dates";
 
@@ -21,7 +21,7 @@ describe("MockGymOSApi management reporting parity", () => {
     expect(cashflow).toMatchObject({ reconciliationStatus: "unproven", reconciliation: { status: "unproven", expectedClosingCash: { amount: cashflow.closingCash.amount }, asOfCash: { amount: cashflow.closingCash.amount }, difference: { amount: 0 } }, balanced: false });
   });
 
-  it("drives membership revenue from queue refresh through recognition into a proven statement", async () => {
+  it("drives membership sales from queue refresh to immediate whole-price revenue in a proven statement", async () => {
     const api = new MockGymOSApi();
     const fromDate = "2024-01-01";
     const toDate = todayISODate("Asia/Amman");
@@ -37,31 +37,25 @@ describe("MockGymOSApi management reporting parity", () => {
     const loopBranchId = allMembershipRows[0]?.branchId;
     const membershipRows = allMembershipRows.filter((row) => row.branchId === loopBranchId);
     if (membershipRows.length === 0) throw new Error("seed must provide a pending membership fact");
+    let postedTotal = 0;
     for (const row of membershipRows) {
-      const original = await api.postAccountingSource({ sourceType: row.sourceType, sourceId: row.sourceId, idempotencyKey: `loop-original-${row.sourceId}`, reason: "Post the deferred membership fact." });
-      expect(original.status).toBe("posted");
+      const original = await api.postAccountingSource({ sourceType: row.sourceType, sourceId: row.sourceId, idempotencyKey: `loop-original-${row.sourceId}`, reason: "Post the membership sale." });
+      // Owner policy: the whole price is revenue at sale — no deferral.
+      expect(original).toMatchObject({ status: "posted" });
+      expect(original.policyCode).toMatch(/^membership-(sale|renewal)\.v2$/);
+      postedTotal += original.amount?.amount ?? 0;
     }
 
-    // Recognition schedules become postable only after the deferred original
-    // is on the ledger and the queue has been re-projected.
+    // Immediate-revenue sales never grow a recognition schedule.
     await api.refreshAccountingSourceQueue({});
-    const recognitions = await api.listAccountingSourcePostings({ status: "pending", sourceType: "membership_revenue_recognition", pageSize: 100 });
-    const recognitionRow = recognitions.items.find((row) => row.amount && row.branchId === loopBranchId);
-    if (!recognitionRow?.amount) throw new Error("posted memberships must expose a pending recognition month");
-    const recognition = await api.postAccountingSource({ sourceType: "membership_revenue_recognition", sourceId: recognitionRow.sourceId, idempotencyKey: "loop-recognition", reason: "Recognize the earned service month." });
-    expect(recognition.status).toBe("posted");
+    const recognitions = await api.listAccountingSourcePostings({ sourceType: "membership_revenue_recognition", pageSize: 100 });
+    expect(recognitions.items).toHaveLength(0);
 
-    // A final full refresh re-fingerprints every candidate so both branch and
-    // consolidated statements can claim proven coverage. The recognition
-    // journal is dated at the tenant-local service-month end, which can sit a
-    // few days ahead of today inside the current month — report through it.
-    const reportToDate = recognitionRow.occurredAt.slice(0, 10) > toDate ? recognitionRow.occurredAt.slice(0, 10) : toDate;
-    await api.refreshAccountingSourceQueue({});
-    const branchIncome = await api.getIncomeStatement({ fromDate, toDate: reportToDate, branchId: recognitionRow.branchId });
+    const branchIncome = await api.getIncomeStatement({ fromDate, toDate, branchId: loopBranchId });
     const revenueLine = branchIncome.revenue.lines.find((line) => line.accountCode === "4100");
-    expect(revenueLine?.amount.amount).toBe(recognitionRow.amount.amount);
+    expect(revenueLine?.amount.amount).toBe(postedTotal);
     expect(branchIncome.queueCoverage).toBe("proven");
-    const consolidatedIncome = await api.getIncomeStatement({ fromDate, toDate: reportToDate });
+    const consolidatedIncome = await api.getIncomeStatement({ fromDate, toDate });
     expect(consolidatedIncome.queueCoverage).toBe("proven");
   }, 30_000);
 
@@ -103,32 +97,32 @@ describe("MockGymOSApi management reporting parity", () => {
     expect(balance.balanced).toBe(true);
   });
 
-  it("keeps a completed historical freeze excluded from recognition after the active flag clears", async () => {
-    const api = new MockGymOSApi();
-    const today = todayISODate("Asia/Amman");
-    const month = today.slice(0, 7);
-    await api.refreshAccountingSourceQueue({});
-    const rows = await api.listAccountingSourcePostings({ sourceType: "membership_revenue_recognition", pageSize: 100 });
-    const memberships = await api.listMemberships({ status: "active", pageSize: 100 });
-    const candidate = memberships.items.find((membership) =>
-      membership.planFreezeAllowanceDays - membership.frozenDaysUsed >= 1 &&
-      !membership.activeFreeze &&
-      membership.startDate <= today && membership.endDate > today &&
-      rows.items.some((row) => row.sourceId === `membership-revenue:${membership.id}:${month}`));
-    if (!candidate) throw new Error("Seed must provide an active membership with freeze allowance and a current-month recognition row.");
-    const before = rows.items.find((row) => row.sourceId === `membership-revenue:${candidate.id}:${month}`);
-    const beforeDays = (before?.details as { serviceDays?: number } | undefined)?.serviceDays;
-    expect(typeof beforeDays).toBe("number");
+  it("keeps completed historical freezes excluded from the daily allocator", () => {
+    const completed = { id: "freeze-h1", membershipId: "m1", startDate: "2026-01-10", endDate: "2026-01-19", status: "completed", reason: "History", createdById: "u1", createdAt: "2026-01-01T00:00:00.000Z" } as const;
+    // The active flag is gone, but the completed window still removed days.
+    const windows = mockMembershipFreezeWindows({ freezes: [completed], activeFreeze: undefined });
+    expect(windows).toHaveLength(1);
+    const rows = mockMembershipAllocations(2_100, "2026-01-01", "2026-01-31", { freezes: windows });
+    expect(rows).toEqual([{ month: "2026-01", serviceStart: "2026-01-01", serviceEnd: "2026-01-31", days: 21, amount: 2_100 }]);
+    // An active freeze that also sits in the history merges without doubling.
+    expect(mockMembershipFreezeWindows({ freezes: [completed], activeFreeze: { ...completed, status: "active" } })).toHaveLength(1);
+  });
 
-    // One-day freeze today, ended immediately: it completes and the active
-    // flag clears, but today stays a frozen (non-service) day forever.
-    await api.freezeMembership(candidate.id, { startDate: today, endDate: today, reason: "Forensic freeze fixture" });
-    await api.unfreezeMembership(candidate.id, { reason: "Forensic unfreeze fixture" });
+  it("keeps an owner review exclusion across refreshes and reopens it on reconsideration", async () => {
+    const api = new MockGymOSApi();
     await api.refreshAccountingSourceQueue({});
-    const after = await api.listAccountingSourcePostings({ sourceType: "membership_revenue_recognition", pageSize: 100 });
-    const afterRow = after.items.find((row) => row.sourceId === `membership-revenue:${candidate.id}:${month}`);
-    const afterDays = (afterRow?.details as { serviceDays?: number } | undefined)?.serviceDays;
-    expect(afterDays).toBe((beforeDays ?? 0) - 1);
+    const listed = await api.listAccountingSourcePostings({ status: "unconfigured", pageSize: 100 });
+    const junk = listed.items[0];
+    if (!junk) throw new Error("Seed must provide an unconfigured queue row.");
+    const excluded = await api.excludeAccountingSource({ sourceType: junk.sourceType, sourceId: junk.sourceId, reason: "Reviewed: cancelled onboarding test data" });
+    expect(excluded.status).toBe("excluded");
+    expect(excluded.reviewExcludedAt).toBeTruthy();
+    await api.refreshAccountingSourceQueue({});
+    const after = await api.listAccountingSourcePostings({ status: "excluded", pageSize: 100 });
+    expect(after.items.find((row) => row.sourceId === junk.sourceId)).toMatchObject({ status: "excluded" });
+    const reopened = await api.reconsiderAccountingSource({ sourceType: junk.sourceType, sourceId: junk.sourceId, reason: "Re-check before close" });
+    expect(reopened.status).toBe("unconfigured");
+    expect(reopened.reviewExcludedAt).toBeUndefined();
   });
 
   it("exposes drilldown ids for every available GM metric, including cash variance", async () => {

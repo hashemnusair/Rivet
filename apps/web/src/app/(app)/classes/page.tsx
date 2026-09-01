@@ -9,7 +9,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
-import type { ClassAudience, ClassCoach, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
+import type { ClassAudience, ClassCoach, ClassOccurrence, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PageHeader } from "@/components/shared/chrome";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -107,6 +107,20 @@ export default function ClassesPage() {
   const memberResults: MemberSummary[] = memberLookup.data?.items.filter((member) => member.status !== "archived") ?? [];
   const managed = sessionsQuery.data?.find((item) => item.id === manageId);
   const managedOccurrence = occurrencesQuery.data?.find((item) => item.id === manageOccurrenceId);
+  // Booking counts live on dated occurrences, not the weekly template. Each
+  // chip and the details popup show the upcoming date's real numbers.
+  const nextOccurrenceByTemplate = useMemo(() => {
+    const map = new Map<string, ClassOccurrence>();
+    for (const occurrence of occurrencesQuery.data ?? []) {
+      if (occurrence.status === "cancelled") continue;
+      if (!map.has(occurrence.templateId)) map.set(occurrence.templateId, occurrence);
+    }
+    return map;
+  }, [occurrencesQuery.data]);
+  const bookedLabel = (session: ClassSession): string => {
+    const next = nextOccurrenceByTemplate.get(session.id);
+    return next ? `${next.bookedCount}/${next.capacity}` : `0/${session.capacity}`;
+  };
 
   useEffect(() => {
     if (!menu) return;
@@ -328,14 +342,14 @@ export default function ClassesPage() {
                               className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[10.5px] leading-tight shadow-sm transition-all hover:-translate-y-px hover:border-line-3 hover:shadow-md"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3.5, Math.min(width, 100 - left))}%`, top: `${5 + item.lane * 58}px`, height: "54px" }}
                               aria-label={`${item.name}, ${DAYS[item.dayOfWeek]} ${rangeLabel(item)}`}
-                              title={`${item.name} — ${rangeLabel(item)} · ${item.roster.length}/${item.capacity}${item.coachName ? ` · ${item.coachName}` : ""}`}
+                              title={`${item.name} — ${rangeLabel(item)} · ${bookedLabel(item)} booked${item.coachName ? ` · ${item.coachName}` : ""}`}
                             >
                               <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
                               <span className="flex items-center gap-1.5">
                                 <span className="truncate text-[11px] font-semibold">{item.name}</span>
                                 {item.audience !== "mixed" ? <span className="shrink-0 rounded-full border border-line-2 px-1.5 text-[8px] font-medium text-ink-2">{item.audience === "women" ? "Women" : "Men"}</span> : null}
                               </span>
-                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3">{rangeLabel(item).split("–")[0]} · {item.roster.length}/{item.capacity}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
+                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3">{rangeLabel(item).split("–")[0]} · {bookedLabel(item)}{item.coachName ? ` · ${item.coachName.split(" ")[0]}` : ""}</span>
                             </button>
                           );
                         })}
@@ -464,6 +478,10 @@ export default function ClassesPage() {
             {(() => {
               const target = sessionsQuery.data?.find((item) => item.id === detailsId);
               if (!target) return null;
+              // Bookings live on the dated class, not the weekly template —
+              // show the upcoming date's real numbers and names.
+              const nextOccurrence = occurrencesQuery.data?.find((occurrence) => occurrence.templateId === target.id && occurrence.status !== "cancelled");
+              const attendees = nextOccurrence?.roster.filter((entry) => ["booked", "attended", "waitlisted"].includes(entry.status)) ?? [];
               return (
                 <>
                   <DialogHeader>
@@ -481,13 +499,28 @@ export default function ClassesPage() {
                       <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
                       <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
                       <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Who is it for?</dt><dd className="mt-0.5 font-medium">{AUDIENCE_LABEL[target.audience]}</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Booked</dt><dd className="mt-0.5 font-medium">{target.roster.length}/{target.capacity}</dd></div>
+                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium">{nextOccurrence ? `${nextOccurrence.bookedCount}/${nextOccurrence.capacity}` : `0/${target.capacity}`}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[10.5px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
                     </dl>
+                    <div>
+                      <p className="text-[10.5px] uppercase tracking-wide text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
+                      {attendees.length > 0 ? (
+                        <ul className="mt-1.5 divide-y divide-line rounded-md border border-line">
+                          {attendees.map((entry) => (
+                            <li key={entry.bookingId} className="flex items-center justify-between gap-3 px-3 py-2 text-[12.5px]">
+                              <span className="min-w-0 truncate font-medium">{entry.name}</span>
+                              <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[9.5px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1.5 text-[12px] text-ink-3">{nextOccurrence ? "No one has booked this date yet." : "No dated class is available in this seven-day view."}</p>
+                      )}
+                    </div>
                     {target.notes ? <div><p className="text-[10.5px] uppercase tracking-wide text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
                   </DialogBody>
                   <DialogFooter>
                     <Button variant="secondary" onClick={() => setDetailsId(undefined)}>Close</Button>
-                    <Button onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Open next dated class</Button>
+                    <Button onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Manage bookings & attendance</Button>
                   </DialogFooter>
                 </>
               );

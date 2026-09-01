@@ -2311,6 +2311,8 @@ export interface AccountingSourcePosting {
   reason?: string;
   details?: Record<string, unknown>;
   projectionFingerprint?: string;
+  /** Set when an owner/manager review permanently excluded this fact from the books. */
+  reviewExcludedAt?: ISODateTime;
   occurredAt: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -2370,6 +2372,13 @@ export interface PostAccountingSourceInput {
   sourceId: UUID;
   idempotencyKey: string;
   reason?: string;
+}
+
+export interface ReviewAccountingSourceInput {
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  /** Written to the audit trail; required. */
+  reason: string;
 }
 
 // ---------------------------------------------------------------------------

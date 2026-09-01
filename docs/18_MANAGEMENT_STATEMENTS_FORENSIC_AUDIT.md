@@ -47,8 +47,8 @@ contract below.
 
 | Source type | Recognition event | Amount | Dr / Cr | Reversal & notes |
 |---|---|---|---|---|
-| `membership_sale` / `membership_renewal` | record creation | net = salePrice − approved discount | 1200 / 2200 | deferred; blocked while discount approval pending/rejected, on cancellation, or lifecycle mismatch |
-| `membership_revenue_recognition` (`membership-revenue:{id}:{YYYY-MM}`) | tenant-local service-month end | monthly slice of `min(net, posted deferred)` by **daily-weighted-largest-remainder.v1** | 2200 / 4100 | requires the original sale/renewal **posted** in same branch+currency; never recognizes future months, frozen days, or days past the cancellation boundary |
+| `membership_sale` / `membership_renewal` (**v2, current**) | record creation | net = salePrice − approved discount | 1200 / 4100 | **immediate whole-price revenue** (owner decision 2026-09-01, §7); blocked while discount approval pending/rejected, on cancellation, or lifecycle mismatch. Rows already queued under v1 stay pinned to v1 (1200 / 2200 deferred) |
+| `membership_revenue_recognition` (`membership-revenue:{id}:{YYYY-MM}`) | tenant-local service-month end | monthly slice of `min(net, posted deferred)` by **daily-weighted-largest-remainder.v1** | 2200 / 4100 | **legacy-only**: exists solely for terms whose original posted under a deferred v1 policy, in the same branch+currency; never recognizes future months, frozen days, or days past the cancellation boundary. Immediate-revenue and unposted sales emit no schedule |
 | `payment` (membership) | `occurredAt` | payment amount | 1100/1110/1120 / 1200 | method → cash account; voided payments cannot post as payments |
 | `payment` (retail, `type=retail_sale`) | `occurredAt` | sale amount | cash / 4200 (`retail-sale-*.v2`) | v1 retail policies are frozen legacy (credit 4100) and only preserved on pre-existing rows |
 | `refund` (membership) | `occurredAt` | abs(amount) | 1200 / cash | collection-side only; service value stops via cancellation, not refund |
@@ -314,3 +314,47 @@ Not defects; the system currently takes the safest documented behavior:
   three statements (desktop + mobile widths), ledger controls with a
   100-fact queue refresh, the excluded-void reason visible in the queue, the
   17-account chart, v2 policy copy, and no application console errors.
+
+---
+
+## 7. Addendum — owner policy change and review controls (1 September 2026)
+
+The owner reviewed the audited system on live data and made the deferred
+model's monthly fils and monthly clicks an explicit product decision:
+
+- **Membership revenue policy v2 (owner decision).** `membership-sale.v2` /
+  `membership-renewal.v2` post the full net price as revenue at sale
+  (1200 → 4100, immediate). There is no deferral, no service-day split, and
+  no recognition schedule for new sales — whole-dinar prices produce
+  whole-dinar statements. v1 stays defined for history: already-posted
+  deferred terms keep their recognition schedules until they run off or an
+  owner reverses the v1 sale (and its posted recognition months) and
+  re-posts the sale from the queue under v2. Queue rows previously projected
+  under v1 stay pinned to v1 by policy preservation. Trade-offs accepted by
+  the owner: revenue is front-loaded to the sale month, and a mid-term
+  cancellation does not automatically claw back recognized revenue (a refund
+  reverses cash only; any further adjustment is an owner manual journal).
+- **Review exclusions.** `accounting.source.exclude` /
+  `accounting.source.reconsider` (owner/manager, audited reason,
+  `reviewExcludedAt`/`reviewExcludedByUserId` on the row — additive schema
+  fields). A reviewed exclusion survives queue refreshes like a posted row,
+  counts as resolved for coverage and schedule statuses, and is superseded
+  by explicitly posting the source. This is the honest mechanism for
+  clearing cancelled test data, unpriced movements, and other
+  never-postable facts out of the completeness warnings without deleting
+  anything.
+- **Warning semantics.** `excluded` rows (system rules and reviewed
+  decisions) no longer count toward the "source facts are not posted"
+  warning; recognition/depreciation coverage ignores months whose
+  tenant-anchored month end has not passed yet, so the current month stops
+  nagging before it is completable.
+- **UI.** Queue rows gained Exclude/Reconsider actions with audited reasons
+  and a reviewed marker; the classes details popup reads booking counts from
+  the dated class (the weekly template's standing roster had been shown,
+  reporting 0 for booked events) and lists who booked, with the calendar
+  chips corrected the same way.
+- **Evidence.** Regression tests cover the immediate lifecycle across all
+  three statements, the legacy deferred lifecycle via seeded v1 rows
+  (recognition, cancellation drift, reversal), the no-schedule guarantee for
+  v2 sales, and review-exclusion persistence/reconsideration in both
+  adapters.

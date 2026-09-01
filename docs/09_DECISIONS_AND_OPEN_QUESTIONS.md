@@ -183,3 +183,20 @@ decisions explicit:
   deprecated equal-valued alias for one release. A retained-earnings close, a
   supplier-payment source type, and refund-shortens-service semantics remain
   open owner/accountant decisions recorded in docs/18 §4.
+
+## Membership revenue posts in full at sale — 2026-09-01
+
+The owner reviewed the deferred model live and retired it for new sales:
+`membership-sale.v2` / `membership-renewal.v2` post the full net price as
+immediate revenue (1200 → 4100). No service-day split, no monthly recognition
+clicks, no fils from allocation on new sales. Accepted trade-offs: revenue is
+front-loaded to the sale month, and a mid-term cancellation does not claw
+back revenue automatically (refunds reverse cash only; further adjustment is
+an owner manual journal). Already-posted deferred v1 terms keep their
+recognition schedules until run-off or an owner reversal-and-repost; queue
+rows projected under v1 stay pinned to v1. In the same session the owner
+approved audited **review exclusions** (`accounting.source.exclude` /
+`.reconsider`, owner/manager with reason) so never-postable facts stop
+counting toward statement completeness warnings, and warnings stopped
+counting `excluded` rows or not-yet-due current-month schedules. Details in
+docs/18 §7.

@@ -26,6 +26,15 @@ async function seeded() {
   return { t, owner: t.withIdentity({ subject: "clerk-forensic-owner" }) };
 }
 
+/** Seeds a membership sale posted under the retired deferred v1 policy (source row only). */
+async function seedLegacyDeferredSale(t: Awaited<ReturnType<typeof seeded>>["t"], membershipPublicId: string, amountMinor: number, occurredAt: number) {
+  await t.run(async (ctx) => {
+    const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "forensic-org")).unique();
+    const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "forensic-branch")).unique();
+    await ctx.db.insert("accountingSourcePostings", { organizationId: organization!._id, publicId: `source-legacy-${membershipPublicId}`, sourceType: "membership_sale", sourcePublicId: membershipPublicId, branchId: branch!._id, status: "posted", amountMinor, currency: "JOD", policyCode: "membership-sale.v1", policyVersion: 1, journalEntryPublicId: `je-legacy-${membershipPublicId}`, occurredAt, createdAt: occurredAt, updatedAt: occurredAt });
+  });
+}
+
 type Line = { accountCode: string; debit: { amount: number }; credit: { amount: number } };
 type Section = { lines: Array<{ accountCode: string; amount: { amount: number }; entryIds: string[] }>; total: { amount: number } };
 
@@ -34,7 +43,34 @@ function lineAmount(section: Section, code: string): number | undefined {
 }
 
 describe("forensic statement lifecycles", () => {
-  it("carries a membership from sale through recognition, refund, cancellation drift, and reversal", async () => {
+  it("posts a new membership as immediate whole-price revenue across all three statements", async () => {
+    const { t, owner } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "forensic-org")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "forensic-branch")).unique();
+      const createdAt = Date.parse("2026-04-01T00:00:00.000Z");
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "forensic-imm-m1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-imm-m1", homeBranchId: "forensic-branch", startDate: "2026-04-01", endDate: "2026-06-30", salePrice: { amount: 90_000, currency: "JOD" }, frozenDaysUsed: 0 } });
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "payment", publicId: "forensic-imm-p1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-imm-p1", branchId: "forensic-branch", type: "payment", status: "completed", amount: { amount: 50_000, currency: "JOD" }, method: "cash", occurredAt: "2026-04-02T10:00:00.000Z" } });
+    });
+    const sale = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "forensic-imm-m1", idempotencyKey: "f-imm-sale", reason: "Post membership sale" })) as { status: string; policyCode?: string; amount: { amount: number } };
+    expect(sale).toMatchObject({ status: "posted", policyCode: "membership-sale.v2", amount: { amount: 90_000 } });
+    await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "forensic-imm-p1", idempotencyKey: "f-imm-pay", reason: "Post collection" }));
+
+    // The whole price is April revenue; no deferred liability ever exists.
+    const income = await owner.query(api.domain.query, operation("reports.income_statement", { fromDate: "2026-04-01", toDate: "2026-04-30" })) as { totalRevenue: { amount: number }; netIncome: { amount: number }; revenue: Section };
+    expect(income).toMatchObject({ totalRevenue: { amount: 90_000 }, netIncome: { amount: 90_000 } });
+    expect(lineAmount(income.revenue, "4100")).toBe(90_000);
+    const balance = await owner.query(api.domain.query, operation("reports.balance_sheet", { fromDate: "2026-04-01", toDate: "2026-04-30" })) as { assets: { current: Section }; liabilities: { current: Section }; cumulativeEarnings: { amount: number }; balanced: boolean };
+    expect(lineAmount(balance.assets.current, "1100")).toBe(50_000);
+    expect(lineAmount(balance.assets.current, "1200")).toBe(40_000);
+    expect(lineAmount(balance.liabilities.current, "2200")).toBeUndefined();
+    expect(balance.cumulativeEarnings.amount).toBe(90_000);
+    expect(balance.balanced).toBe(true);
+    const cashflow = await owner.query(api.domain.query, operation("reports.cashflow_statement", { fromDate: "2026-04-01", toDate: "2026-04-30" })) as { operating: { netChange: { amount: number } }; closingCash: { amount: number }; reconciliation: { difference: { amount: number } } };
+    expect(cashflow).toMatchObject({ operating: { netChange: { amount: 50_000 } }, closingCash: { amount: 50_000 }, reconciliation: { difference: { amount: 0 } } });
+  });
+
+  it("carries a legacy deferred membership from sale through recognition, refund, cancellation drift, and reversal", async () => {
     const { t, owner } = await seeded();
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "forensic-org")).unique();
@@ -45,9 +81,11 @@ describe("forensic statement lifecycles", () => {
       await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "payment", publicId: "forensic-r1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-r1", branchId: "forensic-branch", type: "refund", status: "completed", amount: { amount: -10_000, currency: "JOD" }, method: "cash", occurredAt: "2026-02-10T10:00:00.000Z" } });
     });
 
-    // Post the deferred sale, the collection, both earned months, and the refund.
-    const sale = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "forensic-m1", idempotencyKey: "f-sale", reason: "Post deferred sale" })) as { status: string; amount: { amount: number } };
-    expect(sale).toMatchObject({ status: "posted", amount: { amount: 90_000 } });
+    // The deferred model is legacy: recreate exactly what a v1-posted sale
+    // left behind — its journal (via an owner manual journal with identical
+    // lines) and its posted v1 source row — then run the schedule.
+    await owner.mutation(api.domain.mutate, operation("accounting.manual_journal.post", { scope: "branch", branchId: "forensic-branch", postingDate: "2026-01-01", memo: "Legacy deferred membership sale forensic-m1", reason: "Recreate the v1 deferred sale journal", idempotencyKey: "f-legacy-sale", lines: [{ accountId: "acct-1200", debit: { amount: 90_000, currency: "JOD" }, credit: { amount: 0, currency: "JOD" } }, { accountId: "acct-2200", debit: { amount: 0, currency: "JOD" }, credit: { amount: 90_000, currency: "JOD" } }] }));
+    await seedLegacyDeferredSale(t, "forensic-m1", 90_000, Date.parse("2026-01-01T00:00:00.000Z"));
     const payment = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "forensic-p1", idempotencyKey: "f-pay", reason: "Post collection" })) as { status: string };
     expect(payment.status).toBe("posted");
     // Hand-derived allocation: 59 service days, 90000 = 1525/day remainder 25.
@@ -193,6 +231,41 @@ describe("forensic statement lifecycles", () => {
     expect(cashflow).toMatchObject({ operating: { netChange: { amount: 1_500 } }, investing: { netChange: { amount: 0 } }, financing: { netChange: { amount: 0 } }, closingCash: { amount: 1_500 }, reconciliation: { difference: { amount: 0 } } });
   });
 
+  it("lets an owner exclude a never-postable fact after review, survives refreshes, and clears the warning", async () => {
+    const { t, owner } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "forensic-org")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "forensic-branch")).unique();
+      const createdAt = Date.parse("2026-05-05T00:00:00.000Z");
+      // A cancelled test membership: can never post, and without a review it
+      // pollutes every statement with an incompleteness warning forever.
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "forensic-junk-m1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-junk-m1", homeBranchId: "forensic-branch", startDate: "2026-05-05", endDate: "2026-06-04", salePrice: { amount: 45_000, currency: "JOD" }, cancelledAt: "2026-05-06T10:00:00.000Z", frozenDaysUsed: 0 } });
+    });
+    await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh"));
+    const reportInput = { fromDate: "2026-05-01", toDate: "2026-05-31" };
+    const before = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { warnings: string[] };
+    expect(before.warnings.some((warning) => warning.includes("not posted"))).toBe(true);
+
+    const excluded = await owner.mutation(api.domain.mutate, operation("accounting.source.exclude", { sourceType: "membership_sale", sourceId: "forensic-junk-m1", reason: "Cancelled test membership from onboarding" })) as { status: string; reviewExcludedAt?: string };
+    expect(excluded.status).toBe("excluded");
+    expect(excluded.reviewExcludedAt).toBeTruthy();
+
+    const after = await owner.query(api.domain.query, operation("reports.income_statement", reportInput)) as { warnings: string[]; queueCoverage: string };
+    expect(after.warnings.some((warning) => warning.includes("not posted"))).toBe(false);
+    expect(after.queueCoverage).toBe("proven");
+
+    // A refresh must not resurrect the reviewed decision.
+    await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh"));
+    const stillExcluded = await owner.query(api.domain.query, operation("accounting.source_postings.list", { sourceType: "membership_sale" })) as { items: Array<{ sourceId: string; status: string; reviewExcludedAt?: string }> };
+    expect(stillExcluded.items.find((item) => item.sourceId === "forensic-junk-m1")).toMatchObject({ status: "excluded" });
+    expect(stillExcluded.items.find((item) => item.sourceId === "forensic-junk-m1")?.reviewExcludedAt).toBeTruthy();
+
+    // Reconsidering returns the row to what the operational facts say.
+    const reopened = await owner.mutation(api.domain.mutate, operation("accounting.source.reconsider", { sourceType: "membership_sale", sourceId: "forensic-junk-m1", reason: "Re-check before year end" })) as { status: string; reviewExcludedAt?: string };
+    expect(reopened.status).toBe("unconfigured");
+    expect(reopened.reviewExcludedAt).toBeUndefined();
+  });
+
   it("queues a valid recognition month as pending with no contradictory reason text", async () => {
     const { t, owner } = await seeded();
     await t.run(async (ctx) => {
@@ -201,7 +274,7 @@ describe("forensic statement lifecycles", () => {
       const createdAt = Date.parse("2026-02-01T00:00:00.000Z");
       await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "forensic-reason-m1", branchId: branch!._id, createdAt, updatedAt: createdAt, data: { id: "forensic-reason-m1", homeBranchId: "forensic-branch", startDate: "2026-02-01", endDate: "2026-02-28", salePrice: { amount: 28_000, currency: "JOD" }, frozenDaysUsed: 0 } });
     });
-    await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "forensic-reason-m1", idempotencyKey: "f-reason-sale", reason: "Post deferred sale" }));
+    await seedLegacyDeferredSale(t, "forensic-reason-m1", 28_000, Date.parse("2026-02-01T00:00:00.000Z"));
     const refreshed = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"], fromDate: "2026-02-01", toDate: "2026-02-28" })) as { items: Array<{ sourceId: string; status: string; reason?: string }> };
     const pendingRow = refreshed.items.find((item) => item.sourceId === "membership-revenue:forensic-reason-m1:2026-02");
     // A valid pending fact must not display the unconfigured fallback text.

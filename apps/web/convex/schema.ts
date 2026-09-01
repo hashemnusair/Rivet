@@ -901,6 +901,11 @@ export default defineSchema({
     // row. It lets reports distinguish a current empty/complete scan from a
     // stale projection without mutating posted source decisions.
     projectionFingerprint: v.optional(v.string()),
+    // An owner/manager review can permanently exclude a fact from the books
+    // (with an audited reason). Reviewed exclusions survive queue refreshes
+    // and stop counting toward completeness warnings.
+    reviewExcludedAt: v.optional(v.number()),
+    reviewExcludedByUserId: v.optional(v.id("users")),
     occurredAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),

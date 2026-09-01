@@ -1,5 +1,45 @@
 # GymOS / RIVET current implementation state
 
+## Whole-price membership revenue, review exclusions, classes booking truth — 1 September 2026
+
+- **Owner policy decision executed:** membership sales/renewals now post the
+  full net price as immediate revenue (`membership-sale.v2` /
+  `membership-renewal.v2`, 1200 → 4100) — no deferral, no service-day split,
+  no monthly recognition clicks, and no allocation fils on new sales. The
+  deferred v1 engine is legacy-only: recognition schedules exist solely for
+  terms already posted under v1 (queue rows projected under v1 stay pinned by
+  policy preservation), and a recognition attempt against an immediate sale
+  is honestly `unconfigured` ("posted as immediate revenue"). Recorded in
+  docs/09 and docs/18 §7 with accepted trade-offs (front-loaded revenue; no
+  automatic cancellation claw-back).
+- **Review exclusions clear the completeness warnings honestly:** new
+  owner/manager mutations `accounting.source.exclude` /
+  `accounting.source.reconsider` (audited reason; additive
+  `reviewExcludedAt`/`reviewExcludedByUserId` fields on
+  `accountingSourcePostings`) mark never-postable facts as deliberate
+  exclusions that survive queue refreshes and are superseded by an explicit
+  post. Statement warnings no longer count `excluded` rows, and
+  recognition/depreciation coverage ignores months whose tenant-anchored
+  month end has not passed — so the current month stops nagging before it is
+  completable. Ledger-controls queue rows gained Exclude/Reconsider buttons,
+  a reviewed marker, and a clearer status legend.
+- **Classes booking truth:** the event-details popup and the calendar chips
+  were reading the weekly template's standing roster (showing 0 for booked
+  events); both now read the upcoming dated class's real `bookedCount`, the
+  popup lists exactly who booked (with waitlist count), and its footer action
+  is "Manage bookings & attendance".
+- **Statement copy:** the fils note now explains that only legacy deferred
+  memberships carry service-day fils and that current-policy sales post their
+  whole price on the day of sale; the GM metric is labeled "Recorded
+  membership sales".
+- Tests reworked and extended: immediate-policy lifecycle across all three
+  statements; legacy deferred lifecycle via seeded v1 rows (recognition,
+  cancellation drift, reversal); no-schedule guarantee for v2 sales; review
+  exclusion persistence/reconsider in both adapters; direct
+  allocator/freeze-window unit tests replacing the mock integration path
+  that v2 made unreachable. Additive-only schema change (two optional
+  columns); Convex deploy owed after push per the deploy split.
+
 ## Mobile-friendly member CSV correction — 1 September 2026
 
 - A hosted member download exposed that Production Convex was still serving

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
@@ -7,6 +7,21 @@ declare global { interface ImportMeta { glob(pattern: string): Record<string, ()
 const modules = import.meta.glob("./**/*.ts");
 const operation = (name: string, input: Record<string, unknown> = {}, request: Record<string, unknown> = {}) => ({ operation: name, input, correlationId: `cor-accounting-${name}`, ...request });
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
+
+/**
+ * Seeds a membership sale that was posted under the retired deferred v1
+ * policy. New sales post as immediate revenue (v2), so the deferred
+ * recognition engine is reachable only through rows like these — exactly the
+ * legacy shape production still carries.
+ */
+async function seedPostedDeferredSale(t: TestConvex<typeof schema>, membershipPublicId: string, amountMinor: number) {
+  await t.run(async (ctx) => {
+    const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
+    const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
+    const now = Date.now();
+    await ctx.db.insert("accountingSourcePostings", { organizationId: organization!._id, publicId: `source-legacy-${membershipPublicId}`, sourceType: "membership_sale", sourcePublicId: membershipPublicId, branchId: branch!._id, status: "posted", amountMinor, currency: "JOD", policyCode: "membership-sale.v1", policyVersion: 1, journalEntryPublicId: `je-legacy-${membershipPublicId}`, occurredAt: now, createdAt: now, updatedAt: now });
+  });
+}
 
 async function seeded() {
   const t = convexTest(schema, modules);
@@ -85,8 +100,7 @@ describe("immutable management-accounting ledger", () => {
       const now = Date.now();
       await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-may", branchId: branch!._id, createdAt: now, updatedAt: now, data: { id: "accounting-membership-may", homeBranchId: "accounting-branch-a", startDate: "2026-05-01", endDate: "2026-05-31", salePrice: { amount: 31_000, currency: "JOD" }, frozenDaysUsed: 0 } });
     });
-    const sale = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-may", idempotencyKey: "may-sale", reason: "Post May membership sale" })) as { status: string };
-    expect(sale.status).toBe("posted");
+    await seedPostedDeferredSale(t, "accounting-membership-may", 31_000);
     const recognition = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: "membership-revenue:accounting-membership-may:2026-05", idempotencyKey: "may-recognition", reason: "Recognize May service" })) as { status: string; amount: { amount: number }; journalEntryId: string };
     expect(recognition).toMatchObject({ status: "posted", amount: { amount: 31_000 } });
     const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: recognition.journalEntryId })) as { postingDate: string; periodId: string };
@@ -300,8 +314,7 @@ describe("immutable management-accounting ledger", () => {
       await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-recognition", branchId: branch!._id, createdAt: Date.parse("2026-01-01T00:00:00.000Z"), updatedAt: Date.parse("2026-01-01T00:00:00.000Z"), data: { id: "accounting-membership-recognition", homeBranchId: "accounting-branch-a", startDate: "2026-01-15", endDate: "2026-03-14", salePrice: { amount: 100_000, currency: "JOD" }, discount: { amount: 10_000, currency: "JOD" }, discountApprovalStatus: "approved", frozenDaysUsed: 0 } });
     });
 
-    const salePosting = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-recognition", idempotencyKey: "membership-recognition-sale", reason: "Post deferred membership sale" })) as { status: string };
-    expect(salePosting.status).toBe("posted");
+    await seedPostedDeferredSale(t, "accounting-membership-recognition", 90_000);
 
     const refreshed = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"], fromDate: "2026-01-01", toDate: "2026-03-31" })) as { items: Array<{ sourceId: string; status: string; amount?: { amount: number }; details?: Record<string, unknown> }>; queueCoverage?: string };
     expect(refreshed.queueCoverage).toBe("refresh_required");
@@ -323,7 +336,7 @@ describe("immutable management-accounting ledger", () => {
       const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "accounting-branch-a")).unique();
       await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "membership", publicId: "accounting-membership-cutoff", branchId: branch!._id, createdAt: Date.parse("2026-01-01T00:00:00.000Z"), updatedAt: Date.parse("2026-01-01T00:00:00.000Z"), data: { id: "accounting-membership-cutoff", homeBranchId: "accounting-branch-a", startDate: "2026-01-01", endDate: "2026-03-31", salePrice: { amount: 9_000, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, discountApprovalStatus: "approved", frozenDaysUsed: 28 } });
     });
-    await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-cutoff", idempotencyKey: "membership-cutoff-sale", reason: "Post deferred sale before lifecycle changes" }));
+    await seedPostedDeferredSale(t, "accounting-membership-cutoff", 9_000);
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique();
       const membership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization!._id).eq("entityType", "membership").eq("publicId", "accounting-membership-cutoff")).unique();
@@ -335,6 +348,22 @@ describe("immutable management-accounting ledger", () => {
     expect(cutoffRows.reduce((sum, item) => sum + (item.amount?.amount ?? 0), 0)).toBeLessThan(9_000);
     const futureRecognition = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: "membership-revenue:accounting-membership-cutoff:2027-01", idempotencyKey: "membership-recognition-future", reason: "Reject future period" })) as { status: string; reason?: string };
     expect(futureRecognition).toMatchObject({ status: "unconfigured", reason: "Future membership service months cannot be recognized." });
+  });
+
+  it("posts new membership sales as immediate whole-price revenue with no recognition schedule", async () => {
+    const { owner, manager } = await seeded();
+    const sale = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-a", idempotencyKey: "immediate-sale", reason: "Post membership sale" })) as { status: string; policyCode?: string; amount: { amount: number }; journalEntryId: string };
+    expect(sale).toMatchObject({ status: "posted", policyCode: "membership-sale.v2", amount: { amount: 40_000 } });
+    const detail = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: sale.journalEntryId })) as { lines: Array<{ accountCode: string; debit: { amount: number }; credit: { amount: number } }> };
+    expect(detail.lines.map((line) => ({ code: line.accountCode, debit: line.debit.amount, credit: line.credit.amount }))).toEqual([
+      { code: "1200", debit: 40_000, credit: 0 },
+      { code: "4100", debit: 0, credit: 40_000 },
+    ]);
+    // No deferred balance exists, so no service month may ever be recognized.
+    const recognition = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_revenue_recognition", sourceId: `membership-revenue:accounting-membership-a:${new Date().toISOString().slice(0, 7)}`, idempotencyKey: "immediate-recognition", reason: "Attempt recognition of an immediate sale" })) as { status: string; reason?: string };
+    expect(recognition).toMatchObject({ status: "unconfigured", reason: "This membership was posted as immediate revenue; no recognition schedule exists." });
+    const refreshed = await manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["membership_revenue_recognition"] })) as { scanned: number };
+    expect(refreshed.scanned).toBe(0);
   });
 
   it("posts straight-line equipment depreciation with a date fallback and keeps incomplete assets unconfigured", async () => {

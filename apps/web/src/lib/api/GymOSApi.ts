@@ -16,6 +16,7 @@ import type {
   BalanceSheet,
   CashflowStatement,
   PostAccountingSourceInput,
+  ReviewAccountingSourceInput,
   PostManualJournalInput,
   AutomationExecution,
   AutomationExecutionDetail,
@@ -1058,6 +1059,10 @@ export interface GymOSApi {
   listAccountingSourcePostings(query?: AccountingSourcePostingQuery): Promise<Page<AccountingSourcePosting>>;
   refreshAccountingSourceQueue(input?: RefreshAccountingSourceQueueInput): Promise<RefreshAccountingSourceQueueResult>;
   postAccountingSource(input: PostAccountingSourceInput): Promise<AccountingSourcePosting>;
+  /** Owner/manager review: permanently exclude a never-postable fact from the books (audited). */
+  excludeAccountingSource(input: ReviewAccountingSourceInput): Promise<AccountingSourcePosting>;
+  /** Reverses a review exclusion; the row returns to what the operational fact says. */
+  reconsiderAccountingSource(input: ReviewAccountingSourceInput): Promise<AccountingSourcePosting>;
   reverseAccountingEntry(entryId: UUID, input: { reason: string; idempotencyKey: string }): Promise<AccountingJournalEntryDetail>;
   closeAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;
   reopenAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;

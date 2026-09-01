@@ -216,21 +216,30 @@ async function contextFor(ctx: QueryCtx, actor: ActorContext, input: JsonObject)
     .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= fromDate && entry.postingDate <= toDate && inScope(actor, branch, entry.branchId) && entry.policyCode && entry.policyVersion)
     .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
   const queueCoverage = await sourceQueueCoverageForReport(ctx, actor, { branch, fromDate, toDate });
+  // A monthly fact is only "due" once its tenant-anchored month end has
+  // passed — nagging about the current month all month long taught owners to
+  // ignore the warning. A reviewed/system exclusion is a resolved decision.
+  const now = Date.now();
+  const scheduleResolved = (candidate: SourceQueueCandidateFact): boolean =>
+    candidate.fact.occurredAt > now ||
+    Boolean(candidate.current && candidate.row && (candidate.row.status === "posted" || candidate.row.status === "reversed" || candidate.row.status === "excluded"));
   const recognitionCandidates = queueCoverage.candidates.filter((candidate: SourceQueueCandidateFact) => candidate.candidate.sourceType === "membership_revenue_recognition");
   const depreciationCandidates = queueCoverage.candidates.filter((candidate: SourceQueueCandidateFact) => candidate.candidate.sourceType === "equipment_depreciation");
   const recognitionStatus: ManagementMetricStatus = recognitionCandidates.length === 0
     ? "not_available"
-    : recognitionCandidates.every((candidate) => candidate.current && candidate.row && (candidate.row.status === "posted" || candidate.row.status === "reversed") && candidate.fact.status === undefined)
+    : recognitionCandidates.every(scheduleResolved)
       ? "available"
       : "not_configured";
   const depreciationStatus: ManagementMetricStatus = depreciationCandidates.length === 0
     ? "not_available"
-    : depreciationCandidates.every((candidate) => candidate.current && candidate.row && (candidate.row.status === "posted" || candidate.row.status === "reversed") && candidate.fact.status === undefined)
+    : depreciationCandidates.every(scheduleResolved)
       ? "available"
       : "not_configured";
   const warnings = new Set<string>();
   if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
-  const unresolvedPostingCount = sourceRows.filter((row) => ["pending", "unconfigured", "excluded", "failed"].includes(row.status)).length;
+  // Excluded rows are deliberate decisions (system rules or an audited
+  // owner/manager review) and are not incomplete work.
+  const unresolvedPostingCount = sourceRows.filter((row) => ["pending", "unconfigured", "failed"].includes(row.status)).length;
   if (unresolvedPostingCount > 0) warnings.add("Some authoritative source facts are not posted; review the source queue before relying on these figures.");
   if (queueCoverage.postedDriftCount > 0) warnings.add(`${queueCoverage.postedDriftCount} posted accounting ${queueCoverage.postedDriftCount === 1 ? "source posting no longer matches" : "source postings no longer match"} the current operational record (amount, currency, or branch changed after posting). Review the source queue and use an owner reversal plus a corrected posting where needed.`);
   if (recognitionStatus === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
@@ -478,7 +487,7 @@ async function generalManagerAnalysis(ctx: QueryCtx, actor: ActorContext, input:
   const deferredValue = membershipRows.reduce((sum, row) => sum + (row.amountMinor ?? 0), 0);
   const metrics: MetricProjection[] = [
     metric("collections", "Recorded collections", collectionRows.length > 0 ? "available" : "not_available", collectionRows.length > 0 ? money(collectionValue, currency) : undefined, "money", collectionRows.map((row) => row.publicId), collectionRows.length > 0 ? undefined : "No posted payment source facts are available in this period."),
-    metric("deferred_membership_sales", "Deferred membership sales", membershipRows.length > 0 ? "available" : "not_available", membershipRows.length > 0 ? money(deferredValue, currency) : undefined, "money", membershipRows.map((row) => row.publicId), membershipRows.length > 0 ? "Membership sales follow the configured deferred policy." : "No posted membership source facts are available in this period."),
+    metric("deferred_membership_sales", "Recorded membership sales", membershipRows.length > 0 ? "available" : "not_available", membershipRows.length > 0 ? money(deferredValue, currency) : undefined, "money", membershipRows.map((row) => row.publicId), membershipRows.length > 0 ? "Membership sales post as revenue at sale under the current policy; legacy deferred terms recognize by service day until they run off." : "No posted membership source facts are available in this period."),
   ];
 
   const deliveryRows = await ctx.db.query("renewalDeliveries").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();

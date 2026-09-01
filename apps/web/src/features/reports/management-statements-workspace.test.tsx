@@ -142,6 +142,10 @@ describe("ManagementStatementPage", () => {
     vi.spyOn(MockGymOSApi.prototype, "getIncomeStatement").mockImplementation(function (this: MockGymOSApi, input) {
       return originalGetIncomeStatement.call(this, input).then((report) => ({
         ...report,
+        // Force the recognition flag: the seed no longer produces deferred
+        // schedules, but the client-side warning injection and dedupe must
+        // keep working for legacy tenants that still have them.
+        membershipRevenueRecognition: "not_configured" as const,
         warnings: [
           report.warnings[0] ?? "",
           report.warnings[0] ?? "",

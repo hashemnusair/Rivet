@@ -11196,6 +11196,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "finance.manual_journal.post":
     case "accounting.source.post":
     case "finance.source.post":
+    case "accounting.source.exclude":
+    case "finance.source.exclude":
+    case "accounting.source.reconsider":
+    case "finance.source.reconsider":
     case "accounting.source_postings.refresh":
     case "finance.source_postings.refresh":
     case "accounting.entry.reverse":

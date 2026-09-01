@@ -347,6 +347,19 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
   is `READY` for that exact tip; the canonical site returned HTTP 200.
 
+### Membership revenue policy v2 and review exclusions — 1 September 2026
+
+- Owner decision (docs/09, docs/18 §7): new membership sales/renewals post
+  their full net price as immediate revenue (`membership-sale.v2`,
+  1200 → 4100). Recognition schedules remain only for legacy v1-posted
+  deferred terms. Audited review exclusions
+  (`accounting.source.exclude`/`.reconsider`, additive
+  `reviewExcludedAt`/`reviewExcludedByUserId` schema fields) let
+  owners/managers clear never-postable facts from completeness warnings;
+  `excluded` rows and not-yet-due monthly schedules stopped counting toward
+  those warnings. Classes details popup and calendar chips now read booking
+  counts from the dated occurrence and list who booked.
+
 ### Management Ledger forensic audit corrections — 31 August 2026
 
 - The full statements-system audit lives in

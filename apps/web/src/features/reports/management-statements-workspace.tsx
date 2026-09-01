@@ -193,7 +193,7 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
       {report.membershipRevenueRecognition !== "not_available" ? (
         <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3">
           <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p><span className="font-medium text-ink-2">Why fils appear:</span> membership revenue is earned by service day — each term&rsquo;s net price is split across its calendar days in exact minor units, so a whole-dinar membership can show fils in one month&rsquo;s earned revenue. The earned months of a term always add back to its exact net sale price <span dir="ltr">(daily-weighted-largest-remainder.v1)</span>.</p>
+          <p><span className="font-medium text-ink-2">Why fils can appear:</span> memberships sold under the retired deferred policy are earned by service day, so their monthly amounts can carry fils — those months always add back to the exact sale price. Memberships sold under the current policy post their full whole price as revenue on the day of sale.</p>
         </div>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">

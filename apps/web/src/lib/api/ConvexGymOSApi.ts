@@ -632,6 +632,8 @@ export class ConvexGymOSApi implements GymOSApi {
   listAccountingSourcePostings(query: T.AccountingSourcePostingQuery = {}): Promise<T.Page<T.AccountingSourcePosting>> { return this.query("accounting.source_postings.list", query); }
   refreshAccountingSourceQueue(input: T.RefreshAccountingSourceQueueInput = {}): Promise<T.RefreshAccountingSourceQueueResult> { return this.mutate("accounting.source_postings.refresh", input); }
   postAccountingSource(input: T.PostAccountingSourceInput): Promise<T.AccountingSourcePosting> { return this.mutate("accounting.source.post", input); }
+  excludeAccountingSource(input: T.ReviewAccountingSourceInput): Promise<T.AccountingSourcePosting> { return this.mutate("accounting.source.exclude", input); }
+  reconsiderAccountingSource(input: T.ReviewAccountingSourceInput): Promise<T.AccountingSourcePosting> { return this.mutate("accounting.source.reconsider", input); }
   reverseAccountingEntry(entryId: T.UUID, input: { reason: string; idempotencyKey: string }): Promise<T.AccountingJournalEntryDetail> { return this.mutate("accounting.entry.reverse", { entryId, ...input }); }
   closeAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> { return this.mutate("accounting.period.close", { periodId, reason }); }
   reopenAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> { return this.mutate("accounting.period.reopen", { periodId, reason }); }

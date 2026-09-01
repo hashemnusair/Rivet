@@ -101,8 +101,16 @@ interface PolicyDefinition {
 }
 
 export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
+  // v1 membership policies deferred revenue (1200 → 2200) and earned it back
+  // through monthly recognition. The owner retired that model on 2026-09-01:
+  // new sales post their full net price as revenue immediately (v2 below).
+  // v1 stays defined because posted journals and preserved queue rows
+  // reference it, and already-posted deferred terms keep their recognition
+  // schedules until they run off or are reversed.
   { policyCode: "membership-sale.v1", sourceType: "membership_sale", version: 1, debitAccountCode: "1200", creditAccountCode: "2200", recognition: "deferred" },
   { policyCode: "membership-renewal.v1", sourceType: "membership_renewal", version: 1, debitAccountCode: "1200", creditAccountCode: "2200", recognition: "deferred" },
+  { policyCode: "membership-sale.v2", sourceType: "membership_sale", version: 2, debitAccountCode: "1200", creditAccountCode: "4100", recognition: "immediate" },
+  { policyCode: "membership-renewal.v2", sourceType: "membership_renewal", version: 2, debitAccountCode: "1200", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "membership-revenue-recognition.v1", sourceType: "membership_revenue_recognition", version: 1, debitAccountCode: "2200", creditAccountCode: "4100", recognition: "immediate" },
   { policyCode: "payment-cash.v1", sourceType: "payment", version: 1, debitAccountCode: "1100", creditAccountCode: "1200", recognition: "immediate" },
   { policyCode: "payment-card.v1", sourceType: "payment", version: 1, debitAccountCode: "1110", creditAccountCode: "1200", recognition: "immediate" },
@@ -625,6 +633,7 @@ function sourceView(row: SourcePosting, organizationId: string, branchPublicId?:
     sourceId: row.sourcePublicId,
     branchId: branchPublicId,
     status: row.status,
+    reviewExcludedAt: row.reviewExcludedAt === undefined ? undefined : iso(row.reviewExcludedAt),
     amount: row.amountMinor === undefined ? undefined : { amount: row.amountMinor, currency: row.currency },
     currency: row.currency,
     policyCode: row.policyCode,
@@ -847,7 +856,13 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
     const recordBranch = recordBranchId ? await accountingBranchById(ctx, actor, recordBranchId) : undefined;
     const recognitionBranch = originalBranch ?? recordBranch;
     const originalAmount = originalSource?.amountMinor;
-    const dependencyValid = originalSource?.status === "posted" && originalBranch !== undefined && originalSource.branchId === recordBranchId && originalSource.currency === currency && originalAmount !== undefined && Number.isSafeInteger(originalAmount) && originalAmount > 0;
+    // Recognition schedules exist only for terms posted under a deferred
+    // policy (v1). Since the owner's 2026-09-01 policy change, sales post
+    // their full price as immediate revenue and have nothing left to earn.
+    // A posted row without a policy code predates versioning and was deferred.
+    const originalRecognition = originalSource?.status === "posted" ? policyDefinition(originalSource.policyCode ?? "")?.recognition ?? "deferred" : undefined;
+    const immediateOriginal = originalRecognition !== undefined && originalRecognition !== "deferred";
+    const dependencyValid = originalSource?.status === "posted" && originalRecognition === "deferred" && originalBranch !== undefined && originalSource.branchId === recordBranchId && originalSource.currency === currency && originalAmount !== undefined && Number.isSafeInteger(originalAmount) && originalAmount > 0;
     const recognitionBase = dependencyValid && netAmount !== undefined && netAmount >= 0 ? Math.min(netAmount, originalAmount!) : undefined;
     const cancellation = cancellationLocalDate(value.cancelledAt, actor.organization.timezone);
     const cancellationDate = cancellation.date && supersededByImmediatePlanChange(value) ? previousCalendarDay(cancellation.date) : cancellation.date;
@@ -877,7 +892,7 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
       status: invalidCurrency ? "excluded" : valid ? undefined : "unconfigured",
       // A valid fact carries no reason: showing the unconfigured fallback next
       // to a pending status told the reader two contradictory things at once.
-      reason: invalidCurrency ? "Membership currency does not match organization currency " + currency + "." : valid ? undefined : cancellation.invalid ? "Membership cancellation date is invalid." : futureMonth ? "Future membership service months cannot be recognized." : scheduleTooLong ? `Membership service schedules cannot exceed ${MAX_MEMBERSHIP_SERVICE_MONTHS} months.` : !startDate || !endDate || startDate > endDate ? "Membership service start and end dates must be valid calendar dates." : netAmount === undefined || netAmount < 0 || !Number.isSafeInteger(netAmount) ? "Membership net amount is not a safe non-negative integer minor-unit amount." : approvalStatus === "pending" || approvalStatus === "rejected" ? "Membership discount approval is not complete." : !dependencyValid ? "The original membership sale or renewal must be posted in the same branch and currency before revenue can be recognized." : !selected ? "No positive earned amount exists for " + allocation.month + "." : selected.amount <= 0 ? "This service month has no positive amount to recognize." : "Membership recognition source is not configured.",
+      reason: invalidCurrency ? "Membership currency does not match organization currency " + currency + "." : valid ? undefined : immediateOriginal ? "This membership was posted as immediate revenue; no recognition schedule exists." : cancellation.invalid ? "Membership cancellation date is invalid." : futureMonth ? "Future membership service months cannot be recognized." : scheduleTooLong ? `Membership service schedules cannot exceed ${MAX_MEMBERSHIP_SERVICE_MONTHS} months.` : !startDate || !endDate || startDate > endDate ? "Membership service start and end dates must be valid calendar dates." : netAmount === undefined || netAmount < 0 || !Number.isSafeInteger(netAmount) ? "Membership net amount is not a safe non-negative integer minor-unit amount." : approvalStatus === "pending" || approvalStatus === "rejected" ? "Membership discount approval is not complete." : !dependencyValid ? "The original membership sale or renewal must be posted in the same branch and currency before revenue can be recognized." : !selected ? "No positive earned amount exists for " + allocation.month + "." : selected.amount <= 0 ? "This service month has no positive amount to recognize." : "Membership recognition source is not configured.",
     };
   }
 
@@ -909,9 +924,12 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
       currency: sourceCurrency,
       occurredAt,
       memo: `${sourceType === "membership_sale" ? "Membership sale" : "Membership renewal"} ${sourceId}`,
-      policyCode: sourceType === "membership_sale" ? "membership-sale.v1" : "membership-renewal.v1",
+      // Owner policy since 2026-09-01: the full net price is revenue at sale.
+      // Queue rows already projected under v1 are pinned to v1 by
+      // preserveExistingSourcePolicy and keep the deferred treatment.
+      policyCode: sourceType === "membership_sale" ? "membership-sale.v2" : "membership-renewal.v2",
       debitAccountCode: "1200",
-      creditAccountCode: "2200",
+      creditAccountCode: "4100",
       details: { previousMembershipId: previous, startDate: optionalText(value.startDate), endDate: optionalText(value.endDate), salePriceMinor: sale.amount, discountMinor: discountAmount, netAmountMinor: netAmount, discountApprovalStatus: approvalStatus },
       status: invalidCurrency ? "excluded" : invalidLifecycle || invalidDiscount || invalidAmount ? "unconfigured" : undefined,
       reason: invalidCurrency ? `Membership currency does not match organization currency ${currency}.` : invalidLifecycle ? "The membership lifecycle does not match the requested sale or renewal source type." : approvalStatus === "pending" ? "A pending membership discount approval cannot be posted." : approvalStatus === "rejected" ? "A rejected membership discount cannot be posted." : invalidDiscount ? "Membership discount is missing, negative, or exceeds the sale price." : invalidAmount ? "Membership sale net amount is not a safe non-negative integer minor-unit amount." : undefined,
@@ -1412,8 +1430,13 @@ export async function discoverSourceCandidates(ctx: ReadContext, actor: ActorCon
       const netAmount = sale.amount !== undefined && Number.isSafeInteger(sale.amount - (discount.amount ?? 0)) ? sale.amount - (discount.amount ?? 0) : undefined;
       const originalType: AccountingSourceType = optionalText(value.previousMembershipId) ? "membership_renewal" : "membership_sale";
       const originalSource = await sourcePostingByIdentity(ctx, actor, originalType, record.publicId);
-      const recognitionBase = originalSource?.status === "posted" && originalSource.amountMinor !== undefined && Number.isSafeInteger(originalSource.amountMinor) && originalSource.amountMinor > 0 && netAmount !== undefined
-        ? Math.min(netAmount, originalSource.amountMinor)
+      // Only terms posted under a deferred (v1) policy carry a recognition
+      // schedule. Unposted sales have nothing to earn yet (the sale row is
+      // the actionable item), and immediate-revenue sales never will.
+      const originalRecognition = originalSource?.status === "posted" ? policyDefinition(originalSource.policyCode ?? "")?.recognition ?? "deferred" : undefined;
+      if (originalRecognition !== "deferred") continue;
+      const recognitionBase = originalSource!.amountMinor !== undefined && Number.isSafeInteger(originalSource!.amountMinor) && originalSource!.amountMinor > 0 && netAmount !== undefined
+        ? Math.min(netAmount, originalSource!.amountMinor)
         : netAmount;
       const cancellation = cancellationLocalDate(value.cancelledAt, actor.organization.timezone);
       const cancellationDate = cancellation.date && supersededByImmediatePlanChange(value) ? previousCalendarDay(cancellation.date) : cancellation.date;
@@ -1497,10 +1520,12 @@ export async function sourceQueueCoverageForReport(
     const row = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", candidate.sourceType).eq("sourcePublicId", candidate.sourcePublicId)).unique() ?? undefined;
     const effectiveFact = await preserveExistingSourcePolicy(ctx, actor, row, fact);
     const status = queueSourceStatus(effectiveFact, actor.organization.currency.toUpperCase());
-    const postedEvidence = row?.status === "posted" || row?.status === "reversed";
-    candidates.push({ candidate, fact: effectiveFact, status, row, current: postedEvidence ? Boolean(row.projectionFingerprint) : Boolean(row?.projectionFingerprint && row.projectionFingerprint === sourceFactFingerprint(effectiveFact, status)) });
+    // Settled rows never need to match a re-projection: posted/reversed rows
+    // are immutable, and a reviewed exclusion is a standing human decision.
+    const settled = row?.status === "posted" || row?.status === "reversed" || row?.reviewExcludedAt !== undefined;
+    candidates.push({ candidate, fact: effectiveFact, status, row, current: settled ? Boolean(row!.projectionFingerprint) : Boolean(row?.projectionFingerprint && row.projectionFingerprint === sourceFactFingerprint(effectiveFact, status)) });
   }
-  const digestRows = candidates.map((item) => ({ key: item.candidate.sourceType + ":" + item.candidate.sourcePublicId, fingerprint: item.row && (item.row.status === "posted" || item.row.status === "reversed") ? item.row.projectionFingerprint ?? sourceFactFingerprint(item.fact, item.status) : sourceFactFingerprint(item.fact, item.status) })).sort((left, right) => left.key.localeCompare(right.key));
+  const digestRows = candidates.map((item) => ({ key: item.candidate.sourceType + ":" + item.candidate.sourcePublicId, fingerprint: item.row && (item.row.status === "posted" || item.row.status === "reversed" || item.row.reviewExcludedAt !== undefined) ? item.row.projectionFingerprint ?? sourceFactFingerprint(item.fact, item.status) : sourceFactFingerprint(item.fact, item.status) })).sort((left, right) => left.key.localeCompare(right.key));
   const candidateDigest = canonicalJson(digestRows);
   const runs = await ctx.db.query("accountingSourceQueueRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const matchingTypeRuns = runs.filter((run) => sourceTypesDigest(run.sourceTypes) === sourceTypesDigest(SUPPORTED_SOURCE_TYPES));
@@ -1530,9 +1555,11 @@ async function refreshSourceProjection(ctx: MutationCtx, actor: ActorContext, fa
   const effectiveFact = await preserveExistingSourcePolicy(ctx, actor, existing, fact);
   const effectiveStatus = queueSourceStatus(effectiveFact, actor.organization.currency.toUpperCase());
   const now = Date.now();
-  if (existing?.status === "posted" || existing?.status === "reversed") {
+  // Posted/reversed rows are immutable decisions; a reviewed exclusion is a
+  // deliberate human decision too and must survive queue refreshes.
+  if (existing?.status === "posted" || existing?.status === "reversed" || existing?.reviewExcludedAt !== undefined) {
     if (!existing.projectionFingerprint) {
-      await ctx.db.patch(existing._id, { projectionFingerprint: sourceFactFingerprint(effectiveFact, effectiveStatus), updatedAt: now });
+      await ctx.db.patch(existing._id, { projectionFingerprint: sourceFactFingerprint(effectiveFact, existing.reviewExcludedAt !== undefined ? "excluded" : effectiveStatus), updatedAt: now });
       return { row: (await ctx.db.get(existing._id))!, created: false, updated: true, skippedPosted: true };
     }
     return { row: existing, created: false, updated: false, skippedPosted: true };
@@ -1731,7 +1758,7 @@ async function persistSourceDecision(ctx: MutationCtx, actor: ActorContext, fact
   const existing = await ctx.db.query("accountingSourcePostings").withIndex("by_organization_source", (q) => q.eq("organizationId", actor.organization._id).eq("sourceType", fact.sourceType).eq("sourcePublicId", fact.sourcePublicId)).unique();
   const now = Date.now();
   const branchId = fact.branch?._id ?? existing?.branchId;
-  const payload = { branchId, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, idempotencyKey, journalEntryPublicId: undefined, reason: fact.reason, details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, status), updatedAt: now };
+  const payload = { branchId, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, idempotencyKey, journalEntryPublicId: undefined, reason: fact.reason, details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, status), reviewExcludedAt: undefined, reviewExcludedByUserId: undefined, updatedAt: now };
   let row: SourcePosting;
   if (existing) { await ctx.db.patch(existing._id, payload); row = (await ctx.db.get(existing._id))!; } else { const id = await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType: fact.sourceType, sourcePublicId: fact.sourcePublicId, ...payload, occurredAt: fact.occurredAt, createdAt: now }); row = (await ctx.db.get(id))!; }
   const attemptId = await ctx.db.insert("accountingPostingAttempts", { organizationId: actor.organization._id, publicId: `attempt-${crypto.randomUUID()}`, sourceType: fact.sourceType, sourcePublicId: fact.sourcePublicId, sourcePostingPublicId: row.publicId, branchId, idempotencyKey, requestFingerprint, status, amountMinor: fact.amountMinor, currency: fact.currency, policyCode: fact.policyCode, policyVersion: policyDefinition(fact.policyCode ?? "")?.version, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
@@ -1790,12 +1817,60 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   const entry = await insertJournal(ctx, actor, { branch, scope: "branch", postingDate, memo: fact.memo, reason: optionalText(input.reason), sourceType, sourcePublicId: sourceId, policyCode: policy.policyCode, policyVersion: policy.version, idempotencyKey: entryKey, lines: [{ accountId: `acct-${fact.debitAccountCode}`, debit: fact.amountMinor, credit: 0, description: fact.memo }, { accountId: `acct-${fact.creditAccountCode}`, debit: 0, credit: fact.amountMinor, description: fact.memo }] });
   const now = Date.now();
   const sourceIdValue = sourceExisting?._id ?? await ctx.db.insert("accountingSourcePostings", { organizationId: actor.organization._id, publicId: `source-${crypto.randomUUID()}`, sourceType, sourcePublicId: sourceId, branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, "pending"), occurredAt: fact.occurredAt, createdAt: now, updatedAt: now });
-  if (sourceExisting) await ctx.db.patch(sourceExisting._id, { branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, "pending"), updatedAt: now });
+  if (sourceExisting) await ctx.db.patch(sourceExisting._id, { branchId: branch._id, status: "posted", amountMinor: fact.amountMinor, currency: fact.currency, policyCode: policy.policyCode, policyVersion: policy.version, journalEntryPublicId: entry.publicId, idempotencyKey, reason: optionalText(input.reason), details: fact.details, projectionFingerprint: sourceFactFingerprint(fact, "pending"), reviewExcludedAt: undefined, reviewExcludedByUserId: undefined, updatedAt: now });
   await markOperationalSource(ctx, actor, fact, sourceId, "posted");
   await insertAudit(ctx, actor, { action: "accounting.source.post", entityType: "accounting_source_posting", entityId: sourceId, summary: `Posted ${sourceType} source ${sourceId}`, reason: optionalText(input.reason), branchId: branch._id, after: { amountMinor: fact.amountMinor, journalEntryId: entry.publicId, policyCode: policy.policyCode, policyVersion: policy.version } });
   const row = await ctx.db.get(sourceIdValue);
   if (!row) domainError("INTERNAL_ERROR", "Source posting could not be persisted.", { correlationId: actor.correlationId });
   return await sourcePostingView(ctx, actor, row);
+}
+
+/**
+ * Owner/manager review: permanently exclude a fact that will never be posted
+ * (cancelled test records, movements without a policy, costless history).
+ * The row survives refreshes as a standing decision and stops counting
+ * toward completeness warnings. Posting the source later supersedes it.
+ */
+async function excludeAccountingSource(ctx: MutationCtx, actor: ActorContext, input: JsonRecord): Promise<JsonRecord> {
+  await requireFinance(ctx, actor);
+  requirePostingRole(actor);
+  const reason = text(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const sourceType = text(input.sourceType) as AccountingSourceType;
+  if (!SUPPORTED_SOURCE_TYPES.includes(sourceType)) domainError("VALIDATION_ERROR", "Accounting source type is unsupported.", { correlationId: actor.correlationId });
+  const sourceId = text(input.sourceId ?? input.sourcePublicId).trim();
+  if (!sourceId) domainError("VALIDATION_ERROR", "A source id is required.", { correlationId: actor.correlationId });
+  const row = await sourcePostingByIdentity(ctx, actor, sourceType, sourceId);
+  if (!row) domainError("NOT_FOUND", "Accounting source posting not found.", { correlationId: actor.correlationId });
+  requireAccountingRecordVisible(actor, row.branchId);
+  if (row.status === "posted" || row.status === "reversed") domainError("CONFLICT", "A posted or reversed source is already in the books; use an owner reversal instead of an exclusion.", { correlationId: actor.correlationId });
+  if (row.reviewExcludedAt !== undefined) return await sourcePostingView(ctx, actor, row);
+  const now = Date.now();
+  const fact = await preserveExistingSourcePolicy(ctx, actor, row, normalizeSourceBranch(await sourceFact(ctx, actor, sourceType, sourceId)));
+  await ctx.db.patch(row._id, { status: "excluded", reason, reviewExcludedAt: now, reviewExcludedByUserId: actor.user._id, projectionFingerprint: sourceFactFingerprint(fact, "excluded"), updatedAt: now });
+  await insertAudit(ctx, actor, { action: "accounting.source.exclude", entityType: "accounting_source_posting", entityId: row.publicId, summary: `Excluded ${sourceType} source ${sourceId} from the books after review`, reason, branchId: row.branchId, before: { status: row.status }, after: { status: "excluded", reviewed: true } });
+  return await sourcePostingView(ctx, actor, (await ctx.db.get(row._id))!);
+}
+
+/** Reverses a review exclusion: the row returns to whatever the current operational fact says. */
+async function reconsiderAccountingSource(ctx: MutationCtx, actor: ActorContext, input: JsonRecord): Promise<JsonRecord> {
+  await requireFinance(ctx, actor);
+  requirePostingRole(actor);
+  const reason = text(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const sourceType = text(input.sourceType) as AccountingSourceType;
+  if (!SUPPORTED_SOURCE_TYPES.includes(sourceType)) domainError("VALIDATION_ERROR", "Accounting source type is unsupported.", { correlationId: actor.correlationId });
+  const sourceId = text(input.sourceId ?? input.sourcePublicId).trim();
+  if (!sourceId) domainError("VALIDATION_ERROR", "A source id is required.", { correlationId: actor.correlationId });
+  const row = await sourcePostingByIdentity(ctx, actor, sourceType, sourceId);
+  if (!row) domainError("NOT_FOUND", "Accounting source posting not found.", { correlationId: actor.correlationId });
+  requireAccountingRecordVisible(actor, row.branchId);
+  if (row.reviewExcludedAt === undefined) domainError("CONFLICT", "This source has no standing review exclusion to reconsider.", { correlationId: actor.correlationId });
+  await ctx.db.patch(row._id, { reviewExcludedAt: undefined, reviewExcludedByUserId: undefined, updatedAt: Date.now() });
+  const fact = normalizeSourceBranch(await sourceFact(ctx, actor, sourceType, sourceId));
+  const result = await refreshSourceProjection(ctx, actor, fact);
+  await insertAudit(ctx, actor, { action: "accounting.source.reconsider", entityType: "accounting_source_posting", entityId: row.publicId, summary: `Reopened ${sourceType} source ${sourceId} for review`, reason, branchId: row.branchId, before: { status: "excluded", reviewed: true }, after: { status: result.row.status } });
+  return await sourcePostingView(ctx, actor, result.row);
 }
 
 async function reverseEntry(ctx: MutationCtx, actor: ActorContext, input: JsonRecord): Promise<JsonRecord> {
@@ -1879,6 +1954,10 @@ export async function accountingMutation(ctx: MutationCtx, actor: ActorContext, 
     case "finance.manual_journal.post": return await postManualJournal(ctx, actor, input);
     case "accounting.source.post":
     case "finance.source.post": return await postAccountingSource(ctx, actor, input);
+    case "accounting.source.exclude":
+    case "finance.source.exclude": return await excludeAccountingSource(ctx, actor, input);
+    case "accounting.source.reconsider":
+    case "finance.source.reconsider": return await reconsiderAccountingSource(ctx, actor, input);
     case "accounting.source_postings.refresh":
     case "finance.source_postings.refresh": return await refreshSourceQueue(ctx, actor, input);
     case "accounting.entry.reverse":
