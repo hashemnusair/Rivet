@@ -158,7 +158,7 @@ export default function ShiftsPage() {
             <Cell label="Opened" value={formatDateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
             <Cell label="Float" value={<MoneyText money={currentShift.openingFloat} />} />
             <Cell label="Cash in" value={<MoneyText money={totals?.cashPayments ?? money(0)} />} />
-            <Cell label="Expected in drawer" value={<MoneyText money={money(currentShift.openingFloat.amount + (totals?.cashPayments.amount ?? 0) - (totals?.cashRefunds.amount ?? 0))} />} strong />
+            <Cell label="Expected in drawer" value={<MoneyText money={money(currentShift.openingFloat.amount + (totals?.cashPayments.amount ?? 0) - (totals?.cashRefunds.amount ?? 0) - (totals?.supplierCashPayments.amount ?? 0) + (totals?.supplierCashReversals.amount ?? 0))} />} strong />
             <Cell label="Payments" value={<span className="tabular">{totals?.paymentCount ?? 0}</span>} sub={`${totals?.refundCount ?? 0} refunds`} />
           </div>
         ) : (

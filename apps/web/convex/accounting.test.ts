@@ -449,3 +449,74 @@ describe("immutable management-accounting ledger", () => {
     expect(emptyRange.queueCoverage).toBe("proven");
   });
 });
+
+describe("supplier payment settlement sources", () => {
+  async function seededSupplierPayments() {
+    const { owner, t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "accounting-org-a")).unique())!;
+      const branch = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "accounting-branch-a")).unique())!;
+      const user = (await ctx.db.query("users").collect()).find((row) => row.publicId === "accounting-owner")!;
+      const now = Date.now();
+      const supplier = await ctx.db.insert("suppliers", { organizationId: organization._id, publicId: "accounting-supplier-a", name: "Jordan Sports Supply", branchIds: [branch._id], preferredProductIds: [], status: "active", createdAt: now, updatedAt: now });
+      const base = { organizationId: organization._id, supplierId: supplier, supplierName: "Jordan Sports Supply", branchId: branch._id, currency: "JOD", allocations: [{ payableId: "purchase_order:accounting-po-a", payableSourceType: "purchase_order" as const, amountMinor: 650_000 }], recordedByUserId: user._id, recordedByName: "Ledger Owner", occurredAt: now, financialPostingStatus: "not_posted" as const, createdAt: now, updatedAt: now };
+      await ctx.db.insert("supplierPayments", { ...base, publicId: "supplier-payment-cash", method: "cash", amountMinor: 650_000, status: "recorded", shiftPublicId: "accounting-shift-a", idempotencyKey: "sp-cash" });
+      await ctx.db.insert("supplierPayments", { ...base, publicId: "supplier-payment-transfer", method: "bank_transfer", amountMinor: 1_000_000, reference: "TRF-2026-0001", status: "reversed", reversedAt: now, reversedByUserId: user._id, reversedByName: "Ledger Owner", reversalReason: "Transfer was sent twice", idempotencyKey: "sp-transfer" });
+    });
+    return { owner, t };
+  }
+
+  it("defines stable per-method settlement and reversal policies", async () => {
+    const { DEFAULT_ACCOUNTING_POLICIES } = await import("./accounting");
+    const byCode = new Map(DEFAULT_ACCOUNTING_POLICIES.map((policy) => [policy.policyCode, policy]));
+    expect(byCode.get("supplier-payment-cash.v1")).toMatchObject({ sourceType: "supplier_payment", debitAccountCode: "2100", creditAccountCode: "1100", recognition: "immediate" });
+    expect(byCode.get("supplier-payment-bank-transfer.v1")).toMatchObject({ sourceType: "supplier_payment", debitAccountCode: "2100", creditAccountCode: "1120" });
+    expect(byCode.get("supplier-payment-cliq.v1")).toMatchObject({ sourceType: "supplier_payment", debitAccountCode: "2100", creditAccountCode: "1120" });
+    expect(byCode.get("supplier-payment-reversal-cash.v1")).toMatchObject({ sourceType: "supplier_payment_reversal", debitAccountCode: "1100", creditAccountCode: "2100" });
+    expect(byCode.get("supplier-payment-reversal-bank-transfer.v1")).toMatchObject({ sourceType: "supplier_payment_reversal", debitAccountCode: "1120", creditAccountCode: "2100" });
+    expect(byCode.get("supplier-payment-reversal-cliq.v1")).toMatchObject({ sourceType: "supplier_payment_reversal", debitAccountCode: "1120", creditAccountCode: "2100" });
+  });
+
+  it("posts a cash settlement against payables and only posts a reversal after the original reached the ledger", async () => {
+    const { owner, t } = await seededSupplierPayments();
+    const refreshed = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["supplier_payment", "supplier_payment_reversal"] })) as { items: Array<{ sourceType: string; sourceId: string; status: string; policyCode?: string; reason?: string }> };
+    const find = (sourceType: string, sourceId: string) => refreshed.items.find((item) => item.sourceType === sourceType && item.sourceId === sourceId);
+    expect(find("supplier_payment", "supplier-payment-cash")).toMatchObject({ status: "pending", policyCode: "supplier-payment-cash.v1" });
+    // Reversed before it ever posted: neither the original nor the reversal
+    // may fabricate a bank outflow the ledger never saw.
+    expect(find("supplier_payment", "supplier-payment-transfer")).toMatchObject({ status: "excluded", reason: expect.stringMatching(/reversed before it reached the ledger/i) });
+    expect(find("supplier_payment_reversal", "supplier-payment-transfer")).toMatchObject({ status: "excluded", reason: expect.stringMatching(/never posted/i) });
+    expect(find("supplier_payment_reversal", "supplier-payment-cash")).toBeUndefined();
+
+    const posted = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "supplier_payment", sourceId: "supplier-payment-cash", idempotencyKey: "post-supplier-cash" })) as { status: string; policyCode?: string; journalEntryId?: string };
+    expect(posted).toMatchObject({ status: "posted", policyCode: "supplier-payment-cash.v1", journalEntryId: expect.any(String) });
+    const journal = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: posted.journalEntryId })) as { lines: Array<{ accountCode: string; debit: { amount: number }; credit: { amount: number } }> };
+    expect(journal.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountCode: "2100", debit: expect.objectContaining({ amount: 650_000 }) }),
+      expect.objectContaining({ accountCode: "1100", credit: expect.objectContaining({ amount: 650_000 }) }),
+    ]));
+    const marked = await t.run(async (ctx) => (await ctx.db.query("supplierPayments").collect()).find((row) => row.publicId === "supplier-payment-cash"));
+    expect(marked).toMatchObject({ financialPostingStatus: "posted", financialSourceId: "source-supplier_payment-supplier-payment-cash" });
+
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("supplierPayments").collect()).find((candidate) => candidate.publicId === "supplier-payment-cash")!;
+      await ctx.db.patch(row._id, { status: "reversed", reversedAt: Date.now(), reversalReason: "Paid the same invoice twice", reversalShiftPublicId: "accounting-shift-b", updatedAt: Date.now() });
+    });
+    const afterReversal = await owner.mutation(api.domain.mutate, operation("accounting.source_postings.refresh", { sourceTypes: ["supplier_payment", "supplier_payment_reversal"] })) as { items: Array<{ sourceType: string; sourceId: string; status: string; policyCode?: string }> };
+    // Posted rows are skipped by the refresh and stay posted: the original
+    // settlement is immutable and only its reversal enters the queue.
+    expect(afterReversal.items.find((item) => item.sourceType === "supplier_payment" && item.sourceId === "supplier-payment-cash")).toBeUndefined();
+    const original = await t.run(async (ctx) => (await ctx.db.query("accountingSourcePostings").collect()).find((row) => row.sourceType === "supplier_payment" && row.sourcePublicId === "supplier-payment-cash"));
+    expect(original?.status).toBe("posted");
+    expect(afterReversal.items.find((item) => item.sourceType === "supplier_payment_reversal" && item.sourceId === "supplier-payment-cash")).toMatchObject({ status: "pending", policyCode: "supplier-payment-reversal-cash.v1" });
+
+    const reversalPosted = await owner.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "supplier_payment_reversal", sourceId: "supplier-payment-cash", idempotencyKey: "post-supplier-cash-reversal" })) as { status: string; journalEntryId?: string };
+    const reversalJournal = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: reversalPosted.journalEntryId })) as { lines: Array<{ accountCode: string; debit: { amount: number }; credit: { amount: number } }> };
+    expect(reversalJournal.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accountCode: "1100", debit: expect.objectContaining({ amount: 650_000 }) }),
+      expect.objectContaining({ accountCode: "2100", credit: expect.objectContaining({ amount: 650_000 }) }),
+    ]));
+    const reversalMarked = await t.run(async (ctx) => (await ctx.db.query("supplierPayments").collect()).find((row) => row.publicId === "supplier-payment-cash"));
+    expect(reversalMarked).toMatchObject({ financialPostingStatus: "posted", reversalFinancialPostingStatus: "posted" });
+  });
+});

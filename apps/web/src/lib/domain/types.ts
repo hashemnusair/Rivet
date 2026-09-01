@@ -358,6 +358,208 @@ export interface PurchaseOrder {
   updatedAt: ISODateTime;
 }
 
+// ---------------------------------------------------------------------------
+// Supplier payables and supplier payments
+// ---------------------------------------------------------------------------
+export type SupplierPaymentMethod = "cash" | "bank_transfer" | "cliq";
+export type PayableStatus = "unpaid" | "partially_paid" | "paid" | "reversed";
+/** Operational records whose completion credits accounts payable (2100). */
+export type PayableSourceType = "purchase_order" | "stock_receive" | "facility_supplies" | "equipment_acquisition" | "equipment_repair";
+export type PayableStatusFilter = PayableStatus | "open" | "all";
+
+/**
+ * A server-owned projection of one supplier-attributed 2100 balance. Payables
+ * are derived from purchase orders; amounts paid come from recorded supplier
+ * payment allocations. Nothing here is stored separately from those facts.
+ */
+export interface Payable {
+  /** Stable projection id: `${sourceType}:${sourceId}`. */
+  id: UUID;
+  sourceType: PayableSourceType;
+  sourceId: UUID;
+  sourceLabel: string;
+  supplierId: UUID;
+  supplierName: string;
+  branchId: UUID;
+  branchName: string;
+  currency: string;
+  /** When the goods were received (the payable is aged from this date). */
+  receivedAt: ISODateTime;
+  /** Present only when a real supplier due date was recorded; never invented. */
+  dueDate?: ISODate;
+  /** Whole days since receivedAt on the tenant calendar. */
+  ageDays: number;
+  original: Money;
+  paid: Money;
+  remaining: Money;
+  status: PayableStatus;
+  /** Supplier invoice or delivery reference recorded on the source. */
+  externalReference?: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+  href: string;
+}
+
+/**
+ * A 2100 balance with no supplier attached (private purchases, equipment
+ * costs, facility supplies, repairs). Shown for reconciliation only; RIVET
+ * never guesses which supplier it belongs to.
+ */
+export interface UnattributedPayable {
+  id: UUID;
+  sourceType: PayableSourceType;
+  sourceId: UUID;
+  sourceLabel: string;
+  /** Free-text vendor hint captured on the source (e.g. repair vendor). Not a supplier link. */
+  vendorHint?: string;
+  branchId: UUID;
+  branchName: string;
+  recordedAt: ISODateTime;
+  amount: Money;
+  reason: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+  href: string;
+}
+
+export interface PayablesQuery {
+  branchId?: UUID;
+  supplierId?: UUID;
+  status?: PayableStatusFilter;
+  /** Matches supplier name, purchase order id, or external reference. */
+  search?: string;
+  cursor?: string;
+  pageSize?: number;
+}
+
+export interface PayablesAgingBucket {
+  bucket: "0-30" | "31-60" | "61-90" | "90+";
+  outstanding: Money;
+  count: number;
+}
+
+export interface PayablesSupplierTotal {
+  supplierId: UUID;
+  supplierName: string;
+  outstanding: Money;
+  openCount: number;
+  oldestReceivedAt?: ISODateTime;
+}
+
+export interface PayablesPage {
+  currency: string;
+  /** Oldest-first page of payables matching the filters. */
+  items: Payable[];
+  nextCursor?: string;
+  matchedCount: number;
+  /** Totals over every payable matching the filters, not only this page. */
+  totals: { outstanding: Money; original: Money; paid: Money; openCount: number };
+  supplierTotals: PayablesSupplierTotal[];
+  aging: PayablesAgingBucket[];
+  unattributed: { count: number; total: Money; items: UnattributedPayable[] };
+}
+
+export interface PayablesExportRow {
+  supplierName: string;
+  sourceLabel: string;
+  sourceId: UUID;
+  branchName: string;
+  receivedAt: ISODateTime;
+  dueDate?: ISODate;
+  ageDays: number;
+  original: Money;
+  paid: Money;
+  remaining: Money;
+  status: PayableStatus;
+  externalReference?: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+}
+
+export interface PayablesExport {
+  currency: string;
+  generatedAt: ISODateTime;
+  rows: PayablesExportRow[];
+  /** True when the export hit the server row ceiling; narrow the filters. */
+  truncated: boolean;
+}
+
+export interface SupplierPaymentAllocation {
+  payableId: UUID;
+  sourceType: PayableSourceType;
+  sourceLabel: string;
+  amount: Money;
+}
+
+export interface SupplierPaymentReversal {
+  reason: string;
+  reversedAt: ISODateTime;
+  reversedById: UUID;
+  reversedByName: string;
+  /** Open cash shift that received the cash back (cash payments only). */
+  shiftId?: UUID;
+  ledgerPostingStatus: FinancialPostingStatus;
+}
+
+export interface SupplierPayment {
+  id: UUID;
+  organizationId: UUID;
+  supplierId: UUID;
+  supplierName: string;
+  branchId: UUID;
+  branchName: string;
+  method: SupplierPaymentMethod;
+  amount: Money;
+  /** Bank transfer / CliQ reference. Recorded as typed; never verified externally. */
+  reference?: string;
+  notes?: string;
+  status: "recorded" | "reversed";
+  /** Open cash shift that funded a cash payment. */
+  shiftId?: UUID;
+  allocations: SupplierPaymentAllocation[];
+  recordedById: UUID;
+  recordedByName: string;
+  occurredAt: ISODateTime;
+  /** Ledger settlement state; "recorded operationally" is not "posted". */
+  ledgerPostingStatus: FinancialPostingStatus;
+  reversal?: SupplierPaymentReversal;
+  idempotencyKey: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface SupplierPaymentDetail extends SupplierPayment {
+  organization: { name: string };
+  branch: { name: string; code: string; address: string; phone: string };
+  /** Outstanding supplier balance after this payment (all branches the actor can see). */
+  supplierRemaining: Money;
+  payables: Array<{ payableId: UUID; sourceLabel: string; original: Money; paid: Money; remaining: Money; status: PayableStatus }>;
+}
+
+export interface RecordSupplierPaymentInput {
+  supplierId: UUID;
+  branchId: UUID;
+  method: SupplierPaymentMethod;
+  amount: Money;
+  reference?: string;
+  notes?: string;
+  allocations: Array<{ payableId: UUID; amount: Money }>;
+  /** The open cash shift the operator saw; a different open shift means the screen is stale. */
+  expectedShiftId?: UUID;
+  idempotencyKey: string;
+}
+
+export interface ReverseSupplierPaymentInput {
+  paymentId: UUID;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface SupplierPaymentsQuery {
+  supplierId?: UUID;
+  branchId?: UUID;
+  payableId?: UUID;
+  page?: number;
+  pageSize?: number;
+}
+
 export interface CreatePurchaseOrderInput {
   branchId: UUID;
   /** Use `supplier` for a known supplier or `private` for an undisclosed source. */
@@ -2150,6 +2352,10 @@ export interface ShiftTotals {
   paymentCount: number;
   refundCount: number;
   discountsTotal: Money;
+  /** Cash paid out to suppliers from this shift's drawer (real cash outflow). */
+  supplierCashPayments: Money;
+  /** Cash returned to this drawer by reversing a supplier cash payment. */
+  supplierCashReversals: Money;
 }
 
 export interface ReconciliationReport {
@@ -2196,7 +2402,9 @@ export type AccountingSourceType =
   | "facility_supplies"
   | "equipment_acquisition"
   | "equipment_depreciation"
-  | "equipment_repair";
+  | "equipment_repair"
+  | "supplier_payment"
+  | "supplier_payment_reversal";
 
 export interface AccountingAccount {
   id: UUID;

@@ -113,7 +113,7 @@ export function authoritativeExpectedCash(
   current: { shift: CashShift; totals: ShiftTotals } | null | undefined,
 ): number | undefined {
   if (!current || current.shift.id !== shift.id || current.shift.status !== "open") return undefined;
-  return shift.openingFloat.amount + current.totals.cashPayments.amount - current.totals.cashRefunds.amount;
+  return shift.openingFloat.amount + current.totals.cashPayments.amount - current.totals.cashRefunds.amount - current.totals.supplierCashPayments.amount + current.totals.supplierCashReversals.amount;
 }
 
 export function CloseShiftDialog({
@@ -181,10 +181,11 @@ export function CloseShiftDialog({
         </DialogHeader>
         <DialogBody className="space-y-4">
           {/* Expected story */}
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5">
             <ExpectCell label="Float" minor={expected === undefined ? undefined : shift.openingFloat.amount} />
             <ExpectCell label="Cash in" minor={totals?.cashPayments.amount} sign="+" />
             <ExpectCell label="Cash refunds" minor={totals?.cashRefunds.amount} sign="−" />
+            <ExpectCell label="Supplier cash out" minor={totals === undefined ? undefined : totals.supplierCashPayments.amount - totals.supplierCashReversals.amount} sign="−" />
             <ExpectCell label="Expected" minor={expected} strong />
           </div>
           {totalsQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Loading authoritative shift totals…</p> : null}

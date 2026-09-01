@@ -2033,6 +2033,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     receipts,
     retailSales: [],
     shifts,
+    supplierPayments: [],
     checkIns: checkIns.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
     leads,
     offers,

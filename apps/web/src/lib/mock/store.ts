@@ -5,6 +5,7 @@ import type {
   Branch,
   BrandKit,
   CashShift,
+  SupplierPayment,
   Charge,
   CheckInSummary,
   FreezePeriod,
@@ -159,6 +160,7 @@ export interface MockDb {
   receipts: Receipt[];
   retailSales: RetailSale[];
   shifts: CashShift[];
+  supplierPayments: SupplierPayment[];
   checkIns: CheckInSummary[];
   leads: LeadRecord[];
   offers: Offer[];

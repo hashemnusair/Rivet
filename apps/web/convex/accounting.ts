@@ -38,7 +38,9 @@ export type AccountingSourceType =
   | "facility_supplies"
   | "equipment_acquisition"
   | "equipment_depreciation"
-  | "equipment_repair";
+  | "equipment_repair"
+  | "supplier_payment"
+  | "supplier_payment_reversal";
 
 type PostingStatus = "pending" | "posted" | "unconfigured" | "excluded" | "failed" | "reversed";
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
@@ -161,6 +163,15 @@ export const DEFAULT_ACCOUNTING_POLICIES: readonly PolicyDefinition[] = [
   { policyCode: "equipment-acquisition.v1", sourceType: "equipment_acquisition", version: 1, debitAccountCode: "1500", creditAccountCode: "2100", recognition: "immediate" },
   { policyCode: "equipment-depreciation.v1", sourceType: "equipment_depreciation", version: 1, debitAccountCode: "5600", creditAccountCode: "1550", recognition: "immediate" },
   { policyCode: "equipment-repair.v1", sourceType: "equipment_repair", version: 1, debitAccountCode: "5200", creditAccountCode: "2100", recognition: "immediate" },
+  // Supplier payments settle accounts payable from cash on hand (cash) or
+  // the bank/CliQ clearing account (bank transfer, CliQ). The policy codes
+  // are stable per method so a reversal can always find its opposite.
+  { policyCode: "supplier-payment-cash.v1", sourceType: "supplier_payment", version: 1, debitAccountCode: "2100", creditAccountCode: "1100", recognition: "immediate" },
+  { policyCode: "supplier-payment-bank-transfer.v1", sourceType: "supplier_payment", version: 1, debitAccountCode: "2100", creditAccountCode: "1120", recognition: "immediate" },
+  { policyCode: "supplier-payment-cliq.v1", sourceType: "supplier_payment", version: 1, debitAccountCode: "2100", creditAccountCode: "1120", recognition: "immediate" },
+  { policyCode: "supplier-payment-reversal-cash.v1", sourceType: "supplier_payment_reversal", version: 1, debitAccountCode: "1100", creditAccountCode: "2100", recognition: "immediate" },
+  { policyCode: "supplier-payment-reversal-bank-transfer.v1", sourceType: "supplier_payment_reversal", version: 1, debitAccountCode: "1120", creditAccountCode: "2100", recognition: "immediate" },
+  { policyCode: "supplier-payment-reversal-cliq.v1", sourceType: "supplier_payment_reversal", version: 1, debitAccountCode: "1120", creditAccountCode: "2100", recognition: "immediate" },
 ];
 
 function objectValue(value: unknown): JsonRecord {
@@ -782,6 +793,54 @@ export async function sourceFact(ctx: ReadContext, actor: ActorContext, sourceTy
   const currency = actor.organization.currency.toUpperCase();
   if (!sourceId.trim()) domainError("VALIDATION_ERROR", "A source id is required.", { correlationId: actor.correlationId });
 
+  if (sourceType === "supplier_payment" || sourceType === "supplier_payment_reversal") {
+    const payment = await ctx.db.query("supplierPayments").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourceId)).unique();
+    if (!payment) domainError("NOT_FOUND", "Supplier payment source not found.", { correlationId: actor.correlationId });
+    const branch = await accountingBranchById(ctx, actor, payment.branchId);
+    const reversal = sourceType === "supplier_payment_reversal";
+    const settlementAccount = payment.method === "cash" ? "1100" : "1120";
+    const sourceCurrency = payment.currency.toUpperCase();
+    const invalidCurrency = sourceCurrency !== currency;
+    const amount = payment.amountMinor;
+    const invalidAmount = !Number.isSafeInteger(amount) || amount <= 0;
+    const reversed = payment.status === "reversed";
+    // The original settlement and its reversal are two source facts on the
+    // same operational record. A reversal only reverses money that actually
+    // reached the ledger, and a payment reversed before it ever posted has
+    // nothing left to post: posting it now would fabricate a cash outflow
+    // that the reversal would immediately have to undo.
+    const originalStatus = (await sourcePostingByIdentity(ctx, actor, "supplier_payment", sourceId))?.status;
+    const reversalWithoutPostedOriginal = reversal && originalStatus !== "posted";
+    const reversedBeforePosting = !reversal && reversed && originalStatus !== "posted";
+    const methodSlug = payment.method.replace("_", "-");
+    return {
+      sourceType,
+      sourcePublicId: sourceId,
+      branch,
+      branchPublicId: branch ? publicBranchId(branch) : undefined,
+      amountMinor: amount,
+      currency: sourceCurrency,
+      occurredAt: reversal ? payment.reversedAt ?? payment.updatedAt : payment.occurredAt,
+      memo: `${reversal ? "Supplier payment reversal" : "Supplier payment"} · ${payment.supplierName}${payment.reference ? ` · ${payment.reference}` : ""}`,
+      policyCode: `${reversal ? "supplier-payment-reversal" : "supplier-payment"}-${methodSlug}.v1`,
+      debitAccountCode: reversal ? settlementAccount : "2100",
+      creditAccountCode: reversal ? "2100" : settlementAccount,
+      details: { method: payment.method, supplierId: String(payment.supplierId), supplierName: payment.supplierName, reference: payment.reference, paymentStatus: payment.status, allocationCount: payment.allocations.length, ...(reversal ? { originalPaymentPostingStatus: originalStatus ?? "never_posted" } : {}) },
+      status: invalidCurrency ? "excluded" : invalidAmount ? "unconfigured" : reversal ? (!reversed || reversalWithoutPostedOriginal ? "excluded" : undefined) : reversedBeforePosting ? "excluded" : undefined,
+      reason: invalidCurrency
+        ? `Supplier payment currency ${sourceCurrency} does not match organization currency ${currency}.`
+        : invalidAmount
+          ? "Supplier payment amount is not a positive safe integer minor-unit amount."
+          : reversal && !reversed
+            ? "This supplier payment has not been reversed, so there is no reversal to post."
+            : reversalWithoutPostedOriginal
+              ? "The reversed supplier payment was never posted to the ledger, so the reversal has no ledger effect."
+              : reversedBeforePosting
+                ? "This supplier payment was reversed before it reached the ledger, so nothing is posted."
+                : undefined,
+    };
+  }
+
   if (["payment", "refund", "void"].includes(sourceType)) {
     const record = await domainSource(ctx, actor, "payment", sourceId);
     if (!record) domainError("NOT_FOUND", "Payment source not found.", { correlationId: actor.correlationId });
@@ -1174,6 +1233,13 @@ async function markOperationalSource(ctx: MutationCtx, actor: ActorContext, fact
     if (workOrder) await ctx.db.patch(workOrder._id, { financialPostingStatus: status, financialSourceId: `source-${fact.sourceType}-${sourcePublicId}` });
     return;
   }
+  if (fact.sourceType === "supplier_payment" || fact.sourceType === "supplier_payment_reversal") {
+    const payment = await ctx.db.query("supplierPayments").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", sourcePublicId)).unique();
+    if (!payment) return;
+    const sourceId = `source-${fact.sourceType}-${sourcePublicId}`;
+    await ctx.db.patch(payment._id, fact.sourceType === "supplier_payment" ? { financialPostingStatus: status, financialSourceId: sourceId, updatedAt: Date.now() } : { reversalFinancialPostingStatus: status, reversalFinancialSourceId: sourceId, updatedAt: Date.now() });
+    return;
+  }
   if (fact.sourceType === "membership_revenue_recognition" || fact.sourceType === "equipment_depreciation") return;
   const entity = fact.sourceType === "payment" || fact.sourceType === "refund" || fact.sourceType === "void" ? "payment" : "membership";
   const record = await domainSource(ctx, actor, entity, sourcePublicId);
@@ -1319,7 +1385,7 @@ interface SourceCandidateDateRange {
   toDate?: string;
 }
 
-export const SUPPORTED_SOURCE_TYPES: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
+export const SUPPORTED_SOURCE_TYPES: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair", "supplier_payment", "supplier_payment_reversal"];
 
 function queueSourceStatus(fact: SourceFact, currency: string): QueueSourceStatus {
   if (fact.status) return fact.status;
@@ -1483,6 +1549,13 @@ export async function discoverSourceCandidates(ctx: ReadContext, actor: ActorCon
         const amount = asset.purchaseCostMinor === undefined ? undefined : monthlyDepreciationAmount(asset.purchaseCostMinor, usefulLife, monthIndex);
         if (amount !== undefined && amount > 0 && monthInDateRange(month, serviceRange)) add("equipment_depreciation", "equipment-depreciation:" + asset.publicId + ":" + month, asset.branchId);
       }
+    }
+  }
+  if (allowed.has("supplier_payment") || allowed.has("supplier_payment_reversal")) {
+    const payments = await ctx.db.query("supplierPayments").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    for (const payment of payments) {
+      if (timestampInDateRange(payment.occurredAt, actor.organization.timezone, dateRange)) add("supplier_payment", payment.publicId, payment.branchId);
+      if (payment.status === "reversed" && timestampInDateRange(payment.reversedAt ?? payment.updatedAt, actor.organization.timezone, dateRange)) add("supplier_payment_reversal", payment.publicId, payment.branchId);
     }
   }
   if (allowed.has("equipment_repair")) {
@@ -1772,7 +1845,7 @@ async function postAccountingSource(ctx: MutationCtx, actor: ActorContext, input
   await requireFinance(ctx, actor);
   requirePostingRole(actor);
   const sourceType = text(input.sourceType) as AccountingSourceType;
-  const supported: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
+  const supported: readonly AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair", "supplier_payment", "supplier_payment_reversal"];
   if (!supported.includes(sourceType)) domainError("VALIDATION_ERROR", "Accounting source type is unsupported.", { correlationId: actor.correlationId });
   const sourceId = text(input.sourceId ?? input.sourcePublicId).trim();
   const idempotencyKey = text(input.idempotencyKey).trim();

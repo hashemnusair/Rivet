@@ -23,6 +23,8 @@ const totals: ShiftTotals = {
   paymentCount: 3,
   refundCount: 2,
   discountsTotal: money(0),
+  supplierCashPayments: money(0),
+  supplierCashReversals: money(0),
 };
 
 describe("openShiftSchema", () => {

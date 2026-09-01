@@ -392,7 +392,7 @@ function mockSourceTypesDigest(sourceTypes: readonly T.AccountingSourceType[]): 
   return [...new Set(sourceTypes)].sort().join(",");
 }
 
-const MOCK_ACCOUNTING_SOURCE_TYPES: readonly T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair"];
+const MOCK_ACCOUNTING_SOURCE_TYPES: readonly T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair", "supplier_payment", "supplier_payment_reversal"];
 
 type MockAccountingFact = {
   amount?: number;
@@ -7745,6 +7745,11 @@ export class MockGymOSApi implements GymOSApi {
           .map((p) => ("chargeId" in p ? this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0 : 0))
           .reduce((s, d) => s + d, 0),
       ),
+      // Supplier cash leaves the drawer during the shift that funded it and
+      // comes back during the shift that recorded the reversal, so both sides
+      // stay truthful even when they happen in different shifts.
+      supplierCashPayments: money(this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.shiftId === shift.id).reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency),
+      supplierCashReversals: money(this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.status === "reversed" && payment.reversal?.shiftId === shift.id).reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency),
     };
   }
 
@@ -7755,7 +7760,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
       if (shift.status === "closed") throw ApiError.of(ERR.VALIDATION, "Shift is already closed.");
       const totals = this.shiftTotals(shift);
-      const expected = shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount;
+      const expected = shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount - totals.supplierCashPayments.amount + totals.supplierCashReversals.amount;
       const variance = input.countedCash.amount - expected;
       if (variance !== 0 && !input.varianceExplanation?.trim()) {
         throw ApiError.of(ERR.VALIDATION, "Explain the cash variance before closing.", {
@@ -8286,6 +8291,10 @@ export class MockGymOSApi implements GymOSApi {
       }
     }
     for (const workOrder of this.db.equipmentWorkOrders) if (mockTimestampInDateRange(workOrder.completedAt ?? workOrder.updatedAt, this.db.organization.timezone, dateRange)) add("equipment_repair", workOrder.id, workOrder.branchId);
+    for (const payment of this.db.supplierPayments) {
+      if (mockTimestampInDateRange(payment.occurredAt, this.db.organization.timezone, dateRange)) add("supplier_payment", payment.id, payment.branchId);
+      if (payment.status === "reversed" && mockTimestampInDateRange(payment.reversal?.reversedAt ?? payment.updatedAt, this.db.organization.timezone, dateRange)) add("supplier_payment_reversal", payment.id, payment.branchId);
+    }
     return candidates;
   }
 
@@ -8360,6 +8369,42 @@ export class MockGymOSApi implements GymOSApi {
 
   private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): MockAccountingFact {
     const accountForMethod = (method: T.PaymentMethodKey) => method === "card" ? "1110" : method === "bank_transfer" || method === "cliq" ? "1120" : "1100";
+    if (sourceType === "supplier_payment" || sourceType === "supplier_payment_reversal") {
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === sourceId);
+      if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment source not found.");
+      const reversal = sourceType === "supplier_payment_reversal";
+      const settlementAccount = payment.method === "cash" ? "1100" : "1120";
+      const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
+      const invalidAmount = !Number.isSafeInteger(payment.amount.amount) || payment.amount.amount <= 0;
+      const reversed = payment.status === "reversed";
+      // Mirrors Convex: a reversal only reverses money that reached the
+      // ledger, and a payment reversed before posting has nothing to post.
+      const originalStatus = this.accountingSources.find((row) => row.sourceType === "supplier_payment" && row.sourceId === sourceId)?.status;
+      const reversalWithoutPostedOriginal = reversal && originalStatus !== "posted";
+      const reversedBeforePosting = !reversal && reversed && originalStatus !== "posted";
+      return {
+        amount: payment.amount.amount,
+        currency: payment.amount.currency,
+        branchId: payment.branchId,
+        occurredAt: reversal ? payment.reversal?.reversedAt ?? payment.updatedAt : payment.occurredAt,
+        debitCode: reversal ? settlementAccount : "2100",
+        creditCode: reversal ? "2100" : settlementAccount,
+        policyCode: `${reversal ? "supplier-payment-reversal" : "supplier-payment"}-${payment.method.replace("_", "-")}.v1`,
+        details: { method: payment.method, supplierId: payment.supplierId, supplierName: payment.supplierName, reference: payment.reference, paymentStatus: payment.status, allocationCount: payment.allocations.length, ...(reversal ? { originalPaymentPostingStatus: originalStatus ?? "never_posted" } : {}) },
+        status: currencyMismatch ? "excluded" : invalidAmount ? "unconfigured" : reversal ? (!reversed || reversalWithoutPostedOriginal ? "excluded" : undefined) : reversedBeforePosting ? "excluded" : undefined,
+        reason: currencyMismatch
+          ? "Supplier payment currency does not match organization currency."
+          : invalidAmount
+            ? "Supplier payment amount is not a positive safe integer minor-unit amount."
+            : reversal && !reversed
+              ? "This supplier payment has not been reversed, so there is no reversal to post."
+              : reversalWithoutPostedOriginal
+                ? "The reversed supplier payment was never posted to the ledger, so the reversal has no ledger effect."
+                : reversedBeforePosting
+                  ? "This supplier payment was reversed before it reached the ledger, so nothing is posted."
+                  : undefined,
+      };
+    }
     if (["payment", "refund", "void"].includes(sourceType)) {
       const retailSale = this.db.retailSales.find((sale) => `retail-payment-${sale.id}` === sourceId);
       const payment: T.Payment | T.RetailPayment | undefined = this.db.payments.find((candidate) => candidate.id === sourceId) ?? (retailSale ? this.retailPaymentProjection(retailSale) : undefined);

@@ -419,6 +419,8 @@ describe("ConvexGymOSApi contract boundary", () => {
       paymentCount: 0,
       refundCount: 0,
       discountsTotal: { amount: 0, currency: "JOD" },
+      supplierCashPayments: { amount: 0, currency: "JOD" },
+      supplierCashReversals: { amount: 0, currency: "JOD" },
     };
     const calls: Array<Record<string, unknown>> = [];
     const api = new ConvexGymOSApi(transportFor({ query: { shift, totals } }, (_kind, args) => calls.push(args)));

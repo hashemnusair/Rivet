@@ -45,6 +45,7 @@ import {
 } from "./workspaceModules";
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
+import { supplierCashShiftMovements } from "./payables";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -6304,7 +6305,8 @@ async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): 
   const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
   const total = (method: string, type?: string) => payments.filter((payment) => payment.method === method && (type ? payment.type === type : isCollection(payment))).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
   const discounts = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter((charge) => payments.some((payment) => payment.chargeId === charge.id)).reduce((sum, charge) => sum + amountOf(charge.discount), 0);
-  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter(isCollection).length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency) };
+  const supplierCash = await supplierCashShiftMovements(ctx, actor, stringValue(shift.id));
+  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter(isCollection).length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency), supplierCashPayments: money(supplierCash.paidMinor, actor.organization.currency), supplierCashReversals: money(supplierCash.reversedMinor, actor.organization.currency) };
 }
 
 async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branchId: string, date: string): Promise<Data> {
@@ -10738,7 +10740,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const shift = data(record.data);
       if (shift.status !== "open") domainError("VALIDATION_ERROR", "This shift is already closed.", { correlationId: actor.correlationId });
       const totals = await shiftTotals(ctx, actor, shift);
-      const expected = amountOf(shift.openingFloat) + amountOf(totals.cashPayments) - amountOf(totals.cashRefunds);
+      const expected = amountOf(shift.openingFloat) + amountOf(totals.cashPayments) - amountOf(totals.cashRefunds) - amountOf(totals.supplierCashPayments) + amountOf(totals.supplierCashReversals);
       const counted = amountOf(input.countedCash);
       const variance = counted - expected;
       if (variance !== 0) requireReason(input.varianceExplanation, actor.correlationId, "varianceExplanation");

@@ -72,6 +72,8 @@ const zoneKind = v.union(
 const operationsRecordStatus = v.union(v.literal("active"), v.literal("archived"));
 const productUnit = v.union(v.literal("each"), v.literal("kg"), v.literal("liter"), v.literal("box"), v.literal("serving"));
 const financialPostingStatus = v.union(v.literal("not_posted"), v.literal("pending"), v.literal("posted"), v.literal("failed"), v.literal("reversed"));
+const supplierPaymentMethod = v.union(v.literal("cash"), v.literal("bank_transfer"), v.literal("cliq"));
+const payableSourceType = v.union(v.literal("purchase_order"), v.literal("stock_receive"), v.literal("facility_supplies"), v.literal("equipment_acquisition"), v.literal("equipment_repair"));
 const stockMovementType = v.union(v.literal("receive"), v.literal("sale"), v.literal("consumption"), v.literal("adjustment"), v.literal("return"), v.literal("transfer_in"), v.literal("transfer_out"), v.literal("waste"));
 const purchaseOrderStatus = v.union(v.literal("draft"), v.literal("approved"), v.literal("partially_received"), v.literal("received"), v.literal("cancelled"));
 const facilityTaskKind = v.union(v.literal("cleaning"), v.literal("inspection"), v.literal("incident"));
@@ -118,6 +120,8 @@ const accountingSourceType = v.union(
   v.literal("equipment_acquisition"),
   v.literal("equipment_depreciation"),
   v.literal("equipment_repair"),
+  v.literal("supplier_payment"),
+  v.literal("supplier_payment_reversal"),
 );
 const accountingSourceStatus = v.union(v.literal("pending"), v.literal("posted"), v.literal("unconfigured"), v.literal("excluded"), v.literal("failed"), v.literal("reversed"));
 const accountingPostingDecisionStatus = v.union(v.literal("unconfigured"), v.literal("excluded"));
@@ -465,6 +469,49 @@ export default defineSchema({
     .index("by_organization", ["organizationId"])
     .index("by_branch_product", ["organizationId", "branchId", "productId"])
     .index("by_public_id", ["organizationId", "publicId"]),
+
+  // Supplier payments settle accounts payable (2100). A payment is an
+  // immutable operational fact: allocations are captured at record time and a
+  // reversal never edits the original, it only marks it reversed with a
+  // reason and (for cash) the shift that received the money back.
+  supplierPayments: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    supplierId: v.id("suppliers"),
+    supplierName: v.string(),
+    branchId: v.id("branches"),
+    method: supplierPaymentMethod,
+    amountMinor: v.number(),
+    currency: v.string(),
+    reference: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    allocations: v.array(v.object({ payableId: v.string(), payableSourceType, amountMinor: v.number() })),
+    status: v.union(v.literal("recorded"), v.literal("reversed")),
+    // Public id of the open cash shift that funded a cash payment.
+    shiftPublicId: v.optional(v.string()),
+    recordedByUserId: v.id("users"),
+    recordedByName: v.string(),
+    occurredAt: v.number(),
+    reversedAt: v.optional(v.number()),
+    reversedByUserId: v.optional(v.id("users")),
+    reversedByName: v.optional(v.string()),
+    reversalReason: v.optional(v.string()),
+    // Public id of the open cash shift that received the cash back.
+    reversalShiftPublicId: v.optional(v.string()),
+    // Accounting owns both posting states; operations only project them.
+    financialPostingStatus,
+    financialSourceId: v.optional(v.string()),
+    reversalFinancialPostingStatus: v.optional(financialPostingStatus),
+    reversalFinancialSourceId: v.optional(v.string()),
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["organizationId", "publicId"])
+    .index("by_organization_supplier", ["organizationId", "supplierId"])
+    .index("by_organization_shift", ["organizationId", "shiftPublicId"])
+    .index("by_organization_reversal_shift", ["organizationId", "reversalShiftPublicId"]),
 
   purchaseOrders: defineTable({
     organizationId: v.id("organizations"),
