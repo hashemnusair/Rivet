@@ -30,6 +30,7 @@ describe("ManagementLedgerHome", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /payments|shifts|cash reports|reports/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ledger controls" })).toHaveAttribute("href", "/finance/controls");
+    expect(screen.getByTestId("ledger-card-controls")).toHaveAttribute("href", "/finance/controls");
   });
 
   it("normalizes and preserves statement scope on every destination", async () => {

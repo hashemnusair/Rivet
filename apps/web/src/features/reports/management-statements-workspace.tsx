@@ -162,9 +162,10 @@ function statementWarnings(report: ManagementReportCompleteness | undefined, kin
   return dedupeStatementWarnings(warnings);
 }
 
-function ReportQuality({ report, warnings, kind }: { report?: ManagementReportCompleteness; warnings?: readonly string[]; kind?: ManagementStatementKind }) {
+function ReportQuality({ report, warnings, kind, controlsHref }: { report?: ManagementReportCompleteness; warnings?: readonly string[]; kind?: ManagementStatementKind; controlsHref?: string }) {
   if (!report) return null;
   const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings);
+  const needsAttention = report.queueCoverage !== "proven" || visibleWarnings.length > 0;
   return (
     <section className="space-y-2" aria-label="Statement quality and scope">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
@@ -175,8 +176,9 @@ function ReportQuality({ report, warnings, kind }: { report?: ManagementReportCo
         <span aria-hidden>·</span>
         <span dir="ltr">{report.currency}</span>
         {report.queueCoverage !== "proven" ? <Badge variant="warning">Data coverage: {STATUS_LABELS[report.queueCoverage] ?? statusLabel(report.queueCoverage)}</Badge> : null}
+        {!needsAttention ? <span className="inline-flex items-center gap-1 text-success-deep"><CheckCircle2 className="size-3.5" aria-hidden /> All sources accounted for</span> : null}
       </div>
-      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul></div></div></section> : null}
+      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Resolve in Ledger controls</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[11.5px] text-ink-3">Hit <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh queue in Ledger controls</Link> to re-prove coverage.</p> : null}
       <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
     </section>
   );
@@ -186,8 +188,8 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
   return (
     <div className="space-y-4" data-testid="income-statement">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Total revenue" value={<MoneyText money={report.totalRevenue} />} tone="positive" />
-        <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" />
+        <SummaryCard label="Total revenue" value={<MoneyText money={report.totalRevenue} />} tone="positive" context="Membership and shop income earned in this period." />
+        <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" context="Stock, repairs, depreciation, and other running costs." />
         <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue and other income, less cost of sales, operating expenses, and other expenses." />
       </div>
       {report.membershipRevenueRecognition !== "not_available" ? (
@@ -213,9 +215,9 @@ function BalanceSheetView({ report }: { report: BalanceSheet }) {
   return (
     <div className="space-y-4" data-testid="balance-sheet">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Total assets" value={<MoneyText money={report.totalAssets} />} />
-        <SummaryCard label="Liabilities" value={<MoneyText money={report.totalLiabilities} />} />
-        <SummaryCard label="Liabilities + equity" value={<MoneyText money={report.totalLiabilitiesAndEquity} />} tone={report.balanced ? "positive" : "danger"} />
+        <SummaryCard label="Total assets" value={<MoneyText money={report.totalAssets} />} context="Cash, stock, and equipment the gym controls." />
+        <SummaryCard label="Liabilities" value={<MoneyText money={report.totalLiabilities} />} context="What the gym still owes suppliers and members." />
+        <SummaryCard label="Liabilities + equity" value={<MoneyText money={report.totalLiabilitiesAndEquity} />} tone={report.balanced ? "positive" : "danger"} context="Always equals total assets when the books balance." />
       </div>
       <section className={cn("rounded-md border px-4 py-3", report.balanced ? "border-success/40 bg-success-bg text-success-deep" : "border-danger/40 bg-danger-bg text-danger")} role="status" aria-label="Balance sheet equation">
         <div className="flex flex-wrap items-center gap-2"><Scale className="size-4" aria-hidden /><p className="font-medium">{report.balanced ? "Balance sheet equation reconciles" : "Balance sheet equation needs review"}</p><ReportStatusBadge status={report.balanced ? "available" : "not_available"} /></div>
@@ -243,9 +245,9 @@ function CashflowView({ report }: { report: CashflowStatement }) {
   return (
     <div className="space-y-4" data-testid="cashflow-statement">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Opening cash" value={<MoneyText money={report.openingCash} />} />
-        <SummaryCard label="Net change" value={<MoneyText money={report.netChange} signed />} tone={report.netChange.amount >= 0 ? "positive" : "danger"} />
-        <SummaryCard label="Closing cash" value={<MoneyText money={report.closingCash} />} tone={report.balanced ? "positive" : "warning"} />
+        <SummaryCard label="Opening cash" value={<MoneyText money={report.openingCash} />} context="Drawer plus card and transfer clearing at the start." />
+        <SummaryCard label="Net change" value={<MoneyText money={report.netChange} signed />} tone={report.netChange.amount >= 0 ? "positive" : "danger"} context="Cash in minus cash out during this period." />
+        <SummaryCard label="Closing cash" value={<MoneyText money={report.closingCash} />} tone={report.balanced ? "positive" : "warning"} context="Drawer plus clearing at the end of the period." />
       </div>
       <section className={cn("rounded-md border px-4 py-3", reconciliationProven ? "border-success/40 bg-success-bg text-success-deep" : "border-warning/40 bg-warning-bg text-warning-deep")} role="status" aria-label="Cashflow reconciliation"><div className="flex flex-wrap items-center gap-2">{reconciliationProven ? <CheckCircle2 className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}<p className="font-medium">{reconciliationProven ? "Cashflow reconciles" : "Cashflow reconciliation needs review"}</p><ReportStatusBadge status={report.reconciliationStatus} /></div><p className="mt-1 text-[12px]">Opening cash + net change = expected closing cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.expectedClosingCash} /></span> · independent as-of cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.asOfCash} /></span> · difference <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.difference} /></span></p>{reconciliation.note ? <p className="mt-1 text-[11px]">{reconciliation.note}</p> : null}</section>
       <div className="grid gap-4 lg:grid-cols-3"><CashflowSectionCard section={report.operating} /><CashflowSectionCard section={report.investing} /><CashflowSectionCard section={report.financing} /></div>
@@ -278,6 +280,20 @@ export function scopedStatementHref(path: string, fromDate: string, toDate: stri
 
 type StatementBranch = { id: string; name: string };
 
+/** One-click ranges for owners who never want to touch two date fields. */
+function rangePresets(): Array<{ key: string; label: string; from: string; to: string }> {
+  const today = todayISODate();
+  const month = today.slice(0, 7);
+  const previousMonthEnd = addDays(`${month}-01`, -1);
+  const previousMonth = previousMonthEnd.slice(0, 7);
+  return [
+    { key: "this-month", label: "This month", from: `${month}-01`, to: today },
+    { key: "last-month", label: "Last month", from: `${previousMonth}-01`, to: previousMonthEnd },
+    { key: "last-30", label: "Last 30 days", from: addDays(today, -29), to: today },
+    { key: "this-year", label: "This year", from: `${today.slice(0, 4)}-01-01`, to: today },
+  ];
+}
+
 function normalizeBranchFilter(value: string | null | undefined, branches: readonly StatementBranch[]): string {
   const candidate = value?.trim();
   if (!candidate || candidate === "all") return "all";
@@ -292,6 +308,7 @@ function StatementScopeFilters({
   onFromDateChange,
   onToDateChange,
   onBranchChange,
+  onRangeChange,
 }: {
   branches: readonly StatementBranch[];
   fromDate: string;
@@ -300,14 +317,37 @@ function StatementScopeFilters({
   onFromDateChange: (value: string) => void;
   onToDateChange: (value: string) => void;
   onBranchChange: (value: string) => void;
+  onRangeChange: (from: string, to: string) => void;
 }) {
   const validRange = fromDate.length > 0 && toDate.length > 0 && fromDate <= toDate;
+  const presets = rangePresets();
   return (
-    <section className="panel flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end" aria-label="Statement scope filters">
-      <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
-      <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
-      <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
-      <div className="flex items-center gap-2 text-[11.5px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
+    <section className="panel flex flex-col gap-3 p-4" aria-label="Statement scope filters">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Quick date ranges">
+        {presets.map((preset) => {
+          const active = preset.from === fromDate && preset.to === toDate;
+          return (
+            <button
+              key={preset.key}
+              type="button"
+              onClick={() => onRangeChange(preset.from, preset.to)}
+              aria-pressed={active}
+              className={cn(
+                "rounded-full border px-3 py-1 text-[12px] transition-colors",
+                active ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-ink-3 hover:text-ink",
+              )}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
+        <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
+        <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+        <div className="flex items-center gap-2 text-[11.5px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
+      </div>
       {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
     </section>
   );
@@ -423,8 +463,8 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
   return (
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
       <PageHeader eyebrow="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
-      <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} />
-      <ReportQuality report={report} warnings={reportWarnings} kind={kind} />
+      <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} onRangeChange={(from, to) => { setFromDate(from); setToDate(to); }} />
+      <ReportQuality report={report} warnings={reportWarnings} kind={kind} controlsHref={!readOnly ? "/finance/controls" : undefined} />
       {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}
       <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
       {reportView}

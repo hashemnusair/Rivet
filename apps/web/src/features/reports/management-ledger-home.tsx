@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Banknote, LockKeyhole, Scale, TrendingUp } from "lucide-react";
+import { ArrowRight, Banknote, LockKeyhole, Scale, SlidersHorizontal, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -46,8 +46,8 @@ export function ManagementLedgerHome() {
 
   return (
     <div className="space-y-6" data-testid="management-ledger-home">
-      <PageHeader eyebrow="Management ledger" title="Management ledger" description="Choose a statement to review the gym’s financial position." actions={canManageControls ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : undefined} />
-      <div className="grid gap-4 sm:grid-cols-3" aria-label="Financial statements">
+      <PageHeader eyebrow="Management ledger" title="Management ledger" description="Choose a statement to review the gym’s financial position." />
+      <div className={canManageControls ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"} aria-label="Financial statements">
         {STATEMENT_CARDS.map((card) => (
           <Link key={card.kind} href={scopedStatementHref(card.href, fromDate, toDate, branchFilter)} data-testid={`statement-card-${card.kind}`} className="group flex min-h-48 flex-col rounded-lg border border-line bg-surface p-5 shadow-card transition-colors hover:border-ink-3 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
             <span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink-2 transition-colors group-hover:bg-ink group-hover:text-paper"><card.icon className="size-5" aria-hidden /></span>
@@ -56,6 +56,14 @@ export function ManagementLedgerHome() {
             <span className="mt-auto flex items-center gap-1.5 pt-5 text-[12px] font-medium text-ink-2">Open statement <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden /></span>
           </Link>
         ))}
+        {canManageControls ? (
+          <Link href="/finance/controls" aria-label="Ledger controls" data-testid="ledger-card-controls" className="group flex min-h-48 flex-col rounded-lg border border-line bg-surface p-5 shadow-card transition-colors hover:border-ink-3 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
+            <span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink-2 transition-colors group-hover:bg-ink group-hover:text-paper"><SlidersHorizontal className="size-5" aria-hidden /></span>
+            <h2 className="mt-5 text-[17px] font-semibold">Ledger controls</h2>
+            <p className="mt-2 max-w-[26rem] text-[12.5px] leading-relaxed text-ink-3">Refresh the queue, post or exclude facts, and run the month-end clicks that keep the statements current.</p>
+            <span className="mt-auto flex items-center gap-1.5 pt-5 text-[12px] font-medium text-ink-2">Open controls <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden /></span>
+          </Link>
+        ) : null}
       </div>
       <LedgerTutorial />
       <p className="text-[11.5px] text-ink-3">Figures come from posted management-ledger entries for the selected branch and period. Each statement explains any incomplete source coverage.</p>
