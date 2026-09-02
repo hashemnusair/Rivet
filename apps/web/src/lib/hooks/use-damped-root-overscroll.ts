@@ -4,8 +4,13 @@ import { useEffect, type RefObject } from "react";
 
 const MAX_PULL_PX = 7;
 const DAMPING = 0.045;
-const SETTLE_DELAY_MS = 42;
-const SETTLE_DURATION_MS = 170;
+// A critically damped spring returns the page continuously while trackpad
+// momentum is still arriving. Timer-debounced CSS transitions felt delayed on
+// macOS because every inertial wheel event postponed the start of the return.
+const SPRING_STIFFNESS = 1000;
+const SPRING_DAMPING = 2 * Math.sqrt(SPRING_STIFFNESS);
+const REST_POSITION_PX = 0.04;
+const REST_VELOCITY_PX_PER_SECOND = 0.8;
 
 function normalizedWheelDelta(event: WheelEvent): number {
   if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 16;
@@ -50,32 +55,48 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let offset = 0;
-    let settleTimer: number | undefined;
-    let cleanupTimer: number | undefined;
+    let velocity = 0;
+    let animationFrame: number | undefined;
+    let previousFrameTime: number | undefined;
     let lastTouchY: number | undefined;
 
-    const clearTimers = () => {
-      if (settleTimer !== undefined) window.clearTimeout(settleTimer);
-      if (cleanupTimer !== undefined) window.clearTimeout(cleanupTimer);
-      settleTimer = undefined;
-      cleanupTimer = undefined;
+    const clearVisualOffset = () => {
+      offset = 0;
+      velocity = 0;
+      previousFrameTime = undefined;
+      animationFrame = undefined;
+      shell.style.removeProperty("transform");
+      shell.style.removeProperty("will-change");
     };
 
-    const settle = () => {
-      clearTimers();
-      offset = 0;
+    const stepSpring = (frameTime: number) => {
       if (reducedMotion.matches) {
-        shell.style.removeProperty("transform");
-        shell.style.removeProperty("transition");
+        clearVisualOffset();
         return;
       }
-      shell.style.transition = `transform ${SETTLE_DURATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
-      shell.style.transform = "translate3d(0, 0, 0)";
-      cleanupTimer = window.setTimeout(() => {
-        shell.style.removeProperty("transform");
-        shell.style.removeProperty("transition");
-        cleanupTimer = undefined;
-      }, SETTLE_DURATION_MS);
+
+      const elapsedSeconds = previousFrameTime === undefined
+        ? 1 / 60
+        : Math.min((frameTime - previousFrameTime) / 1000, 1 / 30);
+      previousFrameTime = frameTime;
+
+      const acceleration = -SPRING_STIFFNESS * offset - SPRING_DAMPING * velocity;
+      velocity += acceleration * elapsedSeconds;
+      offset += velocity * elapsedSeconds;
+
+      if (Math.abs(offset) <= REST_POSITION_PX && Math.abs(velocity) <= REST_VELOCITY_PX_PER_SECOND) {
+        clearVisualOffset();
+        return;
+      }
+
+      shell.style.transform = `translate3d(0, ${offset}px, 0)`;
+      animationFrame = window.requestAnimationFrame(stepSpring);
+    };
+
+    const ensureSpringRunning = () => {
+      if (animationFrame !== undefined || reducedMotion.matches) return;
+      shell.style.willChange = "transform";
+      animationFrame = window.requestAnimationFrame(stepSpring);
     };
 
     const dampBoundaryDelta = (deltaY: number, event: WheelEvent | TouchEvent): boolean => {
@@ -86,13 +107,11 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
       if (!((deltaY < 0 && atTop) || (deltaY > 0 && atBottom))) return false;
 
       if (event.cancelable) event.preventDefault();
-      clearTimers();
       offset = Math.max(-MAX_PULL_PX, Math.min(MAX_PULL_PX, offset - deltaY * DAMPING));
       if (!reducedMotion.matches) {
-        shell.style.transition = "none";
         shell.style.transform = `translate3d(0, ${offset}px, 0)`;
+        ensureSpringRunning();
       }
-      settleTimer = window.setTimeout(settle, SETTLE_DELAY_MS);
       return true;
     };
 
@@ -112,7 +131,7 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     };
     const onTouchEnd = () => {
       lastTouchY = undefined;
-      if (offset !== 0) settle();
+      if (offset !== 0) ensureSpringRunning();
     };
 
     window.addEventListener("wheel", onWheel, { passive: false });
@@ -121,9 +140,8 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     window.addEventListener("touchend", onTouchEnd, { passive: true });
     window.addEventListener("touchcancel", onTouchEnd, { passive: true });
     return () => {
-      clearTimers();
-      shell.style.removeProperty("transform");
-      shell.style.removeProperty("transition");
+      if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+      clearVisualOffset();
       delete shell.dataset.overscrollMode;
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchstart", onTouchStart);

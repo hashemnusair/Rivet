@@ -1,5 +1,17 @@
 # GymOS / RIVET current implementation state
 
+## Responsive desktop edge spring — 2 September 2026
+
+- Replaced the desktop shell's debounce-plus-transition overscroll return with
+  a frame-driven, critically damped spring. The content now starts returning
+  immediately while inertial trackpad events taper off instead of waiting for
+  the wheel stream to end.
+- The restrained seven-pixel desktop edge response remains, and the fixed
+  utility bar continues to stay aligned with the sidebar brand row. Touch-first
+  devices still use native browser elasticity and pull-to-refresh.
+- Browser coverage now verifies that the edge response visibly begins
+  returning within two animation frames and fully settles in under 400 ms.
+
 ## Anchored desktop utility bar — 2 September 2026
 
 - Synchronized the completed supplier-payables and Checkout release at

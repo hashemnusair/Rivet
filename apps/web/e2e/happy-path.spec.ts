@@ -342,6 +342,31 @@ test.describe("settings navigation", () => {
     expect(topbarDuringPull).not.toBeNull();
     expect(topbarDuringPull!.y).toBe(topbarBeforePull!.y);
     await expect.poll(() => page.getByTestId("app-scroll-shell").evaluate((node) => (node as HTMLElement).style.transform)).toBe("");
+
+    const springRelease = await page.evaluate(async () => {
+      const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
+      if (!shell) throw new Error("Missing app scroll shell");
+      window.scrollTo({ top: 0 });
+      const startedAt = performance.now();
+      window.dispatchEvent(new WheelEvent("wheel", { deltaY: -240, cancelable: true }));
+      const initialTransform = shell.style.transform;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const returningTransform = shell.style.transform;
+      while (shell.style.transform && performance.now() - startedAt < 500) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      return {
+        elapsedMs: performance.now() - startedAt,
+        initialTransform,
+        returningTransform,
+        settledTransform: shell.style.transform,
+      };
+    });
+    expect(springRelease.initialTransform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
+    expect(springRelease.returningTransform).not.toBe(springRelease.initialTransform);
+    expect(springRelease.settledTransform).toBe("");
+    expect(springRelease.elapsedMs).toBeLessThan(400);
+
     const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
     await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);
