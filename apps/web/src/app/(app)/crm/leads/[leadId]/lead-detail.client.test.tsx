@@ -101,7 +101,7 @@ describe("CRM lead workflow language and transitions", () => {
 
     await screen.findByRole("heading", { name: "Original Contact" });
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit contact" }));
+    await user.click(await screen.findByRole("button", { name: "Edit contact" }));
     await screen.findByRole("dialog", { name: "Edit lead contact" });
     await user.clear(screen.getByRole("textbox", { name: "Full name" }));
     await user.type(screen.getByRole("textbox", { name: "Full name" }), "Corrected Contact");

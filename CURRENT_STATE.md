@@ -11,6 +11,8 @@
   devices still use native browser elasticity and pull-to-refresh.
 - Browser coverage now verifies that the edge response visibly begins
   returning within two animation frames and fully settles in under 400 ms.
+- Stabilized the CRM contact-edit test against the independent session and lead
+  query resolution order after the hosted gate exposed the race.
 
 ## Anchored desktop utility bar — 2 September 2026
 
