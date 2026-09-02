@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { PERMISSIONS, ROLE_LABELS } from "@/lib/domain/permissions";
+import { PERMISSIONS, PERMISSION_LABELS, ROLE_LABELS } from "@/lib/domain/permissions";
 import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
@@ -506,7 +506,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(["manager", "salesperson", "receptionist", "trainer", "auditor"] as RoleKey[]).map((r) => (
+                  {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
                     <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                   ))}
                 </SelectContent>
@@ -590,7 +590,7 @@ function EditAccessDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(["manager", "salesperson", "receptionist", "trainer", "auditor"] as RoleKey[]).map((r) => (
+                {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
                   <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                 ))}
               </SelectContent>
@@ -661,8 +661,11 @@ export function RolesSection() {
           </thead>
           <tbody>
             {PERMISSIONS.map((perm) => (
-              <tr key={perm} className="border-b border-line/70 last:border-0 hover:bg-sunken/30">
-                <td className="sticky start-0 z-10 bg-surface px-4 py-1.5 font-mono text-[11.5px] text-ink-2">{perm}</td>
+              <tr key={perm} className="border-b border-line/70 last:border-0">
+                <td className="sticky start-0 z-10 bg-surface px-4 py-2">
+                  <p className="text-[13px] font-medium text-ink">{PERMISSION_LABELS[perm].label}</p>
+                  <p className="text-[11.5px] text-ink-3">{PERMISSION_LABELS[perm].hint}</p>
+                </td>
                 {editableRoles.map((r) => {
                   const checked = r.permissions.includes(perm);
                   return (
@@ -671,7 +674,7 @@ export function RolesSection() {
                         type="button"
                         role="switch"
                         aria-checked={checked}
-                        aria-label={`${r.label} — ${perm}`}
+                        aria-label={`${r.label} — ${PERMISSION_LABELS[perm].label}`}
                         onClick={() =>
                           toggle.mutate({
                             role: r.key,
@@ -736,7 +739,7 @@ export function PaymentsSection() {
 
   if (settingsQuery.isLoading) return <Skeleton className="h-64 w-full" />;
   const methods = settingsQuery.data?.paymentMethods ?? [];
-  const roles = (settingsQuery.data?.roles ?? []).filter((r) => r.key !== "owner" && r.key !== "trainer" && r.key !== "auditor");
+  const roles = (settingsQuery.data?.roles ?? []).filter((r) => r.key !== "owner" && r.key !== "trainer");
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">

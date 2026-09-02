@@ -49,7 +49,7 @@ function optionalString(input: unknown): string | undefined {
 function roleFromFrontend(input: unknown, correlationId: string): OrganizationRole {
   const role = stringValue(input);
   const normalized = role === "salesperson" ? "sales" : role;
-  if (!["owner", "manager", "sales", "receptionist", "trainer", "auditor"].includes(normalized)) {
+  if (!["owner", "manager", "sales", "receptionist", "trainer"].includes(normalized)) {
     domainError("VALIDATION_ERROR", "A valid staff role is required.", { correlationId });
   }
   return normalized as OrganizationRole;
@@ -205,7 +205,7 @@ export const markSent = internalMutation({
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
-    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer"), v.literal("auditor")),
+    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer")),
     userPublicId: v.string(),
     userName: v.string(),
     correlationId: v.string(),
@@ -241,7 +241,7 @@ export const markFailed = internalMutation({
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
-    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer"), v.literal("auditor")),
+    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer")),
     userPublicId: v.string(),
     userName: v.string(),
     correlationId: v.string(),

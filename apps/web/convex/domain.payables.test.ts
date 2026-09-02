@@ -22,11 +22,9 @@ async function seeded() {
     const owner = await ctx.db.insert("users", { publicId: "payables-owner", authSubject: "clerk-payables-owner", email: "owner@payables.example", fullName: "Payables Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const manager = await ctx.db.insert("users", { publicId: "payables-manager", authSubject: "clerk-payables-manager", email: "manager@payables.example", fullName: "Payables Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     const sales = await ctx.db.insert("users", { publicId: "payables-sales", authSubject: "clerk-payables-sales", email: "sales@payables.example", fullName: "Payables Sales", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
-    const auditor = await ctx.db.insert("users", { publicId: "payables-auditor", authSubject: "clerk-payables-auditor", email: "auditor@payables.example", fullName: "Payables Auditor", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branchA, branchB], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: manager, role: "manager", branchIds: [branchB], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: sales, role: "sales", branchIds: [branchA], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
-    await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: auditor, role: "auditor", branchIds: [branchA, branchB], branchScope: "all", active: true, createdAt: now, updatedAt: now });
 
     const otherOrganization = await ctx.db.insert("organizations", { publicId: "payables-org-b", name: "Payables B", slug: "payables-b", status: "active", subscriptionPlan: "Pro", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
     const otherBranch = await ctx.db.insert("branches", { organizationId: otherOrganization, publicId: "payables-other-branch", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now });
@@ -38,7 +36,6 @@ async function seeded() {
     owner: t.withIdentity({ subject: "clerk-payables-owner" }),
     manager: t.withIdentity({ subject: "clerk-payables-manager" }),
     sales: t.withIdentity({ subject: "clerk-payables-sales" }),
-    auditor: t.withIdentity({ subject: "clerk-payables-auditor" }),
     otherOwner: t.withIdentity({ subject: "clerk-payables-other-owner" }),
   };
 }
@@ -192,15 +189,12 @@ describe("supplier payables and supplier payments", () => {
   });
 
   it("enforces capabilities, branch scope, and tenant isolation on every payables operation", async () => {
-    const { owner, manager, sales, auditor, otherOwner } = await seeded();
+    const { owner, manager, sales, otherOwner } = await seeded();
     const { supplier, payableId } = await seededPayable(owner);
     const cash = { supplierId: supplier.id, branchId: "payables-branch-a", method: "bank_transfer", amount: JOD(100_000), reference: "TRF-1", allocations: [{ payableId, amount: JOD(100_000) }], idempotencyKey: "scoped" };
 
     await expectCode(sales.mutation(api.domain.mutate, operation("operations.supplier_payment.record", cash)), "FORBIDDEN");
     await expectCode(sales.query(api.domain.query, operation("operations.payables.list")), "FORBIDDEN");
-    await expectCode(auditor.mutation(api.domain.mutate, operation("operations.supplier_payment.record", cash)), "FORBIDDEN");
-    const auditorView = await auditor.query(api.domain.query, operation("operations.payables.list")) as PayablesPage;
-    expect(auditorView.items).toHaveLength(1);
 
     // The manager is scoped to the second branch: the first branch's payable
     // is invisible and cannot be paid from a branch they cannot access.

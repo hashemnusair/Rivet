@@ -79,7 +79,6 @@ export const U = {
   rana: seedUuid(17), // reception SWF
   tarek: seedUuid(18), // reception ABD
   fadi: seedUuid(19), // trainer
-  mona: seedUuid(20), // auditor
   sanad: seedUuid(21), // invited receptionist
   rania: seedUuid(22), // deactivated sales
 } as const;
@@ -222,7 +221,6 @@ export function buildSeed(now: Date = new Date()): MockDb {
     { id: U.rana, organizationId: ORG_ID, name: "Rana Issa", email: "rana@forgefitness.jo", phone: "+962 77 577 2256", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_SWF], status: "active", lastActiveAt: iso(hoursAgo(now, 1)) },
     { id: U.tarek, organizationId: ORG_ID, name: "Tarek Azar", email: "tarek@forgefitness.jo", phone: "+962 78 588 7742", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_ABD], status: "active", lastActiveAt: iso(hoursAgo(now, 26)) },
     { id: U.fadi, organizationId: ORG_ID, name: "Fadi Khoury", email: "fadi@forgefitness.jo", phone: "+962 79 599 1187", role: "trainer", branchScope: "selected", branchIds: [BRANCH_ABD], status: "active", lastActiveAt: iso(hoursAgo(now, 8)) },
-    { id: U.mona, organizationId: ORG_ID, name: "Mona Barakat", email: "mona@forgefitness.jo", phone: "+962 77 610 3359", role: "auditor", branchScope: "all", branchIds: [], status: "active", lastActiveAt: iso(hoursAgo(now, 50)) },
     { id: U.sanad, organizationId: ORG_ID, name: "Sanad Khries", email: "sanad@forgefitness.jo", phone: "+962 78 621 9924", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_SWF], status: "invited", invitedAt: iso(daysAgo(now, 2)) },
     { id: U.rania, organizationId: ORG_ID, name: "Rania Hijazi", email: "rania@forgefitness.jo", phone: "+962 79 632 5508", role: "salesperson", branchScope: "selected", branchIds: [BRANCH_ABD], status: "deactivated", lastActiveAt: iso(daysAgo(now, 34)) },
   ];

@@ -1,5 +1,26 @@
 # GymOS / RIVET current implementation state
 
+## Auditor role retired, readable permission matrix — 2 September 2026
+
+- **The read-only auditor role is gone as a product concept.** It cannot be
+  invited or assigned, has no dashboard, persona, seeded user, navigation
+  branch-picker privilege or default permissions, and every role list in the
+  server, the frontend catalogue, the mock and the tests now names five gym
+  roles (owner, manager, sales, reception, trainer). Read-only finance
+  access is expressed the honest way: a manager whose `accounting.post` or
+  `operations.manage` capability is switched off in the matrix.
+- **Deploy safety:** the `auditor` literal stays in the stored-role
+  validators only so historical `organizationMemberships` and audit rows keep
+  validating on a Production deploy; `requireActor` refuses to build an actor
+  from such a membership with a clear "role retired" message, and the
+  permission helpers treat it as having no capabilities.
+- **Permission matrix copy:** each row now shows a plain-language name with a
+  one-line hint ("Collect payments — Take payments and run checkout") instead
+  of the raw permission code, and rows no longer highlight on hover. Codes
+  remain the server contract (`PERMISSION_LABELS` in
+  `src/lib/domain/permissions.ts`).
+- Convex deployment for this change is still owed to Production alongside the
+  payables/checkout sprint (additive schema; no index changes here).
 ## Responsive desktop edge spring — 2 September 2026
 
 - Replaced the desktop shell's debounce-plus-transition overscroll return with

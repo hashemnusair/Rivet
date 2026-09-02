@@ -34,7 +34,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   }, [pathname, onOpenChange]);
 
   const role = session?.roles[0];
-  const canPickBranch = role === "owner" || role === "manager" || role === "auditor";
+  const canPickBranch = role === "owner" || role === "manager";
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>

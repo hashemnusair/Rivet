@@ -49,10 +49,10 @@ export type RoleKey =
   | "manager"
   | "salesperson"
   | "receptionist"
-  | "trainer"
-  | "auditor";
+  | "trainer";
 
-export type AuditActorRole = RoleKey | "member";
+/** Historical audit rows may still carry the retired auditor role. */
+export type AuditActorRole = RoleKey | "auditor" | "member";
 
 export type BranchScope = "all" | "selected";
 
@@ -3031,7 +3031,7 @@ export interface TodayQueueData {
 export type ChecklistType = "opening" | "closing";
 export type ChecklistItemStatus = "pending" | "completed" | "failed" | "skipped";
 /** Server-side gym role keys a checklist can be assigned to. */
-export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor";
+export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer";
 
 export interface ChecklistTemplateItem {
   id: string;

@@ -10,7 +10,6 @@ vi.mock("@/features/dashboard/manager-dashboard", () => ({ ManagerDashboard: () 
 vi.mock("@/features/dashboard/sales-dashboard", () => ({ SalesDashboard: () => <div data-testid="sales-dashboard" /> }));
 vi.mock("@/features/dashboard/reception-dashboard", () => ({ ReceptionDashboard: () => <div data-testid="reception-dashboard" /> }));
 vi.mock("@/features/dashboard/trainer-dashboard", () => ({ TrainerDashboard: () => <div data-testid="trainer-dashboard" /> }));
-vi.mock("@/features/dashboard/auditor-dashboard", () => ({ AuditorDashboard: () => <div data-testid="auditor-dashboard" /> }));
 
 describe("role-specific dashboard routing", () => {
   beforeEach(() => { state.role = "owner"; });
@@ -33,7 +32,6 @@ describe("role-specific dashboard routing", () => {
     ["owner", "owner-dashboard"],
     ["manager", "manager-dashboard"],
     ["salesperson", "sales-dashboard"],
-    ["auditor", "auditor-dashboard"],
   ])("renders the %s operational projection", (role, testId) => {
     state.role = role;
     render(<DashboardPage />);

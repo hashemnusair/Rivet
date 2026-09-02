@@ -21,7 +21,7 @@ credential-gated Playwright journeys.
 
 - [x] Runs in sanctioned credential-free preview/test mode without external services or secrets.
 - [x] Build, lint, type-check, and tests pass in the current local gate.
-- [x] Role-routing coverage exercises owner, manager, salesperson, receptionist, trainer, auditor, member, and platform administrator destinations.
+- [x] Role-routing coverage exercises owner, manager, salesperson, receptionist, trainer, member, and platform administrator destinations (the auditor role was retired on 2 September 2026).
 - [x] Two branches and connected realistic mock seed data exist.
 - [x] Loading, empty, error, timeout, retry, forbidden, and not-found states are reviewable.
 - [x] RTL layout can be toggled or otherwise demonstrated.

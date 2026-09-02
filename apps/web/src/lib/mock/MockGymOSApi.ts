@@ -1047,7 +1047,7 @@ export class MockGymOSApi implements GymOSApi {
 
   // --- Daily branch checklists (parity with convex/branchChecklists) ---
 
-  private static readonly CHECKLIST_ROLES: readonly T.ChecklistRole[] = ["owner", "manager", "sales", "receptionist", "trainer", "auditor"];
+  private static readonly CHECKLIST_ROLES: readonly T.ChecklistRole[] = ["owner", "manager", "sales", "receptionist", "trainer"];
 
   private seedChecklists(): void {
     const branch = this.db.branches[0];
@@ -1675,7 +1675,7 @@ export class MockGymOSApi implements GymOSApi {
         permissionsFor(this.db, currentRole(this.db)).includes("crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review assigned work.", "/crm/queues", "required") : null,
         currentRole(this.db) === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
         currentRole(this.db) === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule and member bookings.", "/pt", "required") : null,
-        ["manager", "auditor"].includes(currentRole(this.db)) ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records.", "/audit", "required") : null,
+        currentRole(this.db) === "manager" ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records.", "/audit", "required") : null,
         manualTask("staff_security", "Review safe handling", "Understand audited actions.", "/getting-started#security"),
       ].filter((task): task is import("@/lib/domain/qol").OnboardingTaskState => Boolean(task));
       return { progress, tasks, role: audience === "member" ? "member" : currentRole(this.db), organizationName: audience === "member" ? undefined : this.db.organization.name };
@@ -4375,7 +4375,7 @@ export class MockGymOSApi implements GymOSApi {
               ? leadById.get(task.leadId)?.branchId
               : undefined;
           if (!queueBranchVisible(taskBranchId)) continue;
-          if (!canManageTeam && role !== "auditor" && task.ownerId !== actor.id) continue;
+          if (!canManageTeam && task.ownerId !== actor.id) continue;
           const dueDate = todayISODate(TZ, new Date(task.dueAt));
           if (dueDate > today) continue;
           const overdue = task.dueAt < nowISO();
@@ -4478,7 +4478,7 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
-      if (["owner", "manager", "receptionist", "auditor"].includes(role)) {
+      if (["owner", "manager", "receptionist"].includes(role)) {
         const latestBlockedByMember = new Map<T.UUID, T.CheckInSummary>();
         for (const checkIn of this.db.checkIns) {
           if (checkIn.decision !== "blocked" || !queueBranchVisible(checkIn.branchId) || dayOf(checkIn.occurredAt) !== today) continue;

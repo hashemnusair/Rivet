@@ -11,7 +11,7 @@ beforeEach(async () => {
 });
 
 describe("mock daily operations parity", () => {
-  it("uses explicit write permissions for manager actions and keeps auditor read-only", async () => {
+  it("uses explicit write permissions for manager actions and keeps trainers read-only", async () => {
     const managerSession = await api.switchDemoRole("manager");
     expect(managerSession.permissions).toEqual(expect.arrayContaining(["operations.manage", "accounting.post"]));
     const managerPermissions = [...managerSession.permissions];
@@ -32,9 +32,8 @@ describe("mock daily operations parity", () => {
     await api.switchDemoRole("manager");
     await expect(api.refreshAccountingSourceQueue()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
 
-    await api.switchDemoRole("auditor");
-    await expect(api.listAccountingAccounts()).resolves.toBeDefined();
-    await expect(api.upsertProduct({ sku: "AUDITOR", name: "Blocked stock", unit: "each", reorderPoint: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("trainer");
+    await expect(api.upsertProduct({ sku: "TRAINER", name: "Blocked stock", unit: "each", reorderPoint: 1 })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
     await expect(api.refreshAccountingSourceQueue()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 
@@ -104,7 +103,7 @@ describe("mock daily operations parity", () => {
     const resolved = await api.updateEquipmentIssue(issue.id, { status: "resolved", safetyStatus: "safe_to_operate" });
     expect(resolved).toMatchObject({ status: "resolved", safetyStatus: "safe_to_operate", resolvedAt: expect.any(String) });
     expect(manager.permissions).toContain("operations.manage");
-    await api.switchDemoRole("auditor");
+    await api.switchDemoRole("trainer");
     await expect(api.updateEquipmentIssue(issue.id, { status: "in_progress" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
   });
 

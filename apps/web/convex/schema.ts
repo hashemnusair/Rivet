@@ -28,6 +28,9 @@ const gymApplicationNotificationStatus = v.union(
 const customerMarketingPreferenceSource = v.union(v.literal("system_default"), v.literal("member_selected"));
 const customerMarketingPreferenceStatus = v.union(v.literal("explicit_opt_in"), v.literal("explicit_opt_out"), v.literal("unknown"));
 
+// "auditor" is a retired role. The literal stays so historical rows still
+// validate on deploy; security refuses to build an actor from one and no
+// invitation or access change can assign it.
 export const organizationRole = v.union(
   v.literal("owner"),
   v.literal("manager"),

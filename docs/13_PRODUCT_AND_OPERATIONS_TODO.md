@@ -15,6 +15,18 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
+## Current release index — 2 September 2026
+
+### Auditor role retired and permission matrix made readable — 2 September 2026
+
+- [x] Remove the read-only auditor role from invitations, access changes,
+  defaults, personas, dashboards, navigation, tests and docs; keep the stored
+  literal for historical rows and refuse to build an actor from it.
+- [x] Replace permission codes in the settings matrix with plain-language
+  names and hints; remove the row hover highlight.
+- [ ] Deploy the Convex backend to Production (owed together with the
+  payables/checkout sprint; requires Hashem's explicit authorization).
+
 ## Current release index — 31 August 2026
 
 ### Supplier payables, supplier payments, and the canonical checkout — 2 September 2026
@@ -245,8 +257,9 @@ values, applicant details, and provider credentials out of this file.
   balances, same-day access denials, pending approvals, cash variances and
   facility work. The shared dashboard aggregation is deterministic,
   role/branch-safe and count-truthful beyond its 12-row display limit; owners,
-  managers, sales and reception receive tailored projections, auditors receive
-  a dedicated read-only dashboard, and trainers retain their PT day. One-tap
+  managers, sales and reception receive tailored projections, and trainers
+  retain their PT day (the auditor dashboard was retired with the role on
+  2 September 2026). One-tap
   task completion, direct collect/renew actions, responsive ordering and empty,
   loading, expansion and truncation states are covered. Application tip
   `8c4be51` passed 945 Vitest tests and the full 41-pass/14-skip browser gate.
@@ -1089,7 +1102,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - Status: **Resolved in the credential-free browser matrix; credentialed
   provider acceptance remains open**.
 - Evidence: `apps/web/e2e/role-routing.spec.ts` covers member, owner, manager,
-  sales, reception, trainer, auditor, and platform-admin destinations, direct
+  sales, reception, trainer, and platform-admin destinations, direct
   forbidden routes, sign-out, cold refresh, unavailable-gym recovery, and
   wrong-dashboard flash prevention. The local matrix passed 7/7 tests.
 - Risk: a valid gym owner, platform admin, or member can land on the wrong surface or see a misleading role error.

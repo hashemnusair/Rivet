@@ -15,7 +15,7 @@ async function seeded() {
     const now = Date.now();
     const organization = await ctx.db.insert("organizations", { publicId: "permission-org", name: "Permission Gym", slug: "permission-gym", status: "active", subscriptionPlan: "Pro", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "permission-branch", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
-    const createUser = async (publicId: string, role: "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor") => {
+    const createUser = async (publicId: string, role: "owner" | "manager" | "sales" | "receptionist" | "trainer") => {
       const user = await ctx.db.insert("users", { publicId, authSubject: `clerk-${publicId}`, email: `${publicId}@example.com`, fullName: publicId, platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
       await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: user, role, branchIds: [branch], branchScope: role === "owner" || role === "manager" ? "all" : "selected", active: true, createdAt: now, updatedAt: now });
       return user;
@@ -25,13 +25,12 @@ async function seeded() {
     await createUser("permission-sales", "sales");
     await createUser("permission-receptionist", "receptionist");
     await createUser("permission-trainer", "trainer");
-    await createUser("permission-auditor", "auditor");
   });
   return {
     t,
     owner: t.withIdentity({ subject: "clerk-permission-owner" }),
     manager: t.withIdentity({ subject: "clerk-permission-manager" }),
-    auditor: t.withIdentity({ subject: "clerk-permission-auditor" }),
+    trainer: t.withIdentity({ subject: "clerk-permission-trainer" }),
   };
 }
 
@@ -105,10 +104,23 @@ describe("permission catalog compatibility and write boundaries", () => {
     await expectCode(manager.mutation(api.domain.mutate, operation("accounting.source_postings.refresh")), "FORBIDDEN");
   });
 
-  it("keeps auditors read-only for finance and operations", async () => {
-    const { auditor } = await seeded();
-    await expectCode(auditor.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "AUDITOR", name: "Blocked stock", unit: "each" })), "FORBIDDEN");
-    await expectCode(auditor.mutation(api.domain.mutate, operation("accounting.source_postings.refresh")), "FORBIDDEN");
-    await expectCode(auditor.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "missing", idempotencyKey: "auditor-post" })), "FORBIDDEN");
+  it("keeps roles without the write capabilities out of finance and operations", async () => {
+    const { trainer } = await seeded();
+    await expectCode(trainer.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "TRAINER", name: "Blocked stock", unit: "each" })), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("accounting.source_postings.refresh")), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "missing", idempotencyKey: "trainer-post" })), "FORBIDDEN");
+  });
+
+  it("refuses to build an actor from a retired auditor membership", async () => {
+    const { t } = await seeded();
+    await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "permission-org")).unique())!;
+      const branch = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "permission-branch")).unique())!;
+      const now = Date.now();
+      const user = await ctx.db.insert("users", { publicId: "permission-legacy-auditor", authSubject: "clerk-permission-legacy-auditor", email: "legacy@example.com", fullName: "Legacy Auditor", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: user, role: "auditor", branchIds: [branch._id], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+    });
+    const legacy = t.withIdentity({ subject: "clerk-permission-legacy-auditor" });
+    await expectCode(legacy.query(api.domain.query, operation("dashboard")), "FORBIDDEN");
   });
 });

@@ -54,7 +54,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     label: "People",
     entries: [
       { id: "users", label: "Users", keywords: "staff accounts invite deactivate branch access", component: UsersSection },
-      { id: "roles", label: "Roles & permissions", keywords: "access matrix owner manager receptionist coach auditor", component: RolesSection },
+      { id: "roles", label: "Roles & permissions", keywords: "access matrix owner manager receptionist coach", component: RolesSection },
     ],
   },
   {

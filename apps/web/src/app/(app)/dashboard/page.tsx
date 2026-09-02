@@ -5,7 +5,6 @@ import { ManagerDashboard } from "@/features/dashboard/manager-dashboard";
 import { ReceptionDashboard } from "@/features/dashboard/reception-dashboard";
 import { SalesDashboard } from "@/features/dashboard/sales-dashboard";
 import { TrainerDashboard } from "@/features/dashboard/trainer-dashboard";
-import { AuditorDashboard } from "@/features/dashboard/auditor-dashboard";
 import { useApp } from "@/lib/providers/app-providers";
 
 export default function DashboardPage() {
@@ -16,7 +15,6 @@ export default function DashboardPage() {
   if (role === "manager") return <ManagerDashboard />;
   if (role === "trainer") return <TrainerDashboard />;
   if (role === "receptionist") return <ReceptionDashboard />;
-  if (role === "auditor") return <AuditorDashboard />;
 
   return <OwnerDashboard />;
 }

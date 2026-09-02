@@ -46,7 +46,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const router = useRouter();
 
   const role = session?.roles[0];
-  const canPickBranch = role === "owner" || role === "manager" || role === "auditor";
+  const canPickBranch = role === "owner" || role === "manager";
   const demoControlsEnabled = DEMO_AUTH_BYPASS || !CONVEX_ENABLED;
 
   const handleSignOut = async () => {

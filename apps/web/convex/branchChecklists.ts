@@ -16,7 +16,7 @@ type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-ex
 type Template = Doc<"checklistTemplates">;
 type Run = Doc<"checklistRuns">;
 
-const GYM_ROLES: readonly OrganizationRole[] = ["owner", "manager", "sales", "receptionist", "trainer", "auditor"];
+const GYM_ROLES: readonly OrganizationRole[] = ["owner", "manager", "sales", "receptionist", "trainer"];
 const MAX_ITEMS = 50;
 const TZ_FALLBACK = "Asia/Amman";
 const RUN_STATUSES = ["pending", "completed", "failed", "skipped"] as const;

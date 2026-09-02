@@ -11,7 +11,7 @@ The MVP must be broad enough to run a gym's core commercial operations, but narr
 - Create organization and branches.
 - Tenant timezone, currency, locale, tax settings, and receipt numbering.
 - User invitation and deactivation.
-- Roles: owner, manager, salesperson, receptionist, trainer, read-only auditor.
+- Roles: owner, manager, salesperson, receptionist, trainer. (The read-only auditor role was retired on 2 September 2026; historical rows keep the literal, but no actor can be built from it.)
 - Permission matrix with branch scope.
 
 ### Members

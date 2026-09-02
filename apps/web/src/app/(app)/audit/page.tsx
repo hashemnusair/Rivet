@@ -63,7 +63,7 @@ function AuditPageInner() {
   const items = data?.items ?? [];
 
   if (isError && isApiError(error) && error.code === "FORBIDDEN") {
-    return <ForbiddenState description="The audit log requires the audit.read permission — owner, manager and auditor roles have it." />;
+    return <ForbiddenState description="The audit log requires the “View audit log” permission — owners and managers have it." />;
   }
 
   return (

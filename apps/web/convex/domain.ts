@@ -16,6 +16,7 @@ import {
   requireReason,
   type ActorContext,
   type OrganizationRole,
+  type StoredOrganizationRole,
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, roleDiscountLimit, rolePermissions, toFrontendRole } from "./permissions";
@@ -718,7 +719,7 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
     .query("organizationMemberships")
     .withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId))
     .collect())
-    .filter((membership) => membership.active && input.roles.includes(membership.role))
+    .filter((membership) => membership.active && (input.roles as string[]).includes(membership.role))
     .filter((membership) => !input.branchId || membership.branchScope === "all" || membership.branchIds.includes(input.branchId));
   await Promise.all(memberships.map(async (membership) => {
     if (input.excludeUserId && membership.userId === input.excludeUserId) return;
@@ -954,7 +955,7 @@ function roleFromFrontend(value: unknown): OrganizationRole {
   return normalized as OrganizationRole;
 }
 
-function frontendRole(value: OrganizationRole): string {
+function frontendRole(value: StoredOrganizationRole): string {
   return toFrontendRole(value);
 }
 
@@ -3483,7 +3484,7 @@ const AUTOMATION_TRIGGER_KEYS = [
   "payment_outstanding",
 ] as const;
 const AUTOMATION_ACTION_KEYS = ["create_task", "queue_message", "notify_manager"] as const;
-const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"] as const;
+const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const;
 
 function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
@@ -4313,7 +4314,7 @@ async function onboardingExperience(ctx: ReadContext, input: Data, request: Requ
     hasPermission(actor, "crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review overdue and upcoming work assigned to you.", "/crm/queues", "required") : null,
     actor.role === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
     actor.role === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule, member bookings, and package credits.", "/pt", "required") : null,
-    ["manager", "auditor"].includes(actor.role) && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
+    actor.role === "manager" && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
     manualTask("staff_security", "Review safe handling", "Know why sensitive changes require reasons and leave audit events.", "/getting-started#security"),
   ].filter(Boolean);
   return { progress, tasks: audience === "owner" ? ownerTasks : staffTasks, role: actor.role, organizationName: actor.organization.name };
@@ -11365,7 +11366,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
           ? optionalString(leadById.get(stringValue(task.leadId))?.branchId)
           : undefined;
       if (!queueBranchVisible(taskBranchId)) continue;
-      if (!canManageTeam && role !== "auditor" && stringValue(task.ownerId) !== actorPublicId) continue;
+      if (!canManageTeam && stringValue(task.ownerId) !== actorPublicId) continue;
       const dueAt = stringValue(task.dueAt);
       if (businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
       const overdueTask = dueAt < isoNow();
@@ -11473,7 +11474,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     }
   }
 
-  if (["owner", "manager", "receptionist", "auditor"].includes(role)) {
+  if (["owner", "manager", "receptionist"].includes(role)) {
     const latestBlockedByMember = new Map<string, Data>();
     for (const checkin of checkins) {
       if (stringValue(checkin.decision) !== "blocked" || businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== today) continue;

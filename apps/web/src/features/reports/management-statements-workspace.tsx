@@ -386,7 +386,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
     (api) => kind === "income" ? api.getIncomeStatement(reportInput) : kind === "balance" ? api.getBalanceSheet(reportInput) : api.getCashflowStatement(reportInput),
     { enabled: ready, retry: false },
   );
-  const readOnly = !(session?.roles.some((role) => role === "owner" || role === "manager") ?? false);
+  const readOnly = !can("accounting.post");
   const definition = STATEMENT_LABELS[kind];
   const currentHref = searchParamsKey ? `${pathname}?${searchParamsKey}` : pathname;
   const desiredHref = scopedStatementHref(pathname, fromDate, toDate, effectiveBranchFilter);
