@@ -1,5 +1,23 @@
 # GymOS / RIVET current implementation state
 
+## Anchored desktop utility bar — 2 September 2026
+
+- Synchronized the completed supplier-payables and Checkout release at
+  `939bdd8` before changing the shell. The damped desktop edge response now
+  moves only page content, so search, branch, notifications, and account
+  controls remain anchored while the document settles at a scroll boundary.
+- The desktop utility bar now uses the same 64px row as the fixed sidebar
+  brand. Their top and bottom borders stay aligned across expanded and
+  collapsed sidebar states. Smaller layouts retain the compact 56px bar.
+- Touch-first devices still use native browser elasticity and pull-to-refresh;
+  the restrained seven-pixel response remains limited to fine-pointer
+  devices. No page-specific layout or scroll behavior changed.
+- Verification passed TypeScript, zero-warning lint and secret-output audit,
+  185 Vitest files / 1,129 tests plus 14 repository-safety tests, the 62-page
+  Production build, 57 credential-free Playwright journeys with 14 explicit
+  staging-only skips, `git diff --check`, and the Impeccable detector with no
+  findings on the changed shell files.
+
 ## Supplier payables, supplier payments, walk-in checkout, Stock & purchasing — 2 September 2026
 
 - **Accounts payable is now settleable.** A server-owned payables projection

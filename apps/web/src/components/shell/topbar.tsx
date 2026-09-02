@@ -70,7 +70,10 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4">
+    <header
+      data-testid="app-topbar"
+      className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4 lg:h-16"
+    >
       {/* Navigation drawer — below lg the sidebar is hidden */}
       <Button
         variant="ghost"

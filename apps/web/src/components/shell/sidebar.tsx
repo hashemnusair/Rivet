@@ -37,7 +37,7 @@ export function Sidebar() {
     >
       {/* Brand — the workspace wears the gym's own logo when a brand kit sets
           one, with a quiet "Operated by RIVET" credit underneath. */}
-      <div className="flex h-16 items-center border-b border-night-line px-4">
+      <div data-testid="sidebar-brand-row" className="flex h-16 items-center border-b border-night-line px-4">
         {/* Keep the brand wrapper's left edge fixed and use the dedicated glyph
             when collapsed so the brand never jumps between sidebar states. */}
         <Link

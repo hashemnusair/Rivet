@@ -106,12 +106,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           instead, so the content column keeps the full viewport width. */}
       <div
         className={cn(
-          "transition-[margin] duration-200",
+          "min-h-screen transition-[margin] duration-200",
           sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
         )}
       >
-        <div ref={scrollShellRef} data-testid="app-scroll-shell" className="flex min-h-screen flex-col">
-          <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
+        {/* Keep the utility bar outside the damped edge-response layer. Desktop
+            content can move a few pixels at a scroll boundary without pulling
+            search and branch controls away from the fixed sidebar brand row. */}
+        <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
+        <div
+          ref={scrollShellRef}
+          data-testid="app-scroll-shell"
+          className="flex min-h-[calc(100dvh-3.5rem)] flex-col lg:min-h-[calc(100dvh-4rem)]"
+        >
           {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </div>

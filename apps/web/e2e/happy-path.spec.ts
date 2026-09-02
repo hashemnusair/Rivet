@@ -325,6 +325,9 @@ test.describe("settings navigation", () => {
     }));
     expect(rootScrollPhysics).toEqual({ html: "none", body: "none", coarsePointer: false });
     await expect(page.getByTestId("app-scroll-shell")).toHaveAttribute("data-overscroll-mode", "damped");
+    await expect(page.getByTestId("app-topbar")).toHaveCSS("position", "sticky");
+    await expect(page.getByTestId("app-topbar").locator("xpath=ancestor::*[@data-testid='app-scroll-shell']")).toHaveCount(0);
+    const topbarBeforePull = await page.getByTestId("app-topbar").boundingBox();
     const dampedEdge = await page.evaluate(() => {
       window.scrollTo({ top: 0 });
       const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
@@ -334,6 +337,10 @@ test.describe("settings navigation", () => {
     });
     expect(dampedEdge.prevented).toBe(true);
     expect(dampedEdge.transform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
+    const topbarDuringPull = await page.getByTestId("app-topbar").boundingBox();
+    expect(topbarBeforePull).not.toBeNull();
+    expect(topbarDuringPull).not.toBeNull();
+    expect(topbarDuringPull!.y).toBe(topbarBeforePull!.y);
     await expect.poll(() => page.getByTestId("app-scroll-shell").evaluate((node) => (node as HTMLElement).style.transform)).toBe("");
     const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
@@ -364,6 +371,12 @@ test.describe("settings navigation", () => {
     const rail = page.getByRole("tablist");
     await expect(rail).toBeVisible();
     await expect(rail).toHaveAttribute("aria-orientation", "vertical");
+    const desktopTopbar = await page.getByTestId("app-topbar").boundingBox();
+    const desktopBrandRow = await page.getByTestId("sidebar-brand-row").boundingBox();
+    expect(desktopTopbar).not.toBeNull();
+    expect(desktopBrandRow).not.toBeNull();
+    expect(desktopTopbar!.y).toBe(desktopBrandRow!.y);
+    expect(desktopTopbar!.height).toBe(desktopBrandRow!.height);
     const settingsNavigation = page.getByRole("navigation", { name: "Settings sections" });
     const verticalFit = await settingsNavigation.evaluate((node) => ({ scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
     expect(verticalFit.scrollHeight).toBeLessThanOrEqual(verticalFit.clientHeight + 1);
