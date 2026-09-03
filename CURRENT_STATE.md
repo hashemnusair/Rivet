@@ -86,7 +86,10 @@
   chips, tables, panels, framed signatures) shared by the subscription
   agreement and the new invoice document, which is attached to the invoice
   emails. Facts RIVET has not registered, the legal entity and tax treatment,
-  appear as visible placeholders rather than inventions.
+  appear as visible placeholders rather than inventions. On screen, the
+  privacy policy, the terms, the agreement reading view and the signed record
+  render on the same master page (`document-sheet.tsx`), and the legal pages
+  download a PDF built from what is rendered.
 - **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
   allowlist | live (default off; the legacy boolean is honoured as live only
   while the new variable is unset). Sandbox redirects to

@@ -46,7 +46,7 @@ describe("platform agreements console", () => {
     expect(screen.getByText("1 awaiting countersignature")).toBeInTheDocument();
     await user.click(within(rows[0]!).getByRole("button", { name: /Open agreement/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("••••••4567")).toBeInTheDocument();
+    expect(within(dialog).getByText(/••••••4567/)).toBeInTheDocument();
 
     await user.type(within(dialog).getByTestId("reveal-reason"), "Verifying before countersigning");
     await user.click(within(dialog).getByTestId("reveal-id"));

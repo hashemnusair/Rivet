@@ -241,6 +241,17 @@ the reference and the legal-entity placeholder. The renderer draws status
 chips, label/value rows on a 52mm label column, ruled tables, right-aligned
 totals, sunken panels and hairline frames for signatures.
 
+**Documents on screen** (`src/features/legal/document-sheet.tsx`). The
+same master page, rendered in the app: the privacy policy and the terms at
+`/privacy` and `/terms`, the agreement as the owner reads it in the signing
+modal, and the signed record in Settings → Agreement and in the platform
+console all use one sheet with the lockup, the technical label, the title
+and status chip, the mono meta line, numbered sections at the document
+scale, label/value rows on the 52mm column, framed signatures and the
+footer. The legal pages carry a Download PDF action that reads the rendered
+page back into the PDF renderer (`src/features/legal/document-pdf.ts`,
+`convex/documentPdf.ts`), so the file says exactly what the page says.
+
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals
 with the total due at 20pt, and a how-to-pay panel whose bank and CliQ

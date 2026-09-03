@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RIVET_CONTACT } from "@/lib/rivet-contact";
+import { DocumentSection, DocumentSheet } from "./document-sheet";
+import { DownloadDocumentButton } from "./download-document-button";
 
 export interface LegalSection {
   id: string;
@@ -9,56 +11,62 @@ export interface LegalSection {
 }
 
 /**
- * Shared layout for the public legal documents: a numbered contents list, the
- * version line, and one column of sections. Print-friendly and readable on a
- * phone without any client-side code.
+ * The public legal documents on RIVET's document sheet: the lockup and the
+ * technical label, the title and version line, a numbered contents list,
+ * and one column of numbered sections at the document scale. The download
+ * builds a PDF from exactly what is rendered here.
  */
-export function LegalDocument({ context, title, summary, version, sections, related }: { context?: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
+export function LegalDocument({ context, label, title, summary, version, sections, related }: { context?: string; label: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
+  const meta = `Version ${version} · Governed by the laws of the Hashemite Kingdom of Jordan`;
+  const target = label.toLowerCase().replace(/\s+/g, "-");
   return (
-    <article className="mx-auto max-w-3xl px-5 py-12 sm:px-8 lg:py-16" data-testid="legal-document">
-      {context ? <p className="context-label">{context}</p> : null}
-      <h1 className={context ? "mt-3 font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink sm:text-[42px]" : "font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink sm:text-[42px]"}>{title}</h1>
-      <p className="mt-5 text-[15px] leading-relaxed text-ink-2">{summary}</p>
-      <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">Version {version} · Governed by the laws of the Hashemite Kingdom of Jordan</p>
+    <div className="px-4 py-8 sm:px-8 lg:py-12">
+      {context ? <p className="context-label mx-auto mb-3 max-w-[794px]">{context}</p> : null}
+      <DocumentSheet
+        label={label}
+        title={title}
+        meta={meta}
+        reference={`Version ${version.split(" ·")[0] ?? version}`}
+        testId="legal-document"
+        actions={<DownloadDocumentButton target={target} label={label} title={title} meta={meta} reference={`Version ${version.split(" ·")[0] ?? version}`} version={version} />}
+      >
+        <p className="text-[14px] leading-[1.55] text-ink-2">{summary}</p>
 
-      <nav aria-label="Contents" className="mt-10 border-y border-line py-5">
-        <p className="context-label">Contents</p>
-        <ol className="mt-3 grid gap-1.5 text-[13px] sm:grid-cols-2">
+        <nav aria-label="Contents" className="mt-6 border-y border-line py-4">
+          <p className="text-[12px] font-semibold text-ink-3">Contents</p>
+          <ol className="mt-2 grid gap-1 text-[13px] sm:grid-cols-2">
+            {sections.map((section, index) => (
+              <li key={section.id}>
+                <a href={`#${section.id}`} className="text-ink-2 underline-offset-4 hover:text-ink hover:underline">
+                  <span className="me-2 font-mono text-[11px] text-ink-3">{String(index + 1).padStart(2, "0")}</span>
+                  {section.title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <div className="mt-2 divide-y divide-line" data-document-body={target}>
           {sections.map((section, index) => (
-            <li key={section.id}>
-              <a href={`#${section.id}`} className="text-ink-2 underline-offset-4 hover:text-ink hover:underline">
-                <span className="me-2 font-mono text-[11px] text-ink-3">{String(index + 1).padStart(2, "0")}</span>
-                {section.title}
-              </a>
-            </li>
+            <div key={section.id} className="py-6">
+              <DocumentSection id={section.id} number={String(index + 1).padStart(2, "0")} title={section.title}>{section.body}</DocumentSection>
+            </div>
           ))}
-        </ol>
-      </nav>
+        </div>
 
-      <div className="mt-10 space-y-10">
-        {sections.map((section, index) => (
-          <section key={section.id} id={section.id} className="scroll-mt-24">
-            <h2 className="font-display text-[20px] font-semibold tracking-tight text-ink">
-              <span className="me-3 font-mono text-[12px] font-normal text-ink-3">{String(index + 1).padStart(2, "0")}</span>
-              {section.title}
-            </h2>
-            <div className="legal-body mt-4 space-y-3 text-[14px] leading-relaxed text-ink-2">{section.body}</div>
-          </section>
-        ))}
-      </div>
-
-      {related?.length ? (
-        <p className="mt-12 border-t border-line pt-6 text-[13px] text-ink-3">
-          Related documents:{" "}
-          {related.map((item, index) => (
-            <span key={item.href}>
-              {index > 0 ? " · " : ""}
-              <Link href={item.href} className="text-ink-2 underline underline-offset-4 hover:text-ink">{item.label}</Link>
-            </span>
-          ))}
-        </p>
-      ) : null}
-    </article>
+        {related?.length ? (
+          <p className="mt-6 text-[13px] text-ink-3" data-pdf-skip>
+            Related documents:{" "}
+            {related.map((item, index) => (
+              <span key={item.href}>
+                {index > 0 ? " · " : ""}
+                <Link href={item.href} className="text-ink-2 underline underline-offset-4 hover:text-ink">{item.label}</Link>
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </DocumentSheet>
+    </div>
   );
 }
 

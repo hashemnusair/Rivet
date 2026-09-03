@@ -13,8 +13,8 @@ describe("subscription agreement page", () => {
     await renderWithApp(<SubscriptionAgreementSigning />, { role: "owner" });
     expect(await screen.findByTestId("agreement-record")).toBeInTheDocument();
     expect(screen.getByText("RVT-20260815-FORGE")).toBeInTheDocument();
-    expect(screen.getByText("Countersigned by RIVET")).toBeInTheDocument();
-    expect(screen.getByText("••••••4567")).toBeInTheDocument();
+    expect(screen.getByText("Signed and countersigned")).toBeInTheDocument();
+    expect(screen.getByText(/••••••4567/)).toBeInTheDocument();
     expect(screen.queryByTestId("sign-agreement")).not.toBeInTheDocument();
   });
 

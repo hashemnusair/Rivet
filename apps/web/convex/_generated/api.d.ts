@@ -20,6 +20,7 @@ import type * as brandTokens from "../brandTokens.js";
 import type * as classes from "../classes.js";
 import type * as crons from "../crons.js";
 import type * as customer from "../customer.js";
+import type * as documentPdf from "../documentPdf.js";
 import type * as domain from "../domain.js";
 import type * as emailMode from "../emailMode.js";
 import type * as emailTemplate from "../emailTemplate.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   classes: typeof classes;
   crons: typeof crons;
   customer: typeof customer;
+  documentPdf: typeof documentPdf;
   domain: typeof domain;
   emailMode: typeof emailMode;
   emailTemplate: typeof emailTemplate;

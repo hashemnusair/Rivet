@@ -208,6 +208,7 @@ const SECTIONS: LegalSection[] = [
 export function PrivacyPolicy() {
   return (
     <LegalDocument
+      label="Privacy policy"
       title="Privacy policy"
       summary="What RIVET collects, why, who it is shared with, how long it is kept, and what you can do about it. This policy covers the RIVET website, the RIVET platform, and the messages RIVET sends on behalf of gyms."
       version={PRIVACY_POLICY_VERSION}
