@@ -7,8 +7,10 @@
  * forwarded; the full number stays in the platform console behind a reason
  * and an audit event.
  */
-import { renderPdf, encodeBase64, type PdfBlock } from "./pdfDocument";
-import { SUBSCRIPTION_AGREEMENT_PREAMBLE, type AgreementSection } from "./legalAgreementText";
+import { renderPdf, encodeBase64, mm, type PdfBlock } from "./pdfDocument";
+import { RIVET_GLYPH_JPEG, RIVET_LOCKUP_JPEG } from "./brandAssets";
+import { BRAND_CONTACT, BRAND_PLACEHOLDERS } from "./brandTokens";
+import { type AgreementSection } from "./legalAgreementText";
 
 export interface AgreementPdfInput {
   reference: string;
@@ -40,26 +42,35 @@ function fullAddress(input: AgreementPdfInput): string {
 
 /** The blocks of the document, in order. Exported so tests can read them. */
 export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly AgreementSection[] | undefined): PdfBlock[] {
+  const countersigned = input.status === "countersigned";
   const blocks: PdfBlock[] = [
-    { type: "title", text: "RIVET subscription agreement" },
-    { type: "meta", text: `Version ${input.version} · Reference ${input.reference} · ${input.status === "countersigned" ? "Signed and countersigned" : "Signed, awaiting RIVET's countersignature"}` },
-    { type: "spacer", height: 6 },
-    { type: "paragraph", text: SUBSCRIPTION_AGREEMENT_PREAMBLE, size: 9.5 },
-    { type: "rule" },
+    {
+      type: "title",
+      text: "Subscription agreement",
+      chip: input.status === "void"
+        ? { label: "Void", tone: "muted" }
+        : countersigned
+          ? { label: "Signed and countersigned", tone: "success" }
+          : { label: "Signed, awaiting countersignature", tone: "warning" },
+    },
+    { type: "meta", text: `${input.reference} · v${input.version} · ${countersigned ? "Signed and countersigned" : "Signed"} · ${input.signedAtLocal}` },
+    { type: "heading", text: "1. Parties" },
+    { type: "paragraph", text: `This agreement is made between RIVET (${BRAND_PLACEHOLDERS.legalEntity}, ${BRAND_CONTACT.city}) and ${input.customer.legalName} (${fullAddress(input)}), represented by ${input.signatory.name}, for the use of the RIVET platform under the plan and terms recorded below.` },
+    { type: "heading", text: "2. Details" },
     {
       type: "rows",
       rows: [
-        ["Gym", input.customer.legalName],
-        ["Address", fullAddress(input)],
-        ["Plan", input.subscription.plan],
-        ["Contract start date", input.subscription.startDate],
-        ["Signed by", input.signatory.name],
-        [ID_LABELS[input.signatory.idType], `${input.signatory.idNumberMasked} (masked)`],
-        ["Email", input.signatory.email],
-        ["Signed at", `${input.signedAtLocal} (${input.timezone}, RIVET server time)`],
-        ...(input.placeOfSigning ? [["Place of signing", input.placeOfSigning] as [string, string]] : []),
-        ["Document fingerprint", input.documentSha256],
-        ...(input.hashMatch ? [] : [["Fingerprint check", "The signer's browser produced a different fingerprint from RIVET's copy; flagged for review."] as [string, string]]),
+        { label: "Customer", value: input.customer.legalName },
+        { label: "Address", value: fullAddress(input) },
+        { label: "Representative", value: input.signatory.name },
+        { label: ID_LABELS[input.signatory.idType], value: `${input.signatory.idNumberMasked} (masked)` },
+        { label: "Email", value: input.signatory.email },
+        { label: "Plan", value: input.subscription.plan },
+        { label: "Contract start date", value: input.subscription.startDate },
+        { label: "Signed at", value: `${input.signedAtLocal} (${input.timezone}, RIVET server time)` },
+        ...(input.placeOfSigning ? [{ label: "Place of signing", value: input.placeOfSigning }] : []),
+        { label: "Document fingerprint", value: input.documentSha256 },
+        ...(input.hashMatch ? [] : [{ label: "Fingerprint check", value: "The signer's browser produced a different fingerprint from RIVET's copy; flagged for review." }]),
       ],
     },
     { type: "rule" },
@@ -74,38 +85,54 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
     blocks.push({ type: "paragraph", text: `The full text of agreement version ${input.version} is held by RIVET and is available in the app under Settings, Agreement.` });
   }
 
-  const signatureBlocks: PdfBlock[] = [
-    { type: "rule" },
-    { type: "heading", text: "Signatures" },
-    { type: "paragraph", text: `For the Customer: ${input.signatory.name}`, font: "bold", size: 10 },
-  ];
-  if (input.signature.method === "drawn" && input.signature.printImageDataUrl) {
-    signatureBlocks.push({ type: "image", jpegDataUrl: input.signature.printImageDataUrl, maxWidth: 240, maxHeight: 90 });
-  } else if (input.signature.method === "typed") {
-    signatureBlocks.push({ type: "paragraph", text: input.signature.typedName ?? input.signatory.name, size: 15 });
-    signatureBlocks.push({ type: "paragraph", text: "Typed and adopted as the signatory's signature.", size: 8.5 });
-  } else {
-    signatureBlocks.push({ type: "paragraph", text: "Signature drawn in RIVET and held with the signed record.", size: 8.5 });
-  }
-  signatureBlocks.push({ type: "paragraph", text: `Signed ${input.signedAtLocal} (${input.timezone}). Electronic signature under the Electronic Transactions Law No. 15 of 2015.`, size: 8.5 });
-  signatureBlocks.push({ type: "spacer", height: 8 });
-  signatureBlocks.push({ type: "spacer", height: 4 });
-  signatureBlocks.push({ type: "paragraph", text: `For RIVET${input.countersign ? `: ${input.countersign.byName}` : ""}`, font: "bold", size: 10 });
-  if (!input.countersign) {
-    signatureBlocks.push({ type: "paragraph", text: "RIVET will countersign and send the completed agreement.", size: 9 });
-  } else {
-    const mark = input.countersign.signature;
-    if (mark?.method === "drawn" && mark.printImageDataUrl) {
-      signatureBlocks.push({ type: "image", jpegDataUrl: mark.printImageDataUrl, maxWidth: 240, maxHeight: 90 });
-    } else if (mark?.method === "drawn") {
-      signatureBlocks.push({ type: "paragraph", text: "Signature drawn in RIVET and held with the signed record.", size: 8.5 });
+  const signatureBlock = (
+    heading: string,
+    name: string,
+    role: string,
+    mark: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string } | undefined,
+    caption: string,
+  ): PdfBlock[] => {
+    const out: PdfBlock[] = [
+      { type: "paragraph", text: heading, font: "bold", size: 10 },
+      { type: "paragraph", text: `${name}${role ? `, ${role}` : ""}`, size: 10 },
+    ];
+    if (mark?.method === "drawn") {
+      // The signature sits in a hairline frame at the size the identity
+      // system sets, whether or not a printable image reached the server.
+      out.push({ type: "frame", width: mm(85), height: mm(32), jpegDataUrl: mark.printImageDataUrl });
+      if (!mark.printImageDataUrl) out.push({ type: "paragraph", text: "Signature drawn in RIVET and held with the signed record.", size: 8.5 });
     } else {
-      signatureBlocks.push({ type: "paragraph", text: mark?.typedName ?? input.countersign.byName, size: 15 });
-      signatureBlocks.push({ type: "paragraph", text: "Typed and adopted as RIVET's signature.", size: 8.5 });
+      out.push({ type: "paragraph", text: mark?.typedName ?? name, size: 15 });
+      out.push({ type: "paragraph", text: `Typed and adopted as ${heading === "For RIVET" ? "RIVET's" : "the signatory's"} signature.`, size: 8.5 });
     }
-    signatureBlocks.push({ type: "paragraph", text: `${input.countersign.title}, ${input.countersign.atLocal}`, size: 8.5 });
-  }
-  blocks.push({ type: "keep", blocks: signatureBlocks });
+    out.push({ type: "paragraph", text: caption, size: 8.5 });
+    return out;
+  };
+
+  blocks.push({
+    type: "keep",
+    blocks: [
+      { type: "rule" },
+      { type: "heading", text: "Signatures" },
+      ...signatureBlock(
+        "For the Customer",
+        input.signatory.name,
+        input.customer.legalName,
+        input.signature,
+        `Signed ${input.signedAtLocal}, ${input.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.`,
+      ),
+      { type: "spacer", height: 10 },
+      ...(input.countersign
+        ? signatureBlock(
+            "For RIVET",
+            input.countersign.byName,
+            input.countersign.title,
+            input.countersign.signature,
+            `Countersigned ${input.countersign.atLocal}.`,
+          )
+        : [{ type: "paragraph" as const, text: "For RIVET", font: "bold" as const, size: 10 }, { type: "paragraph" as const, text: "RIVET will countersign and send the completed agreement.", size: 9 }]),
+    ],
+  });
   return blocks;
 }
 
@@ -114,7 +141,12 @@ export function renderAgreementPdf(input: AgreementPdfInput, sections?: readonly
     title: `RIVET subscription agreement ${input.reference}`,
     author: "RIVET",
     subject: `${input.customer.legalName} · ${input.subscription.plan} · from ${input.subscription.startDate}`,
-    footer: `${input.reference} · RIVET, Amman, Jordan`,
+    documentLabel: "Subscription agreement",
+    runningTitle: "Subscription agreement",
+    footer: `${input.reference} · RIVET, ${BRAND_CONTACT.city}`,
+    footerPlaceholder: BRAND_PLACEHOLDERS.legalEntity,
+    lockupJpeg: RIVET_LOCKUP_JPEG,
+    glyphJpeg: RIVET_GLYPH_JPEG,
   });
 }
 

@@ -34,7 +34,7 @@ describe("agreement PDF", () => {
     expect(blocks).toContain("••••••4567 (masked)");
     expect(blocks).not.toContain("9871234567");
     expect(blocks).toContain("1 October 2026, 10:15 (Asia/Amman, RIVET server time)");
-    expect(blocks).toContain("Signed, awaiting RIVET's countersignature");
+    expect(blocks).toContain("Signed, awaiting countersignature");
     expect(blocks).toContain("01. What this agreement covers");
     expect(blocks).toContain("10. Electronic signature");
     expect(blocks).toContain("Typed and adopted");
@@ -49,8 +49,9 @@ describe("agreement PDF", () => {
   it("shows the countersignature and flags a fingerprint mismatch", () => {
     const blocks = flatten({ ...signed, status: "countersigned", hashMatch: false, countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00" } });
     expect(blocks).toContain("Signed and countersigned");
-    expect(blocks).toContain("For RIVET: Elias Hreish");
-    expect(blocks).toContain("Co-founder, 2 October 2026, 09:00");
+    expect(blocks).toContain("For RIVET");
+    expect(blocks).toContain("Elias Hreish, Co-founder");
+    expect(blocks).toContain("Countersigned 2 October 2026, 09:00.");
     expect(blocks).toContain("flagged for review");
   });
 
@@ -62,10 +63,13 @@ describe("agreement PDF", () => {
       signature: { method: "drawn", printImageDataUrl: jpeg },
       countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00", signature: { method: "drawn", printImageDataUrl: jpeg } },
     });
-    expect(blocks).toContain("For the Customer: Omar Haddad");
-    expect(blocks).toContain("For RIVET: Elias Hreish");
-    expect(JSON.parse(blocks).flatMap((block: { type: string; blocks?: Array<{ type: string }> }) => block.blocks ?? []).filter((block: { type: string }) => block.type === "image")).toHaveLength(2);
-    expect(blocks).toContain("Co-founder, 2 October 2026, 09:00");
+    expect(blocks).toContain("For the Customer");
+    expect(blocks).toContain("Omar Haddad, Iron House Fitness Co.");
+    expect(blocks).toContain("For RIVET");
+    expect(blocks).toContain("Elias Hreish, Co-founder");
+    // Both signatures sit in a framed area at the size the identity sets.
+    const frames = JSON.parse(blocks).flatMap((block: { blocks?: Array<{ type: string }> }) => block.blocks ?? []).filter((block: { type: string }) => block.type === "frame");
+    expect(frames).toHaveLength(2);
   });
 
   it("falls back to RIVET's typed name when the countersignature was typed", () => {
@@ -82,7 +86,8 @@ describe("agreement PDF", () => {
     const pdf = renderAgreementPdf(signed, SUBSCRIPTION_AGREEMENT_SECTIONS);
     const body = Array.from(pdf, (byte) => String.fromCharCode(byte)).join("");
     expect(body.startsWith("%PDF-1.4")).toBe(true);
-    expect(body).toContain("(RIVET subscription agreement) Tj");
+    expect(body).toContain("(Subscription agreement) Tj");
+    expect(body).toContain("(SUBSCRIPTION AGREEMENT) Tj");
     // WinAnsi puts the middle dot at 0xB7, which reads back as the same character.
     expect(body).toContain("(RVT-20261001-ABCDE \u00b7 RIVET, Amman, Jordan) Tj");
     expect([...body.matchAll(/\/Type \/Page[^s]/g)].length).toBeGreaterThan(1);

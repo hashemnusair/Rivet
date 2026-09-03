@@ -18,16 +18,43 @@
 export const PDF_PAGE_WIDTH = 595.28;
 export const PDF_PAGE_HEIGHT = 841.89;
 export const PDF_MARGIN = 56;
+/** Millimetres to points, for the measurements the identity system gives in mm. */
+export const mm = (value: number): number => value * 2.834645669;
 
 export type PdfFont = "regular" | "bold";
 
+export type PdfTone = "success" | "warning" | "danger" | "muted";
+
+export interface PdfRow {
+  label: string;
+  value: string;
+  /** Figures a reader compares are set bold. */
+  strong?: boolean;
+  muted?: boolean;
+}
+
+export interface PdfColumn {
+  heading?: string;
+  lines: Array<{ text: string; font?: PdfFont; size?: number; color?: string }>;
+}
+
 export type PdfBlock =
-  | { type: "title"; text: string }
+  | { type: "title"; text: string; chip?: { label: string; tone: PdfTone } }
   | { type: "meta"; text: string }
   | { type: "heading"; text: string }
-  | { type: "paragraph"; text: string; font?: PdfFont; size?: number }
-  | { type: "rows"; rows: Array<[string, string]> }
-  | { type: "rule" }
+  | { type: "paragraph"; text: string; font?: PdfFont; size?: number; color?: string }
+  | { type: "rows"; rows: PdfRow[]; labelWidth?: number }
+  /** Side-by-side blocks of lines: parties, or a meta grid. */
+  | { type: "columns"; columns: PdfColumn[]; gap?: number }
+  /** A ruled table: the invoice's line items. */
+  | { type: "table"; head: string[]; rows: string[][]; widths: number[]; alignEnd?: number[] }
+  /** Right-aligned figures under a table. */
+  | { type: "totals"; rows: Array<{ label: string; value: string; strong?: boolean; muted?: boolean }>; width?: number }
+  /** A sunken panel, for payment instructions. */
+  | { type: "panel"; blocks: PdfBlock[] }
+  /** A hairline box, for a drawn signature. */
+  | { type: "frame"; width: number; height: number; jpegDataUrl?: string; caption?: string }
+  | { type: "rule"; strong?: boolean }
   | { type: "spacer"; height: number }
   | { type: "image"; jpegDataUrl: string; maxWidth: number; maxHeight: number }
   /** Blocks that must not be split across a page break, such as a signature. */
@@ -39,6 +66,16 @@ export interface PdfDocumentOptions {
   subject?: string;
   /** Right-hand footer text; the page number is always on the left. */
   footer?: string;
+  /** A second, fainter footer line: the facts RIVET has not registered yet. */
+  footerPlaceholder?: string;
+  /** Uppercase technical label at the end of the first-page header. */
+  documentLabel?: string;
+  /** Shown in the running header of every page after the first. */
+  runningTitle?: string;
+  /** The lockup, drawn once at the start of page 1. */
+  lockupJpeg?: string;
+  /** The glyph, drawn in every running header. */
+  glyphJpeg?: string;
   createdAt?: Date;
 }
 
@@ -166,16 +203,41 @@ export function readJpegSize(bytes: Uint8Array): { width: number; height: number
 }
 
 /** One text run on a baseline; a row draws its label and value as two runs. */
-interface Segment { text: string; font: PdfFont; size: number; indent: number }
+interface Segment { text: string; font: PdfFont; size: number; indent: number; color?: string; alignEnd?: number }
 interface DrawnImage { data: Uint8Array; width: number; height: number; drawWidth: number; drawHeight: number }
 type Item =
-  | { kind: "line"; segments: Segment[]; baseline: number; height: number }
-  | { kind: "rule"; height: number }
+  | { kind: "line"; segments: Segment[]; baseline: number; height: number; chip?: { label: string; tone: PdfTone } }
+  | { kind: "rule"; height: number; strong?: boolean }
   | { kind: "space"; height: number }
-  | { kind: "image"; image: DrawnImage; height: number };
+  | { kind: "image"; image: DrawnImage; height: number }
+  | { kind: "frame"; width: number; height: number; image?: DrawnImage }
+  | { kind: "panel"; items: Item[]; height: number };
 
 const CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
-const LABEL_WIDTH = 150;
+/** 52mm, as the identity system sets the label column. */
+const LABEL_WIDTH = mm(52);
+const HAIRLINE = "#E3E1D6";
+const HAIRLINE_STRONG = "#D2CFC2";
+const INK = "#1B1A15";
+const INK_MUTED = "#8B887B";
+const INK_DISABLED = "#B6B3A6";
+const SUNKEN = "#EDECE5";
+const TONES: Record<PdfTone, { ink: string; background: string }> = {
+  success: { ink: "#176E44", background: "#E6F1EA" },
+  warning: { ink: "#96620A", background: "#F7EDD9" },
+  danger: { ink: "#AD1B22", background: "#FAE9E9" },
+  muted: { ink: INK_MUTED, background: SUNKEN },
+};
+const CHIP_HEIGHT = 16.5;
+const CHIP_PADDING = 6;
+const CHIP_SIZE = 8.5;
+
+/** "#1B1A15" as the PDF's 0-1 RGB triple. */
+function rgb(hex: string): string {
+  const value = hex.replace("#", "");
+  const parts = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+  return parts.map((part) => part.toFixed(3)).join(" ");
+}
 
 function wrap(text: string, font: PdfFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
@@ -200,8 +262,8 @@ function wrap(text: string, font: PdfFont, size: number, maxWidth: number): stri
   return lines.length > 0 ? lines : [""];
 }
 
-function line(text: string, font: PdfFont, size: number, leading: number, indent = 0): Item {
-  return { kind: "line", segments: [{ text, font, size, indent }], baseline: size, height: leading };
+function line(text: string, font: PdfFont, size: number, leading: number, indent = 0, color?: string): Item {
+  return { kind: "line", segments: [{ text, font, size, indent, color }], baseline: size, height: leading };
 }
 
 function layoutImage(dataUrl: string, maxWidth: number, maxHeight: number): DrawnImage | undefined {
@@ -216,37 +278,126 @@ function layoutImage(dataUrl: string, maxWidth: number, maxHeight: number): Draw
 
 function itemsFor(block: PdfBlock): Item[] {
   switch (block.type) {
-    case "title":
-      return [...wrap(block.text, "bold", 18, CONTENT_WIDTH).map((text) => line(text, "bold", 18, 23)), { kind: "space", height: 4 }];
+    case "title": {
+      const items: Item[] = wrap(block.text, "bold", 20, CONTENT_WIDTH - (block.chip ? 170 : 0)).map((text) => line(text, "bold", 20, 25));
+      const first = items[0];
+      if (block.chip && first?.kind === "line") first.chip = block.chip;
+      items.push({ kind: "space", height: 4 });
+      return items;
+    }
     case "meta":
-      return wrap(block.text, "regular", 9, CONTENT_WIDTH).map((text) => line(text, "regular", 9, 13));
+      return wrap(block.text, "regular", 8.5, CONTENT_WIDTH).map((text) => line(text, "regular", 8.5, 13, 0, INK_MUTED));
     case "heading":
       return [{ kind: "space", height: 8 }, ...wrap(block.text, "bold", 11.5, CONTENT_WIDTH).map((text) => line(text, "bold", 11.5, 15))];
     case "paragraph": {
       const font = block.font ?? "regular";
       const size = block.size ?? 10;
-      return [...wrap(block.text, font, size, CONTENT_WIDTH).map((text) => line(text, font, size, size * 1.45)), { kind: "space", height: 5 }];
+      return [...wrap(block.text, font, size, CONTENT_WIDTH).map((text) => line(text, font, size, size * 1.45, 0, block.color)), { kind: "space", height: 5 }];
     }
     case "rows": {
+      const labelWidth = block.labelWidth ?? LABEL_WIDTH;
       const items: Item[] = [];
-      for (const [label, value] of block.rows) {
-        const labelLines = wrap(label, "bold", 9, LABEL_WIDTH - 12);
-        const valueLines = wrap(value, "regular", 10, CONTENT_WIDTH - LABEL_WIDTH);
+      for (const row of block.rows) {
+        const labelLines = wrap(row.label, "bold", 9, labelWidth - 12);
+        const valueLines = wrap(row.value, "regular", 10, CONTENT_WIDTH - labelWidth);
         // Label and value share a baseline and wrap independently, so a row
         // is as tall as its longer column.
         for (let index = 0; index < Math.max(labelLines.length, valueLines.length); index += 1) {
           const segments: Segment[] = [];
           const labelText = labelLines[index];
           const valueText = valueLines[index];
-          if (labelText) segments.push({ text: labelText, font: "bold", size: 9, indent: 0 });
-          if (valueText) segments.push({ text: valueText, font: "regular", size: 10, indent: LABEL_WIDTH });
+          if (labelText) segments.push({ text: labelText, font: "bold", size: 9, indent: 0, color: INK_MUTED });
+          if (valueText) segments.push({ text: valueText, font: row.strong ? "bold" : "regular", size: 10, indent: labelWidth, color: row.muted ? INK_DISABLED : undefined });
           items.push({ kind: "line", segments, baseline: 10, height: 14 });
         }
       }
       return items;
     }
+    case "columns": {
+      const gap = block.gap ?? 24;
+      const width = (CONTENT_WIDTH - gap * (block.columns.length - 1)) / block.columns.length;
+      const laid = block.columns.map((column) => {
+        const rendered: Array<{ text: string; font: PdfFont; size: number; color?: string }> = [];
+        if (column.heading) for (const text of wrap(column.heading, "bold", 9, width)) rendered.push({ text, font: "bold", size: 9, color: INK_MUTED });
+        for (const entry of column.lines) {
+          const font = entry.font ?? "regular";
+          const size = entry.size ?? 10;
+          for (const text of wrap(entry.text, font, size, width)) rendered.push({ text, font, size, color: entry.color });
+        }
+        return rendered;
+      });
+      const rows = Math.max(...laid.map((column) => column.length));
+      const items: Item[] = [];
+      for (let index = 0; index < rows; index += 1) {
+        const segments: Segment[] = [];
+        laid.forEach((column, columnIndex) => {
+          const entry = column[index];
+          if (entry) segments.push({ text: entry.text, font: entry.font, size: entry.size, indent: columnIndex * (width + gap), color: entry.color });
+        });
+        items.push({ kind: "line", segments, baseline: 10, height: 14 });
+      }
+      items.push({ kind: "space", height: 6 });
+      return items;
+    }
+    case "table": {
+      const items: Item[] = [];
+      const offsets = block.widths.map((_, index) => block.widths.slice(0, index).reduce((sum, value) => sum + value, 0));
+      const cell = (values: string[], font: PdfFont, size: number, color?: string): Item[] => {
+        const wrapped = values.map((value, index) => wrap(value, font, size, block.widths[index]! - 8));
+        const height = Math.max(...wrapped.map((lines) => lines.length));
+        const out: Item[] = [];
+        for (let index = 0; index < height; index += 1) {
+          const segments: Segment[] = [];
+          wrapped.forEach((lines, column) => {
+            const text = lines[index];
+            if (!text) return;
+            const alignEnd = block.alignEnd?.includes(column);
+            const indent = alignEnd ? offsets[column]! + block.widths[column]! - widthOf(text, font, size) : offsets[column]!;
+            segments.push({ text, font, size, indent, color });
+          });
+          out.push({ kind: "line", segments, baseline: size, height: size * 1.45 });
+        }
+        return out;
+      };
+      items.push(...cell(block.head, "bold", 9, INK_MUTED));
+      items.push({ kind: "rule", height: 8, strong: true });
+      block.rows.forEach((row, index) => {
+        items.push(...cell(row, "regular", 10));
+        if (index < block.rows.length - 1) items.push({ kind: "rule", height: 10 });
+      });
+      items.push({ kind: "rule", height: 10, strong: true });
+      return items;
+    }
+    case "totals": {
+      const width = block.width ?? 225;
+      const indent = CONTENT_WIDTH - width;
+      return block.rows.map((row) => {
+        const size = row.strong ? 20 : 10;
+        const font: PdfFont = row.strong ? "bold" : "regular";
+        return {
+          kind: "line" as const,
+          segments: [
+            { text: row.label, font: "bold" as PdfFont, size: row.strong ? 10 : 9, indent, color: INK_MUTED },
+            { text: row.value, font, size, indent: CONTENT_WIDTH - widthOf(row.value, font, size), color: row.muted ? INK_DISABLED : undefined },
+          ],
+          baseline: size,
+          height: size * 1.6,
+        };
+      });
+    }
+    case "panel": {
+      const items = block.blocks.flatMap(itemsFor);
+      const height = items.reduce((sum, item) => sum + item.height, 0) + 20;
+      return [{ kind: "panel", items, height }];
+    }
+    case "frame": {
+      const image = block.jpegDataUrl ? layoutImage(block.jpegDataUrl, block.width - 16, block.height - 16) : undefined;
+      const items: Item[] = [{ kind: "frame", width: block.width, height: block.height, image }];
+      if (block.caption) items.push(...wrap(block.caption, "regular", 8.5, CONTENT_WIDTH).map((text) => line(text, "regular", 8.5, 12, 0, INK_MUTED)));
+      return items;
+    }
     case "rule":
-      return [{ kind: "rule", height: 12 }];
+      return [{ kind: "rule", height: 12, strong: block.strong }];
     case "spacer":
       return [{ kind: "space", height: block.height }];
     case "image": {
@@ -268,35 +419,106 @@ function bytes(text: string): number[] {
 export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint8Array {
   const pages: number[][] = [];
   const images: DrawnImage[] = [];
-  const bottom = PDF_MARGIN + 26;
+  // The footer sits 42pt from the foot of the page; content stops above it.
+  const FOOTER_RULE = 42;
+  const bottom = PDF_MARGIN;
   let content: number[] = [];
   let cursor = PDF_PAGE_HEIGHT - PDF_MARGIN;
+  let indent = 0;
 
-  const newPage = () => { pages.push(content); content = []; cursor = PDF_PAGE_HEIGHT - PDF_MARGIN; };
+  const push = (text: string) => content.push(...bytes(text));
+  const stroke = (y: number, colour = HAIRLINE) => push(`${rgb(colour)} RG 0.7 w ${PDF_MARGIN} ${y.toFixed(2)} m ${(PDF_PAGE_WIDTH - PDF_MARGIN).toFixed(2)} ${y.toFixed(2)} l S\n`);
+  const text = (value: string, x: number, y: number, font: PdfFont, size: number, colour = INK, tracking = 0) => {
+    if (!value) return;
+    push(`${rgb(colour)} rg BT /${font === "bold" ? "F2" : "F1"} ${size} Tf ${tracking ? `${tracking.toFixed(2)} Tc ` : ""}1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm `);
+    content.push(...pdfString(value));
+    push(` Tj ET\n${tracking ? "BT 0 Tc ET\n" : ""}`);
+  };
+  const box = (x: number, y: number, width: number, height: number, fill?: string, border?: string) => {
+    if (fill) push(`${rgb(fill)} rg ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f\n`);
+    if (border) push(`${rgb(border)} RG 0.7 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S\n`);
+  };
+  const image = (drawn: DrawnImage, x: number, y: number) => {
+    const index = images.push(drawn) - 1;
+    push(`q ${drawn.drawWidth.toFixed(2)} 0 0 ${drawn.drawHeight.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im${index} Do Q\n`);
+  };
+  const chip = (label: string, tone: PdfTone, baseline: number) => {
+    const colours = TONES[tone];
+    const width = widthOf(label, "bold", CHIP_SIZE) + CHIP_PADDING * 2;
+    const x = PDF_PAGE_WIDTH - PDF_MARGIN - width;
+    box(x, baseline - 4.5, width, CHIP_HEIGHT, colours.background);
+    text(label, x + CHIP_PADDING, baseline, "bold", CHIP_SIZE, colours.ink);
+  };
+
+  /** Page furniture. Page 1 carries the lockup; later pages carry the glyph. */
+  const startPage = (index: number) => {
+    content = [];
+    cursor = PDF_PAGE_HEIGHT - PDF_MARGIN;
+    if (index === 0) {
+      const lockup = options.lockupJpeg ? layoutImage(options.lockupJpeg, mm(34), 40) : undefined;
+      const height = lockup?.drawHeight ?? 0;
+      if (lockup) image(lockup, PDF_MARGIN, cursor - height);
+      if (options.documentLabel) {
+        const label = options.documentLabel.toUpperCase();
+        const width = widthOf(label, "bold", 8) + label.length * 0.48;
+        text(label, PDF_PAGE_WIDTH - PDF_MARGIN - width, cursor - height + 4, "bold", 8, INK_MUTED, 0.48);
+      }
+      cursor -= Math.max(height, 12) + 10;
+      stroke(cursor);
+      cursor -= 22;
+      return;
+    }
+    const glyph = options.glyphJpeg ? layoutImage(options.glyphJpeg, 20, mm(6)) : undefined;
+    const height = glyph?.drawHeight ?? 0;
+    if (glyph) image(glyph, PDF_MARGIN, cursor - height);
+    if (options.runningTitle) text(options.runningTitle, PDF_MARGIN + (glyph ? glyph.drawWidth + 8 : 0), cursor - height + 3, "regular", 8.5, INK_MUTED);
+    if (options.footer) {
+      const reference = options.footer.split(" · ")[0]!;
+      text(reference, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(reference, "regular", 8.5), cursor - height + 3, "regular", 8.5, INK_MUTED);
+    }
+    cursor -= Math.max(height, 12) + 8;
+    stroke(cursor);
+    cursor -= 20;
+  };
 
   const draw = (item: Item) => {
     if (item.kind === "line") {
       cursor -= item.baseline;
+      if (item.chip) chip(item.chip.label, item.chip.tone, cursor);
       for (const segment of item.segments) {
-        if (!segment.text) continue;
-        content.push(...bytes(`BT /${segment.font === "bold" ? "F2" : "F1"} ${segment.size} Tf 1 0 0 1 ${(PDF_MARGIN + segment.indent).toFixed(2)} ${cursor.toFixed(2)} Tm `));
-        content.push(...pdfString(segment.text));
-        content.push(...bytes(" Tj ET\n"));
+        text(segment.text, PDF_MARGIN + indent + segment.indent, cursor, segment.font, segment.size, segment.color ?? INK);
       }
       cursor -= item.height - item.baseline;
       return;
     }
     if (item.kind === "rule") {
       cursor -= item.height / 2;
-      content.push(...bytes(`0.82 0.81 0.78 RG 0.7 w ${PDF_MARGIN} ${cursor.toFixed(2)} m ${(PDF_PAGE_WIDTH - PDF_MARGIN).toFixed(2)} ${cursor.toFixed(2)} l S\n`));
+      stroke(cursor, item.strong ? HAIRLINE_STRONG : HAIRLINE);
       cursor -= item.height / 2;
       return;
     }
     if (item.kind === "image") {
       cursor -= item.image.drawHeight;
-      const index = images.push(item.image) - 1;
-      content.push(...bytes(`q ${item.image.drawWidth.toFixed(2)} 0 0 ${item.image.drawHeight.toFixed(2)} ${PDF_MARGIN} ${cursor.toFixed(2)} cm /Im${index} Do Q\n`));
+      image(item.image, PDF_MARGIN + indent, cursor);
       cursor -= 6;
+      return;
+    }
+    if (item.kind === "frame") {
+      cursor -= item.height;
+      box(PDF_MARGIN + indent, cursor, item.width, item.height, undefined, HAIRLINE_STRONG);
+      if (item.image) image(item.image, PDF_MARGIN + indent + (item.width - item.image.drawWidth) / 2, cursor + (item.height - item.image.drawHeight) / 2);
+      cursor -= 8;
+      return;
+    }
+    if (item.kind === "panel") {
+      cursor -= item.height;
+      box(PDF_MARGIN, cursor, CONTENT_WIDTH, item.height, SUNKEN);
+      const bottomOfPanel = cursor;
+      cursor += item.height - 10;
+      indent += 12;
+      for (const inner of item.items) draw(inner);
+      indent -= 12;
+      cursor = bottomOfPanel - 8;
       return;
     }
     cursor -= item.height;
@@ -304,36 +526,32 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
 
   const fits = (height: number) => cursor - height >= bottom;
 
+  startPage(0);
   for (const block of blocks) {
     const items = itemsFor(block);
     if (items.length === 0) continue;
-    if (block.type === "keep" || block.type === "image") {
+    if (block.type === "keep" || block.type === "image" || block.type === "panel" || block.type === "frame") {
       const total = items.reduce((sum, item) => sum + item.height, 0);
-      if (!fits(total) && cursor < PDF_PAGE_HEIGHT - PDF_MARGIN) newPage();
+      if (!fits(total) && cursor < PDF_PAGE_HEIGHT - PDF_MARGIN * 2) { pages.push(content); startPage(pages.length); }
     }
     for (const item of items) {
-      // A heading alone at the foot of a page reads as a mistake; move it and
-      // its first line together.
-      if (!fits(item.height)) newPage();
+      if (!fits(item.height)) { pages.push(content); startPage(pages.length); }
       draw(item);
     }
   }
   pages.push(content);
 
   const footerFor = (index: number, total: number): number[] => {
-    const out: number[] = [];
-    const y = PDF_MARGIN - 12;
-    out.push(...bytes(`0.82 0.81 0.78 RG 0.7 w ${PDF_MARGIN} ${(y + 14).toFixed(2)} m ${(PDF_PAGE_WIDTH - PDF_MARGIN).toFixed(2)} ${(y + 14).toFixed(2)} l S\n`));
-    out.push(...bytes(`BT /F1 8 Tf 1 0 0 1 ${PDF_MARGIN} ${y.toFixed(2)} Tm `));
-    out.push(...pdfString(`Page ${index + 1} of ${total}`));
-    out.push(...bytes(" Tj ET\n"));
-    if (options.footer) {
-      const width = widthOf(options.footer, "regular", 8);
-      out.push(...bytes(`BT /F1 8 Tf 1 0 0 1 ${(PDF_PAGE_WIDTH - PDF_MARGIN - width).toFixed(2)} ${y.toFixed(2)} Tm `));
-      out.push(...pdfString(options.footer));
-      out.push(...bytes(" Tj ET\n"));
-    }
-    return out;
+    const saved = content;
+    content = [];
+    stroke(FOOTER_RULE);
+    const page = `PAGE ${index + 1} OF ${total}`;
+    text(page, PDF_MARGIN, FOOTER_RULE - 12, "bold", 8, INK_MUTED, 0.48);
+    if (options.footer) text(options.footer, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(options.footer, "regular", 8), FOOTER_RULE - 12, "regular", 8, INK_MUTED);
+    if (options.footerPlaceholder) text(options.footerPlaceholder, PDF_MARGIN, FOOTER_RULE - 22, "regular", 8, INK_DISABLED);
+    const drawn = content;
+    content = saved;
+    return drawn;
   };
 
   const objects: number[][] = [];

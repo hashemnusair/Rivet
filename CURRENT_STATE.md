@@ -74,6 +74,16 @@
   or prints the record under Settings → Agreement. The demo gym is seeded as
   countersigned; `rivet.demo.agreement=required` simulates an unsigned gym in
   previews.
+- **Transactional branding:** email, PDF and invoice follow one identity
+  system. `convex/emailTemplate.ts` renders every operational email as a
+  600px column with the lockup, one headline, one action, an optional summary
+  card and a complete footer, with dark mode and Arabic mirroring built in;
+  member mail leads with the gym and uses its accent. `convex/pdfDocument.ts`
+  carries the page furniture (lockup, technical label, running header, status
+  chips, tables, panels, framed signatures) shared by the subscription
+  agreement and the new invoice document, which is attached to the invoice
+  emails. Facts RIVET has not registered, the legal entity and tax treatment,
+  appear as visible placeholders rather than inventions.
 - **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
   allowlist | live (default off; the legacy boolean is honoured as live only
   while the new variable is unset). Sandbox redirects to

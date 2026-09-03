@@ -4,6 +4,7 @@ import { domainError, publicOrganizationId, publicUserId, requireActor, requireP
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
+import { attachmentSizeLabel } from "./emailTemplate";
 import { agreementPdfFilename, renderAgreementPdfBase64 } from "./legalAgreementPdf";
 import {
   AGREEMENT_COPY_RECIPIENTS,
@@ -253,8 +254,8 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string): { 
  */
 async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", includeSigner: boolean): Promise<Data> {
   const copy = agreementCopy(row, organizationName);
-  const options = { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL };
   const attachments = [agreementPdfAttachment(row, organizationName)];
+  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const sequence = (row.copyResendCount ?? 0) + 1;
   const deliveries: Data[] = [];
   const queue = async (recipient: string, audience: "signer" | "rivet") => {
@@ -286,8 +287,8 @@ async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organi
  */
 async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<Doc<"operationalEmailDeliveries">> {
   const copy = agreementCopy(row, organizationName);
-  const options = { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL };
   const attachments = [agreementPdfAttachment(row, organizationName)];
+  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const signerDelivery = await enqueueOperationalEmail(ctx, {
     organizationId: row.organizationId,
     kind: "subscription_agreement_signed",
@@ -606,7 +607,8 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         after: { title, hashMatch: row.hashMatch, method: mark.method, attempt: (row.countersignCount ?? 0) + 1 },
       });
       const updated = (await ctx.db.get(row._id))!;
-      const rendered = renderAgreementCopyEmail(agreementCopy(updated, organizationName), "signer", { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL });
+      const completedAttachment = agreementPdfAttachment(updated, organizationName);
+      const rendered = renderAgreementCopyEmail(agreementCopy(updated, organizationName), "signer", { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: completedAttachment.filename, sizeLabel: attachmentSizeLabel(completedAttachment.contentBase64.length) } });
       await enqueueOperationalEmail(ctx, {
         organizationId: row.organizationId,
         kind: "subscription_agreement_countersigned",
@@ -617,7 +619,7 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         relatedEntityType: "subscription_agreement",
         relatedEntityPublicId: row.publicId,
         dedupeKey: `agreement-countersigned:${row.publicId}:${(row.countersignCount ?? 0) + 1}`,
-        attachments: [agreementPdfAttachment(updated, organizationName)],
+        attachments: [completedAttachment],
         ...rendered,
       });
       return agreementView(updated, organizationName);

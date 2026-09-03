@@ -36,10 +36,10 @@ describe("pdf writer", () => {
     const pdf = renderPdf([
       { type: "title", text: "RIVET subscription agreement" },
       { type: "meta", text: "Version 1.1" },
-      { type: "rows", rows: [["Gym", "Iron House Fitness"], ["Document fingerprint", "a".repeat(64)]] },
+      { type: "rows", rows: [{ label: "Gym", value: "Iron House Fitness" }, { label: "Document fingerprint", value: "a".repeat(64) }] },
       { type: "rule" },
       { type: "paragraph", text: "Fees are invoiced in advance." },
-    ], { title: "Agreement", author: "RIVET", footer: "RVT-1" });
+    ], { title: "Agreement", author: "RIVET", footer: "RVT-1 · RIVET, Amman, Jordan" });
     const body = text(pdf);
     expect(body.startsWith("%PDF-1.4")).toBe(true);
     expect(body.trimEnd().endsWith("%%EOF")).toBe(true);
@@ -47,7 +47,7 @@ describe("pdf writer", () => {
     expect(body).toContain("/BaseFont /Helvetica-Bold");
     expect(body).toContain("(RIVET subscription agreement) Tj");
     expect(body).toContain("(Iron House Fitness) Tj");
-    expect(body).toContain("(Page 1 of 1) Tj");
+    expect(body).toContain("(PAGE 1 OF 1) Tj");
     // Every /Kids reference must name a real page object. A viewer refuses the
     // whole file when one points at a font or an image instead.
     const kids = [...body.match(/\/Kids \[([^\]]+)\]/)![1]!.matchAll(/(\d+) 0 R/g)].map((match) => Number(match[1]));
@@ -78,7 +78,7 @@ describe("pdf writer", () => {
     const kids = [...body.match(/\/Kids \[([^\]]+)\]/)![1]!.matchAll(/(\d+) 0 R/g)].map((match) => Number(match[1]));
     expect(kids).toHaveLength(pages);
     for (const id of kids) expect(body.slice(body.indexOf(`\n${id} 0 obj\n`), body.indexOf(`\n${id} 0 obj\n`) + 200)).toContain("/Type /Page ");
-    expect(body).toContain(`(Page ${pages} of ${pages}) Tj`);
+    expect(body).toContain(`(PAGE ${pages} OF ${pages}) Tj`);
     // Every line starts at the left margin or the row indent, never beyond it.
     for (const [, x] of body.matchAll(/1 0 0 1 (\d+\.\d+) \d+\.\d+ Tm/g)) {
       expect(Number(x)).toBeGreaterThanOrEqual(PDF_MARGIN);
@@ -92,7 +92,7 @@ describe("pdf writer", () => {
     expect(body).toContain("/Subtype /Image /Width 400 /Height 100");
     expect(body).toContain("/Filter /DCTDecode");
     expect(body).toContain("/XObject << /Im0");
-    expect(body).toMatch(/q 240\.00 0 0 60\.00 56 \d+\.\d+ cm \/Im0 Do Q/);
+    expect(body).toMatch(/q 240\.00 0 0 60\.00 56\.00 \d+\.\d+ cm \/Im0 Do Q/);
     const missing = text(renderPdf([{ type: "image", jpegDataUrl: "data:image/png;base64,AAAA", maxWidth: 10, maxHeight: 10 }], { title: "t", author: "RIVET" }));
     expect(missing).not.toContain("/Subtype /Image");
   });

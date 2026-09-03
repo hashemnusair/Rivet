@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
-import { SUBSCRIPTION_AGREEMENT_SECTIONS } from "./legalAgreementText";
+import { footerLines } from "./emailTemplate";
 
 const copy: AgreementCopy = {
   reference: "RVT-20261001-ABCDE",
@@ -17,30 +17,45 @@ const copy: AgreementCopy = {
 };
 
 describe("agreement copy email", () => {
-  it("renders RIVET's copy with the masked ID, the record link and the agreement text", () => {
-    const rendered = renderAgreementCopyEmail(copy, "rivet", { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: "https://app.rivet.jo/" });
+  it("renders RIVET's copy on the branded template, with the masked ID and the attachment chip", () => {
+    const rendered = renderAgreementCopyEmail(copy, "rivet", { siteUrl: "https://app.rivet.jo/", attachment: { filename: "RIVET-agreement-RVT-20261001-ABCDE.pdf", sizeLabel: "26 KB" } });
     expect(rendered.subject).toBe("Iron <House> Fitness signed the RIVET subscription agreement (RVT-20261001-ABCDE)");
     expect(rendered.html).toContain("Iron &lt;House&gt; Fitness Co.");
     expect(rendered.html).not.toContain("<House>");
     expect(rendered.html).toContain("••••••4567");
+    expect(rendered.html).toContain("https://app.rivet.jo/brand/rivet-lockup.png");
     expect(rendered.html).toContain("https://app.rivet.jo/platform/agreements");
-    expect(rendered.html).toContain("Drawn signature, on file in RIVET");
-    expect(rendered.html).toContain("10. Electronic signature");
-    expect(rendered.text).toContain("Jordanian national ID: ••••••4567");
-    expect(rendered.text).toContain("Full record: https://app.rivet.jo/platform/agreements");
-    expect(rendered.text).toContain("03. Term and ending");
+    expect(rendered.html).toContain("RIVET-agreement-RVT-20261001-ABCDE.pdf");
+    expect(rendered.html).toContain("26 KB");
+    // The agreement itself travels as the PDF, not as text in the body.
+    expect(rendered.html).not.toContain("Electronic Transactions Law No. 15 of 2015.</h3>");
+    expect(rendered.text).toContain("Reference: RVT-20261001-ABCDE");
+    expect(rendered.text).toContain("Attached: RIVET-agreement-RVT-20261001-ABCDE.pdf (26 KB)");
   });
 
-  it("renders the signer's copy, flags a fingerprint mismatch and describes a countersignature", () => {
+  it("renders the signer's copy, flags a fingerprint mismatch as the one chip, and describes a countersignature", () => {
     const signer = renderAgreementCopyEmail({ ...copy, hashMatch: false, signature: { method: "typed", typedName: "Omar Haddad" } }, "signer");
     expect(signer.subject).toBe("Your signed RIVET subscription agreement RVT-20261001-ABCDE");
-    expect(signer.text).toContain("Typed and adopted: Omar Haddad");
+    expect(signer.html).toContain("Fingerprint mismatch");
     expect(signer.text).toContain("Fingerprint check: The signer's browser produced a different fingerprint");
-    expect(signer.text).toContain("Full record: Settings → Agreement in RIVET");
-    expect(signer.text).not.toContain("01. What this agreement covers");
 
     const countersigned = renderAgreementCopyEmail({ ...copy, countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00" } }, "signer");
     expect(countersigned.subject).toBe("RIVET countersigned your subscription agreement RVT-20261001-ABCDE");
-    expect(countersigned.text).toContain("Countersigned for RIVET: Elias Hreish, Co-founder, 2 October 2026, 09:00");
+    expect(countersigned.text).toContain("Countersigned by: Elias Hreish, Co-founder, 2 October 2026, 09:00");
+  });
+
+  it("carries the complete footer, with no unsubscribe on a service message", () => {
+    const rendered = renderAgreementCopyEmail(copy, "signer", { siteUrl: "https://www.rivetjo.com" });
+    const lines = footerLines({ language: "en", audience: "gym", headline: "", paragraphs: [] });
+    expect(lines[0]).toBe("RIVET · Amman, Jordan");
+    expect(lines[1]).toBe("077 837 8608 · wa.me/962778378608 · @rivet.jo · www.rivetjo.com");
+    expect(lines[2]).toBe("Support 09:00–21:00 Amman time, Saturday to Thursday");
+    expect(lines[3]).toBe("Privacy policy · Terms of service · Email preferences");
+    expect(lines[4]).toBe("This is a service message about your RIVET account.");
+    expect(lines[5]).toBe("© 2026 RIVET. All rights reserved.");
+    expect(lines[6]).toBe("[Legal entity name · Commercial registration no.]");
+    for (const line of lines) expect(rendered.text).toContain(line);
+    expect(rendered.html).toContain("https://www.rivetjo.com/privacy");
+    expect(rendered.html).not.toContain("Unsubscribe");
   });
 });

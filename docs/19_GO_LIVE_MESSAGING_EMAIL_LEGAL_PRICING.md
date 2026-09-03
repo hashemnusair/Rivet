@@ -203,6 +203,40 @@ section 02 points to RIVET's written quote or published prices and section
 - Arabic versions of all three documents and which language prevails
   (Terms section 18 currently says English unless the law requires otherwise)
 
+### Branding: email, PDF and invoice
+
+The transactional communications follow the identity system designed for
+RIVET in September 2026. One family across three surfaces, built from
+`convex/brandTokens.ts` (palette, contact block, the placeholders RIVET has
+not filled in yet) and `convex/brandAssets.ts` (the marks as print-ready
+JPEGs, embedded because the server has no image codec).
+
+**Email** (`convex/emailTemplate.ts`). One column at 600px: a paper header
+with the lockup at 112px, an optional gym name for member-facing mail, one
+headline, one or two paragraphs, an optional summary card of label/value
+rows, exactly one primary button, an attachment chip when a PDF rides along,
+and a sunken footer carrying RIVET's contact block, the legal links, why the
+message was received, the copyright and the legal-entity placeholder. Dark
+mode swaps to the night palette and the reversed marks through a media query;
+Arabic mirrors the layout without mirroring the logo. Every operational email
+goes through it, and a member-facing message colours its button with the
+gym's own accent. The one signal red is reserved for past due and suspension.
+
+**PDF** (`convex/pdfDocument.ts`). A4 at 56pt margins, Helvetica and
+Helvetica-Bold, hairlines and JPEG images. Page one carries the lockup and an
+uppercase technical label; later pages carry a running header with the glyph,
+the document title and the reference. Every page ends with the page number,
+the reference and the legal-entity placeholder. The renderer draws status
+chips, label/value rows on a 52mm label column, ruled tables, right-aligned
+totals, sunken panels and hairline frames for signatures.
+
+**Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
+`INVOICE` label: parties, a four-across meta grid, the line items, totals
+with the total due at 20pt, and a how-to-pay panel whose bank and CliQ
+details are labelled placeholders. It is attached to the invoice issued,
+past due and paid emails. Tax treatment is shown as undecided rather than
+guessed.
+
 ### The PDF
 
 `convex/pdfDocument.ts` is a small PDF writer with no dependencies: the

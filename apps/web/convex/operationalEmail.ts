@@ -4,6 +4,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
+import { attachmentSizeLabel, renderBrandedEmail, type BrandedEmail, type EmailAudience } from "./emailTemplate";
+import { resolveBrandColor } from "./brand";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -142,23 +144,66 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
   },
 };
 
-function fallbackContent(kind: string, language: Language) {
+/**
+ * Who each message is written for, and where its one action goes. A member
+ * reads about their own gym, so the gym leads and its accent colours the
+ * button; a gym owner reads about their RIVET account.
+ */
+const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: string; action?: string; actionAr?: string; status?: BrandedEmail["status"] }>> = {
+  subscription_agreement_signed: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
+  subscription_agreement_copy: { audience: "gym", path: "/platform/agreements", action: "Open in the console", actionAr: "فتح في اللوحة" },
+  subscription_agreement_countersigned: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
+  platform_invoice_issued: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_reminder: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_paid: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_past_due: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة", status: { label: "Past due", tone: "danger" } },
+  platform_subscription_suspended: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب", status: { label: "Suspended", tone: "danger" } },
+  platform_subscription_cancelled: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب" },
+  support_acknowledgement: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
+  support_reply: { audience: "gym", path: "/support", action: "Read the reply", actionAr: "قراءة الرد" },
+  support_resolved: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
+  trial_request_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
+  trial_status: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
+  payment_receipt: { audience: "member", path: "/customer/receipts", action: "View the receipt", actionAr: "عرض الإيصال" },
+  renewal_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
+  membership_expiry: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
+  pt_package_paid: { audience: "member", path: "/customer/my-gyms", action: "View the sessions", actionAr: "عرض الجلسات" },
+  pt_booking_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_booking_update: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_booking_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_low_balance: { audience: "member", path: "/customer/my-gyms", action: "View the balance", actionAr: "عرض الرصيد" },
+};
+
+interface BrandContext {
+  gymName?: string;
+  accent?: string;
+  siteUrl?: string;
+}
+
+/**
+ * The branded body for a kind that does not supply its own. The subject is
+ * also the headline: one sentence that says what happened.
+ */
+function fallbackContent(kind: string, language: Language, context: BrandContext = {}, attachments?: QueueOperationalEmailInput["attachments"]) {
   const localized = SERVICE_COPY[kind]?.[language];
   const label = kind.replaceAll("_", " ");
   const subject = localized?.subject ?? (language === "ar" ? "تحديث خدمة من RIVET" : "A service update from RIVET");
   const body = localized?.body ?? (language === "ar" ? `لديك تحديث جديد بخصوص ${label}. سجّل الدخول إلى RIVET للاطلاع على التفاصيل.` : `There is a new update about ${label}. Sign in to RIVET to view the authoritative details.`);
-  if (language === "ar") {
-    return {
-      subject,
-      text: body,
-      html: `<div dir="rtl" style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.7"><h2>${subject}</h2><p>${body}</p></div>`,
-    };
-  }
-  return {
-    subject,
-    text: body,
-    html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>${subject}</h2><p>${body}</p></div>`,
-  };
+  const meta = KIND_AUDIENCE[kind] ?? { audience: "gym" as EmailAudience, path: "/dashboard" };
+  const siteUrl = (context.siteUrl ?? process.env.RIVET_SITE_URL ?? "https://www.rivetjo.com").replace(/\/$/, "");
+  const attachment = attachments?.[0];
+  return renderBrandedEmail(subject, {
+    language,
+    audience: meta.audience,
+    headline: subject,
+    paragraphs: [body],
+    gymName: meta.audience === "member" ? context.gymName : undefined,
+    accent: context.accent,
+    siteUrl,
+    status: meta.status,
+    button: { label: (language === "ar" ? meta.actionAr : meta.action) ?? (language === "ar" ? "عرض في RIVET" : "View in RIVET"), href: `${siteUrl}${meta.path}` },
+    attachment: attachment ? { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } : undefined,
+  });
 }
 
 async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
@@ -211,7 +256,9 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   if (existing) return existing;
   const now = Date.now();
   const language = input.language ?? "en";
-  const content = fallbackContent(input.kind, language);
+  const organization = input.organizationId ? await ctx.db.get(input.organizationId) : null;
+  const brand = organization ? resolveBrandColor(organization.brandPaletteKey, organization.brandPrimaryColor) : undefined;
+  const content = fallbackContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL }, input.attachments);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
   if (!suppressionReason) {

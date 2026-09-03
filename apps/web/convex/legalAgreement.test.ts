@@ -98,7 +98,10 @@ describe("subscription agreement e-signature", () => {
     const signerCopy = emails.find((row) => row.kind === "subscription_agreement_signed");
     expect(signerCopy).toMatchObject({ recipientEmail: "omar@ironhouse.example", subject: `Your signed RIVET subscription agreement ${signed.reference}` });
     expect(signerCopy?.html).toContain("••••••4567");
-    expect(signerCopy?.text).toContain("10. Electronic signature");
+    // The agreement travels as the attached PDF; the email stays a summary.
+    expect(signerCopy?.text).toContain("Reference: " + signed.reference);
+    expect(signerCopy?.text).toContain("Attached: RIVET-agreement-" + signed.reference + ".pdf");
+    expect(signerCopy?.html).toContain("/brand/rivet-lockup.png");
     const founderCopies = emails.filter((row) => row.kind === "subscription_agreement_copy");
     expect(founderCopies.map((row) => row.recipientEmail).sort()).toEqual(["elias@rivetjo.com", "hashem@rivetjo.com"]);
     for (const row of founderCopies) {
@@ -119,7 +122,7 @@ describe("subscription agreement e-signature", () => {
       const pdf = Array.from(decodeBase64(attachment.contentBase64), (byte) => String.fromCharCode(byte)).join("");
       expect(pdf.startsWith("%PDF-1.4")).toBe(true);
       expect(pdf.trimEnd().endsWith("%%EOF")).toBe(true);
-      expect(pdf).toContain("(RIVET subscription agreement) Tj");
+      expect(pdf).toContain("(Subscription agreement) Tj");
       expect(pdf).toContain("4567 \\(masked\\)");
       expect(pdf).not.toContain("9871234567");
     }
@@ -225,8 +228,8 @@ describe("subscription agreement e-signature", () => {
     // The completed copy carries a PDF that shows both signatures.
     const completed = emails.find((row) => row.kind === "subscription_agreement_countersigned")!;
     const pdf = Array.from(decodeBase64(completed.attachments![0]!.contentBase64), (byte) => String.fromCharCode(byte)).join("");
-    expect(pdf).toContain("(For RIVET: Elias Hreish) Tj");
-    expect(pdf).toContain("(Co-founder, ");
-    expect(pdf).toContain("Signed and countersigned");
+    expect(pdf).toContain("(Elias Hreish, Co-founder) Tj");
+    expect(pdf).toContain("(Countersigned ");
+    expect(pdf).toContain("(Signed and countersigned) Tj");
   });
 });

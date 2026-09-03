@@ -49,6 +49,7 @@ import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { resolveEmailMode } from "./emailMode";
+import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { resolveMessagingMode } from "./messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
@@ -753,6 +754,7 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   dedupeKey: string;
   messageClass?: "service" | "marketing";
   marketingOptIn?: boolean;
+  attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
 }): Promise<void> {
   const suppressionReason = input.messageClass === "marketing"
     ? marketingSuppressionReason({ marketingOptIn: input.marketingOptIn })
@@ -765,10 +767,21 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
     templateVersion: input.templateVersion,
     language: input.language,
     recipientReference: input.recipientReference,
+    attachments: input.attachments,
     recipientEmail: input.recipientEmail,
     dedupeKey: input.dedupeKey,
     suppressionReason,
   });
+}
+
+/** "Bill to" on an invoice: the gym, its owner, and the plan it is on. */
+function invoiceCustomer(organization: Organization, owner: User): { name: string; address?: string; contactName?: string; contactEmail?: string; plan?: string } {
+  return {
+    name: organization.name,
+    contactName: `${owner.fullName} (owner)`,
+    contactEmail: owner.email,
+    plan: organization.subscriptionPlan ?? undefined,
+  };
 }
 
 async function platformGymOwnerRecipient(ctx: MutationCtx, gymId: string): Promise<{ organization: Organization; user: User } | null> {
@@ -8505,14 +8518,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         });
         issuedTermInvoice = { invoiceId, amountMinor, creditDays: appliedCreditDays, periodEnd: periodEndIso };
         const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
-        if (billedRecipient && billedRecipient.organization._id === organization._id) await queueOperationalEmail(ctx, {
-          organizationId: billedRecipient.organization._id,
-          kind: "platform_invoice_issued",
-          templateVersion: "platform-invoice-issued-v1",
-          recipientReference: publicUserId(billedRecipient.user),
-          recipientEmail: billedRecipient.user.email,
-          dedupeKey: `subscription-change-invoice:${invoiceId}`,
-        });
+        if (billedRecipient && billedRecipient.organization._id === organization._id) {
+          const issued = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
+          await queueOperationalEmail(ctx, {
+            organizationId: billedRecipient.organization._id,
+            kind: "platform_invoice_issued",
+            templateVersion: "platform-invoice-issued-v1",
+            recipientReference: publicUserId(billedRecipient.user),
+            recipientEmail: billedRecipient.user.email,
+            dedupeKey: `subscription-change-invoice:${invoiceId}`,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user))] : undefined,
+          });
+        }
       }
     }
     await insertPlatformAudit(ctx, admin, {
@@ -8855,6 +8872,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
+        // The invoice travels with the notice, as the paperwork it is.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user))],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {
