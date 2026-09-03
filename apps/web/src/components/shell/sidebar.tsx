@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
+import { ContextLabel } from "@/components/ui/typography";
 
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
 export function navIsActive(href: string, pathname: string): boolean {
@@ -66,7 +67,7 @@ export function Sidebar() {
               <div key={section.label} className="mb-4">
                 <div className="relative h-5">
                   {!sidebarCollapsed ? (
-                    <p className="eyebrow-night truncate whitespace-nowrap px-3.5 leading-4">{section.label}</p>
+                    <ContextLabel tone="night" className="truncate whitespace-nowrap px-3.5">{section.label}</ContextLabel>
                   ) : (
                     <div aria-hidden className="absolute inset-x-2 top-2 h-px bg-night-line" />
                   )}
@@ -79,15 +80,12 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "group relative flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] transition-colors duration-100",
+                          "group flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] transition-colors duration-100",
                           active
                             ? "bg-night-3 text-night-ink font-medium"
                             : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
                         )}
                       >
-                        {active ? (
-                          <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
-                        ) : null}
                         <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                           <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />
                         </span>

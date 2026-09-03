@@ -16,29 +16,46 @@ export function StatePanel({
   action,
   className,
   compact,
+  layout,
+  role = "status",
 }: {
   icon?: LucideIcon;
   title: string;
   description?: string;
   action?: ReactNode;
   className?: string;
+  /** @deprecated Prefer an explicit layout. */
   compact?: boolean;
+  layout?: "inline" | "section" | "page";
+  role?: "status" | "alert";
 }) {
+  const resolvedLayout = layout ?? (compact ? "section" : "page");
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center border border-dashed border-line-2 rounded-lg bg-surface/60",
-        compact ? "px-6 py-8" : "px-6 py-14",
+        "border-line-2 bg-surface/55",
+        resolvedLayout === "inline" && "flex items-start gap-3 border-y px-3 py-3 text-start",
+        resolvedLayout === "section" && "flex items-start gap-3 rounded-md border border-dashed px-4 py-4 text-start",
+        resolvedLayout === "page" && "flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-14 text-center",
         className,
       )}
-      role="status"
+      role={role}
+      aria-live={role === "alert" ? "assertive" : "polite"}
+      data-state-layout={resolvedLayout}
     >
-      <div className="mb-3 flex size-10 items-center justify-center rounded-md border border-line bg-surface">
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-md border border-line bg-surface",
+          resolvedLayout === "page" ? "mb-3 size-10" : "size-8",
+        )}
+      >
         <Icon className="size-4.5 text-ink-3" aria-hidden />
       </div>
-      <h3 className="font-display text-[15px] font-semibold text-ink">{title}</h3>
-      {description ? <p className="mt-1 max-w-sm text-[13px] text-ink-2">{description}</p> : null}
-      {action ? <div className="mt-4">{action}</div> : null}
+      <div className={cn("min-w-0", resolvedLayout === "page" && "flex flex-col items-center")}>
+        <h3 className="font-display text-[14px] font-semibold text-ink">{title}</h3>
+        {description ? <p className="mt-1 max-w-md text-[13px] leading-relaxed text-ink-2">{description}</p> : null}
+        {action ? <div className={resolvedLayout === "inline" ? "mt-2" : "mt-3"}>{action}</div> : null}
+      </div>
     </div>
   );
 }
@@ -49,6 +66,7 @@ export function EmptyState(props: {
   description?: string;
   action?: ReactNode;
   compact?: boolean;
+  layout?: "inline" | "section" | "page";
   className?: string;
 }) {
   return <StatePanel icon={Inbox} {...props} />;
@@ -71,6 +89,7 @@ export function ErrorState({
       title={title}
       description={description}
       className={className}
+      role="alert"
       action={
         onRetry ? (
           <Button variant="secondary" size="sm" onClick={onRetry}>

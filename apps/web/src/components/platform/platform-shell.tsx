@@ -15,6 +15,7 @@ import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { NotificationCenter } from "@/components/shell/notification-center";
+import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
 
 const NAVIGATION = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
@@ -118,7 +119,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             <NotificationCenter />
             <div className="hidden text-end sm:block">
               <p className="text-[12px] font-semibold">{administratorName}</p>
-              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-ink-3">Platform owner</p>
+              <ContextLabel className="text-[10.5px]">Platform owner</ContextLabel>
             </div>
             <span
               className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[9px] text-paper"
@@ -143,11 +144,11 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
       <div className="px-5 pb-7 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3">
           <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
-          <span className="border-s border-night-line ps-3 font-mono text-[8px] uppercase tracking-[0.14em] text-night-ink-3">Platform</span>
+          <TechnicalLabel as="span" tone="night" className="border-s border-night-line ps-3 text-[8px]">Platform</TechnicalLabel>
         </Link>
       </div>
       <nav className="flex-1 px-3" aria-label="Platform navigation">
-        <p className="px-3 pb-2 font-mono text-[8px] uppercase tracking-[0.18em] text-night-ink-3">Network control</p>
+        <ContextLabel tone="night" className="px-3 pb-2">Network control</ContextLabel>
         <div className="grid gap-1">
           {NAVIGATION.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -161,7 +162,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
                   active && "bg-night-3 text-night-ink",
                 )}
               >
-                <item.icon className={cn("size-4", active && "text-signal")} />
+                <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3")} />
                 {item.label}
               </Link>
             );

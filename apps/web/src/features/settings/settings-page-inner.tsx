@@ -26,6 +26,7 @@ import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { ChecklistsSection } from "@/features/settings/checklists-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ContextLabel } from "@/components/ui/typography";
 
 interface SettingsEntry {
   id: string;
@@ -135,11 +136,6 @@ export function SettingsPageInner() {
           isActive ? "bg-sunken font-semibold text-ink" : "text-ink-2 hover:bg-sunken/60 hover:text-ink",
         )}
       >
-        <span
-          aria-hidden
-          className="me-2 h-4 w-px shrink-0"
-          style={{ backgroundColor: isActive ? "var(--tenant-brand-primary)" : "transparent" }}
-        />
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
       </button>
     );
@@ -186,7 +182,7 @@ export function SettingsPageInner() {
               ) : (
                 SETTINGS_GROUPS.map((group) => (
                   <div key={group.label}>
-                    <p className="eyebrow mb-0.5 px-3">{group.label}</p>
+                    <ContextLabel className="mb-0.5 px-3">{group.label}</ContextLabel>
                     <div className="space-y-0.5">{group.entries.map(navButton)}</div>
                   </div>
                 ))

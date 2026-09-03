@@ -65,7 +65,7 @@ export default function DiscoverGymsPage() {
           <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((gym, index) => (
               <Reveal key={gym.id} delay={index * 70}>
-                <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-all duration-300 hover:-translate-y-1 hover:border-ink hover:shadow-pop">
+                <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-pop">
                   <div className="relative h-28 overflow-hidden bg-cover bg-center px-5 py-4 text-white" style={{ backgroundColor: gym.accent, backgroundImage: gym.cover?.url ? `linear-gradient(rgb(0 0 0 / .45), rgb(0 0 0 / .45)), url(${gym.cover.url})` : undefined }}>
                     <div className="absolute inset-0 opacity-20 marketing-grid" />
                     <div className="relative flex items-start justify-between">

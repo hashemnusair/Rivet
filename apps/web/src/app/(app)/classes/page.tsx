@@ -369,7 +369,7 @@ export default function ClassesPage() {
                               type="button"
                               onClick={(event) => { event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); else openNextOccurrence(item.id); }}
                               onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
-                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[10.5px] leading-tight shadow-sm transition-all hover:-translate-y-px hover:border-line-3 hover:shadow-md"
+                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[10.5px] leading-tight shadow-sm transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-md"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3.5, Math.min(width, 100 - left))}%`, top: `${5 + item.lane * 58}px`, height: "54px" }}
                               aria-label={`${item.name}, ${DAYS[item.dayOfWeek]} ${rangeLabel(item)}`}
                               title={`${item.name} — ${rangeLabel(item)} · ${bookedLabel(item)} booked${item.coachName ? ` · ${item.coachName}` : ""}`}

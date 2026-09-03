@@ -121,7 +121,7 @@ export function LeadFunnel({ data }: { data: DashboardData["funnel"] }) {
             <span className="w-24 shrink-0 text-[12px] text-ink-2">{stage.label}</span>
             <div className="relative h-6 flex-1 rounded-sm bg-sunken/70">
               <div
-                className="flex h-full items-center rounded-sm bg-ink ps-2 transition-all"
+                className="flex h-full items-center rounded-sm bg-ink ps-2 transition-[width] duration-200 ease-out"
                 style={{ width: `${Math.max(stage.count > 0 ? 10 : 0, (stage.count / max) * 100)}%` }}
               >
                 <span className="text-[11px] font-medium text-paper tabular">{stage.count}</span>

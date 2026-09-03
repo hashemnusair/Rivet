@@ -12,6 +12,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
+import { ContextLabel } from "@/components/ui/typography";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -69,7 +70,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               if (visible.length === 0) return null;
               return (
                 <div key={section.label} className="mb-4">
-                  <p className="eyebrow-night px-2.5 pb-1.5">{section.label}</p>
+                  <ContextLabel tone="night" className="px-2.5 pb-1.5">{section.label}</ContextLabel>
                   <ul className="space-y-0.5">
                     {visible.map((item) => {
                       const active = navIsActive(item.href, pathname);
@@ -79,15 +80,12 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                             href={item.href}
                             aria-current={active ? "page" : undefined}
                             className={cn(
-                              "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[13.5px] transition-colors duration-100",
+                              "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[13.5px] transition-colors duration-100",
                               active
                                 ? "bg-night-3 text-night-ink font-medium"
                                 : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
                             )}
                           >
-                            {active ? (
-                                <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} />
-                            ) : null}
                             <item.icon
                               className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")}
                               aria-hidden

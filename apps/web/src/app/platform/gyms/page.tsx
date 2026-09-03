@@ -146,7 +146,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
   const titleId = `gym-card-${gym.id}`;
   const lifecycle = lifecycleDeadline(gym);
   return (
-    <article aria-labelledby={titleId} className="group border border-line bg-surface p-5 transition-all hover:-translate-y-0.5 hover:border-ink hover:shadow-pop">
+    <article aria-labelledby={titleId} className="group border border-line bg-surface p-5 transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-pop">
       <div className="flex items-start justify-between gap-4">
         <PlatformGymLogo name={gym.name} shortName={gym.shortName} accent={gym.accent} logoUrl={gym.logoUrl} />
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
