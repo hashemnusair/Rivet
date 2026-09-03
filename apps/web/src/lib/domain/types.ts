@@ -480,6 +480,8 @@ export interface SubscriptionAgreement {
   hashMatch: boolean;
   countersign?: { at: ISODateTime; byName: string; title: string; typedName: string; signature?: SubscriptionAgreementSignature };
   idRevealCount: number;
+  voidedAt?: ISODateTime;
+  voidReason?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -548,6 +550,12 @@ export interface CountersignAgreementInput {
   /** Replace an existing countersignature instead of refusing it. */
   replace?: boolean;
   idempotencyKey: string;
+}
+
+export interface VoidAgreementInput {
+  agreementId: UUID;
+  /** Why the agreement is retired; written to the audit trail. */
+  reason: string;
 }
 
 export interface AttachPrintSignatureInput {

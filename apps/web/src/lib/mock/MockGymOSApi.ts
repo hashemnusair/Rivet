@@ -10519,6 +10519,24 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  voidPlatformAgreement(input: T.VoidAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (row.status === "void") return this.agreementView(row);
+      const now = nowISO();
+      const previous = row.status;
+      row.status = "void";
+      row.voidedAt = now;
+      row.voidReason = input.reason.trim();
+      row.updatedAt = now;
+      this.recordPlatformAudit({ action: "agreement.voided", summary: `Voided subscription agreement ${row.reference} for ${row.organizationName}; the owner must sign again`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { previousStatus: previous } });
+      this.audit({ category: "legal", action: "legal.agreement.void", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `RIVET voided subscription agreement ${row.reference}; a new signature is required`, after: { reference: row.reference, reason: input.reason.trim() } });
+      return this.agreementView(row);
+    });
+  }
+
   attachAgreementPrintSignature(input: T.AttachPrintSignatureInput): Promise<T.SubscriptionAgreement> {
     return this.respond(() => {
       const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);

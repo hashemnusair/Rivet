@@ -71,7 +71,10 @@
   second time as an opaque JPEG so the PDF can embed it. The ID number is masked everywhere and
   revealed only by a platform admin with a reason and an audit event;
   platform admins countersign from the Agreements console; the owner views
-  or prints the record under Settings → Agreement. The demo gym is seeded as
+  or prints the record under Settings → Agreement. A platform admin can void
+  an agreement with a reason, which gates the owner into signing a fresh one;
+  `convex/communications.e2e.test.ts` exercises the full chain, invoices
+  included, and can dump every email and PDF for inspection. The demo gym is seeded as
   countersigned; `rivet.demo.agreement=required` simulates an unsigned gym in
   previews.
 - **Transactional branding:** email, PDF and invoice follow one identity

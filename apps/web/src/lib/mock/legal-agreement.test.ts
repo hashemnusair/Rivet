@@ -90,6 +90,16 @@ describe("mock subscription agreement parity", () => {
     expect(withSigner.sequence).toBe(2);
     expect(withSigner.deliveries.map((delivery) => delivery.recipient)).toContain("omar@forgefitness.jo");
 
+    // Voiding retires the record with a reason and gates the owner again.
+    await expect(api.voidPlatformAgreement({ agreementId: signed.id, reason: " " })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const voided = await api.voidPlatformAgreement({ agreementId: signed.id, reason: "Re-signing on the current text" });
+    expect(voided).toMatchObject({ status: "void", voidReason: "Re-signing on the current text" });
+    expect(await api.voidPlatformAgreement({ agreementId: signed.id, reason: "Again" })).toMatchObject({ status: "void", voidReason: "Re-signing on the current text" });
+    // The voided record no longer counts; the demo gym's seeded agreement is
+    // what remains active here, and a real gym with none would be gated.
+    expect((await api.getSession()).legal?.agreementReference).not.toBe(signed.reference);
+    expect((await api.listPlatformAgreements()).find((row) => row.id === signed.id)?.status).toBe("void");
+
     const audits = (await api.listAuditEvents({ pageSize: 50 })).items.filter((event) => event.action === "legal.agreement.sign");
     expect(audits).toHaveLength(1);
     expect(JSON.stringify(audits[0]?.after)).not.toContain("9871234567");

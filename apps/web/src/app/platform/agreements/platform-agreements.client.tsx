@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
+import { Ban, Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -79,7 +79,7 @@ export function PlatformAgreements() {
                   <TableCell>{row.plan}{row.termMonths ? ` · ${row.termMonths}m` : ""}</TableCell>
                   <TableCell dir="ltr">{row.startDate}</TableCell>
                   <TableCell>{formatDateTime(row.signedAt)}</TableCell>
-                  <TableCell><Badge variant={row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
+                  <TableCell><Badge variant={row.status === "void" ? "neutral" : row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "void" ? "Void" : row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
                   <TableCell className="text-end"><Button size="xs" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye /> Open</Button></TableCell>
                 </TableRow>
               ))}
@@ -106,6 +106,8 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
   const [countersignature, setCountersignature] = useState<SignatureValue>({ method: "drawn" });
   const [replacing, setReplacing] = useState(false);
   const [includeSigner, setIncludeSigner] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
+  const [voiding, setVoiding] = useState(false);
   const [resendKey, setResendKey] = useState(() => newKey("resend"));
   const [resent, setResent] = useState<ResendAgreementCopiesResult>();
 
@@ -121,6 +123,10 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
   }), {
     onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); setReplacing(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
     onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not countersign."),
+  });
+  const voidAgreement = useApiMutation((api) => api.voidPlatformAgreement({ agreementId, reason: voidReason.trim() }), {
+    onSuccess: async () => { toast.success("Agreement voided. The owner will be asked to sign again."); setVoiding(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
+    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not void the agreement."),
   });
   const attachPrint = useApiMutation((api, input: { target: "signatory" | "countersign"; printImageDataUrl: string }) => api.attachAgreementPrintSignature({ agreementId, ...input }), {
     onSuccess: async () => { await invalidate([qk.platformAgreement(agreementId)]); },
@@ -222,6 +228,25 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                   </ul>
                 ) : null}
               </section>
+              {agreement.status === "void" ? (
+                <p className="rounded-md border border-line bg-sunken/40 px-3 py-2 text-[12.5px] text-ink-2" data-testid="agreement-void-notice">Voided{agreement.voidedAt ? ` on ${formatDateTime(agreement.voidedAt)}` : ""}{agreement.voidReason ? `: ${agreement.voidReason}` : ""}. The owner is asked to sign a new agreement the next time they open RIVET.</p>
+              ) : (
+                <section className="panel space-y-3 p-4" data-testid="agreement-void">
+                  <p className="context-label">Retire this agreement</p>
+                  <p className="text-[12px] text-ink-3">Voiding keeps the record as evidence, marks it void with your reason, and asks the owner to sign again through the current agreement. Use it when the signed details are wrong or the agreement was signed under an older text.</p>
+                  {voiding ? (
+                    <>
+                      <Field label="Reason" required><Textarea rows={2} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Signed under version 1.0 before the short form; re-signing on 1.1" data-testid="void-reason" /></Field>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="danger" disabled={voidReason.trim().length < 3} loading={voidAgreement.isPending} onClick={() => { setError(null); voidAgreement.mutate(); }} data-testid="void-confirm"><Ban /> Void and ask the owner to sign again</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setVoiding(false)}>Cancel</Button>
+                      </div>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="secondary" onClick={() => setVoiding(true)} data-testid="void-agreement"><Ban /> Void this agreement</Button>
+                  )}
+                </section>
+              )}
               {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
             </>
           )}

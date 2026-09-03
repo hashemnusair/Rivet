@@ -74,6 +74,15 @@ describe("platform agreements console", () => {
     await user.click(within(dialog).getByLabelText("Also send to the signatory"));
     await user.click(within(dialog).getByTestId("resend-copies"));
     await waitFor(() => expect(within(dialog).getByTestId("resend-result")).toHaveTextContent("omar@forgefitness.jo"));
+
+    // Voiding needs a reason, keeps the record, and tells the console why.
+    await user.click(within(dialog).getByTestId("void-agreement"));
+    expect(within(dialog).getByTestId("void-confirm")).toBeDisabled();
+    await user.type(within(dialog).getByTestId("void-reason"), "Re-signing on the current text");
+    await user.click(within(dialog).getByTestId("void-confirm"));
+    expect(await within(dialog).findByTestId("agreement-void-notice")).toHaveTextContent("Re-signing on the current text");
+    expect(within(dialog).queryByTestId("void-agreement")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Void")).not.toHaveLength(0));
     await waitFor(() => expect(screen.getByText("All countersigned")).toBeInTheDocument());
   });
 });

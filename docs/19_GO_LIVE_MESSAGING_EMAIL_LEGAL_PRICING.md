@@ -179,7 +179,18 @@ what the platform actually records.
    copies were suppressed, because a suppressed row is never revisited by the
    worker and the original dedupe keys block a repeat. The result names each
    recipient and says "queued" or gives the suppression reason, so a copy that
-   is not going to arrive says so on the spot. The owner can
+   is not going to arrive says so on the spot. The same dialog has **Void this
+   agreement**: with a reason, it marks the record void (the evidence stays),
+   writes a platform audit event, and the owner is asked to sign again the
+   next time they open RIVET. Use it when an agreement was signed under an
+   older text or with wrong details; the replacement is a new agreement with
+   its own reference and its own copies.
+
+   `convex/communications.e2e.test.ts` drives this whole chain against the
+   real backend on every run: sign, countersign by hand, re-send, void,
+   sign again, then issue, chase and settle an invoice, checking every email
+   for the branded template and every attachment for a readable PDF. Run it
+   with `RIVET_DUMP_DIR=<folder>` to write the emails and PDFs out. The owner can
    view or print the record under Settings → Agreement.
 8. The ID number is stored only in the agreement row (Convex encrypts at
    rest), masked in every view, email and audit payload, and revealed to a

@@ -145,7 +145,7 @@ function buttonHtml(button: { label: string; href: string }, accent: string | un
 function attachmentHtml(attachment: { filename: string; sizeLabel: string }, arabic: boolean): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-chip" style="background:${BRAND.paper};border-radius:4px;padding:8px 12px;font-family:${MONO};font-size:13px;color:${BRAND.ink}">
 <span style="display:inline-block;width:11px;height:14px;border:1.5px solid ${BRAND.ink};border-radius:2px;vertical-align:-2px;margin-${arabic ? "left" : "right"}:10px"></span>${escapeHtml(attachment.filename)}
-<span class="rv-muted" style="font-family:${arabic ? SANS_AR : SANS};font-size:12px;color:${BRAND.inkMuted};padding-${arabic ? "right" : "left"}:8px">${escapeHtml(attachment.sizeLabel)}</span>
+<span class="rv-muted" style="font-family:${arabic ? SANS_AR : SANS};font-size:12px;color:${BRAND.inkMuted};padding-${arabic ? "right" : "left"}:8px;white-space:nowrap">${escapeHtml(attachment.sizeLabel)}</span>
 </td></tr></table>`;
 }
 

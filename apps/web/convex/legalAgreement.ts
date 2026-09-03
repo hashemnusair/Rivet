@@ -123,6 +123,8 @@ function agreementView(row: AgreementRow, organizationName: string, options: { r
       signature: row.countersignSignature ? { ...row.countersignSignature } : { method: "typed" as const, typedName: row.countersignTypedName ?? "" },
     } : undefined,
     idRevealCount: row.idRevealCount,
+    voidedAt: row.voidedAt ? iso(row.voidedAt) : undefined,
+    voidReason: row.voidReason,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   };
@@ -546,6 +548,22 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       const next = { ...current, printImageDataUrl };
       await ctx.db.patch(row._id, target === "signatory" ? { signature: next, updatedAt: Date.now() } : { countersignSignature: next, updatedAt: Date.now() });
       await insertPlatformAudit(ctx, admin, { action: "agreement.print_signature_attached", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Completed the printable ${target === "signatory" ? "signature" : "countersignature"} on ${row.reference}`, after: { target } });
+      return agreementView((await ctx.db.get(row._id))!, organizationName);
+    }
+    case "platform.agreement.void": {
+      // Voiding retires a signed agreement without deleting the evidence: the
+      // row stays, marked void with the reason, and the owner is asked to sign
+      // again the next time they open RIVET. Like an invoice void, a RIVET
+      // action lives in the platform ledger rather than the gym's own trail.
+      const admin = await requirePlatformAdmin(ctx, request.correlationId);
+      const row = await agreementByPublicId(ctx, optionalTrimmed(input.agreementId), admin.correlationId);
+      requireReason(input.reason, admin.correlationId);
+      const organization = await ctx.db.get(row.organizationId);
+      const organizationName = organization?.name ?? row.customer.legalName;
+      if (row.status === "void") return agreementView(row, organizationName);
+      const now = Date.now();
+      await ctx.db.patch(row._id, { status: "void", voidedAt: now, voidReason: input.reason.trim(), updatedAt: now });
+      await insertPlatformAudit(ctx, admin, { action: "agreement.voided", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Voided subscription agreement ${row.reference} for ${organizationName}; the owner must sign again`, reason: input.reason.trim(), after: { previousStatus: row.status } });
       return agreementView((await ctx.db.get(row._id))!, organizationName);
     }
     case "platform.agreement.resend_copies": {
