@@ -67,6 +67,16 @@ describe("mock subscription agreement parity", () => {
     await expect(api.countersignPlatformAgreement({ agreementId: signed.id, title: "Co-founder", typedName: "Nope", idempotencyKey: "cs" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const countersigned = await api.countersignPlatformAgreement({ agreementId: signed.id, title: "Co-founder", typedName: actor, idempotencyKey: "cs" });
     expect(countersigned).toMatchObject({ status: "countersigned", countersign: { byName: actor, title: "Co-founder" } });
+    const resend = await api.resendPlatformAgreementCopies({ agreementId: signed.id, audience: "rivet", idempotencyKey: "resend-1" });
+    expect(resend).toEqual({ sequence: 1, deliveries: [
+      { recipient: "elias@rivetjo.com", status: "suppressed", reason: "Operational email mode is off (RIVET_EMAIL_MODE)" },
+      { recipient: "hashem@rivetjo.com", status: "suppressed", reason: "Operational email mode is off (RIVET_EMAIL_MODE)" },
+    ] });
+    expect(await api.resendPlatformAgreementCopies({ agreementId: signed.id, audience: "rivet", idempotencyKey: "resend-1" })).toEqual(resend);
+    const withSigner = await api.resendPlatformAgreementCopies({ agreementId: signed.id, audience: "all", idempotencyKey: "resend-2" });
+    expect(withSigner.sequence).toBe(2);
+    expect(withSigner.deliveries.map((delivery) => delivery.recipient)).toContain("omar@forgefitness.jo");
+
     const audits = (await api.listAuditEvents({ pageSize: 50 })).items.filter((event) => event.action === "legal.agreement.sign");
     expect(audits).toHaveLength(1);
     expect(JSON.stringify(audits[0]?.after)).not.toContain("9871234567");

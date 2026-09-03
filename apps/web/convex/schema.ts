@@ -1279,6 +1279,8 @@ export default defineSchema({
     voidedAt: v.optional(v.number()),
     voidReason: v.optional(v.string()),
     idRevealCount: v.number(),
+    /** How many times the copies have been re-sent; part of each resend's dedupe key. */
+    copyResendCount: v.optional(v.number()),
     emailDeliveryPublicId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),

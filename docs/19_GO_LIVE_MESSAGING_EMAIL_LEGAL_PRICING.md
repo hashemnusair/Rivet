@@ -172,7 +172,14 @@ what the platform actually records.
    either way. The confirmation screen names all three addresses and offers
    the same PDF as a download, then "Continue to RIVET" closes the modal.
 7. RIVET countersigns from Platform → Agreements by typing the admin's own
-   name; the signatory gets the countersigned copy by email. The owner can
+   name; the signatory gets the countersigned copy by email. The same dialog
+   has **Send the copies again**, which re-renders the email and the PDF from
+   the record as it stands and queues fresh delivery rows: RIVET's addresses
+   always, the signatory only when the box is ticked. Use it when the first
+   copies were suppressed, because a suppressed row is never revisited by the
+   worker and the original dedupe keys block a repeat. The result names each
+   recipient and says "queued" or gives the suppression reason, so a copy that
+   is not going to arrive says so on the spot. The owner can
    view or print the record under Settings → Agreement.
 8. The ID number is stored only in the agreement row (Convex encrypts at
    rest), masked in every view, email and audit payload, and revealed to a

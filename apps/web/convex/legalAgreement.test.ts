@@ -157,6 +157,37 @@ describe("subscription agreement e-signature", () => {
     expect((await otherOwner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } }).legal.agreementStatus).toBe("required");
   });
 
+  it("re-sends the copies of an existing agreement with the PDF, and reports what was suppressed", async () => {
+    const { owner, admin, manager, t } = await seeded();
+    const signed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", await signingInput())) as Agreement;
+    await expectCode(manager.mutation(api.domain.mutate, operation("platform.agreement.resend_copies", { agreementId: signed.id, audience: "rivet", idempotencyKey: "r1" })), "FORBIDDEN");
+    await expectCode(admin.mutation(api.domain.mutate, operation("platform.agreement.resend_copies", { agreementId: signed.id, audience: "everyone", idempotencyKey: "r1" })), "VALIDATION_ERROR");
+
+    type Resend = { sequence: number; deliveries: Array<{ recipient: string; status: string; reason?: string }> };
+    const first = await admin.mutation(api.domain.mutate, operation("platform.agreement.resend_copies", { agreementId: signed.id, audience: "rivet", idempotencyKey: "r1" })) as Resend;
+    expect(first.sequence).toBe(1);
+    expect(first.deliveries.map((delivery) => delivery.recipient)).toEqual(["elias@rivetjo.com", "hashem@rivetjo.com"]);
+    // Sending is off in tests, so the honest answer is "suppressed", with the reason.
+    expect(first.deliveries.every((delivery) => delivery.status === "suppressed" && /mode is off/.test(delivery.reason ?? ""))).toBe(true);
+    // A repeat of the same request must not queue a second round.
+    expect(await admin.mutation(api.domain.mutate, operation("platform.agreement.resend_copies", { agreementId: signed.id, audience: "rivet", idempotencyKey: "r1" }))).toEqual(first);
+
+    const second = await admin.mutation(api.domain.mutate, operation("platform.agreement.resend_copies", { agreementId: signed.id, audience: "all", idempotencyKey: "r2" })) as Resend;
+    expect(second.sequence).toBe(2);
+    expect(second.deliveries.map((delivery) => delivery.recipient)).toEqual(["elias@rivetjo.com", "hashem@rivetjo.com", "omar@ironhouse.example"]);
+
+    // Each resend writes its own delivery rows, every one carrying the PDF.
+    const emails = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
+    const resends = emails.filter((row) => row.dedupeKey.startsWith("agreement-resend:"));
+    expect(resends).toHaveLength(5);
+    for (const row of resends) {
+      expect(row.attachments?.[0]).toMatchObject({ filename: `RIVET-agreement-${signed.reference}.pdf`, contentType: "application/pdf" });
+      expect(row.relatedEntityPublicId).toBe(signed.id);
+    }
+    const audits = await t.run(async (ctx) => (await ctx.db.query("platformAuditEvents").collect()).filter((event) => event.action === "agreement.copies_resent"));
+    expect(audits).toHaveLength(2);
+  });
+
   it("lets platform admins list, countersign, and reveal the ID with a reason and an audit event, and hides all of it from gym staff", async () => {
     const { owner, admin, manager, t } = await seeded();
     const signed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", await signingInput())) as Agreement;

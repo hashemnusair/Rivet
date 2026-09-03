@@ -58,6 +58,17 @@ describe("platform agreements console", () => {
     await user.type(nameInput, actorName);
     await user.click(within(dialog).getByTestId("countersign"));
     await waitFor(() => expect(within(dialog).getByText(new RegExp(`Countersigned by ${actorName}`))).toBeInTheDocument());
+
+    // Copies can be sent again, and the console says plainly what happened to
+    // each one rather than implying delivery.
+    await user.click(within(dialog).getByTestId("resend-copies"));
+    const result = await within(dialog).findByTestId("resend-result");
+    expect(result).toHaveTextContent("elias@rivetjo.com: not sent, Operational email mode is off (RIVET_EMAIL_MODE)");
+    expect(result).toHaveTextContent("hashem@rivetjo.com: not sent");
+    expect(result).not.toHaveTextContent("omar@forgefitness.jo");
+    await user.click(within(dialog).getByLabelText("Also send to the signatory"));
+    await user.click(within(dialog).getByTestId("resend-copies"));
+    await waitFor(() => expect(within(dialog).getByTestId("resend-result")).toHaveTextContent("omar@forgefitness.jo"));
     await waitFor(() => expect(screen.getByText("All countersigned")).toBeInTheDocument());
   });
 });

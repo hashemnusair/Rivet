@@ -1160,6 +1160,8 @@ export interface GymOSApi {
   listPlatformAgreements(): Promise<import("@/lib/domain/types").PlatformAgreementSummary[]>;
   getPlatformAgreement(agreementId: UUID): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
   revealPlatformAgreementId(input: import("@/lib/domain/types").RevealAgreementIdInput): Promise<import("@/lib/domain/types").RevealAgreementIdResult>;
+  /** Re-queue the emailed copies of a signed agreement, rendered as the record stands now. */
+  resendPlatformAgreementCopies(input: import("@/lib/domain/types").ResendAgreementCopiesInput): Promise<import("@/lib/domain/types").ResendAgreementCopiesResult>;
   countersignPlatformAgreement(input: import("@/lib/domain/types").CountersignAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
 
   // Supplier payables and supplier payments (Growth+ operations module)

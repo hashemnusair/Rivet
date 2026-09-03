@@ -212,6 +212,41 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string): { 
 }
 
 /**
+ * Re-queue the copies for an agreement that is already signed. The email and
+ * the PDF are rendered from the record as it stands now, so a resend carries
+ * the countersignature and anything else added since. Each resend gets its
+ * own dedupe keys: the original copies are deduped forever, and an email
+ * suppressed while sending was off is never revisited by the worker.
+ */
+async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", includeSigner: boolean): Promise<Data> {
+  const copy = agreementCopy(row, organizationName);
+  const options = { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL };
+  const attachments = [agreementPdfAttachment(row, organizationName)];
+  const sequence = (row.copyResendCount ?? 0) + 1;
+  const deliveries: Data[] = [];
+  const queue = async (recipient: string, audience: "signer" | "rivet") => {
+    const delivery = await enqueueOperationalEmail(ctx, {
+      organizationId: row.organizationId,
+      kind: audience === "signer" ? (row.status === "countersigned" ? "subscription_agreement_countersigned" : "subscription_agreement_signed") : "subscription_agreement_copy",
+      templateVersion: row.agreementVersion,
+      language: audience === "signer" ? language : "en",
+      recipientReference: `agreement:${row.publicId}${audience === "rivet" ? ":rivet" : ""}`,
+      recipientEmail: recipient,
+      relatedEntityType: "subscription_agreement",
+      relatedEntityPublicId: row.publicId,
+      dedupeKey: `agreement-resend:${row.publicId}:${sequence}:${recipient}`,
+      attachments,
+      ...renderAgreementCopyEmail(copy, audience, options),
+    });
+    deliveries.push({ recipient, status: delivery.status === "suppressed" ? "suppressed" : "queued", reason: delivery.suppressionReason });
+  };
+  for (const recipient of AGREEMENT_COPY_RECIPIENTS) await queue(recipient, "rivet");
+  if (includeSigner) await queue(row.signatory.email, "signer");
+  await ctx.db.patch(row._id, { copyResendCount: sequence, updatedAt: Date.now() });
+  return { sequence, deliveries };
+}
+
+/**
  * One copy to the signer and one to each founder address. All of them go
  * through the operational email boundary, so RIVET_EMAIL_MODE decides
  * whether anything leaves the platform; the queue rows are the evidence.
@@ -468,6 +503,29 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       await ctx.db.patch(row._id, { idRevealCount: row.idRevealCount + 1, updatedAt: Date.now() });
       await insertPlatformAudit(ctx, admin, { action: "agreement.id_revealed", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Revealed the signatory ID number on ${row.reference}`, reason: input.reason.trim(), after: { idType: row.signatory.idType, revealCount: row.idRevealCount + 1 } });
       return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount + 1 };
+    }
+    case "platform.agreement.resend_copies": {
+      const admin = await requirePlatformAdmin(ctx, request.correlationId);
+      const row = await agreementByPublicId(ctx, optionalTrimmed(input.agreementId), admin.correlationId);
+      const idempotencyKey = optionalTrimmed(input.idempotencyKey);
+      if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: admin.correlationId });
+      const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", row.organizationId).eq("operation", "legal.agreement.resend").eq("key", idempotencyKey!)).unique();
+      if (existing) return value(existing.result);
+      const audience = trimmed(input.audience) || "rivet";
+      requireField(audience === "rivet" || audience === "all", "audience", "Choose who receives the copy.", admin.correlationId);
+      const organization = await ctx.db.get(row.organizationId);
+      const organizationName = organization?.name ?? row.customer.legalName;
+      const result = await resendAgreementCopies(ctx, row, organizationName, organization?.defaultLanguage ?? "en", audience === "all");
+      await insertPlatformAudit(ctx, admin, {
+        action: "agreement.copies_resent",
+        entityPublicId: row.publicId,
+        entityLabel: row.reference,
+        summary: `Re-sent the copies of ${row.reference} to ${audience === "all" ? "RIVET and the signatory" : "RIVET"}`,
+        after: { sequence: result.sequence, recipients: (result.deliveries as Data[]).length, audience },
+      });
+      const now = Date.now();
+      await ctx.db.insert("idempotencyRecords", { organizationId: row.organizationId, operation: "legal.agreement.resend", key: idempotencyKey!, requestHash: `${row.publicId}:${audience}`, result, createdAt: now, expiresAt: now + 30 * 86_400_000 });
+      return result;
     }
     case "platform.agreement.countersign": {
       const admin = await requirePlatformAdmin(ctx, request.correlationId);

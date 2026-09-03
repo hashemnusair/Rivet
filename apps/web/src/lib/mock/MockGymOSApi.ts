@@ -68,7 +68,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
-import { AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
+import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
@@ -771,6 +771,7 @@ export class MockGymOSApi implements GymOSApi {
   /** Internal linkage kept out of the public trainer DTO, matching Convex's photoAssetId field. */
   private ptTrainerPhotoAssetIds = new Map<string, string>();
   private operationalEmailKinds: string[] = [];
+  private agreementResendCounts = new Map<string, number>();
   private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
   private savedViews: import("@/lib/domain/qol").SavedView[] = [];
   private bulkJobs: import("@/lib/domain/qol").BulkOperationJob[] = [];
@@ -3431,6 +3432,7 @@ export class MockGymOSApi implements GymOSApi {
     this.ptOrders = [];
     this.operationalEmailKinds = [];
     this.operationalEmailUpdate = undefined;
+    this.agreementResendCounts.clear();
     const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
     if (trainer) {
       const createdAt = nowISO();
@@ -10468,6 +10470,26 @@ export class MockGymOSApi implements GymOSApi {
       row.updatedAt = nowISO();
       this.recordPlatformAudit({ action: "agreement.id_revealed", summary: `Revealed the signatory ID number on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { revealCount: row.idRevealCount } });
       return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount };
+    });
+  }
+
+  resendPlatformAgreementCopies(input: T.ResendAgreementCopiesInput): Promise<T.ResendAgreementCopiesResult> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (!input.idempotencyKey?.trim()) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      if (input.audience !== "rivet" && input.audience !== "all") throw ApiError.of(ERR.VALIDATION, "Choose who receives the copy.", { fieldErrors: { audience: ["Choose who receives the copy."] } });
+      const replay = this.operationsIdempotent("legal.agreement.resend", input.idempotencyKey.trim(), "resend") as T.ResendAgreementCopiesResult | undefined;
+      if (replay) return replay;
+      const sequence = (this.agreementResendCounts.get(row.id) ?? 0) + 1;
+      this.agreementResendCounts.set(row.id, sequence);
+      const recipients = [...AGREEMENT_COPY_RECIPIENTS, ...(input.audience === "all" ? [row.signatory.email] : [])];
+      // The preview has no mail provider, so every copy is suppressed with the
+      // same reason the server gives when the mode is off.
+      const result: T.ResendAgreementCopiesResult = { sequence, deliveries: recipients.map((recipient) => ({ recipient, status: "suppressed" as const, reason: "Operational email mode is off (RIVET_EMAIL_MODE)" })) };
+      this.recordPlatformAudit({ action: "agreement.copies_resent", summary: `Re-sent the copies of ${row.reference} to ${input.audience === "all" ? "RIVET and the signatory" : "RIVET"}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Resend copies", after: { sequence, recipients: recipients.length } });
+      this.operationsIdempotency.set(`legal.agreement.resend:${input.idempotencyKey.trim()}`, { signature: "resend", result });
+      return result;
     });
   }
 

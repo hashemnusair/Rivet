@@ -545,6 +545,21 @@ export interface CountersignAgreementInput {
   idempotencyKey: string;
 }
 
+export type AgreementCopyAudience = "rivet" | "all";
+
+export interface ResendAgreementCopiesInput {
+  agreementId: UUID;
+  /** "rivet" sends only to RIVET's own addresses; "all" includes the signatory. */
+  audience: AgreementCopyAudience;
+  idempotencyKey: string;
+}
+
+export interface ResendAgreementCopiesResult {
+  /** Which resend this was; each one gets its own delivery rows. */
+  sequence: number;
+  deliveries: Array<{ recipient: string; status: "queued" | "suppressed"; reason?: string }>;
+}
+
 export interface RevealAgreementIdInput {
   agreementId: UUID;
   reason: string;

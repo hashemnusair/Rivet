@@ -715,6 +715,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listPlatformAgreements(): Promise<T.PlatformAgreementSummary[]> { return this.query("platform.agreements.list", {}); }
   getPlatformAgreement(agreementId: T.UUID): Promise<T.SubscriptionAgreement> { return this.query("platform.agreement.get", { agreementId }); }
   revealPlatformAgreementId(input: T.RevealAgreementIdInput): Promise<T.RevealAgreementIdResult> { return this.mutate("platform.agreement.reveal_id", input); }
+  resendPlatformAgreementCopies(input: T.ResendAgreementCopiesInput): Promise<T.ResendAgreementCopiesResult> { return this.mutate("platform.agreement.resend_copies", input); }
   countersignPlatformAgreement(input: T.CountersignAgreementInput): Promise<T.SubscriptionAgreement> { return this.mutate("platform.agreement.countersign", input); }
   listPayables(query: T.PayablesQuery = {}): Promise<T.PayablesPage> { return this.query("operations.payables.list", query); }
   exportPayables(query: T.PayablesQuery = {}): Promise<T.PayablesExport> { return this.query("operations.payables.export", query); }

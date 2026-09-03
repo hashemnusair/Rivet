@@ -1,20 +1,22 @@
 "use client";
 
-import { Download, Eye, FileSignature, PenLine } from "lucide-react";
+import { Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
-import type { PlatformAgreementSummary, SubscriptionAgreement } from "@/lib/domain/types";
+import type { PlatformAgreementSummary, ResendAgreementCopiesResult, SubscriptionAgreement } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { formatDateTime } from "@/lib/utils/dates";
+import { AGREEMENT_COPY_RECIPIENTS } from "../../../../convex/legalAgreementText";
 import { AgreementRecord } from "@/features/legal/agreement-record";
 import { downloadAgreementPdf } from "@/features/legal/agreement-pdf";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/switch";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
@@ -99,10 +101,26 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
   const [revealedId, setRevealedId] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [countersignKey] = useState(() => newKey("countersign"));
+  const [includeSigner, setIncludeSigner] = useState(false);
+  const [resendKey, setResendKey] = useState(() => newKey("resend"));
+  const [resent, setResent] = useState<ResendAgreementCopiesResult>();
 
   const countersign = useApiMutation((api) => api.countersignPlatformAgreement({ agreementId, title: title.trim(), typedName: typedName.trim(), idempotencyKey: countersignKey }), {
     onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
     onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not countersign."),
+  });
+  // Copies are re-rendered from the record as it stands, so a resend carries
+  // the countersignature and the PDF even when the first attempt was
+  // suppressed because sending was switched off.
+  const resend = useApiMutation((api) => api.resendPlatformAgreementCopies({ agreementId, audience: includeSigner ? "all" : "rivet", idempotencyKey: resendKey }), {
+    onSuccess: (result) => {
+      setResent(result);
+      setResendKey(newKey("resend"));
+      const sent = result.deliveries.filter((delivery) => delivery.status === "queued").length;
+      if (sent > 0) toast.success(`Queued ${sent} ${sent === 1 ? "copy" : "copies"}. Delivery follows within a minute.`);
+      else toast.error("Nothing was sent. Every copy was suppressed; the reason is shown below.");
+    },
+    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not re-send the copies."),
   });
   const reveal = useApiMutation((api) => api.revealPlatformAgreementId({ agreementId, reason: revealReason.trim() }), {
     onSuccess: async (result) => { setRevealedId(result.idNumber); await invalidate([qk.platformAgreement(agreementId)]); },
@@ -140,6 +158,24 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                   )}
                 </section>
               </div>
+              <section className="panel space-y-3 p-4" data-testid="agreement-copies">
+                <p className="context-label">Send the copies again</p>
+                <p className="text-[12px] text-ink-3">RIVET always receives a copy at {AGREEMENT_COPY_RECIPIENTS.join(" and ")}, with the agreement attached as a PDF. Use this when the first copies were suppressed, or after the record changed.</p>
+                <label className="flex cursor-pointer items-start gap-3 text-[12.5px] text-ink-2">
+                  <Checkbox checked={includeSigner} onCheckedChange={(checked) => setIncludeSigner(checked === true)} aria-label="Also send to the signatory" className="mt-0.5" />
+                  <span>Also send to the signatory, <span dir="ltr">{agreement.signatory.email}</span></span>
+                </label>
+                <Button size="sm" variant="secondary" loading={resend.isPending} onClick={() => { setError(null); resend.mutate(); }} data-testid="resend-copies"><Send /> Send the copies</Button>
+                {resent ? (
+                  <ul className="space-y-1 text-[12px]" data-testid="resend-result">
+                    {resent.deliveries.map((delivery) => (
+                      <li key={delivery.recipient} className={delivery.status === "queued" ? "text-ink-2" : "text-warning-deep"}>
+                        <span dir="ltr">{delivery.recipient}</span>: {delivery.status === "queued" ? "queued for delivery" : `not sent, ${delivery.reason ?? "suppressed"}`}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
               {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
             </>
           )}
