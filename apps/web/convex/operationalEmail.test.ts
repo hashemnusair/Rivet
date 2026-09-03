@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { enqueueOperationalEmail } from "./operationalEmail";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -13,6 +14,7 @@ const previousEnvironment = {
   globalTypes: process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES,
 };
 afterEach(() => {
+  for (const key of ["RIVET_EMAIL_MODE", "RIVET_EMAIL_SANDBOX_TO", "RIVET_EMAIL_ALLOWLIST"]) delete process.env[key];
   for (const [key, value] of Object.entries({ RIVET_OPERATIONAL_EMAIL_LIVE: previousEnvironment.live, RESEND_API_KEY: previousEnvironment.apiKey, RESEND_FROM_EMAIL: previousEnvironment.from, RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES: previousEnvironment.globalTypes })) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
@@ -49,7 +51,7 @@ describe("durable operational email", () => {
     expect(replay.publicId).toBe(first.publicId);
     const rows = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect());
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.suppressionReason).toContain("disabled or the provider is not configured");
+    expect(rows[0]?.suppressionReason).toMatch(/mode is off/);
     expect(rows[0]?.subject).toBe("Your RIVET payment receipt");
   });
 
@@ -151,5 +153,64 @@ describe("durable operational email", () => {
     const state = await t.run(async (ctx) => ({ deliveries: await ctx.db.query("operationalEmailDeliveries").collect(), events: await ctx.db.query("operationalEmailWebhookEvents").collect() }));
     expect(state.deliveries[0]).toMatchObject({ status: "delivered", providerEventAt: 200 });
     expect(state.events).toHaveLength(2);
+  });
+});
+
+describe("operational email go-live modes", () => {
+  it("redirects every message to the sandbox inbox with the real recipient in the subject", async () => {
+    process.env.RIVET_EMAIL_MODE = "sandbox";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    process.env.RIVET_EMAIL_SANDBOX_TO = "inbox@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-sandbox" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-1", recipientEmail: "owner@gym.jo", dedupeKey: "sandbox-1", subject: "Invoice issued" });
+    });
+    await t.action(internal.operationalEmail.processDue, {});
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as { to: string[]; subject: string };
+    expect(body.to).toEqual(["inbox@rivetjo.com"]);
+    expect(body.subject).toBe("[sandbox → owner@gym.jo] Invoice issued");
+    const delivery = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").collect())[0]);
+    expect(delivery?.attempts[0]).toMatchObject({ outcome: "accepted", mode: "sandbox", deliveredTo: "inbox@rivetjo.com" });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_SANDBOX_TO;
+  });
+
+  it("suppresses recipients outside the allowlist with a readable reason and never calls the provider for them", async () => {
+    process.env.RIVET_EMAIL_MODE = "allowlist";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    process.env.RIVET_EMAIL_ALLOWLIST = "@rivetjo.com, pilot@gym.jo";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-allowed" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-2", recipientEmail: "pilot@gym.jo", dedupeKey: "allow-1", subject: "Invoice issued" });
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-3", recipientEmail: "member@gmail.com", dedupeKey: "allow-2", subject: "Invoice issued" });
+    });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 2, disabled: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const rows = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
+    expect(rows.find((row) => row.recipientEmail === "pilot@gym.jo")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "member@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/allowlist/) });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_ALLOWLIST;
+  });
+
+  it("keeps everything suppressed when the mode is off even if the provider is configured", async () => {
+    process.env.RIVET_EMAIL_MODE = "off";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    const t = convexTest(schema, modules);
+    const delivery = await t.run(async (ctx) => await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-4", recipientEmail: "owner@gym.jo", dedupeKey: "off-1" }));
+    expect(delivery).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/mode is off/) });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 0, disabled: true });
+    delete process.env.RIVET_EMAIL_MODE;
   });
 });

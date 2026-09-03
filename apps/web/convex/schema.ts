@@ -1202,7 +1202,7 @@ export default defineSchema({
     dedupeKey: v.string(),
     providerId: v.optional(v.string()),
     providerEventAt: v.optional(v.number()),
-    attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()) })),
+    attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure"), v.literal("suppressed")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()), mode: v.optional(v.string()), deliveredTo: v.optional(v.string()) })),
     status: v.union(v.literal("queued"), v.literal("leased"), v.literal("provider_accepted"), v.literal("delivered"), v.literal("retrying"), v.literal("failed"), v.literal("suppressed")),
     suppressionReason: v.optional(v.string()),
     nextAttemptAt: v.optional(v.number()),

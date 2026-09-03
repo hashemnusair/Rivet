@@ -48,6 +48,7 @@ import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBran
 import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
+import { resolveEmailMode } from "./emailMode";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -5450,7 +5451,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const updatedBy = settings ? await ctx.db.get(settings.updatedByUserId) : undefined;
       const confirmedBy = settings?.ownerConfirmedByUserId ? await ctx.db.get(settings.ownerConfirmedByUserId) : undefined;
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
+      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
     }
     case "settings.brand.get":
       requirePermission(actor, "settings.manage");
@@ -10997,7 +10998,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason, ownerConfirmedAt: now, ownerConfirmedByUserId: actor.user._id, createdAt: now, updatedAt: now });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} gym-controlled service email type${enabledKinds.length === 1 ? "" : "s"}`, reason: reason || undefined, before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
+      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
     }
     case "settings.operationalPolicies": {
       requirePermission(actor, "settings.manage");

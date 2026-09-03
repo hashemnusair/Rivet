@@ -1870,7 +1870,12 @@ export interface OperationalEmailActivationSettings {
   configurableKinds: string[];
   /** RIVET-controlled billing, subscription, and access notices. */
   mandatoryPlatformKinds: string[];
+  /** True when the worker runs (mode is not off) and a provider is configured. */
   liveWorkerEnabled: boolean;
+  /** RIVET_EMAIL_MODE: off | sandbox | allowlist | live. */
+  deliveryMode: "off" | "sandbox" | "allowlist" | "live";
+  deliveryModeSource: "RIVET_EMAIL_MODE" | "legacy_live_flag" | "default";
+  deliveryModeWarning?: string;
   providerConfigured: boolean;
   webhookConfigured: boolean;
   ownerConfirmed: boolean;

@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
+import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -17,8 +18,9 @@ function providerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
 }
 
-function liveDeliveryEnabled(): boolean {
-  return process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured();
+/** The worker runs in every mode except off, and only with a configured provider. */
+function deliveryEnabled(): boolean {
+  return resolveEmailMode().mode !== "off" && providerConfigured();
 }
 
 export interface QueueOperationalEmailInput {
@@ -176,6 +178,8 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
       outcome: attempt.outcome,
       statusCode: attempt.statusCode,
       errorCode: attempt.errorCode,
+      mode: attempt.mode,
+      deliveredTo: attempt.deliveredTo,
     })),
     retryPolicy: { maxAttempts: MAX_ATTEMPTS, backoffMinutes: [...RETRY_MINUTES] },
     nextAttemptAt: delivery.nextAttemptAt ? utcIso(delivery.nextAttemptAt) : undefined,
@@ -205,7 +209,7 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
   if (!suppressionReason) {
-    if (!liveDeliveryEnabled()) suppressionReason = "External operational email delivery is disabled or the provider is not configured";
+    if (!deliveryEnabled()) suppressionReason = resolveEmailMode().mode === "off" ? "Operational email mode is off (RIVET_EMAIL_MODE)" : "The email provider is not configured";
     else if (input.organizationId && !MANDATORY_PLATFORM_KINDS.has(input.kind)) {
       const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId!)).unique();
       if (!settings?.ownerConfirmedAt) suppressionReason = "The gym owner has not confirmed operational email preferences";
@@ -342,20 +346,26 @@ export const recordAttempt = internalMutation({
     providerId: v.optional(v.string()),
     statusCode: v.optional(v.number()),
     errorCode: v.optional(v.string()),
+    mode: v.optional(v.string()),
+    deliveredTo: v.optional(v.string()),
+    suppressionReason: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const delivery = await ctx.db.get(args.deliveryId);
     if (!delivery || delivery.status !== "leased" || delivery.leaseToken !== args.leaseToken) return null;
     const now = Date.now();
+    const suppressed = Boolean(args.suppressionReason);
     const attempts = [...delivery.attempts, {
       attemptedAt: now,
-      outcome: args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const,
+      outcome: suppressed ? "suppressed" as const : args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const,
       statusCode: args.statusCode,
       errorCode: args.errorCode,
+      mode: args.mode,
+      deliveredTo: args.deliveredTo,
     }];
     const exhausted = attempts.length >= MAX_ATTEMPTS;
-    const status = args.accepted ? "provider_accepted" as const : args.retryable && !exhausted ? "retrying" as const : "failed" as const;
+    const status = suppressed ? "suppressed" as const : args.accepted ? "provider_accepted" as const : args.retryable && !exhausted ? "retrying" as const : "failed" as const;
     const nextAttemptAt = status === "retrying" ? now + (RETRY_MINUTES[Math.min(attempts.length - 1, RETRY_MINUTES.length - 1)] ?? RETRY_MINUTES[RETRY_MINUTES.length - 1] ?? 30) * 60_000 : undefined;
     await ctx.db.patch(delivery._id, {
       attempts,
@@ -365,6 +375,7 @@ export const recordAttempt = internalMutation({
       leaseToken: undefined,
       leaseExpiresAt: undefined,
       lastErrorCode: args.errorCode,
+      ...(suppressed ? { suppressionReason: args.suppressionReason } : {}),
       updatedAt: now,
     });
     const updated = (await ctx.db.get(delivery._id))!;
@@ -428,13 +439,27 @@ export const processDue = internalAction({
   args: {},
   returns: v.object({ processed: v.number(), disabled: v.boolean() }),
   handler: async (ctx) => {
-    if (!liveDeliveryEnabled()) return { processed: 0, disabled: true };
+    if (!deliveryEnabled()) return { processed: 0, disabled: true };
+    const { mode } = resolveEmailMode();
+    const sandboxTo = process.env.RIVET_EMAIL_SANDBOX_TO;
+    const allowlist = parseEmailAllowlist(process.env.RIVET_EMAIL_ALLOWLIST);
     const apiKey = process.env.RESEND_API_KEY!.trim();
     const from = process.env.RESEND_FROM_EMAIL!.trim();
     const deliveries = await ctx.runMutation(internal.operationalEmail.leaseDue, { limit: 25 }) as Delivery[];
     let processed = 0;
     for (const delivery of deliveries) {
       if (!delivery.leaseToken || !delivery.recipientEmail) continue;
+      // The mode decides where the message may go. Sandbox never reaches the
+      // real inbox; allowlist drops with a reason the gym can read; both are
+      // recorded on the attempt so an audit shows exactly what happened.
+      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist });
+      if (route.decision === "drop") {
+        await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted: false, retryable: false, mode, suppressionReason: route.reason });
+        processed += 1;
+        continue;
+      }
+      const to = route.to;
+      const subject = route.decision === "redirect" ? sandboxSubject(delivery.subject, route.originalRecipient) : delivery.subject;
       let accepted = false;
       let retryable = true;
       let providerId: string | undefined;
@@ -444,7 +469,7 @@ export const processDue = internalAction({
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": delivery.dedupeKey },
-          body: JSON.stringify({ from, to: [delivery.recipientEmail], subject: delivery.subject, html: delivery.html, text: delivery.text }),
+          body: JSON.stringify({ from, to: [to], subject, html: delivery.html, text: delivery.text }),
         });
         statusCode = response.status;
         accepted = response.ok;
@@ -461,7 +486,7 @@ export const processDue = internalAction({
       } catch {
         errorCode = "provider_network_error";
       }
-      await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted, retryable, providerId, statusCode, errorCode });
+      await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted, retryable, providerId, statusCode, errorCode, mode, deliveredTo: to });
       processed += 1;
     }
     return { processed, disabled: false };
