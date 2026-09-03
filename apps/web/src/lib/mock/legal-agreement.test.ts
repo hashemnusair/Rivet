@@ -65,8 +65,21 @@ describe("mock subscription agreement parity", () => {
     expect(reveal).toEqual({ idNumber: "9871234567", idType: "national", revealCount: 1 });
     const actor = (await api.getSession()).user.name;
     await expect(api.countersignPlatformAgreement({ agreementId: signed.id, title: "Co-founder", typedName: "Nope", idempotencyKey: "cs" })).rejects.toMatchObject({ code: ERR.VALIDATION });
-    const countersigned = await api.countersignPlatformAgreement({ agreementId: signed.id, title: "Co-founder", typedName: actor, idempotencyKey: "cs" });
-    expect(countersigned).toMatchObject({ status: "countersigned", countersign: { byName: actor, title: "Co-founder" } });
+    const countersigned = await api.countersignPlatformAgreement({ agreementId: signed.id, title: "Co-founder", typedName: actor, signature: { method: "drawn", imageDataUrl: PNG }, idempotencyKey: "cs" });
+    expect(countersigned).toMatchObject({ status: "countersigned", countersign: { byName: actor, title: "Co-founder", signature: { method: "drawn", imageDataUrl: PNG } } });
+    // A second countersignature is ignored unless it is an explicit replacement.
+    expect((await api.countersignPlatformAgreement({ agreementId: signed.id, title: "Founder", typedName: actor, idempotencyKey: "cs2" })).countersign?.title).toBe("Co-founder");
+    const replaced = await api.countersignPlatformAgreement({ agreementId: signed.id, title: "Founder", typedName: actor, signature: { method: "typed", typedName: actor }, replace: true, idempotencyKey: "cs3" });
+    expect(replaced.countersign).toMatchObject({ title: "Founder", signature: { method: "typed" } });
+
+    // The printable twin can be filled in later for a signature captured
+    // before the PDF existed, and is never overwritten once present.
+    const JPEG = `data:image/jpeg;base64,${"/9j/4AAQSkZJRgABAQAA".repeat(20)}`;
+    const completed = await api.attachAgreementPrintSignature({ agreementId: signed.id, printImageDataUrl: JPEG, target: "signatory" });
+    expect(completed.signature.printImageDataUrl).toBe(JPEG);
+    const again = await api.attachAgreementPrintSignature({ agreementId: signed.id, printImageDataUrl: `data:image/jpeg;base64,${"AAAA".repeat(80)}`, target: "signatory" });
+    expect(again.signature.printImageDataUrl).toBe(JPEG);
+    await expect(api.attachAgreementPrintSignature({ agreementId: signed.id, printImageDataUrl: "data:image/png;base64,AAAA", target: "signatory" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const resend = await api.resendPlatformAgreementCopies({ agreementId: signed.id, audience: "rivet", idempotencyKey: "resend-1" });
     expect(resend).toEqual({ sequence: 1, deliveries: [
       { recipient: "elias@rivetjo.com", status: "suppressed", reason: "Operational email mode is off (RIVET_EMAIL_MODE)" },

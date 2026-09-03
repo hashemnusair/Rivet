@@ -49,8 +49,28 @@ describe("agreement PDF", () => {
   it("shows the countersignature and flags a fingerprint mismatch", () => {
     const blocks = flatten({ ...signed, status: "countersigned", hashMatch: false, countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00" } });
     expect(blocks).toContain("Signed and countersigned");
-    expect(blocks).toContain("Elias Hreish, Co-founder, 2 October 2026, 09:00");
+    expect(blocks).toContain("For RIVET: Elias Hreish");
+    expect(blocks).toContain("Co-founder, 2 October 2026, 09:00");
     expect(blocks).toContain("flagged for review");
+  });
+
+  it("draws RIVET's own signature next to the customer's", () => {
+    const jpeg = "data:image/jpeg;base64,/9j/" + "A".repeat(200);
+    const blocks = flatten({
+      ...signed,
+      status: "countersigned",
+      signature: { method: "drawn", printImageDataUrl: jpeg },
+      countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00", signature: { method: "drawn", printImageDataUrl: jpeg } },
+    });
+    expect(blocks).toContain("For the Customer: Omar Haddad");
+    expect(blocks).toContain("For RIVET: Elias Hreish");
+    expect(JSON.parse(blocks).flatMap((block: { type: string; blocks?: Array<{ type: string }> }) => block.blocks ?? []).filter((block: { type: string }) => block.type === "image")).toHaveLength(2);
+    expect(blocks).toContain("Co-founder, 2 October 2026, 09:00");
+  });
+
+  it("falls back to RIVET's typed name when the countersignature was typed", () => {
+    const blocks = flatten({ ...signed, status: "countersigned", countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00", signature: { method: "typed", typedName: "Elias Hreish" } } });
+    expect(blocks).toContain("Typed and adopted as RIVET's signature.");
   });
 
   it("says the drawn signature is on file when there is no printable image", () => {

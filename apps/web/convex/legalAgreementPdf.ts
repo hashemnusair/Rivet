@@ -24,7 +24,7 @@ export interface AgreementPdfInput {
   placeOfSigning?: string;
   documentSha256: string;
   hashMatch: boolean;
-  countersign?: { byName: string; title: string; atLocal: string };
+  countersign?: { byName: string; title: string; atLocal: string; signature?: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string } };
 }
 
 const ID_LABELS = { national: "Jordanian national ID", passport: "Passport" } as const;
@@ -89,12 +89,22 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
   }
   signatureBlocks.push({ type: "paragraph", text: `Signed ${input.signedAtLocal} (${input.timezone}). Electronic signature under the Electronic Transactions Law No. 15 of 2015.`, size: 8.5 });
   signatureBlocks.push({ type: "spacer", height: 8 });
-  signatureBlocks.push({ type: "paragraph", text: "For RIVET", font: "bold", size: 10 });
-  signatureBlocks.push(
-    input.countersign
-      ? { type: "paragraph", text: `${input.countersign.byName}, ${input.countersign.title}, ${input.countersign.atLocal}`, size: 10 }
-      : { type: "paragraph", text: "RIVET will countersign and send the completed agreement.", size: 9 },
-  );
+  signatureBlocks.push({ type: "spacer", height: 4 });
+  signatureBlocks.push({ type: "paragraph", text: `For RIVET${input.countersign ? `: ${input.countersign.byName}` : ""}`, font: "bold", size: 10 });
+  if (!input.countersign) {
+    signatureBlocks.push({ type: "paragraph", text: "RIVET will countersign and send the completed agreement.", size: 9 });
+  } else {
+    const mark = input.countersign.signature;
+    if (mark?.method === "drawn" && mark.printImageDataUrl) {
+      signatureBlocks.push({ type: "image", jpegDataUrl: mark.printImageDataUrl, maxWidth: 240, maxHeight: 90 });
+    } else if (mark?.method === "drawn") {
+      signatureBlocks.push({ type: "paragraph", text: "Signature drawn in RIVET and held with the signed record.", size: 8.5 });
+    } else {
+      signatureBlocks.push({ type: "paragraph", text: mark?.typedName ?? input.countersign.byName, size: 15 });
+      signatureBlocks.push({ type: "paragraph", text: "Typed and adopted as RIVET's signature.", size: 8.5 });
+    }
+    signatureBlocks.push({ type: "paragraph", text: `${input.countersign.title}, ${input.countersign.atLocal}`, size: 8.5 });
+  }
   blocks.push({ type: "keep", blocks: signatureBlocks });
   return blocks;
 }

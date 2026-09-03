@@ -91,7 +91,12 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
         <Row label="For RIVET">
           {agreement.countersign ? (
             <>
-              <span className="font-display text-[20px] italic">{agreement.countersign.typedName}</span>
+              {agreement.countersign.signature?.method === "drawn" && agreement.countersign.signature.imageDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- a signature captured as a data URL, not an optimizable asset
+                <img src={agreement.countersign.signature.imageDataUrl} alt={`Signature of ${agreement.countersign.byName}`} className="h-20 max-w-full rounded border border-line bg-white object-contain" />
+              ) : (
+                <span className="font-display text-[20px] italic">{agreement.countersign.signature?.typedName ?? agreement.countersign.typedName}</span>
+              )}
               <span className="mt-1 block text-[12px] text-ink-2">{agreement.countersign.byName} · {agreement.countersign.title} · {formatDateTime(agreement.countersign.at)}</span>
             </>
           ) : (

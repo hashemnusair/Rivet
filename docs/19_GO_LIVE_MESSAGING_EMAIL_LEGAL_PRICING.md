@@ -214,11 +214,21 @@ the signed details with the ID masked, the full agreement text of the version
 that was signed, the signature, the server time, the fingerprint and the
 countersignature once it exists.
 
+Both sides sign by hand. The customer draws in the modal; RIVET draws in the
+platform console when countersigning, and the PDF carries the two marks side
+by side under "Signatures". A countersignature can be replaced, which is how
+a typed one becomes a drawn one; the replacement is audited and sends a fresh
+completed copy.
+
 A drawn signature is captured twice: the transparent PNG the app shows on
 screen, and an opaque JPEG (`signature.printImageDataUrl`) for the PDF,
 because a PDF embeds JPEG bytes directly and the server has no image decoder.
-A record without the JPEG twin, including anything signed before this change,
-prints "Signature drawn in RIVET and held with the signed record" instead.
+Anything signed before the PDF existed has only the PNG, so opening the
+agreement in the platform console fills the gap: the browser can already
+display the PNG, so it flattens it to JPEG and sends it back through
+`legal.agreement.attach_print_signature`, which only ever fills an empty slot
+and is audited. Until that happens the PDF prints "Signature drawn in RIVET
+and held with the signed record" rather than a blank space.
 
 Two limits worth knowing:
 

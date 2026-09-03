@@ -1163,6 +1163,8 @@ export interface GymOSApi {
   /** Re-queue the emailed copies of a signed agreement, rendered as the record stands now. */
   resendPlatformAgreementCopies(input: import("@/lib/domain/types").ResendAgreementCopiesInput): Promise<import("@/lib/domain/types").ResendAgreementCopiesResult>;
   countersignPlatformAgreement(input: import("@/lib/domain/types").CountersignAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  /** Fill in the printable twin of a drawn signature stored before the PDF existed. */
+  attachAgreementPrintSignature(input: import("@/lib/domain/types").AttachPrintSignatureInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
 
   // Supplier payables and supplier payments (Growth+ operations module)
   listPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesPage>;

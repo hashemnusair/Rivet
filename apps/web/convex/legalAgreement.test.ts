@@ -208,17 +208,25 @@ describe("subscription agreement e-signature", () => {
     expect(JSON.stringify(revealAudit[0])).not.toContain("9871234567");
 
     await expectCode(admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Co-founder", typedName: "Wrong Name", idempotencyKey: "cs-1" })), "VALIDATION_ERROR");
-    const countersigned = await admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Co-founder", typedName: "Elias Hreish", idempotencyKey: "cs-1" })) as Agreement;
-    expect(countersigned).toMatchObject({ status: "countersigned", countersign: { byName: "Elias Hreish", title: "Co-founder" } });
+    // RIVET signs its own side by hand, exactly like the customer.
+    const countersigned = await admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Co-founder", typedName: "Elias Hreish", signature: { method: "drawn", imageDataUrl: PNG }, idempotencyKey: "cs-1" })) as Agreement & { countersign?: { signature?: { method: string; imageDataUrl?: string } } };
+    expect(countersigned).toMatchObject({ status: "countersigned", countersign: { byName: "Elias Hreish", title: "Co-founder", signature: { method: "drawn", imageDataUrl: PNG } } });
+    await expectCode(admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Co-founder", typedName: "Elias Hreish", signature: { method: "typed", typedName: "Someone Else" }, replace: true, idempotencyKey: "cs-bad" })), "VALIDATION_ERROR");
     const again = await admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Co-founder", typedName: "Elias Hreish", idempotencyKey: "cs-2" })) as Agreement;
     expect(again.status).toBe("countersigned");
+    // Replacing RIVET's mark is allowed, audited, and sends a fresh copy.
+    const replaced = await admin.mutation(api.domain.mutate, operation("platform.agreement.countersign", { agreementId: signed.id, title: "Founder", typedName: "Elias Hreish", signature: { method: "typed", typedName: "Elias Hreish" }, replace: true, idempotencyKey: "cs-3" })) as Agreement & { countersign?: { title: string; signature?: { method: string } } };
+    expect(replaced.countersign).toMatchObject({ title: "Founder", signature: { method: "typed" } });
+    const replacedAudit = await t.run(async (ctx) => (await ctx.db.query("platformAuditEvents").collect()).filter((event) => event.action === "agreement.countersign_replaced"));
+    expect(replacedAudit).toHaveLength(1);
     expect((await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } }).legal.agreementStatus).toBe("countersigned");
     const emails = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
     expect(emails.map((row) => row.kind)).toEqual(expect.arrayContaining(["subscription_agreement_signed", "subscription_agreement_countersigned"]));
     // The completed copy carries a PDF that shows both signatures.
     const completed = emails.find((row) => row.kind === "subscription_agreement_countersigned")!;
     const pdf = Array.from(decodeBase64(completed.attachments![0]!.contentBase64), (byte) => String.fromCharCode(byte)).join("");
-    expect(pdf).toContain("(Elias Hreish, Co-founder");
+    expect(pdf).toContain("(For RIVET: Elias Hreish) Tj");
+    expect(pdf).toContain("(Co-founder, ");
     expect(pdf).toContain("Signed and countersigned");
   });
 });

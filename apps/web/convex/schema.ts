@@ -1276,6 +1276,14 @@ export default defineSchema({
     countersignedByName: v.optional(v.string()),
     countersignTitle: v.optional(v.string()),
     countersignTypedName: v.optional(v.string()),
+    /** RIVET's own mark: drawn like the customer's, or a typed name. */
+    countersignSignature: v.optional(v.object({
+      method: v.union(v.literal("drawn"), v.literal("typed")),
+      imageDataUrl: v.optional(v.string()),
+      printImageDataUrl: v.optional(v.string()),
+      typedName: v.optional(v.string()),
+    })),
+    countersignCount: v.optional(v.number()),
     voidedAt: v.optional(v.number()),
     voidReason: v.optional(v.string()),
     idRevealCount: v.number(),

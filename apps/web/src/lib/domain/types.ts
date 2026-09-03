@@ -478,7 +478,7 @@ export interface SubscriptionAgreement {
   /** SHA-256 the signer's browser computed over the text it displayed. */
   clientDocumentSha256?: string;
   hashMatch: boolean;
-  countersign?: { at: ISODateTime; byName: string; title: string; typedName: string };
+  countersign?: { at: ISODateTime; byName: string; title: string; typedName: string; signature?: SubscriptionAgreementSignature };
   idRevealCount: number;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -541,8 +541,21 @@ export interface PlatformAgreementSummary {
 export interface CountersignAgreementInput {
   agreementId: UUID;
   title: string;
+  /** Must match the admin's own account name; also the fallback signature. */
   typedName: string;
+  /** RIVET's mark. Drawn is the default; typed adopts the name above. */
+  signature?: SubscriptionAgreementSignature;
+  /** Replace an existing countersignature instead of refusing it. */
+  replace?: boolean;
   idempotencyKey: string;
+}
+
+export interface AttachPrintSignatureInput {
+  agreementId: UUID;
+  /** Opaque JPEG of a signature already stored as a transparent PNG. */
+  printImageDataUrl: string;
+  /** Which signature to complete. */
+  target: "signatory" | "countersign";
 }
 
 export type AgreementCopyAudience = "rivet" | "all";

@@ -17,7 +17,7 @@ export interface AgreementCopy {
   timezone: string;
   documentSha256: string;
   hashMatch: boolean;
-  countersign?: { byName: string; title: string; atLocal: string };
+  countersign?: { byName: string; title: string; atLocal: string; signature?: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string } };
 }
 
 export type AgreementCopyAudience = "signer" | "rivet";

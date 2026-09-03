@@ -10497,16 +10497,40 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
       if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
-      if (row.status === "countersigned") return this.agreementView(row);
+      const replacing = row.status === "countersigned";
+      if (replacing && input.replace !== true) return this.agreementView(row);
       const title = input.title?.trim() ?? "";
       if (title.length < 2 || title.length > 80) throw ApiError.of(ERR.VALIDATION, "Enter your role at RIVET.", { fieldErrors: { title: ["Enter your role at RIVET."] } });
       const typedName = input.typedName?.trim() ?? "";
       if (typedName.length < 2 || typedName.toLowerCase() !== this.actor().name.trim().toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type your full name exactly as on your RIVET account to countersign.", { fieldErrors: { typedName: ["Type your full name exactly as on your RIVET account to countersign."] } });
+      const mark = input.signature?.method ? input.signature : { method: "typed" as const, typedName };
+      if (mark.method === "drawn") {
+        if (!mark.imageDataUrl?.startsWith("data:image/png;base64,") || mark.imageDataUrl.length <= 200 || mark.imageDataUrl.length > MAX_SIGNATURE_IMAGE_LENGTH) throw ApiError.of(ERR.VALIDATION, "Draw the signature before signing.", { fieldErrors: { signature: ["Draw the signature before signing."] } });
+        if (mark.printImageDataUrl && (!mark.printImageDataUrl.startsWith("data:image/jpeg;base64,") || mark.printImageDataUrl.length > MAX_SIGNATURE_PRINT_IMAGE_LENGTH)) throw ApiError.of(ERR.VALIDATION, "The signature image could not be read. Draw it again.", { fieldErrors: { signature: ["The signature image could not be read. Draw it again."] } });
+      } else if ((mark.typedName ?? "").trim().toLowerCase() !== this.actor().name.trim().toLowerCase()) {
+        throw ApiError.of(ERR.VALIDATION, "The typed signature must match the full name exactly.", { fieldErrors: { signature: ["The typed signature must match the full name exactly."] } });
+      }
       const now = nowISO();
       row.status = "countersigned";
-      row.countersign = { at: now, byName: this.actor().name, title, typedName };
+      row.countersign = { at: now, byName: this.actor().name, title, typedName, signature: { ...mark } };
       row.updatedAt = now;
-      this.recordPlatformAudit({ action: "agreement.countersigned", summary: `Countersigned subscription agreement ${row.reference} for ${row.organizationName}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Countersign", after: { title, hashMatch: row.hashMatch } });
+      this.recordPlatformAudit({ action: replacing ? "agreement.countersign_replaced" : "agreement.countersigned", summary: `${replacing ? "Replaced RIVET's signature on" : "Countersigned"} subscription agreement ${row.reference} for ${row.organizationName}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Countersign", after: { title, hashMatch: row.hashMatch, method: mark.method } });
+      return this.agreementView(row);
+    });
+  }
+
+  attachAgreementPrintSignature(input: T.AttachPrintSignatureInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (input.target !== "signatory" && input.target !== "countersign") throw ApiError.of(ERR.VALIDATION, "Choose which signature to complete.", { fieldErrors: { target: ["Choose which signature to complete."] } });
+      const printImageDataUrl = input.printImageDataUrl?.trim() ?? "";
+      if (!printImageDataUrl.startsWith("data:image/jpeg;base64,") || printImageDataUrl.length <= 200 || printImageDataUrl.length > MAX_SIGNATURE_PRINT_IMAGE_LENGTH) throw ApiError.of(ERR.VALIDATION, "The signature image could not be read.", { fieldErrors: { printImageDataUrl: ["The signature image could not be read."] } });
+      const current = input.target === "signatory" ? row.signature : row.countersign?.signature;
+      if (!current || current.method !== "drawn" || !current.imageDataUrl || current.printImageDataUrl) return this.agreementView(row);
+      current.printImageDataUrl = printImageDataUrl;
+      row.updatedAt = nowISO();
+      this.recordPlatformAudit({ action: "agreement.print_signature_attached", summary: `Completed the printable ${input.target === "signatory" ? "signature" : "countersignature"} on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Printable signature", after: { target: input.target } });
       return this.agreementView(row);
     });
   }

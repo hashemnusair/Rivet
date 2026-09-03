@@ -114,7 +114,13 @@ function agreementView(row: AgreementRow, organizationName: string, options: { r
     documentSha256: row.documentSha256,
     clientDocumentSha256: row.clientDocumentSha256,
     hashMatch: row.hashMatch,
-    countersign: row.countersignedAt ? { at: iso(row.countersignedAt), byName: row.countersignedByName ?? "RIVET", title: row.countersignTitle ?? "", typedName: row.countersignTypedName ?? "" } : undefined,
+    countersign: row.countersignedAt ? {
+      at: iso(row.countersignedAt),
+      byName: row.countersignedByName ?? "RIVET",
+      title: row.countersignTitle ?? "",
+      typedName: row.countersignTypedName ?? "",
+      signature: row.countersignSignature ? { ...row.countersignSignature } : { method: "typed" as const, typedName: row.countersignTypedName ?? "" },
+    } : undefined,
     idRevealCount: row.idRevealCount,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
@@ -192,8 +198,35 @@ function agreementCopy(row: AgreementRow, organizationName: string): AgreementCo
     timezone: row.timezone,
     documentSha256: row.documentSha256,
     hashMatch: row.hashMatch,
-    countersign: row.countersignedAt ? { byName: row.countersignedByName ?? "RIVET", title: row.countersignTitle ?? "", atLocal: localDateTime(row.countersignedAt, row.timezone) } : undefined,
+    countersign: row.countersignedAt ? {
+      byName: row.countersignedByName ?? "RIVET",
+      title: row.countersignTitle ?? "",
+      atLocal: localDateTime(row.countersignedAt, row.timezone),
+      signature: row.countersignSignature ?? { method: "typed", typedName: row.countersignTypedName },
+    } : undefined,
   };
+}
+
+/**
+ * Validate a captured signature, drawn or typed, against the name it must
+ * match. Used for the customer's signature and for RIVET's countersignature,
+ * so both sides are held to the same rules.
+ */
+function readSignature(input: Data, expectedName: string, correlationId: string, field = "signature"): { method: "drawn" | "typed"; imageDataUrl?: string; printImageDataUrl?: string; typedName?: string } {
+  const method = trimmed(input.method) as (typeof SIGNATURE_METHODS)[number];
+  requireField(SIGNATURE_METHODS.includes(method), field, "Sign, or type your name instead.", correlationId);
+  const imageDataUrl = optionalTrimmed(input.imageDataUrl);
+  const printImageDataUrl = optionalTrimmed(input.printImageDataUrl);
+  const typedName = optionalTrimmed(input.typedName);
+  if (method === "drawn") {
+    requireField(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH && imageDataUrl!.length > 200, field, "Draw the signature before signing.", correlationId);
+    // The PDF twin is optional: an older client, or a browser that cannot
+    // produce it, still signs. The PDF then says the signature is on file.
+    requireField(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), field, "The signature image could not be read. Draw it again.", correlationId);
+    return { method, imageDataUrl, printImageDataUrl };
+  }
+  requireField(Boolean(typedName) && typedName!.toLowerCase() === expectedName.trim().toLowerCase(), field, "The typed signature must match the full name exactly.", correlationId);
+  return { method, typedName };
 }
 
 /** The signed agreement as a PDF, named by its reference. */
@@ -346,19 +379,8 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     requireField(consents[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.", correlationId);
   }
 
-  const method = trimmed(signature.method) as (typeof SIGNATURE_METHODS)[number];
-  requireField(SIGNATURE_METHODS.includes(method), "signature", "Sign, or type your name instead.", correlationId);
-  const imageDataUrl = optionalTrimmed(signature.imageDataUrl);
-  const printImageDataUrl = optionalTrimmed(signature.printImageDataUrl);
-  const typedName = optionalTrimmed(signature.typedName);
-  if (method === "drawn") {
-    requireField(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH && imageDataUrl!.length > 200, "signature", "Draw your signature before signing.", correlationId);
-    // The PDF twin is optional: an older client, or a browser that cannot
-    // produce it, still signs. The PDF then says the signature is on file.
-    requireField(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), "signature", "The signature image could not be read. Draw it again.", correlationId);
-  } else {
-    requireField(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.", correlationId);
-  }
+  const mark = readSignature(signature, signatoryName, correlationId);
+  const { method, imageDataUrl, printImageDataUrl, typedName } = mark;
 
   const placeOfSigning = optionalTrimmed(input.placeOfSigning) ?? city;
   requireField(!placeOfSigning || placeOfSigning.length <= 80, "placeOfSigning", "Place of signing is too long.", correlationId);
@@ -504,6 +526,27 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       await insertPlatformAudit(ctx, admin, { action: "agreement.id_revealed", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Revealed the signatory ID number on ${row.reference}`, reason: input.reason.trim(), after: { idType: row.signatory.idType, revealCount: row.idRevealCount + 1 } });
       return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount + 1 };
     }
+    case "legal.agreement.attach_print_signature": {
+      // A drawn signature is stored as a transparent PNG for the screen and an
+      // opaque JPEG for the PDF. Anything signed before the PDF existed has
+      // only the PNG, and the server has no image decoder, so the browser that
+      // can already display it sends the printable twin back once.
+      const admin = await requirePlatformAdmin(ctx, request.correlationId);
+      const row = await agreementByPublicId(ctx, optionalTrimmed(input.agreementId), admin.correlationId);
+      const target = trimmed(input.target) || "signatory";
+      requireField(target === "signatory" || target === "countersign", "target", "Choose which signature to complete.", admin.correlationId);
+      const printImageDataUrl = optionalTrimmed(input.printImageDataUrl);
+      requireField(Boolean(printImageDataUrl) && printImageDataUrl!.startsWith("data:image/jpeg;base64,") && printImageDataUrl!.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH && printImageDataUrl!.length > 200, "printImageDataUrl", "The signature image could not be read.", admin.correlationId);
+      const current = target === "signatory" ? row.signature : row.countersignSignature;
+      const organization = await ctx.db.get(row.organizationId);
+      const organizationName = organization?.name ?? row.customer.legalName;
+      // Only ever fills a gap: an existing printable image is never replaced.
+      if (!current || current.method !== "drawn" || !current.imageDataUrl || current.printImageDataUrl) return agreementView(row, organizationName);
+      const next = { ...current, printImageDataUrl };
+      await ctx.db.patch(row._id, target === "signatory" ? { signature: next, updatedAt: Date.now() } : { countersignSignature: next, updatedAt: Date.now() });
+      await insertPlatformAudit(ctx, admin, { action: "agreement.print_signature_attached", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Completed the printable ${target === "signatory" ? "signature" : "countersignature"} on ${row.reference}`, after: { target } });
+      return agreementView((await ctx.db.get(row._id))!, organizationName);
+    }
     case "platform.agreement.resend_copies": {
       const admin = await requirePlatformAdmin(ctx, request.correlationId);
       const row = await agreementByPublicId(ctx, optionalTrimmed(input.agreementId), admin.correlationId);
@@ -534,14 +577,34 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: admin.correlationId });
       const organization = await ctx.db.get(row.organizationId);
       const organizationName = organization?.name ?? row.customer.legalName;
-      if (row.status === "countersigned") return agreementView(row, organizationName);
+      // Countersigning twice is a no-op unless the admin asks to replace the
+      // mark, which is how a typed countersignature becomes a drawn one.
+      const replacing = row.status === "countersigned";
+      if (replacing && input.replace !== true) return agreementView(row, organizationName);
       const title = trimmed(input.title);
       requireField(title.length >= 2 && title.length <= 80, "title", "Enter your role at RIVET.", admin.correlationId);
       const typedName = trimmed(input.typedName);
       requireField(typedName.length >= 2 && typedName.toLowerCase() === admin.user.fullName.trim().toLowerCase(), "typedName", "Type your full name exactly as on your RIVET account to countersign.", admin.correlationId);
+      const mark = readSignature(value(input.signature).method ? value(input.signature) : { method: "typed", typedName }, admin.user.fullName, admin.correlationId);
       const now = Date.now();
-      await ctx.db.patch(row._id, { status: "countersigned", countersignedAt: now, countersignedByUserId: admin.user._id, countersignedByName: admin.user.fullName, countersignTitle: title, countersignTypedName: typedName, updatedAt: now });
-      await insertPlatformAudit(ctx, admin, { action: "agreement.countersigned", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Countersigned subscription agreement ${row.reference} for ${organizationName}`, after: { title, hashMatch: row.hashMatch } });
+      await ctx.db.patch(row._id, {
+        status: "countersigned",
+        countersignedAt: now,
+        countersignedByUserId: admin.user._id,
+        countersignedByName: admin.user.fullName,
+        countersignTitle: title,
+        countersignTypedName: typedName,
+        countersignSignature: mark,
+        countersignCount: (row.countersignCount ?? 0) + 1,
+        updatedAt: now,
+      });
+      await insertPlatformAudit(ctx, admin, {
+        action: replacing ? "agreement.countersign_replaced" : "agreement.countersigned",
+        entityPublicId: row.publicId,
+        entityLabel: row.reference,
+        summary: `${replacing ? "Replaced RIVET's signature on" : "Countersigned"} subscription agreement ${row.reference} for ${organizationName}`,
+        after: { title, hashMatch: row.hashMatch, method: mark.method, attempt: (row.countersignCount ?? 0) + 1 },
+      });
       const updated = (await ctx.db.get(row._id))!;
       const rendered = renderAgreementCopyEmail(agreementCopy(updated, organizationName), "signer", { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL });
       await enqueueOperationalEmail(ctx, {
@@ -553,7 +616,7 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         recipientEmail: row.signatory.email,
         relatedEntityType: "subscription_agreement",
         relatedEntityPublicId: row.publicId,
-        dedupeKey: `agreement-countersigned:${row.publicId}`,
+        dedupeKey: `agreement-countersigned:${row.publicId}:${(row.countersignCount ?? 0) + 1}`,
         attachments: [agreementPdfAttachment(updated, organizationName)],
         ...rendered,
       });

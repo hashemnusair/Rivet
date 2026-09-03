@@ -56,6 +56,11 @@ describe("platform agreements console", () => {
     const nameInput = within(dialog).getByTestId("countersign-name");
     await user.clear(nameInput);
     await user.type(nameInput, actorName);
+    // RIVET signs its own side. A canvas cannot be drawn on in jsdom, so the
+    // test adopts the typed name, which the server checks against the account.
+    expect(within(dialog).getByTestId("countersign")).toBeDisabled();
+    await user.click(within(dialog).getByRole("radio", { name: "Type my name" }));
+    await user.type(within(dialog).getByLabelText("Type your full name as your signature"), actorName);
     await user.click(within(dialog).getByTestId("countersign"));
     await waitFor(() => expect(within(dialog).getByText(new RegExp(`Countersigned by ${actorName}`))).toBeInTheDocument());
 

@@ -2,7 +2,7 @@
 
 import { Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
@@ -12,6 +12,8 @@ import { useApp } from "@/lib/providers/app-providers";
 import { formatDateTime } from "@/lib/utils/dates";
 import { AGREEMENT_COPY_RECIPIENTS } from "../../../../convex/legalAgreementText";
 import { AgreementRecord } from "@/features/legal/agreement-record";
+import { SignaturePad, type SignatureValue } from "@/features/legal/signature-pad";
+import { flattenSignatureToJpeg } from "@/features/legal/signature-image";
 import { downloadAgreementPdf } from "@/features/legal/agreement-pdf";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,13 +103,27 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
   const [revealedId, setRevealedId] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [countersignKey] = useState(() => newKey("countersign"));
+  const [countersignature, setCountersignature] = useState<SignatureValue>({ method: "drawn" });
+  const [replacing, setReplacing] = useState(false);
   const [includeSigner, setIncludeSigner] = useState(false);
   const [resendKey, setResendKey] = useState(() => newKey("resend"));
   const [resent, setResent] = useState<ResendAgreementCopiesResult>();
 
-  const countersign = useApiMutation((api) => api.countersignPlatformAgreement({ agreementId, title: title.trim(), typedName: typedName.trim(), idempotencyKey: countersignKey }), {
-    onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
+  const countersign = useApiMutation((api) => api.countersignPlatformAgreement({
+    agreementId,
+    title: title.trim(),
+    typedName: typedName.trim(),
+    signature: countersignature.method === "drawn"
+      ? { method: "drawn", imageDataUrl: countersignature.imageDataUrl, printImageDataUrl: countersignature.printImageDataUrl }
+      : { method: "typed", typedName: countersignature.typedName?.trim() },
+    replace: replacing,
+    idempotencyKey: countersignKey,
+  }), {
+    onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); setReplacing(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
     onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not countersign."),
+  });
+  const attachPrint = useApiMutation((api, input: { target: "signatory" | "countersign"; printImageDataUrl: string }) => api.attachAgreementPrintSignature({ agreementId, ...input }), {
+    onSuccess: async () => { await invalidate([qk.platformAgreement(agreementId)]); },
   });
   // Copies are re-rendered from the record as it stands, so a resend carries
   // the countersignature and the PDF even when the first attempt was
@@ -128,6 +144,28 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
   });
 
   const agreement: SubscriptionAgreement | undefined = detail.data;
+  const countersignatureReady = countersignature.method === "drawn" ? Boolean(countersignature.imageDataUrl) : Boolean(countersignature.typedName?.trim());
+
+  // A signature captured before the PDF existed has no printable twin. This
+  // browser can read the stored PNG, so it fills the gap once and the emailed
+  // copies carry the real signature from then on.
+  const backfilled = useRef(new Set<string>());
+  useEffect(() => {
+    if (!agreement) return;
+    const targets: Array<{ target: "signatory" | "countersign"; signature?: { method: string; imageDataUrl?: string; printImageDataUrl?: string } }> = [
+      { target: "signatory", signature: agreement.signature },
+      { target: "countersign", signature: agreement.countersign?.signature },
+    ];
+    for (const { target, signature } of targets) {
+      const key = `${agreement.id}:${target}`;
+      if (backfilled.current.has(key)) continue;
+      if (signature?.method !== "drawn" || !signature.imageDataUrl || signature.printImageDataUrl) continue;
+      backfilled.current.add(key);
+      void flattenSignatureToJpeg(signature.imageDataUrl).then((printImageDataUrl) => {
+        if (printImageDataUrl) attachPrint.mutate({ target, printImageDataUrl });
+      });
+    }
+  }, [agreement, attachPrint]);
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl">
@@ -148,12 +186,20 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                 </section>
                 <section className="panel space-y-3 p-4">
                   <p className="context-label">Countersign for RIVET</p>
-                  {agreement.status === "countersigned" ? <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}.</p> : (
+                  {agreement.status === "countersigned" && !replacing ? (
+                    <>
+                      <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}.</p>
+                      <Button size="xs" variant="secondary" onClick={() => setReplacing(true)} data-testid="replace-countersignature"><PenLine /> Replace RIVET&apos;s signature</Button>
+                    </>
+                  ) : (
                     <>
                       {!agreement.hashMatch ? <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12px] text-warning-deep">The signer’s browser produced a different document fingerprint from RIVET’s copy. Review before countersigning.</p> : null}
+                      {replacing ? <p className="text-[12px] text-ink-3">The new signature replaces the one on the record. The signatory receives a fresh completed copy, and the change is audited.</p> : null}
                       <Field label="Your role at RIVET" required><Input value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
-                      <Field label="Type your full name to sign" required hint="Must match your RIVET account name exactly."><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} className="font-display text-[18px] italic" data-testid="countersign-name" /></Field>
-                      <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> Countersign</Button>
+                      <Field label="Type your full name to confirm" required hint="Must match your RIVET account name exactly."><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} data-testid="countersign-name" /></Field>
+                      <Field label="Sign for RIVET" required><SignaturePad value={countersignature} onChange={setCountersignature} signatoryName={typedName} /></Field>
+                      <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2 || !countersignatureReady} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> {replacing ? "Replace the signature" : "Countersign"}</Button>
+                      {replacing ? <Button size="xs" variant="ghost" onClick={() => setReplacing(false)}>Cancel</Button> : null}
                     </>
                   )}
                 </section>

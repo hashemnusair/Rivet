@@ -20,7 +20,7 @@ export function agreementPdfInput(agreement: SubscriptionAgreement): AgreementPd
     placeOfSigning: agreement.placeOfSigning,
     documentSha256: agreement.documentSha256,
     hashMatch: agreement.hashMatch,
-    countersign: agreement.countersign ? { byName: agreement.countersign.byName, title: agreement.countersign.title, atLocal: agreement.countersign.at } : undefined,
+    countersign: agreement.countersign ? { byName: agreement.countersign.byName, title: agreement.countersign.title, atLocal: agreement.countersign.at, signature: agreement.countersign.signature } : undefined,
   };
 }
 

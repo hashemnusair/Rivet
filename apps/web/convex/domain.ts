@@ -7796,7 +7796,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return await publicOfferView(ctx, token);
   }
 
-  if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign" || operation === "platform.agreement.resend_copies") {
+  if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign" || operation === "platform.agreement.resend_copies" || operation === "legal.agreement.attach_print_signature") {
     return await legalAgreementMutation(ctx, operation, input, request);
   }
 
