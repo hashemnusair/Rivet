@@ -359,12 +359,34 @@
   font-feature-settings: "tnum";
 }
 
-/* Eyebrow / section label — the operational voice */
+/*
+  Legacy label utilities retained only while the product-wide migration is in
+  progress. New product code uses ContextLabel or TechnicalLabel explicitly so
+  typography communicates whether content is human context or system metadata.
+*/
 @utility eyebrow {
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+@utility context-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1rem;
+  color: var(--color-ink-3);
+}
+
+@utility technical-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-ink-3);
 }

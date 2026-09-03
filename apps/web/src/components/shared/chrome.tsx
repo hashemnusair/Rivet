@@ -5,31 +5,36 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
+import { ContextLabel } from "@/components/ui/typography";
 import { usePermissions } from "@/lib/providers/app-providers";
 import type { Page } from "@/lib/domain/types";
 
-/** Page title block: eyebrow + display title + actions. */
+/** Page title block: optional human context + display title + actions. */
 export function PageHeader({
+  sectionLabel,
   eyebrow,
   title,
   description,
   actions,
   className,
 }: {
+  sectionLabel?: string;
+  /** @deprecated Migrate callers to sectionLabel, then remove this alias. */
   eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
   className?: string;
 }) {
+  const context = sectionLabel ?? eyebrow;
   return (
     <div className={cn("flex flex-wrap items-end justify-between gap-3", className)}>
       <div className="min-w-0">
-        {eyebrow ? <p className="eyebrow mb-1.5">{eyebrow}</p> : null}
+        {context ? <ContextLabel className="mb-1.5">{context}</ContextLabel> : null}
         <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight text-ink">
           {title}
         </h1>
-        {description ? <p className="mt-1 text-[13px] text-ink-2 max-w-2xl">{description}</p> : null}
+        {description ? <p className="mt-1 max-w-2xl text-[13.5px] text-ink-2">{description}</p> : null}
       </div>
       {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
     </div>
@@ -102,7 +107,7 @@ export function DataPagination<T>({
   );
 }
 
-/** Stat block — label above, mono figure, optional delta/context line. */
+/** Stat block — readable label, tabular figure, optional delta/context line. */
 export function Stat({
   label,
   value,
@@ -118,7 +123,7 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <p className="eyebrow">{label}</p>
+      <ContextLabel>{label}</ContextLabel>
       <div
         className={cn(
           "mt-1.5 text-[26px] font-semibold leading-none tabular tracking-[-0.02em]",
