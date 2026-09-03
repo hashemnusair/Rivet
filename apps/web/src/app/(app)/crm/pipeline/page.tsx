@@ -195,7 +195,6 @@ function PipelinePageInner() {
   return (
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
-        eyebrow="Growth"
         title="Leads"
         description="Drag leads between trial, sale outcomes, and unanswered contact work."
         actions={
@@ -269,7 +268,7 @@ function PipelinePageInner() {
                     <MoneyText money={{ amount: stageValue, currency: "JOD" }} compact className="text-[11px] text-ink-3" />
                   ) : null}
                   </div>
-                  <p className="mt-0.5 text-[10.5px] text-ink-3">{hint}</p>
+                  <p className="mt-0.5 text-[12px] text-ink-3">{hint}</p>
                 </header>
                 <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                   {stageLeads.map((lead) => (
@@ -408,7 +407,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
             <tr className="border-b border-line">
               <th className="w-10 px-3 py-2 text-start"><Checkbox checked={leads.length > 0 && leads.every((lead) => selected.has(lead.id))} onCheckedChange={(checked) => { const next = new Set(selected); leads.forEach((lead) => { if (checked) next.add(lead.id); else next.delete(lead.id); }); onSelectedChange(next); }} aria-label="Select all leads on this page" /></th>
               {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up", "Actions"].map((h) => (
-                <th key={h} className="whitespace-nowrap px-3 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
+                <th key={h} className="whitespace-nowrap px-3 py-2 text-start text-[11.5px] font-medium text-ink-3">
                   {h}
                 </th>
               ))}

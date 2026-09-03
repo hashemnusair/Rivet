@@ -70,7 +70,7 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
 function StatCell({ label, value, border }: { label: string; value: React.ReactNode; border?: boolean }) {
   return (
     <div className={cn("px-4 py-3.5", border && "border-t border-line")}>
-      <p className="eyebrow">{label}</p>
+      <p className="context-label">{label}</p>
       <div className="mt-1 text-[20px] font-medium tabular">{value}</div>
     </div>
   );
@@ -270,9 +270,9 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
           <DialogFooter><Button variant="secondary" onClick={() => setBookingOpen(false)}>Cancel</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Package catalog</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[10.5px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Create charge</Button> : null}</div></article>) : <p className="p-5 text-[11px] text-ink-3">No active PT packages.</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="eyebrow">Recent orders</p><div className="mt-2 space-y-1">{experience.orders.slice(0, 3).map((order) => <p key={order.id} className="flex justify-between text-[10.5px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
+      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Package catalog</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[10.5px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Create charge</Button> : null}</div></article>) : <p className="p-5 text-[11px] text-ink-3">No active PT packages.</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="context-label">Recent orders</p><div className="mt-2 space-y-1">{experience.orders.slice(0, 3).map((order) => <p key={order.id} className="flex justify-between text-[10.5px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
     </div>
-    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[10.5px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
+    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
   </div>;
 }
 
@@ -458,13 +458,13 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
       ))}
       {member.sensitiveNotes ? (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning-bg/50 p-3">
-          <p className="eyebrow mb-1 text-warning-deep">Sensitive note</p>
+          <p className="context-label mb-1 text-warning-deep">Sensitive note</p>
           <p className="text-[12.5px] text-ink-2">{member.sensitiveNotes}</p>
         </div>
       ) : null}
       {member.notes ? (
         <div className="mt-3 rounded-md border border-line bg-sunken/40 p-3">
-          <p className="eyebrow mb-1">Desk note</p>
+          <p className="context-label mb-1">Desk note</p>
           <p className="text-[12.5px] text-ink-2">{member.notes}</p>
         </div>
       ) : null}

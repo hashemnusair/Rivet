@@ -126,7 +126,7 @@ export default function RuleEditorPageClient() {
     <div className="space-y-4">
       <Breadcrumbs items={[{ label: "Automation history", href: "/audit?category=automations" }, { label: rule.name }]} />
       <PageHeader
-        eyebrow="System · Automations"
+        sectionLabel="Automation rule"
         title={rule.name}
         description={`Trigger: ${TRIGGER_LABELS[rule.trigger]}. Last run ${rule.lastRunAt ? formatDateTime(rule.lastRunAt) : "never"} · ${rule.executionsLast30Days} executions in 30 days.`}
         actions={
@@ -278,8 +278,8 @@ export default function RuleEditorPageClient() {
             {runPreviewQuery.isLoading ? <Skeleton className="h-24 w-full" /> : runPreviewQuery.isError ? <ErrorState onRetry={() => runPreviewQuery.refetch()} /> : (
               <div className="rounded-md border border-line bg-sunken/40 p-3">
                 <div className="grid grid-cols-2 gap-3 text-[12px]">
-                  <div><p className="eyebrow">Eligible records</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.eligibleCount ?? 0}</p></div>
-                  <div><p className="eyebrow">Dedupe suppressed</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.duplicateCount ?? 0}</p></div>
+                  <div><p className="context-label">Eligible records</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.eligibleCount ?? 0}</p></div>
+                  <div><p className="context-label">Dedupe suppressed</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.duplicateCount ?? 0}</p></div>
                 </div>
                 {(runPreviewQuery.data?.candidates.length ?? 0) > 0 ? <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto border-t border-line text-[12px]">{runPreviewQuery.data!.candidates.map((candidate) => <li key={`${candidate.subjectType}:${candidate.subjectId}`} className="flex items-center justify-between gap-3 py-2"><span className="truncate">{candidate.subjectName}</span><Badge variant={candidate.duplicate ? "neutral" : "success"}>{candidate.duplicate ? "duplicate" : "eligible"}</Badge></li>)}</ul> : <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-3">No persisted records match this trigger right now.</p>}
               </div>
@@ -313,7 +313,7 @@ function renderTemplate(template: MessageTemplate, lang: "en" | "ar"): string {
 function TemplateBubble({ label, body, rtl }: { label: string; body: string; rtl?: boolean }) {
   return (
     <div className="p-4">
-      <p className="eyebrow mb-2">{label}</p>
+      <p className="context-label mb-2">{label}</p>
       <div
         dir={rtl ? "rtl" : "ltr"}
         className={cn(
@@ -323,7 +323,7 @@ function TemplateBubble({ label, body, rtl }: { label: string; body: string; rtl
       >
         {body}
       </div>
-      <p className="mt-1.5 font-mono text-[10px] text-ink-4" dir="ltr">
+      <p className="mt-1.5 font-mono text-[10.5px] text-ink-4" dir="ltr">
         WhatsApp · sandbox provider · sample variables
       </p>
     </div>

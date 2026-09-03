@@ -59,7 +59,7 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
     <section className="panel p-4" data-testid="offer-work-panel">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Optional sales tool</p>
+          <p className="context-label">Optional sales tool</p>
           <h2 className="mt-1 font-display text-[15px] font-semibold">Membership offers</h2>
           <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Send a branded link the lead can accept or decline without creating an account.</p>
         </div>

@@ -334,7 +334,7 @@ export default function ReceptionPage() {
                     <span className="mt-0.5 text-[11px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
-                      <p className="truncate font-mono text-[10px] text-night-ink-3">{c.memberNumber}</p>
+                      <p className="truncate font-mono text-[10.5px] text-night-ink-3">{c.memberNumber}</p>
                       {c.overrideReason ? (
                         <p className="truncate text-[11px] text-night-ink-3" title={c.overrideReason}>
                           override · {c.overrideReason}

@@ -152,9 +152,9 @@ export function FacilityTaskWorkspace({ branchId, zones, writeEnabled }: { branc
   return (
     <div className="space-y-4" data-testid="operations-facilities">
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <section className="panel p-3 sm:p-4"><p className="eyebrow">Open work</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{activeTasks.length}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Everything still needing attention</p></section>
-        <section className={cn("panel p-3 sm:p-4", criticalCount > 0 && "border-danger/40 bg-danger-bg/30")}><p className="eyebrow">Critical</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{criticalCount}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Handle these before routine work</p></section>
-        <section className="panel p-3 sm:p-4"><p className="eyebrow">In progress</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{inProgressCount}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Someone has started these tasks</p></section>
+        <section className="panel p-3 sm:p-4"><p className="context-label">Open work</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{activeTasks.length}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Everything still needing attention</p></section>
+        <section className={cn("panel p-3 sm:p-4", criticalCount > 0 && "border-danger/40 bg-danger-bg/30")}><p className="context-label">Critical</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{criticalCount}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Handle these before routine work</p></section>
+        <section className="panel p-3 sm:p-4"><p className="context-label">In progress</p><p className="mt-1 font-display text-2xl font-semibold" dir="ltr">{inProgressCount}</p><p className="mt-1 hidden text-[11px] text-ink-3 sm:block">Someone has started these tasks</p></section>
       </div>
 
       <section className="panel overflow-hidden">

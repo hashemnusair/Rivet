@@ -174,7 +174,7 @@ export default function LeadDetailPageClient() {
           <section className="panel p-4" data-testid="trial-workflow">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Step 1</p>
+                <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">Step 1</p>
                 <h2 className="mt-1 font-display text-[16px] font-semibold">Trial</h2>
               </div>
               {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatus.replaceAll("_", " ")}</Badge> : null}
@@ -224,7 +224,7 @@ export default function LeadDetailPageClient() {
 
           {trialDone && !saleDone && !saleFailed ? (
             <section className="panel p-4" data-testid="membership-sale-step">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Step 2</p>
+              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">Step 2</p>
               <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
               <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -321,7 +321,7 @@ function SimpleStep({ number, title, detail, state }: { number: number; title: s
   return (
     <li className={`rounded-md border px-3 py-2.5 ${state === "current" ? "border-ink bg-sunken" : state === "done" ? "border-success/35 bg-success-bg/40" : state === "stopped" ? "border-signal/25 bg-signal-bg/30" : "border-line"}`} aria-current={state === "current" ? "step" : undefined}>
       <div className="flex items-center gap-2">
-        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-mono ${state === "done" ? "border-success bg-success text-white" : state === "current" ? "border-ink bg-ink text-paper" : "border-line-3 text-ink-3"}`}>{state === "done" ? <Check className="size-3" /> : number}</span>
+        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[10.5px] font-mono ${state === "done" ? "border-success bg-success text-white" : state === "current" ? "border-ink bg-ink text-paper" : "border-line-3 text-ink-3"}`}>{state === "done" ? <Check className="size-3" /> : number}</span>
         <span className="text-[12.5px] font-medium">{title}</span>
       </div>
       <p className="mt-1 ps-7 text-[11px] text-ink-3">{detail}</p>

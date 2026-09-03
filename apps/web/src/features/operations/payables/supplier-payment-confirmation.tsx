@@ -64,7 +64,7 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
         <article id="receipt-print" className="panel mx-auto w-full max-w-xl px-8 py-8 text-[13px]">
           <header className="border-b border-dashed border-line-3 pb-4">
-            <p className="eyebrow">Supplier payment confirmation</p>
+            <p className="context-label">Supplier payment confirmation</p>
             <h1 className="mt-1 font-display text-[20px] font-semibold tracking-tight">{detail.organization.name}</h1>
             <p className="text-[12px] text-ink-2">{detail.branch.name}{detail.branch.address ? ` · ${detail.branch.address}` : ""}</p>
             {detail.branch.phone ? <p className="text-[12px] text-ink-2" dir="ltr">{detail.branch.phone}</p> : null}
@@ -108,13 +108,13 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
 
         <aside className="no-print space-y-4 self-start">
           <section className="panel p-4">
-            <h3 className="eyebrow mb-2.5">Status</h3>
+            <h3 className="context-label mb-2.5">Status</h3>
             <div className="flex flex-wrap gap-1.5">{reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>Recorded</Badge>}<LedgerStatusBadge status={detail.ledgerPostingStatus} /></div>
             {detail.reversal ? <p className="mt-2 text-[12px] text-ink-2">Reversal in ledger: {ledgerStatusLabel(detail.reversal.ledgerPostingStatus).toLowerCase()}.</p> : null}
             <p className="mt-2 text-[12px] text-ink-3">Recording a payment and posting it to the ledger are separate steps. Owners post from Statements → Ledger controls.</p>
           </section>
           <section className="panel p-4 text-[12.5px]">
-            <h3 className="eyebrow mb-2.5">Next</h3>
+            <h3 className="context-label mb-2.5">Next</h3>
             <ul className="space-y-2">
               <li><Link href={`/operations/payables?supplier=${encodeURIComponent(detail.supplierId)}`} className="underline decoration-line-3 underline-offset-2 hover:text-ink">Open {detail.supplierName}’s payables</Link></li>
               <li><Link href="/operations?tab=suppliers" className="underline decoration-line-3 underline-offset-2 hover:text-ink">Supplier directory</Link></li>

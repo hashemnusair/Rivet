@@ -70,7 +70,6 @@ function AuditPageInner() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="System"
         title="Audit log"
         description="Every sensitive action: who, what, when, why — with before and after. Append-only by design."
       />
@@ -179,7 +178,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
           <div className="grid gap-3 md:grid-cols-2">
             {event.reason ? (
               <div className="rounded-md border border-line bg-surface p-3 md:col-span-2">
-                <p className="eyebrow mb-1">Reason</p>
+                <p className="context-label mb-1">Reason</p>
                 <p className="text-[12.5px]">{event.reason}</p>
               </div>
             ) : null}
@@ -200,7 +199,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
 function DiffPanel({ label, values, highlight }: { label: string; values: Record<string, string | number | null>; highlight?: boolean }) {
   return (
     <div className={cn("rounded-md border p-3", highlight ? "border-line bg-surface" : "border-line bg-surface/70")}>
-      <p className="eyebrow mb-1.5">{label}</p>
+      <p className="context-label mb-1.5">{label}</p>
       <dl className="space-y-1">
         {Object.entries(values).map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-2 text-[12px]">

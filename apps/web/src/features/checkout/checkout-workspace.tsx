@@ -114,7 +114,7 @@ export function CheckoutWorkspace() {
 
   if (!can("members.read")) return <ForbiddenState description="Checkout is limited to gym team members with operational read access." />;
   if (!can("payments.collect")) return <ForbiddenState description="Checkout requires permission to collect payments." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader eyebrow="Front desk" title="Checkout" description="Loading workspace access…" /><Skeleton className="h-48 w-full" /></div>;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title="Checkout" description="Loading workspace access…" /><Skeleton className="h-48 w-full" /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Checkout is not included" description="The Growth workspace module adds stock, checkout, suppliers, and purchase orders." className="mt-4" />;
   if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Checkout is paused" description="An organization owner can enable the operations module from workspace settings." className="mt-4" />;
@@ -129,7 +129,7 @@ export function CheckoutWorkspace() {
       {branchSelectionError ? <p className="basis-full text-[12px] text-danger" role="alert">{branchSelectionError}</p> : null}
     </div>
   ) : null;
-  const header = <PageHeader eyebrow="Front desk" title="Checkout" description={branchName ? `Selling from ${branchName}. Walk-in by default; attach a member only when it matters.` : "Sell stock at the desk. The server records the payment, receipt, and stock movement together."} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button>} />;
+  const header = <PageHeader title="Checkout" description={branchName ? `Selling from ${branchName}. Walk-in by default; attach a member only when it matters.` : "Sell stock at the desk. The server records the payment, receipt, and stock movement together."} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button>} />;
 
   if (completed) {
     return (

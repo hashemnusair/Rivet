@@ -47,7 +47,7 @@ function NotebookArt() {
         ↓
       </span>
       <div className="w-44 rounded-md border border-line bg-surface p-3 shadow-card animate-pin-pop" style={{ animationDelay: "1s" }}>
-        <p className="eyebrow">Ledger</p>
+        <p className="context-label">Ledger</p>
         <div className="mt-2 space-y-1.5">
           <div className="h-1.5 rounded bg-line" />
           <div className="h-1.5 rounded bg-line" />
@@ -63,7 +63,7 @@ function QueueRow({ label, badge, hint, delay }: { label: string; badge: ReactNo
     <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2">
       <div className="min-w-0">
         <p className="truncate text-[12px] font-medium">{label}</p>
-        {hint ? <p className="text-[10.5px] text-ink-3">{hint}</p> : null}
+        {hint ? <p className="text-[12px] text-ink-3">{hint}</p> : null}
       </div>
       <span className="animate-fade-up" style={{ animationDelay: delay }}>{badge}</span>
     </div>
@@ -202,52 +202,52 @@ function RoutineArt() {
   );
 }
 
-const TUTORIAL_STEPS: readonly { key: string; eyebrow: string; title: string; body: string; art: () => ReactNode }[] = [
+const TUTORIAL_STEPS: readonly { key: string; context: string; title: string; body: string; art: () => ReactNode }[] = [
   {
     key: "notebook",
-    eyebrow: "The notebook",
+    context: "The notebook",
     title: "One honest notebook",
     body: "Every payment, retail sale, repair, and machine purchase becomes a line in one auditable notebook. Nothing is invented — figures only ever come from facts you post.",
     art: NotebookArt,
   },
   {
     key: "queue",
-    eyebrow: "The queue",
+    context: "The queue",
     title: "Refresh finds the facts",
     body: "Refresh queue scans your operations and lists everything that could be posted. Pending means ready to go; unconfigured means something is missing — and the row says exactly what, in plain words.",
     art: QueueArt,
   },
   {
     key: "posting",
-    eyebrow: "Posting",
+    context: "Posting",
     title: "You post — it balances",
     body: "Posting turns a fact into a balanced journal entry: every debit has an equal credit, so the books can never drift. Posted entries are permanent; corrections happen by audited reversal, never deletion.",
     art: BalanceArt,
   },
   {
     key: "income",
-    eyebrow: "Income statement",
+    context: "Income statement",
     title: "What you earned vs. spent",
     body: "One period's story: money earned minus money spent is your net income. Membership money paid in advance counts only as it is earned, day by day.",
     art: IncomeArt,
   },
   {
     key: "balance",
-    eyebrow: "Balance sheet",
+    context: "Balance sheet",
     title: "A photo of one day",
     body: "What you own equals what you owe plus what is yours. The page checks the equation for you — the difference should always read 0.000.",
     art: BalanceSheetArt,
   },
   {
     key: "cashflow",
-    eyebrow: "Cash flow",
+    context: "Cash flow",
     title: "Follow the actual money",
     body: "Opening cash, what moved, closing cash — classified by activity and reconciled against an independent count of your cash accounts.",
     art: CashflowArt,
   },
   {
     key: "routine",
-    eyebrow: "Your routine",
+    context: "Your routine",
     title: "Two clicks a month",
     body: "Refresh the queue, post whatever is pending, read your statements. Flags are not errors — they are the system asking a human to glance before the books claim completeness.",
     art: RoutineArt,
@@ -283,8 +283,8 @@ export function LedgerTutorial() {
               {step.art()}
             </div>
             <div>
-              <p className="eyebrow">
-                {step.eyebrow} · {stepIndex + 1} of {TUTORIAL_STEPS.length}
+              <p className="context-label">
+                {step.context} · {stepIndex + 1} of {TUTORIAL_STEPS.length}
               </p>
               <h3 className="mt-1 text-[16px] font-semibold">{step.title}</h3>
               <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">{step.body}</p>

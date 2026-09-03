@@ -67,7 +67,6 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Finance"
         title="Payments"
         description="Every payment, refund and void — the immutable money trail."
         actions={

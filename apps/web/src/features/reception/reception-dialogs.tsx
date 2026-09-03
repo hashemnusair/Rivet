@@ -77,7 +77,7 @@ export function OverrideCheckInDialog({
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-signal/30 bg-signal-bg px-3 py-2.5">
-            <p className="eyebrow text-signal-deep">Entry was blocked because</p>
+            <p className="context-label text-signal-deep">Entry was blocked because</p>
             <ul className="mt-1.5 space-y-0.5">
               {preview.reasonCodes.map((code) => (
                 <li key={code} className="text-[13px] text-signal-deep">

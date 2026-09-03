@@ -51,7 +51,6 @@ function MembershipsWorkspace() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Operations"
         title="Memberships"
         description="Every term ever sold — current, past, frozen and cancelled."
       />
@@ -198,7 +197,7 @@ function FreezeRequestsPanel() {
   if (pending.length === 0) return null;
   return (
     <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
-      <p className="eyebrow">Member requests</p>
+      <p className="context-label">Member requests</p>
       <h2 className="mt-1 text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
       <p className="mt-1 text-[11.5px] text-ink-3">RIVET recalculates any fee when you approve, using the gym&apos;s current policy.</p>
       <div className="mt-3 grid gap-2">

@@ -361,7 +361,7 @@ export function MembershipSaleDialog({
 
             {/* Money story */}
             <aside className="rounded-md border border-line bg-sunken/50 p-4 self-start" aria-label="Sale summary">
-              <p className="eyebrow">Summary</p>
+              <p className="context-label">Summary</p>
               <dl className="mt-3 space-y-2 text-[13px]">
                 <Row label="Plan">{plan?.name ?? "—"}</Row>
                 <Row label="Term">

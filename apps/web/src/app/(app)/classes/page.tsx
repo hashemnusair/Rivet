@@ -282,7 +282,6 @@ export default function ClassesPage() {
     <div className="space-y-5" data-print-root>
       <div className="print:hidden">
         <PageHeader
-          eyebrow="Operations"
           title="Classes"
           description="One fixed weekly timetable. Click a class for details and rosters; press an open slot to add one."
           actions={<div className="flex flex-wrap items-center gap-2">
@@ -310,7 +309,7 @@ export default function ClassesPage() {
                 <p className="text-[12px]">{branchName} · Weekly class schedule</p>
               </div>
             </div>
-            <div className="text-end text-[10px] leading-4">
+            <div className="text-end text-[12px] leading-4">
               <p>Printed {formatDate(todayISODate())}</p>
               <p>Operated by RIVET™</p>
             </div>
@@ -322,7 +321,7 @@ export default function ClassesPage() {
         ) : (
           <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface shadow-sm" data-print-schedule>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2.5 text-[11.5px] text-ink-2" aria-label="Audience color legend">
-              <span className="text-[10.5px] uppercase tracking-wide text-ink-3">Classes for</span>
+              <span className="text-[12px] uppercase tracking-wide text-ink-3">Classes for</span>
               {(["mixed", "women", "men"] as const).map((audience) => (
                 <span key={audience} className="inline-flex items-center gap-1.5 font-medium">
                   <span aria-hidden className="size-2.5 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[audience] }} />
@@ -369,14 +368,14 @@ export default function ClassesPage() {
                               type="button"
                               onClick={(event) => { event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); else openNextOccurrence(item.id); }}
                               onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
-                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[10.5px] leading-tight shadow-sm transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-md"
+                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[12px] leading-tight shadow-sm transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-md"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3.5, Math.min(width, 100 - left))}%`, top: `${5 + item.lane * 58}px`, height: "54px" }}
                               aria-label={`${item.name}, ${DAYS[item.dayOfWeek]} ${rangeLabel(item)}`}
                               title={`${item.name} — ${rangeLabel(item)} · ${bookedLabel(item)} booked${item.coachName ? ` · ${item.coachName}` : ""}`}
                             >
                               <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: AUDIENCE_ACCENT[item.audience] }} />
                               <span className="line-clamp-2 block text-[11px] font-semibold leading-[1.2]">{item.name}</span>
-                              <span className="mt-0.5 block truncate text-[9.5px] text-ink-3" dir="ltr">{rangeLabel(item)}</span>
+                              <span className="mt-0.5 block truncate text-[12px] text-ink-3" dir="ltr">{rangeLabel(item)}</span>
                             </button>
                           );
                         })}
@@ -470,7 +469,7 @@ export default function ClassesPage() {
               ) : <div className="divide-y divide-line rounded-md border border-line">
                 {coaches.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No coaches yet — add the first one below.</p> : coaches.map((coach) => (
                   <div key={coach.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[10.5px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p></div>
+                    <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[12px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p></div>
                     <Button variant="ghost" size="sm" aria-label={`Remove ${coach.name}`} loading={removeCoach.isPending} onClick={() => removeCoach.mutate(coach.id)}><X /></Button>
                   </div>
                 ))}
@@ -491,10 +490,10 @@ export default function ClassesPage() {
                 {/* The roster IS the page: one big list of everyone booked.
                     Desk tools stay one tap away but never crowd the names. */}
                 <section>
-                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-w-0 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} disabled={!canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[10px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[9px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[10px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
-                  <p className="mt-1.5 text-[10.5px] text-ink-3">{managedOccurrence.attendanceFinalizedAt ? `Attendance finalized ${formatDateTime(managedOccurrence.attendanceFinalizedAt)}.` : "Tick who showed up; attendance stays editable until finalized."}</p>
+                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-w-0 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} disabled={!canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
+                  <p className="mt-1.5 text-[12px] text-ink-3">{managedOccurrence.attendanceFinalizedAt ? `Attendance finalized ${formatDateTime(managedOccurrence.attendanceFinalizedAt)}.` : "Tick who showed up; attendance stays editable until finalized."}</p>
                 </section>
-                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[11px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="font-mono text-[10px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[10.5px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></div></details> : null}
+                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[11px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="font-mono text-[10.5px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[10.5px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></div></details> : null}
                 {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Substitute the coach for this date</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="Substitute coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose substitute</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Record substitute</Button></div></div></details> : null}
               </DialogBody>
               <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canRoster && !managedOccurrence.attendanceFinalizedAt ? <Button variant="signal" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => finalizeOccurrence.mutate()}><Check /> Finalize attendance</Button> : null}</DialogFooter>
@@ -520,21 +519,21 @@ export default function ClassesPage() {
                   <DialogBody className="grid gap-3">
                     {target.imageUrl ? <div className="h-32 rounded-md border border-line bg-cover bg-center" role="img" aria-label={target.imageAltText ?? `${target.name} photo`} style={{ backgroundImage: `url(${target.imageUrl})` }} /> : null}
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12.5px]">
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Time</dt><dd className="mt-0.5 font-medium">{rangeLabel(target)}</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Who is it for?</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium"><span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[target.audience] }} />{AUDIENCE_LABEL[target.audience]}</dd></div>
-                      <div><dt className="text-[10.5px] uppercase tracking-wide text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium">{nextOccurrence ? `${nextOccurrence.bookedCount}/${nextOccurrence.capacity}` : `0/${target.capacity}`}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[10.5px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Time</dt><dd className="mt-0.5 font-medium">{rangeLabel(target)}</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Who is it for?</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium"><span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[target.audience] }} />{AUDIENCE_LABEL[target.audience]}</dd></div>
+                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium">{nextOccurrence ? `${nextOccurrence.bookedCount}/${nextOccurrence.capacity}` : `0/${target.capacity}`}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[12px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
                     </dl>
                     <div>
-                      <p className="text-[10.5px] uppercase tracking-wide text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
+                      <p className="text-[12px] uppercase tracking-wide text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
                       {attendees.length > 0 ? (
                         <ul className="mt-1.5 divide-y divide-line rounded-md border border-line">
                           {attendees.map((entry) => (
                             <li key={entry.bookingId} className="flex items-center justify-between gap-3 px-3 py-2 text-[12.5px]">
                               <span className="min-w-0 truncate font-medium">{entry.name}</span>
-                              <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[9.5px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>
+                              <span className="shrink-0 rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>
                             </li>
                           ))}
                         </ul>
@@ -542,7 +541,7 @@ export default function ClassesPage() {
                         <p className="mt-1.5 text-[12px] text-ink-3">{nextOccurrence ? "No one has booked this date yet." : "No dated class is available in this seven-day view."}</p>
                       )}
                     </div>
-                    {target.notes ? <div><p className="text-[10.5px] uppercase tracking-wide text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
+                    {target.notes ? <div><p className="text-[12px] uppercase tracking-wide text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
                   </DialogBody>
                   <DialogFooter>
                     {canManage ? <Button variant="secondary" onClick={() => { setDetailsId(undefined); openEdit(target); }} aria-label={`Edit ${target.name}`}><Pencil /> Edit</Button> : null}
@@ -568,7 +567,7 @@ export default function ClassesPage() {
                 <DialogBody className="grid gap-4">
                   {managed.imageUrl ? <div className="h-28 rounded-sm border border-line bg-cover bg-center" role="img" aria-label={managed.imageAltText ?? `${managed.name} photo`} style={{ backgroundImage: `url(${managed.imageUrl})` }} /> : null}
                   <div>
-                    <p className="eyebrow">Who is in</p>
+                    <p className="context-label">Who is in</p>
                     <div className="mt-2 divide-y divide-line rounded-md border border-line">
                       {managed.roster.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No one is in this class yet.</p> : managed.roster.map((entry) => (
                         <div key={entry.memberId} className="flex items-center justify-between gap-2 px-3 py-2">

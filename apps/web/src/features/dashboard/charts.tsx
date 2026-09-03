@@ -30,7 +30,7 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
     <div>
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <div>
-          <p className="eyebrow">Collected — last 30 days</p>
+          <p className="context-label">Collected — last 30 days</p>
           <p className="mt-1 text-[22px] font-medium tabular">
             <MoneyText money={money(total)} compact />
             <span className="ms-2 text-[12px] text-ink-3">
@@ -56,7 +56,7 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
                 const p = payload[0]!.payload as { label: string; collected: number; refunds: number };
                 return (
                   <div className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] shadow-pop">
-                    <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-3">{p.label}</p>
+                    <p className="context-label">{p.label}</p>
                     <p className="mt-1 tabular">{formatMoney(money(p.collected * 1000))}</p>
                     {p.refunds > 0 ? (
                       <p className="tabular text-danger">−{formatMoney(money(p.refunds * 1000))} refunded</p>

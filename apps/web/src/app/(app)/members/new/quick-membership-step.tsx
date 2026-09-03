@@ -109,14 +109,14 @@ export function QuickMembershipStep({
   return (
     <form onSubmit={submit} className="space-y-5">
       <div className="flex items-center gap-2 text-[12px] text-ink-3" aria-label="Sale progress">
-        <span className="inline-flex items-center gap-1.5"><span className="grid size-5 place-items-center rounded-full bg-success text-[10px] text-white"><Check className="size-3" /></span> Member details</span>
+        <span className="inline-flex items-center gap-1.5"><span className="grid size-5 place-items-center rounded-full bg-success text-[12px] text-white"><Check className="size-3" /></span> Member details</span>
         <span aria-hidden className="h-px w-8 bg-line-2" />
-        <span className="inline-flex items-center gap-1.5 font-medium text-ink"><span className="grid size-5 place-items-center rounded-full bg-ink text-[10px] text-paper">2</span> Membership &amp; payment</span>
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink"><span className="grid size-5 place-items-center rounded-full bg-ink text-[12px] text-paper">2</span> Membership &amp; payment</span>
       </div>
 
       <section className="panel overflow-hidden">
         <div className="border-b border-line bg-sunken/40 px-5 py-4">
-          <p className="eyebrow">Complete the sale</p>
+          <p className="context-label">Complete the sale</p>
           <h2 className="mt-1 font-display text-xl font-semibold tracking-tight">Choose {memberName}&apos;s membership</h2>
           <p className="mt-1 text-[13px] text-ink-3">One confirmation creates the profile, membership, balance, and receipt together.</p>
         </div>
@@ -211,7 +211,7 @@ function SaleSummary({ plan, payingNow, remaining }: { plan?: MembershipPlan; pa
   const end = plan ? addDays(start, plan.kind === "visits" ? (plan.visitValidityDays ?? 90) : (plan.durationDays ?? 30)) : undefined;
   return (
     <aside className="self-start rounded-lg border border-line bg-sunken/55 p-4" aria-label="Sale summary">
-      <p className="eyebrow">At a glance</p>
+      <p className="context-label">At a glance</p>
       <dl className="mt-4 space-y-3 text-[13px]">
         <SummaryRow icon={<WalletCards className="size-4" />} label="Membership" value={plan?.name ?? "Not selected"} />
         <SummaryRow icon={<CalendarDays className="size-4" />} label="Term" value={end ? `${start} → ${end}` : "—"} mono />

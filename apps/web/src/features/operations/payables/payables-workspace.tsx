@@ -155,7 +155,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   return (
     <div className="space-y-4" data-testid="payables-workspace">
       {embedded ? <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-[15px] font-semibold">Payables</h2><p className="text-[12px] text-ink-3">What the gym still owes suppliers, oldest first.</p></div>{toolbar}</div>
-        : <PageHeader eyebrow="Stock & purchasing" title="Payables" description="What the gym still owes suppliers, oldest first. Record a payment when money goes out; the ledger posts it separately." actions={toolbar} />}
+        : <PageHeader sectionLabel="Stock & purchasing" title="Payables" description="What the gym still owes suppliers, oldest first. Record a payment when money goes out; the ledger posts it separately." actions={toolbar} />}
 
       {payablesQuery.isLoading ? <div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
         : payablesQuery.isError ? <QueryErrorState error={payablesQuery.error} onRetry={() => void payablesQuery.refetch()} forbiddenDescription="Your role can’t read supplier payables for this workspace." />
@@ -165,7 +165,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                 <section className="panel p-4"><Stat label="Outstanding" value={<MoneyText money={page.totals.outstanding} />} context={`${page.totals.openCount} open ${page.totals.openCount === 1 ? "payable" : "payables"} · ${branchLabel.toLowerCase()}`} /></section>
                 <section className="panel p-4"><Stat label="Oldest open balance" value={oldestOpen ? <DateText iso={oldestOpen} /> : "—"} context={oldestOpen ? "Aged from the receiving date; RIVET does not invent due dates." : "Nothing is waiting to be paid."} /></section>
                 <section className="panel p-4">
-                  <p className="eyebrow">Aging</p>
+                  <p className="context-label">Aging</p>
                   <dl className="mt-2 grid grid-cols-4 gap-1 text-[11.5px]">
                     {page.aging.map((bucket) => <div key={bucket.bucket}><dt className="text-ink-3">{bucket.bucket} days</dt><dd className={cn("mt-0.5 font-medium tabular", bucket.bucket === "90+" && bucket.count > 0 && "text-danger")}><MoneyText money={bucket.outstanding} hideCurrency /></dd></div>)}
                   </dl>

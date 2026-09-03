@@ -110,7 +110,7 @@ export function WhatsAppHandoff({
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="rounded-md border border-line bg-sunken px-3 py-2.5">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Destination</p>
+              <p className="context-label">Destination</p>
               <p className="mt-1 font-mono text-[13px]" dir="ltr">{phone}</p>
               <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Local numbers use the gym&apos;s +{callingCode} default. A number beginning with + or 00 always keeps its own country.</p>
             </div>

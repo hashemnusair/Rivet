@@ -50,9 +50,9 @@ export function BookingOutcomeConfirmation({
         <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Review the member, trainer, time, and ledger impact before recording this audited outcome.</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <dl className="grid gap-3 rounded-md border border-line bg-sunken p-3 text-[12px] sm:grid-cols-2">
-            <div><dt className="eyebrow">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
-            <div><dt className="eyebrow">Trainer</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
-            <div className="sm:col-span-2"><dt className="eyebrow">Session time</dt><dd className="mt-1 font-medium text-ink">{formatDateTime(booking.startsAt)} · {booking.branchName}</dd></div>
+            <div><dt className="context-label">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
+            <div><dt className="context-label">Trainer</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
+            <div className="sm:col-span-2"><dt className="context-label">Session time</dt><dd className="mt-1 font-medium text-ink">{formatDateTime(booking.startsAt)} · {booking.branchName}</dd></div>
           </dl>
           <p className={consequence.effect === "consume" ? "rounded-md border border-warning/30 bg-warning-bg p-3 text-[12px] text-warning-deep" : "rounded-md border border-success/30 bg-success-bg p-3 text-[12px] text-success-deep"}>{consequence.text}</p>
           {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required hint="This explanation is included in the immutable audit history."><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : "Why is the gym cancelling this session?"} /></Field> : <p className="text-[12px] text-ink-3">Routine completion stays fast: no reason is required.</p>}

@@ -94,7 +94,6 @@ export default function ShiftsPage() {
     return (
       <div className="space-y-5">
         <PageHeader
-          eyebrow="Finance"
           title="Shifts & cash"
           description="Open the drawer, collect all day, close with a count — variances get reviewed, not ignored."
           actions={branchPicker}
@@ -108,7 +107,6 @@ export default function ShiftsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Finance"
         title="Shifts & cash"
         description="Open the drawer, collect all day, close with a count — variances get reviewed, not ignored."
         actions={
@@ -393,7 +391,7 @@ export default function ShiftsPage() {
 function Cell({ label, value, sub, strong }: { label: string; value: React.ReactNode; sub?: string; strong?: boolean }) {
   return (
     <div className="px-4 py-3.5">
-      <p className="eyebrow">{label}</p>
+      <p className="context-label">{label}</p>
       <div className={cn("mt-1 text-[16px] tabular", strong && "font-semibold")}>{value}</div>
       {sub ? <p className="mt-0.5 text-[11px] text-ink-3">{sub}</p> : null}
     </div>

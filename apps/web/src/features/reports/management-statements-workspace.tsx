@@ -94,7 +94,7 @@ function SectionLines({ section, emptyLabel = "No posted lines in this scope." }
         <div key={line.accountId} className="flex items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium">{line.accountName}</p>
-            <p className="font-mono text-[10px] text-ink-3" dir="ltr">{line.accountCode} · {line.entryIds.length} journal {line.entryIds.length === 1 ? "entry" : "entries"}</p>
+            <p className="font-mono text-[10.5px] text-ink-3" dir="ltr">{line.accountCode} · {line.entryIds.length} journal {line.entryIds.length === 1 ? "entry" : "entries"}</p>
           </div>
           <MoneyText money={line.amount} />
         </div>
@@ -118,7 +118,7 @@ function StatementSectionCard({ title, section, tone }: { title: string; section
 function SummaryCard({ label, value, context, tone = "default" }: { label: string; value: ReactNode; context?: ReactNode; tone?: "default" | "positive" | "warning" | "danger" }) {
   return (
     <section className="panel p-4">
-      <p className="eyebrow">{label}</p>
+      <p className="context-label">{label}</p>
       <div className={cn("mt-1.5 text-[21px] font-semibold leading-tight tabular", tone === "positive" && "text-success-deep", tone === "warning" && "text-warning-deep", tone === "danger" && "text-danger")} dir="ltr">{value}</div>
       {context ? <p className="mt-1.5 text-[11.5px] text-ink-3">{context}</p> : null}
     </section>
@@ -453,16 +453,16 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
   const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} /> : <CashflowView report={report as CashflowStatement} /> : null;
   const reportWarnings = statementWarnings(report, kind);
 
-  if (sessionLoading && !session) return <><PageHeader eyebrow="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (sessionLoading && !session) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
-  if (workspaceQuery.isLoading) return <><PageHeader eyebrow="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds the income statement, balance sheet, and cash flow statement." className="mt-4" />;
   if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Management reporting is paused" description="An organization owner can enable the reporting module from workspace settings." className="mt-4" />;
 
   return (
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
-      <PageHeader eyebrow="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
+      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} onRangeChange={(from, to) => { setFromDate(from); setToDate(to); }} />
       <ReportQuality report={report} warnings={reportWarnings} kind={kind} controlsHref={!readOnly ? "/finance/controls" : undefined} />
       {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}

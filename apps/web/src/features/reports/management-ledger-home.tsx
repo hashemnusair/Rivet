@@ -34,11 +34,11 @@ export function ManagementLedgerHome() {
   const canManageControls = session?.roles.some((role) => role === "owner" || role === "manager") ?? false;
 
   if (sessionLoading && !session) {
-    return <><PageHeader eyebrow="Management ledger" title="Management ledger" description="Loading your reporting workspace…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
+    return <><PageHeader title="Management ledger" description="Loading your reporting workspace…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
   }
   if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
   if (workspaceQuery.isLoading) {
-    return <><PageHeader eyebrow="Management ledger" title="Management ledger" description="Loading your reporting workspace…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
+    return <><PageHeader title="Management ledger" description="Loading your reporting workspace…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
   }
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds the income statement, balance sheet, and cash flow statement." className="mt-4" />;
@@ -46,7 +46,7 @@ export function ManagementLedgerHome() {
 
   return (
     <div className="space-y-6" data-testid="management-ledger-home">
-      <PageHeader eyebrow="Management ledger" title="Management ledger" description="Choose a statement to review the gym’s financial position." />
+      <PageHeader title="Management ledger" description="Choose a statement to review the gym’s financial position." />
       <div className={canManageControls ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"} aria-label="Financial statements">
         {STATEMENT_CARDS.map((card) => (
           <Link key={card.kind} href={scopedStatementHref(card.href, fromDate, toDate, branchFilter)} data-testid={`statement-card-${card.kind}`} className="group flex min-h-48 flex-col rounded-lg border border-line bg-surface p-5 shadow-card transition-colors hover:border-ink-3 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">

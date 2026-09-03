@@ -192,7 +192,6 @@ export default function NewMemberPage() {
         <div className="space-y-5 p-5">
       <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: "New member" }]} />
       <PageHeader
-        eyebrow="Operations"
         title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : "Add member"}
         description={completed ? "The profile, membership, balance, and receipt are all in place." : saleDraft ? "Review the money story once, then confirm everything together." : "Save a profile on its own, or complete the first membership and payment in one guided flow."}
         actions={
@@ -481,7 +480,7 @@ function SaleComplete({ result, onReset }: { result: CreateMemberMembershipSaleR
       <div className="grid gap-5 bg-success-bg/55 p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
         <span className="grid size-12 place-items-center rounded-full bg-success text-white"><CheckCircle2 className="size-6" /></span>
         <div>
-          <p className="eyebrow text-success-deep">Sale complete</p>
+          <p className="context-label text-success-deep">Sale complete</p>
           <h2 className="mt-1 font-display text-xl font-semibold">{result.member.fullName} is ready</h2>
           <p className="mt-1 text-[13px] text-ink-2"><span className="font-mono">{result.member.memberNumber}</span> · membership begins {result.sale.membership.startDate}</p>
         </div>

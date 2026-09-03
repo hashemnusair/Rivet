@@ -200,7 +200,7 @@ export function CloseShiftDialog({
 
           {/* Denominations */}
           <div>
-            <p className="eyebrow mb-2">Count the drawer</p>
+            <p className="context-label mb-2">Count the drawer</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {DENOMS.map((d) => (
                 <label key={d.label} className="block">
@@ -285,7 +285,7 @@ export function CloseShiftDialog({
 function ExpectCell({ label, minor, sign, strong }: { label: string; minor?: number; sign?: string; strong?: boolean }) {
   return (
     <div className="bg-surface px-3 py-2.5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
+      <p className="context-label">{label}</p>
       <p className={cn("mt-0.5 text-[14px] tabular", strong && "font-semibold")}>
         {minor === undefined ? "—" : <>{sign}{toMajor(money(minor)).toFixed(3)}</>}
       </p>

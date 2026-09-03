@@ -476,7 +476,7 @@ export function ChangeMembershipPlanDialog({
 function BeforeAfter({ rows }: { rows: Array<{ label: string; before: string; after: string }> }) {
   return (
     <div className="overflow-hidden rounded-md border border-line">
-      <div className="grid grid-cols-[1fr_1fr_1fr] border-b border-line bg-sunken/60 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+      <div className="grid grid-cols-[1fr_1fr_1fr] border-b border-line bg-sunken/60 px-3 py-2 text-[11.5px] font-medium text-ink-3">
         <span />
         <span>Before</span>
         <span>After</span>

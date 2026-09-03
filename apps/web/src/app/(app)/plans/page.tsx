@@ -44,7 +44,6 @@ export default function PlansPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Operations"
         title="Membership plans"
         description="The catalogue you sell from. Editing a plan never rewrites past sales."
         actions={

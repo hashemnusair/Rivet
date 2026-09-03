@@ -210,7 +210,7 @@ export function ChecklistsSection() {
                     <li key={index} className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2.5 text-[13px]">
                       <span aria-hidden className="size-4 rounded-full border border-line-3" />
                       <span className="flex-1">{item.label}</span>
-                      {!item.required ? <span className="text-[10.5px] text-ink-3">optional</span> : null}
+                      {!item.required ? <span className="text-[12px] text-ink-3">optional</span> : null}
                     </li>
                   ))}
                 </ul>

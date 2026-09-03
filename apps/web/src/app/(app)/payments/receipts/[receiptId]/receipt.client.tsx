@@ -205,16 +205,16 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           </div>
 
           <div className="border-t border-dashed border-line-3 pt-3 text-center">
-            <p className="text-[10.5px] leading-relaxed text-ink-2">{detail.organization.receiptFooter}</p>
+            <p className="text-[12px] leading-relaxed text-ink-2">{detail.organization.receiptFooter}</p>
             <p className="mt-3 font-mono text-[13px] tracking-[0.3em]">{customerReference}</p>
-            <p className="mt-1 text-[9.5px] text-ink-3">JOD · amounts in Jordanian Dinar</p>
+            <p className="mt-1 text-[12px] text-ink-3">JOD · amounts in Jordanian Dinar</p>
           </div>
         </div>
 
         {/* Side panel */}
         <aside className="no-print space-y-4 self-start">
           <section className="panel p-4">
-            <h3 className="eyebrow mb-2.5">Status</h3>
+            <h3 className="context-label mb-2.5">Status</h3>
             <TransactionStatusChip status={payment.status} />
             {paymentRecord?.refundedAmount && paymentRecord.refundedAmount.amount > 0 ? (
               <p className="mt-2 text-[12.5px] text-ink-2">
@@ -234,7 +234,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           {detail.relatedPayments?.length > 0 ? (
             <section className="panel p-4">
-              <h3 className="eyebrow mb-2.5">Linked records</h3>
+              <h3 className="context-label mb-2.5">Linked records</h3>
               <ul className="space-y-2">
                 {detail.relatedPayments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-[12.5px]">
@@ -252,7 +252,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           ) : null}
 
           <section className="panel p-4 text-[12.5px] text-ink-2">
-            <h3 className="eyebrow mb-2.5">Rules</h3>
+            <h3 className="context-label mb-2.5">Rules</h3>
             <ul className="list-disc space-y-1.5 ps-4">
               <li>Voids are same-day only and fully reverse the payment.</li>
               <li>Refunds create a linked negative receipt; they never rewrite history.</li>

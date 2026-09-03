@@ -39,7 +39,7 @@ export function SalesDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={formatDate(today)}
+        sectionLabel={formatDate(today)}
         title={`Your day, ${session?.user.name.split(" ")[0] ?? ""}`}
         description="Everything due now, then everything that makes this month count."
         actions={
@@ -59,7 +59,7 @@ export function SalesDashboard() {
           { label: "Leads converted", value: me?.leadsConverted ?? 0, danger: false },
         ].map((cell) => (
           <div key={cell.label} className="px-4 py-3.5">
-            <p className="eyebrow">{cell.label}</p>
+            <p className="context-label">{cell.label}</p>
             <div className={cn("mt-1 text-[22px] font-medium leading-none tabular", cell.danger && "text-danger")}>
               {dashQuery.isLoading ? <Skeleton className="h-6 w-10" /> : cell.value}
             </div>

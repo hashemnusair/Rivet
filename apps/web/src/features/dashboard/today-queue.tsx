@@ -79,7 +79,7 @@ export function TodayQueue({
         ) : (
           <div className="text-end" aria-live="polite">
             <p className="text-[18px] font-semibold leading-none tabular">{data?.totalItems ?? 0}</p>
-            <p className="mt-1 text-[10.5px] text-ink-3">
+            <p className="mt-1 text-[12px] text-ink-3">
               {(data?.urgentItems ?? 0) > 0 ? `${data?.urgentItems} urgent` : "items left"}
             </p>
           </div>
@@ -120,14 +120,14 @@ export function TodayQueue({
           ) : expanded && items.length > initialVisible ? (
             <div className="flex flex-wrap items-center justify-center gap-x-3 border-t border-line bg-sunken/25 px-4 py-2 text-center">
               {data && data.totalItems > data.items.length ? (
-                <span className="text-[10.5px] text-ink-3">Showing the top {data.items.length} of {data.totalItems}</span>
+                <span className="text-[12px] text-ink-3">Showing the top {data.items.length} of {data.totalItems}</span>
               ) : null}
               <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded(false)}>
                 Show less
               </Button>
             </div>
           ) : data && data.totalItems > data.items.length ? (
-            <p className="border-t border-line bg-sunken/25 px-4 py-2.5 text-center text-[10.5px] text-ink-3">
+            <p className="border-t border-line bg-sunken/25 px-4 py-2.5 text-center text-[12px] text-ink-3">
               Showing the {data.items.length} highest-priority items.
             </p>
           ) : null}
@@ -158,9 +158,9 @@ function TodayQueueRow({
       <Icon className={cn("size-4", urgent ? "text-danger" : item.priority === "high" ? "text-warning-deep" : "text-ink-3")} aria-hidden />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {first ? <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-signal-deep">Do this next</span> : null}
-          <span className="text-[10.5px] text-ink-3">{meta.label}</span>
-          {item.branchName ? <span className="truncate text-[10.5px] text-ink-4">{item.branchName}</span> : null}
+          {first ? <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-signal-deep">Do this next</span> : null}
+          <span className="text-[12px] text-ink-3">{meta.label}</span>
+          {item.branchName ? <span className="truncate text-[12px] text-ink-4">{item.branchName}</span> : null}
         </div>
         <Link href={item.href} className="mt-0.5 block truncate text-[13px] font-semibold text-ink outline-none hover:underline focus-visible:underline focus-visible:decoration-2 focus-visible:underline-offset-4">
           {item.title}

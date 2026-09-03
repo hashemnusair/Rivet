@@ -141,7 +141,7 @@ function ClassesView({ report, from, to }: { report: ClassUtilizationReport; fro
             <Table>
               <TableHeader><TableRow><TableHead>Class</TableHead><TableHead className="text-end">Dates</TableHead><TableHead className="text-end">Booked / capacity</TableHead><TableHead className="text-end">Fill</TableHead><TableHead className="text-end">Attended</TableHead><TableHead className="text-end">No-shows</TableHead><TableHead className="text-end">Waitlist</TableHead><TableHead className="text-end">Cancellations</TableHead></TableRow></TableHeader>
               <TableBody>{report.rows.map((row) => <TableRow key={`${row.templateId}:${row.className}`}>
-                <TableCell><p className="font-medium">{row.className}</p>{row.cancelledOccurrences ? <p className="mt-0.5 text-[10.5px] text-warning-deep">{row.cancelledOccurrences} class cancellation{row.cancelledOccurrences === 1 ? "" : "s"}</p> : null}</TableCell>
+                <TableCell><p className="font-medium">{row.className}</p>{row.cancelledOccurrences ? <p className="mt-0.5 text-[12px] text-warning-deep">{row.cancelledOccurrences} class cancellation{row.cancelledOccurrences === 1 ? "" : "s"}</p> : null}</TableCell>
                 <TableCell className="text-end tabular">{row.occurrences}</TableCell>
                 <TableCell className="text-end tabular">{row.booked} / {row.capacity}</TableCell>
                 <TableCell className="text-end tabular">{percent(row.fillRate)}</TableCell>
@@ -171,7 +171,7 @@ function ReportHeader({ title, definition, onExport, exportDisabled }: { title: 
 }
 
 function StatCell({ label, children, tone }: { label: string; children: React.ReactNode; tone?: "warning" }) {
-  return <div className="border-e border-line px-4 py-3.5 last:border-e-0"><p className="eyebrow">{label}</p><div className={cn("mt-1 text-[20px] tabular", tone === "warning" && "text-warning-deep")}>{children}</div></div>;
+  return <div className="border-e border-line px-4 py-3.5 last:border-e-0"><p className="context-label">{label}</p><div className={cn("mt-1 text-[20px] tabular", tone === "warning" && "text-warning-deep")}>{children}</div></div>;
 }
 
 // --- Peak hours -------------------------------------------------------------
@@ -206,13 +206,13 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
             <div className="min-w-[640px]">
               <div className="grid" style={{ gridTemplateColumns: `88px repeat(${hours.length}, 1fr)` }} aria-hidden>
                 <div />
-                {hours.map((hour) => <div key={hour} className="pb-1 text-center font-mono text-[9px] text-ink-3">{String(hour).padStart(2, "0")}</div>)}
+                {hours.map((hour) => <div key={hour} className="pb-1 text-center font-mono text-[10.5px] text-ink-3">{String(hour).padStart(2, "0")}</div>)}
                 {WEEKDAYS.map((label, weekday) => (
                   <div key={label} className="contents">
                     <div className="pe-2 py-0.5 text-[11px] text-ink-2">{label}</div>
                     {hours.map((hour) => {
                       const count = byCell.get(`${weekday}:${hour}`) ?? 0;
-                      return <div key={hour} className="m-px flex h-7 items-center justify-center rounded-sm text-[10px] font-medium" style={{ backgroundColor: count > 0 ? `color-mix(in oklab, var(--tenant-brand-primary) ${Math.max(12, Math.round((count / max) * 100))}%, transparent)` : "var(--color-sunken)", color: count > 0 && count / max > 0.55 ? "var(--color-paper)" : undefined }}>{count > 0 ? count : ""}</div>;
+                      return <div key={hour} className="m-px flex h-7 items-center justify-center rounded-sm text-[12px] font-medium" style={{ backgroundColor: count > 0 ? `color-mix(in oklab, var(--tenant-brand-primary) ${Math.max(12, Math.round((count / max) * 100))}%, transparent)` : "var(--color-sunken)", color: count > 0 && count / max > 0.55 ? "var(--color-paper)" : undefined }}>{count > 0 ? count : ""}</div>;
                     })}
                   </div>
                 ))}
@@ -238,7 +238,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
 
 function RetentionView({ report }: { report: RetentionReport }) {
   const cell = (checkpoint: { retained: number; eligible: number }) =>
-    checkpoint.eligible === 0 ? <span className="text-ink-4">too new</span> : <span className="tabular">{Math.round((checkpoint.retained / checkpoint.eligible) * 100)}% <span className="text-[10.5px] text-ink-3">({checkpoint.retained}/{checkpoint.eligible})</span></span>;
+    checkpoint.eligible === 0 ? <span className="text-ink-4">too new</span> : <span className="tabular">{Math.round((checkpoint.retained / checkpoint.eligible) * 100)}% <span className="text-[12px] text-ink-3">({checkpoint.retained}/{checkpoint.eligible})</span></span>;
   const exportCsv = () => downloadCsv("rivet-retention-cohorts.csv", "Retention cohorts", [
     ["Cohort month", "Members", "1 month retained", "1 month eligible", "3 months retained", "3 months eligible", "6 months retained", "6 months eligible", "12 months retained", "12 months eligible"],
     ...report.cohorts.map((cohort) => [cohort.cohortMonth, String(cohort.size), String(cohort.months1.retained), String(cohort.months1.eligible), String(cohort.months3.retained), String(cohort.months3.eligible), String(cohort.months6.retained), String(cohort.months6.eligible), String(cohort.months12.retained), String(cohort.months12.eligible)]),
@@ -299,7 +299,7 @@ function RenewalsView({ report, currency }: { report: RenewalForecastReport; cur
           <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3">
             {report.buckets.map((bucket) => (
               <div key={bucket.label} className="bg-surface px-4 py-3.5">
-                <p className="eyebrow">{bucket.label}</p>
+                <p className="context-label">{bucket.label}</p>
                 <p className="mt-1 text-[20px] tabular">{bucket.count}</p>
                 <p className="text-[11.5px] text-ink-3"><MoneyText money={money(bucket.valueMinor)} /> expected</p>
               </div>

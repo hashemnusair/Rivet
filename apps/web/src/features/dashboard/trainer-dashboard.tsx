@@ -43,7 +43,7 @@ export function TrainerDashboard() {
 
   return <div className="space-y-5">
     <PageHeader
-      eyebrow="Trainer workspace"
+      sectionLabel="Trainer workspace"
       title={`Today, ${session?.user.name.split(" ")[0] ?? "coach"}`}
       description="Your assigned sessions and members update from the gym's live PT calendar."
       actions={<Button asChild><Link href="/pt">Open full PT calendar <ArrowRight /></Link></Button>}
@@ -58,30 +58,30 @@ export function TrainerDashboard() {
 
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="panel overflow-hidden">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="eyebrow">Today</p><h2 className="mt-1 text-[14px] font-semibold">Session outcomes</h2></div><Clock3 className="size-4 text-ink-3" /></header>
+        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">Today</p><h2 className="mt-1 text-[14px] font-semibold">Session outcomes</h2></div><Clock3 className="size-4 text-ink-3" /></header>
         {workspace.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div> : todayBookings.length ? <div className="divide-y divide-line">{todayBookings.map((booking) => {
           const started = Date.parse(booking.startsAt) <= Date.now();
           return <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4">
-            <div className="min-w-0 flex-1"><Link href={`/members/${booking.memberId}`} className="text-[13px] font-semibold hover:underline">{booking.memberName}</Link><p className="mt-1 text-[11px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p>{!started ? <p className="mt-1 text-[10px] text-ink-3">Outcome controls unlock when the session begins.</p> : null}</div>
+            <div className="min-w-0 flex-1"><Link href={`/members/${booking.memberId}`} className="text-[13px] font-semibold hover:underline">{booking.memberName}</Link><p className="mt-1 text-[11px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p>{!started ? <p className="mt-1 text-[12px] text-ink-3">Outcome controls unlock when the session begins.</p> : null}</div>
             <Badge variant="outline">{booking.status}</Badge>
             <div className="flex gap-1"><Button size="sm" variant="secondary" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></div>
           </article>;
-        })}</div> : <div className="px-5 py-12 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-3 text-[12px] font-medium">No PT sessions today</p><p className="mt-1 text-[10.5px] text-ink-3">This reflects your current assigned calendar.</p></div>}
+        })}</div> : <div className="px-5 py-12 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-3 text-[12px] font-medium">No PT sessions today</p><p className="mt-1 text-[12px] text-ink-3">This reflects your current assigned calendar.</p></div>}
       </section>
 
       <section className="panel overflow-hidden">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="eyebrow">Next</p><h2 className="mt-1 text-[14px] font-semibold">Upcoming calendar</h2></div><CalendarClock className="size-4 text-ink-3" /></header>
-        {workspace.isLoading ? <div className="p-4"><Skeleton className="h-28 w-full" /></div> : upcoming.length ? <div className="divide-y divide-line">{upcoming.map((booking) => <article key={booking.id} className="flex items-center gap-3 px-4 py-3"><span className="flex size-8 items-center justify-center rounded-full bg-sunken"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium">{booking.memberName}</p><p className="mt-0.5 text-[10px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div></article>)}</div> : <p className="p-8 text-center text-[11px] text-ink-3">No upcoming sessions.</p>}
+        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">Next</p><h2 className="mt-1 text-[14px] font-semibold">Upcoming calendar</h2></div><CalendarClock className="size-4 text-ink-3" /></header>
+        {workspace.isLoading ? <div className="p-4"><Skeleton className="h-28 w-full" /></div> : upcoming.length ? <div className="divide-y divide-line">{upcoming.map((booking) => <article key={booking.id} className="flex items-center gap-3 px-4 py-3"><span className="flex size-8 items-center justify-center rounded-full bg-sunken"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium">{booking.memberName}</p><p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div></article>)}</div> : <p className="p-8 text-center text-[11px] text-ink-3">No upcoming sessions.</p>}
       </section>
     </div>
 
-    <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><p className="eyebrow">Coaching context</p><h2 className="mt-1 text-[14px] font-semibold">Assigned members</h2></header>{workspace.isLoading ? <div className="p-4"><Skeleton className="h-14 w-full" /></div> : members.length ? <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">{members.map((member) => <Link key={member.id} href={`/members/${member.id}`} className="flex items-center gap-3 p-4 hover:bg-sunken"><span className="flex size-9 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-paper">{initials(member.name)}</span><span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{member.name}</span><ArrowRight className="size-3.5 text-ink-3" /></Link>)}</div> : <p className="p-8 text-center text-[11px] text-ink-3">Members appear after their first assigned booking.</p>}</section>
+    <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><p className="context-label">Coaching context</p><h2 className="mt-1 text-[14px] font-semibold">Assigned members</h2></header>{workspace.isLoading ? <div className="p-4"><Skeleton className="h-14 w-full" /></div> : members.length ? <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">{members.map((member) => <Link key={member.id} href={`/members/${member.id}`} className="flex items-center gap-3 p-4 hover:bg-sunken"><span className="flex size-9 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-paper">{initials(member.name)}</span><span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{member.name}</span><ArrowRight className="size-3.5 text-ink-3" /></Link>)}</div> : <p className="p-8 text-center text-[11px] text-ink-3">Members appear after their first assigned booking.</p>}</section>
     <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={outcome.isPending} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason }) => outcome.mutate({ booking, result: action as "completed" | "no_show", reason })} />
   </div>;
 }
 
 function Metric({ label, value, loading }: { label: string; value: number; loading: boolean }) {
-  return <div className="p-4"><p className="eyebrow">{label}</p>{loading ? <Skeleton className="mt-2 h-7 w-12" /> : <p className="mt-2 text-[22px] font-semibold tabular-nums">{value}</p>}</div>;
+  return <div className="p-4"><p className="context-label">{label}</p>{loading ? <Skeleton className="mt-2 h-7 w-12" /> : <p className="mt-2 text-[22px] font-semibold tabular-nums">{value}</p>}</div>;
 }
 
 function dateKey(timestamp: number, timezone: string): string {

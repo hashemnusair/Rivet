@@ -49,7 +49,6 @@ export default function ChecklistsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Workspace"
         title="Daily checklist"
         description="Tick each item as it's done. Anything that fails gets a reason, so nothing is quietly skipped."
         actions={branches.length > 1 ? (
@@ -128,7 +127,7 @@ function RunCard({ run, busy, onComplete, onProblem, onCorrect, onEscalate }: {
                   {item.status === "completed" ? <Check className="size-4" /> : item.status === "failed" ? <CircleAlert className="size-4" /> : item.status === "skipped" ? "–" : null}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={cn("block text-[13.5px]", item.status === "completed" && "text-ink-3 line-through decoration-line-3")}>{item.label}{!item.required ? <span className="ms-2 text-[10.5px] text-ink-3">optional</span> : null}</span>
+                  <span className={cn("block text-[13.5px]", item.status === "completed" && "text-ink-3 line-through decoration-line-3")}>{item.label}{!item.required ? <span className="ms-2 text-[12px] text-ink-3">optional</span> : null}</span>
                   {item.instructions && !done ? <span className="block text-[11.5px] text-ink-3">{item.instructions}</span> : null}
                   {done && item.actorName && item.at ? <span className="block text-[11px] text-ink-3">{item.status === "completed" ? "Done" : item.status === "failed" ? "Failed" : "Skipped"} by {item.actorName} at {formatTime(item.at)}{item.reason ? ` — ${item.reason}` : ""}</span> : null}
                 </span>

@@ -174,10 +174,10 @@ export function BrandKitSection() {
           </Field>
         </div>
         <div className="rounded-lg border border-line bg-surface p-4" style={{ borderColor: color }}>
-          <p className="eyebrow">Preview</p>
-          <div className="mt-3 flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-md" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>{logo ? <span role="img" aria-label={pendingLogo?.altText || brand.logoAltText || `${session?.organization.name ?? "Gym"} logo`} className="size-8 rounded-sm bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} /> : <span className="font-display text-sm font-semibold">{session?.organization.name?.slice(0, 2).toUpperCase() ?? "RV"}</span>}</span><span className="min-w-0"><span className="block truncate text-[12.5px] font-medium">{session?.organization.name ?? "Your gym"}</span><span className="block text-[10.5px] text-ink-3">Staff workspace</span></span></div>
+          <p className="context-label">Preview</p>
+          <div className="mt-3 flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-md" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>{logo ? <span role="img" aria-label={pendingLogo?.altText || brand.logoAltText || `${session?.organization.name ?? "Gym"} logo`} className="size-8 rounded-sm bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} /> : <span className="font-display text-sm font-semibold">{session?.organization.name?.slice(0, 2).toUpperCase() ?? "RV"}</span>}</span><span className="min-w-0"><span className="block truncate text-[12.5px] font-medium">{session?.organization.name ?? "Your gym"}</span><span className="block text-[12px] text-ink-3">Staff workspace</span></span></div>
           <button type="button" className="mt-5 inline-flex w-full items-center justify-center rounded-md px-3 py-2 text-[12px] font-medium" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>Primary action</button>
-          <p className="mt-3 text-[10.5px] text-ink-3">Palette v{brand.version}. Changes affect the gym shell only.</p>
+          <p className="mt-3 text-[12px] text-ink-3">Palette v{brand.version}. Changes affect the gym shell only.</p>
         </div>
       </div>
       {!isOwner ? <p className="mt-4 rounded-md border border-warning/30 bg-warning-bg px-3 py-2 text-[11.5px] text-warning-deep" role="status">Only the organization owner can save Brand Kit changes.</p> : null}
