@@ -15,7 +15,33 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
-## Current release index — 2 September 2026
+## Current release index — 3 September 2026
+
+### Legal pages, e-signature onboarding, email and messaging go-live flags — 3 September 2026
+
+- [x] Publish `/privacy` and `/terms` (with the data processing addendum) in
+  the app, versioned for lawyer review, and put RIVET's contact details
+  (Instagram @rivet.jo, 077 837 8608, WhatsApp) in every footer.
+- [x] Build RIVET's own e-signature for the subscription agreement: owner-only
+  signing at onboarding with gym details, signatory name, national ID or
+  passport number, plan, start date, term, declarations, drawn or typed
+  signature, server time, document fingerprint, masked ID, audited reveal,
+  platform countersign, email copies through the operational email boundary.
+- [x] Replace the email live boolean with `RIVET_EMAIL_MODE`
+  (off/sandbox/allowlist/live), recorded per attempt and shown in settings.
+- [x] Add the WhatsApp/SMS provider seam (Twilio), the outbound worker,
+  quiet-hour deferral, and the bilingual utility template catalogue; the
+  gym's external-delivery switch and the global mode must both be on.
+- [x] Add the provisional-pricing notice and the docs/19 sign-off sheet.
+- [ ] Lawyer review of the three legal documents and Arabic versions.
+- [ ] Decide the email sending domain and flip Production email from
+  `allowlist` to `live` after two clean weeks (docs/19 checklist).
+- [ ] Meta business verification, WhatsApp template approval, inbound
+  STOP handling, and the messaging go-live decision (docs/19).
+- [ ] Sign the pricing sheet (docs/19) and remove the provisional notice.
+- [ ] Deploy the Convex backend to Production (owed for this whole batch;
+  requires Hashem's explicit authorization).
+
 
 ### Auditor role retired and permission matrix made readable — 2 September 2026
 
