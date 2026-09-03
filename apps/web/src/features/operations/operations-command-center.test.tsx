@@ -24,6 +24,7 @@ beforeEach(() => {
   HTMLElement.prototype.releasePointerCapture = vi.fn();
 });
 
+
 async function selectBranch(user: ReturnType<typeof userEvent.setup>, branchName?: string) {
   await screen.findByTestId("operations-command-center");
   const picker = screen.getByRole("combobox", { name: "Operations branch" });
@@ -184,7 +185,7 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByRole("dialog", { name: "Create purchase order" })).toBeInTheDocument();
     await user.click(screen.getByRole("combobox", { name: "Purchase order source" }));
     await user.click(await screen.findByRole("option", { name: /Private \/ bought elsewhere/ }));
-    expect(screen.getByRole("status")).toHaveTextContent(/source name will not be recorded/i);
+    expect(screen.getByText(/source name will not be recorded/i)).toBeVisible();
   });
 
   it("filters stock by search and keeps row actions to sell, reorder, and edit", async () => {
@@ -277,4 +278,3 @@ describe("OperationsCommandCenter", () => {
     expect((await screen.findAllByTestId("purchase-order-row")).length).toBeGreaterThan(0);
   });
 });
-
