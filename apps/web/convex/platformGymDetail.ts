@@ -53,6 +53,8 @@ export interface PlatformGymDetailSource {
     email: string;
     phone?: string;
   };
+  /** Active subscription agreement summary; absent when the owner has not signed yet. */
+  agreement?: Record<string, unknown> & { id: string; reference: string; status: string };
   usage: {
     memberCount: number;
     activeStaffCount: number;
@@ -150,6 +152,7 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),
     branches: tenantAvailable ? available(source.branches) : notAvailable(),
     owner: source.owner ? available(source.owner) : notAvailable(),
+    agreement: tenantAvailable ? (source.agreement ? available(source.agreement) : notConfigured()) : notAvailable(),
     usage: {
       memberCount: tenantAvailable ? available(source.usage.memberCount) : notAvailable(),
       activeStaffCount: tenantAvailable ? available(source.usage.activeStaffCount) : notAvailable(),

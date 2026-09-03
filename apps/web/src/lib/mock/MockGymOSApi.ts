@@ -66,6 +66,7 @@ import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { AGREEMENT_PLANS, AGREEMENT_TERMS_MONTHS, MAX_SIGNATURE_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
@@ -506,8 +507,11 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
 
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
 
+/** Stored agreement row: the view plus the unmasked ID number that only platform admins may reveal. */
+type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title: string; idType: T.AgreementIdType; idNumber: string; phone: string; email: string } };
+
 type MockPlatformAuditEvent = PlatformGymActivity & {
-  entityType: "platform_gym" | "platform_plan";
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement";
   entityPublicId: string;
   entityLabel: string;
   reason: string;
@@ -2440,6 +2444,7 @@ export class MockGymOSApi implements GymOSApi {
         joinedAt: notAvailable(),
         branches: organization ? available(branches) : notAvailable(),
         owner: owner ? available({ name: owner.name, email: owner.email, phone: owner.phone || undefined }) : notAvailable(),
+        agreement: organization ? (() => { const current = this.activeSubscriptionAgreement(organization.id); return current ? available(this.agreementSummary(current)) : notConfigured<T.PlatformAgreementSummary>(); })() : notAvailable(),
         usage: {
           memberCount: organization ? available(activeMemberCount) : notAvailable(),
           activeStaffCount: organization ? available(activeStaffCount) : notAvailable(),
@@ -4178,6 +4183,7 @@ export class MockGymOSApi implements GymOSApi {
       roles: [user.role],
       permissions: permissionsFor(this.db, user.role),
       workspace: this.workspaceAccess(),
+      legal: this.sessionLegalState(user.role),
     };
   }
 
@@ -10280,6 +10286,206 @@ export class MockGymOSApi implements GymOSApi {
       const detail = this.supplierPaymentDetail(payment);
       this.operationsIdempotency.set(`supplier_payment.reverse:${idempotencyKey}`, { signature, result: detail });
       return detail;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Subscription agreement (e-signature at onboarding)
+  // -------------------------------------------------------------------------
+
+  /** Browser previews can simulate a gym that has not signed yet. */
+  private agreementRequiredOverride(): boolean {
+    if (this.behavior.agreementUnsigned) return true;
+    try {
+      return typeof window !== "undefined" && window.sessionStorage.getItem("rivet.demo.agreement") === "required";
+    } catch {
+      return false;
+    }
+  }
+
+  private activeSubscriptionAgreement(organizationId: T.UUID = this.db.organization.id): MockSubscriptionAgreement | undefined {
+    if (organizationId === this.db.organization.id && this.agreementRequiredOverride()) return undefined;
+    return [...this.db.subscriptionAgreements].filter((row) => row.organizationId === organizationId && row.status !== "void").sort((left, right) => right.signedAt.localeCompare(left.signedAt))[0];
+  }
+
+  private sessionLegalState(role: T.RoleKey): T.SessionLegalState {
+    const current = this.activeSubscriptionAgreement();
+    if (current) return { agreementStatus: current.status === "countersigned" ? "countersigned" : "signed", agreementReference: current.reference };
+    return { agreementStatus: role === "owner" ? "required" : "not_applicable" };
+  }
+
+  private agreementView(row: MockSubscriptionAgreement, options: { revealId?: boolean } = {}): T.SubscriptionAgreement {
+    const { idNumber, ...signatory } = row.signatory;
+    return {
+      ...row,
+      customer: { ...row.customer },
+      signatory: { ...signatory, idNumberMasked: maskIdNumber(idNumber) },
+      subscription: { ...row.subscription },
+      consents: { ...row.consents },
+      signature: { ...row.signature },
+      client: { ...row.client },
+      countersign: row.countersign ? { ...row.countersign } : undefined,
+      ...(options.revealId ? { signatory: { ...signatory, idNumberMasked: maskIdNumber(idNumber), idNumber } } : {}),
+    } as T.SubscriptionAgreement;
+  }
+
+  private agreementSummary(row: MockSubscriptionAgreement): T.PlatformAgreementSummary {
+    return { id: row.id, reference: row.reference, version: row.version, status: row.status, organizationId: row.organizationId, organizationName: row.organizationName, plan: row.subscription.plan, startDate: row.subscription.startDate, termMonths: row.subscription.termMonths, signatoryName: row.signatory.name, signedAt: row.signedAt, countersignedAt: row.countersign?.at, hashMatch: row.hashMatch };
+  }
+
+  getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> {
+    return this.respond(async () => {
+      const user = this.actor();
+      const current = this.activeSubscriptionAgreement();
+      const textBody = canonicalAgreementText();
+      const organization = this.db.organization;
+      const branches = this.db.branches.filter((branch) => branch.status === "active");
+      return {
+        version: SUBSCRIPTION_AGREEMENT_VERSION,
+        sections: SUBSCRIPTION_AGREEMENT_SECTIONS.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
+        text: textBody,
+        sha256: await sha256Hex(textBody),
+        status: current ? (current.status === "countersigned" ? "countersigned" : "signed") : user.role === "owner" ? "required" : "not_applicable",
+        canSign: user.role === "owner" && !current,
+        organizationName: organization.name,
+        timezone: organization.timezone,
+        prefill: {
+          legalName: organization.name,
+          tradeName: organization.name,
+          branches: Math.max(1, branches.length),
+          city: "Amman",
+          address: branches[0]?.address,
+          signatoryName: user.name,
+          signatoryTitle: "Owner",
+          phone: user.phone,
+          email: user.email,
+          plan: organization.subscriptionPlan ?? "Growth",
+          startDate: organization.subscriptionStartedAt ? managementLocalDate(organization.subscriptionStartedAt, organization.timezone) : this.today(),
+          termMonths: 12,
+          placeOfSigning: "Amman",
+        },
+        agreement: current ? this.agreementView(current) : undefined,
+      };
+    });
+  }
+
+  signSubscriptionAgreement(input: T.SignSubscriptionAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(async () => {
+      const user = this.actor();
+      if (user.role !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can sign the subscription agreement.");
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const replay = this.operationsIdempotent("legal.agreement.sign", idempotencyKey, "agreement") as T.SubscriptionAgreement | undefined;
+      if (replay) return replay;
+      const current = this.activeSubscriptionAgreement();
+      if (current) throw ApiError.of(ERR.CONFLICT, `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { details: { reference: current.reference } });
+      const field = (condition: boolean, name: string, message: string) => { if (!condition) throw ApiError.of(ERR.VALIDATION, message, { fieldErrors: { [name]: [message] } }); };
+      const customer = input.customer;
+      const legalName = customer.legalName?.trim() ?? "";
+      field(legalName.length >= 2 && legalName.length <= 160, "legalName", "Enter the registered name of the gym or company.");
+      const address = customer.address?.trim() ?? "";
+      field(address.length >= 3 && address.length <= 240, "address", "Enter the gym's address.");
+      const city = customer.city?.trim() ?? "";
+      field(city.length >= 2 && city.length <= 80, "city", "Enter the city.");
+      field(Number.isSafeInteger(customer.branches) && customer.branches >= 1 && customer.branches <= 100, "branches", "Enter the number of branches (1 to 100).");
+      const signatoryName = input.signatory.name?.trim() ?? "";
+      field(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the signatory's full name as on their ID.");
+      const signatoryTitle = input.signatory.title?.trim() ?? "";
+      field(signatoryTitle.length >= 2 && signatoryTitle.length <= 80, "signatoryTitle", "Enter the signatory's role at the gym.");
+      field(input.signatory.idType === "national" || input.signatory.idType === "passport", "idType", "Choose the ID document.");
+      const idNumber = input.signatory.idNumber?.trim() ?? "";
+      field(input.signatory.idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", input.signatory.idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.");
+      const phone = input.signatory.phone?.trim() ?? "";
+      field(/^\+?[\d\s().-]{7,}$/.test(phone) && phone.length <= 40, "phone", "Enter a phone or WhatsApp number RIVET can reach.");
+      const email = input.signatory.email?.trim().toLowerCase() ?? "";
+      field(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), "email", "Enter the email address for the signed copy.");
+      field((AGREEMENT_PLANS as readonly string[]).includes(input.subscription.plan), "plan", "Choose a plan.");
+      field(validCalendarDate(input.subscription.startDate ?? ""), "startDate", "Enter the contract start date.");
+      field((AGREEMENT_TERMS_MONTHS as readonly number[]).includes(input.subscription.termMonths), "termMonths", "Choose the initial term.");
+      for (const key of ["agreement", "authority", "electronic", "accurate"] as const) field(input.consents?.[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.");
+      const method = input.signature.method;
+      field(method === "drawn" || method === "typed", "signature", "Sign, or type your name instead.");
+      const imageDataUrl = input.signature.imageDataUrl?.trim();
+      const typedName = input.signature.typedName?.trim();
+      if (method === "drawn") field(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length > 200 && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH, "signature", "Draw your signature before signing.");
+      else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the signatory's full name.");
+      const documentSha256 = await sha256Hex(canonicalAgreementText());
+      const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
+      const now = nowISO();
+      const row: MockSubscriptionAgreement = {
+        id: mockUuid(),
+        reference: agreementReference(this.today()),
+        version: SUBSCRIPTION_AGREEMENT_VERSION,
+        status: "signed",
+        organizationId: this.db.organization.id,
+        organizationName: this.db.organization.name,
+        customer: { legalName, tradeName: customer.tradeName?.trim() || undefined, registrationNumber: customer.registrationNumber?.trim() || undefined, address, city, branches: customer.branches },
+        signatory: { name: signatoryName, title: signatoryTitle, idType: input.signatory.idType, idNumber, phone, email },
+        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths: input.subscription.termMonths, quote: input.subscription.quote?.trim() || undefined },
+        consents: { agreement: true, authority: true, electronic: true, accurate: true },
+        signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
+        client: { userAgent: (input.client?.userAgent ?? "").slice(0, 300), language: (input.client?.language ?? "").slice(0, 20), viewport: (input.client?.viewport ?? "").slice(0, 40) },
+        placeOfSigning: input.placeOfSigning?.trim() || city,
+        signedAt: now,
+        signedAtLocal: new Intl.DateTimeFormat("en-GB", { timeZone: this.db.organization.timezone, day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(now)),
+        timezone: this.db.organization.timezone,
+        signedByName: user.name,
+        documentSha256,
+        clientDocumentSha256,
+        hashMatch: clientDocumentSha256 === documentSha256,
+        idRevealCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.db.subscriptionAgreements.unshift(row);
+      this.behavior.agreementUnsigned = false;
+      try { if (typeof window !== "undefined") window.sessionStorage.removeItem("rivet.demo.agreement"); } catch { /* preview only */ }
+      this.audit({ category: "legal", action: "legal.agreement.sign", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `Signed subscription agreement ${row.reference} (${row.subscription.plan}, ${row.subscription.termMonths} months from ${row.subscription.startDate})`, after: { reference: row.reference, plan: row.subscription.plan, signatory: signatoryName, hashMatch: row.hashMatch ? "yes" : "no", method } });
+      const view = this.agreementView(row);
+      this.operationsIdempotency.set(`legal.agreement.sign:${idempotencyKey}`, { signature: "agreement", result: view });
+      return view;
+    });
+  }
+
+  listPlatformAgreements(): Promise<T.PlatformAgreementSummary[]> {
+    return this.respond(() => [...this.db.subscriptionAgreements].sort((left, right) => right.signedAt.localeCompare(left.signedAt)).map((row) => this.agreementSummary(row)));
+  }
+
+  getPlatformAgreement(agreementId: T.UUID): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      return this.agreementView(row);
+    });
+  }
+
+  revealPlatformAgreementId(input: T.RevealAgreementIdInput): Promise<T.RevealAgreementIdResult> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      row.idRevealCount += 1;
+      row.updatedAt = nowISO();
+      this.recordPlatformAudit({ action: "agreement.id_revealed", summary: `Revealed the signatory ID number on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { revealCount: row.idRevealCount } });
+      return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount };
+    });
+  }
+
+  countersignPlatformAgreement(input: T.CountersignAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (row.status === "countersigned") return this.agreementView(row);
+      const title = input.title?.trim() ?? "";
+      if (title.length < 2 || title.length > 80) throw ApiError.of(ERR.VALIDATION, "Enter your role at RIVET.", { fieldErrors: { title: ["Enter your role at RIVET."] } });
+      const typedName = input.typedName?.trim() ?? "";
+      if (typedName.length < 2 || typedName.toLowerCase() !== this.actor().name.trim().toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type your full name exactly as on your RIVET account to countersign.", { fieldErrors: { typedName: ["Type your full name exactly as on your RIVET account to countersign."] } });
+      const now = nowISO();
+      row.status = "countersigned";
+      row.countersign = { at: now, byName: this.actor().name, title, typedName };
+      row.updatedAt = now;
+      this.recordPlatformAudit({ action: "agreement.countersigned", summary: `Countersigned subscription agreement ${row.reference} for ${row.organizationName}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Countersign", after: { title, hashMatch: row.hashMatch } });
+      return this.agreementView(row);
     });
   }
 

@@ -32,6 +32,7 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   accounting: "Accounting",
   users: "Users & roles",
   settings: "Settings",
+  legal: "Legal",
 };
 
 function AuditPageInner() {

@@ -359,6 +359,173 @@ export interface PurchaseOrder {
 }
 
 // ---------------------------------------------------------------------------
+// Subscription agreement (e-signature at onboarding)
+// ---------------------------------------------------------------------------
+export type AgreementPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type AgreementIdType = "national" | "passport";
+export type AgreementSignatureMethod = "drawn" | "typed";
+
+export interface AgreementTextSection {
+  number: string;
+  heading: string;
+  paragraphs: string[];
+}
+
+export interface SubscriptionAgreementCustomer {
+  legalName: string;
+  tradeName?: string;
+  registrationNumber?: string;
+  address: string;
+  city: string;
+  branches: number;
+}
+
+export interface SubscriptionAgreementSignatoryView {
+  name: string;
+  title: string;
+  idType: AgreementIdType;
+  /** All but the last four characters masked; the full number is platform-only. */
+  idNumberMasked: string;
+  phone: string;
+  email: string;
+}
+
+export interface SubscriptionAgreementTerms {
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  quote?: string;
+}
+
+export interface SubscriptionAgreementConsents {
+  agreement: boolean;
+  authority: boolean;
+  electronic: boolean;
+  accurate: boolean;
+}
+
+export interface SubscriptionAgreementSignature {
+  method: AgreementSignatureMethod;
+  /** PNG data URL when drawn. */
+  imageDataUrl?: string;
+  typedName?: string;
+}
+
+export interface SubscriptionAgreementClient {
+  userAgent: string;
+  language: string;
+  viewport: string;
+  ipAddress?: string;
+}
+
+export interface SubscriptionAgreement {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  customer: SubscriptionAgreementCustomer;
+  signatory: SubscriptionAgreementSignatoryView;
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning: string;
+  /** Server receipt time; the browser clock is never trusted. */
+  signedAt: ISODateTime;
+  signedAtLocal: string;
+  timezone: string;
+  signedByName: string;
+  /** SHA-256 of the canonical agreement text the server published. */
+  documentSha256: string;
+  /** SHA-256 the signer's browser computed over the text it displayed. */
+  clientDocumentSha256?: string;
+  hashMatch: boolean;
+  countersign?: { at: ISODateTime; byName: string; title: string; typedName: string };
+  idRevealCount: number;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface SubscriptionAgreementPrefill {
+  legalName: string;
+  tradeName?: string;
+  branches: number;
+  city?: string;
+  address?: string;
+  signatoryName: string;
+  signatoryTitle: string;
+  phone?: string;
+  email: string;
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  placeOfSigning: string;
+}
+
+/** Everything the signing page needs, from one server call. */
+export interface SubscriptionAgreementContext {
+  version: string;
+  sections: AgreementTextSection[];
+  /** The canonical text; hash this exact string to produce clientDocumentSha256. */
+  text: string;
+  sha256: string;
+  status: SubscriptionAgreementStatus | "signed" | "countersigned";
+  canSign: boolean;
+  organizationName: string;
+  timezone: string;
+  prefill: SubscriptionAgreementPrefill;
+  agreement?: SubscriptionAgreement;
+}
+
+export interface SignSubscriptionAgreementInput {
+  customer: SubscriptionAgreementCustomer;
+  signatory: { name: string; title: string; idType: AgreementIdType; idNumber: string; phone: string; email: string };
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning: string;
+  clientDocumentSha256: string;
+  idempotencyKey: string;
+}
+
+export interface PlatformAgreementSummary {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  signatoryName: string;
+  signedAt: ISODateTime;
+  countersignedAt?: ISODateTime;
+  hashMatch: boolean;
+}
+
+export interface CountersignAgreementInput {
+  agreementId: UUID;
+  title: string;
+  typedName: string;
+  idempotencyKey: string;
+}
+
+export interface RevealAgreementIdInput {
+  agreementId: UUID;
+  reason: string;
+}
+
+export interface RevealAgreementIdResult {
+  idNumber: string;
+  idType: AgreementIdType;
+  revealCount: number;
+}
+
+// ---------------------------------------------------------------------------
 // Supplier payables and supplier payments
 // ---------------------------------------------------------------------------
 export type SupplierPaymentMethod = "cash" | "bank_transfer" | "cliq";
@@ -1077,6 +1244,15 @@ export interface Session {
   permissions: string[];
   /** Workspace entitlements/preferences are distinct from role permissions. */
   workspace?: WorkspaceAccess;
+  /** Whether this gym still owes RIVET a signed subscription agreement. Owners are gated until they sign. */
+  legal?: SessionLegalState;
+}
+
+export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";
+
+export interface SessionLegalState {
+  agreementStatus: SubscriptionAgreementStatus;
+  agreementReference?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -2875,6 +3051,7 @@ export interface OperationalEmailDelivery {
 
 export type AuditCategory =
   | "auth"
+  | "legal"
   | "members"
   | "memberships"
   | "payments"

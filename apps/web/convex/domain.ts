@@ -47,6 +47,7 @@ import {
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
+import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -230,7 +231,7 @@ const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -1525,6 +1526,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
     roles: [frontendRole(actor.role)],
     permissions: actor.permissions,
     workspace,
+    legal: await agreementSessionState(ctx, actor),
   };
 }
 
@@ -4935,6 +4937,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await buildSession(ctx, actor, request.activeBranchId);
   }
 
+  if (operation === "legal.agreement.current" || operation === "platform.agreements.list" || operation === "platform.agreement.get") {
+    return await legalAgreementQuery(ctx, operation, input, request);
+  }
+
   if (operation === "health") {
     return { status: "ok", serverTime: Date.now() };
   }
@@ -5237,6 +5243,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
     let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
     let owner: { name: string; email: string; phone?: string } | undefined;
+    let agreement: (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
     let memberCount = 0;
     let activeStaffCount = 0;
     let staffLimit: number | undefined;
@@ -5263,6 +5270,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const ownerMembership = membershipRows.find((membership) => membership.active && membership.role === "owner");
       const ownerUser = ownerMembership ? await ctx.db.get(ownerMembership.userId) : null;
       if (ownerUser) owner = { name: ownerUser.fullName, email: ownerUser.email, phone: ownerUser.phone };
+      agreement = await agreementSummaryForOrganization(ctx, organization._id, organization.name) as (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
 
       const [memberRows, planRows, ruleRows, paymentRows] = await Promise.all([
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
@@ -5350,6 +5358,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         : undefined,
       branches,
       owner,
+      agreement,
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
       recurringAmountMinor,
       invoices,
@@ -7762,6 +7771,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const timelineId = newPublicId();
     await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
     return await publicOfferView(ctx, token);
+  }
+
+  if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign") {
+    return await legalAgreementMutation(ctx, operation, input, request);
   }
 
   if (operation === "platform.marketingMigration.apply") {
