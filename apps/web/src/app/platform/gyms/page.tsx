@@ -12,6 +12,8 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { formatDateTime } from "@/lib/utils/dates";
 import { sortGymDirectory } from "@/lib/platform/gym-directory";
+import { PageHeader } from "@/components/shared/chrome";
+import { ContextLabel } from "@/components/ui/typography";
 
 type GymFilter = "all" | MarketplaceGym["subscriptionStatus"];
 
@@ -78,16 +80,11 @@ export default function PlatformGymsPage() {
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="mx-auto max-w-[1480px]">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="eyebrow">Tenant directory</p>
-            <h1 className="mt-2 text-[30px] font-semibold tracking-tight">Gym organizations</h1>
-            <p className="mt-2 max-w-2xl text-[12.5px] text-ink-2">Manage every gym organization, its branches, subscription state, and public directory visibility.</p>
-          </div>
-          <Button asChild variant="signal">
-            <Link href="/platform/applications"><Plus />Add gym</Link>
-          </Button>
-        </div>
+        <PageHeader
+          title="Gym organizations"
+          description="Manage every gym organization, its branches, subscription state, and public directory visibility."
+          actions={<Button asChild variant="signal"><Link href="/platform/applications"><Plus />Add gym</Link></Button>}
+        />
 
         {showingStaleDirectory ? (
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status" aria-live="polite">
@@ -111,7 +108,7 @@ export default function PlatformGymsPage() {
                 onClick={() => setFilter(item.value)}
                 aria-pressed={filter === item.value}
               >
-                {item.label} <span className="font-mono text-[10px] opacity-70">{statusCounts[item.value]}</span>
+                {item.label} <span className="text-[11px] tabular opacity-70">{statusCounts[item.value]}</span>
               </Button>
             ))}
           </div>
@@ -129,6 +126,7 @@ export default function PlatformGymsPage() {
         ) : (
           <div className="mt-5">
             <EmptyState
+              layout="section"
               icon={Building2}
               title={hasFilters ? "No gyms match these filters" : "No gyms in the directory"}
               description={hasFilters ? "Try another search or subscription status, or clear the filters to see every tenant." : "No provisioned gym organizations are available yet. Review applications to add the first tenant."}
@@ -150,7 +148,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
       <div className="flex items-start justify-between gap-4">
         <PlatformGymLogo name={gym.name} shortName={gym.shortName} accent={gym.accent} logoUrl={gym.logoUrl} />
         <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
-          <span className={`rounded-full px-2.5 py-1 font-mono text-[8px] uppercase tracking-[.1em] ${status.className}`} aria-label={`Subscription status: ${status.label}`}>{status.label}</span>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${status.className}`} aria-label={`Subscription status: ${status.label}`}>{status.label}</span>
         </div>
       </div>
       <h2 id={titleId} className="mt-5 truncate text-[19px] font-semibold">{gym.name}</h2>
@@ -162,7 +160,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
       </div>
       <div className="mt-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">{lifecycle.label}</p>
+          <ContextLabel className="text-[10.5px]">{lifecycle.label}</ContextLabel>
           <p className="mt-1 truncate text-[12px] font-semibold">{lifecycle.value}</p>
         </div>
         <Button asChild variant="secondary" size="sm">
@@ -212,5 +210,5 @@ function isArchivedGym(gym: MarketplaceGym): boolean {
 }
 
 function Metric({ icon, value, label }: { icon?: React.ReactNode; value: string; label: string }) {
-  return <div className="min-w-0 bg-surface px-3 py-3"><div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-semibold"><span className="shrink-0 text-ink-3 [&_svg]:size-3" aria-hidden>{icon}</span><span className="truncate">{value}</span></div><p className="mt-1 font-mono text-[7.5px] uppercase tracking-[.1em] text-ink-3">{label}</p></div>;
+  return <div className="min-w-0 bg-surface px-3 py-3"><div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-semibold"><span className="shrink-0 text-ink-3 [&_svg]:size-3" aria-hidden>{icon}</span><span className="truncate tabular">{value}</span></div><ContextLabel className="mt-1 text-[10.5px]">{label}</ContextLabel></div>;
 }

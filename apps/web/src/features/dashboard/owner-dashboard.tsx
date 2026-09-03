@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils/cn";
 import { BranchRevenueBars, RevenueChart } from "./charts";
 import { dashboardScopeDescription } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
+import { ContextLabel } from "@/components/ui/typography";
 
 export function OwnerDashboard() {
   const { session } = useApp();
@@ -44,7 +45,7 @@ export function OwnerDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={formatDate(today)}
+        sectionLabel={formatDate(today)}
         title={`${greeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
         description={
           dashboardScopeDescription(session?.branches ?? [], branchId)
@@ -133,7 +134,7 @@ export function OwnerDashboard() {
           {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} />}
         </section>
         <section className="panel p-4">
-          <p className="eyebrow mb-3">Revenue by branch — 30 days</p>
+          <ContextLabel className="mb-3">Revenue by branch · 30 days</ContextLabel>
           {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
         </section>
       </div>
@@ -156,12 +157,12 @@ export function OwnerDashboard() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-start">
-                    <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Rep</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Collected</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">New</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Renewals</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Follow-ups</th>
-                    <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">Overdue</th>
+                    <th className="px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">Rep</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Collected</th>
+                    <th className="px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">New</th>
+                    <th className="px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Renewals</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Follow-ups</th>
+                    <th className="px-4 py-2 text-end text-[11.5px] font-semibold text-ink-3">Overdue</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -216,7 +217,7 @@ function KpiCell({
 }) {
   return (
     <div className="px-4 py-3.5">
-      <p className="eyebrow">{label}</p>
+      <ContextLabel>{label}</ContextLabel>
       {loading ? (
         <Skeleton className="mt-2 h-7 w-20" />
       ) : (

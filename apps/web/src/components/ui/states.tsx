@@ -77,11 +77,13 @@ export function ErrorState({
   description = "The request could not be completed. Your last loaded data is preserved; try again.",
   onRetry,
   className,
+  layout,
 }: {
   title?: string;
   description?: string;
   onRetry?: () => void;
   className?: string;
+  layout?: "inline" | "section" | "page";
 }) {
   return (
     <StatePanel
@@ -89,6 +91,7 @@ export function ErrorState({
       title={title}
       description={description}
       className={className}
+      layout={layout}
       role="alert"
       action={
         onRetry ? (
@@ -104,9 +107,11 @@ export function ErrorState({
 export function ForbiddenState({
   description = "Your account role does not have permission to view this area.",
   className,
+  layout,
 }: {
   description?: string;
   className?: string;
+  layout?: "inline" | "section" | "page";
 }) {
   return (
     <StatePanel
@@ -114,6 +119,7 @@ export function ForbiddenState({
       title="Not allowed for this role"
       description={description}
       className={className}
+      layout={layout}
       action={
         <Button asChild variant="secondary" size="sm">
           <Link href="/dashboard">Back to dashboard</Link>
@@ -134,33 +140,37 @@ export function QueryErrorState({
   forbiddenDescription,
   notFoundTitle,
   className,
+  layout,
 }: {
   error: unknown;
   onRetry?: () => void;
   forbiddenDescription?: string;
   notFoundTitle?: string;
   className?: string;
+  layout?: "inline" | "section" | "page";
 }) {
   if (isApiError(error)) {
     if (error.code === ERR.FORBIDDEN) {
-      return <ForbiddenState description={forbiddenDescription ?? error.message} className={className} />;
+      return <ForbiddenState description={forbiddenDescription ?? error.message} className={className} layout={layout} />;
     }
     if (error.code === ERR.NOT_FOUND) {
-      return <NotFoundState title={notFoundTitle ?? "Not found"} description={error.message} className={className} />;
+      return <NotFoundState title={notFoundTitle ?? "Not found"} description={error.message} className={className} layout={layout} />;
     }
-    return <ErrorState description={error.message} onRetry={onRetry} className={className} />;
+    return <ErrorState description={error.message} onRetry={onRetry} className={className} layout={layout} />;
   }
-  return <ErrorState onRetry={onRetry} className={className} />;
+  return <ErrorState onRetry={onRetry} className={className} layout={layout} />;
 }
 
 export function NotFoundState({
   title = "Not found",
   description = "The record you are looking for does not exist — it may have been removed, or the link is wrong.",
   className,
+  layout,
 }: {
   title?: string;
   description?: string;
   className?: string;
+  layout?: "inline" | "section" | "page";
 }) {
   return (
     <StatePanel
@@ -168,6 +178,7 @@ export function NotFoundState({
       title={title}
       description={description}
       className={className}
+      layout={layout}
       action={
         <Button asChild variant="secondary" size="sm">
           <Link href="/dashboard">Back to dashboard</Link>

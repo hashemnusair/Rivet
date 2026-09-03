@@ -649,11 +649,11 @@ export function RolesSection() {
         <table className="w-full text-[12.5px]">
           <thead>
             <tr className="border-b border-line">
-              <th className="sticky start-0 z-10 bg-surface px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
+              <th className="sticky start-0 z-10 bg-surface px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">
                 Permission
               </th>
               {editableRoles.map((r) => (
-                <th key={r.key} className="px-3 py-2 text-center font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3 whitespace-nowrap">
+                <th key={r.key} className="whitespace-nowrap px-3 py-2 text-center text-[11.5px] font-semibold text-ink-3">
                   {r.label}
                 </th>
               ))}

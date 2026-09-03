@@ -35,6 +35,7 @@ import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog"
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
+import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
   const { session, setBranch } = useApp();
@@ -201,14 +202,14 @@ export default function ReceptionPage() {
         <div className="flex min-w-0 flex-col bg-night px-5 py-5 lg:px-8 lg:py-7">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <p className="eyebrow-night">Front desk · {branch.name}</p>
+              <ContextLabel tone="night">Front desk · {branch.name}</ContextLabel>
               <h1 className="mt-1 font-display text-[22px] font-semibold tracking-tight text-night-ink">
                 Check in
               </h1>
             </div>
-            <p className="flex items-center gap-1.5 font-mono text-[11px] text-night-ink-3">
+            <ContextLabel tone="night" className="flex items-center gap-1.5">
               <ScanLine className="size-3.5" aria-hidden /> Scanner ready
-            </p>
+            </ContextLabel>
           </div>
 
           {/* Search lane */}
@@ -226,7 +227,7 @@ export default function ReceptionPage() {
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
-              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-14 font-mono text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none sm:pe-28"
+              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-14 text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none sm:pe-28"
             />
             <div className="absolute end-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
               {query ? (
@@ -281,7 +282,7 @@ export default function ReceptionPage() {
           </div>
 
           {/* Keyboard legend */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4 font-mono text-[10.5px] uppercase tracking-wider text-night-ink-3">
+          <TechnicalLabel as="div" tone="night" className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4">
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">
                 <CornerDownLeft className="size-2.5" />
@@ -295,7 +296,7 @@ export default function ReceptionPage() {
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">⌘</Kbd>
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd> command palette
             </span>
-          </div>
+          </TechnicalLabel>
         </div>
 
         {/* ---------------------------------------------------------------- */}
@@ -303,7 +304,7 @@ export default function ReceptionPage() {
         {/* ---------------------------------------------------------------- */}
         <aside className="flex min-w-0 flex-col bg-night-2" aria-label="Branch activity">
           <section className="border-b border-night-line px-5 py-5">
-            <p className="eyebrow-night">Check-ins today</p>
+            <ContextLabel tone="night">Check-ins today</ContextLabel>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
                 {recentQuery.data?.totalItems ?? "—"}
@@ -312,18 +313,18 @@ export default function ReceptionPage() {
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <dt className="eyebrow-night">Branch</dt>
+                <ContextLabel as="dt" tone="night">Branch</ContextLabel>
                 <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
               </div>
               <div>
-                <dt className="eyebrow-night">Peak hour</dt>
+                <ContextLabel as="dt" tone="night">Peak hour</ContextLabel>
                 <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.peakHour ?? "—"}</dd>
               </div>
             </dl>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <p className="eyebrow-night border-b border-night-line px-5 py-3">Today&apos;s check-in log</p>
+            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Today&apos;s check-in log</ContextLabel>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
                 <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">No check-ins yet today.</li>
@@ -721,7 +722,7 @@ function VerdictPanel({
 
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
-          <p className="eyebrow-night text-signal">Critical note</p>
+          <ContextLabel tone="night" className="text-signal">Critical note</ContextLabel>
           <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
         </div>
       ) : null}
@@ -793,7 +794,7 @@ function Cell({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="eyebrow-night">{label}</dt>
+      <ContextLabel as="dt" tone="night">{label}</ContextLabel>
       <dd
         className={cn(
           "mt-0.5 truncate text-[14px]",

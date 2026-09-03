@@ -52,6 +52,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={asChild ? undefined : disabled || loading}
         aria-busy={loading || undefined}
+        data-rivet-button={variant ?? "primary"}
         {...props}
       >
         {/* Slot needs exactly one child, so asChild renders the child untouched. */}

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { ErrorState, StatePanel } from "./states";
+import { ApiError, ERR } from "@/lib/api/errors";
+import { ErrorState, QueryErrorState, StatePanel } from "./states";
 
 describe("StatePanel", () => {
   it.each(["inline", "section", "page"] as const)("renders the %s layout explicitly", (layout) => {
@@ -16,6 +17,14 @@ describe("StatePanel", () => {
 
   it("keeps compact as a compatibility alias for section states", () => {
     render(<StatePanel compact title="No rows" />);
+    expect(screen.getByRole("status")).toHaveAttribute("data-state-layout", "section");
+  });
+
+  it("preserves the requested layout through query-error variants", () => {
+    const { rerender } = render(<QueryErrorState error={new Error("offline")} layout="inline" />);
+    expect(screen.getByRole("alert")).toHaveAttribute("data-state-layout", "inline");
+
+    rerender(<QueryErrorState error={ApiError.of(ERR.NOT_FOUND, "Member removed")} layout="section" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-state-layout", "section");
   });
 });
