@@ -47,13 +47,24 @@ describe("subscription agreement modal", () => {
     const agree = within(modal).getByTestId("agree-continue");
     expect(agree).toBeDisabled();
     expect(within(modal).getByText("Scroll to the end of the agreement to continue.")).toBeInTheDocument();
+    // The bar reads the scroll position, so it is empty at the top and full
+    // exactly when the button unlocks. 1600px of text in a 400px viewport
+    // leaves a 1200px range.
+    const bar = within(modal).getByRole("progressbar", { name: "Reading progress" });
+    expect(bar).toHaveAttribute("aria-valuenow", "0");
     const scroller = within(modal).getByTestId("agreement-scroll");
     scroller.scrollTop = 600;
     fireEvent.scroll(scroller);
     expect(agree).toBeDisabled();
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
+    // Scrolling back up to re-read a clause must not look like lost progress.
+    scroller.scrollTop = 120;
+    fireEvent.scroll(scroller);
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
     scroller.scrollTop = 1200;
     fireEvent.scroll(scroller);
     await waitFor(() => expect(agree).toBeEnabled());
+    expect(bar).toHaveAttribute("aria-valuenow", "100");
     expect(within(modal).getByText("You have reached the end of the agreement.")).toBeInTheDocument();
     await user.click(agree);
 

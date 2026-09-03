@@ -160,11 +160,18 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
   // "Read to the end" is measured on the scroll container itself: the
   // button unlocks once the bottom of the text has been in view. Text that
   // fits without scrolling counts as read.
+  //
+  // Progress is how far down the scrollable range the reader has moved, so
+  // it starts empty at the top and is full exactly when the button unlocks.
+  // It never runs backwards: scrolling up to re-read a clause should not
+  // look like lost progress.
   const measure = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
-    setProgress(element.scrollHeight > 0 ? Math.min(1, Math.max(0, (element.scrollTop + element.clientHeight) / element.scrollHeight)) : 1);
+    const range = element.scrollHeight - element.clientHeight;
+    const reached = remaining <= END_TOLERANCE || range <= 0 ? 1 : Math.min(1, Math.max(0, element.scrollTop / range));
+    setProgress((current) => Math.max(current, reached));
     if (remaining <= END_TOLERANCE) setReadToEnd(true);
   }, []);
 
