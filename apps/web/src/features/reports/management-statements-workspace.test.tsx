@@ -192,7 +192,11 @@ describe("ManagementStatementPage", () => {
 
     cleanup();
     resetApiForTests();
-    await renderWithApp(<ManagementStatementPage kind="income" />, { role: "auditor" });
+    await renderWithApp(<ManagementStatementPage kind="income" />, { role: "manager", prepare: async (api) => {
+      const managerPermissions = (await api.switchDemoRole("manager")).permissions.filter((permission) => permission !== "accounting.post");
+      await api.switchDemoRole("owner");
+      await api.updateRolePermissions("manager", { permissions: managerPermissions });
+    } });
     expect(await screen.findByTestId("income-statement")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Ledger controls" })).not.toBeInTheDocument();
     expect(screen.getByText("Read-only access")).toBeInTheDocument();

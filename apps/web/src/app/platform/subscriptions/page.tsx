@@ -81,7 +81,7 @@ export default function SubscriptionsPage() {
 
         <section className="mt-7" aria-labelledby="plan-catalog-title">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
-            <div><p className="eyebrow">Published pricing</p><h2 id="plan-catalog-title" className="mt-1 text-[18px] font-semibold">Four tiers, one live contract</h2></div>
+            <div><p className="eyebrow">Published pricing</p><h2 id="plan-catalog-title" className="mt-1 text-[18px] font-semibold">Four tiers, one live contract</h2><p className="mt-1 text-[12px] text-warning-deep" data-testid="pricing-provisional-notice">Provisional: these prices and limits are live in the product but not yet signed off. The sign-off sheet is docs/19; nothing here should be quoted as final until it is signed.</p></div>
             <p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Monthly JOD · annual billing saves 20%</p>
           </div>
           {loading ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the live pricing catalog…</p> : plans.length === 0 ? <p className="border border-dashed border-line-2 px-4 py-10 text-center text-[11px] text-ink-3">No pricing plans have been published.</p> : <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}

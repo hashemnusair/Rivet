@@ -8,7 +8,7 @@ import {
   discountNeedsApproval,
   effectiveRolePermissions,
   hasPermission,
-  type Permission,
+
 } from "./permissions";
 import type { RoleKey } from "./types";
 
@@ -17,7 +17,7 @@ const byKey = (key: RoleKey) => roles.find((r) => r.key === key)!;
 
 describe("role catalogue", () => {
   it("defines every system role with a label", () => {
-    const keys: RoleKey[] = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"];
+    const keys: RoleKey[] = ["owner", "manager", "salesperson", "receptionist", "trainer"];
     for (const key of keys) {
       expect(byKey(key)).toBeDefined();
       expect(ROLE_LABELS[key]).toBeTruthy();
@@ -66,16 +66,6 @@ describe("least privilege per role", () => {
     expect(reception).not.toContain("reconciliation.approve_variance");
   });
 
-  it("keeps the auditor read-only", () => {
-    const auditor = byKey("auditor").permissions;
-    expect(auditor).toContain("audit.read");
-    expect(auditor).toContain("reports.financial.read");
-    expect(auditor).not.toContain("operations.manage");
-    expect(auditor).not.toContain("accounting.post");
-    for (const write of ["members.write", "memberships.sell", "payments.collect", "payments.refund"] as Permission[]) {
-      expect(auditor).not.toContain(write);
-    }
-  });
 
   it("limits the trainer to member lookup and their own PT schedule/outcomes", () => {
     expect(byKey("trainer").permissions).toEqual(["members.read", "pt.schedule.self", "pt.outcome.self"]);

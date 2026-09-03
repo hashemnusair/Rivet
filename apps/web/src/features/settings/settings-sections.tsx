@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { PERMISSIONS, ROLE_LABELS } from "@/lib/domain/permissions";
+import { PERMISSIONS, PERMISSION_LABELS, ROLE_LABELS } from "@/lib/domain/permissions";
 import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
@@ -506,7 +506,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(["manager", "salesperson", "receptionist", "trainer", "auditor"] as RoleKey[]).map((r) => (
+                  {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
                     <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                   ))}
                 </SelectContent>
@@ -590,7 +590,7 @@ function EditAccessDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(["manager", "salesperson", "receptionist", "trainer", "auditor"] as RoleKey[]).map((r) => (
+                {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
                   <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                 ))}
               </SelectContent>
@@ -661,8 +661,11 @@ export function RolesSection() {
           </thead>
           <tbody>
             {PERMISSIONS.map((perm) => (
-              <tr key={perm} className="border-b border-line/70 last:border-0 hover:bg-sunken/30">
-                <td className="sticky start-0 z-10 bg-surface px-4 py-1.5 font-mono text-[11.5px] text-ink-2">{perm}</td>
+              <tr key={perm} className="border-b border-line/70 last:border-0">
+                <td className="sticky start-0 z-10 bg-surface px-4 py-2">
+                  <p className="text-[13px] font-medium text-ink">{PERMISSION_LABELS[perm].label}</p>
+                  <p className="text-[11.5px] text-ink-3">{PERMISSION_LABELS[perm].hint}</p>
+                </td>
                 {editableRoles.map((r) => {
                   const checked = r.permissions.includes(perm);
                   return (
@@ -671,7 +674,7 @@ export function RolesSection() {
                         type="button"
                         role="switch"
                         aria-checked={checked}
-                        aria-label={`${r.label} — ${perm}`}
+                        aria-label={`${r.label} — ${PERMISSION_LABELS[perm].label}`}
                         onClick={() =>
                           toggle.mutate({
                             role: r.key,
@@ -736,7 +739,7 @@ export function PaymentsSection() {
 
   if (settingsQuery.isLoading) return <Skeleton className="h-64 w-full" />;
   const methods = settingsQuery.data?.paymentMethods ?? [];
-  const roles = (settingsQuery.data?.roles ?? []).filter((r) => r.key !== "owner" && r.key !== "trainer" && r.key !== "auditor");
+  const roles = (settingsQuery.data?.roles ?? []).filter((r) => r.key !== "owner" && r.key !== "trainer");
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -895,7 +898,8 @@ export function NotificationsSection() {
 
       <section className="panel self-start p-5">
         <h2 className="mb-1 font-display text-[15px] font-semibold">Automation delivery</h2>
-        <p className="mb-4 text-[12.5px] text-ink-3">Automation messages are retained in the sandbox delivery ledger. No external WhatsApp or SMS provider is configured.</p>
+        <p className="mb-4 text-[12.5px] text-ink-3">Reminders are prepared in the delivery ledger. They reach members only when RIVET&apos;s provider is live <em>and</em> external delivery is switched on for this gym.</p>
+        <MessagingStatusPanel />
         <label className="mb-3 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5">
           <div>
             <p className="text-[13px] font-medium">Renewal recovery</p>
@@ -910,12 +914,12 @@ export function NotificationsSection() {
         <label className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2.5 cursor-pointer">
           <div>
             <p className="text-[13px] font-medium">External delivery</p>
-            <p className="text-[11.5px] text-ink-3">Not configured. Sandbox remains enforced until individual message types are approved.</p>
+            <p className="text-[11.5px] text-ink-3">{notifications.automationDeliveryMode === "live" ? "On. Queued WhatsApp and SMS reminders are handed to RIVET&apos;s provider, subject to RIVET&apos;s global messaging mode above." : "Off. Reminders stay in the sandbox ledger and no member receives a message."}</p>
           </div>
           <Switch
-            checked={false}
-            disabled
-            aria-label="External delivery not configured"
+            checked={notifications.automationDeliveryMode === "live"}
+            onCheckedChange={(enabled) => save.mutate({ ...notifications, automationDeliveryMode: enabled ? "live" : "sandbox" })}
+            aria-label="External delivery"
           />
         </label>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -934,8 +938,50 @@ export function NotificationsSection() {
             />
           </Field>
         </div>
-        <p className="mt-2 text-[11.5px] text-ink-3">Messages queued during quiet hours are delivered after they end.</p>
+        <p className="mt-2 text-[11.5px] text-ink-3">Messages queued during quiet hours wait and are sent when the window ends, in the gym&apos;s timezone.</p>
+        <MessageTemplateCatalogue />
       </section>
+    </div>
+  );
+}
+
+const MESSAGING_MODE_LABELS: Record<string, string> = { off: "Off", sandbox: "Sandbox", allowlist: "Allowlist", live: "Live" };
+
+function MessagingStatusPanel() {
+  const status = useApiQuery(["settings", "messaging-status"], (api) => api.getMessagingStatus());
+  if (!status.data) return null;
+  const value = status.data;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2 text-[12px] text-ink-2" data-testid="messaging-status">
+      <span className="text-ink-3">RIVET messaging</span>
+      <Badge variant={value.mode === "live" ? "success" : value.mode === "off" ? "neutral" : "warning"} dot>{MESSAGING_MODE_LABELS[value.mode] ?? value.mode}</Badge>
+      <span className="text-ink-3">{value.provider === "twilio" ? `Provider connected · WhatsApp ${value.whatsappReady ? "ready" : "not configured"} · SMS ${value.smsReady ? "ready" : "not configured"}` : "No provider connected; nothing leaves the sandbox."}</span>
+      {value.warning ? <span className="text-warning-deep">{value.warning}</span> : null}
+    </div>
+  );
+}
+
+function MessageTemplateCatalogue() {
+  const catalogue = useApiQuery(["settings", "message-template-catalogue"], (api) => api.listMessageTemplateCatalogue());
+  const [open, setOpen] = useState(false);
+  if (!catalogue.data?.length) return null;
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <button type="button" className="flex w-full items-center justify-between text-start text-[13px] font-medium" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+        <span>Reviewed message catalogue <span className="ms-1 font-normal text-ink-3">({catalogue.data.length} templates · Arabic and English)</span></span>
+        <span className="text-ink-3">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open ? (
+        <ul className="mt-3 space-y-2" data-testid="message-template-catalogue">
+          {catalogue.data.map((template) => (
+            <li key={template.key} className="rounded-md border border-line p-3 text-[12px]">
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{template.name}</span><span className="font-mono text-[10.5px] uppercase tracking-wide text-ink-3">{template.family} · {template.channels.join(" / ")}</span></div>
+              <p className="mt-1.5 text-ink-2">{template.bodyEn}</p>
+              <p className="mt-1 text-ink-2" dir="rtl">{template.bodyAr}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

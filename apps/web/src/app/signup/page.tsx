@@ -182,6 +182,7 @@ export default function GymApplicationPage() {
                   <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan and billing cadence are starting points for the conversation, not a payment or activation.</p>
                   {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                   <Button type="submit" variant="signal" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
+                  <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4">Privacy policy</Link>. The subscription agreement is signed later, inside RIVET, by the gym owner.</p>
                   <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
                 </section>
               </form>

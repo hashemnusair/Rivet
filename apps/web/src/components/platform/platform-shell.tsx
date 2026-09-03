@@ -1,19 +1,7 @@
 "use client";
 
 import { useAuth, useClerk } from "@clerk/nextjs";
-import {
-  BadgeDollarSign,
-  Building2,
-  ClipboardList,
-  CircleHelp,
-  CreditCard,
-  ExternalLink,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Search,
-  X,
-} from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, ExternalLink, FileSignature, LayoutDashboard, LogOut, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -34,6 +22,7 @@ const NAVIGATION = [
   { href: "/platform/gyms", label: "Gyms", icon: Building2 },
   { href: "/platform/subscriptions", label: "Pricing & entitlements", icon: BadgeDollarSign },
   { href: "/platform/billing", label: "Billing", icon: CreditCard },
+  { href: "/platform/agreements", label: "Agreements", icon: FileSignature },
   { href: "/platform/support", label: "Support", icon: CircleHelp },
 ];
 

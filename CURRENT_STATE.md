@@ -1,5 +1,63 @@
 # GymOS / RIVET current implementation state
 
+## Legal pages, e-signature onboarding, email and messaging go-live — 3 September 2026
+
+- **Legal:** `/privacy` and `/terms` (with the data processing addendum) are
+  public app pages, version 1.0 · 3 September 2026, drafted for a Jordanian
+  lawyer's review. RIVET's contact details are one constant
+  (`src/lib/rivet-contact.ts`: Instagram @rivet.jo, 077 837 8608, WhatsApp)
+  and appear in the marketing, sign-in and member-portal footers; the gym
+  application form names the documents an applicant accepts.
+- **E-signature:** a gym owner who has not signed the subscription agreement
+  is taken to `/onboarding/agreement` before anything else. The agreement
+  text is code-owned and versioned; the server publishes its SHA-256, the
+  browser hashes what it displayed, and a mismatch is flagged for review.
+  The signing records the gym's legal details, the signatory (name, role,
+  national ID or passport, phone, email), plan, contract start date, term,
+  four declarations, a drawn or typed signature, the device, and the server
+  time. The ID number is masked everywhere and revealed only by a platform
+  admin with a reason and an audit event; platform admins countersign from
+  the new Agreements console; signer and countersign copies go through the
+  operational email boundary. The demo gym is seeded as countersigned;
+  `rivet.demo.agreement=required` simulates an unsigned gym in previews.
+- **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
+  allowlist | live (default off; the legacy boolean is honoured as live only
+  while the new variable is unset). Sandbox redirects to
+  `RIVET_EMAIL_SANDBOX_TO`, allowlist suppresses non-listed recipients with a
+  reason, and every attempt records the mode and the address actually used.
+- **WhatsApp/SMS provider seam:** `RIVET_MESSAGING_MODE` plus Twilio
+  credentials form the global switch; each gym's "External delivery" setting
+  is the second. A minute worker sends due automation messages and renewal
+  reminders for live gyms, records provider ids, retries with backoff, and
+  defers quiet-hour sends to the end of the window. A bilingual utility
+  template catalogue (renewal, payment, class, entry pass) ships in code.
+- **Pricing:** Starter/Growth/Pro remain provisional; the platform pricing
+  page says so and docs/19 carries the sign-off sheet.
+- **Convex deployment owed to Production:** additive schema
+  (`subscriptionAgreements` table with four indexes; email attempt fields),
+  new cron for the messaging worker, new environment names (docs/12).
+
+## Auditor role retired, readable permission matrix — 2 September 2026
+
+- **The read-only auditor role is gone as a product concept.** It cannot be
+  invited or assigned, has no dashboard, persona, seeded user, navigation
+  branch-picker privilege or default permissions, and every role list in the
+  server, the frontend catalogue, the mock and the tests now names five gym
+  roles (owner, manager, sales, reception, trainer). Read-only finance
+  access is expressed the honest way: a manager whose `accounting.post` or
+  `operations.manage` capability is switched off in the matrix.
+- **Deploy safety:** the `auditor` literal stays in the stored-role
+  validators only so historical `organizationMemberships` and audit rows keep
+  validating on a Production deploy; `requireActor` refuses to build an actor
+  from such a membership with a clear "role retired" message, and the
+  permission helpers treat it as having no capabilities.
+- **Permission matrix copy:** each row now shows a plain-language name with a
+  one-line hint ("Collect payments — Take payments and run checkout") instead
+  of the raw permission code, and rows no longer highlight on hover. Codes
+  remain the server contract (`PERMISSION_LABELS` in
+  `src/lib/domain/permissions.ts`).
+- Convex deployment for this change is still owed to Production alongside the
+  payables/checkout sprint (additive schema; no index changes here).
 ## Responsive desktop edge spring — 2 September 2026
 
 - Replaced the desktop shell's debounce-plus-transition overscroll return with

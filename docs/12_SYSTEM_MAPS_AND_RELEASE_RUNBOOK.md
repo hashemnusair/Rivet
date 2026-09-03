@@ -977,7 +977,17 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RESEND_FROM_EMAIL` | — | — | — | Verified sender | — |
 | `RESEND_WEBHOOK_SECRET` | — | — | — | Resend signing secret | — |
 | `RIVET_APPLICATION_RECIPIENTS` | — | — | — | Partner recipient list | — |
-| `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Global kill switch; default `false` | — |
+| `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Deprecated alias: `true` means `live` only while `RIVET_EMAIL_MODE` is unset | — |
+| `RIVET_EMAIL_MODE` | Absent (`off`) | `sandbox` if email is exercised | `allowlist` until go-live, then `live` | Authoritative email go-live flag: `off`, `sandbox`, `allowlist`, `live`; unrecognised values mean `off` | `sandbox` |
+| `RIVET_EMAIL_SANDBOX_TO` | — | Catch-all inbox | — | Required in `sandbox` mode; every email is redirected here | Catch-all inbox |
+| `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | Required in `allowlist` mode; everyone else is suppressed with a reason | — |
+| `RIVET_MESSAGING_MODE` | Absent (`off`) | — | `allowlist` until go-live, then `live` | WhatsApp/SMS go-live flag: `off`, `sandbox`, `allowlist`, `live`; a gym must also switch external delivery on | `sandbox` |
+| `RIVET_MESSAGING_PROVIDER` | — | — | `twilio` | Only supported provider | `twilio` |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | — | — | Production account | Provider credentials | Test account |
+| `TWILIO_MESSAGING_SERVICE_SID` | — | — | SMS messaging service | SMS sender; without it SMS is "not configured" | Test service |
+| `TWILIO_WHATSAPP_FROM` | — | — | `whatsapp:+…` approved sender | WhatsApp sender; without it WhatsApp is "not configured" | Twilio sandbox sender |
+| `RIVET_MESSAGING_SANDBOX_TO` | — | RIVET test phone | — | Required in `sandbox` mode; every message is redirected here | RIVET test phone |
+| `RIVET_MESSAGING_ALLOWLIST` | — | — | Comma list of E.164 numbers or `+96279*` prefixes | Required in `allowlist` mode | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
@@ -1043,6 +1053,8 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `RESEND_API_KEY` exists.
 - [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
+- [ ] Confirm `RIVET_EMAIL_MODE` is `allowlist` (with `RIVET_EMAIL_ALLOWLIST` = RIVET staff and the pilot gym) until the email go-live checklist in docs/19 is complete, then `live`.
+- [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
 - [x] Do not run `seed:seedDemoTenant`.
 - [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.

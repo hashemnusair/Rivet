@@ -30,7 +30,7 @@ export default function ShiftsPage() {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
-  const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager" || session?.roles[0] === "auditor";
+  const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager";
   const [branchId, setBranchId] = useState("");
   useEffect(() => {
     const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
@@ -173,7 +173,7 @@ export default function ShiftsPage() {
         permission="reports.financial.read"
         fallback={
           <section className="panel p-4">
-            <p className="text-[13px] text-ink-3">Daily reconciliation totals are visible to owner, manager and auditor roles.</p>
+            <p className="text-[13px] text-ink-3">Daily reconciliation totals are visible to owner and manager roles.</p>
           </section>
         }
       >

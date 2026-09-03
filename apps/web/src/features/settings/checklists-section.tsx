@@ -21,7 +21,6 @@ const ROLE_LABELS: Record<ChecklistRole, string> = {
   sales: "Sales",
   receptionist: "Reception",
   trainer: "Coach",
-  auditor: "Auditor",
 };
 
 interface DraftItem {

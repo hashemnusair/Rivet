@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const DEMO_PERSONA_KEY = "rivet.demo.persona";
 
 async function enterOwner(page: Page) {
   await page.goto("/login/gym");
@@ -38,21 +37,10 @@ test.describe("Unified Today queue", () => {
     await expect(queue.locator("header p.tabular")).toHaveText(String(before - 1));
   });
 
-  test("expands truthfully and keeps the auditor projection read-only", async ({ page }) => {
+  test("expands truthfully beyond the display limit", async ({ page }) => {
     await enterOwner(page);
     const ownerQueue = page.getByRole("region", { name: "Today" });
     await ownerQueue.getByRole("button", { name: /Show \d+ more/ }).click();
     await expect(ownerQueue.getByText(/Showing the top \d+ of \d+/)).toBeVisible();
-
-    await page.goto("/login/gym");
-    await page.evaluate(({ key, value }) => window.sessionStorage.setItem(key, value), { key: DEMO_PERSONA_KEY, value: "auditor" });
-    await page.reload();
-    await page.goto("/dashboard");
-
-    await expect(page.getByRole("heading", { name: /Review, / })).toBeVisible();
-    const auditorQueue = page.getByRole("region", { name: "Today" });
-    await expect(auditorQueue).toBeVisible();
-    await expect(auditorQueue.locator('button[aria-label^="Complete "]')).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Review workspaces" })).toBeVisible();
   });
 });

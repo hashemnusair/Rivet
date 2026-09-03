@@ -184,6 +184,44 @@ decisions explicit:
   supplier-payment source type, and refund-shortens-service semantics remain
   open owner/accountant decisions recorded in docs/18 §4.
 
+## Legal, e-signature, email and messaging go-live — 2026-09-03
+
+- **Legal documents are published in the app**, not on a separate site:
+  `/privacy` and `/terms` (with the data processing addendum), version
+  1.0 · 3 September 2026, written for review by a Jordanian lawyer before the
+  first real signature. RIVET's contact details (Instagram @rivet.jo, phone
+  077 837 8608, WhatsApp) live in one constant and appear in every footer.
+- **The subscription agreement is signed inside RIVET with RIVET's own
+  e-signature.** The text is code-owned and versioned; the server publishes
+  its SHA-256 and the browser hashes what it displayed, with a mismatch
+  flagged for review, never silently rejected. Signing is owner-only, records
+  the gym's legal details, the signatory's national ID or passport number,
+  plan, contract start date, initial term, four declarations, and a drawn or
+  typed signature; the server clock is the time of signing. RIVET
+  countersigns from the platform console. **Decided:** the ID number is
+  stored in the agreement row on Convex (encrypted at rest), masked
+  everywhere, never in audit payloads, and revealed only by a platform admin
+  with a reason and an audit event. **Open:** field-level encryption of the
+  ID number and capturing the signer's IP address both need a trusted server
+  hop (a Next.js route or Convex HTTP action); neither is in this release and
+  the privacy policy wording reflects what is actually recorded.
+- **Operational email has one go-live flag**, `RIVET_EMAIL_MODE`
+  (off/sandbox/allowlist/live). Off is the default and the fallback for
+  anything unrecognised. The legacy boolean is honoured as `live` only while
+  the new variable is unset. **Open [decide]:** the sending domain and DMARC
+  policy, and the date to move Production from `allowlist` to `live`.
+- **WhatsApp/SMS use Twilio as the single provider** behind
+  `RIVET_MESSAGING_MODE` plus a per-gym "External delivery" switch; both must
+  be on. Quiet hours defer instead of dropping. The reviewed utility template
+  catalogue is code-owned and bilingual. **Open [decide]:** Twilio versus the
+  Meta Cloud API for WhatsApp, the Meta business verification and template
+  approval timeline, the STOP/إيقاف inbound handling (Twilio Advanced Opt-Out
+  for SMS; WhatsApp needs an inbound webhook), and who pays message costs
+  per tier.
+- **Pricing tiers stay provisional.** Starter, Growth and Pro are live in the
+  product with their limits and prices; the platform pricing page says so and
+  docs/19 carries the sign-off sheet. Nothing is quoted as final until signed.
+
 ## Membership revenue posts in full at sale — 2026-09-01
 
 The owner reviewed the deferred model live and retired it for new sales:

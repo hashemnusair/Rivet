@@ -15,6 +15,44 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
+## Current release index — 3 September 2026
+
+### Legal pages, e-signature onboarding, email and messaging go-live flags — 3 September 2026
+
+- [x] Publish `/privacy` and `/terms` (with the data processing addendum) in
+  the app, versioned for lawyer review, and put RIVET's contact details
+  (Instagram @rivet.jo, 077 837 8608, WhatsApp) in every footer.
+- [x] Build RIVET's own e-signature for the subscription agreement: owner-only
+  signing at onboarding with gym details, signatory name, national ID or
+  passport number, plan, start date, term, declarations, drawn or typed
+  signature, server time, document fingerprint, masked ID, audited reveal,
+  platform countersign, email copies through the operational email boundary.
+- [x] Replace the email live boolean with `RIVET_EMAIL_MODE`
+  (off/sandbox/allowlist/live), recorded per attempt and shown in settings.
+- [x] Add the WhatsApp/SMS provider seam (Twilio), the outbound worker,
+  quiet-hour deferral, and the bilingual utility template catalogue; the
+  gym's external-delivery switch and the global mode must both be on.
+- [x] Add the provisional-pricing notice and the docs/19 sign-off sheet.
+- [ ] Lawyer review of the three legal documents and Arabic versions.
+- [ ] Decide the email sending domain and flip Production email from
+  `allowlist` to `live` after two clean weeks (docs/19 checklist).
+- [ ] Meta business verification, WhatsApp template approval, inbound
+  STOP handling, and the messaging go-live decision (docs/19).
+- [ ] Sign the pricing sheet (docs/19) and remove the provisional notice.
+- [ ] Deploy the Convex backend to Production (owed for this whole batch;
+  requires Hashem's explicit authorization).
+
+
+### Auditor role retired and permission matrix made readable — 2 September 2026
+
+- [x] Remove the read-only auditor role from invitations, access changes,
+  defaults, personas, dashboards, navigation, tests and docs; keep the stored
+  literal for historical rows and refuse to build an actor from it.
+- [x] Replace permission codes in the settings matrix with plain-language
+  names and hints; remove the row hover highlight.
+- [ ] Deploy the Convex backend to Production (owed together with the
+  payables/checkout sprint; requires Hashem's explicit authorization).
+
 ## Current release index — 31 August 2026
 
 ### Supplier payables, supplier payments, and the canonical checkout — 2 September 2026
@@ -245,8 +283,9 @@ values, applicant details, and provider credentials out of this file.
   balances, same-day access denials, pending approvals, cash variances and
   facility work. The shared dashboard aggregation is deterministic,
   role/branch-safe and count-truthful beyond its 12-row display limit; owners,
-  managers, sales and reception receive tailored projections, auditors receive
-  a dedicated read-only dashboard, and trainers retain their PT day. One-tap
+  managers, sales and reception receive tailored projections, and trainers
+  retain their PT day (the auditor dashboard was retired with the role on
+  2 September 2026). One-tap
   task completion, direct collect/renew actions, responsive ordering and empty,
   loading, expansion and truncation states are covered. Application tip
   `8c4be51` passed 945 Vitest tests and the full 41-pass/14-skip browser gate.
@@ -1089,7 +1128,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - Status: **Resolved in the credential-free browser matrix; credentialed
   provider acceptance remains open**.
 - Evidence: `apps/web/e2e/role-routing.spec.ts` covers member, owner, manager,
-  sales, reception, trainer, auditor, and platform-admin destinations, direct
+  sales, reception, trainer, and platform-admin destinations, direct
   forbidden routes, sign-out, cold refresh, unavailable-gym recovery, and
   wrong-dashboard flash prevention. The local matrix passed 7/7 tests.
 - Risk: a valid gym owner, platform admin, or member can land on the wrong surface or see a misleading role error.

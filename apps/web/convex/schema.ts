@@ -28,6 +28,9 @@ const gymApplicationNotificationStatus = v.union(
 const customerMarketingPreferenceSource = v.union(v.literal("system_default"), v.literal("member_selected"));
 const customerMarketingPreferenceStatus = v.union(v.literal("explicit_opt_in"), v.literal("explicit_opt_out"), v.literal("unknown"));
 
+// "auditor" is a retired role. The literal stays so historical rows still
+// validate on deploy; security refuses to build an actor from one and no
+// invitation or access change can assign it.
 export const organizationRole = v.union(
   v.literal("owner"),
   v.literal("manager"),
@@ -1199,7 +1202,7 @@ export default defineSchema({
     dedupeKey: v.string(),
     providerId: v.optional(v.string()),
     providerEventAt: v.optional(v.number()),
-    attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()) })),
+    attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure"), v.literal("suppressed")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()), mode: v.optional(v.string()), deliveredTo: v.optional(v.string()) })),
     status: v.union(v.literal("queued"), v.literal("leased"), v.literal("provider_accepted"), v.literal("delivered"), v.literal("retrying"), v.literal("failed"), v.literal("suppressed")),
     suppressionReason: v.optional(v.string()),
     nextAttemptAt: v.optional(v.number()),
@@ -1215,6 +1218,72 @@ export default defineSchema({
     .index("by_provider_id", ["providerId"])
     .index("by_related_entity", ["relatedEntityType", "relatedEntityPublicId"])
     .index("by_organization_created", ["organizationId", "createdAt"]),
+
+  // A signed subscription agreement is an immutable legal fact. The row
+  // keeps the signatory's ID number so the contract is tied to a person;
+  // it is only ever revealed to platform admins with a reason and an audit
+  // event, masked everywhere else, and deleted with the record.
+  subscriptionAgreements: defineTable({
+    organizationId: v.id("organizations"),
+    organizationPublicId: v.string(),
+    publicId: v.string(),
+    reference: v.string(),
+    agreementVersion: v.string(),
+    documentSha256: v.string(),
+    clientDocumentSha256: v.optional(v.string()),
+    hashMatch: v.boolean(),
+    status: v.union(v.literal("signed"), v.literal("countersigned"), v.literal("void")),
+    customer: v.object({
+      legalName: v.string(),
+      tradeName: v.optional(v.string()),
+      registrationNumber: v.optional(v.string()),
+      address: v.string(),
+      city: v.string(),
+      branches: v.number(),
+    }),
+    signatory: v.object({
+      name: v.string(),
+      title: v.string(),
+      idType: v.union(v.literal("national"), v.literal("passport")),
+      idNumber: v.string(),
+      phone: v.string(),
+      email: v.string(),
+    }),
+    subscription: v.object({
+      plan: v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise")),
+      startDate: v.string(),
+      termMonths: v.number(),
+      quote: v.optional(v.string()),
+    }),
+    consents: v.object({ agreement: v.boolean(), authority: v.boolean(), electronic: v.boolean(), accurate: v.boolean() }),
+    signature: v.object({
+      method: v.union(v.literal("drawn"), v.literal("typed")),
+      imageDataUrl: v.optional(v.string()),
+      typedName: v.optional(v.string()),
+    }),
+    client: v.object({ userAgent: v.string(), language: v.string(), viewport: v.string(), ipAddress: v.optional(v.string()) }),
+    placeOfSigning: v.string(),
+    signedAt: v.number(),
+    signedAtLocal: v.string(),
+    timezone: v.string(),
+    signedByUserId: v.id("users"),
+    signedByName: v.string(),
+    countersignedAt: v.optional(v.number()),
+    countersignedByUserId: v.optional(v.id("users")),
+    countersignedByName: v.optional(v.string()),
+    countersignTitle: v.optional(v.string()),
+    countersignTypedName: v.optional(v.string()),
+    voidedAt: v.optional(v.number()),
+    voidReason: v.optional(v.string()),
+    idRevealCount: v.number(),
+    emailDeliveryPublicId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId"])
+    .index("by_public_id", ["publicId"])
+    .index("by_reference", ["reference"])
+    .index("by_status", ["status"]),
 
   operationalEmailSettings: defineTable({
     organizationId: v.id("organizations"),

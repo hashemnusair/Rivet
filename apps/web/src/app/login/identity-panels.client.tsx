@@ -139,7 +139,7 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
     try {
       await selectOrganization(organizationId);
       const selected = identity.memberships.find((membership) => membership.organizationId === organizationId);
-      if (selected) router.replace(selected.role === "receptionist" ? "/reception" : selected.role === "auditor" ? "/reports" : "/dashboard");
+      if (selected) router.replace(selected.role === "receptionist" ? "/reception" : "/dashboard");
     } catch {
       setBusy(undefined);
       setError(true);

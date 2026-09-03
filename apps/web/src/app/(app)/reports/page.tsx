@@ -132,7 +132,7 @@ export default function ReportsPage() {
         actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || (transactionsQuery.data?.totalItems ?? 0) === 0}><Download /> Export all transactions</Button> : undefined}
       />
 
-      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner, manager, and auditor access is required for financial reporting." />}>
+      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner or manager access is required for financial reporting." />}>
         <nav aria-label="Report views" className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
           {(["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"] as const).map((kind) => (
             <button

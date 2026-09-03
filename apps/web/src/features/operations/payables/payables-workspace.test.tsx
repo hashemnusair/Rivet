@@ -79,7 +79,11 @@ describe("payables workspace", () => {
     await renderWithApp(<PayablesWorkspace />, { role: "salesperson" });
     expect(await screen.findByText("Not allowed for this role")).toBeInTheDocument();
     resetApiForTests();
-    await renderWithApp(<PayablesWorkspace />, { role: "auditor" });
+    await renderWithApp(<PayablesWorkspace />, { role: "manager", prepare: async (api) => {
+      const managerPermissions = (await api.switchDemoRole("manager")).permissions.filter((permission) => permission !== "operations.manage");
+      await api.switchDemoRole("owner");
+      await api.updateRolePermissions("manager", { permissions: managerPermissions });
+    } });
     expect(await screen.findAllByTestId("payable-row")).toHaveLength(1);
     expect(screen.queryByTestId("open-record-supplier-payment")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Pay /i })).not.toBeInTheDocument();

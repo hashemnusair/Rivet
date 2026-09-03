@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const DEMO_PERSONA_KEY = "rivet.demo.persona";
 
 type VisibleStaffRole = "owner" | "manager" | "salesperson" | "receptionist";
-type HiddenStaffRole = "trainer" | "auditor";
+type HiddenStaffRole = "trainer";
 
 const VISIBLE_ROLE_LABELS: Record<VisibleStaffRole, RegExp> = {
   owner: /Owner Omar Al-Khatib/i,
@@ -20,7 +20,7 @@ async function enterVisibleStaff(page: Page, role: VisibleStaffRole) {
 }
 
 async function enterHiddenStaff(page: Page, role: HiddenStaffRole, destination: "/dashboard" | "/reports") {
-  // Trainer and auditor are supported seeded personas, but are intentionally
+  // The trainer is a supported seeded persona, but is intentionally
   // not account-chooser shortcuts. The preview's existing sessionStorage seam
   // lets this matrix exercise their real route guards without introducing a
   // second auth path or a Production bypass.
@@ -53,7 +53,7 @@ async function enterPlatformAdmin(page: Page) {
 }
 
 test.describe("credential-free role routing", () => {
-  test("routes member, owner, manager, sales, reception, trainer, and auditor to their workspaces", async ({ page }) => {
+  test("routes member, owner, manager, sales, reception, and trainer to their workspaces", async ({ page }) => {
     await enterMember(page);
     await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
 
@@ -72,8 +72,6 @@ test.describe("credential-free role routing", () => {
     await enterHiddenStaff(page, "trainer", "/dashboard");
     await expectGymWorkspace(page, "/dashboard");
 
-    await enterHiddenStaff(page, "auditor", "/reports");
-    await expectGymWorkspace(page, "/reports");
   });
 
   test("opens the platform console only for the platform administrator", async ({ page }) => {

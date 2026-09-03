@@ -15,9 +15,9 @@ async function seed(t: TestConvex<typeof schema>) {
     const otherOrg = await ctx.db.insert("organizations", { publicId: "org-nav-other", name: "Other Gym", slug: "other-gym", status: "active", timezone: "UTC", currency: "USD", createdAt: now, updatedAt: now });
     const branch = await ctx.db.insert("branches", { organizationId: org, publicId: "branch-nav", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "owner-nav", authSubject: "clerk-owner-nav", email: "owner@nav.test", fullName: "Owner Nav", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
-    const auditor = await ctx.db.insert("users", { publicId: "auditor-nav", authSubject: "clerk-auditor-nav", email: "auditor@nav.test", fullName: "Auditor Nav", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    const trainer = await ctx.db.insert("users", { publicId: "trainer-nav", authSubject: "clerk-trainer-nav", email: "trainer@nav.test", fullName: "Trainer Nav", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: org, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
-    await ctx.db.insert("organizationMemberships", { organizationId: org, userId: auditor, role: "auditor", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
+    await ctx.db.insert("organizationMemberships", { organizationId: org, userId: trainer, role: "trainer", branchIds: [branch], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: org, entityType: "member", publicId: "member-nav", branchId: branch, memberPublicId: "member-nav", createdAt: now, updatedAt: now, data: { id: "member-nav", fullName: "Lina Haddad", memberNumber: "M-1042", phone: "+962 79 551 2042", homeBranchId: "branch-nav" } });
     await ctx.db.insert("domainRecords", { organizationId: org, entityType: "payment", publicId: "payment-nav", branchId: branch, memberPublicId: "member-nav", createdAt: now, updatedAt: now, data: { id: "payment-nav", memberId: "member-nav", memberName: "Lina Haddad", receiptId: "receipt-nav", receiptNumber: "RCP-7782", externalReference: "CLIQ-AX91", status: "completed", occurredAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: otherOrg, entityType: "member", publicId: "member-secret", createdAt: now, updatedAt: now, data: { id: "member-secret", fullName: "Other Tenant Secret", memberNumber: "SECRET-1", phone: "+962 79 999 9999" } });
@@ -48,8 +48,8 @@ describe("workspace navigation helpers", () => {
     expect(recent).toEqual([expect.objectContaining({ id: "member-nav", viewedAt: expect.any(String) })]);
     const pinned = await owner.mutation(api.domain.mutate, operation("workspace.pin.upsert", { targetKey: "collect-payment", kind: "action", label: "Collect payment", href: "/payments?collect=1" })) as { id: string };
     expect(await owner.query(api.domain.query, operation("workspace.pins"))).toEqual([expect.objectContaining({ id: pinned.id, targetKey: "collect-payment" })]);
-    const auditor = t.withIdentity({ subject: "clerk-auditor-nav" });
-    expect(await auditor.query(api.domain.query, operation("workspace.recents"))).toEqual([]);
-    await expectCode(auditor.mutation(api.domain.mutate, operation("workspace.pin.upsert", { targetKey: "collect-payment", kind: "action", label: "Collect payment", href: "/payments?collect=1" })), "FORBIDDEN");
+    const trainer = t.withIdentity({ subject: "clerk-trainer-nav" });
+    expect(await trainer.query(api.domain.query, operation("workspace.recents"))).toEqual([]);
+    await expectCode(trainer.mutation(api.domain.mutate, operation("workspace.pin.upsert", { targetKey: "collect-payment", kind: "action", label: "Collect payment", href: "/payments?collect=1" })), "FORBIDDEN");
   });
 });

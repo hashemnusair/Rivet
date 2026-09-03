@@ -3,7 +3,9 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { DEFAULT_ROLE_DEFINITIONS, rolePermissions, type Permission } from "./permissions";
 
-export type OrganizationRole = "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor";
+export type OrganizationRole = "owner" | "manager" | "sales" | "receptionist" | "trainer";
+/** Stored role literals, including the retired auditor role kept only for historical rows. */
+export type StoredOrganizationRole = OrganizationRole | "auditor";
 export type AccountStatus = "active" | "invited" | "deactivated";
 export type ReadCtx = QueryCtx | MutationCtx;
 
@@ -86,7 +88,7 @@ type MaybeMembership = {
   _creationTime: number;
   organizationId: Id<"organizations">;
   userId: Id<"users">;
-  role: OrganizationRole;
+  role: StoredOrganizationRole;
   branchIds: Id<"branches">[];
   active: boolean;
   branchScope?: "all" | "selected";
@@ -261,7 +263,10 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
     .query("roleDefinitions")
     .withIndex("by_organization_role", (q) => q.eq("organizationId", organization._id).eq("role", membership.role))
     .unique();
-  const role = membership.role;
+  if (membership.role === "auditor") {
+    domainError("FORBIDDEN", "The read-only auditor role was retired. Ask an owner to assign you a current role.");
+  }
+  const role: OrganizationRole = membership.role as OrganizationRole;
   const branchScope = membership.branchScope ?? (role === "owner" || role === "manager" ? "all" : "selected");
   const organizationBranches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
   const activeBranchIds = new Set(organizationBranches.filter((candidate) => candidate.active && candidate.status !== "inactive").map((candidate) => candidate._id));

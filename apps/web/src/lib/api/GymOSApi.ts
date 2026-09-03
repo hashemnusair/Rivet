@@ -475,6 +475,8 @@ export interface PlatformGymDetail {
   joinedAt: PlatformData<string>;
   branches: PlatformData<PlatformGymDetailBranch[]>;
   owner: PlatformData<PlatformGymOwner>;
+  /** The active subscription agreement; not_configured until the owner signs. */
+  agreement: PlatformData<import("@/lib/domain/types").PlatformAgreementSummary>;
   usage: {
     memberCount: PlatformData<number>;
     activeStaffCount: PlatformData<number>;
@@ -1148,6 +1150,18 @@ export interface GymOSApi {
   receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
 
+  // Outbound messaging (WhatsApp / SMS)
+  getMessagingStatus(): Promise<import("@/lib/domain/types").MessagingStatus>;
+  listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
+
+  // Subscription agreement (e-signature at onboarding)
+  getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
+  signSubscriptionAgreement(input: import("@/lib/domain/types").SignSubscriptionAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  listPlatformAgreements(): Promise<import("@/lib/domain/types").PlatformAgreementSummary[]>;
+  getPlatformAgreement(agreementId: UUID): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  revealPlatformAgreementId(input: import("@/lib/domain/types").RevealAgreementIdInput): Promise<import("@/lib/domain/types").RevealAgreementIdResult>;
+  countersignPlatformAgreement(input: import("@/lib/domain/types").CountersignAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+
   // Supplier payables and supplier payments (Growth+ operations module)
   listPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesPage>;
   exportPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesExport>;
@@ -1217,6 +1231,8 @@ export interface MockBehavior {
   failNextPublicSubscription: boolean;
   /** return empty pages for list endpoints */
   forceEmptyLists: boolean;
+  /** Preview/test seam: pretend the demo gym has not signed its subscription agreement yet. */
+  agreementUnsigned?: boolean;
 }
 
 export const DEFAULT_BEHAVIOR: MockBehavior = {

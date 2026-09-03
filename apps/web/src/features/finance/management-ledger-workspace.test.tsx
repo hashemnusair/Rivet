@@ -57,8 +57,12 @@ describe("ManagementLedgerWorkspace", () => {
     expect(screen.queryByRole("button", { name: /post source/i })).not.toBeInTheDocument();
   });
 
-  it("keeps source posting actions out of the auditor view while preserving the queue", async () => {
-    await renderWithApp(<ManagementLedgerWorkspace />, { role: "auditor" });
+  it("keeps source posting actions out of a read-only manager view while preserving the queue", async () => {
+    await renderWithApp(<ManagementLedgerWorkspace />, { role: "manager", prepare: async (api) => {
+      const managerPermissions = (await api.switchDemoRole("manager")).permissions.filter((permission) => permission !== "accounting.post");
+      await api.switchDemoRole("owner");
+      await api.updateRolePermissions("manager", { permissions: managerPermissions });
+    } });
 
     expect(await screen.findByText(/read-only for this role/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /manual journal/i })).not.toBeInTheDocument();

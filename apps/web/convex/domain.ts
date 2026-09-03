@@ -16,6 +16,7 @@ import {
   requireReason,
   type ActorContext,
   type OrganizationRole,
+  type StoredOrganizationRole,
   type RequestArgs,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, roleDiscountLimit, rolePermissions, toFrontendRole } from "./permissions";
@@ -46,6 +47,10 @@ import {
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
 import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
+import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
+import { resolveEmailMode } from "./emailMode";
+import { resolveMessagingMode } from "./messagingMode";
+import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -229,7 +234,7 @@ const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -718,7 +723,7 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
     .query("organizationMemberships")
     .withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId))
     .collect())
-    .filter((membership) => membership.active && input.roles.includes(membership.role))
+    .filter((membership) => membership.active && (input.roles as string[]).includes(membership.role))
     .filter((membership) => !input.branchId || membership.branchScope === "all" || membership.branchIds.includes(input.branchId));
   await Promise.all(memberships.map(async (membership) => {
     if (input.excludeUserId && membership.userId === input.excludeUserId) return;
@@ -954,7 +959,7 @@ function roleFromFrontend(value: unknown): OrganizationRole {
   return normalized as OrganizationRole;
 }
 
-function frontendRole(value: OrganizationRole): string {
+function frontendRole(value: StoredOrganizationRole): string {
   return toFrontendRole(value);
 }
 
@@ -1524,6 +1529,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
     roles: [frontendRole(actor.role)],
     permissions: actor.permissions,
     workspace,
+    legal: await agreementSessionState(ctx, actor),
   };
 }
 
@@ -3483,7 +3489,7 @@ const AUTOMATION_TRIGGER_KEYS = [
   "payment_outstanding",
 ] as const;
 const AUTOMATION_ACTION_KEYS = ["create_task", "queue_message", "notify_manager"] as const;
-const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"] as const;
+const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const;
 
 function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
@@ -4313,7 +4319,7 @@ async function onboardingExperience(ctx: ReadContext, input: Data, request: Requ
     hasPermission(actor, "crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review overdue and upcoming work assigned to you.", "/crm/queues", "required") : null,
     actor.role === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
     actor.role === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule, member bookings, and package credits.", "/pt", "required") : null,
-    ["manager", "auditor"].includes(actor.role) && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
+    actor.role === "manager" && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
     manualTask("staff_security", "Review safe handling", "Know why sensitive changes require reasons and leave audit events.", "/getting-started#security"),
   ].filter(Boolean);
   return { progress, tasks: audience === "owner" ? ownerTasks : staffTasks, role: actor.role, organizationName: actor.organization.name };
@@ -4934,6 +4940,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await buildSession(ctx, actor, request.activeBranchId);
   }
 
+  if (operation === "legal.agreement.current" || operation === "platform.agreements.list" || operation === "platform.agreement.get") {
+    return await legalAgreementQuery(ctx, operation, input, request);
+  }
+
   if (operation === "health") {
     return { status: "ok", serverTime: Date.now() };
   }
@@ -5236,6 +5246,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
     let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
     let owner: { name: string; email: string; phone?: string } | undefined;
+    let agreement: (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
     let memberCount = 0;
     let activeStaffCount = 0;
     let staffLimit: number | undefined;
@@ -5262,6 +5273,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const ownerMembership = membershipRows.find((membership) => membership.active && membership.role === "owner");
       const ownerUser = ownerMembership ? await ctx.db.get(ownerMembership.userId) : null;
       if (ownerUser) owner = { name: ownerUser.fullName, email: ownerUser.email, phone: ownerUser.phone };
+      agreement = await agreementSummaryForOrganization(ctx, organization._id, organization.name) as (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
 
       const [memberRows, planRows, ruleRows, paymentRows] = await Promise.all([
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
@@ -5349,6 +5361,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         : undefined,
       branches,
       owner,
+      agreement,
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
       recurringAmountMinor,
       invoices,
@@ -5427,6 +5440,26 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const access = await workspaceAccessData(ctx, actor);
       return access.preferences;
     }
+    case "messaging.status": {
+      const resolution = resolveMessagingMode();
+      const settings = (await recordsOf(ctx, actor, "settings"))[0];
+      const notifications = data(data(settings?.data).notifications);
+      return {
+        mode: resolution.mode,
+        provider: resolution.provider,
+        whatsappReady: resolution.whatsappReady,
+        smsReady: resolution.smsReady,
+        sandboxConfigured: resolution.sandboxConfigured,
+        allowlistSize: resolution.allowlistSize,
+        warning: resolution.warning,
+        gymDeliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox"),
+        quietHoursStart: stringValue(notifications.quietHoursStart, "22:00"),
+        quietHoursEnd: stringValue(notifications.quietHoursEnd, "08:00"),
+        catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION,
+      };
+    }
+    case "messaging.templates.catalogue":
+      return MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] }));
     case "workspace.module": {
       const key = stringValue(input.moduleKey);
       if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "Unknown workspace module.", { correlationId: actor.correlationId, details: { module: key } });
@@ -5440,7 +5473,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const updatedBy = settings ? await ctx.db.get(settings.updatedByUserId) : undefined;
       const confirmedBy = settings?.ownerConfirmedByUserId ? await ctx.db.get(settings.ownerConfirmedByUserId) : undefined;
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
+      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
     }
     case "settings.brand.get":
       requirePermission(actor, "settings.manage");
@@ -7761,6 +7794,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const timelineId = newPublicId();
     await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
     return await publicOfferView(ctx, token);
+  }
+
+  if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign") {
+    return await legalAgreementMutation(ctx, operation, input, request);
   }
 
   if (operation === "platform.marketingMigration.apply") {
@@ -10983,7 +11020,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason, ownerConfirmedAt: now, ownerConfirmedByUserId: actor.user._id, createdAt: now, updatedAt: now });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} gym-controlled service email type${enabledKinds.length === 1 ? "" : "s"}`, reason: reason || undefined, before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
+      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
     }
     case "settings.operationalPolicies": {
       requirePermission(actor, "settings.manage");
@@ -11365,7 +11402,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
           ? optionalString(leadById.get(stringValue(task.leadId))?.branchId)
           : undefined;
       if (!queueBranchVisible(taskBranchId)) continue;
-      if (!canManageTeam && role !== "auditor" && stringValue(task.ownerId) !== actorPublicId) continue;
+      if (!canManageTeam && stringValue(task.ownerId) !== actorPublicId) continue;
       const dueAt = stringValue(task.dueAt);
       if (businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
       const overdueTask = dueAt < isoNow();
@@ -11473,7 +11510,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     }
   }
 
-  if (["owner", "manager", "receptionist", "auditor"].includes(role)) {
+  if (["owner", "manager", "receptionist"].includes(role)) {
     const latestBlockedByMember = new Map<string, Data>();
     for (const checkin of checkins) {
       if (stringValue(checkin.decision) !== "blocked" || businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== today) continue;

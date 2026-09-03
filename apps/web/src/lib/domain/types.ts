@@ -49,10 +49,10 @@ export type RoleKey =
   | "manager"
   | "salesperson"
   | "receptionist"
-  | "trainer"
-  | "auditor";
+  | "trainer";
 
-export type AuditActorRole = RoleKey | "member";
+/** Historical audit rows may still carry the retired auditor role. */
+export type AuditActorRole = RoleKey | "auditor" | "member";
 
 export type BranchScope = "all" | "selected";
 
@@ -356,6 +356,205 @@ export interface PurchaseOrder {
   receivedAt?: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
+}
+
+// ---------------------------------------------------------------------------
+// Outbound messaging (WhatsApp / SMS)
+// ---------------------------------------------------------------------------
+export type MessagingMode = "off" | "sandbox" | "allowlist" | "live";
+
+/** Global provider state plus this gym's own delivery switch; never carries secrets. */
+export interface MessagingStatus {
+  mode: MessagingMode;
+  provider: "twilio" | "none";
+  whatsappReady: boolean;
+  smsReady: boolean;
+  sandboxConfigured: boolean;
+  allowlistSize: number;
+  warning?: string;
+  gymDeliveryMode: "sandbox" | "live";
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  catalogueVersion: string;
+}
+
+export interface MessageTemplateCatalogueEntry {
+  key: string;
+  family: "renewal" | "payment" | "class" | "entry";
+  name: string;
+  category: "utility";
+  channels: Array<"whatsapp" | "sms">;
+  variables: string[];
+  bodyEn: string;
+  bodyAr: string;
+  version: string;
+}
+
+// ---------------------------------------------------------------------------
+// Subscription agreement (e-signature at onboarding)
+// ---------------------------------------------------------------------------
+export type AgreementPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type AgreementIdType = "national" | "passport";
+export type AgreementSignatureMethod = "drawn" | "typed";
+
+export interface AgreementTextSection {
+  number: string;
+  heading: string;
+  paragraphs: string[];
+}
+
+export interface SubscriptionAgreementCustomer {
+  legalName: string;
+  tradeName?: string;
+  registrationNumber?: string;
+  address: string;
+  city: string;
+  branches: number;
+}
+
+export interface SubscriptionAgreementSignatoryView {
+  name: string;
+  title: string;
+  idType: AgreementIdType;
+  /** All but the last four characters masked; the full number is platform-only. */
+  idNumberMasked: string;
+  phone: string;
+  email: string;
+}
+
+export interface SubscriptionAgreementTerms {
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  quote?: string;
+}
+
+export interface SubscriptionAgreementConsents {
+  agreement: boolean;
+  authority: boolean;
+  electronic: boolean;
+  accurate: boolean;
+}
+
+export interface SubscriptionAgreementSignature {
+  method: AgreementSignatureMethod;
+  /** PNG data URL when drawn. */
+  imageDataUrl?: string;
+  typedName?: string;
+}
+
+export interface SubscriptionAgreementClient {
+  userAgent: string;
+  language: string;
+  viewport: string;
+  ipAddress?: string;
+}
+
+export interface SubscriptionAgreement {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  customer: SubscriptionAgreementCustomer;
+  signatory: SubscriptionAgreementSignatoryView;
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning: string;
+  /** Server receipt time; the browser clock is never trusted. */
+  signedAt: ISODateTime;
+  signedAtLocal: string;
+  timezone: string;
+  signedByName: string;
+  /** SHA-256 of the canonical agreement text the server published. */
+  documentSha256: string;
+  /** SHA-256 the signer's browser computed over the text it displayed. */
+  clientDocumentSha256?: string;
+  hashMatch: boolean;
+  countersign?: { at: ISODateTime; byName: string; title: string; typedName: string };
+  idRevealCount: number;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface SubscriptionAgreementPrefill {
+  legalName: string;
+  tradeName?: string;
+  branches: number;
+  city?: string;
+  address?: string;
+  signatoryName: string;
+  signatoryTitle: string;
+  phone?: string;
+  email: string;
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  placeOfSigning: string;
+}
+
+/** Everything the signing page needs, from one server call. */
+export interface SubscriptionAgreementContext {
+  version: string;
+  sections: AgreementTextSection[];
+  /** The canonical text; hash this exact string to produce clientDocumentSha256. */
+  text: string;
+  sha256: string;
+  status: SubscriptionAgreementStatus | "signed" | "countersigned";
+  canSign: boolean;
+  organizationName: string;
+  timezone: string;
+  prefill: SubscriptionAgreementPrefill;
+  agreement?: SubscriptionAgreement;
+}
+
+export interface SignSubscriptionAgreementInput {
+  customer: SubscriptionAgreementCustomer;
+  signatory: { name: string; title: string; idType: AgreementIdType; idNumber: string; phone: string; email: string };
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning: string;
+  clientDocumentSha256: string;
+  idempotencyKey: string;
+}
+
+export interface PlatformAgreementSummary {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths: number;
+  signatoryName: string;
+  signedAt: ISODateTime;
+  countersignedAt?: ISODateTime;
+  hashMatch: boolean;
+}
+
+export interface CountersignAgreementInput {
+  agreementId: UUID;
+  title: string;
+  typedName: string;
+  idempotencyKey: string;
+}
+
+export interface RevealAgreementIdInput {
+  agreementId: UUID;
+  reason: string;
+}
+
+export interface RevealAgreementIdResult {
+  idNumber: string;
+  idType: AgreementIdType;
+  revealCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1276,15 @@ export interface Session {
   permissions: string[];
   /** Workspace entitlements/preferences are distinct from role permissions. */
   workspace?: WorkspaceAccess;
+  /** Whether this gym still owes RIVET a signed subscription agreement. Owners are gated until they sign. */
+  legal?: SessionLegalState;
+}
+
+export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";
+
+export interface SessionLegalState {
+  agreementStatus: SubscriptionAgreementStatus;
+  agreementReference?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1694,7 +1902,12 @@ export interface OperationalEmailActivationSettings {
   configurableKinds: string[];
   /** RIVET-controlled billing, subscription, and access notices. */
   mandatoryPlatformKinds: string[];
+  /** True when the worker runs (mode is not off) and a provider is configured. */
   liveWorkerEnabled: boolean;
+  /** RIVET_EMAIL_MODE: off | sandbox | allowlist | live. */
+  deliveryMode: "off" | "sandbox" | "allowlist" | "live";
+  deliveryModeSource: "RIVET_EMAIL_MODE" | "legacy_live_flag" | "default";
+  deliveryModeWarning?: string;
   providerConfigured: boolean;
   webhookConfigured: boolean;
   ownerConfirmed: boolean;
@@ -2755,8 +2968,9 @@ export type AutomationActionKey = "create_task" | "queue_message" | "notify_mana
 
 export interface AutomationAction {
   key: AutomationActionKey;
-  /** for queue_message */
+  /** for queue_message: a gym template id, or a key from the code-owned catalogue */
   templateId?: UUID;
+  templateKey?: string;
   channel?: "whatsapp" | "sms";
   /** for create_task */
   taskOwnerRole?: RoleKey;
@@ -2875,6 +3089,7 @@ export interface OperationalEmailDelivery {
 
 export type AuditCategory =
   | "auth"
+  | "legal"
   | "members"
   | "memberships"
   | "payments"
@@ -3031,7 +3246,7 @@ export interface TodayQueueData {
 export type ChecklistType = "opening" | "closing";
 export type ChecklistItemStatus = "pending" | "completed" | "failed" | "skipped";
 /** Server-side gym role keys a checklist can be assigned to. */
-export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor";
+export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer";
 
 export interface ChecklistTemplateItem {
   id: string;

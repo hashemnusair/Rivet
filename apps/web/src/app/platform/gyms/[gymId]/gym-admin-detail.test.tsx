@@ -52,6 +52,7 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
     joinedAt: available("2026-01-01T00:00:00.000Z"),
     branches: available([{ id: "branch-1", name: "Main branch", code: "FOR-MAIN", address: "Amman", status: "active" }]),
     owner: available({ name: "Owner", email: "owner@example.com", phone: "+962 79 000 0000" }),
+    agreement: { state: "not_configured" },
     usage: {
       memberCount: available(100),
       activeStaffCount: available(5),

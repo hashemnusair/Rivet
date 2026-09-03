@@ -116,9 +116,6 @@ describe("mock supplier payables parity", () => {
     await api.switchDemoRole("salesperson");
     await expect(api.listPayables()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
     await expect(api.recordSupplierPayment({ supplierId: "x", branchId: "y", method: "cash", amount: JOD(1), allocations: [{ payableId: "z", amount: JOD(1) }], idempotencyKey: "mock-sales" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
-    await api.switchDemoRole("auditor");
-    expect((await api.listPayables()).items).toHaveLength(1);
-    await expect(api.recordSupplierPayment({ supplierId: "x", branchId: "y", method: "cash", amount: JOD(1), allocations: [{ payableId: "z", amount: JOD(1) }], idempotencyKey: "mock-auditor" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
     await api.switchDemoRole("owner");
     const reconciliation = await api.listPayablesReconciliation();
     expect(reconciliation.items.find((item) => item.sourceType === "equipment_acquisition")).toMatchObject({ amount: JOD(2_900_000), vendorHint: "Life Fitness" });

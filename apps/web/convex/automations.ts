@@ -1,3 +1,4 @@
+import { nextRenewalQuietHoursEnd } from "./renewalPolicy";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { marketingSuppressionReason, normalizeMarketingChannel } from "./marketing";
@@ -181,7 +182,10 @@ export const evaluate = internalMutation({
       const settings = (await records(ctx, organization._id, "settings"))[0];
       const notifications = value(value(settings?.data).notifications);
       const deliveryMode = stringValue(notifications.automationDeliveryMode, "sandbox");
-      const quiet = isQuietHours(organization.timezone, stringValue(notifications.quietHoursStart, "22:00"), stringValue(notifications.quietHoursEnd, "08:00"));
+      const quietStart = stringValue(notifications.quietHoursStart, "22:00");
+      const quietEnd = stringValue(notifications.quietHoursEnd, "08:00");
+      const quiet = isQuietHours(organization.timezone, quietStart, quietEnd);
+      const quietUntil = quiet ? nextRenewalQuietHoursEnd(Date.now(), organization.timezone, quietStart, quietEnd) : undefined;
       const rules = await records(ctx, organization._id, "automationRule");
       for (const ruleRecord of rules) {
         const rule = value(ruleRecord.data);
@@ -226,10 +230,16 @@ export const evaluate = internalMutation({
             } else if (action === "queue_message") {
               const messageId = newId();
               const marketingRecipient = await marketingPreferenceForCandidate(ctx, organization._id, entityType, candidate, memberId);
+              // Sandbox gyms keep the retained ledger. Live gyms queue a real
+              // channel for the outbound worker; quiet hours defer the send to
+              // the end of the window instead of dropping it.
+              const live = deliveryMode === "live";
               const suppressionReason = marketingSuppressionReason(marketingRecipient)
-                ?? (quiet ? "Tenant quiet hours" : deliveryMode === "live" ? "Outbound delivery is not enabled for this message type" : undefined);
+                ?? (!live && quiet ? "Tenant quiet hours" : undefined);
               const messageStatus = suppressionReason ? "suppressed" : "queued";
-              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: "sandbox", requestedChannel: normalizeMarketingChannel(actionItem.channel), language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, memberId, leadId, queuedAt: isoNow(), suppressionReason, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason }], automationExecutionId: executionId };
+              const deferredUntil = live && quiet && quietUntil ? new Date(quietUntil).toISOString() : undefined;
+              const requestedChannel = normalizeMarketingChannel(actionItem.channel);
+              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: live ? requestedChannel : "sandbox", requestedChannel, language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, templateKey: actionItem.templateKey, recipientPhone: stringValue(candidate.phone) || undefined, memberId, leadId, queuedAt: isoNow(), suppressionReason, deferredUntil, nextAttemptAt: messageStatus === "queued" ? (deferredUntil ?? isoNow()) : undefined, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason ?? (deferredUntil ? `Deferred until quiet hours end (${quietEnd})` : undefined) }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });
               const attemptId = newId();
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationAttempt", publicId: attemptId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: attemptId, executionId, action, attempt: 1, status: messageStatus, reason: suppressionReason, nextAttemptAt: suppressionReason ? undefined : isoNow() } });

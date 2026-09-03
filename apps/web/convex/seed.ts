@@ -200,7 +200,7 @@ export const seedDemoTenant = internalMutation({
     for (const person of customers) await upsertUser(person.email, person.fullName);
 
     // --- reference data and a compact, deterministic operating scenario ----
-    for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<["owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor", (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
+    for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<["owner" | "manager" | "sales" | "receptionist" | "trainer", (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
       const existing = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", organizationId).eq("role", role)).unique();
       const value = { label: definition.label, description: definition.description, permissions: definition.permissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor: definition.discountLimitMinor, isSystem: true, updatedAt: now };
       if (existing) await ctx.db.patch(existing._id, { ...value, permissions: rolePermissions(role, existing.permissions, existing.catalogVersion), discountLimitMinor: existing.discountLimitMinor });

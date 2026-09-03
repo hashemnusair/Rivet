@@ -15,10 +15,10 @@ async function seed(t: TestConvex<typeof schema>) {
     const foreignOrganization = await ctx.db.insert("organizations", { publicId: "org-foreign", name: "Foreign Gym", slug: "foreign-gym", status: "active", timezone: "UTC", currency: "USD", createdAt: now, updatedAt: now });
     const branch = await ctx.db.insert("branches", { organizationId: organization, publicId: "branch-export", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "owner-export", authSubject: "clerk-owner-export", email: "owner@example.com", fullName: "Owner Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
-    const auditor = await ctx.db.insert("users", { publicId: "auditor-export", authSubject: "clerk-auditor-export", email: "auditor@example.com", fullName: "Auditor Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    const trainer = await ctx.db.insert("users", { publicId: "trainer-export", authSubject: "clerk-trainer-export", email: "trainer@example.com", fullName: "Trainer Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("users", { publicId: "customer-export", authSubject: "clerk-customer-export", email: "customer@example.com", fullName: "Customer Export", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
-    await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: auditor, role: "auditor", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
+    await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: trainer, role: "trainer", branchIds: [branch], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-export", branchId: branch, memberPublicId: "member-export", createdAt: now, updatedAt: now, data: { id: "member-export", fullName: "Doe, \"Jane\"", memberNumber: "M-100", phone: "+962790000000", email: "=2+2", homeBranchId: "branch-export", createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("customerProfiles", { publicId: "profile-export", userId: "customer-export", name: "جنى حداد", nameAr: "جنى حداد", email: "customer@example.com", phone: "+962790000010", gender: "female", preferredLanguage: "ar", initials: "جح", context: "RIVET member", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "member", publicId: "member-customer-export", branchId: branch, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "member-customer-export", fullName: "جنى حداد", memberNumber: "M-200", phone: "+962790000010", email: "customer@example.com", homeBranchId: "branch-export", customerProfileId: "profile-export", createdAt: new Date(now).toISOString() } });
@@ -86,8 +86,8 @@ describe("tenant data exports", () => {
   it("enforces dataset permissions and rejects idempotency-key reuse with different filters", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
-    const auditor = t.withIdentity({ subject: "clerk-auditor-export" });
-    await expectCode(auditor.mutation(api.domain.mutate, operation("exports.request", { kind: "operations", idempotencyKey: "export-operations-001" })), "FORBIDDEN");
+    const trainer = t.withIdentity({ subject: "clerk-trainer-export" });
+    await expectCode(trainer.mutation(api.domain.mutate, operation("exports.request", { kind: "operations", idempotencyKey: "export-operations-001" })), "FORBIDDEN");
     const owner = t.withIdentity({ subject: "clerk-owner-export" });
     await owner.mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: {}, idempotencyKey: "export-members-002" }));
     await expectCode(owner.mutation(api.domain.mutate, operation("exports.request", { kind: "members", filters: { search: "different" }, idempotencyKey: "export-members-002" })), "CONFLICT");
