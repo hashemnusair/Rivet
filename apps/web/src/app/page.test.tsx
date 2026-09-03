@@ -36,6 +36,17 @@ describe("landing-page pricing", () => {
     state.experienceError = undefined;
   });
 
+  it("keeps gym application and existing-account entry points in the cinematic navigation", async () => {
+    const user = userEvent.setup();
+    render(<LandingPage />);
+
+    await user.click(screen.getByRole("button", { name: "Menu" }));
+
+    const navigation = screen.getByRole("dialog", { name: "RIVET navigation" });
+    expect(within(navigation).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(within(navigation).getByRole("link", { name: "Send gym application" })).toHaveAttribute("href", "/signup");
+  });
+
   it("shows all four tiers and defaults to monthly billing", () => {
     render(<LandingPage />);
 

@@ -223,7 +223,10 @@ export function CinematicHeader() {
               <span className={styles.metaKey}>Interface</span>
               <span>English · <span lang="ar">العربية</span></span>
             </div>
-            <Link href="/signup" className={styles.menuCta}>Book a walkthrough</Link>
+            <div className={styles.menuAuth}>
+              <Link href="/login" className={styles.menuSignIn}>Sign in</Link>
+              <Link href="/signup" className={styles.menuCta}>Send gym application</Link>
+            </div>
           </div>
         </div>
       </div>
