@@ -26,8 +26,10 @@ test.describe("legal pages and the subscription agreement", () => {
       window.sessionStorage.setItem(personaKey, "owner");
       window.sessionStorage.setItem(agreementKey, "required");
     }, { personaKey: DEMO_PERSONA_KEY, agreementKey: DEMO_AGREEMENT_KEY });
-    await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/onboarding\/agreement$/);
+    // A cold dev-route compile can take a while on a loaded machine; the
+    // gate itself fires as soon as the workspace session is ready.
+    await page.goto("/members");
+    await expect(page).toHaveURL(/\/onboarding\/agreement$/, { timeout: 45_000 });
     await expect(page.getByRole("heading", { name: "Sign your RIVET agreement" })).toBeVisible();
     await expect(page.getByTestId("agreement-text")).toContainText("Electronic signature");
 
@@ -42,7 +44,7 @@ test.describe("legal pages and the subscription agreement", () => {
     await expect(page.getByTestId("agreement-record")).toBeVisible();
     await expect(page.getByText("Awaiting RIVET countersignature")).toBeVisible();
     await expect(page.getByText("••••••4567")).toBeVisible();
-    await page.goto("/dashboard");
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/members");
+    await expect(page).toHaveURL(/\/members$/, { timeout: 45_000 });
   });
 });
