@@ -26,26 +26,42 @@ export function Reveal({
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el) {
+      setShown(true);
+      return;
+    }
+
+    // Keep content recoverable if an embedded browser or a long-running
+    // hydration pass misses the observer callback. Motion is a bonus, never
+    // the thing that makes the page readable.
+    const fallback = window.setTimeout(() => setShown(true), 1600);
+    const reveal = () => {
+      window.clearTimeout(fallback);
+      setShown(true);
+    };
 
     // Anything already on screen at mount counts as revealed, so deep links and
     // reloads mid-document never leave a blank panel waiting for a scroll.
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
-        setShown(true);
+        reveal();
         observer.disconnect();
       },
       { rootMargin: "0px 0px -12% 0px", threshold: 0.05 },
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      window.clearTimeout(fallback);
+      observer.disconnect();
+    };
   }, []);
 
   return (
     <div
       ref={ref}
+      data-reveal-state={shown ? "shown" : "hidden"}
       className={cn(
         "transition-[opacity,transform] duration-[850ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity,transform]",
         shown ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0",

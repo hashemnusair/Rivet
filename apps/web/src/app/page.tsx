@@ -2,23 +2,30 @@
 
 import {
   ArrowRight,
-  Banknote,
   Check,
   Dumbbell,
   MapPin,
   ScanLine,
-  ShieldCheck,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { CinematicHeader } from "@/components/marketing/cinematic-header";
 import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
+import styles from "@/components/marketing/landing-cinematic.module.css";
+import { LandingMotionController } from "@/components/marketing/landing-motion";
+import {
+  AccountabilityLedger,
+  ModulesShowcase,
+  OperationalDay,
+  RegionProof,
+  ScrollStackStory,
+  StoryMarker,
+} from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
-import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { VocabularyMarquee } from "@/components/marketing/vocabulary-marquee";
-import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
+import { PublicFooter } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -50,20 +57,27 @@ export default function LandingPage() {
   const pricingPlans = resolvePublicPricingPlans(saasPlans);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   return (
-    <div className="marketing-body min-h-screen bg-paper text-ink">
+    <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
+      <LandingMotionController />
       <ScrollProgress />
-      <PublicHeader />
+      <CinematicHeader />
 
+      <div data-landing-sheet className={styles.pageSheet}>
       <main>
         {/* ---------------------------------------------------------------- Hero */}
-        <section className="relative overflow-hidden border-b border-ink/10">
+        <section
+          id="top"
+          data-landing-hero
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.layer1} relative min-h-[100svh] overflow-hidden border-b border-ink/10 bg-paper`}
+        >
           {/* Ruled backdrop, faded out at the edges so it never competes with
               the headline. Texture only — no painted colour. */}
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="marketing-grid-sm absolute inset-0 [mask-image:radial-gradient(115%_85%_at_72%_18%,black,transparent_72%)]" />
           </div>
 
-          <div className="relative mx-auto grid max-w-[1440px] items-center gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-14 lg:px-12 lg:py-20">
+          <div className={`${styles.heroMotion} relative mx-auto grid min-h-[100svh] max-w-[1440px] items-center gap-12 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-14 lg:px-12 lg:pb-20 lg:pt-24`}>
             <div>
               <p
                 className="flex animate-rise-in items-center gap-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em] text-ink-3"
@@ -93,8 +107,8 @@ export default function LandingPage() {
                 className="mt-8 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
                 style={{ animationDelay: `${HERO_STEP.copy}ms` }}
               >
-                RIVET joins the sales desk, the gym floor, the cash drawer and the member&rsquo;s phone into one record — from
-                the first free trial to the tenth renewal.
+                RIVET joins the sales desk, the gym floor, the cash drawer, and the member&rsquo;s phone in one record, from the
+                first free trial to the tenth renewal.
               </p>
 
               <div
@@ -144,11 +158,15 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ---------------------------------------------------------- Vocabulary */}
-        <VocabularyMarquee />
+        <div
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.layer2} overflow-hidden`}
+        >
+          {/* -------------------------------------------------------- Vocabulary */}
+          <VocabularyMarquee />
 
-        {/* ------------------------------------------------------------- Numbers */}
-        <section className="border-b border-ink/10 bg-sunken">
+          {/* ----------------------------------------------------------- Numbers */}
+          <section className="border-b border-ink/10 bg-sunken">
           <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
             {[
               ["Live", "branch operations in one workspace"],
@@ -169,70 +187,37 @@ export default function LandingPage() {
               </Reveal>
             ))}
           </div>
-        </section>
+          </section>
+        </div>
 
-        {/* ---------------------------------------------------------------- Loop */}
-        <RivetLoopMachine />
+        {/* --------------------------------------------------------- Scroll stack */}
+        <ScrollStackStory />
 
-        {/* ----------------------------------------------------------------- Ops */}
-        <section className="night-surface bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24">
-          <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              dark
-              eyebrow="RIVET for gyms"
-              title="Depth where gyms lose money."
-              description="Not a wall of dashboards — a working surface for selling, collecting, checking in, reconciling and supervising."
-            />
-            <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-night-line bg-night-line md:grid-cols-2 lg:grid-cols-4">
-              <DarkFeature
-                index={0}
-                icon={<Users />}
-                label="Member 360"
-                title="The whole story"
-                copy="Calls, trials, plans, payments, freezes, visits and renewals in one chronological record."
-              />
-              <DarkFeature
-                index={1}
-                icon={<ScanLine />}
-                label="Reception"
-                title="A verdict, not a guess"
-                copy="Valid, expiring, frozen, depleted or blocked — with the next action already attached."
-              />
-              <DarkFeature
-                index={2}
-                icon={<Banknote />}
-                label="Shift & drawer"
-                title="Close in ninety seconds"
-                copy="Expected against counted cash, with every variance named, explained and routed for approval."
-              />
-              <DarkFeature
-                index={3}
-                icon={<ShieldCheck />}
-                label="Accountability"
-                title="Every override has a name"
-                copy="Discounts, refunds, freezes and voids are reasoned, tiered and written to an append-only log."
-              />
-            </div>
-            <div className="mt-10">
-              <Button asChild variant="night" size="lg" className="group">
-                <Link href="/login">
-                  Sign in to RIVET{" "}
-                  <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </section>
+        {/* ------------------------------------------------------------- Modules */}
+        <ModulesShowcase />
+
+        {/* --------------------------------------------------------- A day on RIVET */}
+        <OperationalDay />
+
+        {/* ------------------------------------------------------- Accountability */}
+        <AccountabilityLedger />
+
+        {/* --------------------------------------------------------- Regional fit */}
+        <RegionProof />
 
         {/* -------------------------------------------------------------- Member */}
-        <section id="member" className="scroll-mt-20 border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
+        <section
+          id="member"
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.layer8} scroll-mt-20 border-b border-ink/10 bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+        >
           <div className="mx-auto grid max-w-[1344px] gap-14 lg:grid-cols-[1fr_0.85fr] lg:items-center">
             <div>
               <SectionIntro
                 stacked
                 eyebrow="RIVET for members"
                 title="Their side of the counter."
-                description="One account finds new gyms, books a free trial, and holds every active membership — no app store, no plastic card, no screenshots of old receipts."
+                description="One account finds new gyms, books a free trial, and holds every active membership. No plastic card or screenshots of old receipts."
               />
               <ul className="mt-8 grid gap-3.5">
                 {[
@@ -269,7 +254,10 @@ export default function LandingPage() {
         </section>
 
         {/* --------------------------------------------------------- Marketplace */}
-        <section className="border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
+        <section
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.layer9} border-b border-ink/10 bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+        >
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
               eyebrow="The RIVET network"
@@ -324,7 +312,11 @@ export default function LandingPage() {
         </section>
 
         {/* ------------------------------------------------------------- Pricing */}
-        <section id="pricing" className="scroll-mt-20 border-b border-ink/10 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
+        <section
+          id="pricing"
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer10} scroll-mt-20 border-b border-ink/10 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+        >
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
               eyebrow="Pricing"
@@ -424,32 +416,51 @@ export default function LandingPage() {
         </section>
 
         {/* ----------------------------------------------------------------- CTA */}
-        <section className="marketing-grid relative overflow-hidden px-5 py-24 sm:px-8 lg:px-12">
-          <div className="relative mx-auto max-w-3xl text-center">
-            <Reveal>
-              <p className="eyebrow">First cohort onboarding in Amman</p>
-              <h2 className="marketing-display mt-5 text-[clamp(2.6rem,5.2vw,4.4rem)] leading-[0.92]">
-                See it on your own numbers.
-              </h2>
-              <p className="mx-auto mt-6 max-w-xl text-[15.5px] leading-relaxed text-ink-2">
-                We configure a pilot around your own branches, members and operating rules so the team can validate the complete workflow on authoritative data.
-              </p>
-              {/* One action here — the header already carries sign-in, and the ops
-                  section owns the demo link. */}
-              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <Button asChild variant="signal" size="lg" className="group">
-                  <Link href="/signup">
-                    Send a gym application{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+        <section
+          id="contact"
+          data-landing-theme="dark"
+          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer11} night-surface scroll-mt-20 relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
+        >
+          <div className="pointer-events-none absolute inset-0 opacity-[0.06]" aria-hidden>
+            <div className="absolute inset-y-0 start-[68%] w-px bg-night-ink" />
+            <div className="absolute inset-y-0 start-[72%] w-px bg-night-ink" />
+            <div className="absolute inset-y-0 start-[76%] w-px bg-night-ink" />
+          </div>
+          <div className="relative mx-auto max-w-[1344px]">
+            <StoryMarker index="07" label="Walkthrough" dark />
+            <div className="mt-12 grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
+              <Reveal>
+                <div>
+                  <h2 className="max-w-xl text-[clamp(2.6rem,4.8vw,4.25rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
+                    Pin the whole gym together.
+                  </h2>
+                  <p className="mt-7 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
+                    See RIVET on your own branches, members, and operating rules. We will walk through the parts that matter at your desk.
+                  </p>
+                </div>
+              </Reveal>
+              <Reveal delay={120}>
+                <div className="flex flex-wrap items-center gap-4 lg:justify-end">
+                  <Button asChild variant="signal" size="lg" className="group">
+                    <Link href="/signup">
+                      Send a gym application{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                  <Link href="/login" className="font-mono text-[10px] uppercase tracking-[0.16em] text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink">
+                    Already have access? Sign in
                   </Link>
-                </Button>
-              </div>
-            </Reveal>
+                </div>
+              </Reveal>
+            </div>
           </div>
         </section>
       </main>
 
-      <PublicFooter />
+      <div data-landing-theme="dark">
+        <PublicFooter />
+      </div>
+      </div>
     </div>
   );
 }
@@ -529,7 +540,7 @@ function SectionIntro({
       <div>
         <p className={`font-mono text-[10px] font-medium uppercase tracking-[0.18em] ${dark ? "text-signal" : "text-ink-3"}`}>{eyebrow}</p>
         <h2
-          className={`marketing-display mt-4 text-[clamp(2.3rem,4vw,3.7rem)] leading-[0.95] ${dark ? "text-night-ink" : "text-ink"}`}
+          className={`mt-4 text-[clamp(2.15rem,3.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.025em] [font-family:var(--font-marketing-display)] ${dark ? "text-night-ink" : "text-ink"}`}
         >
           {title}
         </h2>
@@ -537,36 +548,6 @@ function SectionIntro({
       <p className={`text-[14.5px] leading-[1.7] ${dark ? "text-night-ink-2" : "text-ink-2"} ${stacked ? "mt-5" : "lg:pb-2"}`}>
         {description}
       </p>
-    </Reveal>
-  );
-}
-
-function DarkFeature({
-  icon,
-  label,
-  title,
-  copy,
-  index,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-  copy: string;
-  index: number;
-}) {
-  return (
-    <Reveal delay={index * 90}>
-      <div className="group relative h-full bg-night-2 p-6 transition-colors duration-300 hover:bg-night-3">
-        {/* A signal rule draws across the cell on hover — the same accent the
-            product uses to mark the active surface. */}
-        <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-signal transition-transform duration-500 ease-out group-hover:scale-x-100 rtl:origin-right" />
-        <span className="flex size-10 items-center justify-center rounded-md border border-night-line text-signal transition-colors duration-300 group-hover:border-signal group-hover:bg-signal group-hover:text-white [&_svg]:size-4">
-          {icon}
-        </span>
-        <p className="mt-7 eyebrow-night">{label}</p>
-        <h3 className="mt-2.5 text-[19px] font-semibold tracking-tight">{title}</h3>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-night-ink-2">{copy}</p>
-      </div>
     </Reveal>
   );
 }
