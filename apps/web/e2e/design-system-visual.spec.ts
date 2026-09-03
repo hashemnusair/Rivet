@@ -58,7 +58,15 @@ async function signInPlatform(page: Page) {
 
 async function capture(page: Page, name: string) {
   await prepare(page);
-  await expect(page).toHaveScreenshot(name, { animations: "disabled", caret: "hide" });
+  await expect(page).toHaveScreenshot(name, {
+    animations: "disabled",
+    caret: "hide",
+    // The committed references are authored on macOS while CI runs Linux.
+    // Chromium layout must remain identical, but font rasterization can vary
+    // slightly across those hosts. A 4% ceiling catches layout and component
+    // regressions while tolerating the observed subpixel glyph differences.
+    maxDiffPixelRatio: 0.04,
+  });
 }
 
 test("commits the representative product UI set", async ({ page }) => {

@@ -142,12 +142,12 @@ export function DesignSystemGallery() {
               </div>
             </div>
             <FieldGrid className="sm:grid-cols-2" alignFrom="sm">
-              <Field label="Member name" required><Input defaultValue="Rana Haddad" /></Field>
-              <Field label="Home branch"><Select defaultValue="abdoun"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="abdoun">Abdoun</SelectItem><SelectItem value="sweifieh">Sweifieh</SelectItem></SelectContent></Select></Field>
-              <Field label="Phone" hint="Jordan is the default; international numbers remain supported."><Input defaultValue="+962 79 123 4567" dir="ltr" /></Field>
-              <Field label="Reference" error="Use a valid transfer reference."><Input aria-invalid defaultValue="CLIQ-" /></Field>
-              <Field label="Desk note" className="sm:col-span-2"><Textarea placeholder="Add only the context the next employee needs." /></Field>
-              <Field label="Disabled field"><Input disabled defaultValue="Managed by the gym" /></Field>
+              <Field label="Member name" htmlFor="gallery-member-name" required><Input id="gallery-member-name" defaultValue="Rana Haddad" /></Field>
+              <Field label="Home branch" htmlFor="gallery-home-branch"><Select defaultValue="abdoun"><SelectTrigger id="gallery-home-branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="abdoun">Abdoun</SelectItem><SelectItem value="sweifieh">Sweifieh</SelectItem></SelectContent></Select></Field>
+              <Field label="Phone" htmlFor="gallery-phone" hint="Jordan is the default; international numbers remain supported."><Input id="gallery-phone" defaultValue="+962 79 123 4567" dir="ltr" /></Field>
+              <Field label="Reference" htmlFor="gallery-reference" error="Use a valid transfer reference."><Input id="gallery-reference" aria-invalid defaultValue="CLIQ-" /></Field>
+              <Field label="Desk note" htmlFor="gallery-desk-note" className="sm:col-span-2"><Textarea id="gallery-desk-note" placeholder="Add only the context the next employee needs." /></Field>
+              <Field label="Disabled field" htmlFor="gallery-disabled-field"><Input id="gallery-disabled-field" disabled defaultValue="Managed by the gym" /></Field>
               <label className="flex items-center justify-between gap-4 rounded-md border border-line px-3 py-2.5 text-[13px] font-medium"><span>Class booking enabled</span><Switch defaultChecked aria-label="Class booking enabled" /></label>
             </FieldGrid>
           </div>
