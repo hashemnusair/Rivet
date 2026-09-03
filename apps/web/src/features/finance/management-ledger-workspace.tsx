@@ -496,7 +496,7 @@ export function ManagementLedgerWorkspace() {
   return (
     <div className="space-y-5" data-testid="management-ledger-workspace">
       <PageHeader
-        sectionLabel="Management ledger"
+        sectionLabel="Accounting controls"
         title="Management ledger"
         description="The engine room behind the statements: refresh the queue, post or exclude facts, and run the month-end clicks. Management accounting only — not a statutory filing system."
         actions={canOwner && scopeBranchId ? <Button type="button" onClick={() => setManualOpen(true)}><Plus /> Manual journal</Button> : <Badge variant="outline">{canOwner ? "Select a branch to post" : "Read-only for this role"}</Badge>}
